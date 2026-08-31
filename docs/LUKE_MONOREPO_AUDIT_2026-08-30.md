@@ -1571,3 +1571,126 @@ The configuration-derived findings above were cross-checked against current offi
 
 The repository files remain the primary source of truth for what LUKE currently does; external documentation is used only to validate modernization recommendations.
 
+
+---
+
+# Appendix A — Current disposition and execution baseline (2026-08-31)
+
+**This is not a closure appendix. The Monorepo Audit remains OPEN.**
+
+Reconciliation baseline: `develop-2.2` at `63dce1b`. The audit body above is preserved as written and is deliberately not edited retroactively; this appendix records what became of each item and what the current execution order is.
+
+## A.0 Stability rule for this adjudication
+
+**A later reconciliation must not replace an adjudicated disposition merely because a semantic rerun reaches a different conclusion. Reopen an item only on explicit new repository evidence or a human decision.**
+
+This rule exists because of a measured property of the review system: two identical full audit runs, on the same tree, minutes apart, produced materially different CRITICAL, P1 and QA-gap counts. Absence of a finding in a later run is therefore not evidence that a confirmed finding has been resolved, and a differing re-derivation is not new evidence.
+
+## A.1 Item-by-item disposition
+
+### §4 — Numbered findings
+
+| Item | Original concern | Disposition | Current evidence | Action still required |
+|---|---|---|---|---|
+| P0-01 | `security:sast` chained with `;` — fail-open | DONE | `package.json:41` uses `&&`. Strengthened beyond the recommendation: `checkSecurityRunnerCanonicalForm` (`tools/scripts/check-platform-integrity.ts:566`) makes reintroduction a red gate (`dbe02ef`, `cb14810`) | None |
+| P0-02a | Next/React/React-Hooks rules installed but inactive | CONFIRMED OPEN | `eslint-config-next@^16.3.3` in root and `apps/web`; `eslint.config.mjs` references `next` only in ignore globs (`:202`, `:210`). `eslint-plugin-react-hooks` is not installed anywhere | Full item |
+| P0-02b | `globals.browser` + `globals.node` merged for every workspace | CONFIRMED OPEN (partially addressed) | `eslint.config.mjs:86-87` still merges both. The `tools/**` block (`:113-122`) is Node-only and its comment names this finding and defers it (`58a1629`) | Per-runtime globals for web/api/packages |
+| P0/P1-03 | `minimumReleaseAgeExclude` without `minimumReleaseAge` | DONE | `pnpm-workspace.yaml:22-25` — quarantine at 4320 min, `minimumReleaseAgeStrict: true`, excludes narrowed to `electron-to-chromium`. Interpretation A chosen deliberately; gated by `checkReleaseAgePolicy:424` | None |
+| P1-04 | Prisma 7 still on `prisma-client-js` | CONFIRMED OPEN | `apps/api/prisma/schema.prisma:4-6` unchanged | Full item |
+| P1-05 | 2,418-line schema should split by domain | CONFIRMED OPEN | Still exactly 2,418 lines | Full item |
+| P1-06 | Root tsconfig is a web/Next config, not a neutral base | CONFIRMED OPEN (partially mitigated) | Root still carries `lib:[dom,…]`, `jsx: preserve`, `moduleResolution: bundler`, `allowJs`, and `paths` into `packages/core/src`. `tools/tsconfig.json` was added as a deliberate standalone so as not to pre-empt this refactor | Neutral `tsconfig.base.json` + per-runtime configs |
+| P1-07 | bcrypt vs Argon2 documentation drift | CONFIRMED OPEN | `schema.prisma:134` and `:139` still say "Bcrypt"; runtime is argon2 | Full item (two comment lines) |
+| P1/P2-08 | Move shared versions to pnpm Catalogs | CONFIRMED OPEN | Zero `catalog` occurrences in `pnpm-workspace.yaml` | Full item |
+| P2-09 | Turbo `lint -> ^build` and redundant `packages/core/dist/**` output | CONFIRMED OPEN | Both persist in `turbo.json` | Full item |
+| P2-10 | TypeScript 7.1 migration gate | DONE | HOLD recorded with explicit unblock condition — `.claude/skills/luke-deps/references/platform-policy.md:96`. The audit asked for a controlled decision, not adoption | None (revisit on 7.1 stable) |
+
+### §5 — Observations requiring verification
+
+| Item | Original concern | Disposition | Current evidence | Action still required |
+|---|---|---|---|---|
+| 5.1 | `@prisma/client` devDep of `@luke/core` may leak Prisma types into public `.d.ts` | NOT REPRODUCIBLE | The audit's own criterion fails: `packages/core/src` contains no `@prisma/client` import. `runtime/env.ts:27-37` deliberately declares a structural `IPrismaConfigClient` to avoid it. No declaration leakage exists | None for the stated concern. Separate minor fact: the devDependency appears unused in the package |
+| 5.2 | Internal packages' module format is emergent, not explicit | CONFIRMED OPEN — elevated | `core`, `nav` and `calendar` have no `type` field while `exports.import` and `exports.require` both point at `./dist/index.js`. No longer theoretical: `apps/web/vitest.browser.config.mts` documents that a browser ESM context cannot take named imports from `@luke/core`, worked around by `optimizeDeps.include` | Decide the real contract (CJS / ESM / dual) and make it explicit |
+| 5.3 | Root devDeps on `@luke/api` and `@trpc/client` may be misplaced | CONFIRMED OPEN (minor) | Both present. No root tooling imports either — `@trpc/client` hits under `tools/` are the platform checker's own family constants and fixtures; `@luke/api` appears only in generated report text | Verify they are not load-bearing for resolution, then remove |
+| 5.4 | `allowJs: true` — tighten if all source is TS | CONFIRMED OPEN (minor) | `allowJs` in root + `core` + `nav` + `calendar`. The only JS source in the repo is `packages/eslint-plugin-luke/**`, a package none of those four configs covers | Low-priority cleanup |
+
+### §6 — Agentic-development recommendations
+
+| Item | Original concern | Disposition | Current evidence | Action still required |
+|---|---|---|---|---|
+| 6.1 | Convert recurring lessons into executable gates | ALREADY RESOLVED | Now the repository's standing discipline: `audit-protocol.md` §3 escalation, 8 `eslint-plugin-luke` rules, `.semgrep/rules/`, three checkers all carrying fixture suites (`12cb8e0`) | None — it is the operating model |
+| 6.2 | Make dependency direction machine-checkable | CONFIRMED OPEN | No `no-restricted-imports`, boundary or graph rule in `eslint.config.mjs` | Full item |
+| 6.3 | Rename `deps:latest` to expose blast radius | CONFIRMED OPEN | Still `"deps:latest": "pnpm update --latest"` | Trivial rename |
+| 6.4 | Keep refactors single-purpose | ALREADY RESOLVED | Practised throughout the governance program — one architectural statement per commit, majors never bundled | None — preserve as policy |
+
+### Supplemental item (not from the original audit)
+
+| Item | Concern | Disposition | Evidence |
+|---|---|---|---|
+| S-01 | GitHub branch/ruleset enforcement | NEEDS DECISION | `develop-2.2` and `main` are unprotected with no required status checks. CI and security workflows run on push, so they report rather than gate. Enforcement today rests on `.husky/pre-push`, which is bypassable with `--no-verify` and absent for a push from another clone |
+
+## A.2 Totals
+
+| Disposition | Count |
+|---|---|
+| DONE | 3 |
+| ALREADY RESOLVED | 2 |
+| NOT REPRODUCIBLE | 1 |
+| SUPERSEDED | 0 |
+| CONFIRMED OPEN | 12 |
+| NEEDS DECISION (supplemental) | 1 |
+
+18 original items reconciled. Nothing was superseded: the governance program closed three findings outright and touched two others without invalidating either recommendation.
+
+## A.3 Backlog
+
+### Must do
+
+- **SEC-A** — editor to LOCAL-admin account takeover. CONFIRMED CRITICAL, release-blocking. See A.5.
+- **P1-07** — bcrypt/Argon2 documentation drift. A schema comment that misdescribes the credential algorithm is an agent-facing operational input, not decoration.
+- **P0-02a** — Next/React/Hooks rules inactive. Highest-leverage item in the backlog: `react-hooks/exhaustive-deps` mechanically catches the defect class confirmed as BUG-B, and `apps/web` is extensively agent-generated. Requires installing `eslint-plugin-react-hooks`, which is absent.
+- **5.2** — module-format ambiguity. Promoted from the audit's "verify" status because it has produced a real workaround in the browser test configuration.
+
+### Should do
+
+P0-02b (per-runtime globals) · BUG-B (wizard lock) · P1-04 (Prisma generator) · P1-06 (neutral tsconfig base) · 6.2 (dependency-direction enforcement) · P2-09 (Turbo graph) · S-01 (branch protection decision).
+
+### Optional / defer
+
+- **P1-05** — Prisma schema domain split. Valuable at 2,418 lines, but a large mechanical diff with no behavioral acceptance test beyond "still generates".
+- **P1/P2-08** — pnpm catalogs. Version alignment is already deterministically gated by `checkVersionAlignment`, which covers the risk catalogs would partly mitigate. An ergonomics improvement, not a defect fix.
+- **5.3**, **5.4**, **6.3**, inert `tools/*` workspace glob — minor hygiene, to be batched.
+- **5.1** — unused devDependency, cosmetic.
+
+P1-05 and P1/P2-08 are deliberately not classified as mandatory technical debt: both are sound ideas whose payoff is smaller than when the audit was written, because deterministic gates added since cover part of the risk they were proposed to reduce.
+
+## A.4 Execution sequence
+
+| Cycle | Goal | Closes | Model | Key evidence |
+|---|---|---|---|---|
+| 1 | SEC-A remediation | SEC-A | Opus | Integration tier; assert the persisted row is unchanged on rejection, not merely that an error was returned |
+| 2 | Documentation-drift batch | P1-07 + governance prose drift | Sonnet | `check:drift` green; verify argon2 before rewording |
+| 3 | ESLint framework activation | P0-02a | Opus (config) → Sonnet (triage) | A deliberately invalid bait file proving the rules fire. Integrate and measure only — no mass auto-fix |
+| 4 | BUG-B wizard lock | BUG-B | Sonnet | Browser tier: mount with the layout query unresolved, assert both entity types acquired; warm-cache case stays green |
+| 5 | Per-runtime globals | P0-02b | Sonnet | Bait file per runtime |
+| 6 | `@luke/core` module format | 5.2 | Opus | Browser tier green with the `optimizeDeps` workaround removed |
+| 7 | Turbo graph | P2-09 | Sonnet | Cold-cache lint green with the edge removed; timing before/after |
+| 8 | Hygiene batch | 5.1, 5.3, 5.4, 6.3, `tools/*` glob | Sonnet | Clean install, `check:drift`, typecheck |
+
+Later, unscheduled: P1-06 (with `tools/tsconfig.json` rebased onto it), 6.2, P1-04 then P1-05, P1/P2-08.
+
+Ordering dependencies: cycle 3 before cycle 4 (the rule should demonstrate the bug class); cycle 3 before 6.2; cycle 6 before further ESM consumer work; P1-04 before any Prisma major; P1-06 before rebasing `tools/tsconfig.json`. Per §6.4 nothing above is bundled.
+
+## A.5 Application findings preserved separately
+
+Discovered after this audit was written. They are not evidence that the audit was wrong, and they are tracked here only so the execution order is complete.
+
+- **SEC-A — CONFIRMED CRITICAL, release-blocking.** An `editor` holds `users:update`, which permits changing another LOCAL user's email with no `*:*` guard of the kind applied to password and role. The change neither clears verification state nor invalidates sessions by itself; the public password-reset flow can then target the reassigned address, and reset confirmation applies no role or origin check. Reset completion does increment `tokenVersion` and invalidate the victim's sessions — that affects detectability, not exploitability, since the password has already been changed. Requires the target to hold a LOCAL identity, which is a supported configuration and is what bootstrap creates.
+- **BUG-B — CONFIRMED MEDIUM**, data-integrity/concurrency. On a cold React Query cache the planning wizard acquires only the `SEASON_CALENDAR` lock and never `COLLECTION_LAYOUT`, leaving nine `assertUnlocked` sites unprotected for concurrent editors, and later force-closes the wizard when the heartbeat renews a lock it never took. Not an authorization boundary: no privilege is gained and concurrent editors still need their own permissions.
+
+## A.6 Not Monorepo Audit findings
+
+The following are governance control-plane items from the separately closed Agent Platform Governance Audit v3. They are recorded here only to prevent them being absorbed into this audit's backlog by a later reconciliation:
+
+Explore/fan-out checker fail-open · skill size budget decision · ADR 006–009 status disposition · CLAUDE.md rule 8 breadth · the future finding/adjudication ledger.
+
+These are not Monorepo Audit findings and must not be merged into its execution program.
