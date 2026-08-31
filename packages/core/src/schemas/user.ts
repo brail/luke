@@ -65,36 +65,68 @@ export const UpdateUserInputSchema = z.object({
 });
 
 /**
- * Fields that authenticate or address an account, rather than describe it.
+ * Every field of `UpdateUserInputSchema` that a cross-user update can carry.
  *
- * Mutating one of these on **another** user is an identity change, not a profile
- * edit, and requires `*:*`. `users:update` alone is not enough: that permission
- * is granted to `editor`, and without this boundary an editor could point an
- * admin's email at an address they control and then take the account over
- * through the public password-reset flow — the reset behaving correctly for
- * whoever owns the address on record is precisely what makes it work.
- *
- * `username` belongs here for the same reason as `email`: `authenticateLocal`
- * matches the login against it.
- *
- * Deliberately absent:
- * - `password` and `role` are already guarded individually. `password` never
- *   reaches `updateData` (it lives in `LocalCredential`, not on `User`), and
- *   `role` is re-checked inside the transaction against a freshly read row so a
- *   concurrent promotion cannot slip past it. Folding either into this list
- *   would replace a stronger check with a weaker one.
- * - `isActive` is account state, not identity. An editor deactivating a user is
- *   an existing capability bounded by `assertNotLastAdminWithSettingsAccess`;
- *   restricting it is a product decision, not part of this boundary.
- *
- * Bound to a union rather than left a bare array (CLAUDE.md rule 15) so the
- * router guard and its regression matrix iterate one declaration instead of two
- * copies that drift.
+ * `id` addresses the target rather than mutating it. `password` is excluded
+ * because it structurally never reaches the router's `updateData`: it lives on
+ * `LocalCredential`, not `User`, so it is destructured out and keeps its own
+ * `*:*` guard. It is privileged — it is simply enforced on a different path,
+ * named here rather than omitted silently.
  */
-export const USER_IDENTITY_FIELDS = ['email', 'username'] as const;
+type UserUpdatableField = Exclude<keyof UpdateUserInput, 'id' | 'password'>;
 
-/** A field whose mutation on another user requires `*:*`. */
-export type UserIdentityField = (typeof USER_IDENTITY_FIELDS)[number];
+/**
+ * The fields a caller holding `users:update` **but not** `*:*` may change on
+ * someone else's account. This is the allow-list, and it is the only list.
+ *
+ * Everything else in `UpdateUserInputSchema` is privileged **by derivation**
+ * (`privilegedUserUpdateFields`), not by enumeration. That direction is the
+ * whole point: a field added to the schema tomorrow is denied to editors by
+ * default, instead of being writable until somebody remembers to classify it.
+ *
+ * The first version of this fix named the sensitive fields instead — which
+ * closed the concrete email takeover while leaving the defect class intact,
+ * since every future field would still have defaulted to permitted.
+ *
+ * `isActive` is here as a deliberate product decision, not by omission: an
+ * editor deactivating a user is an existing capability, already bounded by the
+ * self-deactivation guard and `assertNotLastAdminWithSettingsAccess`. It is
+ * account state, not authentication identity. Removing it from this list would
+ * be a behavioural change to make on its own merits.
+ */
+export const USER_EDITOR_UPDATABLE_FIELDS = [
+  'firstName',
+  'lastName',
+  'isActive',
+] as const satisfies readonly UserUpdatableField[];
+
+/** A field an `editor` may change on another account. */
+export type UserEditorUpdatableField = (typeof USER_EDITOR_UPDATABLE_FIELDS)[number];
+
+/** A field whose mutation on another account requires `*:*`. */
+export type PrivilegedUserUpdateField = Exclude<
+  UserUpdatableField,
+  UserEditorUpdatableField
+>;
+
+/**
+ * The privileged complement, derived from the schema rather than listed.
+ *
+ * Reading the shape at runtime is what makes the default deny: a new key in
+ * `UpdateUserInputSchema` appears here automatically, with no edit to this file
+ * and nothing to remember. The router and the regression matrix both consume
+ * this, so neither can drift from the schema or from each other.
+ */
+export function privilegedUserUpdateFields(): PrivilegedUserUpdateField[] {
+  const editorPermitted = USER_EDITOR_UPDATABLE_FIELDS as readonly string[];
+  return Object.keys(UpdateUserInputSchema.shape).filter(
+    (field): field is PrivilegedUserUpdateField =>
+      field !== 'id' && field !== 'password' && !editorPermitted.includes(field)
+    // The predicate mirrors `UserUpdatableField` minus the allow-list, which is
+    // exactly `PrivilegedUserUpdateField`; TypeScript cannot narrow a string
+    // key of a Zod shape to that union on its own.
+  );
+}
 
 /** Schema for identifying a single user by UUID — shared across the users sub-routers. */
 export const UserIdSchema = z.object({

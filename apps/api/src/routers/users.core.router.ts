@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, USER_IDENTITY_FIELDS, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission } from '@luke/core';
+import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 
@@ -420,27 +420,29 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Protection: identity fields are admin-only on someone else's account.
-      // `users:update` is also granted to `editor`, and `email` is not merely
-      // profile data — it is the address `auth.requestPasswordReset` matches on,
-      // so an editor able to rewrite an admin's email can take the account over
-      // through the public reset flow. `username` is the key `authenticateLocal`
-      // matches, so it is the same class of change.
+      // Protection: on someone else's account, `users:update` alone may change
+      // only the fields explicitly classified as editor-permitted. Everything
+      // else in the update schema is privileged and needs `*:*`.
+      //
+      // The privileged set is *derived* from the schema, not enumerated here, so
+      // a field added to `UpdateUserInputSchema` is denied by default rather than
+      // writable until someone classifies it. That default is the point: this
+      // guard originally named the sensitive fields, which fixed the email
+      // takeover but left every future field permit-by-omission.
       //
       // Compared against the stored value rather than tested for presence: the
-      // edit dialog submits the whole record, so an unchanged email must remain
-      // an ordinary save. The list is `USER_IDENTITY_FIELDS` from `@luke/core`,
-      // which the regression matrix iterates too — one declaration, not two.
-      const attemptedIdentityFields = USER_IDENTITY_FIELDS.filter(
+      // edit dialog submits the whole record, so an unchanged field must remain
+      // an ordinary save.
+      const attemptedPrivilegedFields = privilegedUserUpdateFields().filter(
         field => updateData[field] !== undefined && updateData[field] !== existingUser[field]
       );
       if (
-        attemptedIdentityFields.length > 0 &&
+        attemptedPrivilegedFields.length > 0 &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: `Solo un amministratore può modificare: ${attemptedIdentityFields.join(', ')}`,
+          message: `Solo un amministratore può modificare: ${attemptedPrivilegedFields.join(', ')}`,
         });
       }
 
@@ -518,7 +520,7 @@ export const usersCoreRouter = router({
           // password change does: after it, the account is reachable by a
           // different person through account recovery, so tokens issued to the
           // previous holder must stop being honoured.
-          const changesIdentity = attemptedIdentityFields.length > 0;
+          const changesIdentity = attemptedPrivilegedFields.length > 0;
 
           const revokesSessions =
             (updateData.role !== undefined && updateData.role !== current?.role) ||

@@ -9,7 +9,8 @@
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
-import { USER_IDENTITY_FIELDS } from '@luke/core';
+import { USER_EDITOR_UPDATABLE_FIELDS, UpdateUserInputSchema, privilegedUserUpdateFields } from '@luke/core';
+import type { PrivilegedUserUpdateField, UserEditorUpdatableField } from '@luke/core';
 
 import {
   createCallerWithIP,
@@ -191,34 +192,48 @@ describe('users.update — reset password admin', () => {
 });
 
 /**
- * SEC-A — an `editor` must not be able to take over a privileged account by
- * repointing its authentication identity.
+ * SEC-A — a caller holding `users:update` without `*:*` may change only the
+ * fields explicitly classified as editor-permitted on someone else's account.
  *
- * `users:update` is granted to `editor`. The procedure re-checked `*:*` for
- * `password` and `role` but treated `email` as a uniqueness question only, so
- * an editor could point an admin's email at an address they control and then
- * drive the public password-reset flow to obtain that account. The reset itself
- * is not the defect — it behaves correctly for whoever legitimately owns the
- * address on record.
+ * The concrete defect was an editor repointing an admin's email and then
+ * driving the public password-reset flow to obtain the account. The reset was
+ * never the defect: it behaves correctly for whoever owns the address on
+ * record, which is exactly what made the chain work.
  *
- * `email` and `username` are covered together: username is the lookup key
- * `authenticateLocal` matches against, so rewriting it is the same class of
- * identity mutation. `isActive` is deliberately NOT covered — it is account
- * state rather than identity, an editor deactivating a user is an existing
- * capability, and widening this guard to include it would be a product change
- * riding along with a security fix.
+ * The matrices below iterate `privilegedUserUpdateFields()` and
+ * `USER_EDITOR_UPDATABLE_FIELDS`, the same two declarations the router
+ * consumes, so the authorization surface cannot be tested against a stale copy
+ * of itself. The sample maps are typed `Record<…Field, …>`: a field added to
+ * `UpdateUserInputSchema` and left unclassified lands in the privileged
+ * complement automatically and fails `typecheck:test` here for a missing key,
+ * so it cannot reach production silently permitted.
  */
-describe('users.update — privileged identity fields (SEC-A)', () => {
-  it.each(USER_IDENTITY_FIELDS)(
+
+/** One attacker-supplied value per privileged field. Keys are exhaustive by type. */
+const PRIVILEGED_SAMPLE: Record<PrivilegedUserUpdateField, unknown> = {
+  email: `takeover-${Date.now()}@evil.test`,
+  username: `takeover${Date.now()}`,
+  // Must differ from the target's stored value or the guard correctly treats it
+  // as a no-op: the target below is an admin, so demoting is the real attempt.
+  role: 'viewer',
+};
+
+/** One legitimate value per editor-permitted field. Keys are exhaustive by type. */
+const EDITOR_SAMPLE: Record<UserEditorUpdatableField, unknown> = {
+  firstName: 'Modificato',
+  lastName: 'DaEditor',
+  isActive: false,
+};
+
+describe('users.update — cross-user field authorization (SEC-A)', () => {
+  it.each(privilegedUserUpdateFields())(
     'editor con users:update ma senza *:* non può cambiare %s di un admin',
     async field => {
       const { user: adminTarget } = await createTestUser('admin');
       const before = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
 
-      const attacker = field === 'email' ? `takeover-${Date.now()}@evil.test` : `takeover${Date.now()}`;
-
       await expectUnauthorized(() =>
-        usersAs('editor').update({ id: adminTarget.id, [field]: attacker })
+        usersAs('editor').update({ id: adminTarget.id, [field]: PRIVILEGED_SAMPLE[field] })
       );
 
       // The rejection must also mean the write did not happen. An endpoint that
@@ -227,8 +242,34 @@ describe('users.update — privileged identity fields (SEC-A)', () => {
       const after = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
       expect(after.email).toBe(before.email);
       expect(after.username).toBe(before.username);
+      expect(after.role).toBe(before.role);
     }
   );
+
+  it.each(USER_EDITOR_UPDATABLE_FIELDS)(
+    'editor conserva la capacità legittima di cambiare %s',
+    async field => {
+      // The other half of the boundary. A guard that froze the whole procedure
+      // for editors would pass every test above and get reverted in a week.
+      const { user: target } = await createTargetUser();
+
+      await usersAs('editor').update({ id: target.id, [field]: EDITOR_SAMPLE[field] });
+
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+      expect(after[field]).toBe(EDITOR_SAMPLE[field]);
+    }
+  );
+
+  it('la classificazione copre esattamente lo schema: nessun campo resta non classificato', () => {
+    // Belt to the type-level braces: proves at runtime that the two sets
+    // partition the schema, so a field cannot be silently absent from both.
+    const schemaFields = Object.keys(UpdateUserInputSchema.shape)
+      .filter(f => f !== 'id' && f !== 'password')
+      .sort();
+    const classified = [...privilegedUserUpdateFields(), ...USER_EDITOR_UPDATABLE_FIELDS].sort();
+
+    expect(classified).toEqual(schemaFields);
+  });
 
   it('la catena di takeover si interrompe al primo passo: il reset password non raggiunge un indirizzo iniettato', async () => {
     const { user: adminTarget } = await createTestUser('admin');
@@ -286,17 +327,5 @@ describe('users.update — privileged identity fields (SEC-A)', () => {
     const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
     expect(after.firstName).toBe('Rinominato');
     expect(after.tokenVersion).toBe(before.tokenVersion);
-  });
-
-  it('editor conserva le capacità legittime su un utente: firstName/lastName restano modificabili', async () => {
-    // Proves the guard is scoped to identity rather than freezing the whole
-    // procedure for editors — the failure mode that gets a security fix reverted.
-    const { user: target } = await createTargetUser();
-
-    await usersAs('editor').update({ id: target.id, firstName: 'Modificato', lastName: 'DaEditor' });
-
-    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
-    expect(after.firstName).toBe('Modificato');
-    expect(after.lastName).toBe('DaEditor');
   });
 });
