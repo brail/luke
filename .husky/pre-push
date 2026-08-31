@@ -47,7 +47,7 @@ fi
 # `turbo run typecheck` non lo vede e tsx esegue il TypeScript senza
 # controllarlo. Hanno un tsconfig e un blocco ESLint propri, Node-only.
 echo "🔧 Control plane (tools/)..."
-if ! pnpm lint:tools || ! pnpm typecheck:tools; then
+if ! pnpm lint:tools || ! pnpm typecheck:tools || ! pnpm test:tools; then
   echo ""
   echo "❌ Lint/typecheck di tools/ fallito — push bloccato."
   echo "   Per saltare (solo se sai perché): git push --no-verify"

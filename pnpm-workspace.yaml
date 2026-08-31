@@ -13,8 +13,15 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
 
+# Supply-chain quarantine: a version younger than 72h is invisible to
+# resolution, and `pnpm install --frozen-lockfile` re-applies the same cutoff to
+# every lockfile entry — so this governs CI, not only `pnpm update`. Strict is
+# explicit rather than inherited: with `false`, a range whose only match is
+# younger than the window installs the immature version instead of failing.
+# Exclusions are added with the dependency that needs one, never ahead of it.
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
 minimumReleaseAgeExclude:
-  - prettier@3.8.5
   - electron-to-chromium
 
 overrides:
