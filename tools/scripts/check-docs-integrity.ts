@@ -15,6 +15,10 @@
  *    successiva sovrascriva contenuto scritto a mano.
  * 2. **Link relativi**: ogni link markdown a un path relativo risolve su disco.
  *
+ * 3. **Completezza dell'indice ADR**: ogni ADR tracciato compare esattamente una
+ *    volta in `docs/decisions/README.md`, ogni voce dell'indice punta a un ADR
+ *    esistente, e nessun numero è duplicato.
+ *
  * ## Nessuna lista di eccezioni
  *
  * Un link rotto va riparato o cancellato. Se qui comparisse una allow-list, il
@@ -157,6 +161,90 @@ function checkLinks(
   return checked;
 }
 
+/**
+ * Completezza dell'indice ADR.
+ *
+ * Gli ADR 013 e 014 esistevano, erano Accepted, e l'indice generato si fermava
+ * al 012: la manutenzione era stata rimandata, e nulla la reclamava. Questo
+ * controllo impedisce che una manutenzione differita diventi drift permanente.
+ *
+ * Cosa **non** fa: non è il canale di scoperta degli ADR. `luke-audit` legge i
+ * file tracciati sotto `docs/decisions/` direttamente, proprio perché l'indice
+ * non è prova di esistenza — un ADR fuori dall'indice resta visibile all'audit
+ * architetturale. Qui si garantisce che l'indice **umano** resti completo e
+ * coerente con il corpus tracciato: ogni ADR rappresentato esattamente una
+ * volta, ogni voce che risolve a un ADR reale.
+ *
+ * Deliberatamente **non** verifica lo `Status`: il repo usa due formati di
+ * header (`## Status` e `**Status**:`), e lo stato di un ADR è comunque un
+ * fatto semantico sotto decisione umana. Qui si controlla solo ciò che è
+ * strutturale e non ambiguo.
+ */
+export function checkAdrIndex(root: string, problems: Problem[]): number {
+  const indexPath = 'docs/decisions/README.md';
+  const absoluteIndex = join(root, indexPath);
+  if (!existsSync(absoluteIndex)) return 0;
+
+  const adrFiles = execFileSync('git', ['ls-files', 'docs/decisions/*.md'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter(Boolean)
+    .map(path => path.split('/').pop() ?? '')
+    .filter(name => /^\d+-/.test(name));
+
+  const index = readFileSync(absoluteIndex, 'utf8');
+  const linked = [...index.matchAll(/\|\s*\[(\d+)\]\(([^)]+)\)/g)];
+
+  // Numero -> file, dai file tracciati.
+  const byNumber = new Map<string, string>();
+  for (const name of adrFiles) {
+    const number = name.split('-')[0];
+    const existing = byNumber.get(number);
+    if (existing !== undefined) {
+      problems.push({
+        file: 'docs/decisions/',
+        line: 1,
+        message:
+          `numero ADR duplicato \`${number}\`: \`${existing}\` e \`${name}\`. ` +
+          'Il numero è il modo in cui una decisione viene citata: due file che ' +
+          'lo condividono rendono ambiguo ogni riferimento.',
+      });
+    } else {
+      byNumber.set(number, name);
+    }
+  }
+
+  const indexedNumbers = new Set(linked.map(match => match[1]));
+
+  for (const [number, name] of byNumber) {
+    if (!indexedNumbers.has(number)) {
+      problems.push({
+        file: indexPath,
+        line: 1,
+        message:
+          `l'ADR \`${name}\` non compare nell'indice. L'audit lo vede comunque ` +
+          '(legge i file, non l\'indice), ma l\'indice umano è incompleto.',
+      });
+    }
+  }
+
+  for (const [, number, target] of linked) {
+    if (!byNumber.has(number)) {
+      problems.push({
+        file: indexPath,
+        line: 1,
+        message:
+          `la voce \`${number}\` dell'indice punta a \`${target}\`, che non è ` +
+          'un ADR tracciato.',
+      });
+    }
+  }
+
+  return byNumber.size;
+}
+
 function main(): void {
   const files = trackedMarkdown();
 
@@ -196,6 +284,18 @@ function main(): void {
     );
   }
 
+  const adrsChecked = checkAdrIndex(REPO_ROOT, problems);
+
+  // Stessa guardia zero-discovery del resto del file: se la scoperta degli ADR
+  // smette di trovarli, il controllo di completezza passerebbe senza aver
+  // verificato nulla.
+  if (adrsChecked === 0 && existsSync(join(REPO_ROOT, 'docs/decisions/README.md'))) {
+    throw new Error(
+      '[docs-integrity] indice ADR presente ma nessun ADR tracciato trovato. ' +
+        'La completezza dell\'indice sarebbe verde senza aver confrontato nulla.'
+    );
+  }
+
   if (problems.length > 0) {
     throw new Error(
       `[docs-integrity] ${problems.length} problemi:\n${formatProblems(problems)}\n\n` +
@@ -204,8 +304,8 @@ function main(): void {
   }
 
   console.log(
-    `[docs-integrity] ok — ${files.length} file, ${linksChecked} link e ` +
-      `${markersSeen} marker verificati.`
+    `[docs-integrity] ok — ${files.length} file, ${linksChecked} link, ` +
+      `${markersSeen} marker e ${adrsChecked} ADR indicizzati verificati.`
   );
 }
 

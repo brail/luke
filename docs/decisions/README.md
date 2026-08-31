@@ -15,6 +15,8 @@
 | [010](010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza | Accepted |
 | [011](011-single-instance-scaling-constraint.md) | Vincolo Single-Instance e Stato Process-Local | Accepted |
 | [012](012-generic-s3-storage-provider.md) | Provider Storage S3 Generico (rename da MinIO) + Swap a SeaweedFS | Accepted |
+| [013](013-asset-derivative-pipeline.md) | Pipeline Automatica dei Derivati Asset (Thumb/Card/Export) | Accepted |
+| [014](014-calendar-visibility-single-predicate.md) | Visibilità Calendario: un Predicato Unico per Lettura e Notifica | Accepted |
 
-*Ultimo aggiornamento: 2026-08-25*
+*Ultimo aggiornamento: 2026-08-31*
 <!-- luke-docs:end:adr-index -->
