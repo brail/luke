@@ -57,6 +57,23 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+  # Own job, not a step in `checks`: the browser download is the dominant cost
+  # here and would otherwise delay lint/typecheck feedback for every push. Same
+  # reasoning that already keeps integration and migrations separate — anything
+  # needing infrastructure the other steps do not.
+  browser:
+    name: Browser Component Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Install Chromium for Vitest Browser Mode
+        run: pnpm --filter @luke/web exec playwright install --with-deps chromium
+
+      - name: Browser component tests
+        run: pnpm test:browser
+
   integration:
     name: Integration Tests
     runs-on: ubuntu-latest

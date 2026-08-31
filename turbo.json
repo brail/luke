@@ -29,6 +29,10 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:browser": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "test:integration": {
       "dependsOn": ["^build"],
       "cache": false,

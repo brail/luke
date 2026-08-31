@@ -76,6 +76,8 @@ coverage/
 # Playwright: report, artefatti dei fallimenti e storageState autenticato
 playwright-report/
 test-results/
+# Failure screenshots written by Vitest Browser Mode on a failing assertion.
+.vitest-attachments/
 blob-report/
 .playwright/
 apps/web/tests/.auth/

@@ -16,7 +16,18 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"],
+  // The test corpus is owned by tsconfig.test.json. Production and tests were
+  // compiled by this one config, which worked only because the tests happen to
+  // import from 'vitest' explicitly; the moment a browser test needs
+  // test-only types, they would have had to enter the production surface.
+  "exclude": [
+    "node_modules",
+    "tests",
+    "src/**/__tests__/**",
+    "src/**/__browser__/**",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ],
   "references": [
     { "path": "../../packages/core" }
   ]

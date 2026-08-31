@@ -22,7 +22,7 @@ different reasons, which is why they stay separate.
 | **production typecheck**   | the application source is type-coherent                     | cheap  | `pnpm typecheck`               |
 | **test typecheck**         | the test corpus has not rotted away from the code it tests  | cheap  | `pnpm typecheck:test`          |
 | **unit (Node)**            | pure logic: mapping, formatting, calculation, schema shape  | fast   | `pnpm test`                    |
-| **component (browser)**    | React behavior in a real DOM: focus, portals, events, forms | medium | the browser project (see §5)   |
+| **component (browser)**    | React behavior in a real DOM: focus, portals, events, forms | medium | `pnpm test:browser`            |
 | **integration (Postgres)** | wire and persistence behavior against a real database       | slow   | `pnpm test:integration:local`  |
 | **E2E (Playwright)**       | a critical flow through the whole running application       | slowest| `pnpm --filter @luke/web test:e2e` |
 
@@ -104,7 +104,7 @@ suite silently drops out of the run.
 | unit (api)  | anything not matching `*.integration.spec.ts`     | `apps/api/vitest.config.mts`             |
 | integration | `apps/api/test/**/*.integration.spec.ts`          | `apps/api/vitest.integration.config.mts` |
 | unit (web)  | pure modules under `apps/web/src/lib/`            | `apps/web/vitest.config.mts`             |
-| component   | web browser specs, own project and script         | added by the platform cycle              |
+| component   | `apps/web/src/**/*.browser.test.tsx`              | `apps/web/vitest.browser.config.mts`     |
 | E2E         | `apps/web/tests/smoke/*.smoke.spec.ts`            | `apps/web/playwright.config.ts`          |
 
 The component tier deliberately keeps its own config and script so that

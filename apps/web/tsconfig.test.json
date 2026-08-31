@@ -1,0 +1,28 @@
+{
+  // Explicit owner of the web test corpus: the Node unit tests under
+  // src/lib/__tests__, the browser component tests under src/**/__browser__,
+  // the Playwright specs under tests/, and the runner configs themselves.
+  //
+  // It exists so `pnpm typecheck:test` tells the truth about apps/web. Before
+  // it, that named gate skipped this workspace entirely — a type error planted
+  // in a web test left it exit 0 — while the production typecheck happened to
+  // cover the same files as a side effect of a broad `**/*.ts` include. One
+  // gate silently did another's job, and the one with the honest name did
+  // nothing.
+  //
+  // Test source still sees the application types it imports, because it extends
+  // the production config; the reverse does not hold, which is the point.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/**/*",
+    "tests/**/*",
+    "vitest.config.mts",
+    "vitest.browser.config.mts",
+    "playwright.config.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
+}
