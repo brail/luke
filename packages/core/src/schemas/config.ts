@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config';
+import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
 
-import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
-import { MaintenanceModeStateSchema } from './maintenanceMode';
+import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 
 /**
  * Central registry of all AppConfig keys with their Zod validation schemas.

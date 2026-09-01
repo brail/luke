@@ -10,7 +10,7 @@
  * - `resource:action` = specific action (e.g. 'brands:create')
  */
 
-import type { Role } from '../rbac';
+import type { Role } from '../rbac.js';
 
 /**
  * Available resources in the Luke system. Each entry represents a functional entity or domain area.

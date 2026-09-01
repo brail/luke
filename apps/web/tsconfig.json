@@ -7,10 +7,14 @@
         "name": "next"
       }
     ],
+    // `@luke/core` is deliberately absent here: it resolves through the
+    // package's own `exports` map to its built ESM `dist`, the same artifact
+    // the browser test tier loads. `@luke/api` stays because its `main` and
+    // `types` point at `src/index.ts` and it publishes no `exports` map, so
+    // resolving it by package name would land on raw TypeScript — only its
+    // router type is imported from here.
     "paths": {
       "@/*": ["./src/*"],
-      "@luke/core": ["../../packages/core/src"],
-      "@luke/core/*": ["../../packages/core/src/*"],
       "@luke/api": ["../../apps/api/src"],
       "@luke/api/*": ["../../apps/api/src/*"]
     }

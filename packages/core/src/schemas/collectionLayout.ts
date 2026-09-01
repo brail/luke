@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
 
-import { MandatoryReasonSchema } from './reason';
+import { MandatoryReasonSchema } from './reason.js';
 
 /**
  * Toggleable columns for the collection table. Always-visible columns (#, line, skuForecast, actions)

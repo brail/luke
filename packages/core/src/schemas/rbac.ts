@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Role } from '../rbac';
+import type { Role } from '../rbac.js';
 
 /**
  * All navigable sections in the system, including sub-sections expressed in dot-notation

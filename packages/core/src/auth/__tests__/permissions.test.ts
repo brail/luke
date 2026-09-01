@@ -27,10 +27,10 @@ import {
   ACTIONS,
   ROLE_PERMISSIONS,
   VALID_RESOURCE_ACTIONS,
-} from '../permissions';
+} from '../permissions.js';
 
-import type { Role } from '../../rbac';
-import type { Resource, Action } from '../permissions';
+import type { Role } from '../../rbac.js';
+import type { Resource, Action } from '../permissions.js';
 
 describe('Type Guards', () => {
   describe('isResource', () => {

@@ -5,9 +5,9 @@
 
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
 
-import { HardDeleteConfirmSchema } from './confirmation';
+import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({

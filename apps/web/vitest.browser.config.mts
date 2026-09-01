@@ -29,15 +29,8 @@ import { defineConfig } from 'vitest/config';
  * and was not installed. Its Fast Refresh is worthless to a test run.
  */
 export default defineConfig({
-  // `@luke/core` publishes CommonJS while its `exports.import` points at that
-  // same file, so a browser ESM context cannot take named imports from it —
-  // Next bundles around it and Node `require`s it, which is why nothing had
-  // noticed. Pre-bundling converts it once here. Deciding the package's real
-  // module format is a separate platform question and is not settled from a
-  // test config.
   optimizeDeps: {
     include: [
-      '@luke/core',
       'vitest-browser-react',
       'react',
       'react/jsx-runtime',

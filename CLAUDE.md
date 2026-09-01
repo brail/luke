@@ -73,7 +73,10 @@ After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
   `RateLimitConfigSchema`/`LdapResilienceSchema`
 - **TypeScript**: strict mode — no `any`, no type assertion without an explanatory comment
 - **URLs in frontend**: never hardcode `localhost:3001` in `apps/web/src` — use
-  `buildApiUrl()`, `buildTrpcUrl()` from `@luke/core/net/url`
+  `buildApiUrl()`, `buildTrpcUrl()` from `@luke/core`. They are declared in
+  `packages/core/src/net/url.ts` and re-exported by the barrel; the package
+  publishes only `.`, `./server` and `./utils/date`, so `@luke/core/net/url`
+  is not an importable specifier
   (manual check: `pnpm codemod:check-urls` — not yet an ESLint rule in
   `packages/eslint-plugin-luke/`, nor wired into CI/husky)
 

@@ -12,7 +12,7 @@
 
 import { z } from 'zod';
 
-import type { StorageBucket } from './types';
+import type { StorageBucket } from './types.js';
 
 /** Bump to force regeneration of every derivative (e.g. a preset's dimensions changed). */
 export const ASSET_PIPELINE_VERSION = 1;

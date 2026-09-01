@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, type StorageBucket } from './types';
+import { APP_STORAGE_BUCKETS, type StorageBucket } from './types.js';
 
 /**
  * What `LocalFsProvider` needs to run: nothing more.

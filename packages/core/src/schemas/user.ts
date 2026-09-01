@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import { HardDeleteConfirmSchema } from './confirmation';
-import { passwordPrefilterSchema } from './password';
+import { HardDeleteConfirmSchema } from './confirmation.js';
+import { passwordPrefilterSchema } from './password.js';
 
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({

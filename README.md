@@ -615,7 +615,9 @@ toast.error('Errore durante il salvataggio', {
 
 ### Schema Zod Centrali
 
-Gli schema di validazione sono in `@luke/core/schemas`:
+Gli schema di validazione vivono in `packages/core/src/schemas/` e si importano
+dal barrel `@luke/core`: il package pubblica solo `.`, `./server` e
+`./utils/date`, quindi `@luke/core/schemas` non è un specifier importabile.
 
 ```tsx
 import {

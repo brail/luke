@@ -1,7 +1,7 @@
-import { hasPermission, type Permission } from '../auth/permissions';
-import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac';
+import { hasPermission, type Permission } from '../auth/permissions.js';
+import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac.js';
 
-import type { Role } from '../rbac';
+import type { Role } from '../rbac.js';
 
 type SectionDefault = 'auto' | 'enabled' | 'disabled';
 

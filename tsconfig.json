@@ -19,11 +19,21 @@
       {
         "name": "next"
       }
-    ],
-    "paths": {
-      "@luke/core": ["./packages/core/src"],
-      "@luke/core/*": ["./packages/core/src/*"]
-    }
+    ]
+    // No `paths` alias onto `packages/core/src` here, and none in
+    // `apps/web/tsconfig.json`: those two consumers resolve `@luke/core`
+    // through the package's own `exports` map. Turbopack honours a `paths`
+    // alias found here, so while one was in place `next build` compiled the
+    // package's `.ts` sources directly and could not resolve their `.js`
+    // import specifiers, which Node ESM requires.
+    //
+    // This removes the bypass for the root config and `apps/web` only, not
+    // repository-wide: `apps/api` still type-resolves `@luke/core` from
+    // source, wildcard subpaths included, by deliberate decision. A deep
+    // import there typechecks against source and would fail at runtime with
+    // ERR_PACKAGE_PATH_NOT_EXPORTED. Making the source-vs-dist type surface
+    // uniform is the separate tsconfig/boundary finding's work, not this
+    // config's; do not reintroduce the alias here to paper over it.
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules", "dist", ".next", "build"]

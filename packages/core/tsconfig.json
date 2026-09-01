@@ -1,4 +1,17 @@
 {
+  // `@luke/core` is an ESM package: `package.json` declares `"type": "module"`,
+  // so `module: NodeNext` emits ESM and every relative import in `src/` must
+  // carry an explicit `.js` extension — Node's ESM resolver does no extension
+  // guessing. Dropping those extensions fails the build; do not "tidy" them.
+  //
+  // ESM-only rather than dual: the browser is a real consumer (`apps/web` ships
+  // core to the client, and the Vitest browser tier loads `dist` directly), and
+  // a CommonJS artifact cannot serve named ESM imports there. The CommonJS
+  // consumers — `apps/api` and `packages/calendar`, both of which emit
+  // `require("@luke/core")` — reach it through Node's `require(esm)`, supported
+  // unflagged on the Node 24 this repo pins everywhere. That works only while
+  // the graph stays free of top-level `await`, which would make the package
+  // unloadable from `require()` (`ERR_REQUIRE_ASYNC_MODULE`).
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",

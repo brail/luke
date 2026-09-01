@@ -5,9 +5,9 @@
 
 import { z } from 'zod';
 
-import { SECTION_ACCESS_DEFAULTS } from '../schemas/rbac';
+import { SECTION_ACCESS_DEFAULTS } from '../schemas/rbac.js';
 
-import type { IPrismaConfigClient } from '../runtime/env';
+import type { IPrismaConfigClient } from '../runtime/env.js';
 
 /**
  * Static base of section defaults, in the vocabulary that

@@ -8,7 +8,7 @@
  * @author Luke Team
  */
 
-import type { StorageBucket } from './types';
+import type { StorageBucket } from './types.js';
 
 const VALID_BUCKETS: readonly StorageBucket[] = [
   'uploads',

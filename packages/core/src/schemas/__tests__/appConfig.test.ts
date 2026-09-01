@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { AlertBandSchema, CollectionAlertThresholdsSchema } from '../appConfig';
+import { AlertBandSchema, CollectionAlertThresholdsSchema } from '../appConfig.js';
 
 /** Banda come la scriveva l'editor prima che `emphasis` esistesse. */
 const LEGACY_BAND = {

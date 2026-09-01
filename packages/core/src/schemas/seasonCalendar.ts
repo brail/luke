@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { MandatoryReasonSchema } from './reason';
+import { MandatoryReasonSchema } from './reason.js';
 
 /** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
  * open-day period within a season, used in working-day calculations. */

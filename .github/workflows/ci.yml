@@ -57,6 +57,15 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      # `@luke/core` is ESM-only while `apps/api` and `packages/calendar` emit
+      # CommonJS and `require()` it, which Node can only do for a synchronous
+      # ESM graph. Every other tier above loads core through an ESM loader
+      # (vitest, Vite, Next), so a top-level `await` entering that graph would
+      # be green everywhere here and first fail as an API container that will
+      # not boot. This step is the only one that requires the built package.
+      - name: Module contract (require(esm))
+        run: pnpm test:module-contract
+
   # Own job, not a step in `checks`: the browser download is the dominant cost
   # here and would otherwise delay lint/typecheck feedback for every push. Same
   # reasoning that already keeps integration and migrations separate — anything

@@ -5,9 +5,9 @@
 
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
 
-import { HardDeleteConfirmSchema } from './confirmation';
+import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating a season. Code must be alphanumeric, max 10 chars (NAV constraint). */
 export const SeasonInputSchema = z.object({

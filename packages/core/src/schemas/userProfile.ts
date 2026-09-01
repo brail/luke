@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { passwordPrefilterSchema } from './password';
+import { passwordPrefilterSchema } from './password.js';
 
 /** Input schema for updating the authenticated user's profile (all editable fields). */
 export const UserProfileSchema = z.object({

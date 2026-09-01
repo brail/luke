@@ -8,8 +8,8 @@
  * @author Luke Team
  */
 
-import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env';
-import { getProxyUrl } from '../storage/contracts';
+import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env.js';
+import { getProxyUrl } from '../storage/contracts.js';
 
 /**
  * Options for URL construction

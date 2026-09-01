@@ -15,8 +15,8 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { APP_CONFIG_DEFAULTS, AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config';
-import { passwordPrefilterSchema } from '../password';
+import { APP_CONFIG_DEFAULTS, AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config.js';
+import { passwordPrefilterSchema } from '../password.js';
 
 /** Every boolean key in the registry — the property must hold for all of them, not a sample. */
 const BOOLEAN_KEYS = [

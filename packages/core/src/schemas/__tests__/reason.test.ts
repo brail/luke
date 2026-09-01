@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { MandatoryReasonSchema } from '../reason';
+import { MandatoryReasonSchema } from '../reason.js';
 
 describe('MandatoryReasonSchema', () => {
   it('rifiuta la stringa vuota', () => {

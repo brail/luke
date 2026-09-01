@@ -5,9 +5,9 @@
 
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
 
-import { HardDeleteConfirmSchema } from './confirmation';
+import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({

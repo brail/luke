@@ -5,7 +5,10 @@ Aperto il 2026-08-29.
 ## Contesto
 
 CLAUDE.md prescrive: mai `localhost:3001` in `apps/web/src`, sempre `buildApiUrl()` /
-`buildTrpcUrl()` da `@luke/core/net/url`. E dichiara già il buco, con parole sue:
+`buildTrpcUrl()` dal barrel `@luke/core` (all'apertura del task la regola indicava il
+sotto-path `@luke/core/net/url`: non è più un specifier importabile da quando il package
+è ESM-only ed espone solo `.`, `./server` e `./utils/date`). E dichiara già il buco, con
+parole sue:
 
 > *manual check: `pnpm codemod:check-urls` — not yet an ESLint rule in
 > `packages/eslint-plugin-luke/`, nor wired into CI/husky*

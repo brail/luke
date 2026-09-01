@@ -4,7 +4,7 @@
 
 import { z } from 'zod';
 
-import { typedConfirmation } from './confirmation';
+import { typedConfirmation } from './confirmation.js';
 
 /** Confirmation phrase the restore dialog makes the admin type. */
 export const BACKUP_RESTORE_CONFIRM_PHRASE = 'RIPRISTINA';

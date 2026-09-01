@@ -4,5 +4,5 @@
  * Never import this module on the client side.
  */
 
-export * from './rbacConfig';
-export * from '../crypto/secrets.server';
+export * from './rbacConfig.js';
+export * from '../crypto/secrets.server.js';

@@ -16,7 +16,7 @@ import {
   BUCKET_TO_ASSET_KIND,
   buildVariantKey,
   extensionForContentType,
-} from '../assets';
+} from '../assets.js';
 
 describe('extensionForContentType', () => {
   it.each([
