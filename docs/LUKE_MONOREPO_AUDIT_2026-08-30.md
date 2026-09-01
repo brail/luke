@@ -1969,3 +1969,104 @@ Between this cycle's implementation push and its audit recording, `osv-push` fai
 ## F.12 Execution status
 
 Cycle 5 is complete as a bounded hardening cycle. `P0-02b` remains partially open per F.1/F.10 — its closure is deferred to the boundary-aware enforcement work noted above, not scheduled as its own numbered cycle here. Per A.4, cycle 6 — `@luke/core` module format, closing `5.2` (Opus) — is next; it has no dependency on the remaining `P0-02b` portion.
+
+---
+
+# Appendix G — BUG-B retrospective reopening and final remediation (2026-09-01)
+
+Appends to Appendices A–F; neither the historical body nor any earlier appendix is rewritten. Implementation commit `b859ed8` on `develop-2.2`. CI and security fully green on that exact SHA (run 33519979546: Lint/TypeCheck/Unit, Migrations, Integration Tests, Browser Component Tests; run 33519979425: gitleaks, semgrep, osv-push).
+
+## G.1 Disposition
+
+**`BUG-B` → DONE.**
+
+Appendix E remains historically correct: it records the state of knowledge at that checkpoint, and every claim it makes about the Cycle 4 diff was true of that diff as reviewed and as verified by CI at the time. Appendix G does not correct it. It records later evidence, the reopening that evidence justified, and the final remediation — the audit history is appended to, never rewritten.
+
+## G.2 Why the reopening is legitimate
+
+`BUG-B` was marked DONE in Appendix E §E.1 after Cycle 4. A later **read-only `/code-review high` of the historical Cycle 4 commit range** (`9abae0b..1f84a4b`) found a real correctness regression introduced by that remediation. Three independent finder passes reached the same root cause, each tracing it through the installed `@tanstack/query-core` source rather than from the diff alone.
+
+That is new repository evidence about code that is still running, not a re-reading of the audit record. The reopening therefore rests on the defect, not on any revision of what Appendix E concluded — which is exactly the distinction §A.0's stability rule exists to protect.
+
+## G.3 The reopened defect
+
+Cycle 4 bound the whole lock lifecycle to the discovery query's *live* output. `targets` sat in the acquire effect's dependency array, so any later identity change ran that effect's cleanup — which released the granted set.
+
+`computeLockTargets` returns `null` for every non-`'success'` layout query status, and `@tanstack/query-core`'s reducer sets `status: 'error'` **unconditionally** on a failed fetch, prior success or not (verified in `node_modules`, not assumed: the `'error'` case does not consult whether data already exists). A single background refetch failure of `collectionLayout.get` after a successful acquisition was therefore enough to:
+
+1. flip `lockTargets` to `null`,
+2. run the acquire effect's cleanup, releasing the live `SEASON_CALENDAR`/`COLLECTION_LAYOUT` lock,
+3. re-run the effect, which saw `targets === null` and acquired nothing.
+
+`state.expiresAt` was never cleared by that path, so `isReady` stayed true: the wizard kept reporting a usable session while holding no lock at all, and a concurrent editor could take the same entities.
+
+## G.4 Secondary effects of the same defect
+
+- **Stale heartbeat closure.** The renew/backstop effect captured `acquiredTargetsRef.current` once per run and depended only on `[state.expiresAt, state.error, renew]` — nothing that reacted to the cleanup nulling that ref. Its already-scheduled timers could therefore `renew` a target set that had just been released, or force-expire the session against a deadline that no longer corresponded to anything held.
+- **Close-confirmation bypass.** `requestClose` skipped `ConfirmDialog` for any `displayError`, on the premise that an error meant the session was never usable. `layoutQuery.isError` breaks that premise after readiness: a transient refetch failure could discard unsaved draft dates on a click the user read as a plain dismissal.
+
+## G.5 First remediation — explicit session semantics
+
+Discovery and an active lock session became two phases of one state machine, `WizardLockSession`: `idle | acquiring | held | lost`, with `held` carrying the two independent degradations `renewError` and `scopeChanged` (one writer each — the heartbeat and the discovery reducer — so neither clobbers the other's signal).
+
+The granted set is frozen at grant time in `grantedRef` and is what renew and release always operate on. The discovery→session boundary is a pure exported function, `reduceDiscovery`, so it reads and tests as a table rather than being inferred from dependency arrays. Release moved to an effect scoped to the whole `enabled` window, outliving the acquire effect and every degradation transition.
+
+## G.6 Second finding — same-user overlapping acquisition
+
+A pre-push `/code-review high` of that first remediation found a further defect in the same class. `releaseLocks` (`apps/api/src/services/editLock.service.ts`) deletes by `(lockedByUserId, entityType, entityId)`; the `EditLock` row carries **no acquisition or session token**. The server therefore cannot distinguish one attempt's release from another attempt's grant *by the same user on the same entity*.
+
+Two overlapping `acquireMany` calls from one wizard are consequently inseparable at the boundary: attempt A becomes obsolete, successor B starts, B is granted server-side, and A's late cancellation release then deletes the row B depends on — while the UI still reports a healthy lock and the next heartbeat fails `CONFLICT`.
+
+Subtracting the already-granted set from an abandoned release was rejected as the fix: it closes only the orderings in which a grant already exists, not two acquisitions racing before either has landed.
+
+## G.7 Final design — per-instance RPC serialization
+
+Every lock RPC the hook issues is serialized through one promise queue per hook instance:
+
+> at most one `acquireMany` is outstanding, and a successor is not sent until its predecessor has settled and — if it was granted — been released.
+
+- An acquisition is *enqueued*, not started; it checks its obsolescence flag at the top of its turn, so an attempt superseded while queued never reaches the network (latest-wins across any number of discovery changes).
+- An attempt that was granted after becoming obsolete **awaits** its release before returning. `release` is consumed as `mutateAsync` precisely so this is possible: awaiting is what makes the release *ordered* before the successor's acquire, rather than merely issued first.
+- The session-scoped release is enqueued on the same queue, so a wizard closed and immediately reopened cannot have the old release racing the new acquisition.
+
+Proof: the acquire RPC is issued inside a queue step, the step does not return until that RPC (and any obsolete-grant release) has settled, and steps run strictly sequentially. Structurally, once a session reaches `held` no further acquisition is ever enqueued for its lifetime, so the reported ordering is unreachable twice over. **No backend change and no session token were required** — the frontend simply never puts the server in a position where it would have to tell the two apart.
+
+## G.8 Phase authority, settled
+
+- **Before a grant:** discovery is authoritative. `pending`/`error` mean the dependency set is unknown, so nothing is acquired — never a partial set. An obsolete in-flight attempt may be stood down or switched, and its late grant is released exactly once.
+- **After a grant:** discovery decides nothing. It cannot tear down, replace or extend the held set.
+- **Post-acquisition query error:** the held session is left intact — no release, no reacquisition, and the heartbeat keeps renewing exactly the granted set.
+- **Post-acquisition target divergence:** the granted set is preserved and the divergence is reported as `scopeChanged`, which blocks mutation. Releasing to reacquire would open the concurrency gap this hook exists to close; extending in place is `BUG-B`'s original defect class. Neither is an option, so the session keeps precisely what it was granted and says so.
+
+## G.9 `PlanningWizard` semantics
+
+- **Close confirmation** now distinguishes a discovery failure *before* the session was ever usable from a background failure *after* it was, and from an actual lock loss. Only the first is a proof that no draft edit can exist — `EventStep` renders only under a held session — and it is now the only one that skips the confirmation. A degraded-but-previously-usable session still confirms.
+- **Expiry side effects moved out of render.** `toast.error` plus `onClose` in the render body called the parent's setState during this component's render and fired once per render attempt; they now run in an effect behind a latch, which is what makes them exactly-once given that `onClose` is an inline arrow with a fresh identity every parent render.
+- **`handleNext` and `handleBack` enforce mutation readiness themselves** rather than trusting the buttons' `disabled`. `Indietro` in particular was gated only on `isReady`, so on a degraded session it stayed enabled behind the error banner and could move `stepIndex` under content the user could not see.
+- **`reduceDiscovery` tests `targets === null` explicitly** instead of the key's truthiness: `lockTargetsKey([])` is `''`, so a falsiness check would have read a concrete empty set as "discovery unsettled" and let a `held` session report itself healthy against a set it demonstrably does not hold.
+
+## G.10 Queue rejection recovery
+
+The queue's non-rejection is structural, not a bet that every step is internally exhaustive. A throw escaping a step from somewhere it does not guard — the acquire step formats its error inside its own `catch`, for one — would otherwise leave the chain rejected permanently, skipping every later step. The step that costs something there is the release on unmount: a poisoned queue does not merely stop acquiring, it leaks the held lock until its server-side TTL. Recovery cannot let a successor overtake a predecessor, since a rejection is a settled state: the recovering `catch` still runs strictly after the step it recovers, and the next step chains after it.
+
+## G.11 Test progression
+
+Regression coverage was written **red before green** in both rounds, and the invariant tests are demonstrated non-vacuous by mutation rather than asserted to be meaningful:
+
+- Round one: 26 failing tests before the state-machine remediation, including the defect itself — a discovery change during an in-flight acquisition producing `expected 1 times, but got 2 times` on `acquireMany`.
+- Round two: the poisoned-queue test failed with the chain rejected (`expected 2 times, but got 1 times`, plus an unhandled rejection) before the recovery was added.
+- **Completion, not invocation.** Both serialization orderings — obsolete-grant release and close→reopen — are proven with a *deferred* release double, so they assert that the predecessor's release has **completed** before the successor acquisition starts. Call-order assertions alone would pass against a fire-and-forget release, which is the defect. Verified by mutating the source twice: dropping the `await` on the obsolete release fails the first test alone, and making the session-scoped release fire-and-forget fails the second alone. The source was restored and re-verified green after each.
+
+## G.12 Final evidence
+
+Browser suite cold (`rm -rf node_modules/.vite`, matching a cold CI checkout): **59/59**, no dependency-reload warnings, no unhandled rejections. Web unit: **80/80**. `pnpm typecheck` and `pnpm typecheck:test` (full repo): green. `pnpm lint --force`: **0 errors, 49 warnings** — the Cycles 3A/4/5 baseline, unchanged. Suppression debt: **71 suppressed errors across 40 files**, unchanged; neither touched file carries an entry, so pruning cannot move it. `pnpm check:drift`: green.
+
+Implementation commit `b859ed8`, four files, all under `apps/web/src/app/(app)/calendar/_components/PlanningWizard/`. CI run **33519979546** — Lint/TypeCheck/Unit, Migrations, Integration Tests, Browser Component Tests all `success`. Security run **33519979425** — gitleaks, semgrep, osv-push all `success`. Both on `b859ed8` exactly.
+
+## G.13 Scope confirmation
+
+`apps/api`'s `editLock` router and service are untouched, as in Cycle 4: the final design deliberately avoids a lock-protocol change. No Cycle 5 file was touched and **`P0-02b` is unchanged — it remains CONFIRMED OPEN, PARTIALLY ADDRESSED** per §F.1/§F.10. Cycle 6 was not started.
+
+## G.14 Execution status
+
+`BUG-B` is closed. Per A.4, cycle 6 — `@luke/core` module format, closing `5.2` — remains next and is not started here.
