@@ -1,7 +1,7 @@
 'use client';
 
 import { Info } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -20,7 +20,7 @@ import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
 import { useVendorClosures } from './useVendorClosures';
-import { computeLockTargets, useWizardLock } from './useWizardLock';
+import { EXPIRED_MESSAGE, SCOPE_CHANGED_MESSAGE, computeLockTargets, useWizardLock } from './useWizardLock';
 
 import type { CalendarEventItem } from '../types';
 import type { HolidayMap } from '../useHolidays';
@@ -78,19 +78,42 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
   const lock = useWizardLock(lockTargets, open);
 
   /**
-   * A failed `collectionLayout.get` leaves the target set unknown — `computeLockTargets` already
-   * refuses to guess and returns `null`, so no lock is ever attempted and `lock.error` never fires
-   * on its own for this cause. Surfaced through the same banner/close pattern as a lock error
-   * rather than a separate one: from the user's side both mean "this session cannot be usable."
+   * Whether a lock is held *right now* — not whether one ever was. `EventStep` renders only under
+   * this, which is what makes "no session was ever usable" a proof that no draft date can exist.
    */
-  const displayError = layoutQuery.isError ? getTrpcErrorMessage(layoutQuery.error) : lock.error;
+  const isReady = lock.status === 'held';
+  const heldUntil = lock.status === 'held' ? lock.expiresAt : null;
 
   /**
-   * `lock.expiresAt` is set exactly once acquisition succeeds (`useWizardLock`) and stays `null`
-   * through target discovery, through an in-flight `acquireMany`, and through a failed one — so it
-   * already is the "acquisition succeeded" signal without a separate state to keep in sync with it.
+   * A held session can still be degraded: a rejected heartbeat means the lock may already be gone,
+   * and a changed layout means it no longer covers what it was taken for. Either way the session
+   * cannot vouch for a write, so mutation and the freeze hand-off are gated on this, not on
+   * `isReady`.
    */
-  const isReady = lock.expiresAt !== null;
+  const canMutate = lock.status === 'held' && lock.renewError === null && !lock.scopeChanged;
+
+  /**
+   * Three failures that used to be one `displayError`, kept apart because they differ in exactly
+   * the way that matters at the exit: whether a usable session — and therefore an unsaved edit —
+   * could ever have existed.
+   */
+  const sessionEverUsable = lock.status === 'held' || (lock.status === 'lost' && lock.wasHeld);
+  const lockError = lock.status === 'lost'
+    ? lock.message
+    : lock.status === 'held'
+      ? lock.renewError ?? (lock.scopeChanged ? SCOPE_CHANGED_MESSAGE : null)
+      : null;
+  /**
+   * A failed `collectionLayout.get` leaves the target set unknown — `computeLockTargets` refuses to
+   * guess and returns `null`, so no lock is ever attempted and no `lockError` fires for this cause.
+   * Only counted *before* the session became usable: once a lock is held, the discovery query
+   * failing says nothing about whether it is still held (`useWizardLock` keeps the granted set), so
+   * surfacing it would turn a healthy session into an apparently broken one.
+   */
+  const discoveryError = layoutQuery.isError && !sessionEverUsable
+    ? getTrpcErrorMessage(layoutQuery.error)
+    : null;
+  const displayError = lockError ?? discoveryError;
 
   const currentEvent = sortedEvents[stepIndex] ?? null;
 
@@ -104,25 +127,42 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  if (lock.expired) {
-    toast.error('Sessione di pianificazione scaduta — ricomincia');
+  /**
+   * Expiry is a lifecycle transition, so it is handled in an effect rather than in the render body.
+   * Rendering it meant calling the parent's setState during this component's render (`onClose` is
+   * `setPostApplyWizard(null)` in `calendar/page.tsx`) and emitting the toast once per render
+   * attempt instead of once per expiry — twice under React's double-invoked render, and again on
+   * every re-render until the parent got around to unmounting the wizard.
+   *
+   * The latch, not the dependency array, is what makes it exactly once: `onClose` is an inline
+   * arrow at the call site, so its identity changes on every parent render.
+   */
+  const expired = lock.status === 'lost' && lock.cause === 'expired';
+  const expiryHandledRef = useRef(false);
+  useEffect(() => {
+    if (!expired || expiryHandledRef.current) return;
+    expiryHandledRef.current = true;
+    toast.error(EXPIRED_MESSAGE);
     onClose();
-    return null;
-  }
+  }, [expired, onClose]);
+
+  if (expired) return null;
 
   /**
    * Only exit vector: any close attempt (overlay click, Escape, X, Annulla) opens the confirm
-   * step instead — except when `displayError` is set, since there's no in-progress edit to lose
-   * (the session was never usable) and forcing a confirm just adds a click the user can't avoid.
+   * step instead — except when no session was ever usable, which is the one case where skipping it
+   * is *provable* rather than merely likely: draft dates change only through `EventStep`, and
+   * `EventStep` renders only under `isReady`. A discovery error arriving after readiness is not
+   * that case, and used to take this exit and discard the user's edits without asking.
    */
-  const requestClose = () => { if (displayError) { onClose(); return; } setExitConfirmOpen(true); };
+  const requestClose = () => { if (!sessionEverUsable) { onClose(); return; } setExitConfirmOpen(true); };
   const confirmExit = () => { setExitConfirmOpen(false); onClose(); };
 
   const handleNext = async () => {
-    // Belt-and-suspenders: the button below is already disabled for the same condition, this
-    // guards the handler itself so nothing can reach an update/freeze transition before the
-    // session is confirmed usable.
-    if (!isReady || !currentEvent) return;
+    // The handler enforces the full condition itself rather than trusting the button's `disabled`
+    // to have been computed from the same inputs: `canMutate` is the only thing that may open an
+    // `updateMilestone` or the freeze hand-off, and it is false for every degraded session.
+    if (!canMutate || !currentEvent) return;
 
     const draft = draftDates.get(currentEvent.id);
     const dateChanged = draft && draft.getTime() !== new Date(currentEvent.startAt).getTime();
@@ -138,7 +178,17 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     setPhase('freeze');
   };
 
-  const handleBack = () => setStepIndex(i => Math.max(0, i - 1));
+  /**
+   * Gated on the same condition as the step body it navigates, not merely on `isReady`: with a
+   * degraded session the step is replaced by the error banner, so moving `stepIndex` under it would
+   * silently change which event the user resumes on once the degradation clears. `canMutate` is
+   * exactly the step's render condition — when the lock is held, `displayError` is set by precisely
+   * `renewError`/`scopeChanged`, so `!displayError && isReady` and `canMutate` cannot disagree.
+   */
+  const handleBack = () => {
+    if (!canMutate) return;
+    setStepIndex(i => Math.max(0, i - 1));
+  };
 
   if (phase === 'freeze') {
     return (
@@ -182,8 +232,8 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <div className="space-y-4 py-2">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Evento {stepIndex + 1} di {sortedEvents.length}
-                {lock.expiresAt && ` — sessione valida fino alle ${lock.expiresAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
-                {lock.expiresAt && (
+                {heldUntil && ` — sessione valida fino alle ${heldUntil.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
+                {heldUntil && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Info className="h-3 w-3 cursor-help shrink-0" />
@@ -214,12 +264,12 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <Button variant="ghost" onClick={requestClose}>
               Annulla
             </Button>
-            <Button variant="outline" onClick={handleBack} disabled={!isReady || stepIndex === 0}>
+            <Button variant="outline" onClick={handleBack} disabled={!canMutate || stepIndex === 0}>
               Indietro
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!isReady || !currentEvent || updateMilestone.isPending || !!displayError}
+              disabled={!canMutate || !currentEvent || updateMilestone.isPending}
             >
               {updateMilestone.isPending
                 ? 'Salvataggio…'
