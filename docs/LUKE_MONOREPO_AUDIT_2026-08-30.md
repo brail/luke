@@ -2070,3 +2070,125 @@ Implementation commit `b859ed8`, four files, all under `apps/web/src/app/(app)/c
 ## G.14 Execution status
 
 `BUG-B` is closed. Per A.4, cycle 6 — `@luke/core` module format, closing `5.2` — remains next and is not started here.
+
+---
+
+# Appendix H — Cycle 6 explicit internal package module contracts (2026-09-01)
+
+Appends to Appendices A–G; neither the historical body nor any earlier appendix is rewritten. Implementation commit `58df5498e7a8cbe821908a8044fe2ad69b72c003` on `develop-2.2`.
+
+## H.1 Disposition
+
+**`5.2` → DONE.** The three internal packages now declare module contracts that match the artifacts they publish. `@luke/core` is ESM, `@luke/nav` and `@luke/calendar` are CommonJS, and each says so explicitly rather than leaving the format emergent.
+
+## H.2 The original failure mode
+
+`@luke/core` compiled to **54 of 54 CommonJS files** — zero ESM syntax in `dist` — while `exports.import` and `exports.require` both pointed at that same CommonJS artifact. The `import` condition was therefore false: it named a format the file did not have.
+
+Not theoretical. Removing `@luke/core` from `optimizeDeps.include` in `apps/web/vitest.browser.config.mts` and running the browser tier on a cold cache reproduced the real defect:
+
+```
+SyntaxError: The requested module '/@fs/.../packages/core/dist/index.js'
+does not provide an export named 'typedConfirmation'
+```
+
+Two suites failed to import; 16 of 59 tests never ran. A browser ESM context cannot take named imports from a CommonJS file, and the pre-bundling workaround was what had been converting it.
+
+## H.3 Why the mismatch stayed hidden
+
+Every Node consumer worked, so nothing surfaced it. `require('@luke/core')` worked because the artifact genuinely was CommonJS; **static named ESM imports also worked**, because Node's `cjs-module-lexer` walks the `__exportStar` chain that `tsc` emits and synthesises the named bindings. Both halves of the false `exports` map therefore appeared functional on Node, and only the browser — which has no CommonJS interop at all — could tell the difference. That is why the mismatch was first observed in a test config rather than in the package.
+
+## H.4 The contract chosen
+
+`@luke/core` is **ESM-only: one artifact, `"type": "module"`**. Under `module: NodeNext` that requires every relative specifier in `src/` to carry an explicit `.js` extension, as native Node ESM does no extension guessing — 87 specifiers across 25 files. The three published runtime subpaths are:
+
+| Subpath | Target |
+|---|---|
+| `.` | `dist/index.js` |
+| `./server` | `dist/server/index.js` |
+| `./utils/date` | `dist/utils/date.js` |
+
+Each collapses to a single `default` condition beside `types`, so no condition names a format the artifact lacks.
+
+ESM-only rather than dual because the browser is a first-class consumer — `apps/web` ships core to the client and the Vitest browser tier loads `dist` directly — and a single artifact avoids the dual-package hazard of two module identities in one process. Dual output was evaluated and rejected on that basis, not on effort.
+
+## H.5 `nav` and `calendar` were not converted
+
+Both carried the identical false `import`/`require` condition pair over genuinely CommonJS output. Both now declare `"type": "commonjs"` with a single `default` condition. **Their module format did not change** — the correction is that the manifest stops advertising a format the artifact never had. `packages/nav` additionally consumes no `@luke/core` symbol at all; that unused dependency is left for the hygiene batch.
+
+## H.6 Alias removal, and what remains
+
+The root `tsconfig.json` and `apps/web/tsconfig.json` aliased `@luke/core` onto `packages/core/src`. Turbopack honours such an alias, so `next build` compiled the package's TypeScript sources directly and could not resolve their `.js` specifiers — 248 errors. Removing either alone still failed; both had to go.
+
+The deeper reason is not the build error. While those aliases were in place, `apps/web` never exercised the package contract at all: it compiled source and the `exports` map was inert for the largest consumer. A contract that no consumer resolves cannot be proven true. Both were removed, and the wildcard `@luke/core/*` form went with them — it had allowed deep imports past the three published subpaths.
+
+**`apps/api` deliberately keeps its source alias.** This does not hold `5.2` open: the finding is about the packages' published module contracts, and those are now correct and exercised. Making the source-vs-dist *type surface* uniform across consumers is the separate tsconfig/boundary work, and the root config's comment says so rather than claiming a repository-wide boundary.
+
+## H.7 Browser workaround removed
+
+The `@luke/core` entry is gone from `optimizeDeps.include`. The entries added in Cycle 4 for BUG-B cold-cache stability are unrelated and remain untouched. The cold browser suite passes without the workaround — the package is now consumed as native ESM by the browser rather than converted on the way in.
+
+## H.8 The `require(esm)` dependency and its gate
+
+`apps/api` and `packages/calendar` both emit CommonJS and `require("@luke/core")`. They reach an ESM package through Node's `require(esm)`, unflagged on the Node 24 this repository pins in `engines`, `.nvmrc`, the CI setup action and both Dockerfiles. Verified against the real emitted consumers, not only in the abstract: `apps/api/dist/lib/password.js` and `apps/api/dist/utils/downloadToken.js` load the published ESM at runtime, as does `packages/calendar/dist/index.js`.
+
+That compatibility holds **only while core's ESM graph stays synchronous**. A single top-level `await` anywhere in it makes every CommonJS consumer fail at load with `ERR_REQUIRE_ASYNC_MODULE`. The invariant was executable nowhere: vitest, Vite and Next all load core through an ESM loader, so a violation would have been green on every tier and first observed as an API container that will not boot.
+
+Cycle 6 therefore added `packages/core/test/module-contract.cjs` and the `test:module-contract` script, wired into the CI `checks` job. It is CommonJS (`.cjs` inside an ESM package), run by plain `node` — no tsconfig is read, so no `paths` alias can redirect it — and it addresses the package **by name**, which resolves through the `exports` map to `dist`. It builds core itself rather than inheriting a dist from an earlier Turbo task, and asserts for each of the three subpaths that the resolved file lies under `dist`, that the namespace is a real ES module, and that a known named export survives.
+
+Demonstrated non-vacuous by mutation, not asserted to be meaningful:
+
+| Mutation | Result |
+|---|---|
+| top-level `await` in `src/utils/date.ts` | fails, `ERR_REQUIRE_ASYNC_MODULE` |
+| package reverted to `"type": "commonjs"` | fails the ES-module-namespace assertion |
+
+Source restored byte-identical after each, verified by sha256.
+
+## H.9 Review history
+
+An **xhigh** review of the implementation independently re-verified the artifact and the module contract and **found no contradiction in the selected ESM-only design**. It confirmed the emitted format, the subpath resolution, the absence of import cycles and of top-level await, that `apps/web` genuinely typechecks against `dist` declarations, that Vite never pre-bundles the package, and that no server-only core code reaches a client chunk.
+
+Its actionable findings were about enforcement and drift rather than design, and produced the corrective work recorded above: the executable `require(esm)` gate, a corrected root-config comment that no longer claims the alias boundary is repository-wide, a corrected `apps/web` comment that had misdescribed `apps/api` as publishing no build, and documentation fixes where `CLAUDE.md`, `README.md` and `docs/TASK_url_check_enforcement.md` named `@luke/core/net/url` and `@luke/core/schemas` — specifiers the `exports` map does not publish. All three now point at the barrel; no subpath was added to preserve stale wording, and the task document keeps its historical framing while marking the old specifier as no longer importable.
+
+A subsequent **medium** review of that corrective delta found **no material finding**.
+
+## H.10 Evidence from the green implementation SHA
+
+| Surface | Result |
+|---|---|
+| `packages/core/dist` | **54/54 ESM**, zero CommonJS markers |
+| static/native ESM import | green for `.`, `./server`, `./utils/date` |
+| CommonJS `require(esm)` | green for all three subpaths |
+| declaration resolution | resolves for both CommonJS and ESM `NodeNext` consumers |
+| web production build | green (Turbopack, 42 static pages) |
+| browser suite, cold `.vite` | **59/59** without the workaround |
+| unit suites | **837** — core 258, calendar 63, api 436, web 80 |
+| API integration | **525 passed + 1 expected fail**, 42 files |
+| `typecheck` / `typecheck:test` / `typecheck:tools` | green |
+| `pnpm lint --force` | **0 errors, 49 warnings** — Cycles 3A/4/5/G baseline, unchanged |
+| suppression ratchet | **71 suppressed across 40 files**, unchanged |
+| `pnpm check:drift` | green |
+
+Implementation commit `58df5498e7a8cbe821908a8044fe2ad69b72c003`.
+
+Both workflows green on that exact SHA:
+
+| Workflow | Run | Result |
+|---|---|---|
+| CI | **33539768965** | `success` — Lint/TypeCheck & Unit Tests, Browser Component Tests, Integration Tests, Migrations all `success`. The `checks` job's step 11, **`Module contract (require(esm))`**, `success` |
+| security | **33539769096** | `success` — gitleaks, semgrep, osv-push all `success` (`osv-weekly` and `notify-on-failure` skipped by design) |
+
+## H.11 Statuses explicitly preserved
+
+- **`P0-02b` remains CONFIRMED OPEN, PARTIALLY ADDRESSED**, exactly as recorded in §F.1/§F.10. Cycle 6 did not touch `eslint.config.mjs` and changed nothing about per-runtime globals.
+- **The remaining `apps/api` source alias and the source-vs-dist type-surface question belong to the separate tsconfig/boundary work**, together with `P1-06`. They are not part of `5.2` and their being open does not reopen it.
+- The xhigh review's other observations — `sideEffects: false` and barrel tree-shaking, `next build` missing from CI coverage, dist-staleness ergonomics, the dead `webpack:` block in `next.config.js`, and the `zod` pre-bundle coupling in the browser test config — **were not Cycle 6 regressions and were deliberately not addressed here**. The reviewer confirmed the tree-shaking one pre-dated the change. They are recorded as backlog, not as debt this cycle created.
+
+## H.12 Not swept
+
+Several `packages/core/src/**` file-header comments still name module identities that are not published subpaths (`@luke/core/net`, `@luke/core/storage`, `@luke/core/crypto`, `@luke/core/runtime`), as does one comment in `apps/api/src/routers/collectionLayout.ts`. These are module-identity headers rather than import instructions, unlike the three documentation lines that were corrected because they told a reader what to write. **They were deliberately not swept in this cycle** — doing so would have widened a bounded closure into a comment-wide edit.
+
+## H.13 Execution status
+
+`5.2` is closed. Per A.4, cycle 7 — Turbo graph, closing `P2-09` (Sonnet) — is next and is not started here.
