@@ -1878,3 +1878,94 @@ Both `react-hooks/exhaustive-deps` warnings BUG-B's target files carried (`useWi
 ## E.10 Execution status
 
 Cycle 4 is complete. Per A.4, cycle 5 — per-runtime globals, closing `P0-02b` (Sonnet, evidence: a bait file per runtime) — is next.
+
+---
+
+# Appendix F — Cycle 5 per-runtime ESLint globals (2026-09-01)
+
+Appends to Appendices A–E; neither the historical body nor any earlier appendix is rewritten. Implementation commit `ba88602` on `develop-2.2`.
+
+## F.1 Disposition
+
+**`P0-02b` → CONFIRMED OPEN, PARTIALLY ADDRESSED.** Six of seven identified runtime surfaces are now deterministically constrained; the general `apps/web` surface is not, and cannot be by a config change alone — see F.10.
+
+## F.2 Why the original configuration was over-permissive
+
+The common TypeScript block merged `globals.browser` and `globals.node` across every workspace it covered — `apps/api`, `apps/web`, and `packages/core`/`nav`/`calendar` alike — so a genuine wrong-runtime reference (`window.` in a Fastify handler, `Buffer` in a React component) typechecked and linted clean. Cycle 3A's Next framework blocks (`webFrameworkBlocks`) independently contributed both sets a second time, on the same files. `languageOptions.globals` merges cumulatively across every flat-config block that matches a file — confirmed empirically, not assumed — so narrowing only a later block would not have removed either earlier grant; both had to be found and stripped.
+
+## F.3 Resulting architecture
+
+Shared parser/plugins/rules stay runtime-neutral (no `languageOptions.globals` on the common block). Runtime globals are supplied exclusively by narrower blocks, each paired with `ignores` so a file's globals come from exactly one place. `webFrameworkBlocks` no longer sets `languageOptions.globals` at all; it relies on the same isomorphic web block everything else in `apps/web` does.
+
+## F.4 Surfaces now deterministically constrained
+
+| Surface | Globals |
+|---|---|
+| `apps/api` | Node-only |
+| `packages/nav` | Node-only |
+| `packages/calendar` | Node-only |
+| `packages/core/src/server/**`, `crypto/**` | Node-only |
+| general `packages/core` | no ambient runtime grant |
+| `packages/core/src/runtime/env.ts` | only `window`, `process`, `URL` |
+| `packages/core/src/net/url.ts` | only `URL`, `URLSearchParams` |
+| `packages/core/src/storage/types.ts` | only `NodeJS` |
+| web route handlers, `auth.ts`, `auth.shared.ts`, `lib/authz/**` | Node-only |
+| `apps/web/src/lib/**/*.test.ts` (Node Vitest tier) | Node-only |
+| `apps/web/src/**/*.browser.test.tsx` (browser Vitest tier) | browser-only |
+| `apps/web/src/proxy.ts` (Next Edge middleware) | `globals.worker` + `process` |
+| `tools/**` | Node-only, unchanged |
+
+`packages/core`'s narrowing was evidence-driven, not assumed: a grep sweep for `window`/`document`/`process`/`Buffer`/`require`/`NodeJS` found exactly two real bridge files (a few more were prose false positives — "time window", "approval window"); actually running the resulting neutral-by-default config (`pnpm --filter @luke/core lint`) then surfaced `URL`/`URLSearchParams` in `net/url.ts` and one further `URL` use in `runtime/env.ts` — a gap the grep sweep had no way to find, since it wasn't searched for. Both constructors are genuinely universal (present identically in `globals.node` and `globals.browser`, confirmed against the `globals` package directly), so they were granted only to the two files that use them rather than broadening the package again.
+
+`proxy.ts`'s grant is evidenced from Next's own source, not guessed: `next/dist/server/web/globals.js`'s `enhanceGlobals()` installs a `process` object specifically for `NEXT_RUNTIME === 'edge'`; `next/dist/server/web/adapter.js`, the real Edge sandbox, references `URL`/`Headers`/`fetch`, all present in the `globals` package's own `worker` preset (already a dependency) alongside the DOM/Node exclusions Edge actually has.
+
+## F.5 Bait proof (real lint runs, not `--print-config` alone)
+
+| Block | Accepted | Rejected (`no-undef`) |
+|---|---|---|
+| Node (api/nav/calendar/core-server/core-crypto/web-authz/web-route/web-node-test/tools) | `Buffer` | `window` |
+| Browser (vitest-browser tier) | `window` | `Buffer` |
+| Core-neutral (ordinary file) | — | `URL`, `window`, `Buffer`, `process` |
+| `runtime/env.ts` | `window`, `process`, `URL` | `Buffer`, `require` |
+| `storage/types.ts` | `NodeJS` (type position) | `Buffer`, `window` |
+| `proxy.ts` (Edge) | `fetch`, `Request`, `self`, `process` | `window`, `Buffer`, `require`, `module` |
+| Isomorphic (core-universal, web-general) | both | — |
+
+Exact-path-matched files (`proxy.ts`, `runtime/env.ts`, `storage/types.ts`, `net/url.ts`) were backed up, overwritten with bait, tested, and restored — verified byte-identical (`diff` clean, matching sha256) after every pass. One methodology correction made mid-cycle: an early `key in globals` presence check misread the `globals` package's convention (it uses the boolean `false` for *readonly*, not *absent*), giving a false read on `proxy.ts`; all reported results above are from actual `npx eslint` runs against real files, not that heuristic.
+
+## F.6 `--print-config` evidence
+
+Ten-plus representative files checked for `window`/`document`/`Buffer`/`process`/`require`/`URL`/`NodeJS` presence, each matching its intended block exactly: Node-only files show `window=false`; browser-tier shows `Buffer=false`; `proxy.ts` shows zero DOM/Node keys but `fetch`/`Request`/`self`/`process` present; the two isomorphic blocks show the full set. Parser stayed `typescript-eslint` on every file — flat config merges `languageOptions` per sub-key, confirmed, so omitting `parser` from a narrower globals-only block does not reset it.
+
+## F.7 P0-02a still active
+
+Re-verified live with a real bait, twice (once per commit in this cycle's iteration): `react-hooks/rules-of-hooks` and `@next/next/no-sync-scripts` (the Cycle 3A CWV-promoted rule) both still fire exactly as before. Cycle 5 did not touch, weaken, or accidentally disable any Cycle 3A rule.
+
+## F.8 Lint debt
+
+Unchanged: **71 suppressed errors / 49 warnings**, identical to the Cycles 3A/4 baseline, reconfirmed after every amendment in this cycle. Cycle 5 changed zero counted lint findings — only where globals come from.
+
+## F.9 No application change
+
+No application source or runtime behavior changed. The only file touched by the Cycle 5 implementation commit is `eslint.config.mjs`.
+
+## F.10 Remaining `P0-02b` gap
+
+The general Next App Router web surface (`apps/web/src/**`, `apps/web/tests/**`, minus the carve-outs in F.4) cannot be represented honestly as one runtime per file using flat-config path globs, and is not treated as resolved:
+
+- Server Components and Client Components are co-located — `page.tsx`/`layout.tsx` pairs sit on both sides of the `'use client'` line throughout `app/`, with no directory boundary between them, confirmed directly against this repo's own file tree.
+- `'use client'` does not classify every transitive client module — a no-directive leaf component (e.g. a shared `components/ui/*` primitive) is bundled wherever its importer places it.
+- An undirected shared module can therefore legitimately enter either the server or the client module graph depending on which component imports it — the same source file, not an under-annotated one.
+- Assigning either browser-only or Node-only globals to this surface per file would create a false runtime model, not a more precise one.
+
+Investigated and rejected as fixes within this cycle: no official Next/`eslint-config-next` boundary rule exists (checked; Next's own GitHub discussion #80741 requesting one is still open); three community `'use client'` plugins exist but solve a different problem (directive necessity, not global scoping) and are unofficial/experimental; a custom rule assigning one runtime per file from directive presence would be structurally wrong for exactly the shared/leaf components above, which legitimately need both.
+
+Finishing this part requires a different enforcement layer — most plausibly import/dependency-boundary-aware tooling, or adopting Next's own `server-only`/`client-only` build-time marker packages (not currently used in this repo) — and should be reconsidered together with the later `6.2` dependency-direction/boundary work, not by broadening this cycle's config further.
+
+## F.11 Unrelated security-gate interruption
+
+Between this cycle's implementation push and its audit recording, `osv-push` failed on `ba88602` (security run 33494115928) on a newly-disclosed advisory, `GHSA-rgwj-5xj2-c3m3` in `mysql2@3.15.3` (a transitive dependency of the `prisma` CLI package, never reachable from any LUKE runtime — this workspace's only `schema.prisma` is Postgres-only). Confirmed unrelated to this cycle: `pnpm-lock.yaml` had not changed since before this session's work, and the immediately preceding push (`1f84a4b`, Cycle 4) had a clean `security` run on the identical lockfile — the advisory was disclosed to OSV between the two pushes, not introduced by anything here. Remediated separately in `65f005cc289885399b734970af3caebb6ac262fb` (`pnpm-workspace.yaml` override, `mysql2` → `3.24.2`), verified green on that commit, and the auto-filed tracking issue (#27) closed. Recorded here only as the reason Cycle 5's own audit entry was written a step later than its implementation commit — not as `P0-02b` scope, and not touching `eslint.config.mjs` or the `ba88602` diff.
+
+## F.12 Execution status
+
+Cycle 5 is complete as a bounded hardening cycle. `P0-02b` remains partially open per F.1/F.10 — its closure is deferred to the boundary-aware enforcement work noted above, not scheduled as its own numbered cycle here. Per A.4, cycle 6 — `@luke/core` module format, closing `5.2` (Opus) — is next; it has no dependency on the remaining `P0-02b` portion.
