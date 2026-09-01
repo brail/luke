@@ -1,22 +1,43 @@
 {
-  "extends": "../../tsconfig.json",
+  // The Next/browser surface, and the only one in this repository that owns
+  // DOM, JSX and bundler resolution. Everything below used to arrive by
+  // inheritance from the root config, which is why `apps/api` and three
+  // Node-only libraries had the DOM in scope; the neutral base carries none of
+  // it, so this file states its runtime itself.
+  //
+  // `extends` must stay present, whatever it points at: Next's
+  // `writeConfigurationDefaults` returns early when the user config has an
+  // `extends` (or `references`) key, and would otherwise rewrite this file on
+  // every `next build` to add its own suggested `lib`/`allowJs`/`target`.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "incremental": true,
     "allowArbitraryExtensions": true,
     "plugins": [
       {
         "name": "next"
       }
     ],
-    // `@luke/core` is deliberately absent here: it resolves through the
-    // package's own `exports` map to its built ESM `dist`, the same artifact
-    // the browser test tier loads. `@luke/api` stays because its `main` and
-    // `types` point at `src/index.ts` and it publishes no `exports` map, so
-    // resolving it by package name would land on raw TypeScript — only its
-    // router type is imported from here.
+    // No workspace package is aliased onto another workspace's sources here.
+    // `@luke/core` and `@luke/calendar` resolve through their own `exports`
+    // maps to their built ESM `dist`, the same artifacts the browser test tier
+    // loads, so the published contract is the one actually exercised.
+    //
+    // `@luke/api` carried an alias onto `apps/api/src` until this config was
+    // rewritten. It was inert: `apps/api/package.json` points `main` and
+    // `types` at `./src/index.ts` and publishes no `exports` map, so resolving
+    // the package by name lands on the same raw TypeScript with or without it,
+    // and no `@luke/api/*` subpath is imported anywhere in the repository.
+    // Removing it therefore changed no program. It also did not *fix* anything:
+    // this app still typechecks the API's source, and will until `@luke/api`
+    // publishes a build — a package-contract question, not a tsconfig one.
     "paths": {
-      "@/*": ["./src/*"],
-      "@luke/api": ["../../apps/api/src"],
-      "@luke/api/*": ["../../apps/api/src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
@@ -31,8 +52,5 @@
     "src/**/__browser__/**",
     "src/**/*.test.ts",
     "src/**/*.test.tsx"
-  ],
-  "references": [
-    { "path": "../../packages/core" }
   ]
 }

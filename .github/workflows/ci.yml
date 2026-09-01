@@ -41,6 +41,16 @@ jobs:
       - name: Lint & TypeCheck (tools)
         run: pnpm lint:tools && pnpm typecheck:tools
 
+      # `scripts/` at the repository root is not a workspace either. It used to
+      # sit inside the root tsconfig's `**/*.ts` include, but nothing ever
+      # compiled that program — `pnpm typecheck` is `turbo run typecheck` and
+      # turbo runs per-workspace scripts — so `rc-prod-clone.ts`, which drives a
+      # production backup/restore, was checked by no gate at all. Its own step
+      # rather than an extra command on the tools one: a distinct surface that
+      # can break for its own reasons deserves a distinct red X.
+      - name: TypeCheck (root scripts)
+        run: pnpm typecheck:root
+
       # The checkers are release gates, so their own behavior is regression
       # tested: each invariant has a fixture proving it goes red. A checker only
       # ever seen green is assumed to block, not known to.

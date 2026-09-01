@@ -1,30 +1,58 @@
 {
-  "extends": "../../tsconfig.json",
+  // The Fastify/Node server. NodeNext because Node's own resolver runs the
+  // emitted CommonJS, and `lib` comes from the neutral base — this config used
+  // to inherit `dom`, `dom.iterable`, `jsx: preserve` and the Next TypeScript
+  // plugin from a root config that was really a Next project configuration.
+  // Nothing here used any of it: removing all four left the program unchanged.
+  //
+  // `@luke/core` has no `paths` alias and no project reference here. It
+  // resolves by package name through the package's own `exports` map to
+  // `dist/**/*.d.ts` — the same way `apps/web` and `packages/calendar` resolve
+  // it, so one contract is exercised by every consumer.
+  //
+  // Both mechanisms had to go together, and neither was what it looked like.
+  // The alias claimed to typecheck core from source, but a `references` entry
+  // to a composite project outranks `paths`: TypeScript redirected the
+  // resolution to `packages/core/dist`, so this program never saw core's
+  // sources. What the alias did still do was answer `@luke/core/<anything>`,
+  // including the subpaths the `exports` map does not publish — those
+  // typechecked green against `dist` and fail at runtime with
+  // ERR_PACKAGE_PATH_NOT_EXPORTED. Removing `references` alone would have
+  // handed the alias its original meaning back and moved this program onto
+  // core's sources; removing the alias alone would have left a second
+  // resolution mechanism doing what package exports already do.
+  //
+  // Two consequences of having no reference, both accepted deliberately.
+  //
+  // On the command line, a missing or stale `packages/core/dist` surfaces as
+  // TS2307 rather than the more explicit TS6305. Turbo's
+  // `typecheck.dependsOn: ["^build"]` is what stops that from happening, in CI
+  // and in `.husky/pre-push` alike.
+  //
+  // In the editor, tsserver no longer redirects core's declarations back to its
+  // sources — a project reference is what enabled that, so with none, every
+  // consumer here (and in `apps/web` and `packages/calendar`, which never had
+  // one) reads `dist`. Rename a symbol in `packages/core/src` and this project
+  // stays green in the IDE against the previous build until `dist` refreshes;
+  // `pnpm dev` runs core's `tsc --watch`, which is what keeps that window
+  // short. Reading the built declarations is the point — it is the contract
+  // every runtime consumer resolves — so the reference is not coming back to
+  // improve navigation.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
     "rootDir": "./src",
-    "noEmit": false,
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "types": ["node"],
     "paths": {
-      "@luke/core": ["../../packages/core/src"],
-      "@luke/core/*": ["../../packages/core/src/*"],
       "pdfmake/interfaces": ["./node_modules/@types/pdfmake/interfaces.d.ts"]
-    },
-    "types": ["node"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../../packages/core" }
-  ]
+  "exclude": ["node_modules", "dist"]
 }

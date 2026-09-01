@@ -1,22 +1,28 @@
 {
-  // Typecheck di tutto ciò che sta FUORI dal grafo di build: `tsconfig.json`
-  // include solo `src/**/*`, quindi `test/`, `scripts/` e `prisma/` non passavano
-  // da tsc. È così che l'opzione `datasources`, rimossa in Prisma 7, è
-  // sopravvissuta negli helper di test e in 5 script CLI senza segnalazioni.
+  // Typechecks everything OUTSIDE the build graph: `tsconfig.json` includes
+  // only `src/**/*`, so `test/`, `scripts/` and `prisma/` never reached tsc.
+  // That is how the `datasources` option, removed in Prisma 7, survived in the
+  // test helpers and in five CLI scripts without a single report.
   //
-  // La quarantena è vuota: tutte le suite sono state riparate e sono coperte
-  // dal typecheck (vedi docs/quality-hardening-plan.md).
+  // The quarantine is empty: every suite has been repaired and is covered by
+  // the typecheck (see docs/quality-hardening-plan.md).
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    // `rootDir: src` viene dal tsconfig di build: qui non si emette nulla e il
-    // programma include `test/` e i sorgenti di @luke/core, entrambi fuori da src.
-    "rootDir": "../..",
-    // Il runtime dei test è vitest, non il module loader di Node: la risoluzione
-    // bundler evita di pretendere estensioni `.js` sugli import relativi.
+    "sourceMap": false,
+    // `rootDir: src` comes from the build config, and this program includes
+    // `test/`, `scripts/`, `prisma/` and the runner configs, all outside it.
+    // Nothing is emitted here, so the value only has to stop tsc rejecting the
+    // wider include.
+    "rootDir": ".",
+    // The runtime of these files is Vitest, not Node's module loader: bundler
+    // resolution avoids demanding `.js` extensions on relative imports.
+    // This is the one place in the repository where a Node surface is
+    // deliberately typechecked under bundler semantics, because a bundler is
+    // what actually loads it.
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node", "vitest/globals"]

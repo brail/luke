@@ -1,40 +1,33 @@
 {
+  // The repository-root TypeScript project owns exactly one surface: the
+  // operational scripts under `scripts/`. It is a Node configuration, not a
+  // repository-wide one — the runtime-neutral half lives in
+  // `tsconfig.base.json`, which every project here extends.
+  //
+  // Until this cycle this file was a Next project configuration (DOM libs, JSX,
+  // bundler resolution, the Next plugin) that `apps/api` extended, which is how
+  // a Fastify server came to have `HTMLElement` in scope. It also declared an
+  // `include` of `**/*.ts` that nothing ever compiled: `pnpm typecheck` is
+  // `turbo run typecheck`, turbo runs per-workspace scripts, and no root task
+  // is declared. `scripts/rc-prod-clone.ts` sat inside that phantom program and
+  // was checked by nothing. `pnpm typecheck:root` now compiles it for real.
+  //
+  // A solution-style config (`files: []` plus `references`) was rejected: `tsc
+  // -b` requires every referenced project to be composite, and the web, tools
+  // and test projects are not. A bare `extends` with no `module` was rejected
+  // too — an editor opening a file under it would fall back to
+  // `moduleResolution: classic` and fail to resolve any import.
+  //
+  // `scripts/rc-prod-clone.ts` imports `@luke/api`, whose manifest points
+  // `main`/`types` at `./src/index.ts`, so this program typechecks the API's
+  // sources. That is a property of that package's manifest, not of this config.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "es2022"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
-    // No `paths` alias onto `packages/core/src` here, and none in
-    // `apps/web/tsconfig.json`: those two consumers resolve `@luke/core`
-    // through the package's own `exports` map. Turbopack honours a `paths`
-    // alias found here, so while one was in place `next build` compiled the
-    // package's `.ts` sources directly and could not resolve their `.js`
-    // import specifiers, which Node ESM requires.
-    //
-    // This removes the bypass for the root config and `apps/web` only, not
-    // repository-wide: `apps/api` still type-resolves `@luke/core` from
-    // source, wildcard subpaths included, by deliberate decision. A deep
-    // import there typechecks against source and would fail at runtime with
-    // ERR_PACKAGE_PATH_NOT_EXPORTED. Making the source-vs-dist type surface
-    // uniform is the separate tsconfig/boundary finding's work, not this
-    // config's; do not reintroduce the alias here to paper over it.
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["scripts/**/*.ts"],
   "exclude": ["node_modules", "dist", ".next", "build"]
 }

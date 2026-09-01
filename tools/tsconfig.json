@@ -3,34 +3,25 @@
   // boundary validator and the codemods under `tools/`.
   //
   // These are release gates — `pnpm check:drift` runs them in CI and in
-  // `.husky/pre-push` — and until now they were reachable by no typecheck at
-  // all. `tools/` is not a workspace, so `turbo run typecheck` never saw it,
-  // and `tsx` executes TypeScript by stripping types without checking them. A
-  // type error in a gate would have shipped silently.
+  // `.husky/pre-push` — and until they got a config of their own they were
+  // reachable by no typecheck at all. `tools/` is not a workspace, so
+  // `turbo run typecheck` never sees it, and `tsx` executes TypeScript by
+  // stripping types without checking them. A type error in a gate would have
+  // shipped silently.
   //
-  // Standalone on purpose, with no `extends`. The root `tsconfig.json` is a
-  // Next/browser configuration (DOM libs, JSX, bundler resolution, the Next
-  // plugin) and inheriting it here would spread that assumption over Node-only
-  // scripts. Splitting a neutral base out of the root config is its own later
-  // refactor; when it exists, this file becomes `extends: ../tsconfig.base.json`
-  // plus the Node-specific lines below.
+  // Node-only, and now says so by inheriting the neutral base's `lib: ES2022`
+  // rather than restating it: the base is the runtime-neutral half this file
+  // used to have to duplicate, back when the root config was a Next/browser
+  // configuration it could not safely extend.
   //
   // CommonJS, not ESM: `lib/report.ts` uses `__dirname`, relative imports carry
   // no `.js` extension, and the nearest `package.json` declares no `"type"`.
   // `module: NodeNext` resolves that to CJS, which is what actually runs.
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
     "noEmit": true
   },
   "include": ["**/*.ts"],

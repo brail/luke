@@ -1,4 +1,7 @@
 {
+  // The one-off CLI scripts under `scripts/`, built to `dist-scripts/`. Same
+  // runtime as the server, so it inherits everything from the build config and
+  // changes only where the output goes.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": false,
@@ -8,6 +11,5 @@
     "declarationMap": false,
     "sourceMap": false
   },
-  "include": ["scripts/**/*.ts"],
-  "references": [{ "path": "../../packages/core" }]
+  "include": ["scripts/**/*.ts"]
 }

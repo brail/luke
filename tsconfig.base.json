@@ -1,0 +1,40 @@
+{
+  // Runtime-neutral TypeScript invariants for the whole repository.
+  //
+  // Every other tsconfig in this workspace reaches this file through its
+  // `extends` chain — directly for the project configs, transitively for the
+  // `tsconfig.test.json` files, which extend the project they test. Only the
+  // options that are genuinely identical across a browser bundle, a Fastify
+  // server, three libraries and the Node control plane live here.
+  //
+  // `lib` is stated, not omitted. Leaving it out is not neutral: TypeScript
+  // then loads `lib.<target>.full.d.ts`, which for ES2022 pulls in DOM,
+  // DOM.Iterable, DOM.AsyncIterable, ScriptHost and WebWorker.ImportScripts.
+  // That default is how `packages/nav` and `packages/calendar` — Node-only
+  // libraries that never set `lib` — had the whole DOM in scope. A surface that
+  // wants DOM must ask for it (`apps/web`, and `packages/core`, which is
+  // genuinely isomorphic).
+  //
+  // `module`/`moduleResolution` are deliberately absent: there is no
+  // repository-wide value. `apps/web` is ESNext/Bundler because a bundler
+  // resolves it; everything else is NodeNext because Node does. Their default
+  // when unset (`ES2015` + `classic`) is wrong for every surface here, so each
+  // leaf states its own pair rather than inheriting a compromise.
+  //
+  // Emit belongs to the leaf too — `noEmit`, `composite`, `declaration`,
+  // `outDir`, `rootDir`, `incremental`. A base that emitted opinions here would
+  // have to be overridden by every project that builds and every project that
+  // does not.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  }
+}
