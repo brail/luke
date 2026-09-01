@@ -7,17 +7,14 @@
       "outputs": [
         ".next/**",
         "!.next/cache/**",
-        "dist/**",
-        "packages/core/dist/**"
+        "dist/**"
       ]
     },
     "dev": {
       "cache": false,
       "persistent": true
     },
-    "lint": {
-      "dependsOn": ["^build"]
-    },
+    "lint": {},
     "typecheck": {
       "dependsOn": ["^build"],
       "cache": true
