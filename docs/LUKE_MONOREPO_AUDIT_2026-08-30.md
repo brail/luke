@@ -2192,3 +2192,97 @@ Several `packages/core/src/**` file-header comments still name module identities
 ## H.13 Execution status
 
 `5.2` is closed. Per A.4, cycle 7 — Turbo graph, closing `P2-09` (Sonnet) — is next and is not started here.
+
+---
+
+# Appendix I — Cycle 7: Turbo task graph simplification (2026-09-01)
+
+Appends to Appendices A–H; neither the historical body nor any earlier appendix is rewritten. Implementation commit `a0d703e9b470d7456f61155fc2b07dca7d2b8231` on `develop-2.2`. Cycle 7 changed **only `turbo.json`** — no other file was touched.
+
+## I.1 Disposition
+
+**`P2-09` → DONE.** Both hypotheses recorded in the original audit (§P2-09) were verified true and fixed.
+
+## I.2 Hypothesis 1 — `lint.dependsOn: ["^build"]` was unnecessary
+
+**Structural evidence, from the repository as it stands, not inference:**
+
+- `eslint.config.mjs` sets no `parserOptions.project` anywhere — lint is not type-aware.
+- No `import-x` resolver setting is configured anywhere in the file.
+- `import-x/no-unresolved` is not among the enabled rules — only `import-x/order`, `import-x/no-duplicates`, `import-x/first`, `import-x/newline-after-import`, all of which operate on syntax, not resolved module targets.
+- Every workspace's `lint` script is a plain `eslint src/` (`apps/web`, `apps/api`, `packages/core`, `packages/nav`, `packages/calendar`) — no custom tooling that reads a dependency's `dist`.
+
+Conclusion: ESLint, as configured in this repository, has no path by which it consumes an upstream package's built artifacts. The `^build` edge on `lint` bought nothing and only serialized lint behind four unrelated `tsc` invocations.
+
+**Empirical proof**, measured with `turbo run lint --force` (cache bypassed) before and after removing the edge:
+
+| | Tasks executed | Wall time |
+|---|---|---|
+| Before | 9 (`@luke/api#build`, `@luke/calendar#build`, `@luke/core#build`, `@luke/nav#build` + 5 lint tasks) | ≈24.3s |
+| After | 5 (lint tasks only) | ≈10.6s |
+
+≈56% reduction on a fully cold lint run. Warm behavior is unaffected either way: both before and after, `turbo run lint` on a populated cache reports `FULL TURBO` in well under a second — Turbo's own caching already made the warm path a non-issue, so the edge's entire cost was paid on cold runs only.
+
+**`typecheck.dependsOn: ["^build"]` was deliberately left untouched.** Unlike lint, `tsc --noEmit` genuinely needs built declarations from at least some upstream packages under the current `tsconfig.json` setup:
+
+- `apps/web/tsconfig.json` has no `paths` entry for `@luke/core` or `@luke/calendar` — both resolve through their package `exports` map to `dist/**/*.d.ts` (a deliberate choice, documented in that file's own comment, so the browser-consumed contract is actually exercised — see Appendix H).
+- `apps/api/tsconfig.json` maps only `@luke/core` to source (`../../packages/core/src`); `@luke/nav` and `@luke/calendar` are not source-mapped and so resolve through their own `dist` declarations the same way.
+
+Removing `^build` from `typecheck` would reintroduce the documented "stale `dist`" failure mode this repository already works around elsewhere (`apps/api dist staleness`, memory `project_api_dist_staleness.md`). Out of scope for this cycle and not touched.
+
+## I.3 Hypothesis 2 — `packages/core/dist/**` in `build.outputs` was dead
+
+Turbo resolves a task's `outputs` globs relative to the **owning package's own directory**, not the repo root. For the `@luke/core#build` task that owning directory is `packages/core/`, so the glob `packages/core/dist/**` was actually being evaluated as `packages/core/packages/core/dist/**` — a path that has never existed in this repository (verified: `ls packages/core/packages/core/dist` → `No such file or directory`). `dist/**`, the sibling entry in the same list, already resolves to `packages/core/dist/**` correctly and is what every cache hit was actually keyed on.
+
+**Proof that removing the dead glob does not impair cache restoration:** all four package `dist` directories (`packages/core`, `packages/nav`, `packages/calendar`, `apps/api`) were deleted, then `turbo run build` was re-run against the (now-corrected) config with only `dist/**` in `outputs`. All four were restored byte-for-byte from the local cache (4 of 5 build tasks cache-hit; `@luke/web`'s Next build is not cacheable the same way and rebuilt, which is pre-existing behavior unrelated to this change).
+
+## I.4 Review history
+
+A read-only **medium** `/code-review` pass validated both substantive changes above as safe, and additionally found one non-runtime issue: the first draft of the fix had added an explicit `"cache": true` to the `lint` task. That flag is redundant — Turbo already defaults task-level caching to `true` when the key is omitted, confirmed via `turbo run build --dry-run=json`, where the `build` task (which carries no explicit `cache` key at all) resolves to `cache: true` and caches correctly. The finding was accepted and fixed before push: the redundant key was dropped, leaving
+
+```json
+"lint": {}
+```
+
+`turbo run lint --dry-run=json` was re-run after the fix and confirmed every lint task (`@luke/api#lint`, `@luke/calendar#lint`, `@luke/core#lint`, `@luke/nav#lint`, `@luke/web#lint`, `eslint-plugin-luke#lint`) resolves with `cache: true` and `dependsOn: []`. No further material findings remained.
+
+## I.5 Final configuration
+
+```json
+"build": {
+  "dependsOn": ["^build"],
+  "outputs": [
+    ".next/**",
+    "!.next/cache/**",
+    "dist/**"
+  ]
+},
+"lint": {},
+```
+
+`typecheck` and every other task in `turbo.json` are unchanged from the pre-Cycle-7 state.
+
+## I.6 Regression gates, all green on the implementation SHA
+
+Local, before push (also re-run by `.husky/pre-push` on the push itself):
+
+| Gate | Result |
+|---|---|
+| `pnpm lint --force` | **0 errors, 49 warnings** — same baseline as Appendix H's `I.169` row, unchanged |
+| `pnpm typecheck` | green, 9/9 tasks |
+| `pnpm check:drift` | green (skill-integrity, docs-integrity, platform-integrity all `ok`) |
+| `turbo run lint --dry-run=json` | all lint tasks resolve `cache: true`, `dependsOn: []`, no upstream build task in the graph |
+| cold-cache `dist` restoration | `@luke/core`/`nav`/`calendar`/`api` all restore correctly after deleting `dist` and re-running `turbo run build` |
+
+Implementation commit `a0d703e9b470d7456f61155fc2b07dca7d2b8231`.
+
+Both workflows green on that exact SHA:
+
+| Workflow | Run | Result |
+|---|---|---|
+| CI | **33553820934** | `success` — Lint (incl. TypeCheck, TypeCheck (test), Lint & TypeCheck (tools), Control-plane tests, Docs & skills drift, Unit tests, Module contract (require(esm))), Browser Component Tests, Integration Tests, Migrations all `success` |
+| security | **33553820894** | `success` — gitleaks, semgrep, osv-push all `success` (`osv-weekly` and `notify-on-failure` skipped by design) |
+
+## I.7 Execution status
+
+`P2-09` is closed. Per A.4, cycle 7 was the last item in the originally scheduled execution sequence; remaining backlog (`P1-06`, `6.2`, `P1-04`/`P1-05`, `P1/P2-08`, the §A.3 hygiene batch, `S-01`) stays open and unscheduled, exactly as recorded in §A.3/§A.4.
