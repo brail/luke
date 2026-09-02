@@ -127,8 +127,14 @@ export interface ProvenanceInput {
    * The SHA the workflow believes it checked out (`github.sha`). Compared
    * against the commit the tag actually resolves to, so a gate that ran on one
    * commit cannot authorize a build of another.
+   *
+   * Required, and required to look like a SHA. It was optional, and `flag()`
+   * returns `''` rather than `undefined` for `--expected-sha ""`, so an empty
+   * `$GITHUB_SHA` skipped the comparison entirely and the gate authorized
+   * whatever commit the job happened to sit on. An unanswerable question must
+   * reject, the same as an unresolvable stable ref.
    */
-  expectedSha?: string;
+  expectedSha: string;
 }
 
 /** Everything the build jobs need, with no room left for them to re-derive it. */
@@ -193,8 +199,26 @@ function isAncestor(repo: string, sha: string, rev: string): boolean {
   }
 }
 
+/** Full 40-char lowercase hex, which is what `github.sha` always is. */
+const SHA = /^[0-9a-f]{40}$/;
+
 export function checkReleaseProvenance(input: ProvenanceInput): ProvenanceDecision {
-  const { tag, repo, stableRef, trainRef, expectedSha } = input;
+  const { tag, repo, stableRef, trainRef } = input;
+
+  const expectedSha = input.expectedSha.trim();
+  if (expectedSha === '') {
+    throw new ProvenanceError(
+      'No expected commit given. The gate must be told which commit the ' +
+        'workflow is running on; it cannot assume it is the right one.'
+    );
+  }
+  if (!SHA.test(expectedSha)) {
+    throw new ProvenanceError(
+      `"${input.expectedSha}" is not a commit SHA (expected 40 lowercase hex ` +
+        'characters). Refusing to compare a tag against a value that cannot ' +
+        'name a commit.'
+    );
+  }
 
   const parsed = parseReleaseTag(tag);
   if (parsed === null) {
@@ -215,12 +239,7 @@ export function checkReleaseProvenance(input: ProvenanceInput): ProvenanceDecisi
   // An annotated tag has its own object; `github.sha` may name either it or the
   // commit it points at, depending on how the event was produced. Both are the
   // same tag, so both are accepted — anything else is a different commit.
-  if (
-    expectedSha !== undefined &&
-    expectedSha !== '' &&
-    expectedSha !== sha &&
-    expectedSha !== resolveRev(repo, `refs/tags/${tag}`)
-  ) {
+  if (expectedSha !== sha && expectedSha !== resolveRev(repo, `refs/tags/${tag}`)) {
     throw new ProvenanceError(
       `Tag ${tag} resolves to ${sha} but the workflow is running on ` +
         `${expectedSha}. Refusing to authorize a build of a different commit.`
@@ -348,7 +367,7 @@ function main(): void {
     repo: flag('repo') ?? process.cwd(),
     stableRef: required('stable-ref'),
     trainRef: flag('train-ref') ?? '',
-    expectedSha: flag('expected-sha'),
+    expectedSha: required('expected-sha'),
   });
 
   const outputs: Record<string, string> = {
@@ -385,7 +404,8 @@ if (require.main === module) {
   try {
     main();
   } catch (err) {
-    console.error(`[release-provenance] REJECTED — ${(err as Error).message}`);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[release-provenance] REJECTED — ${message}`);
     process.exit(1);
   }
 }

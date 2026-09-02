@@ -4,11 +4,22 @@ while read local_ref local_sha remote_ref remote_sha; do
     refs/tags/v*)
       tag="${remote_ref#refs/tags/}"
       version="${tag#v}"
-      if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+      # Entries under the heading, not merely the heading. A graduation used to
+      # produce `## [X.Y.Z]` with nothing under it -- git-cliff --unreleased
+      # starts at the final rc and normally finds no commits after it -- and a
+      # `grep` for the heading accepted that, so the stable release shipped
+      # blank notes while every change stayed under `[X.Y.Z-rc.N]`.
+      entries=$(awk -v heading="## [$version]" '
+        index($0, heading) == 1 { inside = 1; next }
+        inside && /^## \[/     { exit }
+        inside && /^- /         { n++ }
+        END                     { print n + 0 }
+      ' CHANGELOG.md)
+      if [ "$entries" -eq 0 ]; then
         echo ""
-        echo "❌ Tag $tag mancante in CHANGELOG.md"
-        echo "   Aggiungi una entry [$version] o rigenera con:"
-        echo "   pnpm changelog:tag --tag $tag"
+        echo "❌ Tag $tag has no CHANGELOG.md entries"
+        echo "   [$version] is missing, or its section is empty."
+        echo "   Regenerate with: pnpm release:prepare (or 'rc' / 'stable')"
         echo ""
         exit 1
       fi

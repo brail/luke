@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -27,6 +27,7 @@ import {
   checkReleaseProvenance,
   parseReleaseTag,
 } from './check-release-provenance';
+import { REPO_ROOT } from './lib/report';
 
 const created: string[] = [];
 
@@ -67,6 +68,13 @@ function topology(): Topology {
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'config', 'user.email', 'gate@test.local');
   git(repo, 'config', 'user.name', 'gate');
+  // Local, so a developer's global `commit.gpgsign = true` cannot reach these
+  // throwaway repositories. It would make `git commit` fail outright ("gpg
+  // failed to sign the data") or block on a pinentry prompt — and this suite
+  // runs inside `.husky/pre-push`, so a signing preference would become a push
+  // that never completes, reported as a test failure pointing at the wrong thing.
+  git(repo, 'config', 'commit.gpgsign', 'false');
+  git(repo, 'config', 'tag.gpgsign', 'false');
 
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'chore: root');
   const mainOlderSha = git(repo, 'rev-parse', 'HEAD');
@@ -91,7 +99,8 @@ function tagged(topo: Topology, tag: string, sha: string, expectedSha?: string) 
     repo: topo.repo,
     stableRef: 'main',
     trainRef: 'develop-2.2',
-    expectedSha,
+    // The honest default for "the workflow is running on the tagged commit".
+    expectedSha: expectedSha ?? sha,
   });
 }
 
@@ -208,6 +217,7 @@ test('a tag that is not in the checkout is rejected rather than assumed', () => 
         repo: topo.repo,
         stableRef: 'main',
         trainRef: 'develop-2.2',
+        expectedSha: topo.trainSha,
       }),
     ProvenanceError
   );
@@ -224,6 +234,7 @@ test('an rc is rejected when the release train no longer exists', () => {
         repo: topo.repo,
         stableRef: 'main',
         trainRef: 'develop-2.9',
+        expectedSha: topo.trainSha,
       }),
     ProvenanceError
   );
@@ -242,6 +253,7 @@ test('an unresolvable stable ref is rejected even for an rc', () => {
         repo: topo.repo,
         stableRef: 'origin/main',
         trainRef: 'develop-2.2',
+        expectedSha: topo.trainSha,
       }),
     ProvenanceError
   );
@@ -287,4 +299,178 @@ test('the rc channel closes once the train has been merged into the stable line'
 
   const decision = tagged(topo, 'v2.2.0', git(topo.repo, 'rev-parse', 'main'));
   assert.equal(decision.channel, 'stable');
+});
+
+// ── The expected-commit check must fail closed, not skip ─────────────────────
+
+test('an omitted, empty or whitespace expected SHA is rejected, not skipped', () => {
+  const topo = topology();
+  git(topo.repo, 'tag', 'v2.2.0-rc.4', topo.trainSha);
+
+  // `flag()` returns '' rather than undefined for `--expected-sha ""`, so the
+  // old optional shape silently skipped the comparison and authorized whatever
+  // commit the job happened to be on.
+  for (const expectedSha of ['', '   ', '\t\n']) {
+    assert.throws(
+      () =>
+        checkReleaseProvenance({
+          tag: 'v2.2.0-rc.4',
+          repo: topo.repo,
+          stableRef: 'main',
+          trainRef: 'develop-2.2',
+          expectedSha,
+        }),
+      (err: unknown) =>
+        err instanceof ProvenanceError && /No expected commit given/.test(err.message),
+      `expected ${JSON.stringify(expectedSha)} to be rejected`
+    );
+  }
+});
+
+test('a value that cannot name a commit is rejected before any comparison', () => {
+  const topo = topology();
+  git(topo.repo, 'tag', 'v2.2.0-rc.5', topo.trainSha);
+
+  for (const bad of [
+    'not-a-sha',
+    'HEAD',
+    topo.trainSha.slice(0, 39), // one short
+    `${topo.trainSha}0`, // one long
+    topo.trainSha.toUpperCase(), // github.sha is lowercase
+  ]) {
+    assert.throws(
+      () =>
+        checkReleaseProvenance({
+          tag: 'v2.2.0-rc.5',
+          repo: topo.repo,
+          stableRef: 'main',
+          trainRef: 'develop-2.2',
+          expectedSha: bad,
+        }),
+      (err: unknown) =>
+        err instanceof ProvenanceError && /is not a commit SHA/.test(err.message),
+      `expected ${bad} to be rejected`
+    );
+  }
+});
+
+test('a well-formed but wrong SHA is still rejected, and the right one passes', () => {
+  const topo = topology();
+  rejects(topo, 'v2.2.0-rc.6', topo.trainSha, topo.trainOlderSha);
+
+  const decision = tagged(topo, 'v2.2.0-rc.7', topo.trainSha, topo.trainSha);
+  assert.equal(decision.sha, topo.trainSha);
+});
+
+// ── The string contract between the CLI and the workflow ─────────────────────
+
+/**
+ * `release.yml` gates every registry tag on `outputs.X == 'true'`. That is a
+ * string comparison against what `main()` writes to `$GITHUB_OUTPUT`, and every
+ * assertion above checks the returned *object* instead — so `String(...)`
+ * becoming anything else, or a key being renamed, would leave the suite green
+ * while stable releases silently stopped publishing `latest`.
+ */
+test('the CLI writes exactly the key=value lines release.yml consumes', () => {
+  const topo = topology();
+  git(topo.repo, 'tag', 'v2.2.0-rc.8', topo.trainSha);
+  const outFile = join(topo.repo, 'gh-output');
+
+  execFileSync(
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      join(__dirname, 'check-release-provenance.ts'),
+      '--tag',
+      'v2.2.0-rc.8',
+      '--repo',
+      topo.repo,
+      '--stable-ref',
+      'main',
+      '--train-ref',
+      'develop-2.2',
+      '--expected-sha',
+      topo.trainSha,
+      '--github-output',
+      outFile,
+    ],
+    { stdio: 'ignore' }
+  );
+
+  const emitted = readFileSync(outFile, 'utf-8').trimEnd().split('\n');
+  assert.deepEqual(emitted, [
+    'channel=rc',
+    'version=2.2.0-rc.8',
+    'series=2.2',
+    `sha=${topo.trainSha}`,
+    'publish_series=false',
+    'publish_latest=false',
+    'publish_rc_latest=true',
+  ]);
+
+  // And the stable channel's opposite spelling.
+  const stableOut = join(topo.repo, 'gh-output-stable');
+  git(topo.repo, 'tag', 'v2.1.9', topo.mainSha);
+  execFileSync(
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      join(__dirname, 'check-release-provenance.ts'),
+      '--tag',
+      'v2.1.9',
+      '--repo',
+      topo.repo,
+      '--stable-ref',
+      'main',
+      '--train-ref',
+      'develop-2.2',
+      '--expected-sha',
+      topo.mainSha,
+      '--github-output',
+      stableOut,
+    ],
+    { stdio: 'ignore' }
+  );
+  const stableEmitted = readFileSync(stableOut, 'utf-8').trimEnd().split('\n');
+  assert.ok(stableEmitted.includes('publish_series=true'));
+  assert.ok(stableEmitted.includes('publish_latest=true'));
+  assert.ok(stableEmitted.includes('publish_rc_latest=false'));
+});
+
+test("every release.yml `== 'true'` consumer names an output the CLI emits", () => {
+  const workflow = readFileSync(join(REPO_ROOT, '.github/workflows/release.yml'), 'utf-8');
+
+  const emitted = new Set([
+    'channel',
+    'version',
+    'series',
+    'sha',
+    'publish_series',
+    'publish_latest',
+    'publish_rc_latest',
+  ]);
+
+  const consumers = [
+    ...workflow.matchAll(/needs\.provenance\.outputs\.([a-z_]+)\s*==\s*'([^']*)'/g),
+  ];
+  assert.ok(consumers.length >= 6, 'expected the metadata blocks to gate on the outputs');
+
+  for (const [, name, literal] of consumers) {
+    assert.ok(emitted.has(name), `release.yml reads outputs.${name}, which is never emitted`);
+    // Booleans reach the workflow as the strings String(boolean) produces.
+    if (name.startsWith('publish_')) {
+      assert.equal(literal, 'true', `outputs.${name} must be compared against 'true'`);
+    }
+  }
+
+  // The job must also forward every output the build jobs read.
+  for (const name of new Set(consumers.map(([, n]) => n))) {
+    assert.match(
+      workflow,
+      new RegExp(`^\\s+${name}: \\$\\{\\{ steps\\.gate\\.outputs\\.${name} \\}\\}$`, 'm'),
+      `release.yml never maps steps.gate.outputs.${name} to a job output`
+    );
+  }
 });

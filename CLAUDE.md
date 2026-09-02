@@ -460,14 +460,17 @@ cycle opens a new `develop-(X+1).0`/`develop-X.(Y+1)` cut from `main`.
 to the default branch `main`) — no update needed when the branch changes.
 
 **When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`):
-update the branch name in four places — the `branches` list in
-`.github/workflows/ci.yml` (`push` and `pull_request`), the `branches` list
-**and** `env.RELEASE_TRAIN_BRANCH` in `.github/workflows/security.yml`, and
-`env.RELEASE_TRAIN_BRANCH` in `.github/workflows/release.yml`. Miss the first
-and CI/security scans silently stop running on PRs targeting the new branch;
-miss the release.yml one and every RC tag is rejected by the provenance gate;
-miss the security.yml one and the weekly OSV job goes red on a branch that no
-longer exists — which is the intended reminder, not a bug. Then delete the
+update the branch name in three places — the `branches` list in
+`.github/workflows/ci.yml` (`push` and `pull_request`), and
+`env.RELEASE_TRAIN_BRANCH` in both `.github/workflows/security.yml` and
+`.github/workflows/release.yml`. Miss ci.yml and CI silently stops running on
+PRs targeting the new branch; miss release.yml and every RC tag is rejected by
+the provenance gate; miss security.yml and the weekly OSV job goes red on a
+branch that no longer exists — which is the intended reminder, not a bug.
+`pnpm check:workflows` (inside `pnpm check:drift`) fails on all three, so this
+is a checklist the build enforces rather than one to remember.
+security.yml's `push` filter is **not** on the list: it matches `develop-*` and
+`release/*` by pattern precisely so it never needs the edit. Then delete the
 previous branch (local + remote): it's stale as soon as it's merged, keeping
 it around invites bad backports.
 
