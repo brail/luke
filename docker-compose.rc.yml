@@ -22,6 +22,8 @@
 services:
   # ── PostgreSQL (istanza isolata per l'RC) ────────────────────────────────────
   postgres-rc:
+    networks:
+      - data
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -43,12 +45,18 @@ services:
 
   # ── Fastify API (RC) ─────────────────────────────────────────────────────────
   api-rc:
+    networks:
+      - edge
+      - data
     image: ghcr.io/brail/luke-api:rc-latest
     restart: unless-stopped
     depends_on:
       postgres-rc:
         condition: service_healthy
     environment:
+      # Same interpolation as the `edge` network below: the subnet Docker
+      # builds and the range apps/api trusts cannot drift apart.
+      LUKE_TRUSTED_PROXY_CIDR: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC}@postgres-rc:5432/luke
@@ -69,6 +77,8 @@ services:
 
   # ── Next.js web (RC) — esposta su porta 3010 ─────────────────────────────────
   web-rc:
+    networks:
+      - edge
     image: ghcr.io/brail/luke-web:rc-latest
     restart: unless-stopped
     depends_on:
@@ -90,6 +100,8 @@ services:
 
   # ── MinIO object storage (RC) ────────────────────────────────────────────────
   minio-rc:
+    networks:
+      - data
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -111,6 +123,8 @@ services:
         max-file: "5"
 
   minio-rc-init:
+    networks:
+      - data
     image: minio/mc:latest
     depends_on:
       minio-rc:
@@ -150,3 +164,20 @@ volumes:
   postgres_rc_data:
   api_rc_data:
   minio_rc_data:
+
+networks:
+  # apps/web -> apps/api only. The subnet is deterministic so apps/api can be
+  # told which range its reverse proxy connects from; override LUKE_RC_EDGE_SUBNET
+  # on a host where this range collides with something else.
+  edge:
+    ipam:
+      config:
+        - subnet: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}
+
+  # postgres and minio live here and nowhere else. `internal: true` gives the
+  # network no gateway, so nothing on it can reach — or be reached from —
+  # outside the stack. apps/api is the only service on both, which is what makes
+  # "only apps/web can be apps/api's peer" a property of the topology rather
+  # than an assumption in a comment.
+  data:
+    internal: true
