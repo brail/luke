@@ -38,7 +38,10 @@ overrides:
   # e `pnpm update` non può scavalcarlo. GHSA-7p8r-x3mc-p8w7 su <=3.1.4.
   # Il limite superiore c'è perché un override senza tetto trascina ogni consumer
   # transitivo su una major nuova: `>=3.1.5` da solo risolveva a 4.1.2.
-  fast-uri: '>=3.1.5 <4'
+  # Floor raised to 3.1.6 for GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc,
+  # GHSA-fph4-wmhf-6fwf and GHSA-jqff-g426-hqxp (host confusion via skipped IDN
+  # canonicalisation) on <=3.1.5.
+  fast-uri: '>=3.1.6 <4'
   # GHSA-5p4m-2wfm-xmqj su <=4.3.0. Range, per la stessa ragione di fast-uri.
   js-yaml: '>=4.3.1 <5'
   protobufjs: '7.6.5'
