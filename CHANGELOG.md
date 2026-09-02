@@ -4,6 +4,26 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.1.4] - 2026-09-02
+
+### CI
+- **security**: Scan active release train weekly
+- **security**: Match release trains by pattern instead of by name
+
+### Dependencies
+- **deps**: Bump google/osv-scanner-action in the actions-updates group (#26)
+
+### Fixed
+- **deps**: Patch mysql2 on stable line
+- **deps**: Patch browserslist on stable line
+- **deps**: Patch qs and fast-uri, move fastify to the 5.12.1 line
+- **api**: Validate the proxy address instead of trusting a hop count
+
+### Other
+- Merge pull request #28 from brail/hotfix/mysql2-main
+
+fix(deps): patch mysql2 and browserslist on the stable line
+
 ## [2.1.3] - 2026-08-25
 
 ### Fixed
