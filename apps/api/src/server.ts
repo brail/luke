@@ -45,7 +45,7 @@ import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler
 import { rateLimitStore } from './lib/ratelimit';
 import { registerRetentionScheduler } from './lib/retentionScheduler';
 import { createContext } from './lib/trpc';
-import { trustProxy } from './lib/trustProxy';
+import { createTrustProxy } from './lib/trustProxy';
 import {
   pinoTraceMiddleware,
   // pinoSerializers,
@@ -86,7 +86,12 @@ const fastify = Fastify({
   requestTimeout: 360_000, // 6 min — aligned with Next.js proxyTimeout and the NAV pool (300 s + margin)
   connectionTimeout: 0,    // disabled — requestTimeout handles the total limit
   routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
-  trustProxy, // see lib/trustProxy.ts — security-critical, do not inline a literal here
+  // see lib/trustProxy.ts — security-critical, do not inline a literal here.
+  // Throws at construction when the range is missing or invalid in production.
+  trustProxy: createTrustProxy(
+    process.env.LUKE_TRUSTED_PROXY_CIDR,
+    process.env.NODE_ENV
+  ),
 });
 
 // Register global handler/onError for logging and a safe response

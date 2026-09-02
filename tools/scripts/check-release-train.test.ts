@@ -82,8 +82,17 @@ test('previous stable, hotfix, rc train, merge to main, then graduation', () => 
   git(dir, 'tag', 'v2.1.4');
   git(dir, 'merge', '-q', '--no-ff', '-m', 'chore: merge release train', 'develop-2.2');
 
-  // The bug: from this commit `git describe` answers v2.1.4, not the train.
-  assert.equal(git(dir, 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*'), 'v2.1.4');
+  // Across the merge both tags sit one commit away, and which of them
+  // `git describe` returns is decided by traversal order rather than by
+  // anything about the release — it answered v2.1.4 here for a while and then
+  // started answering the rc. That instability is the point: it is not a source
+  // of truth for "which train am I graduating". The deterministic form of the
+  // same trap is the next test, where the hotfix tag is unambiguously nearer.
+  const described = git(dir, 'describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*');
+  assert.ok(
+    ['v2.1.4', 'v3.0.0-rc.2'].includes(described),
+    `git describe returned ${described}, neither of the two equidistant tags`
+  );
 
   const g = selectGraduation(dir);
   assert.equal(g.tag, 'v3.0.0');

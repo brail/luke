@@ -366,7 +366,17 @@ import { cn } from '../../../../lib/utils';
 `.env` allows ONLY infrastructural bootstrap. Everything else goes in AppConfig.
 
 **Allowed in API `.env`**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`,
-`LUKE_CORS_ALLOWED_ORIGINS`, `OTEL_*`, `LOG_LEVEL`, `APP_VERSION`
+`LUKE_CORS_ALLOWED_ORIGINS`, `LUKE_TRUSTED_PROXY_CIDR`, `OTEL_*`, `LOG_LEVEL`,
+`APP_VERSION`
+
+`LUKE_TRUSTED_PROXY_CIDR` is infrastructural for the same reason
+`LUKE_CORS_ALLOWED_ORIGINS` is: it describes the network boundary, and
+`trustProxy` is read once when the Fastify instance is constructed — before any
+database connection exists, so AppConfig cannot supply it. The compose files
+set it from the same interpolation that creates the `edge` network, so the
+subnet Docker builds and the range apps/api trusts have one source. Missing or
+invalid in production, apps/api refuses to start
+(`apps/api/src/lib/trustProxy.ts`).
 (build-time metadata injected as a Docker `ARG`/`ENV` from the git tag in CI —
 not a secret, never read from AppConfig to avoid drift from the running image)
 

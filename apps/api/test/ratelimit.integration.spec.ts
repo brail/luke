@@ -7,7 +7,7 @@ import Fastify from 'fastify';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { rateLimitStore } from '../src/lib/ratelimit';
-import { trustProxy } from '../src/lib/trustProxy';
+import { TrustedProxyConfigError, createTrustProxy } from '../src/lib/trustProxy';
 
 import {
   setupTestDb,
@@ -17,6 +17,8 @@ import {
   expectToThrow,
   TEST_USER_PASSWORD,
 } from './helpers';
+
+import type { FastifyServerOptions } from 'fastify';
 
 
 describe('Rate-Limit Integration', () => {
@@ -369,67 +371,125 @@ describe('Rate-Limit Integration', () => {
   // correctly from X-Forwarded-For. That resolution is invisible to the tests
   // above: createCallerWithIP stubs req.ip directly on a fake context, never
   // exercising fastify's real HTTP layer or trustProxy option. This is the one
-  // spot that does — it proves the resolution itself, at the HTTP level, using
-  // the exact trustProxy value server.ts wires up (see lib/trustProxy.ts).
-  describe('trustProxy hop resolution (fastify HTTP layer)', () => {
-    async function buildTrustProxyTestServer() {
+  // spot that does — it proves the resolution itself, at the HTTP level, through
+  // the same factory server.ts wires up (see lib/trustProxy.ts).
+  //
+  // The previous version of this block called itself an "anti-spoofing proof"
+  // while running every X-Forwarded-For case from remoteAddress 10.0.0.5 — the
+  // *trusted* peer. It therefore never asked the only question that matters:
+  // what happens when the peer is not the proxy. Under the hop-only predicate
+  // it used to assert, the answer was that request.ip became whatever the
+  // attacker wrote (GHSA-3m5p-2c4r-xxw2).
+  describe('trustProxy address resolution (fastify HTTP layer)', () => {
+    // apps/web on the compose `edge` network, whose subnet is the value
+    // LUKE_TRUSTED_PROXY_CIDR carries.
+    const EDGE_CIDR = '10.254.10.0/24';
+    const EDGE_PEER = '10.254.10.5';
+    // Anything else that manages to open a socket to apps/api directly.
+    const UNTRUSTED_PEER = '203.0.113.9';
+    const REAL_CLIENT = '203.0.113.7';
+
+    async function serverWith(trustProxy: FastifyServerOptions['trustProxy']) {
       const fastify = Fastify({ trustProxy });
       fastify.get('/whoami', async (request) => ({ ip: request.ip }));
       await fastify.ready();
       return fastify;
     }
 
-    it('trusts the one hop apps/web sits behind: X-Forwarded-For resolves to the real client IP', async () => {
-      const fastify = await buildTrustProxyTestServer();
+    async function ipFor(
+      trustProxy: FastifyServerOptions['trustProxy'],
+      remoteAddress: string,
+      xff?: string
+    ) {
+      const fastify = await serverWith(trustProxy);
       try {
-        // remoteAddress simulates the apps/web container's socket connection
-        // (the only possible direct peer per docker-compose network topology).
-        // A single X-Forwarded-For entry simulates NPM's own append.
         const response = await fastify.inject({
           method: 'GET',
           url: '/whoami',
-          remoteAddress: '10.0.0.5',
-          headers: { 'x-forwarded-for': '203.0.113.7' },
+          remoteAddress,
+          headers: xff === undefined ? {} : { 'x-forwarded-for': xff },
         });
-        expect(response.json().ip).toBe('203.0.113.7');
+        return response.json().ip as string;
       } finally {
         await fastify.close();
+      }
+    }
+
+    const shipped = () => createTrustProxy(EDGE_CIDR, 'production');
+
+    it('resolves the real client IP for the edge peer with an NPM-appended chain', async () => {
+      // NPM uses $proxy_add_x_forwarded_for, which appends its resolved peer.
+      expect(await ipFor(shipped(), EDGE_PEER, REAL_CLIENT)).toBe(REAL_CLIENT);
+    });
+
+    it('ignores a leftmost entry the client supplied itself', async () => {
+      // The attacker's value sits to the LEFT of what NPM appends.
+      const ip = await ipFor(shipped(), EDGE_PEER, `198.51.100.9, ${REAL_CLIENT}`);
+      expect(ip).toBe(REAL_CLIENT);
+      expect(ip).not.toBe('198.51.100.9');
+    });
+
+    it('ignores a forged header from a peer outside the trusted range', async () => {
+      // The case the old block never ran. Under a hop-only predicate this
+      // returns 9.9.9.9 and every keyBy:'ip' bucket becomes attacker-chosen.
+      const ip = await ipFor(shipped(), UNTRUSTED_PEER, '9.9.9.9');
+      expect(ip).toBe(UNTRUSTED_PEER);
+      expect(ip).not.toBe('9.9.9.9');
+    });
+
+    it('ignores an in-range hop the client injected into the chain', async () => {
+      // A bare CIDR string handed to fastify walks past this and returns the
+      // leftmost value. `hop < 1` is what stops it.
+      const ip = await ipFor(shipped(), EDGE_PEER, `9.9.9.9, 10.254.10.7`);
+      expect(ip).toBe('10.254.10.7');
+      expect(ip).not.toBe('9.9.9.9');
+    });
+
+    it('falls back to the raw socket address when there is no X-Forwarded-For', async () => {
+      expect(await ipFor(shipped(), UNTRUSTED_PEER)).toBe(UNTRUSTED_PEER);
+    });
+
+    // ── The two rejected shapes, asserted to be rejected for a reason ────────
+
+    it('a hop-only predicate would let an untrusted peer forge request.ip', async () => {
+      const hopOnly: FastifyServerOptions['trustProxy'] = (_address, hop) => hop < 1;
+      expect(await ipFor(hopOnly, UNTRUSTED_PEER, '9.9.9.9')).toBe('9.9.9.9');
+      // ...which is exactly what the shipped predicate refuses.
+      expect(await ipFor(shipped(), UNTRUSTED_PEER, '9.9.9.9')).toBe(UNTRUSTED_PEER);
+    });
+
+    it('numeric trustProxy: 1 is disabled by fastify and collapses every client onto the proxy', async () => {
+      // Fastify 5.12.1 fixed GHSA-3m5p-2c4r-xxw2 by making the numeric form
+      // return false. It is safe and useless: every request reports the web
+      // container's address, so one rate-limit bucket is shared by everyone —
+      // the CRITICAL this whole mechanism exists to prevent.
+      // The 5.12.1 fix also removed the numeric form from the TypeScript union,
+      // so this cast is the only way to reach the runtime behaviour at all —
+      // which is itself part of what this test records.
+      const numeric = 1 as unknown as FastifyServerOptions['trustProxy'];
+      expect(await ipFor(numeric, EDGE_PEER, REAL_CLIENT)).toBe(EDGE_PEER);
+      expect(await ipFor(shipped(), EDGE_PEER, REAL_CLIENT)).toBe(REAL_CLIENT);
+    });
+
+    // ── Configuration fails closed ──────────────────────────────────────────
+
+    it('rejects an invalid range instead of trusting nothing silently', () => {
+      for (const bad of ['not-a-cidr', '10.254.10.0/99', '10.254.10.0/24, nonsense']) {
+        expect(() => createTrustProxy(bad, 'production')).toThrow(TrustedProxyConfigError);
       }
     });
 
-    it('does not let a client-supplied hop spoof req.ip past the trusted one (anti-spoofing proof)', async () => {
-      const fastify = await buildTrustProxyTestServer();
-      try {
-        // An attacker sending their own X-Forwarded-For header ends up to the
-        // LEFT of whatever NPM appends (NPM appends, never overwrites). If
-        // trustProxy trusted more than the one real hop, this attacker-chosen
-        // value would leak through as req.ip, defeating every keyBy:'ip'
-        // rate-limit bucket by letting the attacker pick their own bucket key.
-        const response = await fastify.inject({
-          method: 'GET',
-          url: '/whoami',
-          remoteAddress: '10.0.0.5',
-          headers: { 'x-forwarded-for': '198.51.100.9, 203.0.113.7' },
-        });
-        expect(response.json().ip).toBe('203.0.113.7');
-        expect(response.json().ip).not.toBe('198.51.100.9');
-      } finally {
-        await fastify.close();
+    it('refuses to start in production without a configured range', () => {
+      for (const missing of [undefined, '', '   ', ' , ']) {
+        expect(() => createTrustProxy(missing, 'production')).toThrow(TrustedProxyConfigError);
       }
     });
 
-    it('falls back to the raw socket address when there is no X-Forwarded-For at all', async () => {
-      const fastify = await buildTrustProxyTestServer();
-      try {
-        const response = await fastify.inject({
-          method: 'GET',
-          url: '/whoami',
-          remoteAddress: '203.0.113.9',
-        });
-        expect(response.json().ip).toBe('203.0.113.9');
-      } finally {
-        await fastify.close();
-      }
+    it('reads no forwarded headers at all when unconfigured outside production', async () => {
+      // Local `pnpm dev` has no proxy, so the socket address is the client.
+      const dev = createTrustProxy(undefined, 'development');
+      expect(dev).toBe(false);
+      expect(await ipFor(dev, UNTRUSTED_PEER, '9.9.9.9')).toBe(UNTRUSTED_PEER);
     });
   });
 });

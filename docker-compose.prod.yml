@@ -19,6 +19,8 @@
 services:
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
+    networks:
+      - data
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -40,6 +42,9 @@ services:
 
   # ── Fastify API ──────────────────────────────────────────────────────────────
   api:
+    networks:
+      - edge
+      - data
     image: ghcr.io/brail/luke-api:latest
     pull_policy: always
     restart: unless-stopped
@@ -47,6 +52,9 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      # Same interpolation as the `edge` network below: the subnet Docker
+      # builds and the range apps/api trusts cannot drift apart.
+      LUKE_TRUSTED_PROXY_CIDR: ${LUKE_EDGE_SUBNET:-10.254.10.0/24}
       NODE_ENV: production
       PORT: 3001
       DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
@@ -70,6 +78,8 @@ services:
 
   # ── Next.js web ───────────────────────────────────────────────────────────────
   web:
+    networks:
+      - edge
     image: ghcr.io/brail/luke-web:latest
     pull_policy: always
     restart: unless-stopped
@@ -95,6 +105,8 @@ services:
 
   # ── SeaweedFS object storage (S3-compatible) ──────────────────────────────────
   seaweedfs:
+    networks:
+      - data
     image: chrislusf/seaweedfs:latest
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
@@ -120,3 +132,20 @@ volumes:
   postgres_data:
   api_data:
   seaweedfs_data:
+
+networks:
+  # apps/web -> apps/api only. The subnet is deterministic so apps/api can be
+  # told which range its reverse proxy connects from; override LUKE_EDGE_SUBNET
+  # on a host where this range collides with something else.
+  edge:
+    ipam:
+      config:
+        - subnet: ${LUKE_EDGE_SUBNET:-10.254.10.0/24}
+
+  # postgres and seaweedfs live here and nowhere else. `internal: true` gives
+  # the network no gateway, so nothing on it can reach — or be reached from —
+  # outside the stack. apps/api is the only service on both, which is what makes
+  # "only apps/web can be apps/api's peer" a property of the topology rather
+  # than an assumption in a comment.
+  data:
+    internal: true
