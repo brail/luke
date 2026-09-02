@@ -394,7 +394,28 @@ Never `prisma migrate reset` in production.
 ## Versioning & Release
 
 **SemVer**: `patch` = fix/refactor/chore/migration without a feature;
-`minor` = new visible functionality; `major` = breaking change to API/contracts.
+`minor` = new visible functionality; `major` = breaking change to a supported
+compatibility contract.
+
+**`!` / `BREAKING CHANGE` is reserved for a contract Luke actually supports
+across an upgrade**, which is one of:
+
+- the external/public API surface — anything called from outside this repo;
+- persisted data and migration compatibility;
+- supported configuration — AppConfig keys and the values they accept, `.env`
+  bootstrap;
+- the deployment/upgrade contract — image tags, volumes, entrypoint behaviour.
+
+A coordinated internal change is **not** breaking merely because a function
+signature or a tRPC input shape changed. If every caller lives in this monorepo
+and moves in the same commit, nothing an operator or a client can observe
+broke, and the release is `feat` or `fix`. The test is whether somebody outside
+this repository — an operator upgrading, a stored row, a client we support —
+has to do something. `apps/web` is not that somebody; a standalone client on
+the API would be.
+
+The label is expensive in both directions: it spends a major version, and
+mid-train it cannot even deliver one — see the frozen-target note below.
 
 **Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
@@ -472,7 +493,8 @@ CHANGELOG via `git-cliff`, validated by `.husky/commit-msg` (commitlint).
 - Format: `<type>(<scope>)?: <description>`
 - Types: `feat` (minor) | `fix` (patch) | `docs` | `style` | `refactor` | `perf` |
   `test` | `chore` | `ci`
-- Breaking: `!` after the type (`feat!:`) or footer `BREAKING CHANGE: ...`
+- Breaking: `!` after the type (`feat!:`) or footer `BREAKING CHANGE: ...` —
+  only for a supported compatibility contract, see **Versioning & Release**
 - Recommended scopes: `core`, `api`, `web`, `nav`, and functional domains
   (`merch`, `pricing`, `rbac`, `sourcing`, `auth`, `dashboard`, `calendar`, `company`)
 - **Always and only in English** — subject, body and footer. Same rule as
