@@ -2488,3 +2488,152 @@ The immediate next planned cycle is the **`@luke/api` package-contract boundary*
 - remove source bleed and any obsolete build/deployment accommodations only after proof, not by symmetry.
 
 `6.2` dependency-boundary enforcement follows after the real package contracts exist; enforcing direction over a package that publishes its own sources would encode the wrong graph.
+
+# Appendix K — Cycle 9 prologue: release-control closure and stable-line security remediation (2026-09-02)
+
+Appends to Appendices A–J; neither the historical body nor any earlier appendix is rewritten. Work spans two branches: `develop-2.2` (`ec91893` → `2485ae4`) and the stable line via PR #28 (`ee706c5` → `e119473`, merged as `d912acd`), reunited by the synchronization merge recorded in §K.10.
+
+## K.1 Disposition
+
+**Release-control plane: CLOSED.** Tag provenance, RC-train versioning, stable graduation and branch-pattern drift are each enforced by an executable gate with both-direction regression tests, not by convention.
+
+**Stable-line dependency remediation: CLOSED.** Five packages across two branches; `osv-scanner` reports no issues on both trees and Dependabot has no open alerts.
+
+**Trusted-proxy defect: CLOSED.** `GHSA-3m5p-2c4r-xxw2` was not remediable by a version bump on either branch; §K.7 records why.
+
+Cycle 9 — the `@luke/api` package contract — is **not started**. No release has been prepared and no `v3.*` tag exists.
+
+## K.2 Release provenance
+
+`release.yml` decided both the release channel and the registry tags from `contains(github.ref_name, '-rc')`. That expression answers neither question: it is a substring test on a name the tagger chooses, so it cannot tell where the tagged commit lives, and it is not a SemVer check — `v2.2` passes the `v*` trigger, produces no `type=semver` tag at all, and pushes an unversioned image with every step green.
+
+Replaced by `tools/scripts/check-release-provenance.ts`, a job all build/push jobs depend on:
+
+| shape | required origin | publishes |
+| --- | --- | --- |
+| `vX.Y.Z` | reachable from `main` | version + `X.Y` + `latest`, never `rc-latest` |
+| `vX.Y.Z-rc.N` | reachable from the release train **and not yet from `main`** | version + `rc-latest`, never `latest`, never `X.Y` |
+
+The rc rule needs both halves: `main` is an ancestor of the train, so one-sided reachability would admit an rc tag placed on a `main`-only commit. The negative half also retires the rc channel by itself once the train is merged.
+
+Every registry tag now comes from the gate's outputs, including the version — `docker/metadata-action`'s own `type=semver` parser could otherwise disagree silently.
+
+**Proved against real repository SHAs** (train `88e5b7a`, `main` `0005616`, where `main` *is* an ancestor of the train): rc on the train tip accepted; rc on `main`'s tip rejected; stable on `main` accepted; stable on the train tip rejected; ten malformed shapes rejected (`v3.0`, `v3.0.0.1`, `v3.0.0-rc1`, `v3.0.0-rc.0`, `v3.0.0-rc.01`, `v03.0.0`, `v3.0.0-beta.1`, `v3.0.0-rc.1.2`, `v3.0.0+build.5`, `vnext`); rendered ghcr tag lists checked for both channels.
+
+## K.3 Stable graduation selection
+
+`release-prepare stable` found its train with `git describe --tags --abbrev=0`, which answers proximity, not recency. Reproduced: with `v2.1.3`, a `v2.1.4` hotfix on `main` and `v3.0.0-rc.1` on the train, `git describe` from the merge returns `v2.1.4`, so `stable` refused while `auto`/`rc` proposed `v3.0.0-rc.2` — an rc tag on `main`, which the provenance gate then rejects. **All three modes failed on the only branch a stable tag may be cut from.**
+
+`tools/scripts/check-release-train.ts` replaces proximity with reachability. A train is a candidate when its stable tag exists nowhere and is greater than the highest stable tag reachable from `HEAD`; exactly one candidate graduates, zero and several both fail closed. The comparison is what excludes this repository's own abandoned train — `v1.10.0-rc.1..15` are reachable and `v1.10.0` was never tagged, because that cycle shipped as 2.0.0.
+
+## K.4 Non-empty changelog protection
+
+At graduation there are normally no commits after the final rc, so `git-cliff --unreleased` produced `## [X.Y.Z]` with nothing under it, and the readiness check only grepped for the heading — the script printed "Ready" and `.husky/pre-push` accepted the tag. `[1.9.0]` in `CHANGELOG.md` is what that looks like once shipped: two lines, "Merge develop-2.0" and "Bump version".
+
+Stable mode now generates over `<previous stable>..HEAD` with `--ignore-tags` erasing the rc boundaries, yielding one consolidated section instead of one per candidate; starting at the previous release also excludes what that release already published. Both the script and `.husky/pre-push` count entries under the heading. Measured end to end: 159 entries under rc.1, 1 under rc.2, **162 under the graduated `[3.0.0]`**, a single heading, and a CHANGELOG diff that only adds. Crafted-file check: empty and whitespace-only sections rejected where the old `grep` accepted both.
+
+## K.5 Fail-closed guards
+
+**Exact-SHA.** `--expected-sha` was optional, and `flag()` returns `''` rather than `undefined`, so `--expected-sha ""` skipped the commit-identity comparison entirely and the gate authorized whatever commit the job sat on. Now required and validated as 40 lowercase hex: omitted, empty, whitespace-only, truncated, over-long, uppercase and well-formed-but-wrong all reject.
+
+**Stable line.** `check-release-train.ts` is deliberately branch-agnostic, so on the release train it found the ungraduated train and answered `v3.0.0`. Preparing there rewrote `CHANGELOG.md` and all seven `package.json` files, `.husky/pre-push` then accepted the tag because CHANGELOG and versions genuinely did match, and only `release.yml` refused it — with the tag already on the remote. A publication gate that fails closed is not enough when it fails last.
+
+`stable` now proves `HEAD` is on the stable line before the selector is consulted and before anything is written; `auto`/`rc` ask the same predicate in the opposite direction. Two accepting states, the second needing both halves: `HEAD` reachable from the stable ref; or the checked-out branch is the stable branch **and** the stable ref is an ancestor of `HEAD`. Branch name alone is never sufficient — a local `main` reset onto the train could only reach the remote by force, which ruleset 22082017 forbids.
+
+Automated in `tools/scripts/check-release-stable-line.test.ts`, which executes the real shell script in a throwaway repository with no workspace and no `pnpm` reachable, asserting the diagnostic, the exit status and that `git ls-files -s` is unchanged.
+
+## K.6 Branch-pattern drift enforcement
+
+The active release train was named twice in `security.yml`, and `on:` filters cannot read `env`. Drift there is silent: update one and not the other at a cycle switch and the weekly OSV job keeps scanning the previous train, which still exists during the overlap, so nothing goes red while the new train gets no post-disclosure coverage for a whole cycle.
+
+`security.yml`'s push filter now matches `[main, 'develop-*', 'release/*']` by pattern and needs no per-cycle edit. What a pattern cannot cover is machine-checked by `tools/scripts/check-workflow-branches.ts`, wired into `pnpm check:drift`: the filter still matches `RELEASE_TRAIN_BRANCH`, `release.yml` names the same train, and `ci.yml`'s `push` and `pull_request` filters cover both the train and `main`. CLAUDE.md's per-cycle checklist is corrected to three places and is now build-enforced.
+
+## K.7 Dependency remediation
+
+| package | before | after | advisories | branch |
+| --- | --- | --- | --- | --- |
+| mysql2 | 3.15.3 | 3.24.2 | GHSA-3f6p-5ww8-9rcr, GHSA-rgwj-5xj2-c3m3 | main |
+| browserslist | 4.28.4 | 4.28.8 | GHSA-73wf-gq98-2v4g, GHSA-c83g-rgw3-j3cx | main |
+| qs | 6.15.3 | 6.16.0 | GHSA-4mjr-xmp4-gh2g, GHSA-x5fp-wj9c-mxmx | both |
+| fast-uri | 3.1.5 | 3.1.6 | GHSA-5jgf-p345-68v8 + 3 related | main (develop already 3.1.6) |
+| fastify | 5.8.5 | 5.12.1 | GHSA-3m5p-2c4r-xxw2 | main (develop already 5.12.1) |
+
+**Dependabot root cause, from run 33578854105 rather than inferred:** `security_update_not_possible`, "The latest possible version of mysql2 that can be installed is 3.15.3". mysql2 has one requirer, the `prisma` CLI, which declares it as an **exact pin**. Dependabot had no requirement to unlock and does not author pnpm overrides — so the advisory could not close on any branch without a workspace override. That is why mysql2 needed one and qs did not: qs's two requirers declare caret ranges that already admit the fix.
+
+qs was verified **unreachable** rather than assumed: both advisories are parse-side and need preconditions this tree never creates (`plainObjects`/`allowPrototypes` for the isBuffer DoS, `comma: true` for the array-limit bypass). The runtime requirer, `googleapis-common` via `@luke/calendar`, only calls `qs.stringify(params, { arrayFormat: 'repeat' })`; the single real `qs.parse` is `superagent`'s urlencoded response parser, default options, devDependency only.
+
+The qs and fast-uri advisories were published **2026-09-02 between 14:45 and 15:44 UTC**, after the trees they affected had already scanned clean — the exact post-disclosure window §K.6's release-train scan exists for, arriving before that job's first scheduled run.
+
+**Accepted resolver collateral:** `postcss 8.5.26` enters alongside 8.5.24 on the stable line. `next` pins postcss `8.4.31` exactly and the pre-existing `postcss@<8.5.18: '>=8.5.18'` override rewrites that to an unbounded range, so every `pnpm update` takes the newest 8.5.x. Measured as unavoidable without an override that was ruled out; above the security floor and the version `develop-2.2` already resolved. Recorded, not hidden.
+
+## K.8 Why Fastify needed more than a version bump
+
+`GHSA-3m5p-2c4r-xxw2`: the hop-count form of `trustProxy` "compiles to a predicate that structurally ignores the address argument". Fastify 5.12.1 fixes it by **disabling the numeric form at runtime** — and that fix alone is not a remediation for this repository, in either direction:
+
+- **`main`** ran `trustProxy: 1`. Bumping to 5.12.1 makes every request report the web container's address, collapsing all users into one rate-limit bucket — the CRITICAL from the 2026-08-07 audit, restored.
+- **`develop-2.2`** already ran 5.12.1 and scanned clean, but `lib/trustProxy.ts` held `(_address, hop) => hop < 1` — a hand-written custom function reproducing exactly the semantics the patch removed. The advisory is explicit: "Custom functions must inspect the `address` argument, not only the hop index." **The branch was behaviourally vulnerable despite resolving the patched version.** The module's comment had also mischaracterised the 5.12 change as a regression that "fails closed silently", and worked around it.
+
+Reproduced under 5.12.1 before any change, via `inject({ remoteAddress })`: an untrusted peer sending `X-Forwarded-For: 9.9.9.9` resolved `request.ip` to `9.9.9.9`, choosing its own `keyBy:'ip'` bucket in `lib/ratelimit.ts` and writing a forged address into `lib/auditLog.ts`.
+
+**Both halves are load-bearing**, and each is separately mutation-proved:
+
+```
+hop < 1 && isTrustedAddress(address, hop)
+```
+
+Without the address check an untrusted peer forges `request.ip` (2 tests fail). Without the hop check a client injects a hop whose address is itself inside the trusted range — `X-Forwarded-For: 9.9.9.9, 10.254.10.7` — walks the compiled predicate past it and gets the leftmost value back, which is the hole a bare CIDR string handed to Fastify leaves open (1 test fails). Parsing and matching use `@fastify/proxy-addr`, declared directly rather than reached through Fastify's dependencies; its `compile()` throws on an invalid range, so a deployment typo fails at boot.
+
+**Network isolation is the other half of the remediation.** No compose file declared `networks:` at all, so `postgres`, `api`, `web` and the object store shared one default bridge: "only apps/web can reach apps/api" was true of intent, not of topology. Three distinct claims were conflated and are now separated — *not publicly port-mapped* (provable from the repo), *not reachable by an Internet attacker* (not provable here; depends on host firewall and what else runs on the Docker host), *reachable only by one trusted peer* (was **false**). Now `edge` carries web and api, `data` carries api, postgres and object storage with `internal: true`, and api is the only service on both. The edge subnet is deterministic — `10.254.10.0/24` prod, `10.254.20.0/24` rc — overridable via `LUKE_EDGE_SUBNET`/`LUKE_RC_EDGE_SUBNET`, and `LUKE_TRUSTED_PROXY_CIDR` is interpolated from the **same expression** that creates the network, so the subnet Docker builds and the range apps/api trusts cannot drift apart. Defaults work with no new operator input, which is why this landed as hardening rather than a breaking change.
+
+The pre-existing test block called itself an "anti-spoofing proof" while running every `X-Forwarded-For` case from the *trusted* address, so it never asked the only question that mattered.
+
+## K.9 Governance state
+
+**PR #28** — `hotfix/mysql2-main` → `main`, six commits, merged as a two-parent merge commit **`d912acd9184faaf474b3e51662909663c857a9d2`** at 2026-09-02T17:44:27Z, pinned to head `e119473d6877fc3a04778ae0dac436d5b101d632`. No squash, no rebase, no administrator bypass.
+
+**Issue #29** ("Security workflow failing on develop-2.2") — opened automatically by `notify-on-failure` when `osv-push` first caught the qs advisory; closed 2026-09-02T17:49:24Z after both lines were remotely green.
+
+**PR #30** — `chore(deps): bump fastify from 5.8.5 to 5.12.1`, opened by Dependabot and **closed automatically as redundant** at 17:46:32Z, two minutes after the PR #28 merge, with "Looks like fastify is up-to-date now, so this is no longer needed." No human action; recorded because it is evidence the remediation reached `main`, not a separate change.
+
+**Rulesets** (repository had none before this cycle):
+
+| id | name | target | rules |
+| --- | --- | --- | --- |
+| 22082017 | main integrity | `refs/heads/main` | deletion, non_fast_forward |
+| 22082018 | release train integrity | `refs/heads/develop-*`, `refs/heads/release/*` | deletion, non_fast_forward |
+| 22132087 | main review gate | `refs/heads/main` | pull_request, required_status_checks |
+
+All three `active` with **zero bypass actors**. The review gate requires a PR with `required_approving_review_count: 0` — no fake human-approval requirement for a single-maintainer repository — plus strict up-to-date status checks on exactly `Lint, TypeCheck & Unit Tests`, `Integration Tests` and `Migrations`, all pinned to `integration_id: 15368`. Security checks are deliberately not required: `security.yml` has no `pull_request` trigger and produces no PR checks.
+
+## K.10 Synchronization merge
+
+`main` was merged back into `develop-2.2` as a real two-parent merge, first parent `2485ae4a9be40de07d8605e4fcd514ffb54129cb`, second parent `d912acd9184faaf474b3e51662909663c857a9d2`.
+
+Five conflicts, resolved against the resulting architecture rather than by choosing a parent: `apps/api/package.json` took develop's newer set (nothing on `main` was newer; `main`'s only unique entry was the deprecated `@opentelemetry/instrumentation-fastify` that `06fb83b` replaced with `@fastify/otel`); both compose files took develop's SeaweedFS topology, with MinIO and its init service absent from the result; `pnpm-workspace.yaml` was genuinely merged, keeping develop's overrides and carrying `main`'s `browserslist: '>=4.28.7 <5'` floor, with the mysql2 comment reconciled to cover both advisories and to stop naming a prisma version the override outlives; `pnpm-lock.yaml` was resolved from the merged manifests, which needed exactly one added line — the browserslist override — with **zero package movement**, because develop had already resolved 4.28.8 on its own.
+
+The first-parent delta against `2485ae4` is therefore two files and 17 insertions.
+
+Final resolutions: qs 6.16.0, fast-uri 3.1.6, fastify 5.12.1, browserslist 4.28.8, mysql2 3.24.2, sharp 0.35.4, postcss 8.5.23 + 8.5.26. No package regressed and no unrelated version entered.
+
+## K.11 Verification evidence
+
+**Local, on the merged tree** — lint, typecheck, typecheck:test and unit tests 23/23 uncached; `typecheck:root`; tools lint, typecheck and **143 tests**; `check:drift` all five checkers including `[workflow-branches] ok`; module contract; **532 integration tests** (+1 expected fail) against PostgreSQL 16; **59 browser tests**; production and RC compose resolving with default *and* overridden edge subnets, single-source-of-truth matching in all four; `osv-scanner`: **no issues found**.
+
+**Mutation proofs, all re-run after the merge** — removing the stable-line guard fails 4 tests; reverting train selection to `git describe` fails 7 of 12; the hop-only `trustProxy` predicate fails 2; the address-only predicate fails 1.
+
+**Remote**
+
+| SHA | branch | CI | Security |
+| --- | --- | --- | --- |
+| `2485ae4` | develop-2.2 | 33661476297 ✅ | 33661476304 ✅ |
+| `e119473` | hotfix PR #28 | 33661504186 ✅ (PR) | 33661551616 ✅ (dispatch) |
+| `d912acd` | main | 33662937653 ✅ | 33662937606 ✅ |
+| `6168a53` | develop-2.2 (merge) | 33664969954 ✅ | 33664970003 ✅ |
+
+The dispatched run 33661551616 proved both halves of §K.6's design in one invocation, verified from the job logs: `osv-weekly` checked out `refs/remotes/origin/hotfix/mysql2-main` at `e119473`, `osv-weekly-release-train` checked out `refs/remotes/origin/develop-2.2` at `2485ae4`. On every push run, `gitleaks`, `semgrep` and `osv-push` are `success` and the two weekly jobs are correctly `skipped`.
+
+## K.12 Execution status and next work
+
+No `v3.*` tag exists on the remote (remote tag count unchanged at 56), `pnpm release:prepare` has not been run in any mode, and no release artifact has been built from either line. `git-cliff --bumped-version` on `develop-2.2` continues to compute **v3.0.0**, justified by the `storage.type` AppConfig contract break in `612c9a6` — a supported-configuration change under the policy recorded in `ca23216`, independent of the `feat(calendar)!` label, which that policy would not apply today.
+
+The immediate Cycle 9 objective is unchanged from §J.10: the **`@luke/api` package-contract boundary** — stop `apps/web` and the root scripts program consuming `apps/api/src`, establish an explicit built type contract for the tRPC `AppRouter` surface, and make it package- and `exports`-based as `@luke/core`, `@luke/nav` and `@luke/calendar` already are. Not started.
