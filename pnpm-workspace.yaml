@@ -59,9 +59,20 @@ overrides:
   # dependency, even though this workspace's only schema.prisma declares
   # provider = "postgresql", and @prisma/client's own runtime code never
   # references it — nothing in this repo can reach the vulnerable path).
-  # GHSA-rgwj-5xj2-c3m3 on <=3.23.0 (decompression handling). Range, not a
-  # pin, for the same reason as fast-uri/js-yaml above: prisma pins mysql2 to
-  # an exact version, so pnpm update cannot move past it without this
-  # override, and a later patch should be picked up without editing this
-  # file again.
+  # Covers GHSA-3f6p-5ww8-9rcr (fixed 3.22.0) and GHSA-rgwj-5xj2-c3m3 (fixed
+  # 3.23.1, decompression handling) in one range. Range, not a pin, for the same
+  # reason as fast-uri/js-yaml above: prisma pins mysql2 to an exact version, so
+  # `pnpm update` cannot move past it without this override, and a later patch
+  # should be picked up without editing this file again. Deliberately not naming
+  # the prisma version the pin came from — it was 7.8.0 on the stable line and is
+  # 7.10.0 here, and the override outlives both.
   mysql2: '>=3.23.1 <4'
+  # Transitive only: no workspace manifest depends on browserslist. Its three
+  # requirers all declare ranges that already admit the patched line
+  # (@babel/helper-compilation-targets ^4.24.0, autoprefixer ^4.28.4,
+  # update-browserslist-db peer >= 4.21.0), so this is a floor rather than an
+  # unlock -- `pnpm update` reaches it too, but only by re-resolving the whole
+  # tree, which drags unrelated packages (next's postcss) along with it.
+  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx, both fixed in 4.28.7.
+  # Capped below 5.x for the same reason as fast-uri/js-yaml/mysql2 above.
+  browserslist: '>=4.28.7 <5'
