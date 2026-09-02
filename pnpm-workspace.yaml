@@ -38,9 +38,33 @@ overrides:
   # e `pnpm update` non può scavalcarlo. GHSA-7p8r-x3mc-p8w7 su <=3.1.4.
   # Il limite superiore c'è perché un override senza tetto trascina ogni consumer
   # transitivo su una major nuova: `>=3.1.5` da solo risolveva a 4.1.2.
-  fast-uri: '>=3.1.5 <4'
+  # Floor raised to 3.1.6 for GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc,
+  # GHSA-fph4-wmhf-6fwf and GHSA-jqff-g426-hqxp (host confusion via skipped IDN
+  # canonicalisation) on <=3.1.5.
+  fast-uri: '>=3.1.6 <4'
   # GHSA-5p4m-2wfm-xmqj su <=4.3.0. Range, per la stessa ragione di fast-uri.
   js-yaml: '>=4.3.1 <5'
   protobufjs: '7.6.5'
   sharp: '0.35.0'
   valibot: '>=1.4.2'
+  # Transitive via prisma: the CLI package declares mysql2 as a regular
+  # dependency pinned to an exact version (prisma@7.8.0 -> "mysql2": "3.15.3"),
+  # so nothing in the workspace can move it and Dependabot reports
+  # security_update_not_possible -- it has no requirement to unlock and does not
+  # author pnpm overrides. This workspace's only schema.prisma declares
+  # provider = "postgresql"; @prisma/client's runtime code never references
+  # mysql2, so the vulnerable code sits on disk and is never loaded.
+  # Covers GHSA-3f6p-5ww8-9rcr (fixed 3.22.0) and GHSA-rgwj-5xj2-c3m3
+  # (fixed 3.23.1) in one range. Range, not a pin, for the same reason as
+  # fast-uri/js-yaml above; capped below 4.x so a future breaking major cannot
+  # be dragged in silently.
+  mysql2: '>=3.23.1 <4'
+  # Transitive only: no workspace manifest depends on browserslist. Its three
+  # requirers all declare ranges that already admit the patched line
+  # (@babel/helper-compilation-targets ^4.24.0, autoprefixer ^4.28.4,
+  # update-browserslist-db peer >= 4.21.0), so this is a floor rather than an
+  # unlock -- `pnpm update` reaches it too, but only by re-resolving the whole
+  # tree, which drags unrelated packages (next's postcss) along with it.
+  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx, both fixed in 4.28.7.
+  # Capped below 5.x for the same reason as fast-uri/js-yaml/mysql2 above.
+  browserslist: '>=4.28.7 <5'
