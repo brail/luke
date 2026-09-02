@@ -7,6 +7,12 @@ on:
     - cron: '0 6 * * 1' # lunedì 06:00 UTC
   workflow_dispatch:
 
+env:
+  # The active release train. Named once here and once in the `push` filter
+  # above; part of the per-cycle branch switch (CLAUDE.md, "When switching
+  # develop branch"), together with ci.yml and release.yml.
+  RELEASE_TRAIN_BRANCH: develop-2.2
+
 jobs:
   semgrep:
     if: github.event_name != 'schedule'
@@ -69,6 +75,32 @@ jobs:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
+  # Same job, aimed at the active release train, because the rule above cuts
+  # both ways: a scheduled run reads the workflow from the default branch *and*
+  # checks out the default branch, so `osv-weekly` covers `main` and nothing
+  # else. `osv-push` is the train's only coverage, and it rides on pushes —
+  # which stop precisely during the RC freeze, the weeks when the train is a
+  # deployed artifact under test and no longer changing. That is the window
+  # this job exists for.
+  #
+  # An explicit second job rather than a matrix over a branch list: the branch
+  # is one name, changed once per cycle, and a matrix would buy generality this
+  # repository has never needed.
+  #
+  # It is deliberately not tolerant of a missing branch. Once the train is
+  # merged and deleted this job goes red, `notify-on-failure` opens an issue,
+  # and that is the reminder to retarget `RELEASE_TRAIN_BRANCH` at the next
+  # train — or to delete this job if there isn't one yet. A silent skip would
+  # instead let a whole cycle run with the train unscanned and nothing saying so.
+  osv-weekly-release-train:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TRAIN_BRANCH }}
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
+
   # `contains(needs.*.result, 'failure')` ignora gli skip: i job push-only sono
   # 'skipped' (non 'failure') sui trigger schedule, e viceversa, quindi questo
   # gate si comporta correttamente su entrambi i trigger. `if: always()` è
@@ -79,7 +111,7 @@ jobs:
   # GitHub Issue, perché non esiste uno Slack/webhook nel repo — niente nuovo
   # secret da gestire.
   notify-on-failure:
-    needs: [semgrep, gitleaks, osv-push, osv-weekly]
+    needs: [semgrep, gitleaks, osv-push, osv-weekly, osv-weekly-release-train]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     permissions:
