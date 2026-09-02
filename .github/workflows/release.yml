@@ -11,8 +11,73 @@ env:
   API_IMAGE: ghcr.io/brail/luke-api
   WEB_IMAGE: ghcr.io/brail/luke-web
   PNPM_VERSION: '10.32.1'
+  # The two lines a release may come from. `main` is permanent; the release
+  # train is the temporary branch of the current cycle and changes with it —
+  # the same per-cycle edit already required by the `branches` lists in ci.yml
+  # and security.yml (CLAUDE.md, "When switching develop branch").
+  STABLE_BRANCH: main
+  RELEASE_TRAIN_BRANCH: develop-2.2
 
 jobs:
+  # ── Gate: a tag may only publish what its provenance allows ─────────────────
+  # Runs before everything, including the CI reuse below, so a tag pushed from
+  # the wrong line costs nothing and publishes nothing.
+  #
+  # This replaces `contains(github.ref_name, '-rc')`, which decided the channel
+  # from a substring of a name the tagger chose. It could not tell where the
+  # tagged commit lived, so a stable tag cut by mistake from the release train
+  # moved every `latest` consumer onto unmerged code; and it was not a SemVer
+  # check either, so `v2.2` passed the `v*` trigger, produced no `type=semver`
+  # tag at all, and pushed an unversioned image with every step green.
+  #
+  # The reasoning lives in tools/scripts/check-release-provenance.ts, where it
+  # is typechecked by `typecheck:tools` and regression-tested by `test:tools` —
+  # both directions, since a gate that rejects a legitimate release is
+  # discovered with the tag already pushed.
+  provenance:
+    name: Release provenance
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.gate.outputs.channel }}
+      version: ${{ steps.gate.outputs.version }}
+      series: ${{ steps.gate.outputs.series }}
+      publish_series: ${{ steps.gate.outputs.publish_series }}
+      publish_latest: ${{ steps.gate.outputs.publish_latest }}
+      publish_rc_latest: ${{ steps.gate.outputs.publish_rc_latest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Reachability is the whole proof: a shallow clone would make every
+          # ancestry question unanswerable, and an unanswerable question must
+          # not resolve to "yes".
+          fetch-depth: 0
+
+      - name: Fetch the lines provenance is proved against
+        run: |
+          git fetch --no-tags --quiet origin \
+            "+refs/heads/${STABLE_BRANCH}:refs/remotes/origin/${STABLE_BRANCH}"
+          # The release train is deleted once it has been merged, and stable
+          # tags keep being cut from main afterwards. A missing train ref is
+          # fatal only for an rc, and that is the checker's call, not this
+          # step's.
+          git fetch --no-tags --quiet origin \
+            "+refs/heads/${RELEASE_TRAIN_BRANCH}:refs/remotes/origin/${RELEASE_TRAIN_BRANCH}" \
+            || echo "note: ${RELEASE_TRAIN_BRANCH} not on the remote — only a stable tag can pass"
+
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Check release provenance
+        id: gate
+        run: |
+          pnpm exec tsx tools/scripts/check-release-provenance.ts \
+            --tag "$GITHUB_REF_NAME" \
+            --stable-ref "origin/${STABLE_BRANCH}" \
+            --train-ref "origin/${RELEASE_TRAIN_BRANCH}" \
+            --expected-sha "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
   # ── Gate: nessuna immagine se la CI non è verde ──────────────────────────────
   # Riusa ci.yml invece di duplicarne gli step: lint, typecheck, typecheck:test,
   # unit test, integration e migrazioni. Nessuno è continue-on-error — dallo
@@ -20,12 +85,13 @@ jobs:
   # (docs/quality-hardening-plan.md §5).
   verify:
     name: Verify
+    needs: provenance
     uses: ./.github/workflows/ci.yml
 
   # ── Build & push API image ───────────────────────────────────────────────────
   build-api:
     name: Build API image
-    needs: verify
+    needs: [provenance, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,13 +113,18 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.API_IMAGE }}
-          # RC tags (v*-rc*): push version + rc-latest, never latest
-          # Stable tags (v*): push version + major.minor + latest
+          # Every tag comes from the provenance gate, including the version
+          # itself: `type=semver` re-parses `github.ref_name` with its own
+          # rules and emits nothing when it disagrees, which is a push with no
+          # version tag and no failed step. One parser, one decision.
+          #
+          # rc  → version + rc-latest, never latest and never the minor series
+          # stable → version + major.minor + latest, never rc-latest
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
+            type=raw,value=${{ needs.provenance.outputs.version }}
+            type=raw,value=${{ needs.provenance.outputs.series }},enable=${{ needs.provenance.outputs.publish_series == 'true' }}
+            type=raw,value=latest,enable=${{ needs.provenance.outputs.publish_latest == 'true' }}
+            type=raw,value=rc-latest,enable=${{ needs.provenance.outputs.publish_rc_latest == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -74,7 +145,7 @@ jobs:
   # ── Build & push Web image ───────────────────────────────────────────────────
   build-web:
     name: Build Web image
-    needs: verify
+    needs: [provenance, verify]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -94,7 +165,7 @@ jobs:
       - name: Set public hostname for web build
         id: hostname
         run: |
-          if [[ "${{ github.ref_name }}" == *"-rc"* ]]; then
+          if [ "${{ needs.provenance.outputs.channel }}" = "rc" ]; then
             echo "value=${{ vars.RC_PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${{ vars.PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
@@ -106,10 +177,10 @@ jobs:
         with:
           images: ${{ env.WEB_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
+            type=raw,value=${{ needs.provenance.outputs.version }}
+            type=raw,value=${{ needs.provenance.outputs.series }},enable=${{ needs.provenance.outputs.publish_series == 'true' }}
+            type=raw,value=latest,enable=${{ needs.provenance.outputs.publish_latest == 'true' }}
+            type=raw,value=rc-latest,enable=${{ needs.provenance.outputs.publish_rc_latest == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -125,8 +196,7 @@ jobs:
           # PUBLIC_HOSTNAME → prod, RC_PUBLIC_HOSTNAME → rc (both set as GitHub repo variables)
           build-args: |
             NEXT_PUBLIC_API_URL=http://${{ steps.hostname.outputs.value }}
-            INTERNAL_API_URL=${{ contains(github.ref_name, '-rc') && 'http://api-rc:3001' || 'http://api:3001' }}
+            INTERNAL_API_URL=${{ needs.provenance.outputs.channel == 'rc' && 'http://api-rc:3001' || 'http://api:3001' }}
             APP_VERSION=${{ github.ref_name }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
-

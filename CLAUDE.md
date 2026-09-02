@@ -409,8 +409,27 @@ Never `prisma migrate reset` in production.
 4. `git tag vX.Y.Z && git push origin vX.Y.Z` — `.husky/pre-push` blocks the
    push if CHANGELOG/package.json don't match the tag
 
+**RC trains**: a release train produces several candidates for **one** stable
+target — `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z` — never a new stable version
+per candidate. `pnpm release:prepare rc` prepares the next candidate,
+`pnpm release:prepare stable` graduates the train to the target it was aimed
+at. Both are needed because `git-cliff --bumped-version` answers only one side
+at a time: before the first rc it returns the stable target, and from rc.1
+onward it increments the prerelease counter and never returns to a stable
+number on its own.
+
+The target is **frozen when rc.1 is cut**: a `feat!` landing mid-train moves
+`v2.2.0-rc.1` to `v2.2.0-rc.2`, not to `v3.0.0-rc.1`. That is the point — a
+train has one target — but it means a breaking change accepted after the first
+candidate must be released by starting a new train at the higher version, not
+by continuing the current one.
+
 **Release flow**: push to `main` → CI only (lint + typecheck);
-tag `vX.Y.Z` → Docker build → `ghcr.io` → Portainer pull & redeploy.
+tag `vX.Y.Z` → provenance gate → Docker build → `ghcr.io` → Portainer pull &
+redeploy. RC artifacts come from the active release train and publish
+`rc-latest`; stable artifacts come from `main` and publish `latest` + `X.Y`.
+A tag on the wrong line, or a tag name outside those two shapes, fails before
+any image is built (`tools/scripts/check-release-provenance.ts`).
 **NEVER delete the `luke_api_data` volume** — the master key lives there.
 
 **A `develop-X.Y` branch dies on merge into `main`** — it is not reactivated,
@@ -420,11 +439,16 @@ cycle opens a new `develop-(X+1).0`/`develop-X.(Y+1)` cut from `main`.
 to the default branch `main`) — no update needed when the branch changes.
 
 **When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`):
-update the `branches` list in `.github/workflows/ci.yml` (`push` and
-`pull_request`) and in `.github/workflows/security.yml` (`push`) — otherwise
-CI/security scans silently stop running on PRs targeting the new branch.
-Then delete the previous branch (local + remote): it's stale as soon as it's
-merged, keeping it around invites bad backports.
+update the branch name in four places — the `branches` list in
+`.github/workflows/ci.yml` (`push` and `pull_request`), the `branches` list
+**and** `env.RELEASE_TRAIN_BRANCH` in `.github/workflows/security.yml`, and
+`env.RELEASE_TRAIN_BRANCH` in `.github/workflows/release.yml`. Miss the first
+and CI/security scans silently stop running on PRs targeting the new branch;
+miss the release.yml one and every RC tag is rejected by the provenance gate;
+miss the security.yml one and the weekly OSV job goes red on a branch that no
+longer exists — which is the intended reminder, not a bug. Then delete the
+previous branch (local + remote): it's stale as soon as it's merged, keeping
+it around invites bad backports.
 
 ## Security Testing / Pentest
 
