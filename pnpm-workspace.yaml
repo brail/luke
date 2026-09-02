@@ -56,3 +56,12 @@ overrides:
   # fast-uri/js-yaml above; capped below 4.x so a future breaking major cannot
   # be dragged in silently.
   mysql2: '>=3.23.1 <4'
+  # Transitive only: no workspace manifest depends on browserslist. Its three
+  # requirers all declare ranges that already admit the patched line
+  # (@babel/helper-compilation-targets ^4.24.0, autoprefixer ^4.28.4,
+  # update-browserslist-db peer >= 4.21.0), so this is a floor rather than an
+  # unlock -- `pnpm update` reaches it too, but only by re-resolving the whole
+  # tree, which drags unrelated packages (next's postcss) along with it.
+  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx, both fixed in 4.28.7.
+  # Capped below 5.x for the same reason as fast-uri/js-yaml/mysql2 above.
+  browserslist: '>=4.28.7 <5'
