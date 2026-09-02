@@ -2637,3 +2637,67 @@ The dispatched run 33661551616 proved both halves of §K.6's design in one invoc
 No `v3.*` tag exists on the remote (remote tag count unchanged at 56), `pnpm release:prepare` has not been run in any mode, and no release artifact has been built from either line. `git-cliff --bumped-version` on `develop-2.2` continues to compute **v3.0.0**, justified by the `storage.type` AppConfig contract break in `612c9a6` — a supported-configuration change under the policy recorded in `ca23216`, independent of the `feat(calendar)!` label, which that policy would not apply today.
 
 The immediate Cycle 9 objective is unchanged from §J.10: the **`@luke/api` package-contract boundary** — stop `apps/web` and the root scripts program consuming `apps/api/src`, establish an explicit built type contract for the tRPC `AppRouter` surface, and make it package- and `exports`-based as `@luke/core`, `@luke/nav` and `@luke/calendar` already are. Not started.
+
+## K.13 v2.1.4 publication
+
+Supersedes **only** §K.12's time-sensitive execution snapshot — the statements there that no `v3.*` tag exists and that Cycle 9 is not started remain true, but "release preparation has not run" no longer is: the stable line has since been released as `v2.1.4`. Everything in §K.1–§K.11 is unaffected and stands as written.
+
+`v2.1.4` publishes the security remediation recorded in §K.7 and §K.8. It is **not** the `v3.0.0` release train, and it consumed no version from it: `git-cliff --bumped-version` on `develop-2.2` still computes **v3.0.0**, and no `v3.*` tag exists.
+
+### Preparation and merge
+
+`pnpm release:prepare` on a temporary `hotfix/release-v2.1.4` branch cut from `d912acd` computed exactly `v2.1.4`. A `release/*` name was deliberately not used — that namespace belongs to ruleset 22082018, which protects release trains, not disposable patch preparation.
+
+Version-bump commit **`58aa8fe76858d5c67a4b8aa249e8820b94309b16`**, eight files: `CHANGELOG.md` (+20) and the seven tracked `package.json` files, each a version-only `2.1.3` → `2.1.4`. No lockfile, source, workflow, Compose or configuration change. The generated `[2.1.4]` section carries eight entries, all derived from `main` commits since `v2.1.3` — no `develop-2.2`-only work.
+
+Worth recording because it looks like a failure and is not: `pnpm sync-version:check` **cannot** be green between the bump and the tag. It reads `git describe --tags --abbrev=0`, which is still `v2.1.3` at that point — the behaviour `scripts/release-prepare.sh` documents in its own header. It returned 0 once `v2.1.4` existed.
+
+**PR #31** merged through ruleset 22132087 with a normal merge commit pinned to the head SHA — no squash, rebase, administrator bypass or auto-merge. Main merge SHA **`935dc29fa3c7edee656d75c5354c6e140584254d`**, second parent `58aa8fe`. All seven package versions and the eight-entry CHANGELOG section verified at that SHA before tagging.
+
+### Verification on `main`
+
+| run | workflow | result |
+| --- | --- | --- |
+| **33668747530** | CI | ✅ `Lint, TypeCheck & Unit Tests`, `Integration Tests`, `Migrations` |
+| **33668747741** | security | ✅ `gitleaks`, `semgrep`, `osv-push` (weekly jobs correctly skipped) |
+
+### Provenance proof — local, not a workflow check
+
+`main`'s `release.yml` still predates the provenance job described in §K.2. That gate exists only on `develop-2.2` and does not reach the stable line until the release train merges, so `v2.1.4` was published by the **pre-provenance** release workflow.
+
+The gate was therefore run explicitly before the tag was pushed, sourced from `origin/develop-2.2` and executed against the real repository and the local tag:
+
+```
+[release-provenance] ok — v2.1.4 is a stable tag on 935dc29fa3c7edee656d75c5354c6e140584254d.
+channel=stable   version=2.1.4   series=2.1
+publish_series=true   publish_latest=true   publish_rc_latest=false
+```
+
+This is recorded as a **pre-push local proof**, not as evidence of a check that ran in CI. Lightweight tag `v2.1.4` → `935dc29`, never forced and not moved since.
+
+### Artifacts
+
+Release run **33669314781**, all five jobs successful: `Verify / Lint, TypeCheck & Unit Tests`, `Verify / Integration Tests`, `Verify / Migrations`, `Build API image`, `Build Web image`.
+
+| image | digest |
+| --- | --- |
+| `ghcr.io/brail/luke-api` | `sha256:e31f5cf6ec8d57b5472474428822f6aa5cb4659605cc17fe084911718df00020` |
+| `ghcr.io/brail/luke-web` | `sha256:99b1fd78e616e23909ba522e6211750620ec21cd5f086a7293ae19d58a4019c5` |
+
+For **each image independently**, `2.1.4`, `2.1` and `latest` resolve to that single digest. Both `rc-latest` pointers are byte-identical before and after publication — `luke-api` at `sha256:ed27e3ce…bade99`, `luke-web` at `sha256:8e348d2a…f28ad6d` — confirming in practice the channel separation §K.2 enforces in principle.
+
+`ghcr.io/brail/luke-api:2.1.4` carries `APP_VERSION=v2.1.4`, read from its image config. **The Web image's embedded `APP_VERSION` is unverified**: it is not exposed through that image's manifest-list config, and it was not probed by running the container. It must be checked during deployment validation, not assumed from the API image.
+
+### Deployment status
+
+**Artifacts are published; production has not been deployed or modified.** No Portainer action was taken and no production container, image, volume, network or environment variable was touched. Deployment is a separate, separately reviewed action.
+
+### Synchronization
+
+`main` merged back into `develop-2.2` as **`704cdfb8bb1a341886c480d3033112c397dac1b1`**, first parent `5bd87c7`, second parent `935dc29`. Zero conflicts; the first-parent delta is exactly the release bump — eight files, 27 insertions, 7 deletions — because everything else on `main` had already arrived in `6168a53`. Remotely green: CI **33671347763**, Security **33671347886**.
+
+The manifests on the release train now read `2.1.4`. That is the stable line's released version, not the train's target; the next stable graduation sets them again from git-cliff's computation.
+
+### Next work
+
+Unchanged from §K.12: the **`@luke/api` package-contract boundary** is the immediate Cycle 9 objective, not started.
