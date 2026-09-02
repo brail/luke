@@ -2,15 +2,22 @@ name: security
 
 on:
   push:
-    branches: [develop-2.2, main]
+    # Patterns, not the current train's name. `on:` cannot read `env` — filters
+    # are evaluated before a run exists — so a literal here was a second
+    # spelling of RELEASE_TRAIN_BRANCH below with nothing tying them together:
+    # update one at the next cycle switch and not the other and the new train
+    # gets no scanning at all, silently, because the old branch still exists
+    # during the overlap. A pattern covers every train without a per-cycle
+    # edit, so there is nothing left to keep in sync here.
+    branches: [main, 'develop-*', 'release/*']
   schedule:
     - cron: '0 6 * * 1' # lunedì 06:00 UTC
   workflow_dispatch:
 
 env:
-  # The active release train. Named once here and once in the `push` filter
-  # above; part of the per-cycle branch switch (CLAUDE.md, "When switching
-  # develop branch"), together with ci.yml and release.yml.
+  # The active release train — the one name in this file that changes per
+  # cycle, because the weekly job below has to check out a specific branch. The
+  # `push` filter above already covers it by pattern and needs no edit.
   RELEASE_TRAIN_BRANCH: develop-2.2
 
 jobs:
