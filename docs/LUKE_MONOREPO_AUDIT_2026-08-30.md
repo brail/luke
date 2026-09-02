@@ -2286,3 +2286,205 @@ Both workflows green on that exact SHA:
 ## I.7 Execution status
 
 `P2-09` is closed. Per A.4, cycle 7 was the last item in the originally scheduled execution sequence; remaining backlog (`P1-06`, `6.2`, `P1-04`/`P1-05`, `P1/P2-08`, the §A.3 hygiene batch, `S-01`) stays open and unscheduled, exactly as recorded in §A.3/§A.4.
+
+---
+
+# Appendix J — Cycle 8 neutral TypeScript configuration architecture (2026-09-02)
+
+Appends to Appendices A–I; neither the historical body nor any earlier appendix is rewritten. Implementation commit `5a1987eeb2359835c47239ba21f41d0c345b01c1` on `develop-2.2`, parent `e13d03278ce23a9b135b5cd1ace19d97a6cac520`.
+
+## J.1 Disposition
+
+**Cycle 8 implementation: COMPLETE.**
+
+**`P1-06` → CONFIRMED OPEN, PARTIALLY ADDRESSED.** The structural TypeScript configuration remediation the finding asked for is done and machine-checked. Some of the original acceptance criteria are not satisfiable by a tsconfig at all — they are owned by package contracts and by the runtime-boundary family — and those are recorded as residuals in §J.7 rather than folded into a closure.
+
+**`5.4` (`allowJs: true`) → DONE.** The four dead declarations (root, `packages/core`, `packages/nav`, `packages/calendar`) were removed after measuring that **zero `.js` files entered any affected program** — verified on all twelve pre-existing configs, not sampled. Closed as a co-closure of this cycle rather than as its own scheduled item.
+
+Cycle 8 did **not** solve the `@luke/api` package contract, and nothing in the implementation or in the new gate claims it did.
+
+## J.2 What changed
+
+- **New `tsconfig.base.json`**, carrying only repository-wide invariants: `target`, `lib`, `strict`, `noUnusedLocals`, `noUnusedParameters`, `skipLibCheck`, `esModuleInterop`, `forceConsistentCasingInFileNames`, `resolveJsonModule`, `isolatedModules`.
+- **`lib: ["ES2022"]` is stated, not omitted.** Leaving `lib` unset is not neutrality: TypeScript then loads `lib.<target>.full.d.ts`, which for ES2022 includes DOM, DOM.Iterable, DOM.AsyncIterable, ScriptHost and WebWorker.ImportScripts. That default is why `packages/nav` and `packages/calendar` — Node-only libraries that never named a `lib` — carried the whole browser surface.
+- **`module`/`moduleResolution` remain runtime-owned by the leaves.** There is no repository-wide value, and their unset default (`ES2015` + `classic`) is wrong for every surface here, so each leaf states its own pair.
+- **Root `tsconfig.json`** changed from a Next/browser configuration with a `**/*.ts` include that no runner ever compiled, into a real Node project owning `scripts/**/*.ts`.
+- **`apps/web`** now owns Next/Bundler/DOM/JSX semantics explicitly, instead of inheriting them from the root. Its `extends` key is load-bearing beyond inheritance: Next's `writeConfigurationDefaults` returns early when a user config has `extends` or `references`, and without one it would rewrite the file on every `next build`.
+- **`apps/api`** owns NodeNext/Node semantics explicitly. It had been inheriting `dom`, `dom.iterable`, `jsx: preserve` and the Next TypeScript plugin; removing all four left its program unchanged.
+- **`packages/core`** is the explicit isomorphic exception, `lib: ["ES2022", "DOM"]`. Measured, not assumed: without DOM its three real `typeof window` guards fail (`crypto/secrets.server.ts:21`, `runtime/env.ts:53`, `runtime/env.ts:108`). The rest of the `lib.es2022.full` bundle is gone.
+- **`packages/nav`, `packages/calendar`, `tools`** inherit the neutral base with Node-oriented semantics.
+- **Test configs** inherit through the project they test rather than naming the base directly; transitive inheritance is the invariant. `apps/api/tsconfig.test.json` deliberately keeps ESNext/Bundler, because Vitest — not Node's module loader — is what runs that corpus.
+
+## J.3 `@luke/core` package-boundary normalization
+
+The investigation corrected a premise the earlier record carried. The `apps/api` → `packages/core/src` `paths` alias **was not actually making the production API typecheck against source**: a `references` entry to a composite project outranks `paths`, so TypeScript redirected the resolution onto `packages/core/dist` declarations. The alias's real effect was narrower and worse — it answered `@luke/core/<anything>`, including subpaths the `exports` map does not publish. Those type-resolved green against `dist` and fail at runtime with `ERR_PACKAGE_PATH_NOT_EXPORTED`, confirmed directly under both `import()` and `require()`.
+
+The two mechanisms therefore had to be removed together. Removing `references` alone would have handed the alias its original meaning back and moved the program onto core's sources; removing the alias alone would have left a second resolution mechanism doing what package `exports` already does.
+
+Cycle 8 removed the `@luke/core` alias, the `@luke/core/*` wildcard, and the cross-package project reference (from `apps/api/tsconfig.json`, `apps/api/tsconfig.scripts.json`, `apps/api/tsconfig.test.json`, and the inert pair in `apps/web/tsconfig.json`).
+
+Final measured state — `tsc --listFiles`, per program:
+
+| Consumer | `packages/core/dist` | `packages/core/src` |
+|---|---|---|
+| `tsconfig.json` (root scripts) | 52 | **0** |
+| `apps/api/tsconfig.json` | 52 | **0** |
+| `apps/api/tsconfig.scripts.json` | 52 | **0** |
+| `apps/api/tsconfig.test.json` | 52 | **0** (was 52 src) |
+| `apps/web/tsconfig.json` | 52 | **0** |
+| `apps/web/tsconfig.test.json` | 52 | **0** |
+| `packages/calendar/tsconfig.json` | 49 | **0** |
+| `packages/calendar/tsconfig.test.json` | 49 | **0** |
+
+This normalizes one package contract. It does not generalize: `@luke/api` remains a separate residual (§J.7).
+
+## J.4 Root scripts coverage
+
+The old root `tsconfig.json` declared `include: ["**/*.ts", ...]` but was compiled by nothing — `pnpm typecheck` is `turbo run typecheck`, turbo runs per-workspace scripts, and no root task is declared. `scripts/rc-prod-clone.ts`, which drives a production backup/restore, sat inside that phantom program and was checked by no gate.
+
+Root `tsconfig.json` now owns `scripts/**/*.ts`, with a `typecheck:root` script whose contract is self-sufficient:
+
+```
+turbo run build --filter=@luke/core --filter=@luke/nav --filter=@luke/calendar && tsc -p tsconfig.json
+```
+
+The three artifacts were **measured, not guessed**: with every `dist` deleted, the root program fails with `Cannot find module` for `@luke/core` (86), `@luke/core/server` (8), `@luke/nav` (7) and `@luke/calendar` (2), and nothing else. `apps/api` is not among them because the current `@luke/api` manifest still exposes source, so its own build is not required.
+
+- CI carries a distinct **TypeCheck (root scripts)** step, deliberately not folded into the tools step.
+- `.husky/pre-push` invokes the same gate, so the hook and the pipeline agree (`lessons.md` Postscript 2: a gate that runs only in CI is a green hook over a red pipeline).
+- Clean-artifact mutation: from zero `dist` trees, `pnpm typecheck:root` exits 0 and rebuilds exactly 3/3. Control from the same state: bare `tsc -p tsconfig.json` exits 2 with 145 errors, so the dependency is real and now explicit.
+
+**Root `scripts/**` still has no ESLint coverage.** `eslint scripts/rc-prod-clone.ts` reports *"File ignored because no matching configuration was supplied"*, and `pnpm lint` is `turbo run lint`, which never reaches it. That half was deferred deliberately — it would touch `eslint.config.mjs`, which belongs to the `P0-02b` family — and the new checker's own documentation states the gap rather than implying a backstop.
+
+## J.5 Executable tsconfig integrity gate
+
+New: `tools/scripts/check-tsconfig-integrity.ts`, with fixtures under `tools/scripts/__fixtures__/tsconfig/` and behavioral tests in `tools/scripts/check-tsconfig-integrity.test.ts`. Integrated as `check:tsconfig`, chained into `check:drift`, and covered by `test:tools` — so it runs in CI's *Docs & skills drift* and *Control-plane tests* steps and in `.husky/pre-push`, with no new job.
+
+It follows the existing control-plane conventions: a pure function over a repository root, `git ls-files` discovery, `Problem[]` output through `lib/report`, and fixtures declared as data so the checker never reads them when it runs against Luke itself.
+
+Invariants enforced:
+
+- every canonical tracked `tsconfig*.json` is classified against an explicit table, **fail-closed in both directions** — an unclassified config fails, and a stale table entry fails;
+- a non-canonical TypeScript project config name is rejected wherever the repository reaches for it: a `tsc -p`/`--project` in a tracked `package.json` script, or an `extends` edge;
+- every governed config reaches `tsconfig.base.json` **transitively**;
+- runtime configuration is checked against the surface each config is classified under (Node / Node-loaded-by-bundler / isomorphic / web / the neutral base itself);
+- cross-workspace source aliases are rejected **structurally, by where the target lands**, not by alias name — a renamed key buys no amnesty;
+- an alias through a pnpm workspace symlink under `node_modules` is resolved via `realpath` and cannot bypass the boundary;
+- a genuine external `node_modules` dependency alias remains allowed; an alias into `node_modules` that resolves to nothing is reported as unverifiable rather than assumed external;
+- cross-package project references are forbidden as **repository architecture policy** — nothing here runs `tsc -b`, so such a reference costs the package contract and buys nothing;
+- a config may not directly own another workspace's **root** files through `files`/`include`; the rule reads root files, so imported/transitive files are untouched by it;
+- `extends` arrays, extensionless paths, directory form, diamonds, true cycles, missing parents and malformed parents all have explicit, tested behavior, with diagnostics attributed to the config that declares the bad edge.
+
+The checks read the **resolved** configuration via TypeScript's own parser, not raw JSON. A raw-JSON rule would have called every pre-Cycle-8 config compliant, because none of them mentioned DOM: they inherited it.
+
+Test evidence:
+
+| Measure | Result |
+|---|---|
+| tsconfig-integrity tests | **51** |
+| `pnpm test:tools` | **97/97** |
+| branch-removal proofs | every newly added checker branch has at least one claiming test that goes red when the branch is disabled; checker restored byte-identical (sha verified) after each |
+| live mutation classes | **15**, each exercised against the real tree and restored, working tree verified free of unstaged and untracked residue |
+
+## J.6 Third-party DOM type injection — newly observed residual
+
+Configuring `lib: ["ES2022"]` on a Node-oriented surface does not guarantee the resulting **program** is free of DOM types. A dependency's own triple-slash directive injects them regardless, and no tsconfig option can refuse it.
+
+`@types/pdfmake/interfaces.d.ts` opens with:
+
+```
+/// <reference lib="dom" />
+```
+
+so `lib.dom.d.ts` enters:
+
+- `apps/api/tsconfig.json` and `apps/api/tsconfig.test.json`, which reach those types through the PDF export path;
+- the root scripts program, via the current `@luke/api` source traversal.
+
+Measured consequence: `const el: HTMLElement = ...` compiles in an ordinary Fastify source file today.
+
+The distinction Cycle 8 records, and does not blur:
+
+- **configuration-level** browser libraries were removed or narrowed everywhere — `packages/nav`, `packages/calendar`, `tools` and `apps/api/tsconfig.scripts.json` are now fully free of `lib.dom`, and DOM.Iterable, DOM.AsyncIterable, ScriptHost and WebWorker.ImportScripts are gone from every surface;
+- **`apps/api`** has a compensating control at a different layer: the per-runtime ESLint globals from Cycle 5 mean `no-undef` rejects `window`, `document` and `HTMLElement` there. Verified live on a bait file. Type exposure remains; *use* is blocked;
+- **root `scripts/**`** has neither — no tsc rejection and no lint config;
+- this is a **third-party type-surface residual newly observed by this cycle, not a Cycle 8 regression**. The injection predates the change.
+
+The integrity gate is explicit that it governs the libraries a configuration *asks for*, not the transitive closure of third-party declaration files, and its success output names this exception so a green run cannot be mistaken for stronger isolation. No remediation is proposed here.
+
+## J.7 `P1-06` acceptance criteria and residual ownership
+
+**Satisfied / materially closed by Cycle 8:**
+
+- a genuinely neutral shared TypeScript base exists, with the DOM-by-default trap closed explicitly rather than by omission;
+- runtime-specific leaf configurations exist and own their own `module`/`moduleResolution`/`lib`/`jsx`/`types`;
+- the root phantom-config behavior is gone;
+- root scripts are actually typechecked, by a gate in CI and in pre-push;
+- `@luke/core` resolution is consistent across production, test and build consumers;
+- the source alias and wildcard `exports` bypasses for `@luke/core` are machine-checked, not merely removed;
+- `allowJs` cleanup (§5.4) is done.
+
+**Residuals, with owners:**
+
+1. **`@luke/api` package contract.** `apps/api/package.json` still declares `main`/`types` → `./src/index.ts` with no `exports` boundary and no published build. Consequently `apps/web` (129 files) and the root scripts program still traverse API source. This is a package-contract problem, not a tsconfig one — removing the `apps/web` alias was proven behaviour-neutral precisely because the manifest, not the alias, causes the traversal. Owned by the dedicated next architectural cycle, not by `P1-06` implementation scope.
+2. **`P0-02b` / `6.2` runtime-boundary family.** `packages/core` ships to the browser while declaring `types: ["node"]`; TypeScript's `types` has no per-file granularity, so the per-file runtime split is enforced by the ESLint globals of Cycle 5, not by tsc. The remaining Next server/client boundary problem recorded in §F.10 is unchanged.
+3. **`@types/pdfmake` reference-lib injection.** Newly recorded, as described in §J.6.
+4. **Root scripts ESLint coverage.** Deliberately deferred: typecheck is now present, lint coverage is not.
+
+Appendices F, H and I are unchanged by this cycle, and none of their statuses is reopened.
+
+## J.8 Verification evidence
+
+Local, before push (also re-run by `.husky/pre-push` on the push itself):
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | **9/9** |
+| `pnpm typecheck:test` | **8/8** |
+| `pnpm typecheck:tools` | pass |
+| `pnpm typecheck:root` | pass, including the zero-`dist` clean-artifact proof |
+| `pnpm lint` | `--force`: **0 errors, 49 warnings** — Cycles 3A/4/5/G/H/I baseline, unchanged |
+| `pnpm lint:tools` | pass |
+| `pnpm test:tools` | **97/97** |
+| `pnpm check:drift` | green — skill 17, docs 62, platform 7, tsconfig 13 |
+| `pnpm test:module-contract` | green — 3 subpaths `require()`d from `dist` as ESM |
+| `pnpm test` | **837** — core 258, web 80, calendar 63, api 436 |
+| `pnpm test:browser`, cold `.vite` | **59/59** |
+| `pnpm --filter @luke/web build` | green, **42/42** static pages; `apps/web/tsconfig.json` sha256 identical before and after, confirming Next did not rewrite it |
+
+Both workflows green on the exact implementation SHA `5a1987eeb2359835c47239ba21f41d0c345b01c1`:
+
+| Workflow | Run | Result |
+|---|---|---|
+| CI | **33569375219** | `success` — Lint/TypeCheck & Unit Tests, Browser Component Tests, Integration Tests, Migrations all `success` |
+| security | **33569375229** | `success` — gitleaks, semgrep, osv-push all `success`; `osv-weekly` and `notify-on-failure` skipped by design |
+
+Within the CI `checks` job, recorded explicitly:
+
+| Step | Result |
+|---|---|
+| **TypeCheck (root scripts)** | `success` — first real CI execution of the new gate |
+| **Control-plane tests** | `success` |
+| **Docs & skills drift** | `success` — now includes `check:tsconfig` |
+| **Module contract (require(esm))** | `success` |
+
+## J.9 Review history
+
+A read-only **xhigh** review of the implementation found the TypeScript architecture sound and returned bounded corrections, all in gate coverage and assurance wording rather than config semantics: an undeclared build dependency on `typecheck:root`, its absence from pre-push, an integrity gate that guarded `paths` but not `references`, docstring and output strings implying stronger DOM isolation than the gate verifies, an `extends` walker rejecting legal TypeScript forms, a discarded parse diagnostic, and two vacuous tests.
+
+A subsequent corrective **high** review found further defects in the checker added by that first correction: a pnpm workspace symlink under `node_modules` defeating the boundary rule, a discovery contract narrower than its own claim, `files`/`include` uncovered, a valid `extends` diamond misreported as a cycle, a false positive on external `node_modules` aliases, misattributed chain diagnostics, and one untested branch.
+
+Every finding from both reviews was remediated locally. The cycle remained **one conceptual commit**, amended rather than stacked, and was pushed only once both review rounds were closed and all gates were green. **No application runtime source was modified** — the diff is confined to tsconfig files, `package.json` scripts, CI, the pre-push hook, and the new control-plane files.
+
+## J.10 Execution status and next work
+
+Cycle 8 is closed as an implementation cycle. `P1-06` remains **PARTIALLY ADDRESSED** per §J.1 and §J.7: its remaining acceptance criteria belong to separate architectural boundaries and are not reachable from a tsconfig.
+
+The immediate next planned cycle is the **`@luke/api` package-contract boundary**, described here at objective level only and deliberately not started:
+
+- stop `apps/web` and the root scripts program from consuming `apps/api/src`;
+- establish an explicit built type contract for the tRPC `AppRouter` surface;
+- make that contract package- and `exports`-based, as `@luke/core`, `@luke/nav` and `@luke/calendar` already are;
+- remove source bleed and any obsolete build/deployment accommodations only after proof, not by symmetry.
+
+`6.2` dependency-boundary enforcement follows after the real package contracts exist; enforcing direction over a package that publishes its own sources would encode the wrong graph.
