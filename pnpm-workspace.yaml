@@ -44,3 +44,15 @@ overrides:
   protobufjs: '7.6.5'
   sharp: '0.35.0'
   valibot: '>=1.4.2'
+  # Transitive via prisma: the CLI package declares mysql2 as a regular
+  # dependency pinned to an exact version (prisma@7.8.0 -> "mysql2": "3.15.3"),
+  # so nothing in the workspace can move it and Dependabot reports
+  # security_update_not_possible -- it has no requirement to unlock and does not
+  # author pnpm overrides. This workspace's only schema.prisma declares
+  # provider = "postgresql"; @prisma/client's runtime code never references
+  # mysql2, so the vulnerable code sits on disk and is never loaded.
+  # Covers GHSA-3f6p-5ww8-9rcr (fixed 3.22.0) and GHSA-rgwj-5xj2-c3m3
+  # (fixed 3.23.1) in one range. Range, not a pin, for the same reason as
+  # fast-uri/js-yaml above; capped below 4.x so a future breaking major cannot
+  # be dragged in silently.
+  mysql2: '>=3.23.1 <4'
