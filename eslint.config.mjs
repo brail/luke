@@ -300,6 +300,31 @@ export default [
     },
   },
   {
+    // The package module-contract proofs — plain Node, plain CommonJS, no
+    // TypeScript and no test runner.
+    //
+    // They have to be `.cjs` and they have to `require()` by package name:
+    // that is the whole point, because resolving a package that way is the one
+    // thing a TypeScript program cannot check. `tsc` reads a `paths` alias and
+    // vitest reads a Vite resolver; only Node reads the `exports` map, which is
+    // what `apps/web` and the containers ultimately depend on.
+    //
+    // Scoped to the two files by name rather than to `**/*.cjs`. A blanket
+    // CommonJS grant would hand Node globals to any future `.cjs` anywhere in
+    // the repository, which is the opposite of the per-runtime classification
+    // the blocks above exist to enforce.
+    files: [
+      'apps/api/test/module-contract.cjs',
+      'packages/core/test/module-contract.cjs',
+    ],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+  {
     // Browser runtime — see `WEB_BROWSER_ONLY_FILES` above.
     files: WEB_BROWSER_ONLY_FILES,
     languageOptions: {

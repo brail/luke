@@ -49,8 +49,16 @@ said "Next.js 15" for months while `apps/web` was on 16.
 Dev: `pnpm dev` starts everything via Turbo.
 If the API fails with "Cannot find module @luke/core/dist": `pnpm --filter @luke/core build`.
 Turbo cache can be stale — if the dist files are missing, build manually.
-After changes to a tRPC router in `apps/api`: `cd apps/api && npx tsc -b`
-(otherwise `apps/web` tsc won't see the new shape).
+`apps/web` resolves `@luke/api` through the package's `exports` map to `dist`,
+not to `src`. While `pnpm dev` runs, the API's `dev:types` watch re-emits those
+declarations on every router change, so nothing else is needed. With dev
+stopped, `pnpm --filter @luke/api build`
+refreshes them; every `build` script deletes its outputs first, so a renamed
+or removed source leaves no stale declaration behind.
+Do not run emitting builds or tests (`pnpm build`, `pnpm test`, `pnpm typecheck`,
+the pre-push hook) in a worktree where `pnpm dev` is running: a build that is
+interrupted between its clean and its emit leaves a partial `dist` that the
+running watch will not restore. Use a second worktree, or stop dev first.
 
 ## Stack Constraints
 

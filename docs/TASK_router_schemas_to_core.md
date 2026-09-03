@@ -68,7 +68,7 @@ anche se il frontend non lo tocca.
 
 ```bash
 pnpm --filter @luke/core build && pnpm --filter @luke/core test
-cd apps/api && npx tsc -b && npx eslint src/ && pnpm test:integration:local
+pnpm --filter @luke/api build && cd apps/api && npx eslint src/ && pnpm test:integration:local
 cd apps/web && npx tsc --noEmit && npx eslint src/ && npx vitest run
 ```
 

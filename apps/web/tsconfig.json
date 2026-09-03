@@ -24,18 +24,20 @@
       }
     ],
     // No workspace package is aliased onto another workspace's sources here.
-    // `@luke/core` and `@luke/calendar` resolve through their own `exports`
-    // maps to their built ESM `dist`, the same artifacts the browser test tier
-    // loads, so the published contract is the one actually exercised.
+    // `@luke/core`, `@luke/calendar` and now `@luke/api` all resolve through
+    // their own `exports` maps to their built `dist`, so the published contract
+    // is the one actually exercised.
     //
-    // `@luke/api` carried an alias onto `apps/api/src` until this config was
-    // rewritten. It was inert: `apps/api/package.json` points `main` and
-    // `types` at `./src/index.ts` and publishes no `exports` map, so resolving
-    // the package by name lands on the same raw TypeScript with or without it,
-    // and no `@luke/api/*` subpath is imported anywhere in the repository.
-    // Removing it therefore changed no program. It also did not *fix* anything:
-    // this app still typechecks the API's source, and will until `@luke/api`
-    // publishes a build — a package-contract question, not a tsconfig one.
+    // `@luke/api` was the last exception. Removing its alias in an earlier
+    // cycle changed no program — the manifest pointed `main`/`types` at
+    // `./src/index.ts` and published no `exports` map, so the package resolved
+    // to raw TypeScript with or without the alias — and the note left here said
+    // so: this app would keep typechecking the API's source "until `@luke/api`
+    // publishes a build — a package-contract question, not a tsconfig one".
+    // That is what changed. The manifest now points at `dist` behind an
+    // `exports` map admitting only `.` and `./package.json`, and this program
+    // reads 16 built declarations where it used to compile 129 API sources.
+    // Turbo's `typecheck.dependsOn: ["^build"]` is what keeps them current.
     "paths": {
       "@/*": ["./src/*"]
     }

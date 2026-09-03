@@ -129,7 +129,7 @@ registry è la fonte di verità» descrive un'intenzione, non il codice.
 
 ```bash
 pnpm --filter @luke/core build && pnpm --filter @luke/core test
-cd apps/api && npx tsc -b && npx eslint src/ test/ && pnpm test:integration:local
+pnpm --filter @luke/api build && cd apps/api && npx eslint src/ test/ && pnpm test:integration:local
 cd apps/web && npx tsc --noEmit && npx eslint src/ && npx vitest run
 ```
 

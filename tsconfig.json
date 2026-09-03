@@ -18,9 +18,13 @@
   // too — an editor opening a file under it would fall back to
   // `moduleResolution: classic` and fail to resolve any import.
   //
-  // `scripts/rc-prod-clone.ts` imports `@luke/api`, whose manifest points
-  // `main`/`types` at `./src/index.ts`, so this program typechecks the API's
-  // sources. That is a property of that package's manifest, not of this config.
+  // `scripts/rc-prod-clone.ts` imports `@luke/api` for its `AppRouter` type.
+  // That import used to drag the API's 129 source files into this program,
+  // because the package's manifest pointed `main`/`types` at `./src/index.ts`.
+  // It now resolves through an `exports` map to `dist/index.d.ts`, so this
+  // program reads the built contract instead. Which is still a property of that
+  // package's manifest rather than of this config — but `pnpm typecheck:root`
+  // has to build it first, and does.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "module": "NodeNext",

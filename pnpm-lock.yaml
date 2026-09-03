@@ -279,9 +279,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(effect@3.20.0)(react-hook-form@7.86.0(react@19.2.8))(valibot@1.4.2(typescript@6.0.3))(zod@4.4.3)
-      '@luke/api':
-        specifier: workspace:*
-        version: link:../api
       '@luke/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
@@ -394,6 +391,9 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.9.1(jiti@2.7.0))
+      '@luke/api':
+        specifier: workspace:*
+        version: link:../api
       '@playwright/test':
         specifier: ^1.62.1
         version: 1.62.1

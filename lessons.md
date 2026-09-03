@@ -679,3 +679,25 @@ been wrapped in, and a required field that Radix unmounts with its tab, so
 validation failed with no mounted message to show. Writing the rule down is not
 the same as applying it to every instance — when a rule is added, sweep the
 whole file for the pattern, not just the lines being edited.
+
+## A Turbo `dev` task that emits must depend on its own `build` (2026-09-03)
+
+While simplifying the Cycle 9 build lifecycle, the first prototype relaxed
+`dev.dependsOn` from `["^build", "build"]` to `["^build"]`. The dry graph then
+gave `core#dev`, `nav#dev` and `calendar#dev` no dependency on their own build,
+so at cold start each `tsc --watch` could emit into the same `dist` that the
+build requested by API and Web was still deleting and rewriting. The review
+caught it from the graph; the measurements had not, because two writers
+producing identical files leave no visible damage.
+
+- The single-writer rule at startup is a property of the task graph, not of
+  the scripts. Prove it with `turbo run dev --dry=json` and, for any change to
+  ordering, with timestamps: `--summarize` gives build end times, a
+  millisecond-stamped log gives each watcher's start line.
+- A package-specific entry (`@luke/api#dev`) replaces the global `dev` entry
+  instead of merging with it. One carrying only `with` came out of the dry run
+  with no dependencies and `persistent: false`. Spell out every key and re-run
+  the dry graph after editing an override.
+- A persistent task that emits nothing (`tsx watch`) may start before its
+  package's build; one that emits (`tsc --watch`, `dev:types`) may not. Keep
+  the two apart when reasoning about the graph.
