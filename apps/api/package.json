@@ -6,7 +6,7 @@
   "types": "./src/index.ts",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
-    "build": "tsc && tsc -p tsconfig.scripts.json",
+    "build": "rm -rf dist dist-scripts && tsc && tsc -p tsconfig.scripts.json",
     "start": "node --require ./dist/instrument.js dist/server.js",
     "lint": "eslint src/ test/ scripts/",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json --noEmit",

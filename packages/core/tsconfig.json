@@ -24,9 +24,13 @@
   // `types: ["node"]` stays even though core ships to the browser: `types` has
   // no per-file granularity, and the per-file runtime split is enforced by the
   // per-runtime ESLint globals instead (see `eslint.config.mjs`).
+  //
+  // No `composite` and no `incremental`: no project references this one, and
+  // an incremental build trusts `tsconfig.tsbuildinfo` over the filesystem —
+  // after `rm -rf dist` it reported success and emitted nothing. A plain `tsc`
+  // always emits every output, so `build` can delete `dist` first.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM"],

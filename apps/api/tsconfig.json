@@ -38,9 +38,15 @@
   // short. Reading the built declarations is the point — it is the contract
   // every runtime consumer resolves — so the reference is not coming back to
   // improve navigation.
+  //
+  // No `composite` and no `incremental`, deliberately. Nothing references this
+  // project any more, and an incremental build trusts `tsconfig.tsbuildinfo`
+  // over the filesystem: after `rm -rf dist` it reported success and emitted
+  // nothing, measured here. A plain `tsc` emits every output on every run,
+  // which is what lets `build` delete its outputs first and lets a build that
+  // completes beside the `dev:types` watch leave `dist` whole.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",

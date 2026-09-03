@@ -4,7 +4,6 @@
   // changes only where the output goes.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "composite": false,
     "rootDir": ".",
     "outDir": "./dist-scripts",
     "declaration": false,
