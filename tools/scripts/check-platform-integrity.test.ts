@@ -904,3 +904,155 @@ RUN echo debug
     )
   );
 });
+
+// ---------------------------------------------------------------------------
+// P10 — workspace dependency direction (layer + runtime capability policy)
+// ---------------------------------------------------------------------------
+
+/** A copy of the baseline whose manifest at `path` has been edited. */
+function withManifest(path: string, edit: (json: Record<string, unknown>) => void): RepoFiles {
+  const json = JSON.parse(VALID_REPO[path]) as Record<string, unknown>;
+  edit(json);
+  return withFile(path, JSON.stringify(json, null, 2));
+}
+
+function addDep(group: string, name: string, spec = 'workspace:*') {
+  return (json: Record<string, unknown>): void => {
+    json[group] = { ...((json[group] as Record<string, string> | undefined) ?? {}), [name]: spec };
+  };
+}
+
+test('P10 fails when core declares the api: upward, whether or not anything imports it', () => {
+  expectFailure(withManifest('packages/core/package.json', addDep('dependencies', '@fixture/api')), /points upward/);
+});
+
+test('P10 fails on an upward devDependency too — a type edge is still an edge', () => {
+  expectFailure(withManifest('packages/core/package.json', addDep('devDependencies', '@fixture/api')), /points upward/);
+});
+
+test('P10 fails on a sideways edge between peers (nav → calendar)', () => {
+  expectFailure(withManifest('packages/nav/package.json', addDep('dependencies', '@fixture/calendar')), /points sideways/);
+});
+
+test('P10 fails when a browser package takes a node library at runtime (web → calendar)', () => {
+  expectFailure(withManifest('apps/web/package.json', addDep('dependencies', '@fixture/calendar')), /runtime dependency/);
+});
+
+test('P10 fails when web takes the api at runtime', () => {
+  expectFailure(withManifest('apps/web/package.json', addDep('dependencies', '@fixture/api')), /runtime dependency/);
+});
+
+test('P10 accepts web taking the api as a devDependency: the types-only edge', () => {
+  expectClean(withManifest('apps/web/package.json', addDep('devDependencies', '@fixture/api')));
+});
+
+test('P10 accepts a lower universal package at runtime (nav → core is the baseline)', () => {
+  expectClean(VALID_REPO);
+});
+
+test('P10 accepts any workspace: protocol form, not only workspace:*', () => {
+  expectClean(withManifest('packages/nav/package.json', addDep('dependencies', '@fixture/core', 'workspace:^')));
+});
+
+test('P10 fails when the root declares a workspace under dependencies', () => {
+  expectFailure(
+    withRootManifest(json => {
+      (json as Record<string, unknown>).dependencies = { '@fixture/api': 'workspace:*' };
+    }),
+    /is tooling but declares/
+  );
+});
+
+test('P10 accepts the root declaring a workspace under devDependencies', () => {
+  expectClean(
+    withRootManifest(json => {
+      (json as Record<string, unknown>).devDependencies = { ...json.devDependencies, '@fixture/api': 'workspace:*' };
+    })
+  );
+});
+
+test('P10 fails on a self-dependency', () => {
+  expectFailure(withManifest('packages/core/package.json', addDep('dependencies', '@fixture/core')), /declares itself/);
+});
+
+test('P10 fails when a workspace sits in both dependencies and devDependencies', () => {
+  expectFailure(
+    withManifest('apps/api/package.json', addDep('devDependencies', '@fixture/core')),
+    /both `dependencies` and `devDependencies`/
+  );
+});
+
+test('P10 fails closed on a tracked manifest with no policy row', () => {
+  expectFailure(
+    withFile('packages/rogue/package.json', JSON.stringify({ name: '@fixture/rogue', private: true })),
+    /no row in `WORKSPACE_POLICY`/
+  );
+});
+
+test('P10 fails closed on a policy row whose manifest is no longer tracked', () => {
+  expectFailure(withoutFile('packages/calendar/package.json'), /no such manifest is tracked/);
+});
+
+test('P10 fails on a workspace: link to a name no tracked manifest has', () => {
+  expectFailure(
+    withManifest('apps/api/package.json', addDep('dependencies', '@fixture/ghost')),
+    /no single tracked manifest has that name/
+  );
+});
+
+test('P10 fails when a tracked workspace is declared with a semver range instead of workspace:', () => {
+  expectFailure(
+    withManifest('apps/api/package.json', addDep('dependencies', '@fixture/core', '^1.0.0')),
+    /instead of the `workspace:` protocol/
+  );
+});
+
+test('P10 leaves external packages with semver ranges alone', () => {
+  expectClean(withManifest('apps/api/package.json', addDep('dependencies', 'left-pad', '^1.3.0')));
+});
+
+test('P10 fails closed on a workspace under peerDependencies', () => {
+  expectFailure(withManifest('apps/web/package.json', addDep('peerDependencies', '@fixture/core')), /has no meaning for a workspace edge/);
+});
+
+test('P10 fails closed on a workspace under optionalDependencies', () => {
+  expectFailure(withManifest('apps/api/package.json', addDep('optionalDependencies', '@fixture/nav')), /has no meaning for a workspace edge/);
+});
+
+test('P10 fails closed on a workspace: spec under peerDependencies even for an unknown name', () => {
+  expectFailure(withManifest('apps/web/package.json', addDep('peerDependencies', '@fixture/ghost')), /has no meaning for a workspace edge/);
+});
+
+test('P10 leaves an external peerDependency alone', () => {
+  expectClean(withManifest('apps/web/package.json', addDep('peerDependencies', 'react', '^19.0.0')));
+});
+
+test('P10 fails closed on a classified manifest with no name', () => {
+  expectFailure(withManifest('packages/nav/package.json', json => { delete json.name; }), /has no `name`/);
+});
+
+test('P10 fails closed on a classified manifest with an empty name', () => {
+  expectFailure(withManifest('packages/nav/package.json', json => { json.name = ''; }), /has no `name`/);
+});
+
+test('P10 reports every manifest that shares a name, not only the second one found', () => {
+  const problems = checkPlatformIntegrity(
+    repo(withManifest('packages/nav/package.json', json => { json.name = '@fixture/calendar'; }))
+  );
+  const reported = problems.filter(p => /is also the name of/.test(p.message)).map(p => p.file).sort();
+  assert.deepEqual(reported, ['packages/calendar/package.json', 'packages/nav/package.json']);
+});
+
+test('P10 resolves no edge through a duplicated name, so a dependant of it is reported too', () => {
+  const problems = checkPlatformIntegrity(
+    repo({
+      ...withManifest('packages/nav/package.json', json => { json.name = '@fixture/calendar'; }),
+      'apps/api/package.json': JSON.stringify(
+        { ...JSON.parse(VALID_REPO['apps/api/package.json']), dependencies: { ...JSON.parse(VALID_REPO['apps/api/package.json']).dependencies, '@fixture/calendar': 'workspace:*' } },
+        null,
+        2
+      ),
+    })
+  );
+  assert.ok(problems.some(p => p.file === 'apps/api/package.json' && /no single tracked manifest has that name/.test(p.message)), problems.map(p => `${p.file}: ${p.message}`).join('\n'));
+});

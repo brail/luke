@@ -1054,6 +1054,234 @@ function overlaps(source: string, target: string): boolean {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// P10 — workspace dependency direction: a layer and runtime capability policy
+// ---------------------------------------------------------------------------
+
+type WorkspaceRuntime = 'universal' | 'node' | 'browser';
+
+type WorkspaceRole =
+  | { kind: 'tooling' }
+  | { kind: 'layered'; layer: number; runtime: WorkspaceRuntime };
+
+/**
+ * The normative statement of who may depend on whom, independent of what any
+ * manifest currently declares. Two attributes per workspace, not an edge list:
+ *
+ * - `layer` — a package may depend only on strictly lower layers. Same layer
+ *   is forbidden (nav and calendar are peers, not a stack), and so is upward.
+ * - `runtime` — a *runtime* dependency (`dependencies`) must be `universal`
+ *   or share the dependant's runtime. `devDependencies` are type/tooling edges
+ *   and cross runtimes freely, which is how `apps/web` consumes `@luke/api`
+ *   for `AppRouter` without ever loading Fastify in a browser bundle.
+ *
+ * `tooling` manifests (the repository root, the ESLint plugin) may name a
+ * workspace only under `devDependencies`.
+ *
+ * Only `dependencies` and `devDependencies` carry a workspace edge. A
+ * workspace under `peerDependencies` or `optionalDependencies` is reported
+ * rather than judged: neither group has a meaning here today (no manifest
+ * uses either), so the policy fails closed instead of guessing one.
+ *
+ * Every workspace edge must use the `workspace:` protocol. A semver range on
+ * a name that also exists in the tree lets pnpm satisfy it from the registry
+ * one day, silently replacing the tree's package with a published stranger.
+ *
+ * Fail-closed in both directions: every tracked manifest must be classified,
+ * and every classified path must be tracked. The ESLint rule
+ * `@luke/no-undeclared-workspace-import` guarantees imports ⊆ declarations;
+ * this check guarantees declarations ⊆ policy. Together: imports ⊆ policy,
+ * even when the importing package edits its own manifest — measured: with
+ * `@luke/api` added to core's manifest, the rule, lint, tsc and every other
+ * gate passed, and only this check refused the edge.
+ */
+const WORKSPACE_POLICY = {
+  'package.json': { kind: 'tooling' },
+  'packages/eslint-plugin-luke/package.json': { kind: 'tooling' },
+  'packages/core/package.json': { kind: 'layered', layer: 0, runtime: 'universal' },
+  'packages/nav/package.json': { kind: 'layered', layer: 1, runtime: 'node' },
+  'packages/calendar/package.json': { kind: 'layered', layer: 1, runtime: 'node' },
+  'apps/api/package.json': { kind: 'layered', layer: 2, runtime: 'node' },
+  'apps/web/package.json': { kind: 'layered', layer: 3, runtime: 'browser' },
+} as const satisfies Record<string, WorkspaceRole>;
+
+const WORKSPACE_EDGE_GROUPS = ['dependencies', 'devDependencies'] as const;
+const UNSUPPORTED_EDGE_GROUPS = ['peerDependencies', 'optionalDependencies'] as const;
+
+function workspaceRole(file: string): WorkspaceRole | undefined {
+  return (WORKSPACE_POLICY as Record<string, WorkspaceRole>)[file];
+}
+
+function describeRole(role: WorkspaceRole): string {
+  return role.kind === 'tooling' ? 'tooling' : `layer ${role.layer}, ${role.runtime}`;
+}
+
+function checkWorkspaceDependencyDirection(all: Manifest[], problems: Problem[]): void {
+  // Package identity fails closed: a workspace edge is a `name` in another
+  // manifest, so a classified manifest with no name can neither be depended
+  // on nor have its own edges attributed, and two manifests sharing a name
+  // would let either answer for the other. Every manifest carrying a shared
+  // name is reported, and the name resolves no edge at all — an edge to it
+  // is then reported as unresolvable rather than attributed to whichever
+  // manifest `git ls-files` listed first.
+  const named = new Map<string, Manifest[]>();
+  for (const manifest of all) {
+    const name = manifest.json.name;
+    if (typeof name === 'string' && name.length > 0) {
+      named.set(name, [...(named.get(name) ?? []), manifest]);
+    } else if (workspaceRole(manifest.file) !== undefined) {
+      problems.push({
+        file: manifest.file,
+        line: 1,
+        message:
+          'is classified in `WORKSPACE_POLICY` but has no `name`. A workspace edge is a name in ' +
+          'another manifest, so an unnamed package can neither be depended on nor be judged.',
+      });
+    }
+  }
+  const byName = new Map<string, Manifest>();
+  for (const [name, holders] of named) {
+    if (holders.length === 1) {
+      byName.set(name, holders[0]);
+      continue;
+    }
+    for (const manifest of holders) {
+      const others = holders.filter(h => h !== manifest).map(h => h.file).join(', ');
+      problems.push({
+        file: manifest.file,
+        line: 1,
+        message:
+          `has the name \`${name}\`, which is also the name of ${others}. Two manifests with one ` +
+          'name let either answer for a declared edge; names must be unique across tracked manifests, ' +
+          'and until they are this name resolves no edge.',
+      });
+    }
+  }
+
+  const trackedFiles = new Set(all.map(m => m.file));
+  for (const file of Object.keys(WORKSPACE_POLICY)) {
+    if (!trackedFiles.has(file)) {
+      problems.push({
+        file,
+        line: 1,
+        message:
+          'is classified in `WORKSPACE_POLICY` but no such manifest is tracked. ' +
+          'Either the package moved — update the entry — or it was removed and the row is stale.',
+      });
+    }
+  }
+
+  for (const manifest of all) {
+    const report = (message: string): void => {
+      problems.push({ file: manifest.file, line: 1, message });
+    };
+    const role = workspaceRole(manifest.file);
+    if (role === undefined) {
+      report(
+        'is a tracked manifest with no row in `WORKSPACE_POLICY`. Every workspace must ' +
+          'state its layer and runtime (or be `tooling`) before anything may depend on it, or it on anything.'
+      );
+      continue;
+    }
+
+    for (const group of UNSUPPORTED_EDGE_GROUPS) {
+      const entries = manifest.json[group];
+      if (typeof entries !== 'object' || entries === null) continue;
+      for (const [name, spec] of Object.entries(entries as Record<string, unknown>)) {
+        const isWorkspaceSpec = typeof spec === 'string' && spec.startsWith('workspace:');
+        if (byName.has(name) || isWorkspaceSpec) {
+          report(
+            `declares workspace package \`${name}\` under \`${group}\`. The policy judges only ` +
+              '`dependencies` (runtime) and `devDependencies` (types/tooling); this group has no ' +
+              'meaning for a workspace edge here, so it is refused rather than guessed.'
+          );
+        }
+      }
+    }
+
+    const seen = new Map<string, string[]>();
+
+    for (const group of WORKSPACE_EDGE_GROUPS) {
+      const entries = manifest.json[group];
+      if (typeof entries !== 'object' || entries === null) continue;
+      for (const [name, spec] of Object.entries(entries as Record<string, unknown>)) {
+        const target = byName.get(name);
+        const isWorkspaceSpec = typeof spec === 'string' && spec.startsWith('workspace:');
+        if (target === undefined) {
+          if (isWorkspaceSpec) {
+            report(
+              `declares \`${name}\` as a workspace dependency, but no single tracked manifest has that name ` +
+                '(none does, or more than one does). A workspace link that resolves to nothing is a ' +
+                'declaration the policy cannot judge.'
+            );
+          }
+          continue; // an external package is not this check's business
+        }
+        if (!isWorkspaceSpec) {
+          report(
+            `declares \`${name}\` — a tracked workspace — with the spec \`${String(spec)}\` instead of the ` +
+              '`workspace:` protocol. Anything else can one day be satisfied from the registry by a ' +
+              'published package of the same name, silently replacing the tree\'s.'
+          );
+        }
+        seen.set(name, [...(seen.get(name) ?? []), group]);
+
+        if (target.file === manifest.file) {
+          report(`declares itself (\`${name}\`) as a dependency. A package cannot depend on its own contract.`);
+          continue;
+        }
+
+        const targetRole = workspaceRole(target.file);
+        if (targetRole === undefined) continue; // already reported on the target itself
+
+        if (role.kind === 'tooling') {
+          if (group !== 'devDependencies') {
+            report(
+              `is tooling but declares \`${name}\` under \`${group}\`. Tooling manifests may name a ` +
+                'workspace only under `devDependencies`: they consume types and scripts, never a runtime.'
+            );
+          }
+          continue;
+        }
+
+        if (targetRole.kind === 'tooling') {
+          if (group !== 'devDependencies') {
+            report(`declares tooling package \`${name}\` under \`${group}\`; tooling is a devDependency or nothing.`);
+          }
+          continue;
+        }
+
+        if (targetRole.layer >= role.layer) {
+          report(
+            `(${describeRole(role)}) declares \`${name}\` (${describeRole(targetRole)}) under \`${group}\`. ` +
+              'A workspace may depend only on strictly lower layers: this edge points ' +
+              (targetRole.layer === role.layer ? 'sideways' : 'upward') +
+              ' and is forbidden by `WORKSPACE_POLICY` whether or not anything imports it yet.'
+          );
+          continue;
+        }
+
+        if (group === 'dependencies' && targetRole.runtime !== 'universal' && targetRole.runtime !== role.runtime) {
+          report(
+            `(${role.runtime}) declares \`${name}\` (${targetRole.runtime}) as a runtime dependency. ` +
+              'A runtime edge may reach only a universal package or one sharing this runtime. If only ' +
+              'its types are needed, move it to `devDependencies`, which the ESLint rule then limits to `import type`.'
+          );
+        }
+      }
+    }
+
+    for (const [name, where] of seen) {
+      if (where.length > 1) {
+        report(
+          `declares \`${name}\` under both \`dependencies\` and \`devDependencies\`. One of them is the ` +
+            'contract; the other silently widens it.'
+        );
+      }
+    }
+  }
+}
+
 /** Every platform invariant, against a repository root. */
 export function checkPlatformIntegrity(root: string): Problem[] {
   const problems: Problem[] = [];
@@ -1076,6 +1304,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkPublishedContracts(all, problems);
   checkWebRuntimeHasNoApiSource(root, problems);
   checkPrismaBootstrap(all, problems);
+  checkWorkspaceDependencyDirection(all, problems);
 
   return problems;
 }
@@ -1095,7 +1324,7 @@ function main(): void {
     `[platform-integrity] ok — ${manifests(REPO_ROOT).length} manifest, ` +
       `${NODE_PIN_SITES.length} pin Node, ${DEPENDENCY_FAMILIES.length} ` +
       `famiglie di dipendenze e ${PUBLISHED_CONTRACTS.length} contratti di ` +
-      'pacchetto verificati.'
+      `pacchetto e ${Object.keys(WORKSPACE_POLICY).length} ruoli di workspace verificati.`
   );
 }
 

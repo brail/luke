@@ -154,6 +154,24 @@ export const VALID_REPO: RepoFiles = {
   'apps/api/package.json': JSON.stringify(API_PACKAGE_JSON, null, 2),
   'packages/core/package.json': JSON.stringify(CORE_PACKAGE_JSON, null, 2),
   'apps/web/package.json': JSON.stringify(WEB_PACKAGE_JSON, null, 2),
+  // Every row of `WORKSPACE_POLICY` must be tracked, or P10 reports the row as
+  // stale — so the two peer libraries and the tooling package exist here,
+  // minimally. `nav → core` is the baseline's permitted, unused edge.
+  'packages/nav/package.json': JSON.stringify(
+    { name: '@fixture/nav', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
+    null,
+    2
+  ),
+  'packages/calendar/package.json': JSON.stringify(
+    { name: '@fixture/calendar', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
+    null,
+    2
+  ),
+  'packages/eslint-plugin-luke/package.json': JSON.stringify(
+    { name: 'eslint-plugin-fixture', private: true },
+    null,
+    2
+  ),
   'pnpm-workspace.yaml': WORKSPACE_YAML,
   'pnpm-lock.yaml': LOCKFILE,
   '.nvmrc': '24\n',
