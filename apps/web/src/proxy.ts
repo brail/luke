@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 
 /**
- * Next.js Edge middleware that protects all `/app/*` routes.
+ * Next.js 16 Proxy (`proxy.ts`, Node.js runtime — Next rejects a route-segment
+ * config here with "Proxy always runs on Node.js runtime") that protects all
+ * `/app/*` routes.
  * Unauthenticated requests are handled client-side (`(app)/layout.tsx`), not here.
  *
  * Used to also re-verify the embedded API accessToken against `me.get` on every
@@ -15,7 +17,7 @@ import { NextResponse } from 'next/server';
  * request for a result nothing here reads.
  *
  * Section-level guards are enforced by server-side layout guards (`assertSectionAccess`)
- * rather than here, to keep this middleware lightweight for the Edge Runtime.
+ * rather than here, to keep this proxy lightweight.
  */
 export default function middleware() {
   return NextResponse.next();

@@ -296,7 +296,7 @@ const PACKAGE_NODE_ONLY_FILES = [
  * evidence, not by directory convention (Next's own file-based routing gives
  * no such convention below the route-handler level — see the docstring on the
  * isomorphic web block for why the rest of `apps/web` cannot be split this
- * way). None of these five paths carry `'use client'` — checked directly, not
+ * way). None of these paths carry `'use client'` — checked directly, not
  * inferred, since a Route Handler could not have the directive and be valid
  * either way — and every file that imports from `auth.ts` (rather than the
  * client-safe `auth.shared.ts`) is one of these files or another one already
@@ -309,6 +309,15 @@ const WEB_NODE_ONLY_FILES = [
   'apps/web/src/auth.ts',
   'apps/web/src/auth.shared.ts',
   'apps/web/src/lib/authz/**/*.ts',
+  // Next's proxy entry point (`PROXY_FILENAME` in `next/dist/lib/constants.js`).
+  // On Next 16 this is not Edge middleware: `next/dist/build/analysis/
+  // get-page-static-info.js` rejects a route-segment config in it with "Proxy
+  // always runs on Node.js runtime", so its ambient set is Node's. Until this
+  // entry it carried `globals.worker` plus `process` on the Edge premise of the
+  // pre-16 middleware. Proven by bait: `Buffer` here lints clean, `window` is
+  // `no-undef`. Node globals only — it is deliberately not in
+  // `WEB_SERVER_ENTRYPOINT_IMPORTERS`.
+  'apps/web/src/proxy.ts',
   // Node-tier unit tests — `vitest.config.mts`'s own `environment: 'node'`,
   // matched here against its exact `include` glob so the two cannot drift.
   'apps/web/src/lib/**/*.test.ts',
@@ -357,6 +366,7 @@ const NODE_ONLY_FILES = [
  * - `app/api/**\/route.{ts,js}` is Node by default, but a route may export
  *   `runtime = 'edge'` and nothing here would notice. None needs the
  *   entrypoint; enrol a file here, by name, when one genuinely does;
+ * - `proxy.ts` is Node (see `WEB_NODE_ONLY_FILES`) and has no such need.
  * The transitive case — a client module reaching an enrolled file — is not a
  * specifier question and is not modelled here: Turbopack refuses a Node
  * builtin in the browser layer, so `next build` fails on it, and CI runs that
@@ -537,16 +547,12 @@ export default [
     // Node under the Playwright test runner — genuinely both, in the same
     // file, by design.
     //
-    // Excluded (`ignores`), each already covered by a narrower block above or
-    // needing none at all — a file must get its globals from exactly one
-    // place:
+    // Excluded (`ignores`), each already covered by a narrower block above —
+    // a file must get its globals from exactly one place:
     // - `NODE_ONLY_FILES`'s web slice (route handlers, `auth.ts`,
-    //   `auth.shared.ts`, `lib/authz/**`, the Node-tier unit tests);
-    // - `WEB_BROWSER_ONLY_FILES` (the vitest-browser tier);
-    // - `proxy.ts` — Next's Edge middleware entry point (`PROXY_FILENAME` in
-    //   `next/dist/lib/constants.js`; the file itself calls it "Edge
-    //   middleware" too), which has its own dedicated block below — Edge is
-    //   neither Node nor a full browser and gets neither's ambient set here.
+    //   `auth.shared.ts`, `lib/authz/**`, `proxy.ts` — Node on Next 16, see
+    //   its entry there — and the Node-tier unit tests);
+    // - `WEB_BROWSER_ONLY_FILES` (the vitest-browser tier).
     //
     // This block itself remains the acknowledged open edge of P0-02b (Cycle
     // 5, Monorepo Audit): the same importer-dependent model that makes
@@ -560,7 +566,7 @@ export default [
     // bundler's, and `next build` in CI ("Build (web)") is what refuses a
     // Node builtin in the browser layer. Neither is a flat-config glob.
     files: WEB_FILES,
-    ignores: [...WEB_NODE_ONLY_FILES, ...WEB_BROWSER_ONLY_FILES, 'apps/web/src/proxy.ts'],
+    ignores: [...WEB_NODE_ONLY_FILES, ...WEB_BROWSER_ONLY_FILES],
     languageOptions: {
       globals: {
         ...globals.browser,
@@ -636,31 +642,6 @@ export default [
     languageOptions: {
       globals: {
         NodeJS: 'readonly',
-      },
-    },
-  },
-  {
-    // `apps/web/src/proxy.ts` — Next's Edge middleware/proxy entry point
-    // (`PROXY_FILENAME` in `next/dist/lib/constants.js`). Edge is a real,
-    // distinct third runtime, not "neither Node nor browser" left
-    // unspecified: read Next's own `next/dist/server/web/globals.js`
-    // directly rather than guessing. Its `enhanceGlobals()` runs only when
-    // `NEXT_RUNTIME === 'edge'` and explicitly installs a `process` object
-    // (`global.process = process`, syncing `.env`) — Edge genuinely gets a
-    // `process`, just not the full Node one. Cross-checked
-    // `next/dist/server/web/adapter.js`, the actual Edge sandbox, for
-    // `URL`/`Headers`/`fetch`/`crypto` — all present there, and all present
-    // in the `globals` package's own `worker` preset (already a dependency,
-    // nothing new to install), which correctly excludes `window`/`document`
-    // (no DOM) and `Buffer`/`require`/`__dirname`/`module` (no Node) while
-    // including the Web-standard surface Edge actually has. `worker` plus
-    // one evidenced addition (`process`) — not a hand-maintained Edge-global
-    // list, and not the false-conservative "grant nothing" this replaced.
-    files: ['apps/web/src/proxy.ts'],
-    languageOptions: {
-      globals: {
-        ...globals.worker,
-        process: 'readonly',
       },
     },
   },

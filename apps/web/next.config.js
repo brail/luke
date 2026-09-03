@@ -34,7 +34,14 @@ const nextConfig = {
    * Routes NOT proxied here (already handled by Next.js route handlers):
    *   /api/auth/...               → NextAuth
    *   /api/uploads/...            → app/api/uploads/[...path]/route.ts
-   *   /api/upload/brand-logo/temp → app/api/upload/brand-logo/temp/route.ts
+   *
+   * The temporary brand-logo upload has no route handler of its own: the
+   * dialog posts straight to `/upload/brand-logo/temp`
+   * (`buildTempBrandLogoUploadUrl()`) with its Bearer token, and reaches the
+   * API through the `/upload/:path*` rewrite below like every other upload.
+   * A handler at `app/api/upload/brand-logo/temp/route.ts` used to exist; it
+   * was never tracked (`.gitignore` ignores every `temp/` directory) and was
+   * retired as stale residue in Monorepo Audit Cycle 10.
    *
    * An API path missing from this list does NOT fail loudly: it falls through to Next's own
    * routing, which answers with the 404 page. A `fetch` caller sees `res.ok === false`, but an
