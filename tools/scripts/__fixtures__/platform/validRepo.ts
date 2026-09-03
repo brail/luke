@@ -28,6 +28,10 @@ const ROOT_PACKAGE_JSON = {
   packageManager: 'pnpm@11.24.0+sha512.abcdef0123456789abcdef0123456789',
   engines: { node: '>=24.0.0', pnpm: '>=10.0.0' },
   scripts: {
+    // The Prisma client is a stub until this runs, and a fresh clone cannot
+    // start without it. Root, not workspace: pnpm only runs lifecycle scripts
+    // for the root project — see `checkPrismaBootstrap`.
+    postinstall: 'pnpm --filter @fixture/api exec prisma generate',
     security: 'pnpm security:sast && pnpm security:secrets',
     'security:sast': 'semgrep scan --config a.yml && semgrep scan --error',
     'security:secrets': 'gitleaks detect --source .',
@@ -38,6 +42,16 @@ const ROOT_PACKAGE_JSON = {
 const API_PACKAGE_JSON = {
   name: '@fixture/api',
   private: true,
+  // The published-contract shape: entry points in `dist`, an `exports` map that
+  // answers only what it means to, and a `files` allowlist. All three are
+  // required together — the negative cases remove one at a time.
+  main: './dist/index.js',
+  types: './dist/index.d.ts',
+  exports: {
+    '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+    './package.json': './package.json',
+  },
+  files: ['dist'],
   dependencies: {
     '@fixture/core': 'workspace:*',
     prisma: '7.10.0',
@@ -50,6 +64,26 @@ const API_PACKAGE_JSON = {
     '@opentelemetry/sdk-node': '^0.219.0',
     '@opentelemetry/resources': '^2.10.0',
   },
+  devDependencies: { typescript: '^6.0.3' },
+};
+
+/**
+ * The second registered published contract. It exists here because
+ * `checkPublishedContracts` reports a declared contract whose manifest is not
+ * tracked — a silent skip would have made the rule vacuous exactly when a
+ * package was renamed out from under it.
+ */
+const CORE_PACKAGE_JSON = {
+  name: '@fixture/core',
+  private: true,
+  main: './dist/index.js',
+  types: './dist/index.d.ts',
+  exports: {
+    '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+    './server': { types: './dist/server/index.d.ts', default: './dist/server/index.js' },
+    './package.json': './package.json',
+  },
+  files: ['dist'],
   devDependencies: { typescript: '^6.0.3' },
 };
 
@@ -118,6 +152,7 @@ runs:
 export const VALID_REPO: RepoFiles = {
   'package.json': JSON.stringify(ROOT_PACKAGE_JSON, null, 2),
   'apps/api/package.json': JSON.stringify(API_PACKAGE_JSON, null, 2),
+  'packages/core/package.json': JSON.stringify(CORE_PACKAGE_JSON, null, 2),
   'apps/web/package.json': JSON.stringify(WEB_PACKAGE_JSON, null, 2),
   'pnpm-workspace.yaml': WORKSPACE_YAML,
   'pnpm-lock.yaml': LOCKFILE,
@@ -146,6 +181,24 @@ export function withRootManifest(
   const json = JSON.parse(JSON.stringify(ROOT_PACKAGE_JSON));
   edit(json);
   return withFile('package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose Core manifest has been edited. */
+export function withCoreManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(CORE_PACKAGE_JSON));
+  edit(json);
+  return withFile('packages/core/package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose API manifest has been edited. */
+export function withApiManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(API_PACKAGE_JSON));
+  edit(json);
+  return withFile('apps/api/package.json', JSON.stringify(json, null, 2));
 }
 
 /** A copy of the baseline whose `pnpm-workspace.yaml` policy block is replaced. */

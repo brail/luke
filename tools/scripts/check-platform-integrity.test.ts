@@ -36,6 +36,8 @@ import { after, test } from 'node:test';
 
 import {
   VALID_REPO,
+  withApiManifest,
+  withCoreManifest,
   withFile,
   withPolicy,
   withRootManifest,
@@ -350,5 +352,555 @@ test('P6 accepts delegation to a single runner (canonical form 2)', () => {
     withRootManifest(json => {
       json.scripts['security:sast'] = 'bash scripts/security-sast.sh';
     })
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P7 — published package contracts
+//
+// A workspace other workspaces compile against must resolve to its build, and
+// publish nothing else. The defect is not hypothetical: `@luke/api` pointed
+// `main`/`types` at `./src/index.ts` with no `exports` map, so `apps/web` and
+// the root scripts project each compiled 129 Fastify server files, and
+// `@luke/api/src/index.ts` resolved for anyone who asked.
+//
+// Each negative below was first confirmed to pass a narrower version of this
+// rule — one that only rejected the literal string `src` in entry-point values.
+// They are the bypasses that version admitted.
+// ---------------------------------------------------------------------------
+
+test('P7 fails when a published contract points `types` into src', () => {
+  expectFailure(
+    withApiManifest(json => {
+      json.types = './src/index.ts';
+    }),
+    /entry point `\.\/src\/index\.ts` resolves outside `dist\/`/
+  );
+});
+
+test('P7 fails when a published contract points `main` into src', () => {
+  expectFailure(
+    withApiManifest(json => {
+      json.main = './src/index.ts';
+    }),
+    /entry point `\.\/src\/index\.ts` resolves outside `dist\/`/
+  );
+});
+
+test('P7 fails when an exports condition reaches into src', () => {
+  // The subtle regression: `main`/`types` stay honest while a condition inside
+  // the map hands source back. Nested values are read, not just top-level ones.
+  expectFailure(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './src/index.ts', default: './dist/index.js' },
+      };
+    }),
+    /entry point `\.\/src\/index\.ts` resolves outside `dist\/`/
+  );
+});
+
+test('P7 fails when entry points resolve outside dist without naming src', () => {
+  // `./build` is not source, so a rule that only looked for `src` accepted it.
+  // It is still not the tree `files` ships or the one the build writes.
+  expectFailure(
+    withApiManifest(json => {
+      json.main = './build/index.js';
+      json.types = './build/index.d.ts';
+      json.exports = {
+        '.': { types: './build/index.d.ts', default: './build/index.js' },
+      };
+    }),
+    /entry point `\.\/build\/index\.d\.ts` resolves outside `dist\/`/
+  );
+});
+
+test('P7 fails when a published contract declares no exports map', () => {
+  expectFailure(
+    withApiManifest(json => {
+      delete json.exports;
+    }),
+    /declares no `exports` map/
+  );
+});
+
+test('P7 fails on a wildcard exports key that republishes the whole package', () => {
+  // `"./*": "./*"` re-opens by pattern exactly what the map was added to close.
+  // Every declared target looks legitimate; the key is what leaks.
+  expectFailure(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './*': './*',
+      };
+    }),
+    /publishes by pattern/
+  );
+});
+
+test('P7 fails on a wildcard exports key even when it points inside dist', () => {
+  // Narrower, still a pattern: it publishes every internal declaration in the
+  // build, which is the 160 files the contract deliberately does not expose.
+  expectFailure(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './*': './dist/*',
+      };
+    }),
+    /publishes by pattern/
+  );
+});
+
+test('P7 fails when a published contract declares no files allowlist', () => {
+  expectFailure(
+    withApiManifest(json => {
+      delete json.files;
+    }),
+    /declares no `files` allowlist/
+  );
+});
+
+test('P7 fails on an empty files array, which ships none of the contract', () => {
+  expectFailure(
+    withApiManifest(json => {
+      json.files = [];
+    }),
+    /`files` does not list `dist`/
+  );
+});
+
+test('P7 fails on a files array that omits dist', () => {
+  expectFailure(
+    withApiManifest(json => {
+      json.files = ['README.md'];
+    }),
+    /`files` does not list `dist`/
+  );
+});
+
+test('P7 fails when files ships source beside the build', () => {
+  expectFailure(
+    withApiManifest(json => {
+      json.files = ['dist', 'src'];
+    }),
+    /`files` lists `src`, shipping source beside the build/
+  );
+});
+
+test('P7 accepts a contract whose every entry point resolves into dist', () => {
+  expectClean(VALID_REPO);
+});
+
+test('P7 accepts explicit subpath exports, which are a boundary and not a leak', () => {
+  // `@luke/core` publishes three of these. Publishing more than one entry is
+  // not the defect; publishing source, or publishing by pattern, is.
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './server': { types: './dist/server/index.d.ts', default: './dist/server/index.js' },
+        './utils/date': { types: './dist/utils/date.d.ts', default: './dist/utils/date.js' },
+        './package.json': './package.json',
+      };
+    })
+  );
+});
+
+test('P7 exempts ./package.json, the one published target outside the build', () => {
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './package.json': './package.json',
+      };
+    })
+  );
+});
+
+test('P7 does not mistake a `src` substring inside a longer segment for the directory', () => {
+  // `dist/srcmap` is not `src`. An over-broad rule that reports correct
+  // architecture as broken gets disabled within a week.
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/srcmap/index.d.ts', default: './dist/srcmap/index.js' },
+      };
+      json.types = './dist/srcmap/index.d.ts';
+      json.main = './dist/srcmap/index.js';
+    })
+  );
+});
+
+test('P7 does not read condition names as subpaths', () => {
+  // "types"/"default"/"import" are conditions, not paths, and none of them can
+  // carry a pattern. Treating them as subpath keys would be harmless here but
+  // would misreport the moment someone used a condition containing a `*`.
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', import: './dist/index.js', default: './dist/index.js' },
+      };
+    })
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P8 — the Web runtime image carries no API source
+//
+// Matching is by containment, not by string equality. A rule that looked for
+// the literal `apps/api/src` in a COPY line accepted three copies that place
+// the same files in the image without naming it.
+// ---------------------------------------------------------------------------
+
+const WEB_DOCKERFILE_BUILDER = `FROM node:24-alpine AS base
+FROM base AS builder
+WORKDIR /app
+COPY . .
+RUN pnpm --filter @luke/api build
+`;
+
+/** The builder stage plus a runner stage containing exactly `body`. */
+function webDockerfile(body: string): RepoFiles {
+  return withFile(
+    'apps/web/Dockerfile',
+    `${WEB_DOCKERFILE_BUILDER}FROM base AS runner\n${body}`
+  );
+}
+
+test('P8 fails when the runner stage copies apps/api/src', () => {
+  expectFailure(
+    webDockerfile('COPY --from=builder /app/apps/api/src ./apps/api/src\n'),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 fails on a parent-directory copy that carries API source with it', () => {
+  expectFailure(
+    webDockerfile('COPY --from=builder /app/apps/api ./apps/api\n'),
+    /copies `apps\/api`, which overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 fails on an apps/ copy, two levels above the source', () => {
+  expectFailure(
+    webDockerfile('COPY --from=builder /app/apps ./apps\n'),
+    /copies `apps`, which overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 fails on a wholesale copy of the build root', () => {
+  expectFailure(
+    webDockerfile('COPY --from=builder /app ./\n'),
+    /copies `\/`, which overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 reads every source operand, not only the first', () => {
+  // `COPY src1 src2 dest/` is valid Docker. Checking one operand would miss the
+  // rest.
+  expectFailure(
+    webDockerfile('COPY --from=builder /app/apps/web/public /app/apps/api/src ./stuff/\n'),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 ignores the builder stage, which legitimately holds the whole repository', () => {
+  // The builder must see API source — it is what the contract is compiled from.
+  // A rule that read the whole file would make the fix impossible.
+  expectClean(
+    webDockerfile('COPY --from=builder /app/apps/web/.next ./apps/web/.next\n')
+  );
+});
+
+test('P8 does not fire on a mere mention of the path outside a COPY', () => {
+  expectClean(
+    webDockerfile(
+      '# apps/api/src is deliberately absent here — see the note above.\n' +
+        'COPY --from=builder /app/apps/web/.next ./apps/web/.next\n'
+    )
+  );
+});
+
+test('P8 accepts sibling directories that cannot contain API source', () => {
+  // apps/web and packages/core are what the runner legitimately carries, and
+  // apps/api/dist would be too — none of them contains apps/api/src.
+  expectClean(
+    webDockerfile(
+      'COPY --from=builder /app/apps/web/.next ./apps/web/.next\n' +
+        'COPY --from=builder /app/packages/core/dist ./packages/core/dist\n' +
+        'COPY --from=builder /app/apps/api/dist ./apps/api/dist\n'
+    )
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P7/P8 — bypasses found by review of the first implementation.
+//
+// Each case below was confirmed to pass the previous version of the rule, on
+// this fixture and against the real repository, before the rule was tightened.
+// ---------------------------------------------------------------------------
+
+test('P7 fails on an entry point that traverses out of dist with ..', () => {
+  // `./dist/../src/index.ts` begins with `dist` and lands in `src`. A rule
+  // reading only the first segment accepted it.
+  expectFailure(
+    withApiManifest(json => {
+      json.types = './dist/../src/index.ts';
+    }),
+    /traverses out of its own directory with `\.\.`/
+  );
+});
+
+test('P7 fails on `exports: null`, which removes the map entirely', () => {
+  // Not "no opinion": with a null map every path in the package resolves again.
+  // `undefined`-only checking read this as a declared map with no entries.
+  expectFailure(
+    withApiManifest(json => {
+      json.exports = null;
+    }),
+    /declares no `exports` map/
+  );
+});
+
+test('P7 fails on a files glob that matches every top-level entry', () => {
+  for (const glob of ['**', '*']) {
+    expectFailure(
+      withApiManifest(json => {
+        json.files = ['dist', glob];
+      }),
+      /whose first segment is a glob/
+    );
+  }
+});
+
+test('P7 accepts a bounded glob under a real directory', () => {
+  // `dist/**` is the ordinary way to say "the build tree". The first segment
+  // still bounds it, so it is not the defect above.
+  expectClean(
+    withApiManifest(json => {
+      json.files = ['dist', 'dist/**'];
+    })
+  );
+});
+
+test('P7 accepts a null exports entry, the standard way to block a subpath', () => {
+  // Blocking must stay legal: `"./internal": null` refuses a subpath rather
+  // than publishing one, which is the boundary being drawn, not a hole in it.
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './internal': null,
+        './package.json': './package.json',
+      };
+    })
+  );
+});
+
+test('P7 reports a declared contract whose manifest is not tracked', () => {
+  // A silent skip made the rule vacuous exactly when a package was renamed or
+  // untracked — the case where nothing else would notice either.
+  expectFailure(
+    withoutFile('packages/core/package.json'),
+    /declared in `PUBLISHED_CONTRACTS` but no such manifest is tracked/
+  );
+});
+
+test('P7 checks the second registered contract, not only the first', () => {
+  // Both entries must be live. Breaking Core alone has to go red.
+  expectFailure(
+    withCoreManifest(json => {
+      json.types = './src/index.ts';
+    }),
+    /entry point `\.\/src\/index\.ts` resolves outside `dist\/`/
+  );
+});
+
+test('P8 fails on a descendant copy, which is still API source in the image', () => {
+  // Containment was one-directional: only an ancestor of `apps/api/src` was
+  // caught, so copying a subdirectory of it passed.
+  expectFailure(
+    webDockerfile('COPY --from=builder /app/apps/api/src/routers ./apps/api/src/routers\n'),
+    /copies `apps\/api\/src\/routers`, which overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 reads the JSON array COPY form, with the flags outside the array', () => {
+  // The form Docker requires for paths containing spaces. Flags are not array
+  // elements — an earlier test put `--from=builder` inside the brackets, which
+  // is not valid Docker and so proved nothing about the real syntax.
+  expectFailure(
+    webDockerfile('COPY --from=builder ["/app/apps/api/src", "./apps/api/src"]\n'),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 folds line continuations into one instruction', () => {
+  // Split across three lines, the first had no operands and the rest did not
+  // start with COPY, so a per-line reader saw no copy at all.
+  expectFailure(
+    webDockerfile('COPY --from=builder \\\n  /app/apps/api/src \\\n  ./apps/api/src\n'),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 still accepts a legitimate multi-line copy of the web build', () => {
+  expectClean(
+    webDockerfile('COPY --from=builder \\\n  /app/apps/web/.next \\\n  ./apps/web/.next\n')
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P9 — the development lifecycle bootstraps itself
+// ---------------------------------------------------------------------------
+
+test('P9 fails when the Prisma client is not generated on install', () => {
+  // Reproduced on a genuinely fresh clone: `pnpm install && pnpm dev` died at
+  // `@luke/nav#build` with TS2305 and no development task ever started.
+  expectFailure(
+    withRootManifest(json => {
+      delete (json.scripts as Record<string, unknown>).postinstall;
+    }),
+    /`postinstall` must run `prisma generate`/
+  );
+});
+
+test('P9 fails when postinstall exists but does something else', () => {
+  expectFailure(
+    withRootManifest(json => {
+      json.scripts.postinstall = 'echo hello';
+    }),
+    /`postinstall` must run `prisma generate`/
+  );
+});
+
+test('P9 accepts a postinstall that wraps the generate step', () => {
+  expectClean(
+    withRootManifest(json => {
+      json.scripts.postinstall = 'pnpm --filter @fixture/api exec prisma generate && node tools/after.mjs';
+    })
+  );
+});
+
+test('P9 is not satisfied by the hook on a workspace manifest', () => {
+  // The shape that looked right and never ran: pnpm executes lifecycle scripts
+  // for the root project, not for workspace projects.
+  expectFailure(
+    withRootManifest(json => {
+      delete (json.scripts as Record<string, unknown>).postinstall;
+    }),
+    /`postinstall` must run `prisma generate`/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P7/P8 — the Dockerfile spellings and export shapes a second review found.
+//
+// Every case here was confirmed against the real repository's Dockerfile and
+// manifest before the rules were widened.
+// ---------------------------------------------------------------------------
+
+test('P7 allows a wildcard that blocks a subtree rather than publishing one', () => {
+  // `"./internal/*": null` refuses everything under `./internal`. Rejecting it
+  // was a false positive: it draws the boundary the rule wants.
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './internal/*': null,
+        './package.json': './package.json',
+      };
+    })
+  );
+});
+
+test('P7 allows a wildcard whose every condition is null', () => {
+  expectClean(
+    withApiManifest(json => {
+      json.exports = {
+        '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+        './internal/*': { types: null, default: null },
+      };
+    })
+  );
+});
+
+test('P7 still rejects a wildcard that resolves to something', () => {
+  for (const target of ['./*', './dist/*']) {
+    expectFailure(
+      withApiManifest(json => {
+        json.exports = {
+          '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+          './*': target,
+        };
+      }),
+      /publishes by pattern/
+    );
+  }
+});
+
+test('P8 catches `COPY . .`, which carries the whole build context', () => {
+  expectFailure(webDockerfile('COPY . .\n'), /copies `\/`, which overlaps/);
+});
+
+test('P8 is case-insensitive, as Dockerfile instructions are', () => {
+  expectFailure(
+    webDockerfile('copy --from=builder /app/apps/api/src ./apps/api/src\n'),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 strips whatever WORKDIR the builder declared, not a hardcoded /app', () => {
+  expectFailure(
+    withFile(
+      'apps/web/Dockerfile',
+      `FROM node:24-alpine AS base
+FROM base AS builder
+WORKDIR /srv
+COPY . .
+FROM base AS runner
+COPY --from=builder /srv/apps/api/src ./apps/api/src
+`
+    ),
+    /overlaps `apps\/api\/src`/
+  );
+});
+
+test('P8 reads a named runner that is not the last stage', () => {
+  // A Dockerfile may declare a debug or test target after the runtime stage.
+  // Reading only the last stage would then check the wrong one entirely.
+  expectFailure(
+    withFile(
+      'apps/web/Dockerfile',
+      `FROM node:24-alpine AS base
+FROM base AS builder
+WORKDIR /app
+COPY . .
+FROM base AS runner
+COPY --from=builder /app/apps/api/src ./apps/api/src
+FROM base AS debug
+RUN echo debug
+`
+    ),
+    /runtime stage `runner` copies/
+  );
+});
+
+test('P8 leaves a builder stage alone even when a later stage is named runner', () => {
+  expectClean(
+    withFile(
+      'apps/web/Dockerfile',
+      `FROM node:24-alpine AS base
+FROM base AS builder
+WORKDIR /app
+COPY . .
+RUN pnpm --filter @luke/api build
+FROM base AS runner
+COPY --from=builder /app/apps/web/.next ./apps/web/.next
+FROM base AS debug
+RUN echo debug
+`
+    )
   );
 });

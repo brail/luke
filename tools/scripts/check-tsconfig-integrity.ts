@@ -87,13 +87,14 @@
  * architecture the repository cannot change as broken, which is how a gate
  * becomes furniture. Reporting it as covered would be worse.
  *
- * It is also not a claim about package contracts. It says nothing about
- * `@luke/api`, which `apps/web` and `scripts/` consume as **source** because
- * `apps/api/package.json` points `main`/`types` at `./src/index.ts`. That is a
- * module-resolution consequence of a manifest, not a root-file ownership
- * violation, so the `files`/`include` rule below does not — and must not —
- * report it. No tsconfig rule can fix it, and a gate that appeared to cover it
- * would be worse than one that does not.
+ * It is also not a claim about package contracts. What a workspace publishes,
+ * and whether a consumer therefore compiles its sources or its build, is a
+ * property of a manifest rather than of any tsconfig — `apps/web` and
+ * `scripts/` once consumed `@luke/api` as source purely because its
+ * `main`/`types` pointed at `./src/index.ts`. No tsconfig rule could have fixed
+ * that, and a gate that appeared to cover it would be worse than one that does
+ * not. `checkPublishedContracts` in `check-platform-integrity.ts` owns it now,
+ * where the manifests are.
  *
  * The core is a pure function over a repository root so the fixtures under
  * `__fixtures__/tsconfig/` can drive it against throwaway git repositories.
@@ -818,10 +819,11 @@ function checkNoCrossPackageReference(
  * A config may not directly own another package's root files.
  *
  * `files`/`include` needs no alias and no reference: listing the sources works
- * just as well. This reads the **root** files TypeScript selected, so an
- * *imported* file — `apps/web` reaching `apps/api/src` through `@luke/api`'s
- * manifest — is untouched by it. That traversal is a package-contract problem
- * and deliberately not this rule's business.
+ * just as well. This reads the **root** files TypeScript selected, so a file
+ * that merely arrives by *import* — whatever a package's manifest resolves to —
+ * is untouched by it. That traversal is a package-contract problem, owned by
+ * `checkPublishedContracts` in `check-platform-integrity.ts`, and deliberately
+ * not this rule's business.
  *
  * The neutral base is exempt, and only the base: it declares no `include`, so
  * TypeScript's default expands it across the whole repository. That selection

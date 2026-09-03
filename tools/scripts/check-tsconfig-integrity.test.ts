@@ -623,10 +623,13 @@ test('a `files` entry pointing at another package is rejected', () => {
 });
 
 test('the rule reads root files, not imports: an ordinary local include is clean', () => {
-  // The distinction matters beyond tidiness. `apps/web` pulls 129 `apps/api`
-  // source files through `@luke/api`'s manifest, and this rule must not report
-  // that — it is a package-contract residual, not a root-file violation. Luke's
-  // own tree is the standing proof: `pnpm check:tsconfig` is green there.
+  // The distinction matters beyond tidiness. `apps/web` used to pull 129
+  // `apps/api` source files through `@luke/api`'s manifest, and this rule
+  // correctly never reported it: what a package publishes is a manifest
+  // property, not a root-file violation. That contract now resolves to `dist`,
+  // and `checkPublishedContracts` in `check-platform-integrity.ts` is what
+  // keeps it there. Luke's own tree is the standing proof for this rule:
+  // `pnpm check:tsconfig` is green there.
   expectClean(VALID_REPO);
 });
 
