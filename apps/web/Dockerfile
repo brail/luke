@@ -39,14 +39,23 @@ ENV NEXTAUTH_SECRET=build-time-placeholder-unused-at-runtime
 COPY . .
 RUN pnpm install --frozen-lockfile
 
-# Generate Prisma client BEFORE building — Next.js type-checks API source
-# files (via @luke/api path alias) which import from @prisma/client
+# Generate the Prisma client BEFORE building. Next no longer type-checks API
+# source — apps/web resolves @luke/api through its built `exports` entry — but
+# the emitted declaration graph still reaches @prisma/client: the router types
+# are inferred from procedures whose returns carry Prisma model types. Removing
+# this step degrades those types to `any` and fails the build under `strict`.
 RUN pnpm --filter @luke/api exec prisma generate
 
 # Build shared packages first
 RUN pnpm --filter @luke/core build
 RUN pnpm --filter @luke/nav build
 RUN pnpm --filter @luke/calendar build
+
+# @luke/api publishes a built type contract (dist/index.d.ts) and nothing else
+# resolves it: without this step `import type { AppRouter } from '@luke/api'`
+# fails with TS2307 and the Next build stops at its type-check phase. Proven by
+# deleting this line and watching the image build fail.
+RUN pnpm --filter @luke/api build
 
 # Build Next.js app
 RUN pnpm --filter @luke/web build
@@ -68,15 +77,20 @@ COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /app/packages/core/dist          ./packages/core/dist
 COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
 
-# @luke/nav — dist only (importato da @luke/api/src per i tipi tRPC)
-COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
-COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
-COPY --from=builder /app/packages/nav/node_modules  ./packages/nav/node_modules
-
-# @luke/api types (needed for tRPC type inference at runtime imports)
-COPY --from=builder /app/apps/api/package.json  ./apps/api/package.json
-COPY --from=builder /app/apps/api/src           ./apps/api/src
-COPY --from=builder /app/apps/api/node_modules  ./apps/api/node_modules
+# Neither @luke/api nor @luke/nav is copied here, and that is the point.
+#
+# Both used to be, so that Next could type-check `apps/api/src` — @luke/api
+# pointed `main`/`types` at its own TypeScript sources, and @luke/nav came along
+# because those sources import it. Every one of apps/web's @luke/api imports is
+# `import type`, so all of it is erased at build time: the emitted bundle
+# contains no `require("@luke/api")` at all, and the runner never loaded a byte
+# of it. The copies were a build-time dependency shipped into a runtime image.
+#
+# Verified rather than assumed: this image runs with `apps/api` absent from the
+# filesystem — apps/web/node_modules/@luke/api is a dangling symlink — serving
+# SSR pages, the NextAuth route handlers, and tRPC calls proxied to the API
+# container. Type inference is a compile-time activity; there are no runtime
+# imports to satisfy.
 
 # Next.js app — built output + public assets
 COPY --from=builder /app/apps/web/package.json  ./apps/web/package.json
