@@ -2701,3 +2701,106 @@ The manifests on the release train now read `2.1.4`. That is the stable line's r
 ### Next work
 
 Unchanged from §K.12: the **`@luke/api` package-contract boundary** is the immediate Cycle 9 objective, not started.
+
+# Appendix L — Cycle 9 closure: the `@luke/api` package contract (2026-09-03)
+
+Supersedes **only** the time-sensitive statements in §K.1, §K.12 and §K.13 ("Next work") that Cycle 9 is not started. Everything else in Appendix K, and every section before it, stands as written.
+
+## L.1 Disposition
+
+**`@luke/api` package contract: CLOSED.** `apps/api/package.json` points `main` and `types` at `dist`, publishes an `exports` map that admits only `.` and `./package.json`, and ships a `files` allowlist of `dist`. Consumers compile against `dist/index.d.ts` — `AppRouter`, `RouterOutputs`, `RouterInputs` — and every private subpath (`src/*`, `dist/*`, `routers`, `lib/*`) is refused by TypeScript and by Node with `ERR_PACKAGE_PATH_NOT_EXPORTED`. The package-boundary half of `P1-06` that §J.7 left open is closed at the boundary it belonged to.
+
+**API source out of the Web and root TypeScript programs: CLOSED.** Measured in `00c21b0`: `apps/api/src` 129 → 0 files in `apps/web` (production, 3354 → 1618 files), `apps/web` (tests, 3489 → 1760) and the root scripts program (2282 → 524). All three read 16 built declarations instead.
+
+**API and Nav source out of the Web runtime image: CLOSED.** Every `@luke/api` import in `apps/web` is `import type` and erased at build, so the runner stage copies neither `apps/api` nor `packages/nav`; `apps/web/node_modules/@luke/api` is a dangling symlink in the shipped image, by design.
+
+**Deterministic clean builds: CLOSED.** Every emitting workspace deletes its outputs before compiling, and the TypeScript `composite` setting that let a build report success while emitting nothing is gone (§L.3).
+
+**Development lifecycle: native Turbo and TypeScript.** A custom build/watch/ownership coordinator was implemented, reviewed and rejected before anything reached the remote (§L.4).
+
+**Release state: unchanged.** No tag, no release preparation, no deployment, no production change, no version bump (§L.9).
+
+## L.2 The contract
+
+- `apps/api/package.json`: `main`/`types` → `./dist/index.js` / `./dist/index.d.ts`; `exports` = `{ ".", "./package.json" }`; `files` = `["dist"]`.
+- `apps/web`: `@luke/api` moved to `devDependencies` and out of `transpilePackages`; `apps/web/tsconfig.json` documents that all three workspace packages now resolve through their own `exports` maps to `dist`.
+- Root: `typecheck:root` and `test:module-contract` build `@luke/api` before compiling against it; `postinstall` runs `prisma generate`, because a fresh clone otherwise died at `@luke/nav#build` with TS2305 before any development task ran.
+- `turbo.json`: `dist-scripts/**` joins `build.outputs`, so the API's compiled admin scripts are cached and restored with the rest.
+
+## L.3 Deterministic clean builds and the `composite` root cause
+
+`apps/api` and `packages/core` carried `composite: true`, which implies `incremental`. TypeScript then trusts `tsconfig.tsbuildinfo` as the record of what it emitted and never checks that the outputs exist. Reproduced on both: `tsc` → 176 declarations (api) / 54 (core), `rm -rf dist`, `tsc` → **0 declarations, exit 0**. A partial deletion looked built — 122 declarations against 176 declaration maps and no `dist/index.d.ts`, every build green.
+
+`composite` existed for project references, and Cycle 8 removed the last one. It is deleted from both projects (and the inert `composite: false` overrides in their script and test configs); the same `rm -rf dist` then `tsc` sequence now yields 176 and 54. Because no `tsc` invocation of any kind prunes an output whose source was renamed or removed (a planted `dist/lib/__stale.d.ts` survives `tsc` and `tsc -b --force`), every emitting `build` is `rm -rf dist && tsc` — `apps/api` also removes `dist-scripts`. Two consecutive `pnpm build` runs cache every emitting package; the output listing is identical to the coordinator-era build.
+
+## L.4 Development lifecycle: the rejected coordinator and the final graph
+
+Publishing `dist` as the contract made `apps/api` a library as well as a server, so `pnpm dev` must keep `apps/api/dist` current. The first implementation — never pushed; its tip `ff5e4b2` was preserved as a temporary local recovery ref, `backup/pre-b2-rewrite`, for the duration of review and verification — answered a different question: how to run emitting builds safely inside a worktree where `pnpm dev` is already up. It added a lock-directory protocol (a build claims a package, every watch polls the claim, suspends, and resumes; pid-stamped records reclaimed on crash) through four shared scripts and four test files, 1,832 lines. The architectural review rejected it on two grounds: that workflow is not a supported requirement, and the corruption it guarded against was the `composite` defect of §L.3, which has a two-line fix. A native alternative, `turbo watch dev`, was measured and also rejected: it restarted the persistent API and Next tasks on every dependency change and re-ran the 14-second API build per save.
+
+The committed lifecycle is Turbo's own ordering plus one addition:
+
+| task | dependsOn | note |
+| --- | --- | --- |
+| `dev` (core, nav, calendar) | `["^build", "build"]` | `tsc --watch`; unchanged from the prior ordering |
+| `@luke/web#dev` | `["^build"]` | `next dev`; no production Next build precedes it |
+| `@luke/api#dev` | `["^build", "build"]`, `with: ["@luke/api#dev:types"]` | `tsx watch` |
+| `dev:types` | `["^build", "build"]` | `tsc --watch --emitDeclarationOnly`, added |
+
+Every emitting watcher therefore starts only after its own initial build and its dependencies' builds have finished, which is the single-writer guarantee at startup. Two facts recorded in `lessons.md` because the review caught them: a `dev` task that emits must keep the dependency on its own `build` (`^build` alone lets a library watch start beside the build that API and Web request), and a package-specific Turbo entry replaces the global one rather than merging with it, so `@luke/api#dev` spells out every key.
+
+## L.5 Supported rule for emitting commands while dev is running
+
+Recorded in `CLAUDE.md`: do not run emitting builds or tests (`pnpm build`, `pnpm test`, `pnpm typecheck`, the pre-push hook) in a worktree where `pnpm dev` is running; use a second worktree or stop dev first. A build that completes leaves `dist` whole, because a non-incremental compile rewrites every output; one interrupted between its clean and its emit leaves a partial tree that the running watch will not restore. Type errors do not cause this — `tsc` emits on errors. `pnpm --filter @luke/api build` is only needed when dev is not running; while it runs, `dev:types` keeps the declarations current.
+
+## L.6 Evidence
+
+All measurements below were taken on the tree that is now `5c6b502`, on the real checkout unless stated.
+
+**Contract.** `pnpm test:module-contract`: `@luke/core` — 3 subpaths `require()`d from `dist` as ESM; `@luke/api` — resolves to `apps/api/dist/index.js`, 6 private subpaths refused. `check-platform-integrity` P7 (published contract shape), P8 (Web runtime image free of API source) and P9 (root `postinstall`) each carry fixture cases proving the rule goes red; `pnpm test:tools` 190 / 190.
+
+**Mutation of the output tree.** With `composite`: `rm -rf dist && tsc` → 0 declarations, exit 0. Without: 176. A manual `pnpm --filter @luke/api build` under a live `pnpm dev` left 176 declarations and `dist/index.d.ts` present; the watch's next emit followed in 3.3 s; API and Web stayed healthy.
+
+**Development lifecycle** (cold `pnpm dev`, no Turbo cache, no `dist`):
+
+| measure | result |
+| --- | --- |
+| API listening / Next ready / all four watchers settled | 23.6 s / 20.5 s / 30.1 s |
+| watcher start after its own build end (summary end time vs ms-stamped log) | core +0.210 s, nav +0.262 s, calendar +0.192 s, api `dev:types` +0.219 s |
+| `@luke/web#dev` after api, core and calendar builds | +0.217 s; `@luke/web#build` absent from the run |
+| core edit → `packages/core/dist/index.d.ts` / API restart by `tsx watch` | 0.47 s / 1 |
+| router edit → `apps/api/dist/routers/health.d.ts` / `apps/web` `tsc --noEmit` | 3.2 s / TS2322 on a deliberately wrong literal |
+| login page edit → SSR HTML | 94 ms |
+| Ctrl-C (SIGINT to the process group) | 0 descendants, ports free, no watcher left |
+
+**Full stack.** `check:drift`, `lint:tools`, `typecheck:tools`, `typecheck`, `typecheck:test`, `typecheck:root`, `lint` (49 pre-existing `apps/web` warnings, 0 errors), unit tests (core 5, web 7, calendar 6, api 41 files), browser component tests (4 files), `pnpm build` twice (second run cached for every emitting package). Outputs: core 216 files / 54 declarations, nav 60 / 15, calendar 36 / 9, api 704 / 176, `dist-scripts` 42.
+
+**Docker.** Both images built from a clean export of the committed tree on Docker Desktop: API 230 s, Web 339 s, exit 0. Web runner stage: `/app/apps/api` absent, `/app/packages/nav` absent, `.next` present, `@luke/api` link dangling. API runner stage: `dist`, `dist-scripts`, no `src`, no `tsconfig.tsbuildinfo`. The images were discarded; nothing was published.
+
+## L.7 Commit chain and size
+
+Rewritten locally from the unpushed coordinator series by folding each change into the commit that introduced the behaviour; the reconstructed tip's tree is byte-identical to the reviewed snapshot (`backup/b2-snapshot`, `7754f8f`): empty diff and equal tree hash. Pushed as a fast-forward `d12ec10..5c6b502`, never forced.
+
+| commit | subject |
+| --- | --- |
+| `b5e19fb812525da73435838e5744323cbb3b7357` | fix(build): rebuild every emitting workspace from a clean state |
+| `d5a1fd5ed312e8cf474f7d02bfd9cec59d66a6d2` | fix(build): capture dist-scripts in the turbo build outputs |
+| `00c21b04978859de44755a20ef54dad43205550c` | refactor(api): publish a built type contract behind an exports map |
+| `a4ea6eaba528a64ab1c395007dc75ba9a2c084da` | refactor(web): stop shipping API source in the production image |
+| `5c6b5024bf7185d6f699d8c9af7f84752e194f7d` | test(tools): gate the @luke/api package contract and the dev bootstrap |
+
+Final diff against `d12ec10`: 29 files, +1365 / −69, of which +1201 are the contract gate, its fixtures and `module-contract.cjs`. The rejected series measured +3156 / −67; the 1,832 coordinator lines never reached the remote.
+
+## L.8 Remote verification at `5c6b502`
+
+| run | workflow | jobs |
+| --- | --- | --- |
+| **33767286218** | CI | ✅ `Lint, TypeCheck & Unit Tests` (100688282991), `Migrations` (100688283258), `Integration Tests` (100688283347), `Browser Component Tests` (100688283493) |
+| **33767286168** | security | ✅ `gitleaks` (100688282483), `osv-push` (100688282868), `semgrep` (100688283097); skipped by design: `osv-weekly-release-train`, `osv-weekly` (schedule-only), `notify-on-failure` (no failure) |
+
+## L.9 Release and deployment status
+
+No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, no Portainer or production action was taken, and no manifest version moved: every `package.json` still reads `2.1.4`, the stable line's released version (§K.13). `origin/develop-2.2` advanced only by the five commits above. At closure time two temporary local backup branches existed — `backup/pre-b2-rewrite` (`ff5e4b2`, the rejected series) and `backup/b2-snapshot` (`7754f8f`, the reviewed snapshot) — never pushed, and eligible for deletion once the audit commit passed remote verification.
+
+## L.10 Next work
+
+`6.2` dependency-boundary enforcement, in the order §J set: it follows the real package contracts, and all four workspace packages now publish one. Not started.
