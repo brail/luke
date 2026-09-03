@@ -13,7 +13,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "typecheck:test": "turbo run typecheck:test",
-    "lint:tools": "eslint tools/",
+    "lint:tools": "eslint tools/ scripts/ eslint.config.mjs commitlint.config.js",
     "typecheck:tools": "tsc -p tools/tsconfig.json",
     "typecheck:root": "turbo run build --filter=@luke/core --filter=@luke/nav --filter=@luke/calendar --filter=@luke/api && tsc -p tsconfig.json",
     "test": "turbo run test",

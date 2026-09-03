@@ -12,7 +12,6 @@ tools/
 ├── scripts/
 │   ├── check-docs-integrity.ts      # Link e marker luke-docs nei .md tracciati
 │   ├── check-skill-integrity.ts     # Path e simboli citati da .claude/skills/
-│   ├── validate-client-server-boundaries.ts
 │   └── lib/                         # Regole condivise fra gli script
 └── README.md                        # Questo file
 ```
@@ -26,17 +25,6 @@ da git, non da liste scritte a mano: il perché sta in `scripts/lib/gitPaths.ts`
 ```bash
 pnpm check:drift
 ```
-
-## 🧱 Boundary client/server
-
-Verifica che i file client di `apps/web/src` non importino `@luke/core/server`
-né moduli `node:`.
-
-```bash
-npx tsx tools/scripts/validate-client-server-boundaries.ts
-```
-
-Non è wired in CI né in husky — stesso stato di `pnpm codemod:check-urls`.
 
 ## 🧹 Cleanup file inutili
 

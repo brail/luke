@@ -1,4 +1,7 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import js from '@eslint/js';
 import typescript from '@typescript-eslint/eslint-plugin';
@@ -8,8 +11,73 @@ import importPlugin from 'eslint-plugin-import-x';
 import lukePlugin from 'eslint-plugin-luke';
 import globals from 'globals';
 
-/** The web surface, and the only place framework rules may apply. */
-const WEB_FILES = ['apps/web/src/**/*.{ts,tsx}', 'apps/web/tests/**/*.{ts,tsx}'];
+/**
+ * The web surface, and the only place framework rules may apply. Every source
+ * form Next can build or import, not only TypeScript: a `page.js`, a `.jsx`
+ * component or an `.mjs`/`.cjs` helper is bundled exactly like its `.tsx`
+ * neighbour, and until Cycle 10 each of them sat outside the declaration and
+ * server-entrypoint rules — measured on real baits, silent every time.
+ */
+const WEB_SOURCE_EXTENSIONS = '{ts,tsx,js,jsx,mts,cts,mjs,cjs}';
+/** Production web source: what ships, and what the project's UI rules govern. */
+const WEB_SOURCE_FILES = [`apps/web/src/**/*.${WEB_SOURCE_EXTENSIONS}`];
+/** Playwright specs and their support files: linted, but not UI production code. */
+const WEB_TEST_FILES = [`apps/web/tests/**/*.${WEB_SOURCE_EXTENSIONS}`];
+/** The composed web surface for framework rules, runtime globals and the server-entrypoint boundary. */
+const WEB_FILES = [...WEB_SOURCE_FILES, ...WEB_TEST_FILES];
+
+/**
+ * Every TypeScript file in every workspace: the surface the shared TypeScript
+ * block below parses and applies the `@luke` plugin to. Stated once, as one
+ * glob, so that any narrower glob elsewhere in this file — the test-file
+ * override, the runtime classifications — is a subset by construction. The
+ * previous per-directory list left `packages/<pkg>/test/`, `apps/web/e2e/` and
+ * the plugin's own future TypeScript tests matching the override block but not
+ * the parser block, which ESLint reports as "could not find plugin" — an
+ * aborted configuration, measured on four such paths.
+ */
+const WORKSPACE_TS_FILES = ['{apps,packages}/**/*.{ts,tsx,mts,cts}'];
+
+/**
+ * Every tracked workspace package name, read from where it is declared:
+ * `pnpm-workspace.yaml` says which directories hold workspaces, each
+ * `package.json` says its name. The declaration-integrity rule judges a
+ * specifier only when it addresses one of these, so the unscoped
+ * `eslint-plugin-luke` is judged exactly like `@luke/core`. Fail-closed: a
+ * `packages:` block that cannot be read, a glob shape this reader does not
+ * understand, or an empty result throws here rather than lint with a list that
+ * judges nothing.
+ */
+const WORKSPACE_PACKAGE_NAMES = (() => {
+  const yaml = readFileSync(new URL('./pnpm-workspace.yaml', import.meta.url), 'utf8');
+  const block = yaml.match(/^packages:\n((?:[ \t]+-[ \t]+.*\n)+)/m);
+  if (!block) {
+    throw new Error('pnpm-workspace.yaml has no `packages:` sequence; the workspace package list cannot be derived.');
+  }
+  const globs = block[1]
+    .split('\n')
+    .map((line) => line.replace(/^[ \t]+-[ \t]+/, '').trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
+  const names = [];
+  for (const glob of globs) {
+    const segments = glob.split('/');
+    if (segments.length !== 2 || segments[1] !== '*') {
+      throw new Error(`pnpm-workspace.yaml glob '${glob}' is not of the form '<dir>/*'; extend this reader before linting.`);
+    }
+    const root = fileURLToPath(new URL(`./${segments[0]}`, import.meta.url));
+    if (!existsSync(root)) continue; // `tools/*` is declared but holds no package
+    for (const entry of readdirSync(root)) {
+      const manifest = join(root, entry, 'package.json');
+      if (!existsSync(manifest)) continue;
+      const { name } = JSON.parse(readFileSync(manifest, 'utf8'));
+      if (typeof name === 'string' && name.length > 0) names.push(name);
+    }
+  }
+  if (names.length === 0) {
+    throw new Error('No workspace package name could be read; refusing to lint with an empty workspace list.');
+  }
+  return names;
+})();
 
 /**
  * The React that `apps/web` actually resolves, read through Node from that
@@ -206,6 +274,13 @@ const API_NODE_FILES = [
   'apps/api/src/**/*.{ts,tsx}',
   'apps/api/test/**/*.{ts,tsx}',
   'apps/api/scripts/**/*.{ts,tsx}',
+  // The seed (`prisma db seed`, `tsx prisma/seed.ts`) and the Prisma CLI config
+  // are executable Node source that no lint command reached — measured: ESLint
+  // reported every file under `prisma/` as "ignored because no matching
+  // configuration was supplied". `tsconfig.test.json` already typechecks them.
+  'apps/api/prisma/**/*.ts',
+  'apps/api/prisma.config.ts',
+  'apps/api/*.mts',
 ];
 
 const PACKAGE_NODE_ONLY_FILES = [
@@ -230,7 +305,7 @@ const PACKAGE_NODE_ONLY_FILES = [
  * only on the server, by Next's own architecture, never bundled for the browser.
  */
 const WEB_NODE_ONLY_FILES = [
-  'apps/web/src/app/api/**/route.ts',
+  'apps/web/src/app/api/**/route.{ts,js}',
   'apps/web/src/auth.ts',
   'apps/web/src/auth.shared.ts',
   'apps/web/src/lib/authz/**/*.ts',
@@ -239,7 +314,55 @@ const WEB_NODE_ONLY_FILES = [
   'apps/web/src/lib/**/*.test.ts',
 ];
 
-const NODE_ONLY_FILES = [...API_NODE_FILES, ...PACKAGE_NODE_ONLY_FILES, ...WEB_NODE_ONLY_FILES];
+/**
+ * Test-runner configuration files. They run under Node when vitest or
+ * Playwright loads them, they import declared devDependencies, and until
+ * Cycle 10 none of them was reached by any lint command — the `vitest*.mts`
+ * and `playwright.config.ts` files sit beside `src/`, not inside it.
+ */
+const RUNNER_CONFIG_FILES = [
+  'apps/web/*.mts',
+  'apps/web/playwright.config.ts',
+  'packages/*/vitest.config.mts',
+];
+
+const NODE_ONLY_FILES = [
+  ...API_NODE_FILES,
+  ...PACKAGE_NODE_ONLY_FILES,
+  ...WEB_NODE_ONLY_FILES,
+  ...RUNNER_CONFIG_FILES,
+];
+
+/**
+ * The only web file that may reference `@luke/core/server`, the package's
+ * published server-only entrypoint: it reads the master key from disk and
+ * throws at module evaluation when `window` exists. One entry, the one real
+ * importer — `auth.ts`, which declares `runtime = 'nodejs'`. This list is the
+ * single authority for that boundary; the unwired
+ * `tools/scripts/validate-client-server-boundaries.ts` that used to state a
+ * second, contradictory one is gone.
+ *
+ * Deliberately narrower than `WEB_NODE_ONLY_FILES`, which classifies runtime
+ * *globals* — being Node-only is not the same as having business with the
+ * master key. Each candidate was mutated to import the entrypoint and judged
+ * on lint and on `next build`:
+ * - `lib/authz/**` imports `auth`, never the entrypoint, and needs no
+ *   enrolment to keep doing so;
+ * - `auth.shared.ts` is the client-safe half of the auth config. A server
+ *   import there builds green (`next build` exit 0) and fails at first client
+ *   use, so this rule is the only signal there is;
+ * - `lib/**\/*.test.ts` runs under Node vitest. A test importing the
+ *   entrypoint passed — against the real `~/.luke/secret.key` of whoever ran
+ *   it, and it would create one on a CI runner;
+ * - `app/api/**\/route.{ts,js}` is Node by default, but a route may export
+ *   `runtime = 'edge'` and nothing here would notice. None needs the
+ *   entrypoint; enrol a file here, by name, when one genuinely does;
+ * The transitive case — a client module reaching an enrolled file — is not a
+ * specifier question and is not modelled here: Turbopack refuses a Node
+ * builtin in the browser layer, so `next build` fails on it, and CI runs that
+ * build (`ci.yml`, "Build (web)").
+ */
+const WEB_SERVER_ENTRYPOINT_IMPORTERS = ['apps/web/src/auth.ts'];
 
 /**
  * The vitest-browser tier — real Chromium via Playwright
@@ -253,16 +376,10 @@ export default [
   js.configs.recommended,
   ...webFrameworkBlocks,
   {
-    files: [
-      'apps/api/src/**/*.{ts,tsx}',
-      'apps/api/test/**/*.{ts,tsx}',
-      'apps/api/scripts/**/*.{ts,tsx}',
-      'apps/web/src/**/*.{ts,tsx}',
-      'apps/web/tests/**/*.{ts,tsx}',
-      'packages/core/src/**/*.{ts,tsx}',
-      'packages/nav/src/**/*.{ts,tsx}',
-      'packages/calendar/src/**/*.{ts,tsx}',
-    ],
+    // Every workspace TypeScript file, plus the JavaScript forms of the web
+    // surface; the runtime lists below classify globals within this surface
+    // and never widen it.
+    files: [...WORKSPACE_TS_FILES, ...WEB_FILES],
     languageOptions: {
       parser: typescriptParser,
       parserOptions: {
@@ -285,6 +402,64 @@ export default [
       ...baseTypescriptRules,
       '@luke/no-bare-zod-partial': 'error',
       '@luke/no-uncommented-any': 'error',
+      // Workspace imports must match the importer's own manifest (Monorepo
+      // Audit 6.2, declaration integrity). The rule performs no module
+      // resolution, so it holds in CI's lint step, which runs before any
+      // `dist` exists. Direction — which declarations are allowed at all — is
+      // `WORKSPACE_POLICY` in `tools/scripts/check-platform-integrity.ts`.
+      '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES }],
+    },
+  },
+  {
+    // Test and tooling code may load a devDependency at runtime — that is what
+    // devDependencies are for. Production source may only import its types.
+    //
+    // Scoped to the workspace surfaces the shared block above registers the
+    // `@luke` plugin for. A bare `**/*.test.ts` here also matched
+    // `tools/scripts/*.test.ts`, whose block has no `@luke` plugin, and ESLint
+    // then aborted `pnpm lint:tools` with "could not find plugin" — measured.
+    //
+    // Every glob here is a subset of `WORKSPACE_TS_FILES` by construction —
+    // same roots, same extensions — so a file this block reaches always has
+    // the parser and the plugin from the shared block. That is what keeps a
+    // future `packages/nav/test/*.test.ts` or `apps/web/e2e/*.spec.ts` from
+    // aborting the configuration instead of being linted.
+    files: [
+      '{apps,packages}/**/__tests__/**/*.{ts,tsx}',
+      '{apps,packages}/**/*.test.{ts,tsx}',
+      '{apps,packages}/**/*.spec.{ts,tsx}',
+      'apps/api/test/**/*.{ts,tsx}',
+      'apps/web/{tests,e2e}/**/*.{ts,tsx}',
+    ],
+    rules: { '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES, allowDevDependencies: true }] },
+  },
+  {
+    // `@luke/core/server` may be imported only from the audited paths in
+    // `WEB_SERVER_ENTRYPOINT_IMPORTERS` (see that constant for the evidence).
+    // A helper elsewhere that genuinely needs it must be enrolled there — that
+    // is the whole check, and it is on the specifier, so it needs no
+    // resolution and no build.
+    //
+    // `@luke/no-restricted-module-references`, not ESLint's `no-restricted-imports`:
+    // the core rule sees `import`/`export … from` only, and five of the seven
+    // static forms an unenrolled file can use — `import()`, a static template
+    // literal, `require()`, `import x = require()`, `import('x').T` — were
+    // silent on the real config. The plugin rule judges all of them.
+    files: WEB_FILES,
+    ignores: WEB_SERVER_ENTRYPOINT_IMPORTERS,
+    rules: {
+      '@luke/no-restricted-module-references': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@luke/core/server',
+              message:
+                'Server-only: reads the master key and throws when `window` exists. Reference it only from a file listed in WEB_SERVER_ENTRYPOINT_IMPORTERS (eslint.config.mjs) — enrol the file there if it genuinely runs only on the server and needs the master key.',
+            },
+          ],
+        },
+      ],
     },
   },
   {
@@ -313,6 +488,10 @@ export default [
     // CommonJS grant would hand Node globals to any future `.cjs` anywhere in
     // the repository, which is the opposite of the per-runtime classification
     // the blocks above exist to enforce.
+    //
+    // Deliberately outside `@luke/no-undeclared-workspace-import`: each probe
+    // `require()`s its own package by name, which is the self-import the rule
+    // forbids everywhere else and the one thing these two files exist to do.
     files: [
       'apps/api/test/module-contract.cjs',
       'packages/core/test/module-contract.cjs',
@@ -374,12 +553,13 @@ export default [
     // `'use client'`/no-directive status unrepresentable by path also means
     // an undirected module here may legitimately enter either the server or
     // the client module graph depending on who imports it — a fact about the
-    // file, not a gap this config declines to model. Closing it needs a
-    // different enforcement layer (import-graph-aware tooling, or Next's own
-    // `server-only`/`client-only` build-time markers), evaluated and
-    // deliberately deferred — not attempted here, and not something a
-    // flat-config glob can express on its own.
-    files: ['apps/web/src/**/*.{ts,tsx}', 'apps/web/tests/**/*.{ts,tsx}'],
+    // file, not a gap this config declines to model. Cycle 10 split the
+    // enforcement by what each layer can see: the direct import of the
+    // server entrypoint is a specifier and is refused below outside
+    // `WEB_SERVER_ENTRYPOINT_IMPORTERS`; the transitive graph is the
+    // bundler's, and `next build` in CI ("Build (web)") is what refuses a
+    // Node builtin in the browser layer. Neither is a flat-config glob.
+    files: WEB_FILES,
     ignores: [...WEB_NODE_ONLY_FILES, ...WEB_BROWSER_ONLY_FILES, 'apps/web/src/proxy.ts'],
     languageOptions: {
       globals: {
@@ -511,8 +691,82 @@ export default [
     plugins: {
       '@typescript-eslint': typescript,
       'import-x': importPlugin,
+      '@luke': lukePlugin,
     },
-    rules: baseTypescriptRules,
+    rules: {
+      ...baseTypescriptRules,
+      // `tools/` and `scripts/` belong to the repository root, whose manifest
+      // is `tooling` in `WORKSPACE_POLICY`: it may name workspaces only under
+      // `devDependencies`, and tooling loads them at runtime — `scripts/
+      // rc-prod-clone.ts` imports `@trpc/client` as a value and `@luke/api`
+      // as a type. So the devDependency allowance is the tooling contract
+      // here, not a test-file exception; undeclared workspaces and relative
+      // escapes are still refused.
+      '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES, allowDevDependencies: true }],
+    },
+  },
+  {
+    // Repository-root operational scripts. `scripts/rc-prod-clone.ts` drives a
+    // production backup/restore and was typechecked by no gate until Cycle 8
+    // and linted by none until Cycle 10 (§J.4 recorded the ESLint half as
+    // deferred). Same runtime and rules as `tools/`; `pnpm lint:tools` covers
+    // both directories.
+    files: ['scripts/**/*.ts'],
+    languageOptions: {
+      parser: typescriptParser,
+      parserOptions: {
+        ecmaVersion: 2022,
+        sourceType: 'module',
+      },
+      globals: {
+        ...globals.node,
+      },
+    },
+    plugins: {
+      '@typescript-eslint': typescript,
+      'import-x': importPlugin,
+      '@luke': lukePlugin,
+    },
+    rules: {
+      ...baseTypescriptRules,
+      '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES, allowDevDependencies: true }],
+    },
+  },
+  {
+    // Plain-JavaScript Node code at the root and in the workspaces: the
+    // release/version scripts, the Next and PostCSS configuration that
+    // `next build` executes, and `eslint-plugin-luke` itself, which had no
+    // lint script and so was linted by nothing. `js.configs.recommended`
+    // already applies to `**/*.js`; this block adds the runtime and the
+    // declaration-integrity rule. `next.config.js` is where `INTERNAL_API_URL`
+    // is read, so it is executable source of the build, not decoration.
+    files: [
+      'scripts/**/*.{js,mjs}',
+      'apps/web/*.config.js',
+      'packages/eslint-plugin-luke/**/*.js',
+      // The root tooling configs are executable too: this file runs on every
+      // lint, `commitlint.config.js` on every commit.
+      'eslint.config.mjs',
+      'commitlint.config.js',
+    ],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    plugins: {
+      '@luke': lukePlugin,
+    },
+    rules: {
+      '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES, allowDevDependencies: true }],
+    },
+  },
+  {
+    // CommonJS by format: `module.exports` / `require()` with no `"type":
+    // "module"` above them. Stated so ESLint parses them as scripts rather
+    // than guessing from the extension.
+    files: ['scripts/**/*.js', 'apps/web/*.config.js', 'commitlint.config.js'],
+    languageOptions: { sourceType: 'commonjs' },
   },
   {
     files: ['apps/api/src/**/*.{ts,tsx}'],
@@ -543,21 +797,21 @@ export default [
   {
     // Tailwind arbitrary-value backstop — only apps/web has Tailwind classes.
     // components/ui/** (shadcn CLI-generated) is excluded inside the rule itself.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: WEB_SOURCE_FILES,
     rules: { '@luke/no-uncommented-tailwind-arbitrary': 'error' },
   },
   {
     // Dialog-form backstop: keeps the ad-hoc dialog population from re-forming. Every dialog with
     // a typed field is a form; the sanctioned stack (react-hook-form + a @luke/core schema)
     // already existed while 18 dialogs quietly ignored it.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: WEB_SOURCE_FILES,
     rules: { '@luke/no-dialog-input-outside-form': 'error' },
   },
   {
     // Cache-invalidation backstop. A tRPC hook's query key is generated, so a hand-written one
     // never matches and the invalidation quietly does nothing — a mutation succeeds and the stale
     // row stays on screen. `trpc.useUtils()` is type-checked against the real path.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: WEB_SOURCE_FILES,
     rules: { '@luke/no-raw-query-client': 'error' },
   },
   {
@@ -571,19 +825,23 @@ export default [
     // Disabled-tooltip backstop: a tooltip that explains why a control is disabled is worthless
     // if only the mouse can reach it. `PermissionButton` solved this once; four files
     // reimplemented the wrapper inline and dropped the tabIndex that makes it reachable.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: WEB_SOURCE_FILES,
     rules: { '@luke/no-unreachable-disabled-tooltip': 'error' },
   },
   {
     // crypto.randomUUID() secure-context backstop — only 'use client' files run in the
     // browser; the rule itself checks for the directive, this just scopes it to apps/web.
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: WEB_SOURCE_FILES,
     rules: { '@luke/no-bare-client-random-uuid': 'error' },
   },
   {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      // `apps/api`'s compiled CLI scripts: build output like `dist/`, and the
+      // first thing `eslint .` found once the lint command stopped naming
+      // directories — 9 `no-undef` on emitted CommonJS.
+      '**/dist-scripts/**',
       '**/build/**',
       '**/.next/**',
       'packages/core/src/**/*.js',
@@ -593,11 +851,6 @@ export default [
       '**/*.d.ts',
       '**/*.js.map',
       '**/*.d.ts.map',
-      '**/next.config.js',
-      '**/postcss.config.js',
-      '**/tailwind.config.js',
-      '**/eslint.config.js',
-      '**/.eslintrc.js',
       '**/turbo.json',
       '**/pnpm-lock.yaml',
       '**/pnpm-workspace.yaml',

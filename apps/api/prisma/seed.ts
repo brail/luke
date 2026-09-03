@@ -8,8 +8,8 @@
  */
 
 import { randomBytes } from 'crypto';
-import { join } from 'path';
 import { homedir } from 'os';
+import { join } from 'path';
 
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
@@ -18,6 +18,7 @@ import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
+
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
 import { seedHolidayCountries } from './seeds/holidays';

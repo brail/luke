@@ -658,16 +658,13 @@ pnpm typecheck
 
 # Verifica errori lint residui
 pnpm lint
-
-# Validazione boundary client/server
-npx tsx tools/scripts/validate-client-server-boundaries.ts
 ```
 
 #### Regole Import Applicate
 
 - **Ordinamento**: `builtin` → `external` → `internal` → `parent` → `sibling` → `index` → `type`
 - **Rimozione automatica**: `eslint --fix` (`@typescript-eslint/no-unused-vars`)
-- **Boundary client/server**: Validazione import `@luke/core/server` e moduli `node:`
+- **Boundary client/server**: `@luke/core/server` è importabile in `apps/web` solo da `WEB_SERVER_ENTRYPOINT_IMPORTERS` (`eslint.config.mjs`), in ogni forma di riferimento statico (`@luke/no-restricted-module-references`)
 - **Formattazione**: Prettier per consistenza
 
 ## Troubleshooting
