@@ -16,6 +16,12 @@
       "cache": false,
       "persistent": true
     },
+    "@luke/web#build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": ["INTERNAL_API_URL", "NEXT_PUBLIC_*"],
+      "passThroughEnv": ["NEXTAUTH_SECRET", "NEXT_TELEMETRY_DISABLED", "NODE_OPTIONS"]
+    },
     "@luke/web#dev": {
       "dependsOn": ["^build"],
       "cache": false,

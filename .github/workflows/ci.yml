@@ -76,6 +76,44 @@ jobs:
       - name: Module contract (require(esm))
         run: pnpm test:module-contract
 
+      # The Next server/client boundary is enforced by the bundler and by
+      # nothing earlier: a module that imports a Node builtin and reaches the
+      # `[Client Component Browser]` layer fails `next build` with "Module not
+      # found: Can't resolve 'fs'", while lint and tsc stay green (Monorepo
+      # Audit Cycle 10, mutations 1–4). Before this step that build ran only in
+      # the Docker builder stage at tag time, so such a leak surfaced at
+      # release, not at push. Bounded to `apps/web`: no image, nothing
+      # published, `.next` discarded with the runner. The dependency builds are
+      # the Turbo tasks the TypeCheck step already cached. Last in the job by
+      # design: the cheaper gates above it report first.
+      #
+      # Cache-safe for the variables it models: Turbo runs in its default
+      # strict env mode, and the `@luke/web#build` entry in `turbo.json`
+      # declares `INTERNAL_API_URL` (the rewrites branch in `next.config.js`)
+      # and `NEXT_PUBLIC_*` (inlined into the bundle) as hashed inputs — a
+      # different value is a different build, never a cache hit — and
+      # `NEXTAUTH_SECRET`, `NEXT_TELEMETRY_DISABLED` and `NODE_OPTIONS` as
+      # passthrough: they decide whether the build runs, not what it produces,
+      # so they are visible to the task and absent from its hash. Anything
+      # else the application reads from the environment is neither passed nor
+      # hashed here. `NODE_ENV` is not set because `next build` forces
+      # `production` itself.
+      #
+      # This is what a production build needs to execute its own code paths,
+      # not a claim of parity with the Docker image. Hostnames are reserved
+      # `.invalid` names: the build inlines and records them but resolves
+      # nothing. `INTERNAL_API_URL` is set so the rewrites branch is exercised
+      # rather than skipped; the secret is a placeholder no runtime reads; the
+      # heap is the one the Dockerfile documents for the TypeScript phase.
+      - name: Build (web)
+        run: pnpm turbo run build --filter=@luke/web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXTAUTH_SECRET: ci-build-placeholder-never-read-at-runtime
+          NEXT_PUBLIC_API_URL: http://web.luke.invalid
+          INTERNAL_API_URL: http://api.luke.invalid:3001
+          NODE_OPTIONS: --max-old-space-size=4096
+
   # Own job, not a step in `checks`: the browser download is the dominant cost
   # here and would otherwise delay lint/typecheck feedback for every push. Same
   # reasoning that already keeps integration and migrations separate — anything
