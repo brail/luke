@@ -24,9 +24,11 @@
       }
     ],
     // No workspace package is aliased onto another workspace's sources here.
-    // `@luke/core`, `@luke/calendar` and now `@luke/api` all resolve through
-    // their own `exports` maps to their built `dist`, so the published contract
-    // is the one actually exercised.
+    // `@luke/core` and `@luke/api` — the only workspace packages this app may
+    // depend on under `WORKSPACE_POLICY` (browser runtime: `@luke/calendar` is
+    // Node-only and no longer declared) — resolve through their own `exports`
+    // maps to their built `dist`, so the published contract is the one
+    // actually exercised.
     //
     // `@luke/api` was the last exception. Removing its alias in an earlier
     // cycle changed no program — the manifest pointed `main`/`types` at

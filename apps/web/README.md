@@ -54,7 +54,6 @@ Gruppo pubblico `(public)/`:
 
 <!-- luke-docs:start:internal-deps -->
 - `@luke/core` — Schemi Zod, tipi condivisi, RBAC, URL builder, storage types
-- `@luke/calendar` — Tipi e funzioni condivisi per il calendario milestones
 <!-- luke-docs:end:internal-deps -->
 
 ## Variabili d'ambiente
