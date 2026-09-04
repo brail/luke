@@ -354,7 +354,7 @@ pnpm lint
 pnpm --filter @luke/api run seed
 
 # Verifica segreti in DB
-pnpm --filter @luke/api prisma:studio
+pnpm --filter @luke/db prisma:studio
 ```
 
 ---

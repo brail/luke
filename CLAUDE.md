@@ -31,6 +31,7 @@ apps/
   api/          → Fastify + tRPC + Prisma (backend, port 3001)
 packages/
   core/         → @luke/core: schemas, RBAC, pricing, storage, crypto, URL utils
+  db/           → @luke/db: Prisma schema, migrations, generated client, createPrismaClient
   nav/          → @luke/nav: NAV sync layer (mssql pool, sync modules)
   calendar/     → @luke/calendar: calendar domain, Google sync, ICS generation
   eslint-plugin-luke/ → custom ESLint rules
@@ -64,7 +65,19 @@ running watch will not restore. Use a second worktree, or stop dev first.
 
 - **Package manager**: pnpm only — never npm or yarn.
   Commands: `pnpm --filter <app> <script>` from the root, or cd into the package
-- **ORM**: Prisma — raw SQL only in `packages/nav/src/` (never in application logic).
+- **ORM**: Prisma, owned by `@luke/db` — the schema (`packages/db/prisma/schema.prisma`),
+  the migrations, `prisma.config.ts` and the generated client all live there, and
+  every Prisma type is imported from `@luke/db`, never from `@prisma/client`.
+  A client is constructed in exactly one place, `createPrismaClient` — enforced by
+  `.semgrep/rules/prisma-client-instantiation.yml`. Run any `prisma` CLI command
+  from `packages/db/`; it is the only directory that resolves config, schema and
+  migrations together. Domain seeds and the `db:*` operational scripts stay in
+  `@luke/api`: they apply business rules and import `apps/api/src/`.
+  `apps/api` keeps `@prisma/client` as a **devDependency** — no source imports it,
+  but its emitted `.d.ts` graph names `@prisma/client/runtime/client`, and dropping
+  it breaks `apps/web`'s build while `apps/api` stays green (gated by
+  `DECLARATION_GRAPH_DEPENDENCIES` in `tools/scripts/check-platform-integrity.ts`).
+  Raw SQL only in `packages/nav/src/` (never in application logic).
   Allowed exceptions, only with a justifying comment: health-probe `SELECT 1`
   (`observability/readiness.ts`); queries on application-domain tables (not NAV)
   that require SQL features not expressible in the Prisma ORM (e.g. `DISTINCT ON` +

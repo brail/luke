@@ -28,7 +28,7 @@ pnpm install
 ### 2. Generazione Prisma Client
 
 ```bash
-pnpm --filter @luke/api prisma:generate
+pnpm --filter @luke/db prisma:generate
 ```
 
 ### 3. Setup Database e Seed
@@ -50,13 +50,13 @@ pnpm -w -F @luke/api db:bootstrap
 
 ```bash
 # Reset database (senza seed)
-pnpm -w -F @luke/api db:reset
+pnpm -w -F @luke/db db:reset
 
 # Esegui solo seed (idempotente)
 pnpm -w -F @luke/api db:seed
 
 # Genera Prisma client
-pnpm -w -F @luke/api prisma:generate
+pnpm -w -F @luke/db prisma:generate
 ```
 
 ### Note Importanti
@@ -115,13 +115,13 @@ pnpm -w -F @luke/api db:bootstrap
 
 ```bash
 # Reset database (senza seed)
-pnpm -w -F @luke/api db:reset
+pnpm -w -F @luke/db db:reset
 
 # Esegui solo seed (idempotente)
 pnpm -w -F @luke/api db:seed
 
 # Genera Prisma client
-pnpm -w -F @luke/api prisma:generate
+pnpm -w -F @luke/db prisma:generate
 ```
 
 ## LDAP Resilienza
@@ -227,8 +227,8 @@ pnpm -w -F @luke/api db:bootstrap
 
 ```bash
 # Prisma blocca comandi pericolosi quando eseguiti da AI agents
-# Esegui manualmente il reset:
-cd apps/api
+# Esegui manualmente il reset (schema e migration vivono in @luke/db):
+cd packages/db
 pnpm prisma migrate reset --force --skip-seed
 
 # Poi esegui solo il seed:
@@ -239,7 +239,7 @@ pnpm -w -F @luke/api db:seed
 
 ```bash
 # Se il bootstrap fallisce al reset, esegui i passi manualmente:
-cd apps/api
+cd packages/db
 pnpm prisma migrate reset --force --skip-seed
 pnpm -w -F @luke/api db:seed
 ```
@@ -565,7 +565,7 @@ Dopo il seed, è disponibile un utente admin:
 Per visualizzare e modificare il database tramite UI:
 
 ```bash
-pnpm --filter @luke/api prisma:studio
+pnpm --filter @luke/db prisma:studio
 ```
 
 Disponibile su `http://localhost:5555`

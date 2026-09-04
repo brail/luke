@@ -274,7 +274,7 @@ describe('Bundle Security', () => {
 ### Modelli con Dati Sensibili
 
 ```prisma
-// apps/api/prisma/schema.prisma
+// packages/db/prisma/schema.prisma
 
 model LocalCredential {
   id           String   @id @default(uuid())
@@ -353,4 +353,4 @@ pnpm test:security-scan
 - [GDPR Compliance](https://gdpr.eu/data-protection-by-design-and-by-default/)
 - Esempi: `apps/api/src/routers/me.ts:31-51`
 - Esempi: `apps/api/src/routers/users.ts:200-218`
-- Schema: `apps/api/prisma/schema.prisma:67-78`
+- Schema: `packages/db/prisma/schema.prisma:67-78`

@@ -20,7 +20,7 @@ Inventario dello stato process-local (non esaustivo, ma copre tutto ciò che rom
 | Presence store | `apps/api/src/lib/presenceStore.ts` | Vista "utenti online" parziale, dipende su quale istanza è atterrato l'ultimo heartbeat |
 | Buffer notifiche calendario | `apps/api/src/lib/notifications.ts` (`calendarBuffer`, `dedupLastSentAt`) | Dedup salta a metà: notifiche duplicate se lo stesso evento tocca istanze diverse |
 
-Sono già scale-out-safe (persistiti su Postgres, non in memoria): `EditLock` (ADR — vedi `apps/api/prisma/schema.prisma`), sessioni NextAuth (`strategy: 'jwt'`, stateless per design).
+Sono già scale-out-safe (persistiti su Postgres, non in memoria): `EditLock` (ADR — vedi `packages/db/prisma/schema.prisma`), sessioni NextAuth (`strategy: 'jwt'`, stateless per design).
 
 Separato ma correlato: 7 scheduler tick-based (`backupScheduler`, `calendarDigestScheduler`, `kimoSyncScheduler`, `maintenanceModeScheduler`, `milestoneDeadlineScheduler`, `navSyncScheduler`, `portafoglioSyncScheduler`) avevano solo un guard `isRunning` in-memory: sufficiente a prevenire la doppia esecuzione nello stesso processo, ma con 2 istanze avrebbe permesso due backup, due sync NAV, due digest email concorrenti sugli stessi dati.
 

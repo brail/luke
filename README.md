@@ -3,7 +3,7 @@
 <!-- luke-docs:start:overview -->
 Luke è la piattaforma gestionale interna per la filiera moda wholesale. Gestisce il ciclo completo della stagione — dal piano campionario al pricing, dal merchandising alle statistiche portafoglio ordini — con integrazione nativa Microsoft Dynamics NAV come ERP di riferimento e supporto ai processi ISO 9001:2015 per il controllo qualità delle revisioni campionario.
 
-Sviluppato come monorepo pnpm + Turborepo con sei workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, sync layer NAV, integrazione Google Calendar e un plugin ESLint interno per le regole di codifica specifiche di Luke.
+Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, schema e client Prisma, sync layer NAV, integrazione Google Calendar e un plugin ESLint interno per le regole di codifica specifiche di Luke.
 <!-- luke-docs:end:overview -->
 
 ## Indice
@@ -35,6 +35,7 @@ Sviluppato come monorepo pnpm + Turborepo con sei workspace: frontend Next.js, b
 | `apps/web` | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
 | `apps/api` | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
 | `packages/core` | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
+| `packages/db` | Package | Schema Prisma, migration versionate e client generato; `createPrismaClient` |
 | `packages/nav` | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
 | `packages/calendar` | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
 | `packages/eslint-plugin-luke` | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
@@ -400,7 +401,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 - **Sviluppo e Produzione**: PostgreSQL 16 (via Prisma ORM)
 - **Migrations**: Prisma migrate (`prisma migrate deploy` in produzione, workflow Docker su porta 5433 per generazione)
-- **Schema**: Definito in `apps/api/prisma/schema.prisma`
+- **Schema**: Definito in `packages/db/prisma/schema.prisma` (workspace `@luke/db`)
 
 ## Workflow
 
@@ -638,7 +639,7 @@ import {
 ## Tecnologie
 
 <!-- luke-docs:start:architecture -->
-Luke è un monorepo pnpm + Turborepo con cinque workspace. Il backend (`apps/api`) espone API tRPC type-safe su Fastify 5, con PostgreSQL 16 via Prisma e autenticazione RBAC granulare (`resource:action`). Il frontend (`apps/web`) è un'app Next.js con App Router, shadcn/ui e React 19. La sincronizzazione con Microsoft Dynamics NAV avviene tramite `packages/nav` (mssql diretto, unidirezionale). Le milestone stagionali sono gestite da `packages/calendar` con integrazione Google Calendar e solver topologico delle dipendenze.
+Luke è un monorepo pnpm + Turborepo con sei workspace. Il backend (`apps/api`) espone API tRPC type-safe su Fastify 5, con PostgreSQL 16 via Prisma e autenticazione RBAC granulare (`resource:action`). Il frontend (`apps/web`) è un'app Next.js con App Router, shadcn/ui e React 19. La sincronizzazione con Microsoft Dynamics NAV avviene tramite `packages/nav` (mssql diretto, unidirezionale). Le milestone stagionali sono gestite da `packages/calendar` con integrazione Google Calendar e solver topologico delle dipendenze.
 
 Stack: **Next.js 16** · **Fastify 5** · **tRPC 11** · **Prisma 7** · **PostgreSQL 16** · **TypeScript 6** · **Zod 4** · **pnpm 11** · **Turbo 2**
 

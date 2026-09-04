@@ -1,17 +1,23 @@
 # Prisma Migration Workflow
 
-Ogni modifica a `apps/api/prisma/schema.prisma` richiede una migration versionata.
+Ogni modifica a `packages/db/prisma/schema.prisma` richiede una migration versionata.
 Il workflow usa un Postgres temporaneo su porta 5433 per generare la migration,
 poi la applica al DB dev (porta 5432) con `db push`.
+
+Schema, migration e `prisma.config.ts` vivono in `@luke/db`, quindi ogni comando
+`prisma` va eseguito da `packages/db/`: è l'unica directory da cui il CLI risolve
+tutti e tre. Restano invece in `@luke/api` il seed e gli script `db:*` di dominio
+(bootstrap, reset NAV, backfill), che applicano regole applicative e importano
+`apps/api/src/`.
 
 ## Workflow obbligatorio
 
 ```bash
-pnpm --filter @luke/api db:migrate:new <nome_descrittivo>
-git add apps/api/prisma/migrations apps/api/prisma/schema.prisma
+pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
+git add packages/db/prisma/migrations packages/db/prisma/schema.prisma
 ```
 
-Lo script (`apps/api/scripts/new-migration.sh`) fa i quattro passi che prima erano da eseguire a
+Lo script (`packages/db/scripts/new-migration.sh`) fa i quattro passi che prima erano da eseguire a
 mano: avvia il Postgres usa-e-getta sulla 5433, attende che risponda, genera la migration contro
 quello, lo ferma anche se qualcosa fallisce a metà, e allinea il DB di sviluppo con `db push`.
 Il file prodotto in `prisma/migrations/` va committato insieme a `schema.prisma`.
@@ -26,8 +32,11 @@ drift e proporrebbe di resettarlo, cancellando i dati.
 - **Il CLI non carica più `.env` da solo.** Un `npx prisma db push` nudo fallisce con
   `The datasource.url property is required in your Prisma config file` — messaggio fuorviante,
   perché `prisma.config.ts` la `datasource.url` ce l'ha: la legge da `process.env.DATABASE_URL`,
-  che però non è popolata. Caricare l'env prima (`set -a && . ./.env && set +a`, come fanno gli
-  script `db:*` in `apps/api/package.json`) oppure passare `--url` esplicita.
+  che però non è popolata. Caricare l'env prima (`set -a && . ../../apps/api/.env && set +a`,
+  come fanno gli script in `packages/db/package.json`) oppure passare `--url` esplicita.
+  La `.env` è quella di `apps/api`: `DATABASE_URL` è bootstrap infrastrutturale del deployment
+  (Env Policy in `CLAUDE.md`), non configurazione di `@luke/db` — c'è un solo database, quindi
+  un solo posto dove è dichiarato.
 
 ## Produzione
 
