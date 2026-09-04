@@ -3056,3 +3056,105 @@ None of the above is described as newly closed. `P1-05` and `P1/P2-08` remain op
 No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, no Portainer or production action was taken, and no manifest version moved — every `package.json` still reads `2.1.4` (§K.13). `main` is unaffected; the whole cycle lives on the release-train branch.
 
 Per the ordering in §A.4 and §M.14, the next architectural item is **`P1-05`**, the Prisma schema domain split, followed by `P1/P2-08`. Neither is started.
+
+# Appendix O — Cycle 12 closure: Prisma multi-file domain schema (2026-09-05)
+
+Supersedes **only** the time-sensitive statements in Appendix N (§N.1, §N.11, §N.12) that record `P1-05` as open, not started, or as the next architectural item. Everything else in Appendix N, and every section before it, stands as written.
+
+## O.1 Disposition
+
+**`P1-05`: DONE.** The 2,419-line single `packages/db/prisma/schema.prisma` is now a flat, coarse multi-file schema: a header file holding only `generator`/`datasource`, plus 8 domain files. The change is behavior-preserving and `SemVer` patch — no model, enum, field, relation, mapping, default, index, or database name changed, and no migration was produced. Prisma stays `7.10.0`, unchanged from the version N.1 recorded after the Cycle 11 generator migration. No new checker, orchestration mechanism, or CI job was introduced; the split is verified entirely through Prisma's own tooling (`validate`, `migrate diff`, `generate`) and the existing gates. Release and production state are unchanged — see §O.10.
+
+## O.2 Architectural decision
+
+The recommendation in this document's own §P1-05 (a 17-file granular split by sub-domain — `identity`, `platform`, `brand-season`, `dashboard`, `pricing`, `collection`, `nav-master`, `nav-pf`, `nav-kimo`, `company`, `calendar`, `notifications`, `locks`, `holidays`, `backup`, plus header and merchandising) was **independently investigated rather than adopted as written**. Three layouts were measured against the actual 79-model, 17-enum, 96-block schema, counting cross-file relation pairs out of the schema's 78 total relation pairs:
+
+| design | files | cross-file relation pairs | notes |
+| --- | ---: | ---: | --- |
+| single file (baseline) | 1 (2,419 lines) | 0/78 | current state before this cycle |
+| adopted coarse design | header + 8 domain files | 27/78 | committed; see §O.3 |
+| medium design | 12 files | 38/78 | investigated, not adopted |
+| granular audit design (this doc's §P1-05) | 17 files | 40/78 | investigated, not adopted; six files land under 100 lines |
+
+The coarse design won on four grounds: it materially lowers per-edit context (a domain edit reads one ~200–500-line file, not 17 fragments); it avoids ownership fragments too small to be a meaningful unit (several of the granular design's 17 files fall under 100 lines — `dashboard.prisma`, `locks.prisma`, `pricing.prisma` among them); router/domain ownership is a more useful organizing principle for a coding agent than minimizing cross-file relations, since the schema's relation hubs (`User`, `Brand`, `Season`) make a meaningful share of cross-file relations unavoidable at any file count above one; and splitting further from the coarse to the granular design creates 13 additional cross-file relation pairs — 40 instead of 27 — at the cost of 9 more files and several sub-100-line fragments: more fragmentation, not fewer cross-file relations, and not enough ownership gain to justify it. `nav-analytics.prisma` alone — 499 relation-free lines, 18 models with no `@relation` to any other domain — removes nearly a fifth of the original file's bulk from the main editing surface with zero cross-file cost, which the granular design achieves too but at a finer, less useful grain (splitting it further into `nav-pf.prisma`/`nav-kimo.prisma` adds a file boundary with no ownership or relation benefit, since both halves are already relation-free and already share one sync-state model shape).
+
+`platform.prisma` is recorded honestly as a coarse cross-cutting platform/operations group (`AppConfig`, `AuditLog`, `FileObject`, `DashboardConfig`, `DashboardTask`, `Notification`, `FeedbackSubmission`, `NotificationPreference`, `NotificationDedupKey`, `EditLock`, `SchedulerLock`, `BackupRecord`) — it does not correspond to one router family, and no future cycle should treat it as one without re-splitting it deliberately.
+
+The schema files remain flat inside `packages/db/prisma/` rather than in a nested `prisma/schema/` subdirectory. The nested alternative was measured and rejected: it requires an explicit `migrations.path` entry in `prisma.config.ts`, and without it `prisma migrate status` silently reports no migrations found — a failure mode invisible until someone runs a migration command, not caught by `validate` or `generate`. The flat layout keeps the default `prisma/migrations` relationship Prisma assumes, so `PRISMA_DIR`, `PRISMA_MIGRATIONS_DIR`, the Docker copy step, and every existing operational path needed zero changes.
+
+## O.3 Final schema layout
+
+| file | lines | models | enums |
+| --- | ---: | ---: | ---: |
+| `schema.prisma` | 11 | 0 | 0 |
+| `identity.prisma` | 185 | 6 | 3 |
+| `platform.prisma` | 362 | 12 | 5 |
+| `catalog.prisma` | 245 | 8 | 0 |
+| `collection.prisma` | 347 | 10 | 0 |
+| `merchandising.prisma` | 199 | 5 | 5 |
+| `nav-analytics.prisma` | 499 | 18 | 0 |
+| `company.prisma` | 123 | 5 | 1 |
+| `calendar.prisma` | 448 | 15 | 3 |
+| **total** | **2,419** | **79** | **17** |
+
+`schema.prisma` now contains only `generator`/`datasource` configuration; `packages/db/prisma.config.ts` declares `schema: 'prisma'`, so the CLI reads the whole directory rather than a single file. The domain table above and the committed files make the full model/enum allocation unambiguous; it is not reproduced model-by-model here.
+
+## O.4 Preservation and database parity
+
+Measured against the committed tree: 96/96 enum and model blocks preserved byte-identically (verified by extracting each block's exact text from the baseline `11614f4` source and confirming its presence, unmodified, in its new file); 674/674 `///` documentation lines preserved; all 79 `@@map` attributes preserved. The implementation measured **30** plain standalone comment lines surviving the split (20 outside any model/enum block — section dividers, relocated with the section they head — plus 10 one-line in-block comments such as `// Relations`), one more than the investigation's recorded figure of 29; the discrepancy is unresolved but immaterial, because a full-file byte-perfect reconstruction of the original 2,419-line source from the extracted blocks and their leading comments — proven identical, byte for byte, before any file was written — is a strictly stronger guarantee than either line count.
+
+All 76 migrations and `migration_lock.toml` remained untouched (`git diff` on `packages/db/prisma/migrations/` is empty at every point in the cycle, including in the final commit). `prisma migrate diff` from the baseline single-file schema to the new folder: **No difference detected**. `prisma migrate diff --from-migrations ./prisma/migrations --to-schema ./prisma`: **No difference detected**. All 76 migrations applied to an empty disposable database; a second `migrate deploy` reported no pending migrations. The resulting database has **81 tables** — 79 model tables, the implicit many-to-many join table `_VendorEnabledParameterSets`, and `_prisma_migrations` itself.
+
+No claim is made that the final schema files are formatted. `prisma format` was run only against a disposable copy, never the real tree; `NavSyncFilter` retains the five pre-existing formatting/alignment differences noted before this cycle, because formatting stayed deliberately out of scope.
+
+## O.5 Generated client and package contract
+
+A clean `prisma generate` from the split schema produces **87 files**, the same count as from the pre-split baseline. The public generated export-name set — every exported declaration and re-export across the generated tree — was extracted independently from both a from-scratch baseline generation and the split-schema generation, run in the same package context: **7,527 names in both, an identical set, zero additions and zero removals**. The earlier figure of 7,525 recorded during the investigation is a measurement-method difference in how that count was produced, not a contract difference — the identical-set proof, not either absolute number, is the semantic guarantee. Of the 87 generated files, 34 differ between the baseline and split generations, and every difference inspected is a pure reordering — the same per-relation helper types (`BrandCreateWithout<Relation>Input` and siblings) or the same barrel-file model list, in a different sequence — never a new, removed, or reshaped type.
+
+`@luke/db`, `@luke/nav`, `@luke/api`, and the complete repository typecheck all succeeded against the split schema's generated client. Generated-code ownership (`packages/db/src/generated/prisma`, gitignored, produced by `prisma generate`, compiled into `dist`), Turbo's declared build outputs, and the Docker packaging established in Cycle 11 did not change.
+
+## O.6 Configuration and operational documentation
+
+Two behavioral changes: `packages/db/prisma.config.ts` now declares `schema: 'prisma'`; the CI schema-drift step in `.github/workflows/ci.yml` now targets `--to-schema ./prisma` instead of the single file.
+
+Every live agent- and human-facing instruction that named the single `schema.prisma` file now directs readers to the schema directory or its domain files: `CLAUDE.md` (the ORM section, the Rules-of-engagement file list, and the Prisma Migration Workflow section), `docs/prisma-migration-workflow.md`, `.claude/skills/luke-bugs/SKILL.md`, `.claude/skills/luke-docs/SKILL.md` (three spots), `.claude/skills/luke-docs/references/adr-rules.md`, `.claude/skills/luke-deps/references/platform-policy.md`, `.claude/skills/luke-audit/SKILL.md`, both root and API `README.md`, `packages/db/src/paths.ts`, `packages/db/scripts/new-migration.sh`, and `.gitignore`.
+
+The migration rule itself was corrected mid-cycle, after review, to avoid contradicting Cycle 11's own generator-only change: **a physical datamodel change — a model, enum, field, relation, mapping, default, index, or constraint, in any `packages/db/prisma/*.prisma` file — requires a versioned migration; a change confined to `generator`/`datasource` configuration in `schema.prisma` does not, when an authoritative `prisma migrate diff` proves no physical schema difference** (the Cycle 11 generator switch is the worked example cited in both `CLAUDE.md` and the workflow doc). The live `FileObject` pointer in `apps/api/STORAGE_CONFIG.md` was corrected to `packages/db/prisma/platform.prisma`.
+
+## O.7 Mutations and gates
+
+Five mutations, each applied, its effect proven, then reverted byte-identically:
+
+- Renaming the relation-bearing `collection.prisma` away: `prisma validate` fails with 9 errors, dangling type references from `catalog.prisma`, `calendar.prisma`, and `identity.prisma`.
+- Renaming the relation-free `nav-analytics.prisma` away: `prisma validate` alone stays green (no cross-file relations to break), but `migrate diff` drift reports 18 removed tables, and — once the mutation is propagated through a full `@luke/db` build into `dist` — `@luke/nav` typecheck fails (`TS2339` × 3, `TS7006` × 1).
+- Removing `schema: 'prisma'` from `prisma.config.ts`: Prisma silently falls back to reading only the 11-line header file and generates zero models.
+- Breaking one cross-file relation (`CollectionLayout.brand` retyped against a nonexistent name instead of `catalog.prisma`'s `Brand`): `prisma validate` fails with exactly 1 error, at the correct line.
+- Running the real CI drift command against the stale target `./prisma/schema.prisma` instead of `./prisma`: it reports all 17 enums and roughly 80 tables as removed, exit 2; the corrected target reports no difference, exit 0.
+
+Final gates, all green, no invented counts: `prisma validate`; full-repo `build` 6/6; `typecheck` 11/11; `typecheck:test` 9/9; `typecheck:root`; `lint` 7/7 (0 errors, the same 49 pre-existing web warnings); `lint:tools`; `typecheck:tools`; `check:drift` (all 5 checkers); `test:module-contract`; `test:tools` 222/222; unit `test` 10/10; integration tests against disposable Postgres, 42 files, 532 passing and 1 expected failure; the exact CI `Build (web)` command with its workflow environment; Semgrep custom rules at `--severity ERROR --error`, 0 findings; `git diff --check`, clean.
+
+Two pre-existing informational findings surfaced and are recorded as such, not as failures: the procedure-coverage gate flags `system.triggerCalendarDigest` as uninvoked — pre-existing: the procedure itself was explicitly left untouched during Cycle 11 (§N.7), and this finding was not introduced by Cycle 12; the advisory `mutation-requires-permission` Semgrep rule flags `setMenuCollapsibleStates`, a documented false-positive pattern under CLAUDE.md's RBAC note.
+
+## O.8 Commit and remote evidence
+
+Single atomic implementation commit `301b3c1083f25a86a4727cd086974d2519ec5ed1`, `refactor(db): split the Prisma schema into domain files`, parent `11614f472f6f3f06435538d94fcd44bdca2b18f8`, linear single-parent history. 25 paths — 17 modified, 8 added (the domain `.prisma` files) — 2,457 insertions, 2,439 deletions. Pushed normally to `origin/develop-2.2` as a fast-forward; no force, no rewritten remote history.
+
+Remote CI, run `33924464524`: **success** — Lint/TypeCheck/Unit Tests, Migrations, Integration Tests, and Browser Component Tests all green; `Build (web)` executed (not skipped) and succeeded. Security, run `33924464375`: **success** — `gitleaks` and `semgrep` succeeded; `osv-push` succeeded at the step level, not merely at the masked job level; `osv-weekly`, `osv-weekly-release-train`, and `notify-on-failure` skipped, correctly, by their schedule-only and failure-only trigger conditions on a push event. The Migrations job (`101189828414`) applied all 76 migrations from an empty database and reported the schema drift check — `pnpm --filter @luke/db exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema ./prisma --exit-code` — as **No difference detected**.
+
+## O.9 Honest boundaries and residuals
+
+- Prisma's directory schema loader recursively discovers every `.prisma` file below the configured folder, including a hypothetical stray file under `migrations/`; no producer in this repository creates one, and this is accepted rather than engineered around, per the item's own scope.
+- Placing a model in the wrong domain file is a review convention, not a machine-enforced one; nothing currently fails a build over domain misplacement.
+- Generated declaration ordering (barrel-file listing order, per-relation helper-type sequence) changes with the split even though the datamodel and export surface are unchanged — see §O.5.
+- `check-skill-integrity.ts`'s tracked-path count moved from 177 to 173 because five literal single-file citations became glob references, which the checker does not resolve as literal paths; schema completeness is still covered by `validate`, `migrate diff`, `generate`, and the typecheck gates, not by that counter.
+- `apps/api/STORAGE_CONFIG.md` still contains an adjacent historical reference to an `add_file_storage` migration that does not correspond to any migration in the current `packages/db/prisma/migrations/` tree. Only the `FileObject` schema pointer on the line above it was in scope for this cycle (§O.6); the `add_file_storage` reference is deferred to the separate documentation assessment, not fixed here.
+- Pre-existing, untouched: the runtime-image seed residual and the stale Dockerignore exception recorded in Appendix N §N.11; `dev-bootstrap --skip-seed`; historical ADR schema citations, untouched (`docs/decisions/004` includes the stale line-number citation; `docs/decisions/011` contains a historical single-schema reference, not the line-number form); archived task documents and prior audit reports that mention `schema.prisma` in a historical, non-instructional sense.
+- All three pre-existing stashes remain untouched throughout the cycle.
+
+None of the above is described as newly closed by this cycle.
+
+## O.10 Final state and next work
+
+`develop-2.2` and `origin/develop-2.2` both end at `301b3c1083f25a86a4727cd086974d2519ec5ed1`. The working tree and index were clean before this audit edit. No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, no deployment or Portainer action was taken, and no manifest version moved — every `package.json` still reads `2.1.4`. `main` is unaffected (`935dc29fa3c7edee656d75c5354c6e140584254d`, unrelated to this line of work).
+
+Per the ordering in §A.4, §M.14, and Appendix N §N.12, the next architectural item is **`P1/P2-08`**. The §A.3 hygiene batch and the `S-01` branch-protection decision remain pending, exactly as recorded before this cycle. None of them has started.
