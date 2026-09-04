@@ -1,8 +1,17 @@
 # Prisma Migration Workflow
 
-Ogni modifica a `packages/db/prisma/schema.prisma` richiede una migration versionata.
-Il workflow usa un Postgres temporaneo su porta 5433 per generare la migration,
-poi la applica al DB dev (porta 5432) con `db push`.
+Ogni modifica fisica al datamodel — model, enum, field, relation, mapping,
+default, index o constraint, in uno qualunque dei file `packages/db/prisma/*.prisma`
+— richiede una migration versionata. Una modifica limitata alla configurazione
+`generator`/`datasource` in `schema.prisma` non la richiede, quando un
+`prisma migrate diff` autorevole prova che non c'è differenza fisica di schema
+(es. il cambio di generator del Cycle 11).
+Lo schema è multi-file (uno `schema.prisma` con solo generator/datasource, più un
+file per dominio — `identity.prisma`, `platform.prisma`, `catalog.prisma`, ecc.):
+`prisma.config.ts` dichiara `schema: 'prisma'`, quindi il CLI legge l'intera
+cartella `prisma/`, non il singolo file. Il workflow usa un Postgres temporaneo su
+porta 5433 per generare la migration, poi la applica al DB dev (porta 5432) con
+`db push`.
 
 Schema, migration e `prisma.config.ts` vivono in `@luke/db`, quindi ogni comando
 `prisma` va eseguito da `packages/db/`: è l'unica directory da cui il CLI risolve
@@ -14,13 +23,13 @@ tutti e tre. Restano invece in `@luke/api` il seed e gli script `db:*` di domini
 
 ```bash
 pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
-git add packages/db/prisma/migrations packages/db/prisma/schema.prisma
+git add packages/db/prisma/migrations packages/db/prisma/*.prisma
 ```
 
 Lo script (`packages/db/scripts/new-migration.sh`) fa i quattro passi che prima erano da eseguire a
 mano: avvia il Postgres usa-e-getta sulla 5433, attende che risponda, genera la migration contro
 quello, lo ferma anche se qualcosa fallisce a metà, e allinea il DB di sviluppo con `db push`.
-Il file prodotto in `prisma/migrations/` va committato insieme a `schema.prisma`.
+Il file prodotto in `prisma/migrations/` va committato insieme al/i file `.prisma` modificato/i.
 
 **Perché un DB temporaneo e non quello di sviluppo**: il DB dev è allineato con `db push`, quindi
 il suo `_prisma_migrations` non riflette lo storico versionato. `migrate dev` lo leggerebbe come

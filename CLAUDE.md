@@ -5,7 +5,7 @@
 1. List the files you intend to modify and explain your approach
 2. Wait for confirmation if you touch more than 3 files or any of:
    crypto/auth, RBAC/section definitions, AppConfigRegistry, pricing logic,
-   schema.prisma, release workflow
+   the Prisma schema (`packages/db/prisma/*.prisma`), release workflow
 3. **Never `git commit` without explicit approval** — show the diff, ask for
    confirmation, wait for the go-ahead, then commit
 
@@ -65,7 +65,11 @@ running watch will not restore. Use a second worktree, or stop dev first.
 
 - **Package manager**: pnpm only — never npm or yarn.
   Commands: `pnpm --filter <app> <script>` from the root, or cd into the package
-- **ORM**: Prisma, owned by `@luke/db` — the schema (`packages/db/prisma/schema.prisma`),
+- **ORM**: Prisma, owned by `@luke/db` — the schema (`packages/db/prisma/*.prisma`,
+  a flat multi-file layout split by domain — `identity`, `platform`, `catalog`,
+  `collection`, `merchandising`, `nav-analytics`, `company`, `calendar` — plus a
+  header `schema.prisma` holding only `generator`/`datasource`; `prisma.config.ts`
+  declares `schema: 'prisma'` so the CLI reads the whole directory),
   the migrations, `prisma.config.ts` and the generated client all live there, and
   every Prisma type is imported from `@luke/db`, never from `@prisma/client`.
   A client is constructed in exactly one place, `createPrismaClient` — enforced by
@@ -415,7 +419,11 @@ production if it finds forbidden patterns (`SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRE
 
 ## Prisma Migration Workflow
 
-Every change to `schema.prisma` requires a versioned migration.
+Every physical datamodel change — a model, enum, field, relation, mapping,
+default, index or constraint, in any `packages/db/prisma/*.prisma` file —
+requires a versioned migration. A change confined to `generator`/`datasource`
+config in `schema.prisma` does not, when an authoritative `prisma migrate diff`
+proves no physical schema difference (e.g. the Cycle 11 generator switch).
 Full workflow (temporary Postgres on port 5433 → `migrate dev` → `db push` on
 5432 → commit the migration file): **`docs/prisma-migration-workflow.md`**
 

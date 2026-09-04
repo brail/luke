@@ -1,0 +1,199 @@
+
+// ─── Merchandising Plan ───────────────────────────────────────────────────────
+
+/// Merchandising plan workflow status: DRAFT (editable) | CONFIRMED (locked for changes).
+enum MerchandisingPlanStatus {
+  DRAFT
+  CONFIRMED
+}
+
+/// Gender target for a merchandising plan row: MAN | WOMAN | UNISEX | KID.
+enum MerchandisingGender {
+  MAN
+  WOMAN
+  UNISEX
+  KID
+}
+
+/// Product lifecycle type: NEW_LINE (new category), NEW_STYLE (new design), NEW_COLOR (color extension), CARRY_OVER (rerun from prior season).
+enum MerchandisingLifeType {
+  NEW_LINE
+  NEW_STYLE
+  NEW_COLOR
+  CARRY_OVER
+}
+
+/// Launch type for a row: SAMPLED (physical sample requested), OPEN_TO_BUY (available without sample).
+enum MerchandisingLaunchType {
+  SAMPLED
+  OPEN_TO_BUY
+}
+
+/// Bill-of-materials section in a specsheet: UPPER | LINING | ACCESSORIES | SOLE | OTHER.
+enum SpecsheetComponentSection {
+  UPPER
+  LINING
+  ACCESSORIES
+  SOLE
+  OTHER
+}
+
+/// Merchandising plan for a brand+season pair. Unique per pair. Container for all SKU-level rows.
+model MerchandisingPlan {
+  id        String                  @id @default(uuid())
+  /// FK to Brand. Restrict delete.
+  brandId   String
+  /// FK to Season. Restrict delete.
+  seasonId  String
+  /// Workflow status: DRAFT (editable) → CONFIRMED (locked).
+  status    MerchandisingPlanStatus @default(DRAFT)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  /// The brand this plan belongs to.
+  brand  Brand                  @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this plan belongs to.
+  season Season                 @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// SKU-level rows belonging to this plan.
+  rows   MerchandisingPlanRow[]
+
+  @@unique([brandId, seasonId])
+  @@index([brandId, seasonId])
+  @@map("merchandising_plans")
+}
+
+/// Single SKU row in a merchandising plan at colour granularity. One row = one article+colour combination.
+model MerchandisingPlanRow {
+  id     String @id @default(uuid())
+  /// FK to MerchandisingPlan. Cascade delete.
+  planId String
+  /// Display order within the plan.
+  order  Int    @default(0)
+
+  articleCode         String
+  styleDescription    String
+  styleCode           String?
+  colorCode           String
+  colorDescription    String
+  /// Gender target: MAN | WOMAN | UNISEX | KID.
+  gender              MerchandisingGender
+  productCategory     String
+  lineCode            String?
+  /// Lifecycle type: NEW_LINE | NEW_STYLE | NEW_COLOR | CARRY_OVER.
+  lifeType            MerchandisingLifeType?
+  /// Season code from which this style is carried over (if lifeType=CARRY_OVER).
+  carryoverFromSeason String?
+
+  /// Launch type: SAMPLED | OPEN_TO_BUY.
+  launchType         MerchandisingLaunchType?
+  smsPairsOrder      Int?
+  targetPairs        Int?
+  cancellationStatus String?
+  designer           String?
+
+  /// FK to PricingParameterSet (optional). SetNull if deleted.
+  pricingParameterSetId String?
+
+  targetFobPrice  Decimal? @db.Decimal(10, 4)
+  firstOfferPrice Decimal? @db.Decimal(10, 4)
+  finalOfferPrice Decimal? @db.Decimal(10, 4)
+  retailTargetIt  Decimal? @db.Decimal(10, 4)
+  wholesaleIt     Decimal? @db.Decimal(10, 4)
+  retailTargetEu  Decimal? @db.Decimal(10, 4)
+  wholesaleEu     Decimal? @db.Decimal(10, 4)
+
+  pricingNotes String?
+  generalNotes String?
+
+  /// FK to User responsible for this row. SetNull if user is deleted.
+  assignedUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The merchandising plan this row belongs to.
+  plan                MerchandisingPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  /// Bill-of-materials specsheet linked to this row (1:1 optional).
+  specsheet           MerchandisingSpecsheet?
+  /// User assigned to work on this row.
+  assignedUser        User?                   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  /// Pricing parameter set used for cost calculations on this row.
+  pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([assignedUserId])
+  @@index([pricingParameterSetId])
+  @@map("merchandising_plan_rows")
+}
+
+/// Simplified bill-of-materials (specsheet) linked 1:1 to a merchandising plan row. Contains components and images.
+model MerchandisingSpecsheet {
+  id    String @id @default(uuid())
+  /// FK to MerchandisingPlanRow. 1:1 — unique constraint enforced. Cascade delete.
+  rowId String @unique
+
+  madeIn       String?
+  supplierName String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The plan row this specsheet belongs to.
+  row        MerchandisingPlanRow     @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// BOM component lines (upper, lining, sole, etc.).
+  components MerchandisingComponent[]
+  /// Product images for this specsheet.
+  images     MerchandisingImage[]
+
+  @@map("merchandising_specsheets")
+}
+
+/// Single BOM component line within a specsheet (e.g. upper leather, sole rubber).
+model MerchandisingComponent {
+  id          String                    @id @default(uuid())
+  /// FK to MerchandisingSpecsheet. Cascade delete.
+  specsheetId String
+  /// Display order within section.
+  order       Int                       @default(0)
+  /// BOM section: UPPER | LINING | ACCESSORIES | SOLE | OTHER.
+  section     SpecsheetComponentSection
+
+  partNumber   String?
+  component    String
+  material     String?
+  color        String?
+  pantoneNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The specsheet this component belongs to.
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, section, order])
+  @@map("merchandising_components")
+}
+
+/// Image in a specsheet gallery. Stored in the storage layer; key references the bucket path.
+model MerchandisingImage {
+  id          String  @id @default(uuid())
+  /// FK to MerchandisingSpecsheet. Cascade delete.
+  specsheetId String
+  /// Storage key for the image file. Null until the upload is confirmed.
+  key         String?
+  /// True if this is the primary display image for the specsheet.
+  isDefault   Boolean @default(false)
+  /// Display order within the gallery.
+  order       Int     @default(0)
+  caption     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The specsheet this image belongs to.
+  specsheet MerchandisingSpecsheet @relation(fields: [specsheetId], references: [id], onDelete: Cascade)
+
+  @@index([specsheetId, order])
+  @@map("merchandising_images")
+}

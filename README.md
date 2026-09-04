@@ -401,7 +401,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 - **Sviluppo e Produzione**: PostgreSQL 16 (via Prisma ORM)
 - **Migrations**: Prisma migrate (`prisma migrate deploy` in produzione, workflow Docker su porta 5433 per generazione)
-- **Schema**: Definito in `packages/db/prisma/schema.prisma` (workspace `@luke/db`)
+- **Schema**: Definito in `packages/db/prisma/*.prisma` (multi-file per dominio, workspace `@luke/db`)
 
 ## Workflow
 

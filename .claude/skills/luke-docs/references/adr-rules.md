@@ -59,10 +59,10 @@ for evidence in the code.
 | ----------------------------------- | ---------------------------------------------------------------- |
 | "We use library X"                  | Search for `X` in the relevant workspaces' `package.json`       |
 | "We don't use Y"                    | Search for `Y` in every `package.json` — absence = confirmed    |
-| "The model is called Z"             | Search for `model Z` in `schema.prisma`                         |
+| "The model is called Z"             | Search for `model Z` in `packages/db/prisma/*.prisma`            |
 | "Function F exists in package P"    | Search for `export` + name in `packages/<P>/src/`                |
 | "Pattern/flag/config C is active"   | Search in `CLAUDE.md`, `lessons.md`, relevant config files       |
-| "Field status allows values V"      | Search for the matching enum in `schema.prisma` or `packages/core` |
+| "Field status allows values V"      | Search for the matching enum in `packages/db/prisma/*.prisma` or `packages/core` |
 
 **Outcome for each ADR:**
 

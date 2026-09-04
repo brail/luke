@@ -25,7 +25,7 @@ export {
 
 const logger = pino({ level: 'info' });
 
-/** Shape of `UserPreference.data` (Json column) — see schema.prisma doc comment on the model. */
+/** Shape of `UserPreference.data` (Json column) — see the doc comment on the model in `identity.prisma`. */
 interface UserPreferenceData {
   lastBrandId?: string;
   lastSeasonId?: string;

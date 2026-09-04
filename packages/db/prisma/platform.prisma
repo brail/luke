@@ -1,0 +1,362 @@
+
+/// Notification category used to group and filter user notifications.
+enum NotificationCategory {
+  SYSTEM
+  CALENDAR
+  USER_ACTION
+  WORKFLOW
+}
+
+/// Runtime configuration store (KV). All application settings live here — never in .env. Keys defined in AppConfigRegistry (@luke/core).
+model AppConfig {
+  id          String   @id @default(uuid())
+  /// Dot-notation key (e.g. "auth.strategy", "smtp.host"). Must match an AppConfigRegistry entry.
+  key         String   @unique
+  /// Stored value always as string. Use z.coerce.* or JSON.parse in the application layer.
+  value       String
+  /// When true, value is AES-GCM encrypted at rest. Decrypted via getConfig({ decrypt: true }).
+  isEncrypted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("app_configs")
+}
+
+/// Immutable audit trail entry. Every create/update/delete mutation must produce one record via logAudit() or withAuditLog middleware.
+model AuditLog {
+  id         String   @id @default(uuid())
+  /// FK to User (actor). Nullable: system actions have no actor. SetNull on user deletion preserves the log.
+  actorId    String? // Replaces userId (clearer)
+  /// Action in SCREAMING_SNAKE_CASE (e.g. USER_CREATE, CONFIG_UPDATE).
+  action     String // SCREAMING_SNAKE_CASE (e.g. USER_CREATE)
+  /// Resource type targeted by the action (e.g. User, Config, Auth).
+  targetType String // Resource type (User, Config, Auth)
+  /// ID of the target resource. Null for bulk or non-entity actions.
+  targetId   String? // Target resource ID (optional)
+  /// Outcome of the action: SUCCESS or FAILURE.
+  result     String // SUCCESS or FAILURE (explicit)
+  /// Redacted supplemental data (e.g. changed fields). Secrets must never appear here.
+  metadata   Json? // Redacted data
+  /// Distributed trace ID for correlating with API logs.
+  traceId    String?
+  /// Client IP address at the time of the action.
+  ip         String? // Renamed from ipAddress for brevity
+  createdAt  DateTime @default(now()) // Renamed from timestamp
+
+  // Relations
+  /// The user who performed the action. Null for system-initiated events.
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([action, createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
+
+/// Tracks every file uploaded to a storage bucket. Used for orphan cleanup and deduplication.
+model FileObject {
+  id              String    @id @default(uuid())
+  /// Storage bucket name (e.g. "uploads", "collection-row-pictures"). Must be in localStorageConfigSchema.
+  bucket          String
+  /// Path key within the bucket. Unique per bucket.
+  key             String
+  originalName    String
+  /// File size in bytes.
+  size            Int
+  contentType     String
+  /// SHA-256 checksum of file content for integrity verification.
+  checksumSha256  String
+  /// User ID (string) of the uploader. Soft FK — no @relation, user may be deleted.
+  createdBy       String
+  /// Orphan cleanup state: PENDING (awaiting confirmation), SUCCESS (cleaned up), FAILED (cleanup error).
+  cleanupStatus   String    @default("PENDING") // PENDING | SUCCESS | FAILED
+  /// Number of cleanup attempts made so far.
+  cleanupAttempts Int       @default(0)
+  lastCleanupAt   DateTime?
+  /// Null until the file is linked to an entity (e.g. brand logo saved). Unconfirmed files are eligible for cleanup.
+  confirmedAt     DateTime? // null = pending confirmation; set on entity link
+  createdAt       DateTime  @default(now())
+
+  /// Master this row is a derivative of. Null on masters (and on non-image uploads, e.g. backups).
+  parentId           String?
+  /// Cascade is intentional: a derivative without its master is meaningless — it's regenerable
+  /// cache produced by the asset pipeline, not source data, so it never needs independent retention.
+  parent             FileObject?  @relation("AssetDerivatives", fields: [parentId], references: [id], onDelete: Cascade)
+  /// Derivatives generated from this master (thumb/card/export).
+  variants           FileObject[] @relation("AssetDerivatives")
+  /// Variant name (thumb | card | export). Null on masters.
+  variant            String?
+  /// Asset pipeline version this row was produced with (ASSET_PIPELINE_VERSION in @luke/core). Bump the constant to force regeneration of stale derivatives.
+  pipelineVersion    Int          @default(0)
+  /// Pixel width from the normalization/derivation pipeline. Null for non-image uploads or an undecodable source.
+  width              Int?
+  /// Pixel height from the normalization/derivation pipeline. Null for non-image uploads or an undecodable source.
+  height             Int?
+  /// Derivative generation state — meaningful on masters only: PENDING | READY | FAILED.
+  derivativesStatus  String       @default("PENDING")
+  /// Number of derivative-generation attempts made so far — masters only.
+  derivativeAttempts Int          @default(0)
+
+  @@unique([bucket, key])
+  @@unique([parentId, variant, pipelineVersion])
+  @@index([bucket, key])
+  @@index([createdAt])
+  @@index([createdBy])
+  @@index([cleanupStatus])
+  @@index([confirmedAt])
+  @@index([parentId])
+  @@index([derivativesStatus])
+  @@map("file_objects")
+}
+
+/// Personal dashboard widget layout for a user. One record per user (1:1).
+model DashboardConfig {
+  id        String   @id @default(cuid())
+  /// FK to User. 1:1 — one config per user. Cascade delete.
+  userId    String   @unique
+  /// The user this dashboard config belongs to.
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// JSON blob describing widget positions and settings.
+  widgets   Json
+  updatedAt DateTime @updatedAt
+
+  @@map("dashboard_configs")
+}
+
+/// Personal to-do task shown on a user's dashboard. Not shared across users.
+model DashboardTask {
+  id        String    @id @default(cuid())
+  /// FK to User. Cascade delete.
+  userId    String
+  /// The user who owns this task.
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  /// True when the task has been marked as completed.
+  done      Boolean   @default(false)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@map("dashboard_tasks")
+}
+
+/// In-app notification delivered to a user. Rendered in the notification bell and optionally linked to a resource.
+model Notification {
+  id         String               @id @default(uuid())
+  /// FK to User (recipient). Cascade delete.
+  userId     String
+  /// The user this notification is for.
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
+  category   NotificationCategory
+  title      String
+  message    String
+  /// Optional deep-link URL to the relevant resource.
+  link       String?
+  /// Optional structured payload for custom rendering.
+  data       Json?
+  /// False until the user opens/acknowledges the notification.
+  isRead     Boolean              @default(false)
+  readAt     DateTime?
+  createdAt  DateTime             @default(now())
+  /// Soft-archived by the user (bulk "archive read" action) — hidden from default views.
+  isArchived Boolean              @default(false)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([userId, isArchived])
+  @@map("notifications")
+}
+
+/// A bug report or feature request filed via the in-app feedback dialog and mirrored as a GitHub
+/// issue. Tracked so `feedbackSyncScheduler` can detect new comments or a state change on the
+/// GitHub side and notify the original submitter in-app — the submitter has no GitHub account
+/// of their own to watch the issue.
+model FeedbackSubmission {
+  id           String   @id @default(uuid())
+  /// FK to User (submitter). Cascade delete — the GitHub issue itself is unaffected.
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issueNumber  Int
+  issueUrl     String
+  /// "owner/repo", copied from `integrations.github.feedbackRepo` at submission time.
+  repo         String
+  /// Mirrors the GitHub issue's own open/closed state.
+  status       String   @default("open")
+  /// GitHub issue `comments` count as of the last sync tick — a jump since the last check means
+  /// new activity to notify about.
+  commentCount Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("feedback_submissions")
+}
+
+/// Per-user, per-category (or per-event) notification preference. When enabled=false, notifications for that scope are suppressed.
+model NotificationPreference {
+  id        String               @id @default(uuid())
+  /// FK to User. Cascade delete.
+  userId    String
+  /// The user this preference applies to.
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Notification category: SYSTEM | CALENDAR | USER_ACTION | WORKFLOW.
+  category  NotificationCategory
+  /// Empty string = category-level row. Non-empty = event-level override scoped to a specific event key within the category.
+  eventKey  String               @default("")
+  /// When false, notifications in this category/event are suppressed for the user.
+  enabled   Boolean              @default(true)
+  updatedAt DateTime             @updatedAt
+
+  @@unique([userId, category, eventKey])
+  @@index([userId])
+  @@map("notification_preferences")
+}
+
+/// DB-backed dedup ledger for recurring scheduler notifications (sync failures, milestone deadlines).
+/// Replaces in-memory dedup state, which does not survive process restarts.
+model NotificationDedupKey {
+  /// Opaque dedup key, e.g. "nav-sync:failure:vendor" or "milestone:userId:milestoneId:overdue:2026-07-31".
+  key        String   @id
+  lastSentAt DateTime
+
+  @@map("notification_dedup_keys")
+}
+
+/// Entity type an EditLock can target.
+enum LockEntityType {
+  SEASON_CALENDAR
+  COLLECTION_LAYOUT
+}
+
+/// Session-scoped edit lock preventing concurrent editing of a SeasonCalendar or CollectionLayout
+/// while a user has the planning wizard open: a UI-session lock, released on completion/unmount
+/// or expired via a fixed TTL (no renewal/heartbeat).
+model EditLock {
+  id             String         @id @default(uuid())
+  /// Which kind of entity this lock targets: SEASON_CALENDAR or COLLECTION_LAYOUT.
+  entityType     LockEntityType
+  /// Id of the locked entity — a SeasonCalendar or CollectionLayout id depending on entityType. Polymorphic, so no @relation.
+  entityId       String
+  /// FK to User. Cascade delete — a lock has no meaning once its owner is gone.
+  lockedByUserId String
+  /// The user holding this lock.
+  lockedByUser   User           @relation(fields: [lockedByUserId], references: [id], onDelete: Cascade)
+  lockedAt       DateTime       @default(now())
+  /// Hard cutoff — no renewal. Past this instant the lock is considered stale and ignorable.
+  expiresAt      DateTime
+
+  @@unique([entityType, entityId])
+  @@map("edit_locks")
+}
+
+/// Leader lock for tick-based schedulers (backup, NAV sync, calendar digest, ...) — prevents two
+/// API instances from running the same scheduled job concurrently if ever scaled horizontally.
+/// See withSchedulerLock() in apps/api/src/lib/schedulerLock.ts. Unlike EditLock, acquisition is
+/// a conditional upsert (INSERT ... ON CONFLICT DO UPDATE ... WHERE), not a plain insert-or-fail —
+/// expiresAt is a crash-safety ceiling only, since the normal path releases explicitly right after
+/// the tick finishes.
+model SchedulerLock {
+  /// Scheduler name (e.g. 'backup', 'nav-sync') — one row per named lock.
+  name      String   @id
+  /// Random per-process id of the instance currently holding this lock (informational + safe release).
+  heldBy    String
+  expiresAt DateTime
+
+  @@map("scheduler_locks")
+}
+
+// ─── Backup & Disaster Recovery ───────────────────────────────────────────────
+
+/// Scope of a database backup: DB (schema+data only) or DB_AND_FILES (includes all storage bucket objects).
+enum BackupScope {
+  DB
+  DB_AND_FILES
+}
+
+/// What triggered a backup: MANUAL (admin-initiated), SCHEDULED (automatic per backup.schedule.* config), PRE_RESTORE_SAFETY (automatic safety snapshot taken right before a restore), IMPORTED (uploaded from a passphrase-protected export package, possibly created on a different instance), PRE_MIGRATION_SAFETY (snapshot of the migration bridge's temp DB right after pg_restore, before migrations are applied), MIGRATED (a migration bridge's final output — an older backup brought up to the current schema, ready for a normal restore).
+enum BackupTrigger {
+  MANUAL
+  SCHEDULED
+  PRE_RESTORE_SAFETY
+  IMPORTED
+  PRE_MIGRATION_SAFETY
+  MIGRATED
+}
+
+/// Lifecycle status of a backup job: PENDING (queued) → RUNNING (in progress) → COMPLETED | FAILED (terminal).
+enum BackupStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// Catalog entry for an encrypted, compressed full-system backup. The actual blob lives in the
+/// "backups" storage bucket; a sidecar `<id>.meta.json` file next to it duplicates the crypto/
+/// integrity metadata below so a backup remains decryptable/restorable even if this row (and the
+/// whole database) is lost — the row exists purely for a convenient admin-facing catalog UI.
+model BackupRecord {
+  id       String @id @default(uuid())
+  /// Storage key of the encrypted blob within the "backups" bucket.
+  filename String
+
+  /// Whether the backup covers DB only or DB + storage files. See BackupScope.
+  scope   BackupScope
+  /// What kicked off this backup — manual, scheduled, safety snapshot, import, or migration bridge step. See BackupTrigger.
+  trigger BackupTrigger
+  /// Job lifecycle, defaulting to PENDING at creation. See BackupStatus.
+  status  BackupStatus  @default(PENDING)
+
+  /// Optional free-text label set by the admin at creation time (e.g. "before migration X").
+  label String?
+
+  /// Size of the final encrypted+compressed blob in bytes. Null until the job completes.
+  sizeBytesEncrypted BigInt?
+  /// SHA-256 checksum of the encrypted blob, for integrity verification before restore.
+  checksumSha256     String?
+  /// Number of storage files included (scope DB_AND_FILES only). Null for scope DB or until the job completes.
+  fileCount          Int?
+
+  /// AES-256-GCM initialization vector (hex) used to encrypt this backup's data-encryption-key-wrapped stream.
+  ivHex         String?
+  /// AES-256-GCM authentication tag (hex), known only once the stream has been fully written.
+  authTagHex    String?
+  /// Per-backup random data-encryption-key (DEK), itself encrypted ("wrapped") with the server master key.
+  wrappedDekHex String?
+  /// Symmetric algorithm used. Always "aes-256-gcm" today; kept explicit for future rotation.
+  algorithm     String  @default("aes-256-gcm")
+
+  /// Application version (APP_VERSION) that produced this backup.
+  appVersion          String?
+  /// Name of the latest Prisma migration applied at backup time — used to warn on cross-schema restores.
+  schemaMigrationName String?
+
+  /// Populated on failure. Null on success.
+  errorMessage String?
+
+  /// FK to User who triggered a MANUAL backup. Null for SCHEDULED/PRE_RESTORE_SAFETY or if the user was deleted.
+  createdById String?
+  /// The user who triggered this backup, if manual.
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  /// FK to the original BackupRecord this one was derived from by the migration bridge — set only
+  /// for PRE_MIGRATION_SAFETY/MIGRATED, null otherwise. SetNull: deleting the source only loses the
+  /// lineage link, not this record (it remains a perfectly valid, independently restorable backup).
+  sourceBackupId String?
+  sourceBackup   BackupRecord?  @relation("BackupMigrationLineage", fields: [sourceBackupId], references: [id], onDelete: SetNull)
+  /// Backups produced FROM this one by the migration bridge.
+  derivedBackups BackupRecord[] @relation("BackupMigrationLineage")
+
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  /// Retention cutoff — scheduled cleanup deletes backups past this date, subject to backup.retentionMinCount.
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([sourceBackupId])
+  @@map("backup_records")
+}

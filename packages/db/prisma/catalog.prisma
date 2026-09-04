@@ -1,0 +1,245 @@
+
+/// Internal brand entity. Primary grouping for collections, pricing, and calendars. May be linked to a NAV brand record.
+model Brand {
+  id         String    @id @default(uuid())
+  /// Unique short code (max 20 chars, aligned to NAV nvarchar).
+  code       String    @unique
+  name       String
+  /// Storage key for the brand logo in the "brand-logos" bucket. Null if no logo uploaded.
+  logoKey    String?
+  /// FK to NavBrand (optional). Links this brand to the NAV replica. SetNull on NAV record deletion.
+  navBrandId String?   @unique
+  /// NAV brand replica linked to this brand.
+  navBrand   NavBrand? @relation(fields: [navBrandId], references: [navCode], onDelete: SetNull)
+  /// Soft-delete flag. Inactive brands are hidden from normal listings.
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  /// Pricing parameter sets scoped to this brand.
+  pricingParameterSets PricingParameterSet[]
+  /// Collection layouts scoped to this brand.
+  collectionLayouts    CollectionLayout[]
+  /// Merchandising plans scoped to this brand.
+  merchandisingPlans   MerchandisingPlan[]
+  /// Season calendars scoped to this brand.
+  seasonCalendars      SeasonCalendar[]
+  /// Team brand scope assignments granting teams access to this brand.
+  teamBrandScopes      CompanyTeamBrandScope[]
+
+  @@index([name])
+  @@index([isActive, name])
+  @@map("brands")
+}
+
+/// Fashion season entity. Secondary grouping dimension alongside Brand. May be linked to a NAV season record.
+model Season {
+  id          String     @id @default(uuid())
+  /// Unique short code (max 10 chars, aligned to NAV nvarchar).
+  code        String     @unique
+  /// Optional numeric year (e.g. 2026).
+  year        Int?
+  name        String
+  /// FK to NavSeason (optional). Links this season to the NAV replica. SetNull on NAV record deletion.
+  navSeasonId String?    @unique
+  /// NAV season replica linked to this season.
+  navSeason   NavSeason? @relation(fields: [navSeasonId], references: [navCode], onDelete: SetNull)
+  /// Soft-delete flag. Inactive seasons are hidden from normal listings.
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  /// Pricing parameter sets scoped to this season.
+  pricingParameterSets PricingParameterSet[]
+  /// Collection layouts scoped to this season.
+  collectionLayouts    CollectionLayout[]
+  /// Merchandising plans scoped to this season.
+  merchandisingPlans   MerchandisingPlan[]
+  /// Season calendars scoped to this season.
+  seasonCalendars      SeasonCalendar[]
+  /// Vendor closure periods associated with this season.
+  vendorClosures       VendorClosurePeriod[]
+
+  @@index([isActive, name])
+  @@map("seasons")
+}
+
+/// Pricing parameter set for a brand+season combination. Multiple variants per pair (e.g. Pelle, Non Pelle, Tunisia). Drives the pricing calculator.
+model PricingParameterSet {
+  id                     String   @id @default(uuid())
+  /// FK to Brand. Restrict delete — cannot delete a brand while parameter sets exist.
+  brandId                String
+  /// FK to Season. Restrict delete — cannot delete a season while parameter sets exist.
+  seasonId               String
+  /// Human-readable variant name (e.g. "Pelle", "Non Pelle", "Tunisia"). Unique within brand+season.
+  name                   String // e.g. "Pelle", "Non Pelle", "Tunisia"
+  /// ISO 3166-1 alpha-2 country of production (e.g. "CN", "IT", "TR").
+  countryCode            String // e.g. "CN", "IT", "TR" — ISO 3166-1 alpha-2
+  /// Currency for supplier purchase prices. Supported: USD, EUR, GBP, CHF, CNY.
+  purchaseCurrency       String   @default("USD")
+  /// Currency for retail/wholesale selling prices. Supported: USD, EUR, GBP, CHF, CNY.
+  sellingCurrency        String   @default("EUR")
+  qualityControlPercent  Float
+  transportInsuranceCost Float
+  duty                   Float
+  exchangeRate           Float
+  italyAccessoryCosts    Float
+  tools                  Float
+  retailMultiplier       Float
+  optimalMargin          Float
+  /// If true, this set is the default variant selected when creating a new quotation.
+  isDefault              Boolean  @default(false)
+  /// Display order within the brand+season pair.
+  orderIndex             Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  /// The brand this parameter set belongs to.
+  brand                 Brand                    @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this parameter set belongs to.
+  season                Season                   @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// Collection row quotations using this parameter set.
+  quotations            CollectionRowQuotation[]
+  /// Merchandising plan rows using this parameter set.
+  merchandisingPlanRows MerchandisingPlanRow[]
+  /// Vendors for whom this parameter set is enabled.
+  enabledForVendors     Vendor[]                 @relation("VendorEnabledParameterSets")
+
+  @@unique([brandId, seasonId, name])
+  @@index([brandId, seasonId])
+  @@map("pricing_parameter_sets")
+}
+
+/// Sync filter configuration for a NAV entity type. One record per entity. Controls which NAV No_ are included in synchronization.
+model NavSyncFilter {
+  id              String   @id @default(cuid())
+  /// Entity type discriminator: "vendor", "brand", or "season".
+  entity          String // "vendor" | "brand" | "season"
+  /// Sync scope: "all" (sync everything), "whitelist" (only listed navNos), "exclude" (all except listed navNos).
+  mode            String // "all" | "whitelist" | "exclude"
+  /// NAV No_ values used when mode is "whitelist" or "exclude".
+  navNos          String[] // relevant only for whitelist/exclude
+  /// Whether this sync filter is currently active.
+  active          Boolean  @default(true)
+  note            String?
+  /// If true, the scheduler syncs this entity automatically.
+  autoSyncEnabled Boolean  @default(false)
+  /// Automatic sync frequency in minutes (used only when autoSyncEnabled=true).
+  intervalMinutes Int      @default(30)
+  updatedAt       DateTime @updatedAt
+  /// Outcome of the last scheduled sync attempt: "SUCCESS" | "FAILURE". Null if never run.
+  lastSyncStatus  String?
+  /// Error message from the last failed attempt. Null on success or if never run.
+  lastSyncError   String?
+  /// Timestamp of the last sync attempt (success or failure).
+  lastSyncAt      DateTime?
+
+  @@unique([entity])
+  @@index([entity, active])
+  @@map("nav_sync_filters")
+}
+
+/// Read-only replica of [COMPANY$Vendor] from Microsoft NAV. NAV timestamp used only in differential sync queries — not mapped here.
+model NavVendor {
+  /// Natural key: NAV's own "No_" field, used directly as the primary key (no separate id column).
+  navNo      String  @id // No_
+  name       String // Name
+  name2      String? // Name 2
+  searchName String? // Search Name
+  firstName  String? // First Name
+  lastName   String? // Last Name
+
+  address     String? // Address
+  address2    String? // Address 2
+  postCode    String? // Post Code
+  city        String? // City
+  county      String? // County
+  countryCode String? // Country_Region Code
+
+  phoneNo  String? // Phone No_
+  faxNo    String? // Fax No_
+  email    String? // E-Mail
+  homePage String? // Home Page
+  contact  String? // Contact
+
+  vendorType String? // Vendor Type
+
+  navLastModified DateTime? // Last Date Modified
+  /// Timestamp of the last successful sync from NAV.
+  syncedAt        DateTime // timestamp of last sync
+
+  /// Internal Vendor record linked to this NAV vendor, if matched.
+  vendor Vendor? // link to the internal registry
+
+  @@index([name])
+  @@index([syncedAt])
+  @@index([navLastModified])
+  @@map("nav_vendors")
+}
+
+/// Read-only replica of [COMPANY$Brand] from Microsoft NAV.
+model NavBrand {
+  /// Natural key: NAV's own "Code" field, used directly as the primary key (no separate id column).
+  navCode     String   @id // Code (PK)
+  description String   @default("") // Description
+  /// Timestamp of the last successful sync from NAV.
+  syncedAt    DateTime // timestamp of last sync
+
+  /// Internal Brand record linked to this NAV brand, if matched.
+  brand Brand? // link to the internal registry
+
+  @@index([description])
+  @@map("nav_brands")
+}
+
+/// Read-only replica of [COMPANY$Season] from Microsoft NAV.
+model NavSeason {
+  /// Natural key: NAV's own "Code" field, used directly as the primary key (no separate id column).
+  navCode      String    @id // Code (PK)
+  description  String    @default("") // Description
+  startingDate DateTime? // Starting Date
+  endingDate   DateTime? // Ending Date
+  /// Timestamp of the last successful sync from NAV.
+  syncedAt     DateTime // timestamp of last sync
+
+  /// Internal Season record linked to this NAV season, if matched.
+  season Season? // link to the internal registry
+
+  @@index([description])
+  @@map("nav_seasons")
+}
+
+/// Internal supplier (vendor) entity. Standalone — can exist independently of NAV. Optionally linked to a NAV vendor record.
+model Vendor {
+  id          String     @id @default(uuid())
+  name        String
+  countryCode String?
+  /// Short nickname used in UI listings.
+  nickname    String?
+  /// Name of the primary contact person at the vendor.
+  referente   String?
+  email       String?
+  phone       String?
+  /// Messaging/chat contact (e.g. WhatsApp, WeChat).
+  chat        String?
+  notes       String?
+  /// FK to NavVendor (optional). SetNull on NAV record deletion.
+  navVendorId String?    @unique
+  /// NAV vendor replica linked to this vendor, if matched.
+  navVendor   NavVendor? @relation(fields: [navVendorId], references: [navNo], onDelete: SetNull)
+  /// Soft-delete flag. Inactive vendors are hidden from normal listings.
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  /// Collection layout rows assigned to this vendor.
+  collectionRows       CollectionLayoutRow[]
+  /// Pricing parameter sets for which this vendor is enabled.
+  enabledParameterSets PricingParameterSet[] @relation("VendorEnabledParameterSets")
+  /// Closure and open-period overrides for this vendor.
+  closurePeriods       VendorClosurePeriod[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("vendors")
+}

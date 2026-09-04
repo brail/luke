@@ -1,0 +1,123 @@
+
+// ─── Company Structure ────────────────────────────────────────────────────────
+
+/// Singleton company profile record. Always queried by id="singleton". Holds legal, contact and export settings.
+model CompanyProfile {
+  /// Fixed PK "singleton" — only one record allowed per deployment.
+  id             String   @id @default("singleton")
+  legalName      String
+  displayName    String
+  countryCode    String?
+  vatNumber      String?
+  taxCode        String?
+  phone          String?
+  email          String?
+  website        String?
+  /// Structured postal address as JSON blob.
+  address        Json?
+  /// Export configuration settings as JSON blob.
+  exportSettings Json?
+  /// Storage key for the company logo in the "assets" bucket.
+  logoKey        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_profile")
+}
+
+/// Organisational function (department/team unit) within the company. Used to scope calendar event visibility and team structure.
+model CompanyFunction {
+  id          String   @id @default(uuid())
+  /// URL-safe slug used as stable identifier in configs and routes.
+  slug        String
+  name        String
+  description String?
+  /// Display order in function listings.
+  order       Int      @default(0)
+  /// Soft-delete flag.
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// Teams belonging to this function.
+  teams                     CompanyTeam[]
+  /// Calendar event visibility grants for this function.
+  calendarEventVisibilities CalendarEventVisibility[]
+  /// Milestone template item visibility grants for this function.
+  templateItemVisibilities  MilestoneTemplateItemVisibility[]
+  /// Google Calendar bindings for this function.
+  googleCalendarBindings    GoogleCalendarBinding[]
+  /// Google event mappings for calendar events visible to this function.
+  googleEventMappings       GoogleEventMapping[]
+
+  @@index([slug])
+  @@index([isActive, order])
+  @@map("company_functions")
+}
+
+/// Role a user holds within a company team: LEADER (can manage team) or MEMBER (standard member).
+enum CompanyTeamMemberRole {
+  LEADER
+  MEMBER
+}
+
+/// Team within a company function. A function can have multiple teams; team names are unique within a function.
+model CompanyTeam {
+  id          String   @id @default(uuid())
+  /// FK to CompanyFunction. Restrict delete.
+  functionId  String
+  name        String
+  description String?
+  /// Soft-delete flag.
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// The function this team belongs to.
+  function    CompanyFunction         @relation(fields: [functionId], references: [id], onDelete: Restrict)
+  /// User memberships in this team.
+  memberships CompanyTeamMembership[]
+  /// Brand scopes this team has access to.
+  brandScopes CompanyTeamBrandScope[]
+
+  @@unique([functionId, name])
+  @@index([functionId])
+  @@map("company_teams")
+}
+
+/// M2M join table between CompanyTeam and User. Tracks role within the team.
+model CompanyTeamMembership {
+  /// FK to CompanyTeam. Cascade delete.
+  teamId    String
+  /// FK to User. Cascade delete.
+  userId    String
+  /// Role in this team: LEADER or MEMBER.
+  role      CompanyTeamMemberRole @default(MEMBER)
+  createdAt DateTime              @default(now())
+
+  /// The team this membership belongs to.
+  team CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// The user who is a member.
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("company_team_memberships")
+}
+
+/// M2M join table granting a CompanyTeam access to a specific Brand.
+model CompanyTeamBrandScope {
+  /// FK to CompanyTeam. Cascade delete.
+  teamId  String
+  /// FK to Brand. Cascade delete.
+  brandId String
+
+  /// The team being granted access.
+  team  CompanyTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// The brand the team has access to.
+  brand Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, brandId])
+  @@index([brandId])
+  @@map("company_team_brand_scopes")
+}

@@ -227,7 +227,7 @@ Al boot, `assertEnvPolicy()` in `src/server.ts` verifica che nessuna variabile v
 ## Database
 
 <!-- luke-docs:start:database -->
-PostgreSQL 16 via Prisma 7. Schema, migration e client generato vivono in `@luke/db` (`packages/db/prisma/schema.prisma`); qui restano il seed e gli script `db:*` di dominio.
+PostgreSQL 16 via Prisma 7. Schema, migration e client generato vivono in `@luke/db` (`packages/db/prisma/*.prisma`, multi-file per dominio); qui restano il seed e gli script `db:*` di dominio.
 
 ```bash
 pnpm --filter @luke/db prisma:studio   # Apre Prisma Studio (browser)

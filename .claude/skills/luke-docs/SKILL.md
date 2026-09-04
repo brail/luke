@@ -39,8 +39,8 @@ concurrent sessions — you write files, so §7.2 applies to you.
 
 1. **Read before write** — never generate content for a file without having
    read it first.
-2. **No SQL, no migrations, no test runner** — `schema.prisma` is read as
-   text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
+2. **No SQL, no migrations, no test runner** — the `packages/db/prisma/*.prisma`
+   files are read as text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
 3. **Parallel agents: max 3** simultaneously.
 4. **Preserve markers** — never overwrite content outside the
    `luke-docs:start/end` markers. Marker integrity and internal-link
@@ -101,7 +101,7 @@ Empty list → stop: `No relevant file changed relative to <git-ref>. Nothing to
 2. For every workspace: `package.json`, `src/index.ts(x)`, existing `README.md`
 3. `.env.production.example` + env policy in `CLAUDE.md` — env var catalog
    (enforcement is `assertEnvPolicy()` in `apps/api/src/server.ts`)
-4. `packages/db/prisma/schema.prisma` — model names only
+4. `packages/db/prisma/*.prisma` — model names only (multi-file schema, split by domain)
 5. `apps/api/src/routers/` — list of router files (names, not content)
 6. `apps/web/src/app/` — 2-level directory tree
 7. `docs/` — recursive listing of `.md` files (H1 titles, path)
@@ -129,7 +129,7 @@ removed — never added to an exceptions list, or the checker becomes furniture.
 
 - `packages/**/src/**/*.ts`: exports without JSDoc, drifted JSDoc, `//` on public exports
 - `apps/api/src/routers/**/*.ts`: procedures without `/** */` or without input/output/RBAC permission
-- `packages/db/prisma/schema.prisma`: fields and models without `///`
+- `packages/db/prisma/*.prisma`: fields and models without `///`
 
 **Phase 2-4 — Write** following the templates and merge logic in
 `references/inline-rules.md`: package JSDoc (max 3 in parallel) → tRPC

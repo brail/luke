@@ -1,0 +1,185 @@
+
+// Enums
+/// RBAC role assigned to a user: admin (full access), editor (read+write), viewer (read-only).
+enum Role {
+  admin
+  editor
+  viewer
+}
+
+/// Authentication provider for an identity: LOCAL (password-based), LDAP (directory), OIDC (OpenID Connect).
+enum Provider {
+  LOCAL
+  LDAP
+  OIDC
+}
+
+/// Type of a one-time user token: RESET (password reset), VERIFY (email verification).
+enum TokenType {
+  RESET
+  VERIFY
+}
+
+// Models
+/// Platform user. Holds identity, role, and preferences. Relations cover auth, audit, dashboard, calendar, and notifications.
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  username        String    @unique
+  firstName       String    @default("")
+  lastName        String    @default("")
+  /// RBAC role: admin (full access), editor (read+write), viewer (read-only).
+  role            Role
+  /// Soft-delete flag. Inactive users cannot log in.
+  isActive        Boolean   @default(true)
+  /// True while a newly registered user is awaiting admin approval.
+  pendingApproval Boolean   @default(false)
+  locale          String    @default("it-IT")
+  timezone        String    @default("Europe/Rome")
+  /// Incremented on password change or forced logout to invalidate existing JWTs.
+  tokenVersion    Int       @default(0)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  loginCount      Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  /// Authentication identities (LOCAL, LDAP, OIDC) associated with this user.
+  identities                        Identity[]
+  /// Audit log entries where this user is the actor.
+  auditLogs                         AuditLog[]
+  /// One-time tokens (password reset, email verification) belonging to this user.
+  tokens                            UserToken[]
+  /// Per-section visibility overrides for this user.
+  sectionAccess                     UserSectionAccess[]
+  /// Merchandising plan rows assigned to this user.
+  assignedMerchandisingRows         MerchandisingPlanRow[]
+  /// Personal dashboard widget configuration (1:1).
+  dashboardConfig                   DashboardConfig?
+  /// Personal dashboard task list items.
+  dashboardTasks                    DashboardTask[]
+  /// Personal notes on calendar events.
+  calendarEventNotes                CalendarEventPersonalNote[]
+  /// Company team memberships.
+  teamMemberships                   CompanyTeamMembership[]
+  /// Calendar events made visible to this user by a grantor.
+  calendarEventVisibilitiesReceived CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityRecipient")
+  /// Calendar event visibility records granted by this user to others.
+  calendarEventVisibilitiesGranted  CalendarEventUserVisibility[] @relation("CalendarEventUserVisibilityGrantor")
+  /// In-app notifications for this user.
+  notifications                     Notification[]
+  /// Bug reports / feature requests filed by this user, tracked for GitHub issue sync.
+  feedbackSubmissions               FeedbackSubmission[]
+  /// Per-category notification preferences.
+  notificationPreferences           NotificationPreference[]
+  /// Collection layout revisions created by this user.
+  collectionLayoutRevisions         CollectionLayoutRevision[]
+  /// Row phase history entries recorded by this user.
+  recordedRowPhaseHistory           CollectionRowPhaseHistory[]
+  /// Calendar events this user cancelled (with a reason).
+  cancelledCalendarEvents           CalendarEvent[]               @relation("CalendarEventCancelledBy")
+  /// Vendor closure periods confirmed by this user.
+  confirmedVendorClosures           VendorClosurePeriod[]         @relation("ClosureConfirmer")
+  /// Edit locks currently held by this user (planning wizard sessions).
+  editLocks                         EditLock[]
+  /// Manual backups triggered by this user.
+  backupRecords                     BackupRecord[]
+
+  @@map("users")
+}
+
+/// Authentication identity linked to a user. A user may have multiple identities (e.g. LOCAL + LDAP).
+model Identity {
+  id         String   @id @default(uuid())
+  /// FK to User. Cascades delete: removing a user removes all their identities.
+  userId     String
+  /// Authentication provider: LOCAL, LDAP, or OIDC.
+  provider   Provider
+  /// Provider-specific subject identifier (e.g. LDAP DN, OIDC sub).
+  providerId String
+  /// Optional provider-specific metadata (e.g. LDAP attributes).
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  /// The user this identity belongs to.
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Local password credential, present only for LOCAL provider identities.
+  localCredential LocalCredential?
+
+  @@unique([provider, providerId])
+  @@map("identities")
+}
+
+/// Password credential for a LOCAL identity. One-to-one with Identity.
+model LocalCredential {
+  id           String   @id @default(uuid())
+  /// FK to Identity (LOCAL provider). 1:1 unique constraint enforced.
+  identityId   String   @unique
+  /// Argon2id hash of the user's password (see `apps/api/src/lib/password.ts`). Never stored in plain text.
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  /// The LOCAL identity this credential belongs to.
+  identity Identity @relation(fields: [identityId], references: [id], onDelete: Cascade)
+
+  @@map("local_credentials")
+}
+
+/// Short-lived one-time token for password reset or email verification. Invalidated after use or expiry.
+model UserToken {
+  id        String    @id @default(uuid())
+  /// FK to User. Cascade delete: tokens are removed when the user is deleted.
+  userId    String
+  /// Token purpose: RESET (password reset flow) or VERIFY (email verification flow).
+  type      TokenType
+  /// SHA-256 hash of the raw token. The raw token is sent to the user; only the hash is stored.
+  tokenHash String
+  /// Absolute expiry timestamp. Tokens past this date must be rejected.
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  // Relations
+  /// The user this token belongs to.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([type, tokenHash])
+  @@index([userId, type])
+  @@map("user_tokens")
+}
+
+/// Per-user override for section visibility. Takes precedence over role defaults and AppConfig in the 4-level access evaluation.
+model UserSectionAccess {
+  id        String   @id @default(uuid())
+  /// FK to User. Cascade delete: overrides are removed when the user is deleted.
+  userId    String
+  /// Dot-notation section key (e.g. 'settings', 'maintenance'). Must match sectionEnum.
+  section   String // 'settings' | 'maintenance'
+  /// true = explicitly allow access; false = explicitly deny access.
+  enabled   Boolean // true=allow, false=deny
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// The user this section override applies to.
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, section])
+  @@index([userId, section])
+  @@map("user_section_access")
+}
+
+/// Consolidated user preferences stored as a single JSON blob. Structure: { lastBrandId?, lastSeasonId?, menuStates? }. One record per user (PK = userId).
+model UserPreference {
+  /// PK = userId. No separate id field — one preference record per user.
+  userId    String   @id
+  /// JSON blob. Structure: { lastBrandId?, lastSeasonId?, menuStates? }. Defaults to empty object.
+  data      Json?    @default("{}")
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  @@map("user_preferences")
+}

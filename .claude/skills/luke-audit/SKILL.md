@@ -101,8 +101,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 - `user.role === 'admin'` or `user.role === 'editor'` inline instead of `hasPermission()`
 - `console.*` leaking through (covered above)
-- Missing `onDelete:` on any `@relation` in `schema.prisma`
-- Missing `@@index` on FK fields or commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `schema.prisma`. **CONSTRAINT** while CLAUDE.md rule 8 says so — enforce it as written. The rule is also broader than access patterns can justify; report that once per run as `NEEDS DECISION` on the rule itself, never by narrowing it silently (protocol §8.3)
+- Missing `onDelete:` on any `@relation` in `packages/db/prisma/*.prisma`
+- Missing `@@index` on FK fields or commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `packages/db/prisma/*.prisma`. **CONSTRAINT** while CLAUDE.md rule 8 says so — enforce it as written. The rule is also broader than access patterns can justify; report that once per run as `NEEDS DECISION` on the rule itself, never by narrowing it silently (protocol §8.3)
 
 ---
 

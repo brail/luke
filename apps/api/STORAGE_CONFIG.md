@@ -320,7 +320,7 @@ pnpm --filter @luke/api dev
 
 ### API (@luke/api)
 
-- `prisma/schema.prisma` - Modello FileObject
+- `packages/db/prisma/platform.prisma` - Modello FileObject
 - `prisma/migrations/.../add_file_storage/` - Migrazione DB
 - `src/storage/providers/local.ts` - Provider local filesystem
 - `src/storage/index.ts` - Service layer e factory

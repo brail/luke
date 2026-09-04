@@ -1,0 +1,347 @@
+
+/// Collection Layout — unique per brand+season pair. Represents the ordered list of lines composing a seasonal collection.
+model CollectionLayout {
+  id               String                     @id @default(uuid())
+  /// FK to Brand. Restrict delete.
+  brandId          String
+  /// FK to Season. Restrict delete.
+  seasonId         String
+  /// Total SKU budget for the entire layout.
+  skuBudget        Int?
+  /// JSON array of hidden column keys. Null means all columns visible.
+  hiddenColumns    Json? // String[] — hidden columns, null = all visible
+  /// Genders available for rows in this layout (e.g. ["MAN","WOMAN"]).
+  availableGenders String[]                   @default(["MAN", "WOMAN"])
+  /// The brand this layout belongs to.
+  brand            Brand                      @relation(fields: [brandId], references: [id], onDelete: Restrict)
+  /// The season this layout belongs to.
+  season           Season                     @relation(fields: [seasonId], references: [id], onDelete: Restrict)
+  /// Ordered groups (e.g. Uomo, Donna) within this layout.
+  groups           CollectionGroup[]
+  /// All rows across all groups in this layout.
+  rows             CollectionLayoutRow[]
+  /// Formal ISO 9001 revisions of this layout.
+  revisions        CollectionLayoutRevision[]
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+
+  @@unique([brandId, seasonId])
+  @@index([brandId, seasonId])
+  @@map("collection_layouts")
+}
+
+/// Group of rows within a Collection Layout (e.g. "Collezione Uomo", "Collezione Donna", "Special Edition"). Owns its own SKU budget.
+model CollectionGroup {
+  id                 String                @id @default(uuid())
+  /// FK to CollectionLayout. Cascade delete — removing the layout removes all groups.
+  collectionLayoutId String
+  /// The layout this group belongs to.
+  collectionLayout   CollectionLayout      @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  name               String
+  /// Display order within the layout. Lower = first.
+  order              Int                   @default(0)
+  /// SKU budget allocated to this group (distinct from the layout-level skuBudget).
+  skuBudget          Int?
+  /// Rows belonging to this group, ordered by their own order field.
+  rows               CollectionLayoutRow[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([collectionLayoutId])
+  @@map("collection_groups")
+}
+
+/// Single row in a Collection Layout representing one line/style within a seasonal collection.
+model CollectionLayoutRow {
+  id                 String           @id @default(uuid())
+  /// FK to CollectionLayout. Cascade delete.
+  collectionLayoutId String
+  /// The layout this row belongs to.
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Cascade)
+  /// FK to CollectionGroup. Cascade delete — removing a group removes all its rows.
+  groupId            String
+  /// The group this row belongs to.
+  group              CollectionGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// FK to PlanningGroup. Restrict delete — a planning group can't be deleted while it still has rows.
+  planningGroupId    String
+  /// The planning group this row belongs to — determines which calendar events apply to it.
+  planningGroup      PlanningGroup    @relation(fields: [planningGroupId], references: [id], onDelete: Restrict)
+  /// Display order within the group. Lower = first.
+  order              Int              @default(0)
+
+  // Required fields
+  /// Gender for this row. Validated against layout.availableGenders (MAN | WOMAN).
+  gender          String // validated against layout.availableGenders
+  /// FK to Vendor (optional). SetNull if vendor is deleted.
+  vendorId        String?
+  /// Vendor assigned to produce this row, if any.
+  vendor          Vendor? @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  line            String
+  /// Short free-text article description appearing after the line name.
+  article         String? // short free text, after line
+  /// Workflow status value from the lineStatus catalog (catalog-managed).
+  status          String // catalog-managed (lineStatus)
+  /// Planned SKU count (distinct sizes/colors). Belongs to Row (not Group).
+  skuForecast     Int?
+  qtyForecast     Int?
+  productCategory String
+
+  // Optional — identification/progress
+  /// Strategy value from the strategy catalog (CORE | INNOVATION).
+  strategy         String? // catalog-managed
+  /// Style status value from the styleStatus catalog (catalog-managed).
+  styleStatus      String? // catalog-managed
+  /// FK to Phase (optional). Restrict delete — never silently lose production state if a Phase is removed.
+  phaseId          String?
+  /// Current production phase of this row.
+  phase            Phase?  @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  /// Price positioning value from the catalog (catalog-managed).
+  pricePositioning String? // catalog-managed
+  designer         String?
+  /// Storage key for the row photo in the "collection-row-pictures" bucket.
+  pictureKey       String?
+
+  // Optional — notes
+  styleNotes    String?
+  materialNotes String?
+  colorNotes    String?
+  toolingNotes  String?
+
+  // Optional — pricing
+  /// Tooling/mold cost quoted for this row (in purchaseCurrency of the active parameter set).
+  toolingQuotation Float?
+  /// Pricing quotations for this row, one per parameter set variant.
+  quotations       CollectionRowQuotation[]
+  /// Full history of phase transitions for this row.
+  phaseHistory     CollectionRowPhaseHistory[]
+
+  /// Timestamp of the last revision snapshot that included this row.
+  lastRevisedAt DateTime? // updated when row is included in a revision
+
+  /// When the row was explicitly marked as concluded. Null = still in progress.
+  /// The alert engine cannot infer this from the calendar (a row sitting on the last phase has
+  /// reached it, not completed it), so completion is an explicit user action. Once set, the row
+  /// stops being measured against phase deadlines and shows its frozen outcome instead; only an
+  /// explicit reopen clears it — never a phase change.
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([collectionLayoutId])
+  @@index([groupId])
+  @@index([planningGroupId])
+  @@index([vendorId])
+  @@index([phaseId])
+  @@map("collection_layout_rows")
+}
+
+/// Pricing quotation for a collection row. A row can have N quotations with different parameter sets (e.g. CN/USD vs IT/EUR).
+model CollectionRowQuotation {
+  id                    String               @id @default(uuid())
+  /// FK to CollectionLayoutRow. Cascade delete.
+  rowId                 String
+  /// The row this quotation belongs to.
+  row                   CollectionLayoutRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// Display order within the row's quotation list.
+  order                 Int                  @default(0)
+  /// FK to PricingParameterSet (optional). SetNull if the parameter set is deleted.
+  pricingParameterSetId String?
+  /// The pricing parameter set used for this quotation.
+  pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  retailPrice           Float?
+  /// FOB price in the purchaseCurrency defined by the linked parameter set.
+  supplierQuotation     Float? // FOB in purchaseCurrency of the param set
+  notes                 String?
+  /// SKU count specific to this quotation variant.
+  sku                   Int?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([rowId])
+  @@index([pricingParameterSetId])
+  @@map("collection_row_quotations")
+}
+
+/// Full history of phase transitions for a collection row — distinct from AuditLog, queried directly
+/// for plan-vs-actual KPIs (Fase 5/6). No unique on (rowId, phaseId): a row can regress or re-advance
+/// through phases, and every transition is recorded, not just the latest.
+model CollectionRowPhaseHistory {
+  id               String              @id @default(uuid())
+  /// FK to CollectionLayoutRow. Cascade delete — history is meaningless once the row is gone.
+  rowId            String
+  /// The row this history entry belongs to.
+  row              CollectionLayoutRow @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  /// FK to Phase. Restrict delete — never silently lose historical data if a Phase is removed.
+  phaseId          String
+  /// The phase reached at reachedAt.
+  phase            Phase               @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  /// Timestamp when the row transitioned into this phase.
+  reachedAt        DateTime
+  /// FK to User who made the change, if known. SetNull if the user is deleted.
+  recordedByUserId String?
+  /// The user who made the change, if known.
+  recordedByUser   User?               @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime            @default(now())
+
+  @@index([rowId, reachedAt])
+  @@index([phaseId, reachedAt])
+  @@map("collection_row_phase_history")
+}
+
+/// Configurable catalog items for collection layout dropdowns. Types: strategy, lineStatus, styleStatus, revisionType, pricePositioning.
+model CollectionCatalogItem {
+  id                String   @id @default(uuid())
+  /// Discriminator: "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning".
+  type              String // "strategy" | "lineStatus" | "styleStatus" | "revisionType" | "pricePositioning"
+  /// Immutable machine key (e.g. "CORE", "NEW"). Used as stored value in row fields.
+  value             String
+  /// Human-readable display label (editable).
+  label             String
+  /// Unused since the progress domain moved to the Phase catalog. No remaining type writes this field.
+  code              String?
+  /// ISO 9001 categories associated with this item. Populated only for type=revisionType.
+  iso9001Categories String[] @default([]) // ISO 9001 categories — populated only for type=revisionType
+  /// Display order within the type group.
+  order             Int      @default(0)
+  /// Soft-delete flag. Inactive items are hidden from pickers.
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([type, value])
+  @@index([type, isActive])
+  @@map("collection_catalog_items")
+}
+
+// ─── Collection Layout Versioning ────────────────────────────────────────────
+
+/// Formal ISO 9001:2015 revision of a Collection Layout. Immutable after creation — snapshot fields must never be updated.
+model CollectionLayoutRevision {
+  id                 String           @id @default(uuid())
+  /// FK to CollectionLayout. Restrict delete — layout cannot be deleted while revisions exist.
+  collectionLayoutId String
+  /// The layout this revision belongs to.
+  collectionLayout   CollectionLayout @relation(fields: [collectionLayoutId], references: [id], onDelete: Restrict)
+  /// Sequential revision number within the layout (1, 2, 3…). Unique per layout.
+  revisionNumber     Int
+  /// Value from the revisionType catalog (e.g. "DESIGN_CHANGE").
+  revisionTypeValue  String
+  /// Trigger for this revision: MANUAL (user-initiated) or MILESTONE (calendar event).
+  cause              String // MANUAL | MILESTONE
+  /// Soft FK to the CalendarEvent milestone that triggered this revision. No @relation — event may be deleted.
+  milestoneId        String?
+  notes              String?
+  /// FK to User who created the revision. Restrict delete.
+  createdByUserId    String
+  /// The user who created this revision.
+  createdBy          User             @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt          DateTime         @default(now())
+
+  /// Snapshot of all groups at the time of this revision.
+  groups       CollectionGroupRevision[]
+  /// Snapshot of all rows at the time of this revision.
+  rowRevisions CollectionLayoutRowRevision[]
+
+  @@unique([collectionLayoutId, revisionNumber])
+  /// One automatic revision per (event, revision type): the dedup check in
+  /// collectionLayoutAutoRevision.service.ts is a read, so two concurrent triggers could otherwise
+  /// both pass it. Manual revisions are unaffected — milestoneId is null there, and Postgres treats
+  /// NULLs as distinct in a unique index.
+  @@unique([milestoneId, revisionTypeValue])
+  @@index([collectionLayoutId, createdAt])
+  @@index([milestoneId])
+  @@map("collection_layout_revisions")
+}
+
+/// Snapshot of a CollectionGroup at the time of a revision. sourceGroupId is a soft FK — the live group may have been deleted.
+model CollectionGroupRevision {
+  id            String                   @id @default(uuid())
+  /// FK to CollectionLayoutRevision. Cascade delete.
+  revisionId    String
+  /// The revision this group snapshot belongs to.
+  revision      CollectionLayoutRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  /// Soft FK to the live CollectionGroup at revision time. No @relation — group may be deleted post-revision.
+  sourceGroupId String
+  name          String
+  order         Int
+  skuBudget     Int?
+
+  /// Row snapshots belonging to this group snapshot.
+  rows CollectionLayoutRowRevision[]
+
+  @@index([revisionId])
+  @@index([sourceGroupId])
+  @@map("collection_group_revisions")
+}
+
+/// Snapshot of a CollectionLayoutRow at the time of a revision. sourceRowId is a soft FK. wasDeleted=true means the row was already deleted when included in the revision.
+model CollectionLayoutRowRevision {
+  id                    String                   @id @default(uuid())
+  /// FK to CollectionLayoutRevision. Cascade delete.
+  revisionId            String
+  /// The revision this row snapshot belongs to.
+  revision              CollectionLayoutRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  /// FK to CollectionGroupRevision. Cascade delete.
+  sourceGroupRevisionId String
+  /// The group snapshot this row snapshot belongs to.
+  sourceGroupRevision   CollectionGroupRevision  @relation(fields: [sourceGroupRevisionId], references: [id], onDelete: Cascade)
+  /// Soft FK to the live CollectionLayoutRow at revision time. No @relation — row may be deleted post-revision.
+  sourceRowId           String
+  /// True if the row had already been soft-deleted at the time of the revision.
+  wasDeleted            Boolean                  @default(false)
+
+  // Snapshot fields — denormalised from the live row at revision time
+  gender           String
+  /// Soft FK to the live Vendor at revision time. No @relation — vendor may be renamed or deleted later; see vendorName for the denormalised label.
+  vendorId         String?
+  /// Denormalised vendor name at revision time (vendor may be renamed or deleted later).
+  vendorName       String?
+  line             String
+  article          String?
+  status           String
+  skuForecast      Int?
+  qtyForecast      Int?
+  productCategory  String
+  strategy         String?
+  styleStatus      String?
+  progress         String?
+  pricePositioning String?
+  designer         String?
+  /// Storage key in the immutable "collection-row-pictures-revisions" bucket.
+  pictureKey       String? // key in the immutable collection-row-pictures-revisions bucket
+  styleNotes       String?
+  materialNotes    String?
+  colorNotes       String?
+  toolingNotes     String?
+  toolingQuotation Float?
+  order            Int
+
+  /// Quotation snapshots for this row at revision time.
+  quotationRevisions CollectionRowQuotationRevision[]
+
+  @@unique([revisionId, sourceRowId])
+  @@index([sourceRowId, revisionId])
+  @@map("collection_layout_row_revisions")
+}
+
+/// Snapshot of a CollectionRowQuotation at the time of a revision. Fully denormalised — no FK to the live quotation.
+model CollectionRowQuotationRevision {
+  id                      String                      @id @default(uuid())
+  /// FK to CollectionLayoutRowRevision. Cascade delete.
+  rowRevisionId           String
+  /// The row revision this quotation snapshot belongs to.
+  rowRevision             CollectionLayoutRowRevision @relation(fields: [rowRevisionId], references: [id], onDelete: Cascade)
+  order                   Int
+  /// Soft FK to the live PricingParameterSet. No @relation — set may be deleted post-revision.
+  pricingParameterSetId   String?
+  /// Denormalised parameter set name at revision time.
+  pricingParameterSetName String? // denormalised
+  retailPrice             Float?
+  supplierQuotation       Float?
+  notes                   String?
+  sku                     Int?
+
+  @@index([rowRevisionId])
+  @@map("collection_row_quotation_revisions")
+}

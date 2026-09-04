@@ -11,7 +11,7 @@
 # Uso:
 #   pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
 #
-# Al termine il file in prisma/migrations/ va committato insieme alle modifiche a schema.prisma.
+# Al termine il file in prisma/migrations/ va committato insieme alle modifiche ai file .prisma.
 
 set -euo pipefail
 
@@ -56,4 +56,4 @@ echo "🚀 Applico lo schema al database di sviluppo…"
 set -a && . ../../apps/api/.env && set +a
 npx prisma db push
 
-echo "✅ Fatto. Committa il file in prisma/migrations/ insieme a schema.prisma."
+echo "✅ Fatto. Committa il file in prisma/migrations/ insieme al/i file .prisma modificato/i."

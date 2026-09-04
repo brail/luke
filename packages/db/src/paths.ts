@@ -22,7 +22,7 @@ import { join } from 'path';
  */
 export const PRISMA_PACKAGE_ROOT = join(__dirname, '..');
 
-/** The directory holding `schema.prisma` and `migrations/`. */
+/** The directory holding the multi-file schema (`*.prisma`) and `migrations/`. */
 export const PRISMA_DIR = join(PRISMA_PACKAGE_ROOT, 'prisma');
 
 /** The versioned migration folder, as bundled with this build. */
