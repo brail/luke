@@ -6,12 +6,12 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { hasPermission, UserIdSchema, type LockedFields, type Role } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
 import type { Context } from '../lib/trpc';
-import type { Prisma } from '@prisma/client';
 
 /**
  * Resolves the provider to use for lock/display decisions when a user may hold more than one

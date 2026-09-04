@@ -14,17 +14,17 @@
  * through a real filesystem — be exercised directly and deterministically.
  */
 
-import { Prisma } from '@prisma/client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { APP_CONFIG_DEFAULTS } from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { putDerivativeObject, readFileBuffer } from '../../../storage';
 import { getConfigOrDefault } from '../../configManager';
 import { enqueueDerivatives, processMaster, registerDerivativeScheduler } from '../derivativeWorker';
 import { deriveVariant, probeHasAlpha } from '../pipeline';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 // `vi.mock` calls are hoisted above every import in this file regardless of where

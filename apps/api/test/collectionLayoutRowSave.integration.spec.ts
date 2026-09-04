@@ -19,11 +19,11 @@ import { randomUUID } from 'crypto';
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { COLLECTION_STATUS } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;

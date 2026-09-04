@@ -1,9 +1,10 @@
+import type { PrismaClient, FeedbackSubmission } from '@luke/db';
+
 import { getConfig, getTypedConfig } from './configManager';
 import { guardMaintenance } from './maintenanceMode';
 import { createNotification } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { PrismaClient, FeedbackSubmission } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 interface GitHubIssue {

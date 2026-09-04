@@ -20,6 +20,7 @@ import {
   CompanyTeamMembershipRemoveInputSchema,
   CompanyTeamMembershipUpdateRoleInputSchema,
 } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification } from '../lib/notifications.js';
@@ -29,7 +30,6 @@ import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { deleteObjectByKey } from '../storage';
 
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Profile ────────────────────────────────────────────────────────────────
 

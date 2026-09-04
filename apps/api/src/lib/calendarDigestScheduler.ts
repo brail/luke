@@ -19,6 +19,7 @@
 
 
 import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../services/calendarAudience.service';
 
@@ -28,7 +29,6 @@ import { sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;

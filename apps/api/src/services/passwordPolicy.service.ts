@@ -16,10 +16,11 @@
 
 import { TRPCError } from '@trpc/server';
 
+import type { PrismaClient } from '@luke/db';
+
 import { getPasswordPolicy } from '../lib/configManager';
 import { validatePassword, type PasswordValidationResult } from '../lib/password';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Checks a password against the configured policy and returns why it failed.

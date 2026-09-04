@@ -32,7 +32,7 @@ scenario. Ownership boundaries: `.claude/skills/luke-shared/governance-map.md`.
 
 Then read:
 
-- `apps/api/prisma/schema.prisma` — understand models and relations
+- `packages/db/prisma/schema.prisma` — understand models and relations
 - `packages/core/src/auth/permissions.ts` — permission model
 - `apps/api/src/lib/` — middleware: requirePermission, auditLog, context
 - `lessons.md` — regressions already paid for, to re-check on every run

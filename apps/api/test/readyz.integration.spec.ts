@@ -3,7 +3,6 @@
  * Verifies bootstrap fail-fast behavior and /readyz endpoint
  */
 
-import { PrismaClient } from '@prisma/client';
 import {
   describe,
   it,
@@ -14,6 +13,7 @@ import {
 } from 'vitest';
 
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
+import { PrismaClient } from '@luke/db';
 
 import {
   checkBootstrapDependencies,

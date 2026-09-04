@@ -3,9 +3,10 @@
  * Isolated in its own file to prevent circular dependency cycles.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import type { UserSession } from './auth';
 import type { UserAllowedIds } from '../services/context.service';
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
 
 

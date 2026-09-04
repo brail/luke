@@ -1,3 +1,5 @@
+import type { PrismaClient } from '@luke/db';
+
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 import { createRevisionsForReachedEvents } from '../services/collectionLayoutAutoRevision.service';
 import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
@@ -6,7 +8,6 @@ import { guardMaintenance } from './maintenanceMode';
 import { createNotification, notifyDeduped } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@luke/db';
 
 const SEED_FUNCTIONS = [
   { slug: 'product',  name: 'Prodotto', order: 0 },

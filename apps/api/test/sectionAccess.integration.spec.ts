@@ -17,12 +17,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Role, Section } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 

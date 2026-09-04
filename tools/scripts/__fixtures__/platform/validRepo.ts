@@ -55,7 +55,6 @@ const API_PACKAGE_JSON = {
   dependencies: {
     '@fixture/core': 'workspace:*',
     prisma: '7.10.0',
-    '@prisma/client': '^7.10.0',
     '@prisma/adapter-pg': '^7.10.0',
     '@trpc/server': '^11.18.0',
     // OpenTelemetry deliberately spans 0.x experimental and 1.x/2.x stable
@@ -64,7 +63,10 @@ const API_PACKAGE_JSON = {
     '@opentelemetry/sdk-node': '^0.219.0',
     '@opentelemetry/resources': '^2.10.0',
   },
-  devDependencies: { typescript: '^6.0.3' },
+  // `@prisma/client` is here and not in `dependencies` on purpose: it is the
+  // baseline for `DECLARATION_GRAPH_DEPENDENCIES`, whose negative cases move it
+  // and remove it.
+  devDependencies: { typescript: '^6.0.3', '@prisma/client': '^7.10.0' },
 };
 
 /**
@@ -102,6 +104,18 @@ const WEB_PACKAGE_JSON = {
     '@types/react': '^19.2.18',
     '@types/react-dom': '^19.2.5',
   },
+};
+
+/**
+ * The package owning the Prisma schema. Its `build` is the baseline for
+ * `PRISMA_GENERATED_TREE`: the generated tree is deleted *before* the generator
+ * writes it, because the generator cleans only its own output root.
+ */
+const DB_PACKAGE_JSON = {
+  name: '@fixture/db',
+  private: true,
+  scripts: { build: 'rm -rf src/generated dist && prisma generate && tsc' },
+  dependencies: { '@prisma/client': '^7.10.0' },
 };
 
 const WORKSPACE_YAML = `packages:
@@ -157,6 +171,7 @@ export const VALID_REPO: RepoFiles = {
   // Every row of `WORKSPACE_POLICY` must be tracked, or P10 reports the row as
   // stale — so the two peer libraries and the tooling package exist here,
   // minimally. `nav → core` is the baseline's permitted, unused edge.
+  'packages/db/package.json': JSON.stringify(DB_PACKAGE_JSON, null, 2),
   'packages/nav/package.json': JSON.stringify(
     { name: '@fixture/nav', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
     null,
@@ -217,6 +232,15 @@ export function withApiManifest(
   const json = JSON.parse(JSON.stringify(API_PACKAGE_JSON));
   edit(json);
   return withFile('apps/api/package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose database-package manifest has been edited. */
+export function withDbManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(DB_PACKAGE_JSON));
+  edit(json);
+  return withFile('packages/db/package.json', JSON.stringify(json, null, 2));
 }
 
 /** A copy of the baseline whose `pnpm-workspace.yaml` policy block is replaced. */

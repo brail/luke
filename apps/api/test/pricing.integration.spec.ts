@@ -17,6 +17,8 @@ import { randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import {
   createAnonymousCaller,
   createCallerWithSession,
@@ -25,7 +27,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 const sessions: Record<'admin' | 'editor' | 'viewer', UserSession> = {} as never;

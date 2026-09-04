@@ -1,12 +1,12 @@
 
 import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange } from '@luke/core';
+import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle, createStreamingBuffer } from '../lib/export/xlsxStreaming';
 
 import { resolveLogoDataUri } from './asset.service';
 
-import type { PrismaClient, PricingParameterSet } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 type Brand = { name: string; code: string; logoKey?: string | null };

@@ -13,10 +13,10 @@ import { Readable } from 'stream';
 import { createGzip } from 'zlib';
 
 import type { IStorageProvider } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { BATCH_SIZE } from './retentionSweep';
 
-import type { PrismaClient } from '@prisma/client';
 
 /** Storage key for one tick's archive of a given retention tier — the writer (here) and the deleter (`retentionScheduler.ts`) must agree only on ordering (archive before delete), not on this key. */
 export function auditLogArchiveKey(tickId: string, tier: 'normal' | 'critical'): string {

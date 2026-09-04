@@ -11,10 +11,10 @@
  * @fastify/multipart must be registered globally before this plugin (done in server.ts).
  */
 
-import { type PrismaClient } from '@prisma/client';
 
 import type { StorageBucket } from '@luke/core';
 import { APP_STORAGE_BUCKETS, hasPermission } from '@luke/core';
+import { type PrismaClient } from '@luke/db';
 
 import { authenticateRequest as auth } from '../lib/auth';
 import { getTraceId } from '../lib/error';

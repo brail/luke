@@ -1,5 +1,7 @@
 import pino from 'pino';
 
+import type { PrismaClient } from '@luke/db';
+
 import { getPool } from '../client.js';
 import { getNavDbConfig, type GetConfigFn } from '../config.js';
 
@@ -7,7 +9,6 @@ import { syncBrands } from './brands.js';
 import { syncSeasons } from './seasons.js';
 import { syncVendors, type SyncResult } from './vendors.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Summary returned by `runNavSync` after one full or partial sync run.

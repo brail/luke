@@ -19,6 +19,8 @@
  *   dumpPipeline.ts, their `expiresAt` is always `null`.
  */
 
+import type { BackupScope, BackupStatus, PrismaClient } from '@luke/db';
+
 import { getStorageProvider } from '../storage';
 
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from './backup/dumpPipeline';
@@ -26,7 +28,6 @@ import { getBackupScheduleSettings } from './configManager';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { BackupScope, BackupStatus, PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;

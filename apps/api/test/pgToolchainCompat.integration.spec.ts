@@ -8,9 +8,9 @@
  * to test it.
  */
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { createPrismaClient, type PrismaClient } from '@luke/db';
 
 import { pgBinaryMajorVersion } from '../src/lib/backup/pgConnection';
 import { assertPgToolchainCompatible } from '../src/lib/backup/restorePipeline';
@@ -23,7 +23,7 @@ describe.skipIf(!TEST_DATABASE_URL)('preflight versioni pg', () => {
   let serverMajor: number;
 
   beforeAll(async () => {
-    prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: TEST_DATABASE_URL! }) });
+    prisma = createPrismaClient({ connectionString: TEST_DATABASE_URL });
     clientMajor = await pgBinaryMajorVersion('pg_restore');
     const rows = await prisma.$queryRaw<{ server_version: string }[]>`SHOW server_version`;
     serverMajor = Number.parseInt(rows[0].server_version, 10);

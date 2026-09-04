@@ -1,0 +1,38 @@
+{
+  "name": "@luke/db",
+  "version": "2.1.4",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "rm -rf src/generated dist && prisma generate && tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "set -a && . ../../apps/api/.env && set +a && prisma studio",
+    "prisma:push": "set -a && . ../../apps/api/.env && set +a && prisma db push",
+    "db:migrate:new": "bash scripts/new-migration.sh",
+    "db:migrate:deploy": "set -a && . ../../apps/api/.env && set +a && prisma migrate deploy",
+    "db:reset": "set -a && . ../../apps/api/.env && set +a && prisma migrate reset --force"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "prisma": "7.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^6.0.3"
+  }
+}

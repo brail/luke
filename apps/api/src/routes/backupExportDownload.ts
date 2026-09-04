@@ -12,12 +12,13 @@
 
 import { PassThrough, type Readable } from 'stream';
 
+import type { PrismaClient } from '@luke/db';
+
 import { encodeExportHeader } from '../lib/backup/exportFormat';
 import { getStorageProvider } from '../storage';
 import { verifyExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export async function registerBackupExportDownloadRoute(

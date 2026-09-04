@@ -9,7 +9,7 @@
 # fallisce rumorosamente se qualcosa non torna.
 #
 # Uso:
-#   pnpm --filter @luke/api db:migrate:new <nome_descrittivo>
+#   pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
 #
 # Al termine il file in prisma/migrations/ va committato insieme alle modifiche a schema.prisma.
 
@@ -17,7 +17,7 @@ set -euo pipefail
 
 NAME="${1:-}"
 if [ -z "$NAME" ]; then
-  echo "❌ Manca il nome della migration. Uso: pnpm --filter @luke/api db:migrate:new <nome_descrittivo>" >&2
+  echo "❌ Manca il nome della migration. Uso: pnpm --filter @luke/db db:migrate:new <nome_descrittivo>" >&2
   exit 1
 fi
 
@@ -48,8 +48,12 @@ trap - EXIT
 # Il DB di sviluppo si allinea con `db push`, non con `migrate deploy`: il suo storico in
 # `_prisma_migrations` non riflette le migration versionate (vedi la sezione troubleshooting in
 # docs/prisma-migration-workflow.md). `.env` va caricata a mano — Prisma 7 non lo fa più.
+#
+# La `.env` è quella di `apps/api`: `DATABASE_URL` è bootstrap infrastrutturale del
+# deployment (Env Policy in CLAUDE.md), non un file di configurazione di questo
+# package. C'è un solo database, quindi un solo posto dove è dichiarato.
 echo "🚀 Applico lo schema al database di sviluppo…"
-set -a && . ./.env && set +a
+set -a && . ../../apps/api/.env && set +a
 npx prisma db push
 
 echo "✅ Fatto. Committa il file in prisma/migrations/ insieme a schema.prisma."

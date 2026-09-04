@@ -3,10 +3,10 @@
  * Verifies end-to-end that every sensitive action produces consistent entries
  */
 
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+import { PrismaClient } from '@luke/db';
 
 import { appRouter } from '../src/routers';
 

@@ -1,9 +1,9 @@
 
 import { getPublicUrl, getProxyUrl, type StorageBucket, type UrlConfig } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Reads the storage URL configuration from AppConfig and returns a `UrlConfig` object

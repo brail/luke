@@ -8,11 +8,12 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { readAssetBuffer } from '../asset.service';
 import { buildCollectionRowPdf, buildCollectionRowXlsx } from '../collectionLayout.export.row.service';
 
 import type { CollectionRowForExport, RowExportContext } from '../collectionLayout.export.row.service';
-import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../asset.service', () => ({
   readAssetBuffer: vi.fn(),

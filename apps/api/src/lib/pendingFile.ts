@@ -25,8 +25,7 @@
  */
 
 import type { StorageBucket } from '@luke/core';
-
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 /** Accepts either the normal client or one from an interactive transaction. */
 type PrismaLike = PrismaClient | Prisma.TransactionClient;

@@ -16,6 +16,7 @@ import { Readable } from 'stream';
 import { createGzip } from 'zlib';
 
 import { APP_STORAGE_BUCKETS, type IStorageProvider } from '@luke/core';
+import type { BackupScope, BackupTrigger, PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
 import { getBackupRetentionDays } from '../configManager';
@@ -26,7 +27,6 @@ import { createBackupCipher, generateDek, wrapDek } from './crypto';
 import { parseDatabaseUrl, runPgBinary } from './pgConnection';
 
 import type { PgConnectionParts } from './pgConnection';
-import type { BackupScope, BackupTrigger, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 /** Matches both `ctx.logger` (router callers) and `fastify.log` (scheduler callers). */

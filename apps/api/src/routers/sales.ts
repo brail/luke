@@ -14,6 +14,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
 import { getConfig } from '../lib/configManager';
@@ -31,7 +32,6 @@ import { getUserAllowedBrandIds } from '../services/context.service';
 import { buildKimoXlsx } from '../services/kimo.statistics';
 import { buildPortafoglioXlsx } from '../services/sales.statistics';
 
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 

@@ -17,11 +17,12 @@ import { randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { assertBrandAccess, getAllowedFunctionIds, type BrandScopeCtx } from '../src/services/brandScope.service';
 
 import { setupTestDb } from './helpers/database';
 
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let userId: string;

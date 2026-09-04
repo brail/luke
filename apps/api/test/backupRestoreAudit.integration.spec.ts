@@ -24,9 +24,9 @@ import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { createPrismaClient, type PrismaClient } from '@luke/db';
 
 import { runPgBinary } from '../src/lib/backup/pgConnection';
 import {
@@ -132,10 +132,8 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     ], admin.password);
     await restoreDatabaseFromFile(schemaPath, { db: scratchDb, clean: false });
 
-    prisma = new PrismaClient({
-      adapter: new PrismaPg({
-        connectionString: `postgresql://${encodeURIComponent(scratchDb.user)}:${encodeURIComponent(scratchDb.password)}@${scratchDb.host}:${scratchDb.port}/${scratchName}`,
-      }),
+    prisma = createPrismaClient({
+      connectionString: `postgresql://${encodeURIComponent(scratchDb.user)}:${encodeURIComponent(scratchDb.password)}@${scratchDb.host}:${scratchDb.port}/${scratchName}`,
     });
   }, 120_000);
 

@@ -9,10 +9,11 @@
  *    dove assignedSalesDocumentNo = '' e type IN (2, 20)
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { PgParams } from './pgParams.js';
 
 import type { PortafoglioParams } from '../statistics/portafoglio.js';
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

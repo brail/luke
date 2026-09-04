@@ -21,6 +21,7 @@ import { randomUUID } from 'crypto';
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { CATEGORY_LEVEL_EVENT_KEY } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { buildDigestTasks, type DigestDateRange } from '../src/lib/calendarDigestScheduler';
 
@@ -33,7 +34,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 const log = createSilentLogger();

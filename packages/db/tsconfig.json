@@ -1,0 +1,31 @@
+{
+  // The database infrastructure package: the Prisma schema, its migrations, the
+  // client generated from them, and the one factory that constructs it. Node
+  // only — the generated client opens TCP sockets through `@prisma/adapter-pg`
+  // and is never reachable from `apps/web`, which is why the `lib` inherited
+  // from the neutral base (`ES2022`, no DOM) is the right one here, exactly as
+  // in `packages/nav`.
+  //
+  // `src/generated/` is compiled like any other source: the `prisma-client`
+  // generator emits TypeScript, not a prebuilt package, and `dist` is what
+  // `@luke/api` and `@luke/nav` resolve through this package's `exports` map.
+  // It is gitignored and produced by `prisma generate`, which `build` runs
+  // before `tsc` for that reason.
+  //
+  // No `composite` and no `incremental`, for the same reason as `packages/core`
+  // and `apps/api`: an incremental build trusts `tsconfig.tsbuildinfo` over the
+  // filesystem and reports success after `rm -rf dist` without emitting.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

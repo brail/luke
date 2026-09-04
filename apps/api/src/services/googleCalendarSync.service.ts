@@ -11,12 +11,12 @@ import {
   type SyncContext,
 } from '@luke/calendar';
 import type { Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 
 import { getUserAllowedFunctionIds } from './context.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 interface SyncLogger {
   info(obj: unknown, msg?: string): void;

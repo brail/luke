@@ -16,6 +16,10 @@
       "cache": false,
       "persistent": true
     },
+    "@luke/db#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src/generated/**"]
+    },
     "@luke/web#build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "!.next/cache/**"],

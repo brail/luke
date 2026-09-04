@@ -10,8 +10,9 @@
  * - seedContextData creates a usable brand, season, and pricing parameter set
  */
 
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+
+import { PrismaClient } from '@luke/db';
 
 import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
 import { calculateForward } from '../src/services/pricing.service';

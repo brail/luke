@@ -6,8 +6,7 @@
 import { TRPCError } from '@trpc/server';
 
 import { calculateCompanyMultiplier, roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
-
-import type { PrismaClient, PricingParameterSet } from '@prisma/client';
+import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 // ─────────────────────────────────────────────────────────────────
 // Internal types

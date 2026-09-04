@@ -22,12 +22,12 @@ import {
   type CollectionAlertThresholds,
   type WorkingDayHoliday,
 } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { getConfig } from '../lib/configManager';
 
 import { resolveCompanyCountryCode } from './companyProfile.service';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 

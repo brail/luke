@@ -17,6 +17,11 @@ apps/web/out
 # Compiled API output (rebuilt inside Docker)
 apps/api/dist
 packages/core/dist
+packages/db/dist
+
+# The Prisma client, regenerated inside Docker by `@luke/db`'s build. Copying a
+# host-generated one in would ship whatever schema the host last had.
+packages/db/src/generated
 
 # Local dev databases
 **/*.db

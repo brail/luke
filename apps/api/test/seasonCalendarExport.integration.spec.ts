@@ -14,12 +14,13 @@
 import fastify, { type FastifyInstance } from 'fastify';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { createToken } from '../src/lib/auth';
 import seasonCalendarExportRoutes from '../src/routes/seasonCalendarExport.routes';
 
 import { createCalendarFixture, createTestUser, setupTestDb } from './helpers';
 
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let app: FastifyInstance;

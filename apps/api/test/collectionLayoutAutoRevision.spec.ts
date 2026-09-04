@@ -10,8 +10,9 @@
  * queries are the input of the test, not what's being verified.
  */
 
-import { Prisma } from '@prisma/client';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { Prisma } from '@luke/db';
 
 import {
   AUTO_REVISION_TYPE_DATE,

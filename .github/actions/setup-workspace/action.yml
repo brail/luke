@@ -22,4 +22,4 @@ runs:
 
     - name: Generate Prisma client
       shell: bash
-      run: pnpm --filter @luke/api exec prisma generate
+      run: pnpm --filter @luke/db exec prisma generate

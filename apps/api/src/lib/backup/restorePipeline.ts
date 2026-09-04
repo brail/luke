@@ -29,9 +29,9 @@ import { join } from 'path';
 import { finished, pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 
-import { Prisma } from '@prisma/client';
-
 import { APP_STORAGE_BUCKETS, type IStorageProvider, type StorageBucket } from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
 
@@ -42,7 +42,6 @@ import { parseDatabaseUrl, pgBinaryMajorVersion, runPgBinary } from './pgConnect
 
 import type { BackupLogger } from './dumpPipeline';
 import type { PgConnectionParts } from './pgConnection';
-import type { PrismaClient } from '@prisma/client';
 
 const TEMP_DIR = join(homedir(), '.luke', 'restore-tmp');
 

@@ -15,6 +15,7 @@ import {
   normalizeCode,
   type Role,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { confirmPendingFile } from '../lib/pendingFile';
@@ -25,7 +26,6 @@ import { router, protectedProcedure } from '../lib/trpc';
 import { getUserAllowedBrandIds } from '../services/context.service.js';
 import { deleteObjectByKey } from '../storage';
 
-import type { Prisma } from '@prisma/client';
 
 const BRAND_SELECT = {
   id: true,

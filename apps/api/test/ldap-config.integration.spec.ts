@@ -1,5 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+
+import { PrismaClient } from '@luke/db';
 
 import { getLdapConfig } from '../src/lib/configManager';
 

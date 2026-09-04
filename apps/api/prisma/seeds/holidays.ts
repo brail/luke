@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@luke/db';
 
 const HOLIDAY_COUNTRIES = [
   { code: 'IT', name: 'Italy' },

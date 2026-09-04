@@ -41,6 +41,7 @@ import {
   withFile,
   withPolicy,
   withRootManifest,
+  withDbManifest,
   withoutFile,
   type RepoFiles,
 } from './__fixtures__/platform/validRepo';
@@ -791,6 +792,86 @@ test('P9 is not satisfied by the hook on a workspace manifest', () => {
       delete (json.scripts as Record<string, unknown>).postinstall;
     }),
     /`postinstall` must run `prisma generate`/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P12 — a stale file in the generated Prisma tree must not survive a build.
+//
+// Measured on the real package: `prisma generate` removes a planted file inside
+// its own output root (and both subdirectories), but one planted a level up at
+// `src/generated/` survives and is compiled into `dist`. The tree is gitignored
+// as a whole, so no other gate would ever mention it.
+// ---------------------------------------------------------------------------
+
+test('P12 fails when the build does not delete the generated tree', () => {
+  expectFailure(
+    withDbManifest(json => {
+      (json.scripts as Record<string, unknown>).build = 'prisma generate && rm -rf dist && tsc';
+    }),
+    /must run `rm -rf src\/generated`/
+  );
+});
+
+test('P12 fails when the delete happens after the generate', () => {
+  // Contains both strings and is still wrong: it deletes the client it just wrote.
+  expectFailure(
+    withDbManifest(json => {
+      (json.scripts as Record<string, unknown>).build = 'prisma generate && rm -rf src/generated && tsc';
+    }),
+    /before/
+  );
+});
+
+test('P12 fails when the build script is gone', () => {
+  expectFailure(
+    withDbManifest(json => {
+      delete (json.scripts as Record<string, unknown>).build;
+    }),
+    /`build` is missing/
+  );
+});
+
+test('P12 fails when the manifest it names stops being tracked', () => {
+  expectFailure(
+    withoutFile('packages/db/package.json'),
+    /named in `PRISMA_GENERATED_TREE` but no such manifest is tracked/
+  );
+});
+
+// ---------------------------------------------------------------------------
+// P11 — a dependency that only the emitted declarations name.
+//
+// The failure this guards is invisible from the owning package: removing the
+// declaration leaves apps/api green in lint, tsc and every test, and breaks
+// apps/web's build. Nothing but this rule reports it.
+// ---------------------------------------------------------------------------
+
+test('P11 fails when a declaration-graph dependency is dropped', () => {
+  expectFailure(
+    withApiManifest(json => {
+      delete (json.devDependencies as Record<string, unknown>)['@prisma/client'];
+    }),
+    /must declare `@prisma\/client` under `devDependencies`/
+  );
+});
+
+test('P11 fails when it is declared in the wrong group', () => {
+  // A runtime edge would be a different claim: nothing in apps/api loads the
+  // package, and the group is where that fact is recorded.
+  expectFailure(
+    withApiManifest(json => {
+      delete (json.devDependencies as Record<string, unknown>)['@prisma/client'];
+      (json.dependencies as Record<string, unknown>)['@prisma/client'] = '^7.10.0';
+    }),
+    /not under `dependencies`/
+  );
+});
+
+test('P11 fails when the manifest it names stops being tracked', () => {
+  expectFailure(
+    withoutFile('apps/api/package.json'),
+    /named in `DECLARATION_GRAPH_DEPENDENCIES` but no such manifest is tracked/
   );
 });
 

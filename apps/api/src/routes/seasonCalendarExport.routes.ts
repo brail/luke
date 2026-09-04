@@ -17,6 +17,7 @@ import fp from 'fastify-plugin';
 
 import { generateIcal } from '@luke/calendar';
 import { isDevelopment, type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // Single entry point to the PDF engine: it's the only place where `setUrlAccessPolicy`
@@ -30,7 +31,6 @@ import { createPdfBuffer } from '../lib/export/pdf';
 import { getUserAllowedIds } from '../services/context.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import type { TDocumentDefinitions, TableCell, Content } from 'pdfmake/interfaces';
 

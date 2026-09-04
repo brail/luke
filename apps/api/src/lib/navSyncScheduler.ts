@@ -16,6 +16,7 @@
  */
 
 
+import type { PrismaClient } from '@luke/db';
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
@@ -24,7 +25,6 @@ import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minute

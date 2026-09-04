@@ -23,7 +23,7 @@ import {
   CollectionRowSetCompletedInputSchema,
   partialWithoutDefaults,
 } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
@@ -78,7 +78,6 @@ import { deleteObjectByKey } from '../storage';
 
 import type { Context } from '../lib/trpc';
 import type { QuotationSyncResult } from '../services/collectionRow.quotation.service';
-import type { PrismaClient } from '@prisma/client';
 
 const quotationsRouter = router({
   /**

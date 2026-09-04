@@ -13,10 +13,10 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 import { CollectionCatalogItemInputSchema } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { seedCollectionCatalog } from '../prisma/seeds/collectionCatalog';
 
-import type { PrismaClient } from '@prisma/client';
 
 type SeededItem = {
   type: string;

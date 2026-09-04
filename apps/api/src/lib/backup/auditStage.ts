@@ -28,7 +28,7 @@
 
 import { randomUUID } from 'crypto';
 
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@luke/db';
 
 /** Shared prefix of every audit staging schema, past and present. */
 export const AUDIT_STAGE_PREFIX = '_luke_restore_stage';

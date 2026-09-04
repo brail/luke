@@ -1,6 +1,13 @@
 
 import { formatDateTime } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
+import type { PrismaClient,
+  Brand,
+  CollectionGroup,
+  CollectionLayout,
+  CollectionLayoutRow,
+  Season,
+  Vendor } from '@luke/db';
 
 import { imageFetchLimiter } from '../lib/export/concurrency';
 import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
@@ -10,13 +17,6 @@ import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
 import { buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
-import type { PrismaClient,
-  Brand,
-  CollectionGroup,
-  CollectionLayout,
-  CollectionLayoutRow,
-  Season,
-  Vendor } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

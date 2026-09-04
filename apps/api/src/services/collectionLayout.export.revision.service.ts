@@ -1,4 +1,6 @@
 
+import type { PrismaClient } from '@luke/db';
+
 import { buildCollectionLayoutPdf } from './collectionLayout.export.pdf.service';
 import { buildCollectionLayoutXlsx } from './collectionLayout.export.xlsx.service';
 import { getLayoutAsOfRevision } from './collectionLayoutRevision.service';
@@ -6,7 +8,6 @@ import { getLayoutAsOfRevision } from './collectionLayoutRevision.service';
 import type { CollectionLayoutForPdf } from './collectionLayout.export.pdf.service';
 import type { CollectionLayoutForExport, ExtraInfoSheet } from './collectionLayout.export.xlsx.service';
 import type { QuotationWithParamSet } from './collectionLayout.service';
-import type { PrismaClient } from '@prisma/client';
 
 type Logger = { warn: (obj: object, msg: string) => void };
 

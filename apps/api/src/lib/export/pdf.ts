@@ -4,11 +4,10 @@ import {
   type CompanyAddress,
   type CompanyExportSettings,
 } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { readFileBuffer } from '../../storage/index.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
 
 

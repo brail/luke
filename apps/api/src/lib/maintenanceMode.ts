@@ -14,12 +14,12 @@
 import { TRPCError } from '@trpc/server';
 
 import { MaintenanceModeStateSchema, type MaintenanceModeState } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getConfig, saveConfig } from './configManager';
 import { sseStore } from './sseStore';
 import { clearTokenVersionCache } from './tokenVersionCache';
 
-import type { PrismaClient } from '@prisma/client';
 
 export type { MaintenanceModeState, MaintenanceModeStatus } from '@luke/core';
 

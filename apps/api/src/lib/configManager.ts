@@ -25,10 +25,10 @@ import {
   Roles,
 } from '@luke/core';
 import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
+import type { BackupScope, Prisma, PrismaClient } from '@luke/db';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
-import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 

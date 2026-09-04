@@ -32,10 +32,10 @@
 import { TRPCError } from '@trpc/server';
 
 import { type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getUserAllowedIds, type UserAllowedIds } from './context.service';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * The minimum a guard needs.

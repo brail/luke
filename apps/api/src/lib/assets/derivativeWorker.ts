@@ -21,7 +21,6 @@
  * `lib/export/concurrency.ts`.
  */
 
-import { Prisma } from '@prisma/client';
 import pLimit from 'p-limit';
 
 import {
@@ -34,6 +33,8 @@ import {
   type AssetVariant,
   type StorageBucket,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { putDerivativeObject, readFileBuffer } from '../../storage';
 import { getConfigOrDefault } from '../configManager';
@@ -41,7 +42,6 @@ import { withSchedulerLock } from '../schedulerLock';
 
 import { deriveVariant, probeHasAlpha } from './pipeline';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 type Logger = { warn: (obj: object, msg: string) => void; error?: (obj: object, msg: string) => void };

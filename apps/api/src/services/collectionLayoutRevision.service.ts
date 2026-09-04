@@ -1,12 +1,12 @@
+import type { CreateRevisionInput } from '@luke/core';
 import {
   CollectionLayoutRevision,
   CollectionGroupRevision,
   CollectionLayoutRowRevision,
   Prisma,
   PrismaClient,
-} from '@prisma/client';
+} from '@luke/db';
 
-import type { CreateRevisionInput } from '@luke/core';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 

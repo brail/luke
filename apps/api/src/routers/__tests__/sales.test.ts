@@ -13,7 +13,7 @@
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
-import type { PrismaClient, Brand, Season, User } from '@prisma/client';
+import type { PrismaClient, Brand, Season, User } from '@luke/db';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 

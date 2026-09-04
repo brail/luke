@@ -30,9 +30,10 @@
 
 import { describe, it, expect } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
-import type { PrismaClient } from '@prisma/client';
 
 describe('withAuditLog — FAILURE detection', () => {
   it.fails(

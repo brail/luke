@@ -1,8 +1,9 @@
 import mssql from 'mssql';
 
+import type { PrismaClient } from '@luke/db';
+
 import { createSyncRequest } from './utils.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 
 /**

@@ -39,12 +39,14 @@ ENV NEXTAUTH_SECRET=build-time-placeholder-unused-at-runtime
 COPY . .
 RUN pnpm install --frozen-lockfile
 
-# Generate the Prisma client BEFORE building. Next no longer type-checks API
-# source — apps/web resolves @luke/api through its built `exports` entry — but
-# the emitted declaration graph still reaches @prisma/client: the router types
-# are inferred from procedures whose returns carry Prisma model types. Removing
-# this step degrades those types to `any` and fails the build under `strict`.
-RUN pnpm --filter @luke/api exec prisma generate
+# Build @luke/db BEFORE the rest. Next no longer type-checks API source —
+# apps/web resolves @luke/api through its built `exports` entry — but the
+# emitted declaration graph still reaches the generated Prisma client: the
+# router types are inferred from procedures whose returns carry Prisma model
+# types. Removing this step degrades those types to `any` and fails the build
+# under `strict`. `build` here is `prisma generate` plus the tsc that turns the
+# generated source into the `dist` @luke/api and @luke/nav compile against.
+RUN pnpm --filter @luke/db build
 
 # Build shared packages first
 RUN pnpm --filter @luke/core build

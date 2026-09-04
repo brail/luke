@@ -157,3 +157,9 @@ docs/access-porting/
 
 
 
+
+# Prisma client generated into `@luke/db` by `prisma generate` (root `postinstall`).
+# Source, not build output, but derived from `packages/db/prisma/schema.prisma`
+# and rewritten on every generate — committing it would be a second copy of the
+# schema that reviews as 87 files of noise.
+packages/db/src/generated/

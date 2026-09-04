@@ -11,10 +11,9 @@ import { randomBytes } from 'crypto';
 import { homedir } from 'os';
 import { join } from 'path';
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
-
 import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
+import { createPrismaClient, type PrismaClient } from '@luke/db';
+
 
 import { encryptValue } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
@@ -26,7 +25,7 @@ import { seedHolidayCountries } from './seeds/holidays';
 /**
  * Initializes Prisma Client
  */
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
+const prisma = createPrismaClient();
 
 /**
  * Creates/updates the admin user with a local identity
@@ -632,7 +631,7 @@ async function main() {
     console.log('   1. Avvia il server: pnpm --filter @luke/api dev');
     console.log('   2. Testa health check: curl http://localhost:3001/healthz');
     console.log(
-      '   3. Apri Prisma Studio: pnpm --filter @luke/api prisma:studio'
+      '   3. Apri Prisma Studio: pnpm --filter @luke/db prisma:studio'
     );
   } catch (error) {
     console.error('❌ Errore durante seed:', error);

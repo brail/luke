@@ -4,17 +4,13 @@
  * Errors are surfaced as TRPCError with codes NOT_FOUND, CONFLICT, or BAD_REQUEST.
  */
 
-import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import type {
   CollectionGroupInput,
   CollectionLayoutRowInput,
 } from '@luke/core';
-
-import { assertUnlocked } from './editLock.service.js';
-import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
-
+import { Prisma } from '@luke/db';
 import type {
   PrismaClient,
   Brand,
@@ -24,7 +20,11 @@ import type {
   CollectionRowQuotation,
   PricingParameterSet,
   Vendor,
-} from '@prisma/client';
+} from '@luke/db';
+
+import { assertUnlocked } from './editLock.service.js';
+import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
+
 
 // ─────────────────────────────────────────────────────────────────
 // Enriched return type

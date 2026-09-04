@@ -7,6 +7,8 @@ import { randomBytes, createHash } from 'crypto';
 import { TRPCError } from '@trpc/server';
 
 
+import type { PrismaClient, User } from '@luke/db';
+
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
@@ -24,7 +26,6 @@ import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { checkPasswordAgainstPolicy } from './passwordPolicy.service';
 
 import type { Context } from '../lib/trpc';
-import type { PrismaClient, User } from '@prisma/client';
 
 /**
  * Authenticates a user against local credentials (argon2 password hash).

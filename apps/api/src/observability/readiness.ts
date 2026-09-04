@@ -9,11 +9,11 @@
 import { Client } from 'ldapts';
 
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
+import type { PrismaClient } from '@luke/db';
 
 import { getLdapConfig } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
 
 

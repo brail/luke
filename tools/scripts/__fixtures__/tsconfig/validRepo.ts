@@ -177,6 +177,7 @@ export const VALID_REPO: RepoFiles = {
   'apps/web/tsconfig.test.json': json(TEST_PROJECT),
   'packages/core/tsconfig.json': json(CORE),
   'packages/core/tsconfig.test.json': json(TEST_PROJECT),
+  'packages/db/tsconfig.json': json(nodeProject(2)),
   'packages/nav/tsconfig.json': json(nodeProject(2)),
   'packages/calendar/tsconfig.json': json(nodeProject(2)),
   'packages/calendar/tsconfig.test.json': json(TEST_PROJECT),

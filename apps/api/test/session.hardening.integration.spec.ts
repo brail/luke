@@ -3,8 +3,9 @@
  * Verifies tokenVersion, session invalidation, TTL
  */
 
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll } from 'vitest';
+
+import { PrismaClient } from '@luke/db';
 
 import { authenticateRequest, createToken } from '../src/lib/auth';
 import { signJWT } from '../src/lib/jwt';

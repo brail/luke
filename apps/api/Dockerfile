@@ -12,8 +12,10 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile
 
-# Generate Prisma client BEFORE tsc — TypeScript needs the generated types to compile
-RUN pnpm --filter @luke/api exec prisma generate
+# @luke/db first: its `build` runs `prisma generate` and then compiles the
+# generated source, and every package below reads Prisma types through its
+# `dist`. TypeScript needs those declarations to exist before tsc runs.
+RUN pnpm --filter @luke/db build
 
 # Build shared packages first, then the API
 RUN pnpm --filter @luke/core build
@@ -45,6 +47,15 @@ COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /app/packages/core/dist          ./packages/core/dist
 COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
 
+# @luke/db — the Prisma client, plus the schema and migrations `prisma migrate
+# deploy` reads at boot. `prisma.config.ts` is what points the CLI at both, and
+# the CLI itself resolves out of this package's node_modules.
+COPY --from=builder /app/packages/db/package.json     ./packages/db/package.json
+COPY --from=builder /app/packages/db/dist             ./packages/db/dist
+COPY --from=builder /app/packages/db/prisma           ./packages/db/prisma
+COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
+COPY --from=builder /app/packages/db/node_modules     ./packages/db/node_modules
+
 # @luke/nav — NAV sync runtime
 COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
 COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
@@ -55,11 +66,11 @@ COPY --from=builder /app/packages/calendar/package.json ./packages/calendar/pack
 COPY --from=builder /app/packages/calendar/dist          ./packages/calendar/dist
 COPY --from=builder /app/packages/calendar/node_modules  ./packages/calendar/node_modules
 
-# @luke/api — compiled output + prisma schema + runtime deps
+# @luke/api — compiled output + the domain seed + runtime deps. The schema and
+# the migrations are @luke/db's now; `prisma/` here is the seed and its data.
 COPY --from=builder /app/apps/api/package.json    ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist            ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma          ./apps/api/prisma
-COPY --from=builder /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY --from=builder /app/apps/api/node_modules    ./apps/api/node_modules
 
 # Email templates (plain text — tsc does not copy non-TS files)

@@ -18,13 +18,13 @@ import {
   VendorListInputSchema,
   VendorUpdateInputSchema,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
-import type { Prisma } from '@prisma/client';
 
 const VENDOR_SELECT = {
   id: true,

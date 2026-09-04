@@ -13,12 +13,12 @@ import rateLimit from '@fastify/rate-limit';
 import { TRPCError } from '@trpc/server';
 
 import { isDevelopment } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import { getTraceId, toErrorMessage } from '../lib/error';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export default async function specsheetImageRoutes(

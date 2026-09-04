@@ -1,10 +1,11 @@
+import type { PrismaClient, Prisma } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
 import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
 
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import type { PrismaClient, Prisma } from '@prisma/client';
 import type mssql from 'mssql';
 import type { Logger } from 'pino';
 

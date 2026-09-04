@@ -1,11 +1,11 @@
 
 import { CATEGORY_LEVEL_EVENT_KEY, fullName } from '@luke/core';
+import type { PrismaClient, NotificationCategory, Prisma } from '@luke/db';
 
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 
 import { sseStore } from './sseStore';
 
-import type { PrismaClient, NotificationCategory, Prisma } from '@prisma/client';
 
 /**
  * Parameters for creating a single in-app notification.

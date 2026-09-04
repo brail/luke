@@ -21,9 +21,10 @@
  * it on delete-audit snapshots, where the event no longer exists to resolve `P_relevance` from.
  */
 
+import type { Prisma, PrismaClient } from '@luke/db';
+
 import { unionBrandScopes } from './context.service';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * `P_access` for a batch of users: userId → Set of accessible brandIds, or `null` for admin

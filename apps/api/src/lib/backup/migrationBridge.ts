@@ -25,6 +25,8 @@ import { finished, pipeline } from 'stream/promises';
 import { Client } from 'pg';
 
 import type { SchemaCompatibility, SchemaCompatibilityResult } from '@luke/core';
+import { PRISMA_MIGRATIONS_DIR, PRISMA_PACKAGE_ROOT } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { forEachArchiveEntry } from './archiveFormat';
 import { createPendingBackupRecord, getLatestMigrationName, runBackupJob, type BackupLogger } from './dumpPipeline';
@@ -32,7 +34,6 @@ import { buildPostgresUrl, parseDatabaseUrl, runCommand, runPgBinary } from './p
 import { openBackupArchiveStream, restoreDatabaseFromFile } from './restorePipeline';
 
 import type { PgConnectionParts } from './pgConnection';
-import type { PrismaClient } from '@prisma/client';
 
 const BRIDGE_TEMP_DIR = join(homedir(), '.luke', 'bridge-tmp');
 
@@ -46,11 +47,10 @@ function tempDatabaseNameFor(sourceBackupId: string): string {
 // server starts) — nothing in-app migrates it at runtime. Safe to cache indefinitely per process.
 let cachedBundledMigrationNames: string[] | undefined;
 
-/** Reads `prisma/migrations/` as bundled with this instance (folder names are timestamp-prefixed, so lexical sort = chronological order). */
+/** Reads `@luke/db`'s migration folder as bundled with this instance (folder names are timestamp-prefixed, so lexical sort = chronological order). */
 async function listBundledMigrationNames(): Promise<string[]> {
   if (cachedBundledMigrationNames) return cachedBundledMigrationNames;
-  const migrationsDir = join(__dirname, '../../../prisma/migrations');
-  const entries = await readdir(migrationsDir, { withFileTypes: true });
+  const entries = await readdir(PRISMA_MIGRATIONS_DIR, { withFileTypes: true });
   cachedBundledMigrationNames = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
   return cachedBundledMigrationNames;
 }
@@ -135,8 +135,12 @@ async function countUnfinishedMigrations(db: PgConnectionParts): Promise<number>
 
 /** Runs the exact same command `entrypoint.sh` runs at boot, pointed at the temp DB via an overridden `DATABASE_URL`. */
 async function runMigrateDeploy(db: PgConnectionParts): Promise<void> {
-  const cwd = join(__dirname, '../../../'); // apps/api — same cwd entrypoint.sh's WORKDIR sets
-  await runCommand('npx', ['prisma', 'migrate', 'deploy'], { cwd, env: { DATABASE_URL: buildPostgresUrl(db) } });
+  // `@luke/db` is where `prisma.config.ts`, the schema and the migrations live — the
+  // same directory entrypoint.sh runs the CLI from.
+  await runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+    cwd: PRISMA_PACKAGE_ROOT,
+    env: { DATABASE_URL: buildPostgresUrl(db) },
+  });
 }
 
 async function dropTempDatabase(mainDb: PgConnectionParts, tempDbName: string, logger: BackupLogger): Promise<void> {

@@ -11,10 +11,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { getConfig } from '../src/lib/configManager';
 import { clearRateLimitConfigCache, resolveRateLimitPolicy } from '../src/lib/rateLimitPolicy';
 
-import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../src/lib/configManager', () => ({
   getConfig: vi.fn(),

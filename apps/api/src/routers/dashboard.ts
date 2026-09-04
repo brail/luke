@@ -1,4 +1,3 @@
-import { type Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -10,6 +9,7 @@ import {
   DashboardWidgetsSchema,
   type WidgetConfigItem,
 } from '@luke/core';
+import { type Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { protectedProcedure, router } from '../lib/trpc';

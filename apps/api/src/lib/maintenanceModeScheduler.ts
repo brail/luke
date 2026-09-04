@@ -18,12 +18,12 @@
  */
 
 import { getMaintenanceUrgencyTier } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { forceLogoutNonAdmins, getMaintenanceState, markActivated, recordWarningsSent } from './maintenanceMode';
 import { notifyAllUsers } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 /** Tick delay while `INACTIVE`/`ACTIVE` — nothing time-sensitive to track, just a heartbeat. */

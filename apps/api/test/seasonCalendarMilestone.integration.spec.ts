@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import {
   createCalendarFixture,
   createCallerWithSession,
@@ -24,7 +26,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;

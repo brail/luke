@@ -20,6 +20,7 @@ import {
   type StorageBucket,
   type StoredObjectMeta,
 } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
@@ -29,7 +30,6 @@ import { LocalFsProvider } from './providers/local';
 import { S3Provider } from './providers/s3';
 
 import type { Context } from '../lib/trpc';
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 /** Singleton instance of the active storage provider. */
 let providerInstance: IStorageProvider | null = null;

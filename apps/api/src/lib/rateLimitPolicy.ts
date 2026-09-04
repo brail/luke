@@ -6,10 +6,10 @@
 import pino from 'pino';
 
 import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getConfig } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@luke/db';
 
 /**
  * Connection parameters for the NAV SQL Server database.

@@ -14,8 +14,6 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
@@ -26,6 +24,7 @@ import {
   deriveSecret,
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
+import { createPrismaClient } from '@luke/db';
 
 import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
@@ -117,8 +116,7 @@ fastify.addContentTypeParser(
 );
 
 /** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
-const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
+const prisma = createPrismaClient({
   log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
 });
 
@@ -742,7 +740,7 @@ const start = async () => {
     fastify.log.info(`tRPC endpoint: http://${host}:${port}/trpc`);
 
     if (isDevelopment()) {
-      fastify.log.info(`Prisma Studio: pnpm --filter @luke/api prisma:studio`);
+      fastify.log.info(`Prisma Studio: pnpm --filter @luke/db prisma:studio`);
     }
   } catch (err: unknown) {
     fastify.log.error({ err }, 'Errore avvio server');

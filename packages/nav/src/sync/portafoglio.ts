@@ -15,12 +15,13 @@
 
 import mssql from 'mssql';
 
+import type { PrismaClient } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
 import { bulkUpsert, SS_CHUNK, syncIncremental, updateSyncState, type TableSyncStats } from './pgUpsert.js';
 import { bindInClause, createSyncRequest } from './utils.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

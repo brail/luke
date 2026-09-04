@@ -10,9 +10,10 @@
  * so a graceful shutdown doesn't drop notifications still waiting for their window to elapse.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { flushDueCalendarNotifications, flushAllCalendarNotifications } from './notifications';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 30 * 1000;

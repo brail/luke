@@ -11,12 +11,13 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { acquireLastAdminLock } from '../src/lib/lastAdminGuard';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 

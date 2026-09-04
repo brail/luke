@@ -7,10 +7,10 @@ import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
 import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { makeUrlResolver } from '../lib/storageUrl';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * The brand scope guards live in `brandScope.service.ts` (they need the

@@ -20,10 +20,10 @@
 
 import { randomUUID } from 'crypto';
 
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import type { Entity } from './navSyncScheduler';
-import type { PrismaClient } from '@prisma/client';
 
 /** Crash-safety ceiling — see module docstring. Generous since normal-path release doesn't wait on it. */
 const LOCK_TTL_MS = 15 * 60 * 1000;

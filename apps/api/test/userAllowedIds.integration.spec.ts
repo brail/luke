@@ -14,11 +14,12 @@ import { randomUUID } from 'crypto';
 
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { getUserAllowedIds } from '../src/services/context.service';
 
 import { setupTestDb } from './helpers/database';
 
-import type { PrismaClient } from '@prisma/client';
 
 
 let prisma: PrismaClient;

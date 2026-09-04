@@ -6,8 +6,8 @@
 import { effectiveSectionAccess, sectionEnum, Roles } from '@luke/core';
 import type { Section, Role } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
+import type { Prisma, PrismaClient } from '@luke/db';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 type PrismaLike = PrismaClient | Prisma.TransactionClient;

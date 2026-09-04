@@ -8,10 +8,10 @@ import {
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
 } from '@luke/core';
+import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@luke/db';
 
 import { eventVisibilityWhere } from './calendarAudience.service';
 
-import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@prisma/client';
 
 const MS_PER_DAY = 86_400_000;
 const logger = pino({ level: 'info' });

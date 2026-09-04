@@ -6,8 +6,9 @@
 import { randomUUID } from 'crypto';
 
 import helmet from '@fastify/helmet';
-import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
+
+import { PrismaClient } from '@luke/db';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
 import { hashPassword } from '../src/lib/password';

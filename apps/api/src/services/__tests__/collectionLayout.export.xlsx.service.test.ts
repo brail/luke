@@ -12,12 +12,13 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
 import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutXlsx } from '../collectionLayout.export.xlsx.service';
 
 import type { CollectionLayoutForExport } from '../collectionLayout.export.xlsx.service';
-import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../asset.service', () => ({
   readAssetBuffer: vi.fn(),

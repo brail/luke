@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'crypto';
 
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@luke/db';
 
 export interface CalendarFixture {
   /** Short uppercase suffix used in every generated code/name, so parallel specs cannot collide. */

@@ -274,18 +274,27 @@ const API_NODE_FILES = [
   'apps/api/src/**/*.{ts,tsx}',
   'apps/api/test/**/*.{ts,tsx}',
   'apps/api/scripts/**/*.{ts,tsx}',
-  // The seed (`prisma db seed`, `tsx prisma/seed.ts`) and the Prisma CLI config
-  // are executable Node source that no lint command reached — measured: ESLint
-  // reported every file under `prisma/` as "ignored because no matching
-  // configuration was supplied". `tsconfig.test.json` already typechecks them.
+  // The seed (`tsx prisma/seed.ts`) is executable Node source that no lint
+  // command reached — measured: ESLint reported every file under `prisma/` as
+  // "ignored because no matching configuration was supplied".
+  // `tsconfig.test.json` already typechecks it. The Prisma CLI config moved out
+  // with the schema; it is covered under `packages/db` below.
   'apps/api/prisma/**/*.ts',
-  'apps/api/prisma.config.ts',
   'apps/api/*.mts',
 ];
 
 const PACKAGE_NODE_ONLY_FILES = [
   'packages/nav/src/**/*.{ts,tsx}',
   'packages/calendar/src/**/*.{ts,tsx}',
+  // `@luke/db` is Node by construction, not by inspection: its whole content is
+  // a Prisma client that opens TCP sockets through `@prisma/adapter-pg`, plus
+  // `__dirname`-relative paths to the schema and the migration folder. The
+  // browser cannot reach it either — `apps/web` is layer 3 and `@luke/db` is
+  // layer 0 with runtime `node`, so `WORKSPACE_POLICY` refuses the edge before
+  // any import exists. Its Prisma CLI config sits at the package root, beside
+  // `src/`, and is Node source for the same reason the seed is.
+  'packages/db/src/**/*.{ts,tsx}',
+  'packages/db/prisma.config.ts',
   // `@luke/core`'s server-only surface — see the export-subpath evidence above.
   'packages/core/src/server/**/*.{ts,tsx}',
   'packages/core/src/crypto/**/*.{ts,tsx}',
@@ -819,6 +828,11 @@ export default [
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      // The Prisma client, emitted by `prisma generate` into `@luke/db`'s
+      // sources. Gitignored, rewritten on every install, and shipped with
+      // `/* eslint-disable */` and `@ts-nocheck` at the top of every file — so
+      // linting it can only cost 6.9MB of parsing to report nothing.
+      'packages/db/src/generated/**',
       // `apps/api`'s compiled CLI scripts: build output like `dist/`, and the
       // first thing `eslint .` found once the lint command stopped naming
       // directories — 9 `no-undef` on emitted CommonJS.

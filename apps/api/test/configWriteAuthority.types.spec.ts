@@ -12,9 +12,10 @@
 
 import { describe, it, expect } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { saveConfig } from '../src/lib/configManager';
 
-import type { PrismaClient } from '@prisma/client';
 
 // Never dereferenced: every `saveConfig` below sits inside a `void (() => …)` that is compiled and
 // never called. A real client would mean a database for a test that only asks tsc a question.

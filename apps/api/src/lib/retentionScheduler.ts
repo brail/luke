@@ -15,6 +15,8 @@
 
 import { randomUUID } from 'crypto';
 
+import type { Prisma, PrismaClient } from '@luke/db';
+
 import { getStorageProvider } from '../storage';
 
 import { CRITICAL_AUDIT_ACTIONS } from './auditLog';
@@ -28,7 +30,6 @@ import {
 import { collectIdsOlderThan, deleteIdsInBatches } from './retentionSweep';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 24 * 60 * 60 * 1000;

@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import {
   createCallerWithSession,
   createTestUser,
@@ -20,7 +22,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;

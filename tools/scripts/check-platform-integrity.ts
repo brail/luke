@@ -205,6 +205,60 @@ const WEB_RUNTIME_FORBIDDEN = ['apps/api/src'] as const;
  * dependencies, but not for workspace projects — the same hook on
  * `apps/api/package.json` never fired, and the fresh clone stayed broken.
  */
+/**
+ * Dependencies a package must declare because of what its **emitted
+ * declarations** name, not because of what its source imports.
+ *
+ * `apps/api` has no `@prisma/client` import left: every Prisma type it uses
+ * comes from `@luke/db`, and the runtime client is constructed there. What it
+ * still has is a `dist/**.d.ts` graph that reaches `@prisma/client/runtime/client`
+ * — `Decimal` and `JsonValue` travel out through the inferred tRPC router type
+ * — and TypeScript resolves those specifiers from the file that names them, so
+ * they resolve from `apps/api`. Dropping the declaration therefore breaks a
+ * *different* package: measured, `apps/web`'s build went from clean to 88
+ * errors, while `apps/api` itself stayed green in lint, tsc and every test.
+ *
+ * That is the whole reason this rule exists. An unused-looking devDependency is
+ * exactly the kind of line a later cleanup removes, and nothing in the owning
+ * package would report it.
+ *
+ * `devDependencies` and not `dependencies`: nothing in `apps/api` loads the
+ * package at runtime, and the group is the declaration of that fact.
+ */
+const DECLARATION_GRAPH_DEPENDENCIES = [
+  {
+    file: 'apps/api/package.json',
+    group: 'devDependencies',
+    name: '@prisma/client',
+    why:
+      "its emitted `.d.ts` graph names `@prisma/client/runtime/client` (Decimal, JsonValue) " +
+      "through the inferred AppRouter type, and TypeScript resolves that specifier from " +
+      "apps/api. Without the declaration apps/web fails to build, while apps/api stays green.",
+  },
+] as const;
+
+/**
+ * The build that regenerates the Prisma client must delete the whole generated
+ * tree first.
+ *
+ * `prisma generate` cleans only its own output root. Measured: a stale file
+ * planted at `packages/db/src/generated/prisma/**` — the root itself and both
+ * its subdirectories — is removed by the generator, but one planted a level up
+ * at `packages/db/src/generated/` survives, and `tsc` then compiles it into
+ * `dist` and ships it. That directory is gitignored as a whole, so nothing
+ * else in the repository would ever mention the file: not git, not lint, not
+ * a review. The only way it leaves is if the build removes the tree.
+ *
+ * Checked as an ordering, not just as containment: `prisma generate && rm -rf
+ * src/generated` contains both strings and deletes the client it just wrote.
+ */
+const PRISMA_GENERATED_TREE = {
+  file: 'packages/db/package.json',
+  script: 'build',
+  clean: 'rm -rf src/generated',
+  generate: 'prisma generate',
+} as const;
+
 const PRISMA_GENERATE_SITE = {
   file: 'package.json',
   script: 'postinstall',
@@ -688,6 +742,102 @@ function checkPrismaBootstrap(all: Manifest[], problems: Problem[]): void {
 }
 
 /**
+ * A stale file in the generated tree must not survive a build.
+ *
+ * See `PRISMA_GENERATED_TREE`.
+ */
+function checkPrismaGeneratedTreeIsCleaned(all: Manifest[], problems: Problem[]): void {
+  const manifest = all.find(m => m.file === PRISMA_GENERATED_TREE.file);
+  if (manifest === undefined) {
+    problems.push({
+      file: PRISMA_GENERATED_TREE.file,
+      line: 1,
+      message:
+        'is named in `PRISMA_GENERATED_TREE` but no such manifest is tracked. ' +
+        'Either the package moved — update the entry — or the row is stale.',
+    });
+    return;
+  }
+
+  const scripts = (manifest.json.scripts ?? {}) as Record<string, unknown>;
+  const script = scripts[PRISMA_GENERATED_TREE.script];
+
+  const fail = (why: string): void => {
+    problems.push({
+      file: PRISMA_GENERATED_TREE.file,
+      line: 1,
+      message:
+        `\`${PRISMA_GENERATED_TREE.script}\` ${why}. \`${PRISMA_GENERATED_TREE.generate}\` ` +
+        'cleans only its own output root, so a file left a level up survives, is compiled into ' +
+        '`dist` and ships — and the tree is gitignored, so nothing else would ever report it.',
+    });
+  };
+
+  if (typeof script !== 'string') {
+    fail('is missing');
+    return;
+  }
+
+  const cleanAt = script.indexOf(PRISMA_GENERATED_TREE.clean);
+  const generateAt = script.indexOf(PRISMA_GENERATED_TREE.generate);
+
+  if (cleanAt === -1) {
+    fail(`must run \`${PRISMA_GENERATED_TREE.clean}\``);
+  } else if (generateAt === -1) {
+    fail(`must run \`${PRISMA_GENERATED_TREE.generate}\``);
+  } else if (cleanAt > generateAt) {
+    fail(
+      `must run \`${PRISMA_GENERATED_TREE.clean}\` *before* \`${PRISMA_GENERATED_TREE.generate}\`, ` +
+        'not after — after, it deletes the client the build just wrote'
+    );
+  }
+}
+
+/**
+ * A dependency required by an emitted declaration graph must stay declared.
+ *
+ * See `DECLARATION_GRAPH_DEPENDENCIES`. Fail-closed on the manifest too: a
+ * classified path that stops being tracked is reported rather than skipped,
+ * which is what keeps the rule from going quiet when a package is renamed.
+ */
+function checkDeclarationGraphDependencies(all: Manifest[], problems: Problem[]): void {
+  for (const required of DECLARATION_GRAPH_DEPENDENCIES) {
+    const manifest = all.find(m => m.file === required.file);
+    if (manifest === undefined) {
+      problems.push({
+        file: required.file,
+        line: 1,
+        message:
+          'is named in `DECLARATION_GRAPH_DEPENDENCIES` but no such manifest is tracked. ' +
+          'Either the package moved — update the entry — or the row is stale.',
+      });
+      continue;
+    }
+
+    const group = manifest.json[required.group];
+    const spec =
+      typeof group === 'object' && group !== null
+        ? (group as Record<string, unknown>)[required.name]
+        : undefined;
+
+    if (typeof spec !== 'string') {
+      const elsewhere = ['dependencies', 'devDependencies'].find(other => {
+        const entries = manifest.json[other];
+        return typeof entries === 'object' && entries !== null && required.name in (entries as object);
+      });
+      problems.push({
+        file: required.file,
+        line: 1,
+        message:
+          `must declare \`${required.name}\` under \`${required.group}\`` +
+          (elsewhere === undefined ? '' : `, not under \`${elsewhere}\``) +
+          `: ${required.why}`,
+      });
+    }
+  }
+}
+
+/**
  * A workspace that publishes a built contract must resolve to its build, and
  * publish nothing else.
  *
@@ -1099,6 +1249,13 @@ const WORKSPACE_POLICY = {
   'package.json': { kind: 'tooling' },
   'packages/eslint-plugin-luke/package.json': { kind: 'tooling' },
   'packages/core/package.json': { kind: 'layered', layer: 0, runtime: 'universal' },
+  // Layer 0 beside `@luke/core`, not above it: `@luke/db` depends on no
+  // workspace at all, and both its consumers — `@luke/nav` at layer 1 and
+  // `apps/api` at layer 2 — must be able to reach it. Same layer as core means
+  // neither may depend on the other, which is the point: core ships to the
+  // browser and must never pull a database client into a bundle, and the
+  // generated Prisma client has no use for core's schemas.
+  'packages/db/package.json': { kind: 'layered', layer: 0, runtime: 'node' },
   'packages/nav/package.json': { kind: 'layered', layer: 1, runtime: 'node' },
   'packages/calendar/package.json': { kind: 'layered', layer: 1, runtime: 'node' },
   'apps/api/package.json': { kind: 'layered', layer: 2, runtime: 'node' },
@@ -1304,6 +1461,8 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkPublishedContracts(all, problems);
   checkWebRuntimeHasNoApiSource(root, problems);
   checkPrismaBootstrap(all, problems);
+  checkPrismaGeneratedTreeIsCleaned(all, problems);
+  checkDeclarationGraphDependencies(all, problems);
   checkWorkspaceDependencyDirection(all, problems);
 
   return problems;

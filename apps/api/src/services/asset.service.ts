@@ -22,6 +22,7 @@ import {
   type AssetVariant,
   type StorageBucket,
 } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { derivativesEnabled, enqueueDerivatives, markPermanentlyFailed } from '../lib/assets/derivativeWorker';
 import { deriveVariant, normalizeMaster } from '../lib/assets/pipeline';
@@ -31,7 +32,6 @@ import { makeUrlResolver } from '../lib/storageUrl';
 import { putDerivativeObject, putObject, readFileBuffer } from '../storage';
 
 import type { Context } from '../lib/trpc';
-import type { PrismaClient } from '@prisma/client';
 
 type FileParams = {
   filename: string;

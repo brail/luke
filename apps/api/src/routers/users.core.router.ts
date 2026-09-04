@@ -3,13 +3,13 @@
  * list, getById, create, update, softDelete, hardDelete
  */
 
-import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';

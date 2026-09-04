@@ -16,11 +16,12 @@
  * question of whether both should be deleted.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { getStorageProvider } from '../storage';
 import { verifyDownloadToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export async function registerBackupDownloadRoute(

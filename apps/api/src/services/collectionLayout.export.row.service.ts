@@ -8,6 +8,11 @@ import ExcelJS from 'exceljs';
 
 
 import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
+import type { PrismaClient,
+  Brand,
+  CollectionLayoutRow,
+  Season,
+  Vendor } from '@luke/db';
 
 import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, extensionForExcelJs, resizeForEmbed } from '../lib/export/image';
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
@@ -17,11 +22,6 @@ import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
 import { buildProgressLabelMap } from './collectionLayout.service';
 
 import type { QuotationWithParamSet } from './collectionLayout.service';
-import type { PrismaClient,
-  Brand,
-  CollectionLayoutRow,
-  Season,
-  Vendor } from '@prisma/client';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────

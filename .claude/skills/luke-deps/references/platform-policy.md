@@ -42,7 +42,7 @@ does.
 | Build graph               | `turbo.json`                                                                   | a task edge must reflect a real artifact dependency                   |
 | TypeScript configuration  | root `tsconfig.json` + per-workspace `tsconfig*.json`                          | runtime boundaries explicit; test corpora reachable by a typecheck    |
 | Lint                      | `eslint.config.mjs` + `packages/eslint-plugin-luke/`                           | official framework rules and project rules both actually active       |
-| ORM                       | `apps/api/prisma/schema.prisma`, `apps/api/prisma.config.ts`, the Prisma package family | supported generator; schema and migrations in agreement       |
+| ORM                       | `packages/db/prisma/schema.prisma`, `packages/db/prisma.config.ts`, the Prisma package family | supported generator; schema and migrations in agreement       |
 | Database runtime          | `docker-compose.test.yml`, CI service images, `apps/api/Dockerfile`            | client and server majors pinned together                              |
 | Test toolchain            | `apps/api/vitest.config.mts`, `apps/api/vitest.integration.config.mts`, `apps/web/vitest.config.mts`, `apps/web/vitest.browser.config.mts`, `apps/web/playwright.config.ts` | every tier reachable from a named root script; the browser tier keeps its own project so the fast path provisions no browser |
 | CI                        | `.github/workflows/`, `.github/actions/setup-workspace/action.yml`             | gates fail closed; the shared setup action is authoritative           |

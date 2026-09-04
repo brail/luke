@@ -16,8 +16,8 @@ rules:
       exclude:
         - '/apps/api/test/**'
         - '/apps/api/scripts/**'
-        - '/apps/api/prisma.config.ts'
-        - '/apps/api/prisma/seed.ts'
+        - '/packages/db/prisma.config.ts'
+        - '/packages/db/src/client.ts'
         - '/apps/api/src/server.ts'
         - '/apps/api/src/instrument.ts'
         - '/apps/api/src/lib/cors.ts'

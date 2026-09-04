@@ -5,10 +5,11 @@
  * Pre-aggregated fields (date_prenotazione, ddt_picking) are already materialized by the sync job.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { PgParams } from './pgParams.js';
 
 import type { PortafoglioParams, PortafoglioRow } from '../statistics/portafoglio.js';
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Queries the order portfolio from the local nav_pf_* replica tables.

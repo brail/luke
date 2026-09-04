@@ -21,15 +21,11 @@
  */
 
 import { execSync } from 'child_process';
-import { join } from 'path';
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient, type PrismaClient, PRISMA_PACKAGE_ROOT } from '@luke/db';
 
 /** Required marker in the database name: guards against pointing at dev or production. */
 const REQUIRED_DB_NAME_MARKER = 'test';
-
-const API_ROOT = join(__dirname, '../../');
 
 /** Client shared by the current test file. */
 let sharedClient: PrismaClient | null = null;
@@ -87,12 +83,7 @@ function requireTestDatabaseUrl(): string {
  * multiple pools on the same test file exhaust each other.
  */
 export function createTestPrismaClient(): PrismaClient {
-  const url = requireTestDatabaseUrl();
-
-  // Prisma 7 removed both `datasources` and `datasourceUrl` from the
-  // constructor: the only way to point at a specific database is the driver
-  // adapter, the same one `server.ts` uses in production.
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+  return createPrismaClient({ connectionString: requireTestDatabaseUrl() });
 }
 
 /** Client shared by the current test file, created on first access. */
@@ -122,8 +113,11 @@ export async function ensureTestSchema(
 
   if (!present) {
     // The URL comes from prisma.config.ts, which reads DATABASE_URL from the env.
+    // `PRISMA_PACKAGE_ROOT` is where that config and the migrations live — the
+    // only cwd the CLI resolves them from, and one this file cannot drift from
+    // by moving directory.
     execSync('pnpm exec prisma migrate deploy', {
-      cwd: API_ROOT,
+      cwd: PRISMA_PACKAGE_ROOT,
       stdio: 'pipe',
       env: { ...process.env, DATABASE_URL: requireTestDatabaseUrl() },
     });

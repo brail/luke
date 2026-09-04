@@ -34,7 +34,7 @@ import {
   partialWithoutDefaults,
   type Role,
 } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
@@ -86,7 +86,6 @@ import {
   getSyncStatus,
 } from '../services/seasonCalendar.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Appends the non-blocking phase-order sanity check to a create/update/reschedule result, running it

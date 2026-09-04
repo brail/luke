@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server';
 
 import { getRbacConfig } from '@luke/core/server';
+import type { Prisma } from '@luke/db';
 
 import { countRecoveryCapableAdminsAfterChange } from '../services/sectionAccess.service';
 
-import type { Prisma } from '@prisma/client';
 
 const LAST_ADMIN_LOCK_KEY = 'last-admin-guard';
 

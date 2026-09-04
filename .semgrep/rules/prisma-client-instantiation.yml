@@ -3,21 +3,17 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Non istanziare PrismaClient qui. In produzione esiste una sola istanza, in
-      apps/api/src/server.ts, costruita col driver adapter PrismaPg; nei test usa
-      createTestPrismaClient() da test/helpers/database.ts. Prisma 7 ha rimosso
-      `datasources` e `datasourceUrl` dal costruttore: un `new PrismaClient()`
-      senza adapter non punta al database che credi, e nei test finisce su quello
-      di sviluppo. Regressione reale: gli helper di test sono rimasti su SQLite
-      per mesi senza che nulla lo segnalasse.
+      Non istanziare PrismaClient qui. Il client si costruisce in un solo posto,
+      createPrismaClient() in @luke/db, che monta il driver adapter PrismaPg e
+      rifiuta di partire senza connection string; nei test passa da
+      createTestPrismaClient() in test/helpers/database.ts, che la chiama.
+      Prisma 7 ha rimosso `datasources` e `datasourceUrl` dal costruttore: un
+      `new PrismaClient()` senza adapter non punta al database che credi, e nei
+      test finisce su quello di sviluppo. Regressione reale: gli helper di test
+      sono rimasti su SQLite per mesi senza che nulla lo segnalasse.
     pattern: new PrismaClient(...)
     paths:
-      # Le uniche tre sedi legittime di costruzione del client. Ogni altro punto
-      # deve passare da una di queste.
+      # L'unica sede legittima di costruzione del client. Ogni altro punto deve
+      # passare da createPrismaClient().
       exclude:
-        - '/apps/api/src/server.ts'
-        - '/apps/api/test/helpers/database.ts'
-        - '/apps/api/scripts/lib/prisma.ts'
-        # Seed e migrazioni: girano fuori dal ciclo di vita del server e non
-        # possono dipendere da src/ né da test/. Usano già l'adapter.
-        - '/apps/api/prisma/**'
+        - '/packages/db/src/client.ts'

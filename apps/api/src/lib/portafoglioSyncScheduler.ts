@@ -14,6 +14,7 @@
  */
 
 
+import type { PrismaClient } from '@luke/db';
 import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult } from '@luke/nav';
 
 import { getConfig } from './configManager';
@@ -22,7 +23,6 @@ import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifica
 import { withSchedulerLock } from './schedulerLock';
 import { sseStore } from './sseStore';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
 

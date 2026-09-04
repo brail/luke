@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@luke/db';
 
 // Mapping fedele a PI 8.3-01 rev5 "Progettazione"
 const REVISION_TYPE_ITEMS = [

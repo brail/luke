@@ -208,13 +208,13 @@ jobs:
       # Stesso comando di entrypoint.sh in produzione: se fallisce qui,
       # sarebbe fallito al deploy.
       - name: Apply migrations from scratch
-        run: pnpm --filter @luke/api exec prisma migrate deploy
+        run: pnpm --filter @luke/db exec prisma migrate deploy
 
       # schema.prisma e prisma/migrations/ possono divergere silenziosamente.
       # --exit-code: 0 nessuna differenza, 2 drift rilevato.
       - name: Schema drift check
         run: |
-          pnpm --filter @luke/api exec prisma migrate diff \
+          pnpm --filter @luke/db exec prisma migrate diff \
             --from-migrations ./prisma/migrations \
             --to-schema ./prisma/schema.prisma \
             --exit-code

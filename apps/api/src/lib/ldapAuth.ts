@@ -6,6 +6,8 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
+import type { PrismaClient, User } from '@luke/db';
+
 import {
   getLdapConfig,
   getLdapResilienceConfig,
@@ -14,7 +16,6 @@ import {
 import { sendVerificationEmail } from './emailHelpers';
 import { ResilientLdapClient } from './ldapClient';
 
-import type { PrismaClient, User } from '@prisma/client';
 import type { Entry } from 'ldapts';
 
 /**

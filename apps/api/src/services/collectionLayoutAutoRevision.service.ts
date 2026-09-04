@@ -18,11 +18,11 @@
  * is null, and Postgres treats NULLs as distinct in a unique index.
  */
 
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { createRevision } from './collectionLayoutRevision.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Labels stamped on the revisions these triggers create. They are display text, not a contract:

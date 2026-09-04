@@ -10,11 +10,12 @@
  * Uses nav_pf_sync_state for tracking (same schema, "nav_kimo_*" table names).
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
 import { SS_CHUNK, syncIncremental, type TableSyncStats } from './pgUpsert.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type mssql from 'mssql';
 import type { Logger } from 'pino';
 

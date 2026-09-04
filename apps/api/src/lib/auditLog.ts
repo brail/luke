@@ -7,9 +7,9 @@
  */
 
 import { fullName, type AuditLogFilters } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import type { Context } from './trpc';
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * Parameters for a single audit log entry.

@@ -11,6 +11,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 
 import { USER_EDITOR_UPDATABLE_FIELDS, UpdateUserInputSchema, privilegedUserUpdateFields } from '@luke/core';
 import type { PrivilegedUserUpdateField, UserEditorUpdatableField } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import {
   createCallerWithIP,
@@ -22,7 +23,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 type Role = 'admin' | 'editor' | 'viewer';
 

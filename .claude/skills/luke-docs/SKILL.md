@@ -101,7 +101,7 @@ Empty list → stop: `No relevant file changed relative to <git-ref>. Nothing to
 2. For every workspace: `package.json`, `src/index.ts(x)`, existing `README.md`
 3. `.env.production.example` + env policy in `CLAUDE.md` — env var catalog
    (enforcement is `assertEnvPolicy()` in `apps/api/src/server.ts`)
-4. `apps/api/prisma/schema.prisma` — model names only
+4. `packages/db/prisma/schema.prisma` — model names only
 5. `apps/api/src/routers/` — list of router files (names, not content)
 6. `apps/web/src/app/` — 2-level directory tree
 7. `docs/` — recursive listing of `.md` files (H1 titles, path)
@@ -129,7 +129,7 @@ removed — never added to an exceptions list, or the checker becomes furniture.
 
 - `packages/**/src/**/*.ts`: exports without JSDoc, drifted JSDoc, `//` on public exports
 - `apps/api/src/routers/**/*.ts`: procedures without `/** */` or without input/output/RBAC permission
-- `apps/api/prisma/schema.prisma`: fields and models without `///`
+- `packages/db/prisma/schema.prisma`: fields and models without `///`
 
 **Phase 2-4 — Write** following the templates and merge logic in
 `references/inline-rules.md`: package JSDoc (max 3 in parallel) → tRPC

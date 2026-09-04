@@ -3,8 +3,7 @@
  */
 
 import type { WorkingDayHoliday } from '@luke/core';
-
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@luke/db';
 
 /**
  * Loads confirmed vendor closure periods for the given vendors and season.

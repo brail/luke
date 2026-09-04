@@ -12,12 +12,12 @@
 import { Readable } from 'stream';
 
 import { getAuditActionLabel } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
 import { verifyAuditLogExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const EXPORT_BATCH_SIZE = 500;

@@ -5,11 +5,11 @@
  */
 
 import { hasPermission, type Permission, type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
 import { verifyTokenVersion } from './tokenVersionCache';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 // Side-effect import: brings in @fastify/cookie's `declare module 'fastify'`
 // augmentation (reply.clearCookie) into any TS program that reaches this file,

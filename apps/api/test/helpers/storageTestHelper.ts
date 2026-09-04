@@ -5,10 +5,11 @@
 
 import { Readable } from 'stream';
 
+import type { PrismaClient } from '@luke/db';
+
 import { resetStorageProvider } from '../../src/storage';
 
 import type { Context } from '../../src/lib/trpc';
-import type { PrismaClient } from '@prisma/client';
 
 export interface MockFileObject {
   id: string;

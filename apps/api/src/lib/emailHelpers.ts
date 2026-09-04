@@ -5,7 +5,7 @@
 
 import { randomBytes, createHash } from 'crypto';
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@luke/db';
 
 import { logAudit } from './auditLog';
 import { getConfigOrDefault } from './configManager';

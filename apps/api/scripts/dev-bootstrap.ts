@@ -12,9 +12,9 @@
  */
 
 import { execSync } from 'child_process';
-import { join } from 'path';
 
 import { getMasterKey } from '@luke/core/server';
+import { PRISMA_PACKAGE_ROOT } from '@luke/db';
 
 import { createScriptPrismaClient } from './lib/prisma.js';
 
@@ -38,7 +38,7 @@ async function bootstrap() {
   console.log('🗑️  Reset database...');
   try {
     execSync('pnpm prisma migrate reset --force --skip-seed', {
-      cwd: join(__dirname, '..'),
+      cwd: PRISMA_PACKAGE_ROOT,
       stdio: 'inherit',
     });
   } catch (error) {
@@ -49,7 +49,7 @@ async function bootstrap() {
     console.error('   2. Database in uso da altri processi');
     console.error('\n🔧 Soluzioni:');
     console.error(
-      '   - Esegui manualmente: cd apps/api && pnpm prisma migrate reset --force --skip-seed'
+      '   - Esegui manualmente: cd packages/db && pnpm prisma migrate reset --force --skip-seed'
     );
     console.error('   - Oppure ferma tutti i processi e riprova');
     console.error(

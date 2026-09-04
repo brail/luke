@@ -3,10 +3,10 @@
  * Registers Fastify's global error handler and exposes the tRPC error formatter.
  */
 
-import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 
 import { isProduction } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { isRateLimitExceededCause } from './rateLimitError';
 

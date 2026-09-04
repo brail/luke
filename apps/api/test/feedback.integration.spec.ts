@@ -11,6 +11,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import {
   createCallerAs,
   createCallerWithSession,
@@ -19,7 +21,6 @@ import {
   setupTestDb,
 } from './helpers';
 
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 

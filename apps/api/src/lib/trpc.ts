@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server';
 
 
 import { hasPermission, type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest } from './auth';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
@@ -16,7 +17,6 @@ import { t } from './t';
 import { verifyTokenVersion } from './tokenVersionCache';
 
 import type { Context } from './context';
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 export { invalidateTokenVersionCache } from './tokenVersionCache';

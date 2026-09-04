@@ -10,10 +10,10 @@ import nodemailer from 'nodemailer';
 import pino from 'pino';
 
 import { calcBackoffDelay, parseConfigValue } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 import type Mail from 'nodemailer/lib/mailer';
 
 const logger = pino({ level: 'info' });

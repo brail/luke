@@ -10,13 +10,12 @@ import type {
   CollectionRowQuotationInput,
   CollectionRowQuotationUpdate,
 } from '@luke/core';
-
 import type {
   Prisma,
   PrismaClient,
   CollectionRowQuotation,
   PricingParameterSet,
-} from '@prisma/client';
+} from '@luke/db';
 
 export type QuotationWithParamSet = CollectionRowQuotation & {
   pricingParameterSet: PricingParameterSet | null;
