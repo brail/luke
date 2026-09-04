@@ -2926,3 +2926,133 @@ No tag was created, `pnpm release:prepare` did not run in any mode, no PR was op
 ## M.14 Next work
 
 Per the sequence in §A.4, the next architectural item in the ordering recorded after `6.2` is **`P1-04`**, the Prisma generator migration on the current major, followed by `P1-05` and `P1/P2-08`. The hygiene batch that §A.4 assigned to its cycle 8 — `5.1`, `5.3` as narrowed here, `6.3` and the inert `tools/*` workspace glob — was displaced by the tsconfig cycle and remains a small, Sonnet-sized cycle available at any point; `S-01` remains a decision. None is started.
+
+# Appendix N — Cycle 11 closure: Prisma generator migration and `@luke/db` ownership (2026-09-04)
+
+Supersedes **only** the time-sensitive statements in §M.12 and §M.14 that record `P1-04` as unchanged and not started. Everything else in Appendix M, and every section before it, stands as written. `P1-05`, `P1/P2-08`, `5.1`, `6.3`, the hygiene batch and `S-01` are untouched by this cycle and remain exactly as §M.12 and §M.14 describe them.
+
+## N.1 Disposition
+
+**`P1-04`: DONE.** The schema declares `provider = "prisma-client"` with `output = "../src/generated/prisma"`. Every acceptance criterion in the item is met: no database migration was produced by the generator change (`prisma migrate diff --from-migrations ./prisma/migrations --to-schema ./prisma/schema.prisma --exit-code` reports "No difference detected", exit 0); `prisma generate` succeeds from a clean checkout through the root `postinstall` alone; the API build succeeds; the integration suite passes; no generated code enters a browser bundle, and the dependency-direction policy refuses the edge that would allow it; no published declaration points at an unavailable generated path.
+
+**Prisma stays on 7.10.0.** This was a generator and ownership refactor, not a major upgrade — the separation the item itself prescribes. `prisma`, `@prisma/client`, `@prisma/adapter-pg` and `@prisma/instrumentation` all remain `7.10.0`/`^7.10.0`, and `checkDependencyFamilies` still holds the family to one major.
+
+**`P1-05`: OPEN, not started.** The schema is one file of 2,419 lines — one line longer than the 2,418 recorded in the item, because the generator block gained an `output` line. No domain split was attempted.
+
+**Release and production state: unchanged.** No tag, no `pnpm release:prepare` in any mode, no published image, no deployment, no version bump; every `package.json` still reads `2.1.4` (§K.13, §M.13).
+
+## N.2 The architectural decision, and what was rejected
+
+The `prisma-client` generator emits TypeScript source into a directory instead of hiding a package inside `node_modules`. That source has to belong to a workspace, and the choice was forced by two existing constraints: `@luke/nav` needs the Prisma types and may not import from `@luke/api` (the layer policy of §M.2 forbids the upward edge), while `@luke/core` ships to the browser.
+
+Four alternatives were measured and rejected before the adopted design:
+
+- **API-local output.** Mechanically fine for `apps/api`; `@luke/nav` broke loudly on a clean install with 13 × `TS2305`. Restoring it would have meant hand-retyping several models' upsert shapes inside nav — a second, drifting copy of generated types.
+- **Two generated clients, one per consumer.** Falsified: 25 × `TS2345`. Two structurally identical generated copies are not assignable to one another.
+- **Moving nav's Postgres persistence into `apps/api`.** Would have relocated 2,531 of nav's 3,596 lines and forced a rewrite of the raw-SQL rule's scope and the NAV documentation — a larger reshaping than introducing one package.
+- **Prisma inside `@luke/core`.** Rejected without measurement: core is the universal, browser-shipped package, and a database client there is the precise leak the runtime classification exists to prevent.
+
+**Adopted: a dedicated `@luke/db` workspace at layer 0, runtime `node`, beside `@luke/core` at layer 0, runtime `universal`.** Same layer means neither may depend on the other — that is the point, not an accident: core cannot pull a database client into a browser bundle, and db has no use for core's schemas. `@luke/nav` (layer 1) and `apps/api` (layer 2) may depend on it; `apps/web` (layer 3, `browser`) is refused twice over, by runtime as well as by declaration, and declares no such edge. The cost is one more manifest and one more row in each policy surface; the gain is a single owner for database tooling, a single `new PrismaClient` site, and nav's rules unchanged.
+
+## N.3 The ownership boundary
+
+`@luke/db` owns the database *infrastructure*: `prisma/schema.prisma`, the 76 versioned migrations and `migration_lock.toml`, `prisma.config.ts`, the generated client, the `createPrismaClient` factory, the `PRISMA_DIR` / `PRISMA_MIGRATIONS_DIR` / `PRISMA_PACKAGE_ROOT` constants, and the generic Prisma CLI operations (`prisma:generate`, `prisma:studio`, `prisma:push`, `db:migrate:new`, `db:migrate:deploy`, `db:reset`).
+
+`@luke/api` keeps everything domain-shaped, and the boundary is meaning rather than command prefix: the seed (`prisma/seed.ts` and `prisma/seeds/`) and all nine `db:*` scripts — `db:seed`, `db:bootstrap`, `db:nav-reset`, `db:harden-google-acl`, `db:complete-stranded-rows`, `db:fix-allday-dates`, `db:migrate-rbac-section-key`, `db:migrate-storage`, `db:backfill-asset-derivatives`. They apply business rules and import `apps/api/src`; a `db:` prefix alone was not treated as a reason to move anything.
+
+Generated source lives at `packages/db/src/generated/prisma` — 87 files, every one carrying `@ts-nocheck` and `/* eslint-disable */`. It is gitignored as a tree (verified by `git check-ignore -q` exit code, not by output), produced by `prisma generate`, compiled by `tsc` into the `dist` that both consumers resolve through the package's `exports` map, excluded from the Docker build context, and already covered by the existing `generated/` entry in `.semgrepignore`.
+
+## N.4 Package and declaration contracts
+
+- **`@luke/nav` declares `@luke/db` under `dependencies`**, mirroring how `@prisma/client` was declared there before. All ten of nav's imports are `import type`, and its emitted public declarations name db's types, so the edge is real at the declaration level whichever group it sits in.
+- **`apps/api` declares `@prisma/client` under `devDependencies` with no source import at all.** Its emitted `.d.ts` graph reaches `@prisma/client/runtime/client` — `Decimal` and `JsonValue` travel out through the inferred `AppRouter` type — and TypeScript resolves that specifier from the file that names it, so it resolves from `apps/api`. Measured: removing the declaration left `apps/api`'s own package-local lint, typecheck and tests green, `check-platform-integrity` rejected the missing declaration, and `apps/web` went from clean to **88 errors**. The failure is invisible from the package that owns the line, which is why `DECLARATION_GRAPH_DEPENDENCIES` in `check-platform-integrity.ts` now gates it, with three fixture cases (removed, wrong group, manifest untracked).
+- **`apps/web` has no database-package edge** in either dependency group.
+
+## N.5 Deterministic generation
+
+`@luke/db`'s `build` is `rm -rf src/generated dist && prisma generate && tsc`. The cleanup is not decorative. Measured on the real package: a stale file planted at the generator's output root, and at `models/` and `internal/` beneath it, was removed by `prisma generate` — it cleans its own output root. A file planted one level *above* that root, at `packages/db/src/generated/`, **survived**, and `tsc` compiled it into `dist` as four emitted files. The whole tree is gitignored, so no other gate — not git, not lint, not review — would ever have named it.
+
+`PRISMA_GENERATED_TREE` in `check-platform-integrity.ts` checks the ordering, not merely the presence of both strings: `prisma generate && rm -rf src/generated` contains both and deletes the client the build just wrote. Four fixture cases cover it — no cleanup, cleanup after the generate, build script missing, manifest untracked — and reverting the real build script makes the checker fire.
+
+`src/generated/**` is declared alongside `dist/**` in `@luke/db#build`'s Turbo outputs, and that entry is load-bearing: with it removed, a warm cache hit replayed 360 `dist` files and **0** generated files, and the db typecheck went red. With it present, the same wipe-and-replay restored 87 generated and 360 dist files and the typecheck stayed green.
+
+## N.6 Runtime image and migration proof
+
+The API builder builds `@luke/db` first — that task generates and then compiles, and every package below reads Prisma types through its `dist`. The runner carries `packages/db`'s `package.json`, `dist`, `prisma/` (schema and migrations), `prisma.config.ts` and `node_modules`; `apps/api/prisma.config.ts` is gone from the image, while `apps/api/prisma` is still copied because it is now the domain seed and its data. The entrypoint constructs its readiness client through `require('@luke/db')` and `createPrismaClient()` instead of assembling a client and an adapter by hand, and runs `(cd /app/packages/db && npx prisma migrate deploy)` — the only directory from which the CLI resolves config, schema and migrations together.
+
+Proven locally, at the user's explicit instruction, as an explicitly authorised exception to the standing `lessons.md` rule that local image builds are not routine or release-authoritative evidence: the image built, the readiness probe passed, **76 migrations applied from an empty database**, a restart reported "76 migrations found in prisma/migrations … No pending migrations to apply", and after seeding, `/healthz` answered `200` and `/readyz` answered `{"status":"ready","checks":{"database":"ok","secrets":"ok","ldap":"ok"}}`. The recorded OOM from the earlier local-build attempt did not recur.
+
+Nothing was published or deployed. The scratch container, the scratch volume, the local image and the three scratch databases were all removed afterwards; the real `luke_api_data` volume was never referenced.
+
+## N.7 About-panel simplification
+
+The About page listed frontend and backend dependency versions from two hand-maintained key lists — one reading `apps/web/package.json` directly, one reading `apps/api/package.json` inside a `system.about` procedure. Neither list was bound to anything, so a dependency that moved, was renamed or changed group vanished from the panel silently. Moving `@prisma/client` to `devDependencies` would have done exactly that.
+
+The feature was removed rather than repaired: both cards, the label maps, the version stripping, the tRPC query, the loading skeleton, the `system.about` procedure and all runtime package-manifest reading in the API. The application identity, the `NEXT_PUBLIC_APP_VERSION` badge and the development marker remain; `triggerCalendarDigest` is untouched. **No replacement build-info mechanism was introduced** — the version that matters is already injected at build time from the git tag. `/about` no longer issues a query and is prerendered static (`○`) in the Next build.
+
+Delta against the baseline: **162 deletions, 0 insertions** — 109 in `apps/web/src/app/(app)/about/page.tsx` and 53 in `apps/api/src/routers/system.ts`.
+
+## N.8 The cold-CI failure and the forward fix
+
+The first push of the three-commit series produced **CI run `33915244785`: failure**, and **Security run `33915244839`: success**. The failing job was "Lint, TypeCheck & Unit Tests" at step 5, TypeCheck; steps 6–13 were skipped as a consequence, so **Build (web) never executed** on that run.
+
+The cause was a real race, not flakiness. `typecheck.dependsOn` is `["^build"]` — the *dependencies'* builds — and `@luke/db` has no workspace dependencies, so `@luke/db#typecheck` was scheduled against an empty dependency set (`pnpm turbo run typecheck --filter=@luke/db --dry=json` reported `dependencies: []`) while `@luke/db#build` ran concurrently as a prerequisite for api, nav, calendar and web. That build now begins with `rm -rf src/generated`, so the typecheck read the directory the build was deleting and failed with `TS2307` on `./generated/prisma/client.js`.
+
+It surfaces only on a cold cache. The preceding local validation ran against warm Turbo state, in which `@luke/db#build` was a restore that never executed the delete; the failing CI execution was a cold cache miss, which executed the cleanup and exposed the race. The earlier cache-replay mutation of §N.5 exercised restoration, not concurrency, and did not cover it. This is the same class as the `dev`-task ordering defect already recorded in `lessons.md`, applied to `typecheck`.
+
+The fix is forward-only, one commit, one file: `e8512bf3a4239794712a5d93ee48c8e40b291aec` adds a package-specific `@luke/db#typecheck` entry with `dependsOn: ["^build", "build"]` and `cache: true`. A package-specific entry replaces the global one rather than merging with it, so both keys are restated; `^build` is kept for the complete contract even though it currently resolves to nothing. No textual checker was added — the graph and a forced execution are the proof.
+
+The failed workflow was **not** rerun and no workaround was applied; the new SHA triggered fresh workflows. **CI `33916225324`: success** — Lint/TypeCheck/Unit Tests, Migrations, Integration Tests and Browser Component Tests all green, with TypeCheck success and **Build (web)** — skipped in the failed Cycle 11 run — executing and succeeding on the forward-fix SHA. **Security `33916225300`: success** — `gitleaks`, `semgrep` and `osv-push` green; `osv-weekly`, `osv-weekly-release-train` and `notify-on-failure` skipped, which is their intended behaviour (`schedule`-only, and failure-triggered) and not a failure.
+
+## N.9 Validation and mutations
+
+Local gates, run cold after `rm -rf node_modules **/node_modules **/dist .turbo` and `pnpm install --frozen-lockfile`: `pnpm build` 6/6 · `pnpm typecheck` 11/11 · `pnpm typecheck:test` 9/9 · `pnpm lint` 7/7 with 0 errors (the 49 pre-existing web warnings are unchanged) · `pnpm lint:tools`, `pnpm typecheck:tools`, `pnpm typecheck:root` pass · `pnpm test` 10/10 tasks · `pnpm test:tools` 222/222 (218 before this cycle's four `PRISMA_GENERATED_TREE` fixtures; 215 before its three `DECLARATION_GRAPH_DEPENDENCIES` fixtures) · `pnpm check:drift` all five checkers ok · `pnpm test:module-contract` ok · integration against a real Postgres, 42 files, 532 passing and 1 expected failure · the exact CI web build command with its workflow environment, 6/6 · custom Semgrep rules at `--severity ERROR --error`, exit 0.
+
+The three commit states were each checked out into a disposable worktree and `pnpm check:drift` run against all three; all three pass. Commit `47570be` was additionally typechecked on its own (`turbo run typecheck --filter=@luke/api --filter=@luke/web`, 6/6).
+
+Mutations, each reverted after measurement:
+
+| mutation | result |
+| --- | --- |
+| Remove `@prisma/client` from `apps/api` devDependencies | checker fires; `apps/api` tsc exit 0; `apps/web` 88 errors |
+| Delete `src/generated`, compile | `TS2307` × 2 in `@luke/db`, × 10 in `@luke/nav` — loud, not degraded to `any` |
+| Wipe `dist` + `src/generated`, warm cache replay | 87 generated + 360 dist restored, db typecheck green |
+| Remove `src/generated/**` from `@luke/db#build` outputs, same replay | 0 generated / 360 dist, db typecheck red |
+| Edit `schema.prisma` | build hash `3bbb664b…` → `71046e7a…`, and back on revert |
+| Bait `new PrismaClient()` in `apps/api/src` | `luke-prisma-client-instantiation` fires — the rewritten exclude list is non-vacuous |
+| Plant a stale file inside / above the generator output root | see §N.5 |
+| Revert the `packages/db` build script | `PRISMA_GENERATED_TREE` fires on the real manifest |
+
+Ordering proof for the fix, from `pnpm turbo run typecheck --force --output-logs=full` with every cache bypassed: `@luke/db:build` force-executed rather than hitting cache, regenerated the client ("Generated Prisma Client (7.10.0) to ./src/generated/prisma"), and completed before `@luke/db:typecheck` began; 11 tasks successful, 0 cached, exit 0. The resolved task definition reports `dependencies: ["@luke/db#build"]` where it previously reported `[]`.
+
+Schema and migration parity: the 76 migration files and `migration_lock.toml` moved as **byte-identical renames** — `git diff --cached -M --numstat` reports `0 0` for 78 of the 80 renamed paths, the two exceptions being `schema.prisma` (+2 −1, the generator block) and `new-migration.sh` (+7 −3, the filter name and the `.env` path).
+
+## N.10 Commit chain
+
+Baseline `f963e2bf6859fbe99c48cd59dbc04b13fa702fe1`, linear, single-parent throughout:
+
+| commit | subject | files |
+| --- | --- | --- |
+| `47570be0792f3eaa4ece6a475afdc4ca17a14d50` | `refactor(about): remove the dependency version panel` | 2 |
+| `007c662964fbf540c8990046c935cfa8bfa0af7b` | `chore(db): move Prisma ownership and runtime packaging into @luke/db` | 251 |
+| `2ce6b643326624712f3f0c1097b77d1bc6083bb8` | `docs: point the Prisma workflow at packages/db` | 8 |
+| `e8512bf3a4239794712a5d93ee48c8e40b291aec` | `fix(build): order db typecheck after client generation` | 1 |
+
+An earlier four-commit arrangement was rewritten **before** any push, because its first commit relocated the schema while leaving the API Dockerfile and entrypoint generating from the deleted path — not independently valid, and not bisectable. The replacement folds the runtime packaging and the three operational skill files into the same commit as the move, which is what lets all three states pass `check:drift`. The first three commits were pushed normally as a fast-forward; the fix is a forward commit on top of `2ce6b64`. **No pushed history was rewritten**, and no force push was used at any point.
+
+## N.11 Honest residuals
+
+- **A Turbo cache hit restores declared outputs but does not prune extra local files already sitting in an output directory.** With the build fixed, a stale file is removed on every cache miss and forced run; a warm hit replays over whatever is there. Bounded — a hit means the same input hash, so the build whose output is being replayed is the build that would have cleaned it — inherent to Turbo, and equally true of `dist`. Recorded, not closed.
+- **The domain seed cannot run inside the runtime image.** `prisma/seed.ts` imports `../src/lib/configManager`, and `apps/api/src` is not shipped to the runner. This predates the cycle: `apps/api/prisma` was already copied without `src`. The boot proof seeded from the host instead. Not introduced here and not fixed here.
+- **`@luke/db`'s generic CLI scripts source `../../apps/api/.env`.** A layer-0 package reaching upward on the filesystem to an application's bootstrap env. Deliberate — `DATABASE_URL` is deployment bootstrap under the Env Policy and there is one database, so there is one place it is declared — but it is not enforced by any checker.
+- **A stale, gitignored `apps/web/tsconfig.tsbuildinfo` masked one mutation.** After restoring the removed declaration dependency, `apps/web` still reported 88 errors until that file was deleted. Anyone reproducing §N.4 by hand must clear it first.
+
+None of the above is described as newly closed. `P1-05` and `P1/P2-08` remain open; the hygiene batch (`5.1`, `5.3` as narrowed in §M.1, `6.3`, the inert `tools/*` glob) and the `S-01` decision remain pending exactly as §M.14 records them.
+
+## N.12 Final state and next work
+
+`develop-2.2` and `origin/develop-2.2` both end at `e8512bf3a4239794712a5d93ee48c8e40b291aec`. The working tree and index were clean before this audit edit, and the three pre-existing stashes are untouched. Reflog and every superseded commit object remain reachable; nothing recoverable was deleted.
+
+No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, no Portainer or production action was taken, and no manifest version moved — every `package.json` still reads `2.1.4` (§K.13). `main` is unaffected; the whole cycle lives on the release-train branch.
+
+Per the ordering in §A.4 and §M.14, the next architectural item is **`P1-05`**, the Prisma schema domain split, followed by `P1/P2-08`. Neither is started.
