@@ -3158,3 +3158,93 @@ None of the above is described as newly closed by this cycle.
 `develop-2.2` and `origin/develop-2.2` both end at `301b3c1083f25a86a4727cd086974d2519ec5ed1`. The working tree and index were clean before this audit edit. No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, no deployment or Portainer action was taken, and no manifest version moved — every `package.json` still reads `2.1.4`. `main` is unaffected (`935dc29fa3c7edee656d75c5354c6e140584254d`, unrelated to this line of work).
 
 Per the ordering in §A.4, §M.14, and Appendix N §N.12, the next architectural item is **`P1/P2-08`**. The §A.3 hygiene batch and the `S-01` branch-protection decision remain pending, exactly as recorded before this cycle. None of them has started.
+
+# Appendix P — H1 closure: Web warning assessment and behavioral corrections (2026-09-05)
+
+H1 is an intervening hygiene batch — a web `react-hooks` lint-warning reduction pass, plus three runtime defects the investigation surfaced along the way — not a numbered Cycle in the §A.4 architectural sequence, and it supersedes nothing recorded in Appendices A–O. `P1/P2-08` remains the next architectural item exactly as Appendix O §O.10 records it; this batch neither starts nor closes it. The `H2` hygiene items introduced alongside `H1` remain open; none of their scope was pulled forward here. No React Compiler activation was attempted at any point: the `react-hooks/*` rules exercised throughout this batch are the compiler's compatibility-oriented static checks, not the compiler itself, which stays disabled in this build exactly as before.
+
+## P.1 Scope and disposition
+
+H1 is complete. It is scoped entirely to `apps/web`: a set of `react-hooks/exhaustive-deps` warnings judged fixable without behavior change, plus three related runtime defects the same investigation surfaced (calendar date-serialization timezone shifts, collection-row drawer session-state leakage, Google OAuth callback re-entrancy). It touches no Prisma schema, no package boundary, no build/typecheck architecture, and no item in the `§A.4` execution sequence — `P1-05` stays closed exactly as Appendix O left it, and `P1/P2-08` stays open and unstarted, exactly as Appendix O §O.10 records it. The remaining `H2` hygiene items are untouched and still open.
+
+## P.2 Warning baseline and final ratchet
+
+| Rule | Before | After |
+| --- | ---: | ---: |
+| `react-hooks/exhaustive-deps` | 26 | 8 |
+| `react-hooks/incompatible-library` | 16 | 16 |
+| `@next/next/no-img-element` | 6 | 6 |
+| `jsx-a11y/alt-text` | 1 | 0 |
+| **Total** | **49** | **30** |
+
+`apps/web/package.json`'s `lint` script moved from `eslint . --max-warnings 49` to `eslint . --max-warnings 30` — a hard reduction with zero headroom: the script fails the instant a 31st warning of any rule appears. No ESLint rule was disabled or weakened, and no rule's severity changed, to reach this number; every one of the 30 remaining warnings is the same rule, at the same severity, that flagged it before this cycle.
+
+The 16 `react-hooks/incompatible-library` warnings are unchanged before and after. They fire because React Hook Form's `useForm()` returns a `watch()`/similar accessor the compatibility check cannot prove memoizable — a structural property of the library, not of any one call site. React Compiler is not enabled in this build (§P.1), so these warnings carry no live compiler-skip consequence today; rewriting sixteen working `react-hook-form` integrations to silence a warning from a compiler that is not running, with no measured performance or correctness benefit identified, was considered and rejected.
+
+The six `@next/next/no-img-element` warnings are also unchanged. Each was examined individually: the flagged `<img>` elements render runtime-selected, authenticated, blob-URL, or storage-provider-delivered image content — for example the collection-layout picture panel's uploaded-photo preview — which `next/image`'s static optimization pipeline is not built to serve, and swapping the element without addressing that mismatch would trade a lint warning for a functional regression. They remain open findings, not silenced ones.
+
+The one `jsx-a11y/alt-text` warning is closed (1 → 0); no residual of that rule remains.
+
+The eight remaining `react-hooks/exhaustive-deps` warnings each carry an evidence-backed reason recorded directly in the flagged code, not hidden by a suppression comment. `SseProvider`'s exclusion of `getSseTicketMutation` is the case verified directly in this cycle: a fresh `useMutation()` result on every `isPending`/`data` transition would tear down and reopen the live `EventSource` connection on every ticket fetch if added, not fix anything. The remaining seven carry the same standard — an explicit lifecycle, identity-churn, or type-system reason inline, established across the review that produced this ratchet — with none left as a bare, unexplained warning. None of the eight is described here as an error, and none is evidence that the current production build is broken; each is an accepted, reviewed exclusion, which is what a justified `react-hooks/exhaustive-deps` omission is meant to look like.
+
+## P.3 Behavioral corrections
+
+- Calendar navigation (`useCalendarViewNavigation`, extracted from `calendar/page.tsx`) now serializes and parses the `?view=&date=` URL state through local civil-date components (`toLocalIsoDate`/`parseLocalIsoDate`) instead of `Date.prototype.toISOString()`/`new Date(dateOnlyString)`, eliminating the UTC day-shift that occurred at either UTC-offset sign depending on direction.
+- The month view's holiday lookup (`CalendarEventMonthView`) and the planning-wizard event-timeline drag/date-input handling (`EventTimelineDrag`) were migrated to the same local-date semantics, but only where the UI represents a calendar day to the viewer — not as a repository-wide mechanical UTC-to-local rewrite. `EventTimelineDrag`'s `anchorDate`/`value` were traced to a real event instant (`new Date(event.startAt)`) before any change was made; the migration followed only after confirming the values reaching `holidayDates`/`closedDates` needed to match the viewer's local calendar day, not the instant's own UTC representation.
+- Event instants remain instants. Nowhere in this batch was a genuine timestamp (an event's `startAt`/`endAt`, an OAuth code-exchange instant) reinterpreted as a calendar day; every migration in this appendix targets a value that is, or is derived for use as, a calendar day a user reads off a UI.
+- Deterministic Chromium coverage for the timezone-sensitive fixes runs under two dedicated Playwright `timezoneId` instances, `Europe/Rome` and `America/Los_Angeles`, on every `pnpm test:browser` invocation — independent of whatever ambient timezone the host or CI runner happens to be in.
+- LUKE's existing browser-timezone detection and profile-update flow was not touched by this batch; nothing in H1's scope reads or writes that mechanism.
+- Collection-row drawer drafts and defaults (form fields, picture preview, quotations) are preserved across the reviewed session boundaries (a different row, a mode switch, a close/reopen of the same row) by extracting the form-reconciliation logic into `useRowDrawerForm` and giving `CollectionRowDrawer` an explicit `key={rowDrawerKey}`, bumped by a session counter in `page.tsx`'s `openRowDrawer` event handler — never during render — forcing a genuine remount with mount-time-correct state on every new session.
+- Adding `defaultGroupId` to that session key was deliberately rejected and stays rejected: the UI cannot start a second create flow while the drawer is already open, and a late-arriving default during the same create session must keep merging into untouched fields, not erase them by forcing a spurious remount.
+- The Google OAuth callback (`useGoogleOAuthCallback`, extracted from the settings page) is idempotent under re-render with fresh mutation/toast object identities, under a code arriving while a mutation is already pending, and under React's real `<StrictMode>` double-invocation — all four covered by browser tests against the real hook, the `<StrictMode>` case newly added in this batch and falsified by removing the guard.
+- `window.history.replaceState` is stubbed (`beforeEach`/`afterEach`, never calling through) in every one of that test file's cases, so no test changes the real browser test-runner's own URL.
+- The reviewed dialog effect dependency corrections (`BrandDialogWithPermissions`, `TemplateDialog`, `TemplateItemDialog`, `SeasonDialog`, `VendorDialog`, `MerchandisingRowDialog`).
+- Two memoized fallback arrays that were depended on elsewhere without being memoized: calendar's `allBrands` and team listing's `allUsers`.
+- Adding the missing `isDndMode` dependency to `CollectionGroupSection`'s existing filtered-row `useMemo` — the `useMemo` itself was pre-existing; `isDndMode` was the one dependency it lacked.
+- `HeartbeatTicker`'s interval-effect dependency.
+- The documented `SseProvider` identity exclusion (§P.2).
+- Renaming the `lucide-react` icon import from `Image` to `ImageIcon` in the collection-layout picture panel, which removed the sole false-positive `jsx-a11y/alt-text` warning the name collision caused, while leaving the separate, intentionally retained raw `<img>` `@next/next/no-img-element` warning on the same panel unchanged.
+
+## P.4 Evidence and honest boundaries
+
+- Web browser tests: 100/100 — 84 under the normal `vitest.browser.config.mts` project, 16 under the dedicated `vitest.browser.timezone.config.mts` project's two timezone instances (`tz-europe-rome`, `tz-america-los_angeles`).
+- Web Node tests: 80/80.
+- Web lint: exactly 30 warnings, 0 errors, taxonomy per §P.2's table.
+- Web `typecheck` and `typecheck:test` both green, the latter after adding `vitest.browser.timezone.config.mts` to `tsconfig.test.json`'s `include` — confirmed present in `tsc`'s own `--listFilesOnly` output before relying on the gate.
+- Root `lint`/`typecheck`/`test`/`test:browser` Turbo gates green, and the natural (non-bypassed, no `--no-verify`) `.husky/pre-push` hook green at push time.
+- The drawer's production `key={rowDrawerKey}` path was not mounted through a complete render of `page.tsx`: doing so would require mocking sixteen-plus tRPC procedures plus `useAppContext`/`usePermission`/`useSession`, judged a disproportionate harness against what remained to prove. The mount-time-correct value-building functions (`buildRowFormValues`, `initialPreviewPictureUrl`, `initialQuotations`) are directly tested and falsified; the two-line parent wiring (`openRowDrawer`'s counter bump, the `key` prop itself) and React's own key-remount guarantee were confirmed by direct code review, not by an executed end-to-end render. This gap is recorded, not papered over.
+- The remaining `layout` `react-hooks/exhaustive-deps` suppression in collection-layout's deep-link effect was reproduced in a disposable `git worktree add --detach` off the reviewed baseline, removed afterward: replacing the scalar `layout?.id` dependency with the full `layout` value reproduces `TS2589: Type instantiation is excessively deep and possibly infinite` at that exact line, confirming the suppression's stated reason. No permanent checker was added for it.
+- No claim survives, in code or in tests, that `vi.waitFor` proves temporal stability. The corrected comment in the Google OAuth test file states only the real guarantee: `vitest-browser-react`'s `act(async () => {...})` wrapping flushes pending effects before `render()`/`rerender()` resolves.
+- Zero `TARGETED MUTATION` labels remain in any committed test file, confirmed by a whole-repository search; the falsification evidence those labels used to claim lives in the review record, not inside committed test-file documentation.
+
+## P.5 Review process
+
+`/simplify` ran against the implementation ahead of the correction round recorded here. A fresh, independent Opus `/code-review` pass then found three classes of defect this closure fixes: host-timezone-dependent test fixtures (UTC-anchored `new Date('YYYY-MM-DD')` literals that only failed under a negative UTC offset, never exercised under one); a missing `tsconfig.test.json` include for the new timezone-specific Vitest config, silently exempting it from `typecheck:test`; and the same local-vs-UTC calendar-day defect recurring, unfixed, in the month-view holiday lookup and the event-timeline drag/date-input handling — the same family of bug as the navigation fix, not yet applied there. Every finding was corrected and falsified — the fix temporarily reverted, the regression test confirmed to fail, then reverted back — before any commit was made. Findings without new runtime evidence behind them were not applied: the previously and independently rejected `defaultGroupId`-in-session-key change stayed rejected, and no ESLint suppression was strengthened or weakened on review say-so alone. The final committed tree, `fead94d0141cc0d442ee96e57bdae1dc3985a3ab`, was proven byte-identical to the reviewed staged tree before that tree was split into the four commits below.
+
+## P.6 Commit and remote evidence
+
+Four linear, single-parent commits on `develop-2.2`, parent baseline `e39a75eb93c6916b38531aa0287a619b25946660`:
+
+```text
+5ea96b8e48768480bc31ae1e9e25d0b53ccc62c9
+  fix(calendar): preserve local dates across timezones
+
+09f0485ec819daef8541f69241a555a11c3588fb
+  fix(collection): preserve row drawer state across sessions
+
+f71beaa243f9280b6608bc85465c7d3f3fdfbd2a
+  fix(settings): make Google OAuth callback handling idempotent
+
+07a03f6005435cfb392540cc7bcfe7c1da4f3b6c
+  refactor(web): resolve actionable React hook warnings
+```
+
+The cumulative tree at the fourth commit, `fead94d0141cc0d442ee96e57bdae1dc3985a3ab`, is the same reviewed tree cited in §P.5: 34 changed paths, 1,617 insertions, 185 deletions. Pushed to `origin/develop-2.2` as a normal fast-forward — no force, and no commit was rewritten after the push.
+
+Remote CI, run `33976670648`: **success** — all four jobs green (`Lint, TypeCheck & Unit Tests`, `Migrations`, `Integration Tests`, `Browser Component Tests`). Within the first job: `Lint` passed at exactly `eslint . --max-warnings 30` → `30 problems (0 errors, 30 warnings)`; `TypeCheck` and `TypeCheck (test)` both succeeded as their own steps; the `Browser component tests` step ran `pnpm test:browser`, confirmed in the raw job log to execute both `vitest run --config vitest.browser.config.mts` (the 7 normal browser test files, `*.timezone.browser.test.tsx` explicitly excluded from this project) and, chained after it, `vitest run --config vitest.browser.timezone.config.mts` (the 3 timezone-specific test files selected by that project, each run under both the `tz-europe-rome` and `tz-america-los_angeles` instances — 6 file executions, 16 tests); together the browser tier reported 100 tests: 84 normal plus 16 timezone-specific; `Build (web)` executed as a step in the same job and succeeded, not skipped.
+
+Remote Security, run `33976670643`: **success** — `gitleaks`, `semgrep`, and `osv-push` all completed successfully as real jobs. `osv-weekly`, `osv-weekly-release-train`, and `notify-on-failure` show `skipped`, correctly: the first two are `schedule`-only triggers inert on a `push` event, and the third is conditioned on a failure that did not occur. None of the three skips represents a gap in coverage for this push.
+
+## P.7 Final state
+
+`develop-2.2` and `origin/develop-2.2` both end at `07a03f6005435cfb392540cc7bcfe7c1da4f3b6c`. The working tree and index were clean immediately after remote verification. All three pre-existing stashes remain untouched throughout. No manifest version moved — every `package.json` still reads `2.1.4`. No tag was created, `pnpm release:prepare` did not run in any mode, no image was published, and no deployment or Portainer action was taken. `main` is unaffected (`935dc29fa3c7edee656d75c5354c6e140584254d`, unchanged since Appendix O). `H2` remains open, and `P1/P2-08` has not started.
