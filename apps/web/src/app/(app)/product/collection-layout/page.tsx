@@ -2,7 +2,7 @@
 
 import { History } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
@@ -96,6 +96,12 @@ export default function CollectionLayoutPage() {
     rowId?: string;
     defaultGroupId?: string;
   } | null>(null);
+  // Bumped by `openRowDrawer` (never during render — see its own comment) exactly when a new
+  // editing session starts, so `key={rowDrawerKey}` below forces `CollectionRowDrawer` to remount
+  // instead of reusing its previous session's `useForm()`/local state. Left untouched by closing:
+  // the key must stay stable while `rowDrawer` goes back to `null`, or the still-mounted, merely
+  // hidden instance would remount mid-close (Radix animates the dialog closed on the same instance).
+  const [rowDrawerSessionSeq, setRowDrawerSessionSeq] = useState(0);
 
   // ─── Mutations ──────────────────────────────────────────────────
   const getOrCreateMutation = trpc.collectionLayout.getOrCreate.useMutation({
@@ -246,7 +252,21 @@ export default function CollectionLayoutPage() {
     }
   };
 
-  const openEditRow = (row: CollectionRowData) => setRowDrawer({ mode: 'edit', rowId: row.id });
+  // The only way `rowDrawer` is ever set to a non-null value — bumping `rowDrawerSessionSeq`
+  // alongside it here (an event-handler, not render) is what makes `rowDrawerKey` change on every
+  // genuinely new session, including switching rows while already open and reopening after close.
+  // `useCallback` with an empty dep array (both setters are stable, nothing else is captured)
+  // keeps this referentially stable, so the deep-link effect below can depend on `openEditRow`
+  // directly instead of needing to suppress the lint warning for omitting it.
+  const openRowDrawer = useCallback((next: { mode: 'create' | 'edit'; rowId?: string; defaultGroupId?: string }) => {
+    setRowDrawer(next);
+    setRowDrawerSessionSeq(seq => seq + 1);
+  }, []);
+
+  const openEditRow = useCallback(
+    (row: CollectionRowData) => openRowDrawer({ mode: 'edit', rowId: row.id }),
+    [openRowDrawer]
+  );
 
   /** Riga in modifica, risolta a ogni render dalla query live invece che da uno snapshot in state:
    * la conclusione della riga scrive subito e invalida il layout mentre il drawer è aperto.
@@ -259,6 +279,8 @@ export default function CollectionLayoutPage() {
         ?.flatMap(g => g.rows)
         .find(r => r.id === rowDrawer.rowId)
     : undefined;
+
+  const rowDrawerKey = String(rowDrawerSessionSeq);
 
   // Deep-link from the "Fase scaduta" notification (?rowId=...): opens that row's edit drawer
   // once the layout has loaded, then strips the param so closing the drawer or refreshing doesn't
@@ -286,7 +308,12 @@ export default function CollectionLayoutPage() {
     }
     // Depend on `layout?.id` (shallow) rather than `layout` itself — putting the full RouterOutputs
     // type in a dependency array tuple hits the same TS2589 instantiation-depth wall as above.
-  }, [layout?.id, searchParams, router]);
+    // `openEditRow` is stable (see its own `useCallback`) and included normally; only `layout`
+    // needs the suppression, verified by temporarily removing it and rerunning ESLint — with
+    // `openEditRow` unstable that reported both `layout` and `openEditRow` as missing, and with it
+    // fixed it reports only `layout`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `layout` deliberately excluded: adding it fails tsc (TS2589, verified), same wall as the `as any` cast above.
+  }, [layout?.id, searchParams, router, openEditRow]);
 
   // ─── Render ─────────────────────────────────────────────────────
   if (contextLoading || layoutLoading) {
@@ -371,7 +398,7 @@ export default function CollectionLayoutPage() {
                 parameterSets={parameterSets}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
-                  setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+                  openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={row => openEditRow(row)}
                 onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
@@ -424,7 +451,7 @@ export default function CollectionLayoutPage() {
                 parameterSets={parameterSets}
                 onAddGroup={() => setGroupDialog({ mode: 'create' })}
                 onAddRow={groupId =>
-                  setRowDrawer({ mode: 'create', defaultGroupId: groupId })
+                  openRowDrawer({ mode: 'create', defaultGroupId: groupId })
                 }
                 onEditRow={row => openEditRow(row)}
                 onDuplicateRow={rowId => duplicateRowMutation.mutate({ rowId })}
@@ -474,6 +501,7 @@ export default function CollectionLayoutPage() {
       {/* Row create/edit drawer */}
       {layout && (
         <CollectionRowDrawer
+          key={rowDrawerKey}
           open={!!rowDrawer}
           onOpenChange={open => {
             if (!open) setRowDrawer(null);
