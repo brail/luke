@@ -27,7 +27,7 @@ export function HeartbeatTicker() {
     mutate();
     const id = setInterval(() => mutate(), HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [mutate]);
 
   return null;
 }

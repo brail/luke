@@ -92,6 +92,11 @@ export function SseProvider({ children }: { children: React.ReactNode }) {
       esRef.current?.close();
       esRef.current = null;
     };
+    // `getSseTicketMutation` deliberately excluded: its object identity changes on every
+    // isPending/data/status transition (a `useMutation()` result is not referentially stable
+    // across renders), so depending on it would tear down and reopen the EventSource connection
+    // right after every ticket fetch — a reconnect storm, not a fix. `enabled` is the only signal
+    // this effect needs to know when to (re)connect or disconnect.
   }, [enabled]);
 
   const subscribe = useCallback((fn: Listener) => {

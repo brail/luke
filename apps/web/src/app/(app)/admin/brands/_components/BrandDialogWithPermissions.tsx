@@ -209,14 +209,7 @@ export function BrandDialogWithPermissions({
       setCodePreview('');
       setUploadProgress(0);
     }
-  }, [
-    brand?.id,
-    brand?.code,
-    brand?.name,
-    brand?.logoUrl,
-    brand?.isActive,
-    form,
-  ]);
+  }, [brand, form]);
 
   // Auto-focus code field when dialog opens
   React.useEffect(() => {
@@ -237,7 +230,11 @@ export function BrandDialogWithPermissions({
       setCodePreview('');
       setUploadProgress(0);
     }
-  }, [open]); // intentionally limited to open: avoid infinite loop from unstable refs
+    // `brandPerms` deliberately excluded: useBrandPermissions() returns a fresh object literal
+    // on every render (only its leaf fields are memoized), so depending on it would re-run this
+    // effect — re-arming the focus timer, and re-resetting the form while closed — on every
+    // render instead of only on `open` transitions.
+  }, [open, form]);
 
   const handleLogoUpload = (file: File) => {
     if (!brandPerms.canUpdate) {

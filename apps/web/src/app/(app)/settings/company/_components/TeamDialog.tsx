@@ -183,7 +183,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
   );
   const { data: brands = [] } = trpc.company.team.listAllBrands.useQuery(undefined, { enabled: open });
   const { data: usersData } = trpc.users.list.useQuery({ limit: 100 }, { enabled: open });
-  const allUsers = usersData?.users ?? [];
+  const allUsers = useMemo(() => usersData?.users ?? [], [usersData]);
 
   const form = useForm<TeamFormData>({
     resolver: zodResolver(TeamFormSchema),

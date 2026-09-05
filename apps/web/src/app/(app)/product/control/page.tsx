@@ -115,7 +115,7 @@ function SaturationTab() {
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
 
   const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled: !!season?.id });
-  const allBrands = brandsData?.items ?? [];
+  const allBrands = useMemo(() => brandsData?.items ?? [], [brandsData]);
   const brandIds = selectedBrandIds.length > 0 ? selectedBrandIds : allBrands.map(b => b.id);
 
   const { data: cells = [], isLoading, isError } = trpc.phaseAlert.saturationHeatmap.useQuery(

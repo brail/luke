@@ -116,7 +116,7 @@ export function VendorDialog({
         });
       }
     }
-  }, [open, vendor?.id]); // form is stable (react-hook-form)
+  }, [open, vendor, form]);
 
   const handleSubmit = async (data: VendorInput) => {
     await onSubmit(data);

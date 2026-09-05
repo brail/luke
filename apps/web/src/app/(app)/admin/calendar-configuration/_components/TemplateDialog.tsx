@@ -51,7 +51,7 @@ export function TemplateDialog({ open, onClose, onSaved, template }: Props) {
         description: template?.description ?? '',
       });
     }
-  }, [open, template?.id]);
+  }, [open, template?.id, template?.name, template?.description, reset]);
 
   const createMutation = trpc.seasonCalendar.createTemplate.useMutation({
     onSuccess: t => { toast.success('Template creato'); onSaved(t as Template); },

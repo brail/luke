@@ -1,6 +1,6 @@
 'use client';
 
-import { Image, Plus, Trash2, X } from 'lucide-react';
+import { ImageIcon, Plus, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
@@ -670,7 +670,7 @@ export function PictureSidePanel({
               'h-36 w-full rounded-md border-2 border-dashed flex items-center justify-center bg-muted/20',
               canUpdate ? 'border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/30' : 'border-muted'
             )}>
-              <Image className="h-10 w-10 text-muted-foreground/50" />
+              <ImageIcon className="h-10 w-10 text-muted-foreground/50" />
             </div>
           )}
           {canUpdate && (

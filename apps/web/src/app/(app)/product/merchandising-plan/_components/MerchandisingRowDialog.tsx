@@ -184,7 +184,7 @@ export function MerchandisingRowDialog({
     } else if (mode === 'create') {
       form.reset();
     }
-  }, [mode, row, open]);
+  }, [mode, row, open, form]);
 
   const handleSubmit = (values: FormValues) => {
     onSubmit(values);

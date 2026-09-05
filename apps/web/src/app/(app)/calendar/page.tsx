@@ -248,7 +248,7 @@ export default function CalendarPage() {
 
   const canEditActiveEvent = canUpdate && (!activeEvent?.brandId || activeEvent.brandId === contextBrandId);
 
-  const allBrands = brandsData?.items ?? [];
+  const allBrands = useMemo(() => brandsData?.items ?? [], [brandsData]);
   const multiBrandAvailable = allBrands.length > 1;
   const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
 

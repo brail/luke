@@ -107,7 +107,7 @@ export function SeasonDialog({
             }
       );
     }
-  }, [open]);
+  }, [open, form, season]);
 
   const handleSubmit = async (data: SeasonFormData) => {
     await onSubmit(data);

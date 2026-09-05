@@ -98,7 +98,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
         description: item?.description ?? '',
       });
     }
-  }, [open, item?.id]);
+  }, [open, item, reset]);
 
   const createMutation = trpc.seasonCalendar.createTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiunto'); onSaved(); },
