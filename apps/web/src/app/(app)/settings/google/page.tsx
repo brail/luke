@@ -38,6 +38,8 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 
+import { useGoogleOAuthCallback } from './useGoogleOAuthCallback';
+
 type FormValues = GoogleWorkspaceConfig;
 
 interface ServiceAccountJson {
@@ -118,19 +120,7 @@ export default function GoogleWorkspacePage() {
     },
   });
 
-  useEffect(() => {
-    const code = searchParams.get('oauth_code');
-    const oauthError = searchParams.get('oauth_error');
-    if (oauthError) {
-      toast.error('Autorizzazione Google negata');
-    }
-    if (code && !exchangeMutation.isPending) {
-      const redirectUri = `${window.location.origin}/api/google/oauth/callback`;
-      exchangeMutation.mutate({ code, redirectUri });
-      // Clean URL
-      window.history.replaceState({}, '', '/settings/google');
-    }
-  }, []);
+  useGoogleOAuthCallback(searchParams, exchangeMutation, toast);
 
   const saveMutation = trpc.integrations.google.saveConfig.useMutation({
     onSuccess: () => {
