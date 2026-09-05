@@ -1,7 +1,6 @@
 'use client';
 
 import { Calendar, CalendarClock, CalendarPlus, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
@@ -35,18 +34,15 @@ import { ManagePlanningGroupsDialog } from './_components/ManagePlanningGroupsDi
 import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
+import { useCalendarViewNavigation } from './useCalendarViewNavigation';
 import { assignBrandColors, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
 
-const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
-type CalendarView = (typeof VALID_VIEWS)[number];
-
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const { view, viewDate, setView, setViewDate, setViewAndDate } = useCalendarViewNavigation();
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
@@ -66,15 +62,6 @@ export default function CalendarPage() {
   // Which group the picker resolved to, and what to do with it — freeze steps through a wizard,
   // unfreeze just confirms, but there's only ever one active target regardless of which.
   const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze' | 'amend'; groupId: string } | null>(null);
-  const [view, setViewState] = useState<CalendarView>(() => {
-    const v = searchParams.get('view');
-    return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
-  });
-  const [viewDate, setViewDateState] = useState<Date>(() => {
-    const d = searchParams.get('date');
-    const parsed = d ? new Date(d) : null;
-    return parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
-  });
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -83,22 +70,6 @@ export default function CalendarPage() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
-
-  const setSearchParam = useCallback((key: string, value: string) => {
-    const p = new URLSearchParams(searchParams.toString());
-    p.set(key, value);
-    router.replace(`?${p.toString()}`, { scroll: false });
-  }, [router, searchParams]);
-
-  const setView = useCallback((v: CalendarView) => {
-    setViewState(v);
-    setSearchParam('view', v);
-  }, [setSearchParam]);
-
-  const setViewDate = useCallback((d: Date) => {
-    setViewDateState(d);
-    setSearchParam('date', d.toISOString().slice(0, 10));
-  }, [setSearchParam]);
 
   const contextBrandId = brand?.id ?? null;
   const enabled = !!contextBrandId && !!season?.id;
@@ -242,13 +213,11 @@ export default function CalendarPage() {
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
   const handleDayNumberClick = useCallback((isoDate: string) => {
-    setViewDate(new Date(isoDate));
-    setView('day');
-  }, []);
+    setViewAndDate('day', new Date(isoDate));
+  }, [setViewAndDate]);
   const handleWeekNumberClick = useCallback((isoDate: string) => {
-    setViewDate(new Date(isoDate));
-    setView('week');
-  }, []);
+    setViewAndDate('week', new Date(isoDate));
+  }, [setViewAndDate]);
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];

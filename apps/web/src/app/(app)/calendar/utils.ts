@@ -40,6 +40,35 @@ export function toUtcIsoDate(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Returns 'YYYY-MM-DD' for the LOCAL calendar day `d` falls on — never `d.toISOString()`, which
+ * converts to UTC first and silently shifts the date by one for any positive UTC offset (e.g.
+ * Europe/Rome): a local midnight becomes the previous day's evening in UTC. Use this (not
+ * `toUtcIsoDate`) for anything meant to round-trip as "the day the user is looking at" — the
+ * calendar's `?date=` URL param, the day/week-number navigation target.
+ */
+export function toLocalIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Parses a 'YYYY-MM-DD' string as LOCAL midnight on that calendar day — never `new Date(string)`,
+ * which the spec anchors to UTC midnight for a date-only ISO string: in any negative-UTC-offset
+ * zone (e.g. US timezones), that instant falls on the PREVIOUS local calendar day. Returns `null`
+ * for a malformed or non-existent date (e.g. '2026-02-30') rather than silently rolling it over,
+ * the way `new Date(y, m, d)` would.
+ */
+export function parseLocalIsoDate(s: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const date = Number(match[3]);
+  const parsed = new Date(year, month, date);
+  const isValid = parsed.getFullYear() === year && parsed.getMonth() === month && parsed.getDate() === date;
+  return isValid ? parsed : null;
+}
+
 /** Days from a to b (positive = forward). */
 export function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);

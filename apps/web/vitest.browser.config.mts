@@ -1,5 +1,5 @@
 import { playwright } from '@vitest/browser-playwright';
-import { defineConfig } from 'vitest/config';
+import { defaultExclude, defineConfig } from 'vitest/config';
 
 /**
  * Browser tier: React components and hooks exercised in a real Chromium.
@@ -61,6 +61,11 @@ export default defineConfig({
       '@trpc/react-query',
       'next-auth/react',
       'sonner',
+      // Added for useCalendarViewNavigation.browser.test.tsx (H1 hygiene batch), which mocks this
+      // module — same "discovered mid-run instead of before it" failure mode as the block above,
+      // on a cold `.vite` cache. Without this, `vi.mock('next/navigation', ...)` produces
+      // "useSearchParams is not a function" instead of actually intercepting the module.
+      'next/navigation',
     ],
   },
   oxc: {
@@ -68,6 +73,11 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.browser.test.tsx'],
+    // `*.timezone.browser.test.tsx` asserts it's running under a non-UTC offset — true under
+    // `vitest.browser.timezone.config.mts`'s explicit Europe/Rome / America/Los_Angeles instances,
+    // but this project's single default instance inherits whatever TZ the host/CI runner is on
+    // (often UTC), which would fail that guard for a reason unrelated to the code under test.
+    exclude: [...defaultExclude, 'src/**/*.timezone.browser.test.tsx'],
     browser: {
       enabled: true,
       provider: playwright(),

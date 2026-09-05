@@ -8,7 +8,7 @@ import { Button } from '../../../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/ui/popover';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, MONTH_NAMES_IT, cancelledClass } from '../constants';
-import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay, toLocalIsoDate } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -133,8 +133,17 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                   const isToday = sameDay(day, today);
                   const items = byDay[cellIdx] ?? [];
                   const overflow = items.length - MAX_CHIPS;
+                  // `day` is a LOCAL calendar cell (built by `mondayOf`/`addDays`, both local-getter
+                  // arithmetic) — its holiday lookup key must read it back the same way. `HolidayMap`
+                  // is keyed by `toUtcIsoDate` on the *holiday's own* date (a plain calendar date with
+                  // no attached timezone, correctly represented as UTC midnight — see `useHolidays.ts`),
+                  // which numerically equals the intended 'YYYY-MM-DD' string; `toLocalIsoDate(day)`
+                  // recovers that same string from a local-midnight cell. `day.toISOString().slice(0,
+                  // 10)` instead goes through UTC first and reports the PREVIOUS calendar day in any
+                  // positive-offset zone (e.g. Europe/Rome) — a holiday would then shade the wrong cell.
+                  const holidayKey = toLocalIsoDate(day);
                   return (
-                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(day.toISOString().slice(0, 10))} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
+                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(holidayKey)} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
                       <div className="mb-0.5 flex items-center gap-0.5 flex-wrap">
                         <span
                           className={cn('text-xs inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0',
@@ -147,7 +156,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                           {day.getDate()}
                         </span>
                         {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
-                        {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
+                        {holidayDates?.get(holidayKey)?.map((h, hi) => (
                           <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                         ))}
                       </div>

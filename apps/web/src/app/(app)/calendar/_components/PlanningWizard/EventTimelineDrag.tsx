@@ -6,7 +6,7 @@ import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/utils';
-import { addDays, toUtcIsoDate } from '../../utils';
+import { addDays, parseLocalIsoDate, toLocalIsoDate } from '../../utils';
 
 import type { HolidayMap } from '../useHolidays';
 
@@ -29,6 +29,17 @@ function isBlocked(iso: string, holidayDates: HolidayMap, closedDates: Set<strin
   return holidayDates.has(iso) || closedDates.has(iso);
 }
 
+// `anchorDate`/`value` are derived from a real event instant (`EventStep` passes `new
+// Date(event.startAt)` as `anchorDate`), not a timezone-less plain date — `addDays` (local-getter
+// arithmetic) preserves whatever time-of-day that instant carries onto every cell in `days[]`. The
+// day NUMBER shown to the user (`d.getDate()` below) is always a local getter, so the lookup key
+// used to decide whether that same visible cell is blocked has to be derived the same way —
+// `toLocalIsoDate`, not `toUtcIsoDate` — or an event whose `startAt` falls late enough in the UTC
+// day (common for one created in the evening from a positive-offset zone) shows one calendar day
+// in the picker while checking `holidayDates`/`closedDates` (both keyed by the *held* date's own
+// UTC-midnight encoding — see `useHolidays.ts`/`useVendorClosures.ts`, not a viewer-local one) for
+// a different one. See `EventTimelineDrag.timezone.browser.test.tsx` for the regression proof.
+
 /**
  * Single-row draggable timeline: a marker for the event's draft date over a strip of days shaded
  * for public holidays / vendor closures. Drag the marker or click a day cell to move it; when the
@@ -43,15 +54,15 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
     [anchorDate]
   );
 
-  const valueIso = toUtcIsoDate(value);
-  const valueIndex = days.findIndex(d => toUtcIsoDate(d) === valueIso);
+  const valueIso = toLocalIsoDate(value);
+  const valueIndex = days.findIndex(d => toLocalIsoDate(d) === valueIso);
   const blocked = isBlocked(valueIso, holidayDates, closedDates);
 
   const nextFreeDate = useMemo(() => {
     if (!blocked) return null;
     for (let i = 1; i <= MAX_SEARCH_DAYS; i++) {
       const candidate = addDays(value, i);
-      if (!isBlocked(toUtcIsoDate(candidate), holidayDates, closedDates)) return candidate;
+      if (!isBlocked(toLocalIsoDate(candidate), holidayDates, closedDates)) return candidate;
     }
     return null;
   }, [blocked, value, holidayDates, closedDates]);
@@ -77,8 +88,11 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
           type="date"
           value={valueIso}
           onChange={e => {
-            if (!e.target.value) return;
-            onChange(new Date(e.target.value));
+            // `e.target.value` is a native date-input value ('YYYY-MM-DD') — `new Date(string)`
+            // anchors that to UTC midnight (wrong local day in any negative-offset zone), the same
+            // bug this file's `toLocalIsoDate` migration above exists to avoid.
+            const parsed = parseLocalIsoDate(e.target.value);
+            if (parsed) onChange(parsed);
           }}
           inputSize="sm"
           className="w-40 [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
@@ -91,7 +105,7 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
         style={{ height: 56 }}
       >
         {days.map(d => {
-          const iso = toUtcIsoDate(d);
+          const iso = toLocalIsoDate(d);
           const dayBlocked = isBlocked(iso, holidayDates, closedDates);
           return (
             <div

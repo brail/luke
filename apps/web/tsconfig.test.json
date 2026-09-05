@@ -22,6 +22,7 @@
     "tests/**/*",
     "vitest.config.mts",
     "vitest.browser.config.mts",
+    "vitest.browser.timezone.config.mts",
     "playwright.config.ts"
   ],
   "exclude": ["node_modules", ".next"]
