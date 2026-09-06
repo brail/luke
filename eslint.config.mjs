@@ -65,7 +65,6 @@ const WORKSPACE_PACKAGE_NAMES = (() => {
       throw new Error(`pnpm-workspace.yaml glob '${glob}' is not of the form '<dir>/*'; extend this reader before linting.`);
     }
     const root = fileURLToPath(new URL(`./${segments[0]}`, import.meta.url));
-    if (!existsSync(root)) continue; // `tools/*` is declared but holds no package
     for (const entry of readdirSync(root)) {
       const manifest = join(root, entry, 'package.json');
       if (!existsSync(manifest)) continue;
