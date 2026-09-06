@@ -3,15 +3,14 @@
 # Prepare a release: CHANGELOG + versions in every package.json.
 #
 # Does not commit and does not tag — those stay explicit decisions. It does the
-# mechanical part, which is where mistakes happen: `sync-version` with no
-# arguments reads the **existing** tag, so at bump time it would move the
-# package.json files to the previous version instead of the new one. The guard
-# in `.husky/pre-push` would catch that when the tag is pushed, but only after
-# costing a round trip.
+# mechanical part, which is where mistakes happen, and it is the only supported
+# entry point: `changelog:bump` writes notes with no version and no check.
 #
 # The version number has one source: `git-cliff --bumped-version`, computed
 # from the conventional commits. The same value lands in the CHANGELOG and in
-# the package.json files, so they cannot diverge.
+# the package.json files, so they cannot diverge — and before this script
+# returns, `check-release-tree.ts` proves it on the tree it just wrote, with the
+# same checker `release.yml` will run on the tagged tree after the push.
 #
 # ── Modes ───────────────────────────────────────────────────────────────────
 #
@@ -101,18 +100,6 @@ stable_line_reason() {
     git merge-base --is-ancestor "$STABLE_REF" HEAD 2>/dev/null; then
     printf 'the checked-out branch is %s and continues %s' "$stable_branch" "$STABLE_REF"
   fi
-}
-
-# Entries under a `## [version]` section, so "the heading exists" cannot pass
-# for "the release has notes". `index()` and not a regex: the version string
-# contains dots, and a version is data here, not a pattern.
-section_entry_count() {
-  awk -v heading="## [$2]" '
-    index($0, heading) == 1 { inside = 1; next }
-    inside && /^## \[/     { exit }
-    inside && /^- /         { n++ }
-    END                     { print n + 0 }
-  ' "$1"
 }
 
 if [ -n "$(git status --porcelain)" ]; then
@@ -240,17 +227,12 @@ echo
 node scripts/sync-version.js --set "$VERSION"
 echo
 
-# The pre-push guard compares the package.json files against the tag. The tag
-# does not exist yet here, so it is verified against the value just written: if
-# something did not take, it surfaces now rather than at push time.
-ENTRIES=$(section_entry_count CHANGELOG.md "$VERSION")
-if [ "$ENTRIES" -eq 0 ]; then
-  echo "❌ CHANGELOG.md has no [$VERSION] block, or the block is empty." >&2
-  echo "   A heading with nothing under it is what a graduation used to produce:" >&2
-  echo "   the release notes consumers read would be blank." >&2
-  exit 1
-fi
-echo "📝 [$VERSION] carries $ENTRIES entries"
+# Self-check of what the two writers above just produced, through the very
+# checker `release.yml` runs after the push and `.husky/pre-push` runs before it.
+# The tag does not exist yet, so the worktree is the only tree that carries this
+# version: a heading git-cliff emitted empty, or a package.json `--set` failed to
+# reach, surfaces here rather than at push time or in CI.
+pnpm exec tsx tools/scripts/check-release-tree.ts --tag "$TAG" --worktree
 echo
 
 if [ "$CHANNEL" = "rc" ]; then
@@ -268,6 +250,8 @@ cat <<EOF
     git tag $TAG && git push origin $TAG
 
   Tag from: $ORIGIN_HINT.
-  The pre-push hook checks the CHANGELOG block and version alignment.
+  The tree above already claims $VERSION. \`.husky/pre-push\` re-checks the
+  pushed object with the same checker, and release.yml checks the tagged tree
+  again before any image is built — that run is the authoritative one.
 ──────────────────────────────────────────────────────────
 EOF

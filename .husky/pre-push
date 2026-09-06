@@ -1,38 +1,37 @@
-# Blocca push di tag se manca la entry corrispondente in CHANGELOG.md
-while read local_ref local_sha remote_ref remote_sha; do
+# Early feedback on a release tag: does the tree being pushed claim the version
+# the tag names? Same checker `.github/workflows/release.yml` runs after the
+# push, on the same object, so this verdict predicts that one.
+#
+# It is not enforcement. `--no-verify` skips it and a clone that never ran
+# `pnpm install` does not have it — `release.yml` is the authority.
+#
+# What it replaced answered a different question twice. An inline awk counted
+# entries under the heading in the **working tree** CHANGELOG, and
+# `sync-version:check` compared the **working tree** manifests against
+# `git describe --tags --abbrev=0`: the topologically nearest tag, not the one
+# being pushed. A second tag on the same commit made it fail a correct tree;
+# pushing an older still-correct tag after HEAD moved on failed a legitimate
+# push; with no tag reachable it compared against `0.0.0-<branch>`.
+while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/tags/v*)
       tag="${remote_ref#refs/tags/}"
-      version="${tag#v}"
-      # Entries under the heading, not merely the heading. A graduation used to
-      # produce `## [X.Y.Z]` with nothing under it -- git-cliff --unreleased
-      # starts at the final rc and normally finds no commits after it -- and a
-      # `grep` for the heading accepted that, so the stable release shipped
-      # blank notes while every change stayed under `[X.Y.Z-rc.N]`.
-      entries=$(awk -v heading="## [$version]" '
-        index($0, heading) == 1 { inside = 1; next }
-        inside && /^## \[/     { exit }
-        inside && /^- /         { n++ }
-        END                     { print n + 0 }
-      ' CHANGELOG.md)
-      if [ "$entries" -eq 0 ]; then
-        echo ""
-        echo "❌ Tag $tag has no CHANGELOG.md entries"
-        echo "   [$version] is missing, or its section is empty."
-        echo "   Regenerate with: pnpm release:prepare (or 'rc' / 'stable')"
-        echo ""
-        exit 1
-      fi
 
-      # Le versioni nei package.json devono combaciare col tag: è ciò che finisce
-      # nell'immagine e in `/about`. `eslint-plugin-luke` è rimasto a
-      # `1.10.0-dev.0` per diverse release senza che nulla protestasse, e
-      # `calendar` è nato già fuori sync.
-      if ! pnpm sync-version:check > /dev/null 2>&1; then
+      # A tag deletion sends the all-zero SHA and names no tree to check.
+      case "$local_sha" in
+        0000000000000000000000000000000000000000) continue ;;
+      esac
+
+      # `$local_sha` is the tag object for an annotated tag and the commit for a
+      # lightweight one; `<rev>^{tree}` peels either.
+      #
+      # stdin is redirected because this loop *is* stdin: git feeds one line per
+      # pushed ref, and `git push origin main v2.2.0` delivers two. A child that
+      # read from the inherited stdin would swallow the ref records still to come.
+      if ! pnpm exec tsx tools/scripts/check-release-tree.ts \
+        --tag "$tag" --rev "$local_sha" </dev/null; then
         echo ""
-        echo "❌ package.json non allineati al tag $tag."
-        echo "   Dettaglio: pnpm sync-version:check"
-        echo "   Correggi:  pnpm sync-version"
+        echo "   $tag not pushed. Regenerate with: pnpm release:prepare (or 'rc' / 'stable')"
         echo ""
         exit 1
       fi
@@ -40,28 +39,28 @@ while read local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
-# Typecheck prima degli unit test. `test` non tipizza niente e `typecheck` da solo
-# copre solo il grafo di build: `apps/api/tsconfig.json` include `src/**` e basta,
-# quindi `test/`, `scripts/` e `prisma/` passano unicamente da `typecheck:test`.
-# È così che un `Array.prototype.at` è arrivato in CI mentre in locale l'hook
-# stampava otto task verdi — che erano verdi, ma non erano quelli.
+# Typecheck before the unit tests. `test` types nothing and `typecheck` alone
+# only covers the build graph: `apps/api/tsconfig.json` includes `src/**` and
+# nothing else, so `test/`, `scripts/` and `prisma/` are reached only by
+# `typecheck:test`. That is how an `Array.prototype.at` got into CI while the
+# hook printed eight green tasks locally — green, but not those.
 echo "🔎 Typecheck..."
 if ! pnpm turbo run typecheck typecheck:test --output-logs=errors-only; then
   echo ""
-  echo "❌ Typecheck fallito — push bloccato."
-  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo "❌ Typecheck failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
   echo ""
   exit 1
 fi
 
-# I checker sotto tools/ sono gate di release ma tools/ non è un workspace:
-# `turbo run typecheck` non lo vede e tsx esegue il TypeScript senza
-# controllarlo. Hanno un tsconfig e un blocco ESLint propri, Node-only.
+# The checkers under tools/ are release gates but tools/ is not a workspace:
+# `turbo run typecheck` does not see it and tsx runs TypeScript without checking
+# it. They have their own tsconfig and ESLint block, Node-only.
 echo "🔧 Control plane (tools/)..."
 if ! pnpm lint:tools || ! pnpm typecheck:tools || ! pnpm test:tools; then
   echo ""
-  echo "❌ Lint/typecheck di tools/ fallito — push bloccato."
-  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo "❌ Lint/typecheck of tools/ failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
   echo ""
   exit 1
 fi
@@ -70,33 +69,33 @@ fi
 # typecheck` does not see it. Mirrors CI's own "TypeCheck (root scripts)" step:
 # a gate that runs only in CI is the failure `lessons.md` Postscript 2 records —
 # eight green tasks in the hook while a type error went out.
-echo "📜 Script di root..."
+echo "📜 Root scripts..."
 if ! pnpm typecheck:root; then
   echo ""
-  echo "❌ Typecheck degli script di root fallito — push bloccato."
-  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo "❌ Typecheck of the root scripts failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
   echo ""
   exit 1
 fi
 
-# Unit test prima del push. Non in pre-commit: là serve latenza bassa e il ciclo
-# di lavoro ne farebbe a meno. I test di integrazione restano fuori: richiedono
-# Docker, e un hook che dipende da un container non è affidabile.
-echo "🧪 Unit test..."
+# Unit tests before the push. Not in pre-commit: there latency matters and the
+# work cycle would do without them. Integration tests stay out — they need
+# Docker, and a hook that depends on a container is not reliable.
+echo "🧪 Unit tests..."
 if ! pnpm test; then
   echo ""
-  echo "❌ Test falliti — push bloccato."
-  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo "❌ Tests failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
   echo ""
   exit 1
 fi
 
-# Drift di skill e documentazione: ~2s, nessuna infrastruttura. Sta qui e non in
-# pre-commit per la stessa ragione degli unit test — là serve latenza bassa.
-echo "📐 Drift skill/docs..."
+# Skill and documentation drift: ~2s, no infrastructure. Here and not in
+# pre-commit for the same reason as the unit tests — there latency matters.
+echo "📐 Skill/docs drift..."
 if ! pnpm check:drift; then
   echo ""
-  echo "❌ Drift rilevato — push bloccato."
+  echo "❌ Drift detected — push blocked."
   echo ""
   exit 1
 fi
