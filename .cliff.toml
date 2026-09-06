@@ -55,6 +55,14 @@ topo_order = false
 sort_commits = "oldest"
 
 commit_parsers = [
+  # A merge commit is not a change, it is how a change arrived. `[2.1.4]` still
+  # carries `- Merge pull request #28 from brail/hotfix/mysql2-main` followed by
+  # the PR body, because an unconventional commit is rendered with its whole
+  # message. Anchored, capitalised and with the trailing space, so it skips
+  # git's own `Merge pull request …` / `Merge branch …` subjects and nothing
+  # else: `feat(web): merge …` and `chore: merge …` are ordinary commits and
+  # stay. Future generation only — CHANGELOG.md is not rewritten.
+  { message = "^Merge ",             skip = true },
   { message = "^feat",               group = "Added" },
   { message = "^fix",                group = "Fixed" },
   { message = "^perf",               group = "Performance" },
