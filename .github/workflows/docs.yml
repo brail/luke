@@ -1,0 +1,35 @@
+name: Docs
+
+# Runs the documentation drift check on every push that touches Markdown or
+# docs/ — including the pushes ci.yml skips through its `paths-ignore`
+# allowlist, so no push goes unobserved. Deliberately broader than that
+# allowlist: Markdown outside it runs full CI and this job.
+#
+# `push` is the whole trigger set, and the checker compares it as a set. This
+# workflow exists to observe the pushes ci.yml's `paths-ignore` optimisation
+# skips, which is a `push` property: the `paths` filter below is nested under
+# `push` and no other event inherits it. Pull requests and the merge queue are
+# already verified by ci.yml, which stays unfiltered, so `pull_request`,
+# `pull_request_target` and `merge_group` would add a second unfiltered run of
+# a gate that already reports there; `schedule` and `workflow_dispatch` answer
+# no contract this repository has. Widening the set is a deliberate edit here
+# and in the checker, together.
+# The job takes no `if:` and no `continue-on-error:` either: it is the only
+# observer of a push ci.yml skips, so a failing drift check has to fail the
+# run. Branches by pattern, like security.yml.
+# Contract pinned by tools/scripts/check-workflow-paths.ts.
+on:
+  push:
+    branches: [main, 'develop-*', 'release/*']
+    paths: ['docs/**', '**.md']
+
+jobs:
+  drift:
+    name: Documentation drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Docs & skills drift
+        run: pnpm check:drift

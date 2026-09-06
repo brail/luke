@@ -3,6 +3,28 @@ name: CI
 on:
   push:
     branches: [main, develop-2.2]
+    # Documentation ownership surface: a push confined to these paths skips CI
+    # and docs.yml runs the drift check instead. Anything not listed — a new
+    # Markdown location, CHANGELOG.md, .github/**, a non-Markdown file under
+    # docs/ — runs the full pipeline. Push only: `pull_request` stays
+    # unfiltered so the required checks on main always report. Pinned and
+    # explained by tools/scripts/check-workflow-paths.ts.
+    paths-ignore:
+      - 'docs/**/*.md'
+      - 'docs/**/*.pdf'
+      - 'README.md'
+      - 'CLAUDE.md'
+      - 'lessons.md'
+      - 'lessons-archive.md'
+      - 'API_SETUP.md'
+      - 'APP_CONFIG.md'
+      - 'OPERATIONS.md'
+      - 'SETUP_STATUS.md'
+      - 'INTEGRATIONS_ROADMAP.md'
+      - 'apps/*/README.md'
+      - 'packages/*/README.md'
+      - 'tools/README.md'
+      - '.claude/skills/**/*.md'
   pull_request:
     branches: [main, develop-2.2]
   # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
