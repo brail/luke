@@ -513,6 +513,26 @@ security.yml's `push` filter is **not** on the list: it matches `develop-*` and
 previous branch (local + remote): it's stale as soon as it's merged, keeping
 it around invites bad backports.
 
+**Documentation-only pushes skip CI by design.** A push whose complete
+changed-path set falls inside the documentation ownership allowlist
+(`push.paths-ignore` in `ci.yml`) intentionally gets no full CI run;
+`.github/workflows/docs.yml` observes that same push and runs
+`pnpm check:drift` instead, while `security.yml` stays path-blind and still
+runs on every covered branch push. Because the documentation-only commit
+carries forward the same runtime tree as the code-bearing commit before it,
+the applicable runtime-gate evidence for that tree is the last code-bearing
+push's CI run — not a CI run for the documentation-only SHA, which never
+exists and should never be sought. The allowlist is fail-closed and pinned by
+`tools/scripts/check-workflow-paths.ts`: change the checker and the workflows
+together, never one without the other, and never widen CI's `paths-ignore`
+with a global pattern like `**.md`. `CHANGELOG.md`, workflow files, Markdown
+inside a source tree and test inputs/fixtures are not documentation-owned —
+they must keep triggering full CI, so a test fixture belongs under its own
+test tree, never under `docs/`. Never add a path filter to CI's
+`pull_request` trigger, and never make the path-filtered `Documentation
+drift` job a required check on `main` — either would leave a required check
+Pending on every documentation PR.
+
 ## Security Testing / Pentest
 
 - **Always target a real deployed hostname** (`rc.luke.febos.local`, prod
