@@ -67,7 +67,13 @@ export type ReleaseChannel = 'rc' | 'stable';
 /** A tag name that matched one of the two supported shapes. */
 export interface ReleaseTag {
   channel: ReleaseChannel;
-  /** `X.Y.Z`, without the `v` and without the prerelease part. */
+  /**
+   * The version the tag names, without the `v`: `X.Y.Z` for a stable tag and
+   * `X.Y.Z-rc.N` for a candidate — the prerelease part is **kept**, because
+   * this is the string the image is tagged with and the string every
+   * `package.json` and the `CHANGELOG.md` heading must carry
+   * (`check-release-tree.ts`). Use `series` for the `X.Y` form.
+   */
   version: string;
   /** `X.Y`, the moving minor-series tag. Only meaningful for `stable`. */
   series: string;
@@ -202,7 +208,9 @@ function isAncestor(repo: string, sha: string, rev: string): boolean {
 /** Full 40-char lowercase hex, which is what `github.sha` always is. */
 const SHA = /^[0-9a-f]{40}$/;
 
-export function checkReleaseProvenance(input: ProvenanceInput): ProvenanceDecision {
+export function checkReleaseProvenance(
+  input: ProvenanceInput
+): ProvenanceDecision {
   const { tag, repo, stableRef, trainRef } = input;
 
   const expectedSha = input.expectedSha.trim();
@@ -239,7 +247,10 @@ export function checkReleaseProvenance(input: ProvenanceInput): ProvenanceDecisi
   // An annotated tag has its own object; `github.sha` may name either it or the
   // commit it points at, depending on how the event was produced. Both are the
   // same tag, so both are accepted — anything else is a different commit.
-  if (expectedSha !== sha && expectedSha !== resolveRev(repo, `refs/tags/${tag}`)) {
+  if (
+    expectedSha !== sha &&
+    expectedSha !== resolveRev(repo, `refs/tags/${tag}`)
+  ) {
     throw new ProvenanceError(
       `Tag ${tag} resolves to ${sha} but the workflow is running on ` +
         `${expectedSha}. Refusing to authorize a build of a different commit.`
