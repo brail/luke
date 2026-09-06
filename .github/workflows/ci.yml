@@ -25,8 +25,13 @@ on:
       - 'packages/*/README.md'
       - 'tools/README.md'
       - '.claude/skills/**/*.md'
+  # `types:` is pinned because GitHub's default set omits `edited`, which is
+  # what retargeting a pull request fires: without it, moving a PR onto either
+  # protected target produces no new run and the required checks stay Pending
+  # on a head SHA nothing judged.
   pull_request:
     branches: [main, develop-2.2]
+    types: [opened, synchronize, reopened, edited]
   # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
   # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
   # prima di costruire le immagini.

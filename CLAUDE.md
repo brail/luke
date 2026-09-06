@@ -533,6 +533,50 @@ test tree, never under `docs/`. Never add a path filter to CI's
 drift` job a required check on `main` — either would leave a required check
 Pending on every documentation PR.
 
+**The two aggregate gates `main` will require.** `ci.yml` and `security.yml`
+each declare one job whose only work is to fail unless every scan or check it
+`needs` succeeded: `CI gate` and `Security gate`. `Security gate` stands for
+every **PR-relevant** scan job — currently semgrep, gitleaks and OSV, not every
+scan job in the file — and reports on every trigger but the weekly `schedule`;
+what is new is that this now includes pull requests targeting `main`, with no
+path filter on any trigger for the same reason given just above. Its
+`pull_request` targets `main` only, so it is not part of the cycle-switch
+checklist; it is to be required **eventually, and only on `main`**, never by a
+`develop-*` or `release/*` ruleset — that would leave a required context behind
+on a branch that dies at the end of the cycle.
+
+**Both** gated workflows pin the same `pull_request` activity set — `opened`,
+`synchronize`, `reopened`, `edited`. GitHub's default omits `edited`, which is
+what retargeting a pull request fires: without the pin, moving a PR onto a
+protected target produces no new run and leaves the required checks Pending on
+a head SHA nothing judged. The weekly OSV jobs and the
+failure notifier are deliberately outside it — they answer a disclosure landing
+on unchanged code, and a push/schedule failure, neither of which a pull request
+can report.
+
+Both gates are pinned by
+`tools/scripts/check-workflow-paths.ts`, which derives each `needs` list from
+the workflow's own jobs, so a scan job added later is a build failure rather
+than a silently ungated one. It also refuses `continue-on-error:` anywhere in
+either gated workflow: that key turns a failure into the literal `success`,
+which is the one result an aggregate gate accepts, so a tolerated job would be
+green through the gate.
+
+The remote half is **not** done, and neither is `main`'s half. `main` carries
+**neither aggregate-gate implementation** — both jobs exist only on
+`develop-2.2` — and `main`'s ruleset still requires the individual job names.
+The `develop-2.2` version of `CI gate` is configured to report on pull requests
+targeting `main` or the train; `Security gate` on pull requests targeting
+`main`. Because the workflows a pull request is judged by are the ones on the
+branch, the first real hotfix has to port versions of both coherent with `main`
+before the ruleset can require either context. Do not describe either context
+as required today.
+
+Note also what this design does not buy: it protects against accidental
+regressions and ordinary vulnerable changes, but it is not tamper-resistant — a
+pull request that edits the workflow, the checker and the gate in the same diff
+is judged by the version it is itself proposing.
+
 ## Security Testing / Pentest
 
 - **Always target a real deployed hostname** (`rc.luke.febos.local`, prod

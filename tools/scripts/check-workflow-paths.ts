@@ -18,7 +18,36 @@
  *   duplicate-free set (no negations, so order is irrelevant); no
  *   `push.paths`; no filter of either kind under `pull_request`;
  *   `workflow_call` kept.
- * - `security.yml` and `release.yml` carry no path filter at all.
+ * - `security.yml` and `release.yml` carry no path filter at all. For
+ *   `security.yml` that single whole-file scan is also what keeps a filter off
+ *   its `pull_request`: one prohibition, not a second one stacked in front of
+ *   it for the same paths.
+ * - Both gated workflows declare `pull_request` as a readable indented block
+ *   — an inline flow mapping is an error, not a pass — pinned to exactly the
+ *   activity set below. The default set omits `edited`, which is what
+ *   retargeting a pull request fires, so without the pin a PR moved onto a
+ *   protected target produces no run and a required gate sits Pending on a
+ *   head SHA nothing judged. One list for both files: the hazard belongs to
+ *   `pull_request`, not to either gate. Branch *targets* differ and are not
+ *   compared here — `check-workflow-branches.ts` owns ci.yml's, and
+ *   security.yml's exact-`main` pin sits at its own call site.
+ * - `security.yml` declares exactly the trigger set below and
+ *   carries a second aggregate job — `Security
+ *   gate` — of the same shape as ci.yml's, standing for the scans that judge a
+ *   pull request. Its `needs` is derived from the file's own jobs minus the
+ *   three that are deliberately outside it (the two weekly OSV jobs and the
+ *   failure notifier), so a scan job added later is a missing `needs` entry
+ *   rather than a silently ungated one. Every other job must carry exactly one
+ *   job-level `if:`, the one its set is pinned to — `SECURITY_CONDITIONS`
+ *   holds each expression next to the reason it is that one, which is also the
+ *   text reported when it drifts.
+ * - Neither `ci.yml` nor `security.yml` declares `continue-on-error:` anywhere,
+ *   at any indent, and every occurrence is reported. Both files now carry an
+ *   aggregate gate that accepts the literal `success` and nothing else, and
+ *   `continue-on-error:` is precisely what turns a failure into that word:
+ *   the gate would then report green over a job nobody fixed. Scanned as text,
+ *   so a job the line reader does not recognise is covered too, and
+ *   deliberately overlapping the per-job checks for the same reason.
  * - `docs.yml` declares exactly the trigger set `{ push }`, with exactly the
  *   broad path set below and branches covering `main` and the release train,
  *   and declares exactly one job — `Documentation drift` — carrying a
@@ -111,17 +140,31 @@ export const CI_GATE_NAME = 'CI gate';
 export const CI_GATE_IF = '${{ always() }}';
 
 /**
+ * `Security gate`: the same aggregate, standing for the scans that judge a
+ * pull request. Its condition carries a second clause because, unlike ci.yml,
+ * this workflow also runs on a schedule — a run in which all three of its
+ * dependencies are skipped by design and the failure notifier, not this job,
+ * is the signal.
+ */
+export const SECURITY_GATE_NAME = 'Security gate';
+export const SECURITY_GATE_IF = "${{ always() && github.event_name != 'schedule' }}";
+export const SECURITY_GATE_STEP = 'Require every scan to have succeeded';
+
+/**
  * The interpreter the pinned script's semantics belong to, declared on the
  * step rather than inherited from the runner default — which is not part of
  * any contract and would change under the job without a diff here. What runs
  * the line decides whether it asserts anything at all: `shell: echo {0}` would
  * print the script and exit 0, a green gate that never looked at a result.
  * One declaration exactly, so a second one cannot quietly win.
+ *
+ * Unprefixed, like the two below: both gates are judged by this one script,
+ * under this one interpreter, reading this one expression.
  */
-export const CI_GATE_SHELL = 'bash';
+export const GATE_SHELL = 'bash';
 
-/** The gate's only input, bound to `RESULTS`: every dependency's result, space separated. */
-export const CI_GATE_RESULTS = "${{ join(needs.*.result, ' ') }}";
+/** A gate's only input, bound to `RESULTS`: every dependency's result, space separated. */
+export const GATE_RESULTS = "${{ join(needs.*.result, ' ') }}";
 
 /**
  * The gate's whole body, pinned as a literal because it *is* the semantics:
@@ -132,8 +175,51 @@ export const CI_GATE_RESULTS = "${{ join(needs.*.result, ' ') }}";
  * otherwise iterate zero times and pass. The test suite executes this exact
  * string against each of those results rather than only comparing it.
  */
-export const CI_GATE_RUN =
+export const GATE_RUN =
   'echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done';
+
+/**
+ * security.yml's complete trigger set, compared as a set for the same reason
+ * docs.yml's is: `merge_group` and `pull_request_target` would each add a run
+ * of these scans under rules nobody chose here, and losing `pull_request`
+ * would retire the pre-merge gate without a word.
+ */
+export const SECURITY_TRIGGERS = ['push', 'pull_request', 'schedule', 'workflow_dispatch'] as const;
+
+/**
+ * The pre-merge gate covers the stable line only. A train branch already has
+ * every push scanned by `push.branches`, and a gate required on `develop-*` or
+ * `release/*` would be a second remote contract to retire at each cycle
+ * switch. Pinned here so the cycle-switch checklist never has to name it.
+ */
+export const SECURITY_PR_BRANCHES = ['main'] as const;
+
+/**
+ * The activity types both gated workflows must run on. GitHub's default set is
+ * `opened`, `synchronize` and `reopened` — it does not include `edited`, which
+ * is what retargeting a pull request fires. Left to the default, a pull request
+ * moved onto a protected target produces no run for its new base, and a
+ * required aggregate gate would sit Pending on a head SHA nothing ever judged.
+ *
+ * Gate-agnostic on purpose: one list, checked in both files, because the
+ * hazard is a property of `pull_request` itself and not of either gate. Pinned
+ * as a set, so dropping one is as loud as adding one.
+ */
+export const GATED_PULL_REQUEST_TYPES = ['opened', 'synchronize', 'reopened', 'edited'] as const;
+
+/**
+ * The jobs deliberately outside `Security gate`, which is what makes every
+ * other job in the file one the gate must depend on. The weekly pair answers
+ * a disclosure landing on code that has not changed — no pull request to
+ * report on — and the notifier watches the others rather than being watched.
+ */
+export const SECURITY_WEEKLY_JOBS = ['osv-weekly', 'osv-weekly-release-train'] as const;
+export const SECURITY_NOTIFIER_JOB = 'notify-on-failure';
+
+/** The job-level `if:` each set is pinned to; why each is what it is lives in `SECURITY_CONDITIONS`. */
+export const SECURITY_SCAN_IF = "github.event_name != 'schedule'";
+export const SECURITY_WEEKLY_IF = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'";
+export const SECURITY_NOTIFIER_IF = "always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')";
 
 /** The deliberately broader trigger of docs.yml: a superset of the list above. */
 export const DOCS_TRIGGER_PATHS = ['docs/**', '**.md'] as const;
@@ -173,6 +259,14 @@ const DOCS_JOB_RUN = 'pnpm check:drift';
 const JOB_CONTROL = /^( {4,8})(- )?(if|continue-on-error):\s*(.*?)\s*$/;
 
 const PATH_FILTER_KEY = /^\s+paths(-ignore)?:/;
+
+/**
+ * The key that lets a scan report success while it failed, anywhere in
+ * security.yml and at any indent — including a job this file's line-oriented
+ * job reader would not recognise, which is the point of scanning the text
+ * rather than the parsed jobs.
+ */
+const CONTINUE_ON_ERROR_KEY = /^\s*(?:- )?continue-on-error:/;
 
 /**
  * GitHub's path filter globbing: `*` matches anything but `/`, `**` matches
@@ -219,8 +313,16 @@ interface Section {
   end: number;
 }
 
+/**
+ * A scalar with its surrounding quotes removed — only a *matched* pair. An
+ * unbalanced quote belongs to the value: a condition ends in
+ * `!= 'schedule'`, and stripping that lone closing quote would compare a
+ * mangled expression against the pinned one and call the difference drift.
+ */
 function unquote(value: string): string {
-  return value.trim().replace(/^['"]|['"]$/g, '');
+  const trimmed = value.trim();
+  const quoted = /^(['"])(.*)\1$/.exec(trimmed);
+  return quoted === null ? trimmed : quoted[2];
 }
 
 function load(root: string, name: string): Workflow | null {
@@ -239,7 +341,12 @@ function section(lines: string[], header: RegExp, indent: number, from = 0, to =
     }
   }
   if (start === -1) return null;
-  const closes = new RegExp(`^\\s{0,${indent}}\\S`);
+  // A comment never closes a block. It is legal at any indent inside one, and
+  // treating it as the end truncated the job body there: every step-level
+  // `if:` written after a 2-space comment became invisible, so a scan step
+  // could carry a condition that skips it on a pull request while the job
+  // still reported success to the gate.
+  const closes = new RegExp(`^\\s{0,${indent}}[^\\s#]`);
   let end = start + 1;
   while (end < to && !closes.test(lines[end])) end++;
   return { start, end };
@@ -301,9 +408,10 @@ function readList(wf: Workflow, key: Section, label: string): Filter {
 
 /**
  * `on.<trigger>.<key>`, or null when the trigger or the key is absent. A key
- * that lists nothing is an error: an empty filter is not a narrower filter.
+ * that lists nothing is an error: an empty filter is not a narrower filter,
+ * and an empty `branches` matches no branch at all.
  */
-function pathFilter(wf: Workflow, trig: string, key: 'paths' | 'paths-ignore'): Filter | null {
+function triggerFilter(wf: Workflow, trig: string, key: 'paths' | 'paths-ignore' | 'branches' | 'types'): Filter | null {
   const t = trigger(wf, trig);
   if (t === null) return null;
   const k = section(wf.lines, new RegExp(`^ {4}${key}:`), 4, t.start + 1, t.end);
@@ -311,7 +419,13 @@ function pathFilter(wf: Workflow, trig: string, key: 'paths' | 'paths-ignore'): 
 
   const filter = readList(wf, k, `${trig}.${key}`);
   if (filter.entries.length === 0) {
-    throw new WorkflowPathError(`${wf.file}:${filter.line}: \`${trig}.${key}\` lists nothing; an empty filter is not a narrower filter.`);
+    const hazard =
+      key === 'branches'
+        ? 'an empty branch list matches no branch at all'
+        : key === 'types'
+          ? 'an empty activity list matches no event at all'
+          : 'an empty filter is not a narrower filter';
+    throw new WorkflowPathError(`${wf.file}:${filter.line}: \`${trig}.${key}\` lists nothing; ${hazard}.`);
   }
   return filter;
 }
@@ -322,6 +436,8 @@ interface Job {
   name: string | null;
   uses: string[];
   run: string[];
+  /** The `name:` of each step, at step indent — not the job's own at 4. */
+  stepNames: string[];
   /** null when the job declares no `needs:` at all. */
   needs: Filter | null;
   /** The job's lines, for the one binding only the gate cares about. */
@@ -358,6 +474,7 @@ function jobs(wf: Workflow): Job[] {
       name: values(/^ {4}name:\s*(.+?)\s*$/)[0] ?? null,
       uses: values(/^ {6,8}(?:- )?uses:\s*(.+?)\s*$/),
       run: values(/^ {6,8}(?:- )?run:\s*(.+?)\s*$/),
+      stepNames: values(/^ {6,8}(?:- )?name:\s*(.+?)\s*$/),
       needs: needs === null ? null : readList(wf, needs, `${header[1]}.needs`),
       shells: body.flatMap((l, k) => {
         const m = /^( {4,10})(- )?shell:\s*(.*?)\s*$/.exec(l);
@@ -385,7 +502,8 @@ function trackedFiles(root: string): string[] {
  * Two lists as duplicate-free sets; each side's surplus is a problem of its
  * own. `surplus` completes "contains `x`, which …": the default is right for a
  * set pinned in this file, and a caller comparing against something the
- * repository itself declares passes its own.
+ * repository itself declares passes its own — as a function where the right
+ * diagnosis depends on which entry is surplus.
  */
 function compareAsSets(
   wf: Workflow,
@@ -393,7 +511,7 @@ function compareAsSets(
   label: string,
   expected: readonly string[],
   problems: Problem[],
-  surplus = 'is not part of the pinned contract; widen the checker first, then the workflow'
+  surplus: string | ((entry: string) => string) = 'is not part of the pinned contract; widen the checker first, then the workflow'
 ): void {
   const seen = new Set<string>();
   for (const entry of filter.entries) {
@@ -408,10 +526,220 @@ function compareAsSets(
       problems.push({
         file: wf.file,
         line: filter.line,
-        message: `${label} contains \`${entry}\`, which ${surplus}.`,
+        message: `${label} contains \`${entry}\`, which ${typeof surplus === 'function' ? surplus(entry) : surplus}.`,
       });
     }
   }
+}
+
+/**
+ * Which pinned condition a security.yml job answers to. Membership is asked
+ * once, here: the same answer decides both the job's own `if:` and whether
+ * `Security gate` must depend on it, so the two can never disagree.
+ */
+type SecurityJobClass = 'scan' | 'weekly' | 'notifier';
+
+const SECURITY_WEEKLY = new Set<string>(SECURITY_WEEKLY_JOBS);
+
+function securityClass(id: string): SecurityJobClass {
+  if (SECURITY_WEEKLY.has(id)) return 'weekly';
+  if (id === SECURITY_NOTIFIER_JOB) return 'notifier';
+  return 'scan';
+}
+
+const SECURITY_CONDITIONS: Record<SecurityJobClass, { expr: string; why: string }> = {
+  scan: {
+    expr: SECURITY_SCAN_IF,
+    why: 'a scan the gate depends on must run on every trigger the gate reports for; narrower, it is skipped on a pull request and the gate then fails on a skipped dependency rather than on a finding',
+  },
+  weekly: {
+    expr: SECURITY_WEEKLY_IF,
+    why: 'the weekly pair answers the schedule and a manual dispatch, and is deliberately no part of the pull-request gate',
+  },
+  notifier: {
+    expr: SECURITY_NOTIFIER_IF,
+    why: 'on a pull request the gate is the signal, reported on the PR itself, and an issue per failed candidate is noise nobody closes',
+  },
+};
+
+/**
+ * The `pull_request` shape both gated workflows must declare: a readable
+ * indented block, and exactly the approved activity set.
+ *
+ * Branch targets are deliberately not checked here — they differ between the
+ * two files, `check-workflow-branches.ts` owns ci.yml's, and security.yml's
+ * exact-`main` pin lives at its own call site with the reason it is `main`
+ * only. What is shared is the activity set and the requirement that the
+ * trigger be readable at all.
+ */
+function checkGatedPullRequest(wf: Workflow, problems: Problem[]): void {
+  const block = trigger(wf, 'pull_request');
+  if (block === null) {
+    // Declared but unreadable is an error, never a pass: `triggers()` sees the
+    // key on any form, `trigger()` only on the indented block one. An inline
+    // flow mapping — `pull_request: {branches: [x], types: [y]}` — would
+    // otherwise skip every pin below in silence.
+    if (triggers(wf).includes('pull_request')) {
+      throw new WorkflowPathError(
+        `${wf.file}: \`pull_request\` is declared in a form this checker cannot read; it expects \`  pull_request:\` with an indented block, and anything else leaves its branches, types and path filters unchecked.`
+      );
+    }
+    problems.push({
+      file: wf.file,
+      line: topLevel(wf, 'on').start + 1,
+      message: '`pull_request` is missing; the aggregate gate would never report on a pull request, and a ruleset requiring it would block every merge.',
+    });
+    return;
+  }
+
+  const types = triggerFilter(wf, 'pull_request', 'types');
+  if (types === null) {
+    problems.push({
+      file: wf.file,
+      line: block.start + 1,
+      message: '`pull_request` declares no `types`; the default set omits `edited`, so a retargeted pull request would produce no run and leave the gate Pending on a head SHA nothing judged.',
+    });
+    return;
+  }
+  compareAsSets(wf, types, '`pull_request.types`', GATED_PULL_REQUEST_TYPES, problems, 'is not one of the activities the gates are pinned to');
+}
+
+/** What distinguishes one aggregate gate from the other. */
+interface GateContract {
+  /** The job's `name:`: the context string a ruleset requires. */
+  name: string;
+  /** The job-level `if:`, and the only control key the job may carry. */
+  condition: string;
+  /**
+   * Which of the file's other jobs the gate must depend on. Omitted means all
+   * of them, which is ci.yml's contract; security.yml passes a predicate
+   * because three of its jobs are deliberately outside the gate.
+   */
+  stands?: (job: Job) => boolean;
+  /**
+   * The step's `name:`, where the workflow pins one. Optional because only
+   * security.yml's gate pins it: ci.yml's step carries a name too, but
+   * bringing it under this contract is a change to ci.yml's, made on its own.
+   */
+  step?: string;
+}
+
+/**
+ * The shape both aggregate gates share: a job that runs whatever its
+ * dependencies did, reads their results and accepts nothing but `success`.
+ * Only the name, the condition and the set it stands for differ, so the rest
+ * is one contract checked in one place — including the script itself, which is
+ * the same literal in both workflows.
+ *
+ * The `needs` set is derived from the file's own jobs rather than pinned, so a
+ * job added to the workflow is a missing `needs` entry instead of a silently
+ * unguarded one.
+ *
+ * @returns The job it judged, so gate membership is answered here once. A
+ *   caller that re-derived it by name would disagree with this one in exactly
+ *   the run where the name is wrong, and then describe the gate as if it were
+ *   an ordinary job.
+ */
+function checkGate(wf: Workflow, contract: GateContract, all: Job[], problems: Problem[]): Job | null {
+  const at = (line: number, message: string): void => {
+    problems.push({ file: wf.file, line, message });
+  };
+
+  const named = all.filter(j => j.name === contract.name);
+  if (named.length === 0) {
+    at(
+      topLevel(wf, 'jobs').start + 1,
+      `no job is named \`${contract.name}\`; that is the context a ruleset can require in place of a list of job names ` +
+        'nobody can keep in step with this file, and without it there is nothing to switch to.'
+    );
+    return null;
+  }
+  const [gate] = named;
+  if (named.length > 1) {
+    at(
+      named[1].line,
+      `${named.length} jobs are named \`${contract.name}\`; a required context names one job, and which of them answers for it is not this file's to decide.`
+    );
+  }
+
+  compareAsSets(
+    wf,
+    gate.needs ?? { entries: [], line: gate.line },
+    `\`${contract.name}\`'s \`needs\``,
+    all.filter(j => j !== gate && (contract.stands?.(j) ?? true)).map(j => j.id),
+    problems,
+    // Two different mistakes: a name no job answers to — what a rename leaves
+    // behind — and a real job this gate deliberately does not stand for.
+    entry => (all.some(j => j.id === entry) ? 'is a job this gate deliberately does not stand for' : `is not a job in ${wf.file.replace(/^.*\//, '')}`)
+  );
+
+  const jobIf = gate.controls.find(c => c.level === 'job' && c.key === 'if');
+  if (jobIf === undefined) {
+    at(
+      gate.line,
+      `job declares no \`if:\`; without \`if: ${contract.condition}\` it is skipped in exactly the runs it exists to fail, ` +
+        'and a skipped check blocks no merge once the ruleset requires it.'
+    );
+  } else if (jobIf.value !== contract.condition) {
+    at(jobIf.line, `job declares \`if: ${jobIf.value}\`, not \`if: ${contract.condition}\`; anything else lets a failed dependency skip the gate.`);
+  }
+  for (const control of gate.controls) {
+    if (control !== jobIf) {
+      at(
+        control.line,
+        `job declares \`${control.key}:\` besides its job-level \`if: ${contract.condition}\`; ` +
+          'a second condition or a `continue-on-error:` reports the gate green while a dependency did not succeed.'
+      );
+    }
+  }
+
+  if (gate.uses.length > 0) {
+    at(gate.line, `job runs \`${gate.uses[0]}\`; the gate reads its dependencies' results and nothing else — no checkout, workspace setup, install or build.`);
+  }
+  if (gate.run.length !== 1 || gate.run[0] !== GATE_RUN) {
+    at(
+      gate.line,
+      `job's steps are not exactly one \`run:\` equal to \`${GATE_RUN}\`; ` +
+        'that literal is the gate\'s semantics, read here in its inline one-line form and executed by the test suite.'
+    );
+  }
+  if (contract.step !== undefined && (gate.stepNames.length !== 1 || gate.stepNames[0] !== contract.step)) {
+    at(gate.line, `job's steps are not exactly one named \`${contract.step}\`; the gate is that one step, and a second is work a gate does not do.`);
+  }
+  // What interprets the pinned script. Counted across the whole job, so a
+  // job-level `defaults.run.shell` added beside the step's own is ambiguity
+  // rather than a silent winner.
+  if (gate.shells.length === 0) {
+    at(gate.line, `job declares no \`shell:\`; the pinned script's semantics are \`${GATE_SHELL}\`'s, and the runner default is not part of any contract.`);
+  } else if (gate.shells.length > 1) {
+    at(
+      gate.shells[1].line,
+      `job declares ${gate.shells.length} \`shell:\` keys; exactly one decides what runs the pinned script, and two leave which one to GitHub's precedence rules.`
+    );
+  } else if (gate.shells[0].value !== GATE_SHELL) {
+    at(
+      gate.shells[0].line,
+      `job declares \`shell: ${gate.shells[0].value}\`, not \`shell: ${GATE_SHELL}\`; ` +
+        'another interpreter need not fail on what the script rejects, and one like `echo {0}` would report success without executing it at all.'
+    );
+  } else if (gate.shells[0].level !== 'step') {
+    at(gate.shells[0].line, `job declares \`shell: ${GATE_SHELL}\` at job level; it belongs on the step that carries the script.`);
+  }
+
+  // The one step's `env:`, at its own indent. Read here rather than through a
+  // general `env` field on every job: at this indent a job with `services:`
+  // also has its container's variables, and a gate has neither.
+  const results = gate.body.flatMap((l, k) => {
+    const m = /^ {10}RESULTS:\s*(.+?)\s*$/.exec(l);
+    return m === null ? [] : [{ value: unquote(m[1]), line: gate.line + 1 + k }];
+  })[0];
+  if (results === undefined) {
+    at(gate.line, "job binds no `RESULTS`; the script would then read an empty variable rather than its dependencies' results.");
+  } else if (results.value !== GATE_RESULTS) {
+    at(results.line, `job binds \`RESULTS: ${results.value}\`, not \`${GATE_RESULTS}\`; a value that is not the dependency results makes the gate assert nothing.`);
+  }
+
+  return gate;
 }
 
 /**
@@ -438,7 +766,7 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
     at(ci, topLevel(ci, 'on').start + 1, '`on.workflow_call` is gone; release.yml reuses this workflow as its verify gate.');
   }
 
-  const ignore = pathFilter(ci, 'push', 'paths-ignore');
+  const ignore = triggerFilter(ci, 'push', 'paths-ignore');
   if (ignore === null) {
     at(ci, topLevel(ci, 'on').start + 1, '`push` has no `paths-ignore`; the documentation allowlist is the contract this checker pins.');
   } else {
@@ -450,7 +778,7 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
     ['pull_request', 'paths'],
     ['pull_request', 'paths-ignore'],
   ] as const) {
-    const filter = pathFilter(ci, trig, key);
+    const filter = triggerFilter(ci, trig, key);
     if (filter !== null) {
       at(
         ci,
@@ -461,103 +789,114 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
     }
   }
 
+  // ── Both gated workflows: a readable pull_request, on the pinned activities ─
+  for (const wf of [ci, security]) checkGatedPullRequest(wf, problems);
+
   // ── ci.yml: the aggregate gate the ruleset will require ───────────────────
   const ciJobs = jobs(ci);
-  const gate = ciJobs.find(j => j.name === CI_GATE_NAME);
-  if (gate === undefined) {
-    at(
-      ci,
-      topLevel(ci, 'jobs').start + 1,
-      `no job is named \`${CI_GATE_NAME}\`; that is the candidate context the ruleset on \`main\` is meant to require, ` +
-        'and without it there is nothing to switch to — every job stays named one by one in the ruleset, or guarded by nobody.'
-    );
-  } else {
-    compareAsSets(
-      ci,
-      gate.needs ?? { entries: [], line: gate.line },
-      `\`${CI_GATE_NAME}\`'s \`needs\``,
-      ciJobs.filter(j => j !== gate).map(j => j.id),
-      problems,
-      "is not a job in ci.yml; the gate needs ci.yml's other jobs and nothing else"
-    );
-
-    const jobIf = gate.controls.find(c => c.level === 'job' && c.key === 'if');
-    if (jobIf === undefined) {
-      at(
-        ci,
-        gate.line,
-        `job declares no \`if:\`; without \`if: ${CI_GATE_IF}\` it is skipped in exactly the runs it exists to fail, ` +
-          'and a skipped check blocks no merge once the ruleset requires it.'
-      );
-    } else if (jobIf.value !== CI_GATE_IF) {
-      at(ci, jobIf.line, `job declares \`if: ${jobIf.value}\`, not \`if: ${CI_GATE_IF}\`; anything else lets a failed dependency skip the gate.`);
-    }
-    for (const control of gate.controls) {
-      if (control !== jobIf) {
-        at(
-          ci,
-          control.line,
-          `job declares \`${control.key}:\` besides its job-level \`if: ${CI_GATE_IF}\`; ` +
-            'a second condition or a `continue-on-error:` reports the gate green while a dependency did not succeed.'
-        );
-      }
-    }
-
-    if (gate.uses.length > 0) {
-      at(ci, gate.line, `job runs \`${gate.uses[0]}\`; the gate reads its dependencies' results and nothing else — no checkout, workspace setup, install or build.`);
-    }
-    if (gate.run.length !== 1 || gate.run[0] !== CI_GATE_RUN) {
-      at(
-        ci,
-        gate.line,
-        `job's steps are not exactly one \`run:\` equal to \`${CI_GATE_RUN}\`; ` +
-          'that literal is the gate\'s semantics, read here in its inline one-line form and executed by the test suite.'
-      );
-    }
-    // What interprets the pinned script. Counted across the whole job, so a
-    // job-level `defaults.run.shell` added beside the step's own is ambiguity
-    // rather than a silent winner.
-    if (gate.shells.length === 0) {
-      at(
-        ci,
-        gate.line,
-        `job declares no \`shell:\`; the pinned script's semantics are \`${CI_GATE_SHELL}\`'s, and the runner default is not part of any contract.`
-      );
-    } else if (gate.shells.length > 1) {
-      at(
-        ci,
-        gate.shells[1].line,
-        `job declares ${gate.shells.length} \`shell:\` keys; exactly one decides what runs the pinned script, and two leave which one to GitHub's precedence rules.`
-      );
-    } else if (gate.shells[0].value !== CI_GATE_SHELL) {
-      at(
-        ci,
-        gate.shells[0].line,
-        `job declares \`shell: ${gate.shells[0].value}\`, not \`shell: ${CI_GATE_SHELL}\`; ` +
-          'another interpreter need not fail on what the script rejects, and one like `echo {0}` would report success without executing it at all.'
-      );
-    } else if (gate.shells[0].level !== 'step') {
-      at(ci, gate.shells[0].line, `job declares \`shell: ${CI_GATE_SHELL}\` at job level; it belongs on the step that carries the script.`);
-    }
-
-    // The one step's `env:`, at its own indent. Read here rather than through
-    // a general `env` field on every job: at this indent a job with `services:`
-    // also has its container's variables, and the gate has neither.
-    const results = gate.body.flatMap((l, k) => {
-      const m = /^ {10}RESULTS:\s*(.+?)\s*$/.exec(l);
-      return m === null ? [] : [{ value: unquote(m[1]), line: gate.line + 1 + k }];
-    })[0];
-    if (results === undefined) {
-      at(ci, gate.line, "job binds no `RESULTS`; the script would then read an empty variable rather than its dependencies' results.");
-    } else if (results.value !== CI_GATE_RESULTS) {
-      at(ci, results.line, `job binds \`RESULTS: ${results.value}\`, not \`${CI_GATE_RESULTS}\`; a value that is not the dependency results makes the gate assert nothing.`);
-    }
-  }
+  checkGate(ci, { name: CI_GATE_NAME, condition: CI_GATE_IF }, ciJobs, problems);
 
   // ── security.yml and release.yml: path-blind ──────────────────────────────
+  // One prohibition covering every trigger, `pull_request` included: a
+  // required check a path filter skipped reports Pending, not Passed.
   for (const wf of [security, release]) {
     const hit = wf.lines.findIndex(l => PATH_FILTER_KEY.test(l));
     if (hit !== -1) at(wf, hit + 1, 'declares a path filter; security scans every push and the release gate is never path-aware.');
+  }
+
+  // ── Both gated workflows: nothing may tolerate its own failure ────────────
+  // A `continue-on-error:` job hands the aggregate gate a `success` result for
+  // work that failed, which is the one input the pinned script accepts — so
+  // the gate reports green over a job nobody fixed. It applies to ci.yml for
+  // exactly the same reason it applies to security.yml: both now carry an
+  // aggregate that reads its dependencies' results and nothing else.
+  //
+  // Scanned as text rather than through the parsed jobs, so a job the
+  // line-oriented reader does not recognise is covered too; every occurrence
+  // is reported, because fixing the first must not hide the second until the
+  // following run.
+  for (const wf of [ci, security]) {
+    wf.lines.forEach((line, i) => {
+      if (CONTINUE_ON_ERROR_KEY.test(line)) {
+        at(wf, i + 1, 'declares `continue-on-error:`; a job that reports success while it failed is worth less than no job, and the aggregate gate would inherit that success.');
+      }
+    });
+  }
+
+  // ── security.yml: the pre-merge gate for pull requests on main ────────────
+  compareAsSets(security, { entries: triggers(security), line: topLevel(security, 'on').start + 1 }, '`on`', SECURITY_TRIGGERS, problems);
+
+  // security.yml's own branch pin. ci.yml's targets belong to
+  // check-workflow-branches; what both files share — a readable trigger and
+  // the activity set — is asserted for each by `checkGatedPullRequest`.
+  if (trigger(security, 'pull_request') !== null) {
+    const prBranches = triggerFilter(security, 'pull_request', 'branches');
+    if (prBranches === null) {
+      at(
+        security,
+        topLevel(security, 'on').start + 1,
+        '`pull_request` declares no `branches`; it would then report on pull requests against every branch, including the trains this gate must never be required on.'
+      );
+    } else {
+      compareAsSets(security, prBranches, '`pull_request.branches`', SECURITY_PR_BRANCHES, problems, 'is not the stable line; the pre-merge gate targets `main` only');
+    }
+  }
+
+  const securityJobs = jobs(security);
+  const securityGate = checkGate(
+    security,
+    {
+      name: SECURITY_GATE_NAME,
+      condition: SECURITY_GATE_IF,
+      step: SECURITY_GATE_STEP,
+      stands: job => securityClass(job.id) === 'scan',
+    },
+    securityJobs,
+    problems
+  );
+
+  // The next two checks are defined relative to the gate, so with no gate
+  // there is nothing they could say that would not mislead: the gate's own
+  // job would be read as an ordinary scan and told to carry a scan's
+  // condition, and the notifier would be told to watch the one job it must
+  // not. The missing gate is already reported; that is the thing to fix.
+  if (securityGate !== null) {
+    // Every job but the gate is pinned to the condition of the set it belongs
+    // to. Without this the gate's dependencies are only as dependable as
+    // whatever condition they happen to carry.
+    for (const job of securityJobs) {
+      if (job === securityGate) continue;
+      const { expr, why } = SECURITY_CONDITIONS[securityClass(job.id)];
+      const conditions = job.controls.filter(c => c.key === 'if');
+      const jobIf = conditions.find(c => c.level === 'job');
+      if (jobIf === undefined) {
+        at(security, job.line, `\`${job.id}\` declares no job-level \`if:\`; it runs on every trigger this workflow has, and ${why}.`);
+      } else if (jobIf.value !== expr) {
+        at(security, jobIf.line, `\`${job.id}\` declares \`if: ${jobIf.value}\`, not \`if: ${expr}\`; ${why}.`);
+      }
+      for (const extra of conditions) {
+        if (extra !== jobIf) {
+          at(security, extra.line, `\`${job.id}\` declares a second \`if:\`; a step-level condition can skip the work while the job still reports success.`);
+        }
+      }
+    }
+
+    // The notifier watches the scans directly rather than through the gate, so
+    // its `needs` is every job but itself and the gate. Derived, which is also
+    // what catches a reference a job rename left behind.
+    const notifier = securityJobs.find(j => j.id === SECURITY_NOTIFIER_JOB);
+    if (notifier === undefined) {
+      at(security, topLevel(security, 'jobs').start + 1, `no job \`${SECURITY_NOTIFIER_JOB}\`; a failure on a push or on the weekly run would be reported nowhere.`);
+    } else {
+      compareAsSets(
+        security,
+        notifier.needs ?? { entries: [], line: notifier.line },
+        `\`${SECURITY_NOTIFIER_JOB}\`'s \`needs\``,
+        securityJobs.filter(j => j !== notifier && j !== securityGate).map(j => j.id),
+        problems,
+        'is not a job it can watch; the notifier needs every job but itself and the gate'
+      );
+    }
   }
 
   // ── docs.yml: the observer of the pushes ci.yml skips ─────────────────────
@@ -571,13 +910,13 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
   } else {
     compareAsSets(docs, { entries: triggers(docs), line: topLevel(docs, 'on').start + 1 }, '`on`', DOCS_TRIGGERS, problems);
 
-    const docsPaths = pathFilter(docs, 'push', 'paths');
+    const docsPaths = triggerFilter(docs, 'push', 'paths');
     if (docsPaths === null) {
       at(docs, topLevel(docs, 'on').start + 1, '`push.paths` is missing; the job would run on every push, or on none.');
     } else {
       compareAsSets(docs, docsPaths, '`push.paths`', DOCS_TRIGGER_PATHS, problems);
     }
-    const docsIgnore = pathFilter(docs, 'push', 'paths-ignore');
+    const docsIgnore = triggerFilter(docs, 'push', 'paths-ignore');
     if (docsIgnore !== null) at(docs, docsIgnore.line, '`push.paths-ignore` is declared; the trigger is expressed only as `paths`.');
 
     if (trigger(docs, 'push') !== null) {
@@ -646,7 +985,9 @@ function main(): void {
     `[workflow-paths] ok — ci.yml ignores exactly the ${CI_DOCUMENTATION_PATHS_IGNORE.length} documentation patterns, all live and ` +
       "all observed by docs.yml's drift job, which triggers on push and nothing else and runs unconditionally; " +
       'no path filter on pull_request, security.yml or release.yml; ' +
-      `\`${CI_GATE_NAME}\` runs always() under \`shell: ${CI_GATE_SHELL}\` and needs every other ci.yml job.`
+      `\`${CI_GATE_NAME}\` runs always() under \`shell: ${GATE_SHELL}\` and needs every other ci.yml job; ` +
+      `\`${SECURITY_GATE_NAME}\` needs every security.yml scan job, on pull requests targeting ${SECURITY_PR_BRANCHES.join(', ')}; ` +
+      `both gated workflows pin pull_request types [${GATED_PULL_REQUEST_TYPES.join(', ')}] and tolerate no failure of their own.`
   );
 }
 
