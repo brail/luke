@@ -3318,3 +3318,97 @@ This is the acceptance proof the item exists for: a push whose only changed path
 ## Q.9 Final state
 
 At the point immediately before this audit edit: local and remote `develop-2.2` both sit at `bcc794267b39d7545672d3b6dad330ca0e8bdc99`; the working tree and index are clean; the three pre-existing stashes (`stash@{0}`, `stash@{1}`, `stash@{2}`) remain untouched; every `package.json` in the workspace still reads `2.1.4`; no tag was created, no release preparation ran, no image was published, and no deployment or Portainer action was taken; `main` is unaffected. Push C — this appendix — has not yet been committed or pushed.
+
+# Appendix R — H2 closure: dependency and workspace hygiene (2026-09-06)
+
+Supersedes only two bookkeeping statements in Appendix Q: its listing of `5.4` among the still-open `H2` items (§Q.1's "The remaining `H2` hygiene items — `5.1`, `5.3` as narrowed, `5.4`, `6.3`, and the inert `tools/*` workspace glob — are not touched by this closure and remain open", and the equivalent clause in its own supersession preamble), and its characterization of the remaining `H2` batch as a whole as open ("the whole `H2` batch is not claimed closed, only this one item within it"). `5.4` (`allowJs`) was already explicitly DONE in Appendix J §J.1 and §J.7 during Cycle 8 — Appendix Q's prose reopened it by mistake when restating the residual batch. This appendix corrects that bookkeeping error only and does not describe `5.4` as newly closed here. With this appendix, `H2` is operationally CLOSED. Every other statement in Appendices A–Q stands unchanged, and every finding and evidence record in them remains valid.
+
+## R.1 Disposition
+
+- **Path-aware CI** — DONE previously, by Appendix Q. Not reimplemented or re-verified here.
+- **`5.1`, `@prisma/client` in `@luke/core`** — DONE, by removal.
+- **`5.3`, root `@luke/api` and `@trpc/client` devDependencies** — ACCEPTED KNOWN LIMITATION / CLOSED WITH NO CHANGE. Both declarations are load-bearing root tooling, required by `scripts/rc-prod-clone.ts`. The latent upward third-party resolution path this item originally raised remains technically possible; it is not fixed, and it is not impossible — no live workspace source exploits it, and the `@luke/*` half of the concern is already governed at lint time (`@luke/no-undeclared-workspace-import`).
+- **`5.4`, `allowJs`** — remains DONE since Cycle 8 (Appendix J). No tsconfig was touched by this `H2` implementation.
+- **`6.3`, the `deps:latest` bulk-upgrade command** — DONE, by deleting the script and its Turbo task entirely, not by renaming either.
+- **The inert `tools/*` workspace glob** — DONE, by removal.
+
+`H2` closes through a mix of implementation, an accepted no-change disposition, and an earlier verified closure — not because every observation in the original batch became code.
+
+## R.2 Investigation and decisions
+
+Investigated under `/luke-deps platform`'s method, against a clean deterministic baseline: `pnpm check:drift` before any change reported all five checkers green (`skill-integrity`: 17 skills, 173 paths, 24 symbols, 8 execution contracts; `docs-integrity`: 62 files, 98 links, 86 markers, 14 ADRs; `platform-integrity`: 8 manifests, 5 Node pins, 3 dependency families, 2 published contracts, 8 workspace roles; `tsconfig-integrity`: 14 projects; `workflow-branches`/`workflow-paths`: ok).
+
+- `packages/core/src` contained no `@prisma/client` import, and no built `dist/**/*.d.ts` named the specifier literally; `runtime/env.ts`'s `IPrismaConfigClient` is a structural interface declared precisely to avoid it.
+- `apps/api` and `@luke/db` retain their own `@prisma/client` declarations unchanged — `apps/api`'s under `devDependencies` for its declaration-graph reason (`DECLARATION_GRAPH_DEPENDENCIES` in `check-platform-integrity.ts`), `@luke/db`'s as a real runtime dependency it has owned since the Cycle 11 migration.
+- `scripts/rc-prod-clone.ts` imports `createTRPCClient`/`httpBatchLink` from `@trpc/client` as a value and `AppRouter` from `@luke/api` as a type — both root devDependencies are genuinely required by that script.
+- The same investigation reproduced the latent third-party upward-resolution path directly: from inside `packages/core` — which declares neither package — `require.resolve('@trpc/client')` and `require.resolve('@luke/api')` both succeed by walking up to the root `node_modules`. No new checker was written for it: the failure mode is latent, not demonstrated, and the ground rule against inventing a checker without a demonstrated recurring failure applied.
+- Every tracked `tsconfig*.json` (`tsconfig.base.json`, root `tsconfig.json`, both `apps/api` and `apps/web` configs, `packages/{core,nav,calendar,db}`, `tools/tsconfig.json`) was read directly and contains no `allowJs` key, true or false. The authoritative closure of that concern remains Appendix J; this item confirmed it is still in effect and changed nothing.
+- `find tools -iname package.json` returned no manifest at any depth under `tools/`, and the `pnpm-lock.yaml` `importers:` block carried no `tools/*` entry before or after removal.
+- `deps:latest` (`pnpm update --latest`) was removed rather than renamed because an unrestricted, repository-wide, all-major upgrade in one command contradicts `/luke-deps`'s standing policy of one major per verification cycle — the command's existence, not merely its name, was the risk.
+- `pnpm exec turbo run deps:latest --dry=json` resolved all seven workspace tasks (`@luke/api`, `@luke/calendar`, `@luke/core`, `@luke/db`, `@luke/nav`, `@luke/web`, `eslint-plugin-luke`) to `"command": "<NONEXISTENT>"`, proving the matching Turbo task entry was already dead — the root script had never gone through Turbo; it always called `pnpm update --latest` directly.
+
+## R.3 Final implementation
+
+Aggregate: **8 files, 15 deletions, 0 insertions.**
+
+- `packages/core/package.json` — the `@prisma/client` devDependency line, and its matching three-line `pnpm-lock.yaml` importer entry (`'@prisma/client':` / `specifier:` / `version:`) under the `@luke/core` importer.
+- `pnpm-workspace.yaml` — the `- tools/*` line — and, as cleanup once that glob was gone, the adjacent guard/comment in `eslint.config.mjs`. `tools/` existed on disk throughout; it held no `package.json` at any depth, so the glob had always contributed zero workspace package names through the inner per-entry manifest check, not through the removed guard — that guard tests whether the glob's root directory itself is absent, and it never fired for `tools/*`. Removing it once the glob no longer existed was cleanup of now-unreachable code, not the removal of something that had been masking an absent directory.
+- `package.json` and `turbo.json` — the root `deps:latest` script and its matching Turbo task entry.
+- `README.md` (two references: the quickstart block and the scripts table row) and `SETUP_STATUS.md` (one reference) — the live `deps:latest` command mentions.
+
+No package version and no resolved dependency moved anywhere else in the lockfile. Workspace membership is the same eight `pnpm-lock.yaml` importer entries before and after (`.`, `apps/api`, `apps/web`, `packages/calendar`, `packages/core`, `packages/db`, `packages/eslint-plugin-luke`, `packages/nav`). The two historical `deps:latest` mentions inside this audit document were left untouched by the implementation, as this appendix's own byte-identical prefix confirms.
+
+## R.4 Verification
+
+- `pnpm install`, then `pnpm install --frozen-lockfile`: both reported the workspace already consistent, 8 projects in scope.
+- The workspace set was proven unchanged by direct comparison of `pnpm ls -r --depth -1` and the `pnpm-lock.yaml` importer keys against their pre-edit state.
+- `pnpm --filter @luke/core build`, `typecheck`, and `typecheck:test` all succeeded.
+- `pnpm test:module-contract` succeeded on both probes (`packages/core/dist` ESM subpath resolution; `@luke/api`'s private-subpath refusal), rebuilding `@luke/db`, `@luke/nav`, `@luke/calendar`, and `@luke/api` in the process.
+- `pnpm check:drift` was green both before and after the edits. `pnpm lint:tools` and `pnpm typecheck:tools` were green after the edits.
+- A repository-wide search confirmed zero live, non-historical `deps:latest` occurrences after the change.
+- The final implementation tree is `7d1bae8693e4abbf8da278f7f5fbd0d2a022385d`.
+
+The only claim made about the lockfile mechanism is that `pnpm install` and the frozen-lockfile check both confirmed the resulting `pnpm-lock.yaml` was consistent with the edited manifests; no claim is made that `.husky/post-checkout` caused the update.
+
+## R.5 Commit history
+
+Linear chain, parent baseline `b4b67cc76555bab82f0b21778f72b38486eff650`:
+
+```
+78e03c115a7655849953c65ebb60192e0e7eca75
+  chore(core): remove the unused Prisma client dependency
+
+35500e5e277754325f3c52f416dece488d09431f
+  chore(workspace): remove the inert tools workspace glob
+
+302593a0fcf526dc0f66d041eb10616d9f41f6f0
+  chore(deps): remove the unrestricted bulk-upgrade command
+```
+
+The first local version of commit 1 produced one `commitlint` warning (`footer-leading-blank`, 0 problems): a wrapped body line beginning `layering:` was parsed as an attempted footer trailer with no preceding blank line. Before push, all three local commit objects were reconstructed with `git commit-tree`, keeping identical trees, parents, and author/committer identity and timestamps, changing only that one fragment to `layering because`. `commitlint --from b4b67cc --to HEAD` then reported zero problems and zero warnings. No already-pushed history was rewritten — the reconstruction happened entirely before the push — and no force push occurred at any point.
+
+## R.6 Remote evidence
+
+Pushed as a normal fast-forward, no force, no `--no-verify`; `.husky/pre-push` ran in full. `refs/heads/develop-2.2` on the remote reached exactly `302593a0fcf526dc0f66d041eb10616d9f41f6f0`.
+
+CI, run `34029493896`: **success** — all four jobs green (`Migrations`, `Browser Component Tests`, `Integration Tests`, `Lint, TypeCheck & Unit Tests`). Within the first job: `TypeCheck`, `TypeCheck (test)`, `Control-plane tests`, `Docs & skills drift`, `Unit tests`, `Module contract (require(esm))`, and `Build (web)` all executed and succeeded, none skipped.
+
+Docs, run `34029494074`: **success** — exactly one job, `Documentation drift`; its checkout, `setup-workspace`, and `Docs & skills drift` steps all succeeded, and its log shows all six checker outputs: `[skill-integrity] ok`, `[docs-integrity] ok`, `[platform-integrity] ok`, `[tsconfig-integrity] ok`, `[workflow-branches] ok`, `[workflow-paths] ok`.
+
+Security, run `34029494139`: **success** — `gitleaks`, `semgrep`, and `osv-push` ran and passed as real jobs; `osv-weekly`, `osv-weekly-release-train`, and `notify-on-failure` show `skipped`, correctly — the first two are schedule-only and inert on a push event, the third is conditioned on a failure that did not occur.
+
+All three workflows correctly ran on the same push for three independent reasons: the push's changed paths include several files outside `ci.yml`'s documentation-ownership allowlist (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `eslint.config.mjs`, `turbo.json`, `packages/core/package.json`), which is what caused `ci.yml` to run its full pipeline rather than being skipped; `README.md` and `SETUP_STATUS.md` both fall under `docs.yml`'s broader `**.md` observation surface, which is what caused `Docs` to run; and `security.yml` is path-blind by design, so it ran regardless of either fact. No `Release` run exists for this SHA, and no tag points at it.
+
+## R.7 Honest process record and boundaries
+
+- `/luke-docs readme --dry-run` correctly scoped itself to the two `deps:latest` references in root `README.md` and separately flagged unrelated pre-existing documentation drift (a stale Node-engine version mention, a stale workspace-count word, hardcoded stack versions) without proposing to touch any of it.
+- The subsequent apply invocation, given the mode argument `readme`, unexpectedly also entered ADR mode and rewrote `docs/decisions/README.md` — four ADR title/link corrections (ADR-002, ADR-007, ADR-013 and ADR-014) and a date-stamp change, entirely unrelated to `deps:latest`. This is a genuine skill-mode-isolation defect, deferred to the separate skills workstream; it is not an `H2` finding and nothing about `H2`'s scope depended on it.
+- The unwanted ADR-index edit was removed with `git checkout -- docs/decisions/README.md`, which violates the repository's existing no-git-rollback rule (revert by undoing the specific edit, never `git checkout`/`git restore` on a file). The file had zero prior uncommitted state and the resulting diff proved zero net change, but that does not make the method compliant — the rule exists precisely so safety does not need to be verified after the fact. The rule already exists in the project's governance material; no new `lessons.md` entry was added for this.
+- The broader README/SETUP_STATUS staleness this pass surfaced (Node-engine version text, "sei"/"sette" workspace-count wording, hardcoded stack versions, and any Italian/English inconsistency across `docs/decisions/`) remains assigned to the separate documentation review and English-translation workstream — not touched or claimed fixed here.
+- No new dependency checker, workspace package, runtime behavior, Prisma schema or migration change, workflow file, package version, image, or deployment action belongs to this implementation.
+
+## R.8 Final state and next work
+
+Local and remote `develop-2.2` both sit at `302593a0fcf526dc0f66d041eb10616d9f41f6f0`. The working tree and index were clean before this audit edit. All three pre-existing stashes remain untouched. Every `package.json` in the workspace still reads `2.1.4`. `main` is unaffected. No tag was created, no release preparation ran in any mode, no image was published, and no deployment or Portainer action was taken.
+
+`H1` and `H2` are both closed. Per the ordering `§A.4` and later appendices have maintained, `P1/P2-08` is now the next architectural item. `S-01` (branch protection), the skill-mode-isolation finding recorded in §R.7, and the separate full documentation review / English-translation workstream remain distinct, unstarted workstreams — none of them is begun by this appendix.
