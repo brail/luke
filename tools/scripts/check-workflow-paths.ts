@@ -1,5 +1,6 @@
 /**
- * Deterministic gate for the path filters that decide when CI runs.
+ * Deterministic gate for the shape of the workflows that decide when CI runs
+ * and what a merge on `main` will be allowed to depend on.
  *
  * `ci.yml` skips a push confined to documentation through a `paths-ignore`
  * allowlist under its `push` trigger, and `docs.yml` runs the drift check on
@@ -28,6 +29,22 @@
  *   runner, which is not the silent-success state this gate exists for.
  * - Every tracked file CI ignores triggers docs.yml, and every ignore pattern
  *   matches a tracked file.
+ * - `ci.yml` declares an aggregate job named `CI gate`: `needs` exactly its
+ *   other jobs, `if: ${{ always() }}`, no other `if:` and no
+ *   `continue-on-error:` at any level, no `uses:` at all, and one single step
+ *   whose `run:` is the pinned one-line script that treats the literal
+ *   `success` as the only acceptable dependency result, run by an explicitly
+ *   pinned `shell: bash`. That name is the stable candidate the ruleset on
+ *   `main` will require in place of the individual job names — a separate
+ *   remote change, deliberately deferred until a real train PR has produced
+ *   the context. The list it will stand for must therefore be ci.yml's own,
+ *   compared against the file's jobs rather than a constant here, which makes
+ *   a newly added job a missing `needs` entry instead of a silently unguarded
+ *   one. The current remote context list is deliberately not encoded here:
+ *   this checker owns the repository's half of the contract and nothing else.
+ *   The two invariants are coupled, which is why they live together: the gate
+ *   will only be sound as a required check because ci.yml's `pull_request`
+ *   carries no path filter, asserted just above it.
  *
  * Line-oriented and strict, like `check-workflow-branches.ts`: it reads the
  * shapes these workflows actually use and treats anything else as an error,
@@ -72,6 +89,52 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
   '.claude/skills/**/*.md',
 ] as const;
 
+/**
+ * The aggregate gate's name, and the candidate context for `main`'s ruleset.
+ * Branch protection names its contexts as strings: it cannot follow a rename
+ * and never learns about a new job, so one name that carries the dependency on
+ * everything else is meant to replace a list nobody can keep in step. The
+ * ruleset still names the individual jobs today; swapping it for this one is a
+ * separate remote change, deferred until a real train PR has produced this
+ * context. Deliberately not paired with a pinned list of job names here
+ * — neither ci.yml's, which is read from the file, nor the ruleset's, which is
+ * not this checker's to know.
+ */
+export const CI_GATE_NAME = 'CI gate';
+
+/**
+ * Job-level condition. A gate without it is skipped in exactly the runs it
+ * exists to fail — GitHub skips a job whose dependency failed, was cancelled
+ * or was skipped — and a skipped check reports neutral, not failed, which is
+ * worth nothing to a ruleset that requires it.
+ */
+export const CI_GATE_IF = '${{ always() }}';
+
+/**
+ * The interpreter the pinned script's semantics belong to, declared on the
+ * step rather than inherited from the runner default — which is not part of
+ * any contract and would change under the job without a diff here. What runs
+ * the line decides whether it asserts anything at all: `shell: echo {0}` would
+ * print the script and exit 0, a green gate that never looked at a result.
+ * One declaration exactly, so a second one cannot quietly win.
+ */
+export const CI_GATE_SHELL = 'bash';
+
+/** The gate's only input, bound to `RESULTS`: every dependency's result, space separated. */
+export const CI_GATE_RESULTS = "${{ join(needs.*.result, ' ') }}";
+
+/**
+ * The gate's whole body, pinned as a literal because it *is* the semantics:
+ * it accepts the exact string `success` and rejects everything else, so
+ * `failure`, `cancelled`, `skipped` and any result GitHub adds later fail
+ * closed. It counts its arguments before looping because that is not
+ * redundant: a `needs` that resolved to nothing, or to whitespace, would
+ * otherwise iterate zero times and pass. The test suite executes this exact
+ * string against each of those results rather than only comparing it.
+ */
+export const CI_GATE_RUN =
+  'echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done';
+
 /** The deliberately broader trigger of docs.yml: a superset of the list above. */
 export const DOCS_TRIGGER_PATHS = ['docs/**', '**.md'] as const;
 
@@ -98,15 +161,16 @@ const DOCS_JOB_SETUP = './.github/actions/setup-workspace';
 const DOCS_JOB_RUN = 'pnpm check:drift';
 
 /**
- * The keys that would let the Docs job report success without checking
- * anything, at job level (4 spaces) or step level (6 with the dash, 8
- * without). Their *absence* is the contract, so `if: true` and
- * `continue-on-error: false` are rejected with the rest: reading the
- * expression is a YAML evaluator's job, and a gate that tried would be
- * arguing about `success()` instead of refusing the whole class. Conditional
- * behaviour here has to start as a change to this checker.
+ * The keys that let a job report success without having done its work, at job
+ * level (4 spaces) or step level (6 with the dash, 8 without), with the value
+ * so a caller can allow one exact spelling. For the Docs job their *absence*
+ * is the contract, so `if: true` and `continue-on-error: false` are rejected
+ * with the rest: reading the expression is a YAML evaluator's job, and a gate
+ * that tried would be arguing about `success()` instead of refusing the whole
+ * class. Conditional behaviour there has to start as a change to this checker.
+ * The CI gate is the one job that must carry exactly one of them.
  */
-const DOCS_JOB_CONTROL = /^ {4,8}(?:- )?(if|continue-on-error):/;
+const JOB_CONTROL = /^( {4,8})(- )?(if|continue-on-error):\s*(.*?)\s*$/;
 
 const PATH_FILTER_KEY = /^\s+paths(-ignore)?:/;
 
@@ -210,9 +274,34 @@ interface Filter {
 }
 
 /**
- * `on.<trigger>.<key>` as a list — inline `[a, b]` or block `- a` items — or
- * null when the trigger or the key is absent. A key that lists nothing is an
- * error: an empty filter is not a narrower filter.
+ * The list a key introduces — inline `[a, b]` or block `- a` items, both at
+ * the one indent every list in these files uses. A form it cannot read is an
+ * error rather than an empty list: silence would report a filter as absent, or
+ * a `needs` graph as unguarded.
+ */
+function readList(wf: Workflow, key: Section, label: string): Filter {
+  const line = key.start + 1;
+  const header = wf.lines[key.start];
+  const rest = header.slice(header.indexOf(':') + 1).trim();
+  if (rest === '') {
+    return {
+      line,
+      entries: wf.lines
+        .slice(key.start + 1, key.end)
+        .filter(l => /^ {6}- /.test(l))
+        .map(l => unquote(l.replace(/^ {6}- /, ''))),
+    };
+  }
+  const inline = /^\[(.*)\]$/.exec(rest);
+  if (inline === null) {
+    throw new WorkflowPathError(`${wf.file}:${line}: \`${label}\` is neither an inline \`[...]\` list nor a block list.`);
+  }
+  return { line, entries: inline[1].split(',').map(unquote).filter(Boolean) };
+}
+
+/**
+ * `on.<trigger>.<key>`, or null when the trigger or the key is absent. A key
+ * that lists nothing is an error: an empty filter is not a narrower filter.
  */
 function pathFilter(wf: Workflow, trig: string, key: 'paths' | 'paths-ignore'): Filter | null {
   const t = trigger(wf, trig);
@@ -220,34 +309,27 @@ function pathFilter(wf: Workflow, trig: string, key: 'paths' | 'paths-ignore'): 
   const k = section(wf.lines, new RegExp(`^ {4}${key}:`), 4, t.start + 1, t.end);
   if (k === null) return null;
 
-  const line = k.start + 1;
-  const header = wf.lines[k.start];
-  const rest = header.slice(header.indexOf(':') + 1).trim();
-  let entries: string[];
-  if (rest !== '') {
-    const inline = /^\[(.*)\]$/.exec(rest);
-    if (inline === null) {
-      throw new WorkflowPathError(`${wf.file}:${line}: \`${trig}.${key}\` is neither an inline \`[...]\` list nor a block list.`);
-    }
-    entries = inline[1].split(',').map(unquote).filter(Boolean);
-  } else {
-    entries = wf.lines
-      .slice(k.start + 1, k.end)
-      .filter(l => /^ {6}- /.test(l))
-      .map(l => unquote(l.replace(/^ {6}- /, '')));
+  const filter = readList(wf, k, `${trig}.${key}`);
+  if (filter.entries.length === 0) {
+    throw new WorkflowPathError(`${wf.file}:${filter.line}: \`${trig}.${key}\` lists nothing; an empty filter is not a narrower filter.`);
   }
-  if (entries.length === 0) {
-    throw new WorkflowPathError(`${wf.file}:${line}: \`${trig}.${key}\` lists nothing; an empty filter is not a narrower filter.`);
-  }
-  return { entries, line };
+  return filter;
 }
 
 interface Job {
+  /** The key under `jobs:`, which is what a `needs:` list names. */
+  id: string;
   name: string | null;
   uses: string[];
   run: string[];
+  /** null when the job declares no `needs:` at all. */
+  needs: Filter | null;
+  /** The job's lines, for the one binding only the gate cares about. */
+  body: string[];
+  /** Every `shell:` the job declares, at any level: more than one is ambiguity. */
+  shells: Array<{ value: string; level: 'job' | 'step'; line: number }>;
   /** Occurrences of `if:` / `continue-on-error:` anywhere in the job. */
-  controls: Array<{ key: string; line: number }>;
+  controls: Array<{ key: string; value: string; level: 'job' | 'step'; line: number }>;
   line: number;
 }
 
@@ -255,25 +337,39 @@ interface Job {
 function jobs(wf: Workflow): Job[] {
   const block = topLevel(wf, 'jobs');
   const out: Job[] = [];
-  const isJob = /^ {2}[\w-]+:\s*$/;
+  const isJob = /^ {2}([\w-]+):\s*$/;
   for (let i = block.start + 1; i < block.end; i++) {
-    if (!isJob.test(wf.lines[i])) continue;
+    const header = isJob.exec(wf.lines[i]);
+    if (header === null) continue;
     const job = section(wf.lines, isJob, 2, i, block.end);
     if (job === null) break;
     const body = wf.lines.slice(job.start + 1, job.end);
+    const lineOf = (index: number): number => job.start + 2 + index;
     const values = (re: RegExp): string[] =>
       body.flatMap(l => {
         const m = re.exec(l);
         return m === null ? [] : [unquote(m[1])];
       });
+    const needs = section(wf.lines, /^ {4}needs:/, 4, job.start + 1, job.end);
     out.push({
+      body,
       line: job.start + 1,
+      id: header[1],
       name: values(/^ {4}name:\s*(.+?)\s*$/)[0] ?? null,
       uses: values(/^ {6,8}(?:- )?uses:\s*(.+?)\s*$/),
       run: values(/^ {6,8}(?:- )?run:\s*(.+?)\s*$/),
+      needs: needs === null ? null : readList(wf, needs, `${header[1]}.needs`),
+      shells: body.flatMap((l, k) => {
+        const m = /^( {4,10})(- )?shell:\s*(.*?)\s*$/.exec(l);
+        if (m === null) return [];
+        const level: 'job' | 'step' = m[1].length === 4 && m[2] === undefined ? 'job' : 'step';
+        return [{ value: unquote(m[3]), level, line: lineOf(k) }];
+      }),
       controls: body.flatMap((l, k) => {
-        const m = DOCS_JOB_CONTROL.exec(l);
-        return m === null ? [] : [{ key: m[1], line: job.start + 2 + k }];
+        const m = JOB_CONTROL.exec(l);
+        if (m === null) return [];
+        const level: 'job' | 'step' = m[1].length === 4 && m[2] === undefined ? 'job' : 'step';
+        return [{ key: m[3], value: unquote(m[4]), level, line: lineOf(k) }];
       }),
     });
     i = job.end - 1;
@@ -285,8 +381,20 @@ function trackedFiles(root: string): string[] {
   return execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
 }
 
-/** Two lists as duplicate-free sets; each side's surplus is a problem of its own. */
-function compareAsSets(wf: Workflow, filter: Filter, label: string, expected: readonly string[], problems: Problem[]): void {
+/**
+ * Two lists as duplicate-free sets; each side's surplus is a problem of its
+ * own. `surplus` completes "contains `x`, which …": the default is right for a
+ * set pinned in this file, and a caller comparing against something the
+ * repository itself declares passes its own.
+ */
+function compareAsSets(
+  wf: Workflow,
+  filter: Filter,
+  label: string,
+  expected: readonly string[],
+  problems: Problem[],
+  surplus = 'is not part of the pinned contract; widen the checker first, then the workflow'
+): void {
   const seen = new Set<string>();
   for (const entry of filter.entries) {
     if (seen.has(entry)) problems.push({ file: wf.file, line: filter.line, message: `${label} lists \`${entry}\` twice.` });
@@ -300,7 +408,7 @@ function compareAsSets(wf: Workflow, filter: Filter, label: string, expected: re
       problems.push({
         file: wf.file,
         line: filter.line,
-        message: `${label} contains \`${entry}\`, which is not part of the pinned contract; widen the checker first, then the workflow.`,
+        message: `${label} contains \`${entry}\`, which ${surplus}.`,
       });
     }
   }
@@ -353,6 +461,99 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
     }
   }
 
+  // ── ci.yml: the aggregate gate the ruleset will require ───────────────────
+  const ciJobs = jobs(ci);
+  const gate = ciJobs.find(j => j.name === CI_GATE_NAME);
+  if (gate === undefined) {
+    at(
+      ci,
+      topLevel(ci, 'jobs').start + 1,
+      `no job is named \`${CI_GATE_NAME}\`; that is the candidate context the ruleset on \`main\` is meant to require, ` +
+        'and without it there is nothing to switch to — every job stays named one by one in the ruleset, or guarded by nobody.'
+    );
+  } else {
+    compareAsSets(
+      ci,
+      gate.needs ?? { entries: [], line: gate.line },
+      `\`${CI_GATE_NAME}\`'s \`needs\``,
+      ciJobs.filter(j => j !== gate).map(j => j.id),
+      problems,
+      "is not a job in ci.yml; the gate needs ci.yml's other jobs and nothing else"
+    );
+
+    const jobIf = gate.controls.find(c => c.level === 'job' && c.key === 'if');
+    if (jobIf === undefined) {
+      at(
+        ci,
+        gate.line,
+        `job declares no \`if:\`; without \`if: ${CI_GATE_IF}\` it is skipped in exactly the runs it exists to fail, ` +
+          'and a skipped check blocks no merge once the ruleset requires it.'
+      );
+    } else if (jobIf.value !== CI_GATE_IF) {
+      at(ci, jobIf.line, `job declares \`if: ${jobIf.value}\`, not \`if: ${CI_GATE_IF}\`; anything else lets a failed dependency skip the gate.`);
+    }
+    for (const control of gate.controls) {
+      if (control !== jobIf) {
+        at(
+          ci,
+          control.line,
+          `job declares \`${control.key}:\` besides its job-level \`if: ${CI_GATE_IF}\`; ` +
+            'a second condition or a `continue-on-error:` reports the gate green while a dependency did not succeed.'
+        );
+      }
+    }
+
+    if (gate.uses.length > 0) {
+      at(ci, gate.line, `job runs \`${gate.uses[0]}\`; the gate reads its dependencies' results and nothing else — no checkout, workspace setup, install or build.`);
+    }
+    if (gate.run.length !== 1 || gate.run[0] !== CI_GATE_RUN) {
+      at(
+        ci,
+        gate.line,
+        `job's steps are not exactly one \`run:\` equal to \`${CI_GATE_RUN}\`; ` +
+          'that literal is the gate\'s semantics, read here in its inline one-line form and executed by the test suite.'
+      );
+    }
+    // What interprets the pinned script. Counted across the whole job, so a
+    // job-level `defaults.run.shell` added beside the step's own is ambiguity
+    // rather than a silent winner.
+    if (gate.shells.length === 0) {
+      at(
+        ci,
+        gate.line,
+        `job declares no \`shell:\`; the pinned script's semantics are \`${CI_GATE_SHELL}\`'s, and the runner default is not part of any contract.`
+      );
+    } else if (gate.shells.length > 1) {
+      at(
+        ci,
+        gate.shells[1].line,
+        `job declares ${gate.shells.length} \`shell:\` keys; exactly one decides what runs the pinned script, and two leave which one to GitHub's precedence rules.`
+      );
+    } else if (gate.shells[0].value !== CI_GATE_SHELL) {
+      at(
+        ci,
+        gate.shells[0].line,
+        `job declares \`shell: ${gate.shells[0].value}\`, not \`shell: ${CI_GATE_SHELL}\`; ` +
+          'another interpreter need not fail on what the script rejects, and one like `echo {0}` would report success without executing it at all.'
+      );
+    } else if (gate.shells[0].level !== 'step') {
+      at(ci, gate.shells[0].line, `job declares \`shell: ${CI_GATE_SHELL}\` at job level; it belongs on the step that carries the script.`);
+    }
+
+    // The one step's `env:`, at its own indent. Read here rather than through
+    // a general `env` field on every job: at this indent a job with `services:`
+    // also has its container's variables, and the gate has neither.
+    const results = gate.body.flatMap((l, k) => {
+      const m = /^ {10}RESULTS:\s*(.+?)\s*$/.exec(l);
+      return m === null ? [] : [{ value: unquote(m[1]), line: gate.line + 1 + k }];
+    })[0];
+    if (results === undefined) {
+      at(ci, gate.line, "job binds no `RESULTS`; the script would then read an empty variable rather than its dependencies' results.");
+    } else if (results.value !== CI_GATE_RESULTS) {
+      at(ci, results.line, `job binds \`RESULTS: ${results.value}\`, not \`${CI_GATE_RESULTS}\`; a value that is not the dependency results makes the gate assert nothing.`);
+    }
+  }
+
   // ── security.yml and release.yml: path-blind ──────────────────────────────
   for (const wf of [security, release]) {
     const hit = wf.lines.findIndex(l => PATH_FILTER_KEY.test(l));
@@ -397,7 +598,7 @@ export function checkWorkflowPaths(root: string, tracked: readonly string[] = tr
     if (docsJobs.length !== 1) {
       at(docs, topLevel(docs, 'jobs').start + 1, `declares ${docsJobs.length} jobs; exactly one, \`${DOCS_JOB_NAME}\`, is the contract.`);
     }
-    const ciJobNames = jobs(ci).map(j => j.name);
+    const ciJobNames = ciJobs.map(j => j.name);
     for (const job of docsJobs) {
       if (job.name !== DOCS_JOB_NAME) at(docs, job.line, `job is named \`${job.name}\`, not \`${DOCS_JOB_NAME}\`.`);
       if (ciJobNames.includes(job.name)) {
@@ -444,7 +645,8 @@ function main(): void {
   console.log(
     `[workflow-paths] ok — ci.yml ignores exactly the ${CI_DOCUMENTATION_PATHS_IGNORE.length} documentation patterns, all live and ` +
       "all observed by docs.yml's drift job, which triggers on push and nothing else and runs unconditionally; " +
-      'no path filter on pull_request, security.yml or release.yml.'
+      'no path filter on pull_request, security.yml or release.yml; ' +
+      `\`${CI_GATE_NAME}\` runs always() under \`shell: ${CI_GATE_SHELL}\` and needs every other ci.yml job.`
   );
 }
 

@@ -9,11 +9,16 @@
  * contract at its most literal — which concrete paths skip CI, which do not,
  * and which of them the Docs workflow still observes.
  *
+ * The aggregate `CI gate` is covered the same way, plus one thing a fixture
+ * cannot express: its pinned script is executed here, against each dependency
+ * result GitHub can produce, so "only `success` passes" is a demonstrated
+ * property rather than a string comparison.
+ *
  * Run: `pnpm test:tools`
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -21,6 +26,11 @@ import { after, test } from 'node:test';
 
 import {
   CI_DOCUMENTATION_PATHS_IGNORE,
+  CI_GATE_IF,
+  CI_GATE_NAME,
+  CI_GATE_RESULTS,
+  CI_GATE_RUN,
+  CI_GATE_SHELL,
   DOCS_TRIGGER_PATHS,
   DOCS_TRIGGERS,
   WorkflowPathError,
@@ -69,6 +79,29 @@ jobs:
 
 const IGNORE_BLOCK = CI_DOCUMENTATION_PATHS_IGNORE.map(p => `      - '${p}'`).join('\n');
 
+/**
+ * The gate, built from the checker's own constants so the fixture cannot drift
+ * from the contract, with every line a fixture below mutates named once here.
+ */
+const GATE_NEEDS = '[checks, integration, migrations]';
+const GATE_STEP_LINE = '      - name: Require every job to have succeeded';
+const GATE_SHELL_LINE = `        shell: ${CI_GATE_SHELL}`;
+const GATE_ENV_LINE = `          RESULTS: ${CI_GATE_RESULTS}`;
+const GATE_RUN_LINE = `        run: ${CI_GATE_RUN}`;
+
+const CI_GATE_JOB = `  gate:
+    name: ${CI_GATE_NAME}
+    needs: ${GATE_NEEDS}
+    if: ${CI_GATE_IF}
+    runs-on: ubuntu-latest
+    steps:
+${GATE_STEP_LINE}
+${GATE_SHELL_LINE}
+        env:
+${GATE_ENV_LINE}
+${GATE_RUN_LINE}
+`;
+
 const CI = `name: CI
 
 on:
@@ -96,7 +129,7 @@ jobs:
   migrations:
     name: Migrations
     runs-on: ubuntu-latest
-`;
+${CI_GATE_JOB}`;
 
 const DOCS_STEPS = `    steps:
       - uses: actions/checkout@v7
@@ -229,6 +262,136 @@ test('any other path filter in ci.yml is reported: push.paths, or anything under
 
 test('dropping workflow_call is reported: release.yml reuses ci.yml', () => {
   only({ ci: CI.replace('  workflow_call:\n', '') }, /`on\.workflow_call` is gone/);
+});
+
+// ── ci.yml: the aggregate gate ───────────────────────────────────────────────
+
+test('a gate that is absent or carries any other name is reported', () => {
+  only({ ci: CI.replace(CI_GATE_JOB, '') }, /no job is named `CI gate`/);
+  // A ruleset matches a context byte for byte, so case will be part of the name.
+  only({ ci: CI.replace(`name: ${CI_GATE_NAME}`, 'name: CI Gate') }, /no job is named `CI gate`/);
+});
+
+test("the gate needs ci.yml's other jobs: no omission, no duplicate, no name that is not a job", () => {
+  only({ ci: CI.replace(GATE_NEEDS, '[checks, migrations]') }, /`needs` is missing `integration`/);
+  only({ ci: CI.replace(GATE_NEEDS, '[checks, integration, migrations, e2e]') }, /contains `e2e`, which is not a job in ci\.yml/);
+  only({ ci: CI.replace(GATE_NEEDS, '[checks, checks, integration, migrations]') }, /`needs` lists `checks` twice/);
+  // No `needs:` at all is every job missing, one problem each — not one vague failure.
+  const none = problems({ ci: CI.replace(`    needs: ${GATE_NEEDS}\n`, '') });
+  assert.deepEqual(
+    none.map(p => p.message),
+    ['checks', 'integration', 'migrations'].map(id => `\`${CI_GATE_NAME}\`'s \`needs\` is missing \`${id}\`.`)
+  );
+});
+
+test('a job added to ci.yml and not to the gate is reported, and adding it to both is green', () => {
+  const browser = '  browser:\n    name: Browser Component Tests\n    runs-on: ubuntu-latest\n';
+  const added = CI.replace('  migrations:\n', `${browser}  migrations:\n`);
+  only({ ci: added }, /`needs` is missing `browser`/);
+  assert.deepEqual(problems({ ci: added.replace(GATE_NEEDS, '[checks, browser, integration, migrations]') }), []);
+});
+
+test('the gate must run always(): a missing or different condition is reported', () => {
+  only({ ci: CI.replace(`    if: ${CI_GATE_IF}\n`, '') }, /declares no `if:`/);
+  // The semantic opposite, and the unwrapped near-miss that reads as correct.
+  for (const expr of ['${{ success() }}', 'always()']) {
+    only({ ci: CI.replace(`if: ${CI_GATE_IF}`, `if: ${expr}`) }, /not `if: \$\{\{ always\(\) \}\}`/);
+  }
+});
+
+test('any second condition, and any continue-on-error at either level, is reported', () => {
+  const cases: Array<[label: string, ci: string]> = [
+    ['job-level continue-on-error', CI.replace(`    if: ${CI_GATE_IF}\n`, `    if: ${CI_GATE_IF}\n    continue-on-error: true\n`)],
+    ['step-level continue-on-error', CI.replace(GATE_RUN_LINE, `        continue-on-error: true\n${GATE_RUN_LINE}`)],
+    ['step-level if', CI.replace(GATE_RUN_LINE, `        if: false\n${GATE_RUN_LINE}`)],
+    // Except for the job's own `always()`, the absence is the contract: the
+    // benign spellings go red too.
+    ['step-level continue-on-error: false', CI.replace(GATE_RUN_LINE, `        continue-on-error: false\n${GATE_RUN_LINE}`)],
+  ];
+  for (const [label, ci] of cases) {
+    const p = only({ ci }, /besides its job-level `if: \$\{\{ always\(\) \}\}`/);
+    assert.match(p.message, /declares `(if|continue-on-error):`/, label);
+  }
+});
+
+test('the gate does no work of its own: no uses, and exactly the pinned run', () => {
+  only({ ci: CI.replace(GATE_STEP_LINE, `      - uses: actions/checkout@v7\n${GATE_STEP_LINE}`) }, /no checkout, workspace setup, install or build/);
+  only({ ci: CI.replace(GATE_RUN_LINE, '        run: exit 0') }, /steps are not exactly one `run:`/);
+  only({ ci: CI.replace(GATE_RUN_LINE, `${GATE_RUN_LINE}\n      - run: pnpm install`) }, /steps are not exactly one `run:`/);
+  // Reformatted as a block scalar the script is unchanged, but the checker no
+  // longer reads it, and silence would be a pass.
+  only({ ci: CI.replace(GATE_RUN_LINE, `        run: |\n          ${CI_GATE_RUN}`) }, /steps are not exactly one `run:`/);
+});
+
+test('the gate pins the shell that gives the pinned script its semantics', () => {
+  only({ ci: CI.replace(`${GATE_SHELL_LINE}\n`, '') }, /declares no `shell:`/);
+  for (const shell of ['sh', 'pwsh', 'python']) {
+    only({ ci: CI.replace(GATE_SHELL_LINE, `        shell: ${shell}`) }, new RegExp(`declares \`shell: ${shell}\`, not \`shell: bash\``));
+  }
+  // A shell template is not an interpreter of the script: this one prints it and exits 0.
+  const echoed = only({ ci: CI.replace(GATE_SHELL_LINE, '        shell: echo {0}') }, /would report success without executing it at all/);
+  assert.match(echoed.message, /declares `shell: echo \{0\}`/);
+  // Two declarations leave the winner to GitHub's precedence rules rather than to this file.
+  only({ ci: CI.replace(GATE_SHELL_LINE, `${GATE_SHELL_LINE}\n${GATE_SHELL_LINE}`) }, /declares 2 `shell:` keys/);
+  only(
+    { ci: CI.replace(GATE_SHELL_LINE, `${GATE_SHELL_LINE}\n        shell: sh`) },
+    /declares 2 `shell:` keys/
+  );
+  // Right value, wrong level: the step that carries the script is what must say
+  // it. Rewritten inside the gate block, since `runs-on:` is not unique in CI.
+  const atJobLevel = CI_GATE_JOB.replace(`${GATE_SHELL_LINE}\n`, '').replace('    runs-on:', `    shell: ${CI_GATE_SHELL}\n    runs-on:`);
+  only({ ci: CI.replace(CI_GATE_JOB, atJobLevel) }, /at job level; it belongs on the step/);
+});
+
+test('the gate must read its dependencies results, not a value of its own', () => {
+  only({ ci: CI.replace(`${GATE_ENV_LINE}\n`, '') }, /binds no `RESULTS`/);
+  only({ ci: CI.replace(GATE_ENV_LINE, '          RESULTS: success') }, /binds `RESULTS: success`, not/);
+  only(
+    { ci: CI.replace(CI_GATE_RESULTS, "${{ join(needs.*.result, ',') }}") },
+    /binds `RESULTS: \$\{\{ join\(needs\.\*\.result, ','\) \}\}`, not/
+  );
+});
+
+/**
+ * The gate's own script, executed the way GitHub executes a step that declares
+ * `shell: bash` — `bash --noprofile --norc -eo pipefail <file>`, a file rather
+ * than `-c`, which is what the workflow now pins rather than inherits.
+ */
+const gateScript = ((): string => {
+  const dir = mkdtempSync(join(tmpdir(), 'luke-gate-'));
+  created.push(dir);
+  const file = join(dir, 'gate.sh');
+  writeFileSync(file, CI_GATE_RUN);
+  return file;
+})();
+
+function gateExit(results: string): number {
+  const argv = ['--noprofile', '--norc', '-eo', 'pipefail', gateScript];
+  return spawnSync(CI_GATE_SHELL, argv, { env: { ...process.env, RESULTS: results }, encoding: 'utf8' }).status ?? -1;
+}
+
+test('the pinned script accepts only success, and rejects every other dependency result', () => {
+  assert.equal(gateExit('success'), 0);
+  assert.equal(gateExit('success success success success'), 0);
+  for (const results of [
+    // The three results a dependency can end with besides success.
+    'failure',
+    'cancelled',
+    'skipped',
+    // One bad result among good ones, in every position.
+    'failure success success',
+    'success cancelled success',
+    'success success skipped',
+    // A result GitHub might add later, and near misses.
+    'neutral',
+    'SUCCESS',
+    'successful',
+    // `needs` resolving to nothing: no iteration is not a pass.
+    '',
+    '   ',
+  ]) {
+    assert.notEqual(gateExit(results), 0, `results=${JSON.stringify(results)}`);
+  }
 });
 
 // ── security.yml and release.yml stay path-blind ─────────────────────────────

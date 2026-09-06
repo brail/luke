@@ -240,3 +240,37 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema ./prisma \
             --exit-code
+
+  # The aggregate gate: the stable candidate context for `main`'s ruleset,
+  # which today still requires the individual job names and cannot keep that
+  # list in step with this file. The switch is a separate remote change, made
+  # once a real train PR has produced this context successfully; until then
+  # this job reports like any other. Its `needs` is what will let one name
+  # stand for all of them, and tools/scripts/check-workflow-paths.ts pins that
+  # list to ci.yml's own jobs, along with the rest of this job.
+  #
+  # `always()` is what makes it a gate rather than a passenger: without it a
+  # failed, cancelled or skipped dependency would skip this job too, and a
+  # skipped check reports neutral rather than failed — worthless as a required
+  # context once the ruleset names it. Running unconditionally, it accepts the
+  # literal `success` and nothing else, and counts its arguments first because
+  # a `needs` that resolved to nothing would otherwise leave the loop with no
+  # iterations at all. The unquoted `$RESULTS`
+  # is that word split, deliberately: shellcheck's SC2086 here is the intended
+  # behaviour, and a one-line `run:` cannot carry a disable directive.
+  #
+  # `shell:` is spelled out because the script's semantics are bash's, and the
+  # runner default is not part of any contract: whatever interprets this line
+  # decides whether it asserts anything at all — `shell: echo {0}` would print
+  # it and exit 0.
+  gate:
+    name: CI gate
+    needs: [checks, browser, integration, migrations]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to have succeeded
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done
