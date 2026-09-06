@@ -95,6 +95,41 @@ and reviewed when their unblock condition changes.
 | ------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
 | TypeScript 7        | HOLD  | 7.1 stable, and `typescript-eslint`, `ts-morph`, Next tooling, Prisma-generated types, Vite/Vitest and declaration builds all pass a compatibility gate. No TS6/TS7 bridge in the meantime |
 | Prisma next major   | HOLD  | the generator migration on the current major is complete and production-stable; never bundled with it                          |
+| pnpm Catalogs (P1/P2-08) | HOLD | see reconsideration triggers below — decided 2026-09-06, `docs/LUKE_MONOREPO_AUDIT_2026-08-30.md` Appendix S |
+
+### pnpm Catalogs (P1/P2-08) — held, not adopted
+
+Reviewed and closed as a governed hold, not left as an unexamined open
+recommendation. Repeated dependency names already carry one identical
+textual spec each — `checkVersionAlignment` covers cross-manifest textual
+skew today — so a Catalog would only reduce the number of manifest edit
+sites, not fix a live defect. `checkDependencyFamilies` does not resolve
+`catalog:` references; adopting before adapting it would silently weaken
+that family-major gate.
+
+**Reconsideration triggers** (any one reopens the decision):
+
+- the workspace reaches at least 12 manifests; or
+- repeated dependency names account for at least half of all external
+  edges; or
+- the alignment gate has to reject and correct shared-name re-prefixing
+  from `pnpm add` at least twice in one quarter.
+
+Closing the open Dependabot-compatibility investigation on its own is
+**not** a trigger.
+
+**Adoption prerequisites** (all required if the decision is reopened,
+independent of why it reopened):
+
+- `checkDependencyFamilies` and every other literal-spec consumer must
+  resolve `catalog:` references fail-closed before the first manifest is
+  converted;
+- the Dependabot catalog-compatibility issue must be closed, disproved
+  for LUKE, or its residual risk explicitly accepted;
+- any lockfile normalization is a separate, independently verified
+  dependency change — never bundled with the Catalog migration itself;
+- migration must preserve the resolved package tree relative to its
+  immediate pre-migration baseline.
 
 ## 5. What `platform` mode may not do
 

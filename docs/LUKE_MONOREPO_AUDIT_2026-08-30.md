@@ -3412,3 +3412,77 @@ All three workflows correctly ran on the same push for three independent reasons
 Local and remote `develop-2.2` both sit at `302593a0fcf526dc0f66d041eb10616d9f41f6f0`. The working tree and index were clean before this audit edit. All three pre-existing stashes remain untouched. Every `package.json` in the workspace still reads `2.1.4`. `main` is unaffected. No tag was created, no release preparation ran in any mode, no image was published, and no deployment or Portainer action was taken.
 
 `H1` and `H2` are both closed. Per the ordering `§A.4` and later appendices have maintained, `P1/P2-08` is now the next architectural item. `S-01` (branch protection), the skill-mode-isolation finding recorded in §R.7, and the separate full documentation review / English-translation workstream remain distinct, unstarted workstreams — none of them is begun by this appendix.
+
+# Appendix S — P1/P2-08 decision: pnpm Catalogs hold (2026-09-06)
+
+`P1/P2-08` was the next architectural item per §A.4 and every appendix since (most recently §R.8). This appendix closes the *decision* — the item is reviewed and disposed — without closing it by implementation. Nothing in Appendices A–R is corrected, superseded, or restated here; this is a pure addition.
+
+## S.1 Scope and disposition
+
+The architectural review of pnpm Catalogs for `P1/P2-08` is complete. The disposition is **HOLD**, not adopted: no `catalog:` entry, no `catalogMode`, no `catalogPrune`, and no named catalog was added to `pnpm-workspace.yaml` or any manifest. `pnpm-workspace.yaml`, every workspace `package.json`, and `pnpm-lock.yaml` are unchanged by this appendix. HOLD is recorded as a governed decision in `.claude/skills/luke-deps/references/platform-policy.md` §4, with explicit reconsideration triggers and adoption prerequisites — the same discipline already applied there to TypeScript 7 and the Prisma next major.
+
+## S.2 Measured inventory
+
+Counted directly against the eight workspace manifests (`.`, `apps/api`, `apps/web`, `packages/calendar`, `packages/core`, `packages/db`, `packages/eslint-plugin-luke`, `packages/nav` — the same importer set §R.2–§R.4 verified unchanged):
+
+- 117 distinct external dependency names, 149 total external dependency edges (a name counted once per manifest that declares it, across `dependencies`/`devDependencies`/`optionalDependencies`);
+- 17 names are repeated across two or more manifests, accounting for 49 of the 149 edges;
+- of those 17 repeated names, every one already resolves to one identical textual specifier everywhere it appears — zero current textual skew;
+- the remaining 100 names are singletons, declared in exactly one manifest each, and gain nothing from a catalog;
+- collapsing the 49 repeated edges to 17 catalog entries would save approximately 32 repeated declaration sites — the number of edit sites removed, not a count of bugs prevented.
+
+## S.3 Benefits and non-benefits
+
+What Catalogs would change: a shared version becomes a one-line edit instead of N manifest edits, and `pnpm add` inside a member package can no longer reintroduce a stray re-prefixed specifier for an already-catalogued name, which is the class of edit `checkVersionAlignment` currently has to catch and reject after the fact rather than prevent.
+
+What Catalogs would not change: dependency resolution behavior, the security-override mechanism, the release-age quarantine policy, verification requirements for a version bump, or any of the 100 singleton dependencies, which are the majority of the inventory and cannot benefit from a shared catalog entry by definition. No dependency defect recorded since `checkVersionAlignment` was introduced would have been prevented by Catalogs — the gate already rejects textual skew on every push, which is the specific failure mode Catalogs would otherwise mitigate.
+
+## S.4 Gate interaction
+
+`checkVersionAlignment` remains valuable regardless of this decision and is unaffected by it. `checkDependencyFamilies`, as currently implemented, reads literal manifest specifiers and does not resolve `catalog:` references — it would silently stop seeing any catalogued member of a governed dependency family, weakening the family-major check for those members while leaving `checkVersionAlignment`'s separate cross-manifest comparison intact. That is why the adoption prerequisites in §S.8 require `checkDependencyFamilies` (and any other literal-spec consumer) to resolve `catalog:` fail-closed *before* the first manifest is converted, not after. The declaration-graph checks (`DECLARATION_GRAPH_DEPENDENCIES`), the release-age policy, and the override mechanism are all independent of manifest specifier syntax and are untouched by either the hold or a future adoption.
+
+## S.5 Rejected variants
+
+Considered and rejected, each for a reason specific to LUKE's current inventory rather than a general objection to the mechanism:
+
+- **a full 117-name catalog** — 100 of those names are singletons; a catalog entry for a name declared in exactly one manifest adds a layer of indirection with no deduplication benefit;
+- **named catalogs** (multiple catalogs partitioned by purpose) — the repeated-name set is 17 entries; partitioning a set that small adds bookkeeping without a legibility gain;
+- **`catalogMode: strict` or `prefer`** — a workspace-wide enforcement mode presupposes the migration already happened and `checkDependencyFamilies` already resolves `catalog:`; neither is true today, so the mode has nothing correct to enforce yet;
+- **`catalogPrune`** — a maintenance feature for an already-adopted catalog; not applicable to a workspace that has none;
+- **a bespoke "used twice" checker** — would enforce a Catalog-adoption policy that LUKE has just placed on HOLD; adding and maintaining machinery for a policy not adopted would be premature, and such a checker is worth reconsidering only if the HOLD is reopened;
+- **immediate adoption merely because the original audit recommended it** — the original P1/P2-08 recommendation in the main audit body predates `checkVersionAlignment` becoming a deterministic, wired-in gate (Appendix C §C.2); the risk the recommendation was written against is now substantially covered by a gate that already exists, which is the specific reassessment Appendix A §A.3's "sound ideas whose payoff is smaller than when the audit was written" already flagged for this item.
+
+## S.6 Lockfile-deduplication finding
+
+The investigation surfaced a separate, unrelated observation: `pnpm-lock.yaml` may carry deduplication opportunities independent of Catalogs. This finding is recorded here only as a candidate for a future `/luke-deps` review — it is not independent work to perform now, and it is not mandatory. Lockfile deduplication can change transitive dependency resolution, so it requires its own verification pass (frozen-lockfile install, module-contract tests, the same discipline §R.4 applied to the `H2` hygiene edits) entirely separate from whatever happens to `P1/P2-08`. No weekly security gate for it is proposed or added by this appendix.
+
+## S.7 Rollback and equivalence
+
+A future Catalog-only conversion — moving the 17 repeated, already-identical specifiers into `pnpm-workspace.yaml`'s `catalog:` block and replacing their manifest declarations with `catalog:` references, with no other change — can preserve the resolved package tree relative to its immediate, already-reviewed pre-migration baseline, the same standard §S.8's adoption prerequisites require. The lockfile-deduplication idea in §S.6 is a different kind of change: because it can alter transitive resolution, a preliminary deduplication pass would **not** be byte-identical to its baseline, and must not be described as equivalent or as a precondition-free companion to a future Catalog migration.
+
+## S.8 Reconsideration triggers and adoption prerequisites
+
+Recorded verbatim in `.claude/skills/luke-deps/references/platform-policy.md` §4; restated here for the audit record and kept distinct as two separate lists, not one:
+
+**Reconsideration triggers** (any one is sufficient to reopen the decision):
+
+- the workspace reaches at least 12 manifests; or
+- repeated dependency names account for at least half of all external edges; or
+- the alignment gate has to reject and correct shared-name re-prefixing from `pnpm add` at least twice in one quarter.
+
+Closing the open Dependabot-catalog-compatibility issue by itself is explicitly **not** a trigger — it is a prerequisite for adoption once reopened, not a reason to reopen on its own.
+
+**Adoption prerequisites** (all required before implementation, once and if the decision is reopened by one of the triggers above):
+
+- `checkDependencyFamilies` and any other literal-spec consumer must resolve `catalog:` references fail-closed before the first manifest is converted;
+- the Dependabot catalog-compatibility issue must be closed, disproved for LUKE, or its residual risk explicitly accepted;
+- any lockfile normalization must be a separate, independently verified dependency change, never bundled with the Catalog migration itself;
+- migration must preserve the resolved package tree relative to its immediate pre-migration baseline.
+
+## S.9 Investigation integrity
+
+The real checkout remained untouched at `d2afa2e504543ae82e3a8f9107d7bf4ed0e4dc10` (`develop-2.2`, matching `origin/develop-2.2`) throughout this review. Any prototype manifest or catalog block used to compute the §S.2 inventory lived only in the disposable scratchpad, never in the working tree. All three pre-existing stashes (`stash@{0}`, `stash@{1}`, `stash@{2}`) remain untouched. No `pnpm install`, no `pnpm add`, no lockfile write, no commit, no push, no tag, no release preparation, and no deployment or Portainer action occurred as part of this review.
+
+## S.10 Final state and next work
+
+`P1/P2-08` is now governed by a recorded HOLD rather than remaining an unexamined open recommendation — the same status TypeScript 7 and the Prisma next major already carry in `platform-policy.md` §4. Per the ordering `§A.4` and every appendix through `§R.8` have maintained, `S-01` (branch protection) is the next architectural decision. The skill-mode-isolation finding recorded in `§R.7`, and the separate full documentation review / English-translation workstream, remain distinct, unstarted workstreams — neither is begun by this appendix, and `/luke-docs` was not invoked to produce it.
