@@ -104,9 +104,9 @@ pnpm dev
 | `pnpm typecheck` | Type check di tutti i workspace |
 | `pnpm format` | Formatta il codice con Prettier |
 | `pnpm db:seed` | Esegue il seed del database (`apps/api/prisma/seed.ts`) |
-| `pnpm changelog` | Genera `CHANGELOG.md` dal tag corrente via git-cliff |
-| `pnpm changelog:bump` | Genera `CHANGELOG.md` con bump automatico della versione |
-| `pnpm sync-version` | Allinea le versioni di tutti i `package.json` del monorepo |
+| `pnpm changelog` | Stampa le note su **stdout** (anteprima, non scrive nulla) |
+| `pnpm changelog:bump` / `changelog:tag` | Riscrivono `CHANGELOG.md` con una sezione `## [Unreleased]`, **senza versione e senza verifiche** — mai per una release: usa `pnpm release:prepare` |
+| `pnpm sync-version --set X.Y.Z` | Scrive la versione in tutti i `package.json` del monorepo (solo scrittura, `--set` obbligatorio; di norma la invoca `release:prepare`) |
 | `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
 | `pnpm check:drift` | Verifica integrità marker `luke-docs` e riferimenti nelle skill (bloccante in CI) |
 | `pnpm security` | Esegue la suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
@@ -814,12 +814,24 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 <!-- luke-docs:start:release -->
 Il progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per generare automaticamente il CHANGELOG via `git-cliff`. I commit sono validati dall'hook `.husky/commit-msg` (commitlint).
 
-Tag naming: `vX.Y.Z` — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su API/contratti.
+Tag naming: `vX.Y.Z` (stable) o `vX.Y.Z-rc.N` (release candidate) — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su API/contratti.
+
+**`pnpm release:prepare` è l'unico entry point supportato** (`rc` / `stable` per i treni di RC): calcola la versione, scrive CHANGELOG e `package.json`, e verifica il risultato con `check-release-tree.ts`.
+
+`changelog:bump` e `changelog:tag` restano installati ma **non vanno usati**: scrivono un heading `## [Unreleased]`, che il checker rifiuta ovunque in un albero di release. Se ne hai eseguito uno per sbaglio: guarda `git diff CHANGELOG.md`, togli a mano solo la sezione `## [Unreleased]` che il comando ha aggiunto in testa, conserva ogni modifica che c'era già, e non rilanciare `release:prepare` sopra quell'output. Nessun ripristino integrale del file (`checkout`/`restore`/`reset`): butterebbe via anche il lavoro preesistente.
 
 ```bash
-pnpm changelog        # Genera CHANGELOG.md dal tag corrente
-pnpm changelog:bump   # Genera CHANGELOG.md con bump automatico versione
+pnpm release:prepare        # Prepara la prossima release (non committa, non tagga)
+pnpm release:prepare rc     # Prossimo candidato del treno corrente
+pnpm release:prepare stable # Promuove il treno alla sua versione stabile
+pnpm changelog              # Anteprima delle note su stdout
 ```
+
+L'autorità è `.github/workflows/release.yml`: subito dopo il gate di provenance, lo stesso job esegue `tools/scripts/check-release-tree.ts` sull'esatto commit che il gate ha risolto e verifica che **quell'albero** dichiari la versione del tag — ogni `package.json` governato (globs `packages:` di `pnpm-workspace.yaml` letti dallo stesso albero, più il manifest di root) e una sola sezione `## [X.Y.Z]` in `CHANGELOG.md` con almeno una voce `- `. Se fallisce, `verify` e i due job di build non partono e nessuna immagine viene pubblicata.
+
+`.husky/pre-push` esegue lo stesso checker sull'oggetto che stai pushando: è **feedback anticipato, non enforcement** — `--no-verify` lo salta e un altro clone può non averlo.
+
+Le note sono generate solo dai Conventional Commits: i merge commit (`Merge pull request …`, `Merge branch …`) sono esclusi. Di conseguenza un candidato i cui unici commit nuovi sono merge viene rifiutato in fase di prepare: git-cliff non calcola nessuna nuova versione quando tutti i commit nuovi sono saltati, e `release:prepare` si ferma al controllo "tag già esistente" prima che parta qualsiasi scrittura. Il rifiuto della sezione vuota in `check-release-tree.ts` non è ciò che lo ferma: resta come rete di sicurezza per una sezione vuota che arrivi nell'albero di release per un'altra via — è il comportamento voluto.
 <!-- luke-docs:end:release -->
 
 ---

@@ -458,16 +458,20 @@ mid-train it cannot even deliver one — see the frozen-target note below.
 
 **Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
-1. `pnpm release:prepare` — computes the next version from conventional
-   commits (`git-cliff --bumped-version`), updates `CHANGELOG.md` (`--prepend`,
-   never `--bump -o`: overwrites hand-curated sections like the `[2.0.0]`
-   rollup) and syncs every `package.json` to it atomically — never bump
-   versions by hand: `sync-version` without `--set` reads the *existing* tag
-   and silently regresses them
+1. `pnpm release:prepare` — the supported entry point, and the only one:
+   `changelog:bump` writes notes with no version and no check. It computes the
+   next version from conventional commits (`git-cliff --bumped-version`),
+   updates `CHANGELOG.md` (`--prepend`, never `--bump -o`: overwrites
+   hand-curated sections like the `[2.0.0]` rollup), syncs every `package.json`
+   to it atomically, then proves the result with
+   `check-release-tree.ts --worktree`. Never bump versions by hand:
+   `sync-version` is a **writer only** and requires `--set <version>`
 2. `git diff` — review CHANGELOG + version bumps
 3. `git commit -am "chore: bump version to X.Y.Z"`
-4. `git tag vX.Y.Z && git push origin vX.Y.Z` — `.husky/pre-push` blocks the
-   push if CHANGELOG/package.json don't match the tag
+4. `git tag vX.Y.Z && git push origin vX.Y.Z` — one named tag, never
+   `--tags`. `.husky/pre-push` runs the same tree checker on the object being
+   pushed; it is **early feedback, not enforcement** (`--no-verify` skips it,
+   another clone may not have it). `release.yml` is authoritative
 
 **RC trains**: a release train produces several candidates for **one** stable
 target — `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z` — never a new stable version
@@ -491,6 +495,55 @@ redeploy. RC artifacts come from the active release train and publish
 A tag on the wrong line, or a tag name outside those two shapes, fails before
 any image is built (`tools/scripts/check-release-provenance.ts`).
 **NEVER delete the `luke_api_data` volume** — the master key lives there.
+
+**The tagged tree must claim its own tag.** Immediately after the provenance
+gate, the same job runs `tools/scripts/check-release-tree.ts` on the exact
+commit the gate resolved (`steps.gate.outputs.sha`, passed through `env`), and
+a failure skips `verify` and both image jobs. It proves, against **that tree**
+and never the working tree, that every governed `package.json` carries
+`parseReleaseTag(tag).version` and that `CHANGELOG.md` has exactly one
+`## [<version>]` heading — optionally dated — with at least one `- ` entry
+under it. The governed set comes from the `packages:` globs of the same tree's
+`pnpm-workspace.yaml` plus the root manifest; a glob that discovers no manifest,
+a glob shape other than `<dir>/*`, a duplicate heading, an entry that actually
+belongs to the next section or to the historical footer, and any
+`## [Unreleased]` heading are all rejections. The same checker is what
+`release:prepare` and `.husky/pre-push` run, so one contract has one
+implementation — the hook predicts the workflow's verdict, it does not replace
+it.
+
+**Before any part of this checker can be ported to `main`, `main`'s
+`pnpm-workspace.yaml` has to lose its `tools/*` glob.** `main` still declares it
+and has no manifest under `tools/`, so the zero-discovery guard refuses every
+tree cut from that line — verified against `v2.1.4`, which is rejected today.
+The prerequisite covers the complete addition, not only the workflow step:
+`check-release-tree.test.ts` carries a liveness test that runs the checker on
+`HEAD` through `pnpm test:tools` on every push, so porting the checker and its
+suite alone turns `main`'s CI red at `Control-plane tests` before any release
+is attempted; the `.husky/pre-push` caller and the `release.yml` caller refuse
+every tag from that line for the same reason. Nothing is broken right now:
+`main` carries none of this, and the train's workspace file (which already
+dropped the glob) arrives in the same merge. Porting coherent `CI gate` and
+`Security gate` implementations for a hotfix, as the aggregate-gate note below
+describes, does not require porting this checker — if it is ported anyway, do
+the workspace fix first.
+
+**Merge commits are excluded from generated release notes.** `.cliff.toml`
+skips commit *subjects* beginning `Merge `, which is the shape git writes by
+default (`Merge pull request …`, `Merge branch …`). It is deliberately a subject
+rule and not "is this a merge commit": a conventional `feat(x): merge …` or
+`chore: merge …` is an ordinary commit and stays, and `[1.9.0]`'s
+`chore:`-typed `Merge develop-2.0 into main` is the precedent. The cost of that
+choice is that a merge given a custom subject (`git merge -m "sync train"`) is
+still rendered. Consequence to expect: a candidate whose only new commits are
+default-message merges — syncing `main` into the train, say — is **refused at
+prepare time**: git-cliff computes no new version when every new commit is
+skipped, so `release:prepare` stops at its existing-tag guard before either
+writer runs, and nothing is written. That is correct, a candidate with no
+changes should not exist, but it is a behaviour change. The empty-section
+rejection in `check-release-tree.ts` is not what refuses it — it is the
+backstop for an empty section that reaches the release tree by another route.
+Existing `CHANGELOG.md` sections are not rewritten.
 
 **A `develop-X.Y` branch dies on merge into `main`** — it is not reactivated,
 never backport onto a branch that has already been merged: the next feature

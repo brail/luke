@@ -21,7 +21,7 @@ Stato: 🟢 fatto · 🟡 in corso · ⚪ da fare
 | Stile / tipi | eslint + `tsc --noEmit` in CI |
 | Commit | commitlint via `.husky/commit-msg` |
 | Env policy | `assertEnvPolicy()` blocca il boot in produzione |
-| Versioni | `sync-version` + `post-checkout` hook |
+| Versioni | `sync-version` + `post-checkout` hook (§P6: il primo è diventato solo scrittura, il secondo è stato eliminato) |
 | Analisi LLM | `simplify` ad ogni implementazione, `luke-*` periodiche |
 
 ### Il buco
@@ -257,6 +257,58 @@ chiude, toast e invalidazione della lista, il click successivo trovava l'element
 dell'applicazione**: a riposo la tabella brand è stabile e non emette una sola
 query tRPC in 8 secondi. La pulizia riparte quindi da una navigazione a ogni
 eliminazione — qualche centinaio di millisecondi in cambio del determinismo.
+
+### P6 — L'albero taggato deve dichiarare il proprio tag 🟢
+
+Il gate di provenance dimostra da quale linea arriva un tag, non **cosa contiene
+l'albero**: nessuno step confrontava i `package.json` o `CHANGELOG.md` con il
+tag, e le uniche verifiche esistenti stavano in `.husky/pre-push` — saltabili con
+`--no-verify`, assenti in qualsiasi altro clone, e per giunta lette dal *working
+tree* invece che dall'albero taggato. La metà versioni si appoggiava a
+`git describe --tags --abbrev=0`, cioè il tag topologicamente più vicino e non
+quello in push: un secondo tag sullo stesso commit faceva fallire un albero
+corretto, e senza tag raggiungibili confrontava con `0.0.0-<branch>`.
+
+`tools/scripts/check-release-tree.ts` è il checker condiviso che risponde alla
+domanda giusta: dato `--tag`, l'albero indicato da `--rev` (o `--worktree`)
+dichiara quella versione? Ogni `package.json` governato — globs `packages:` di
+`pnpm-workspace.yaml` letti **dallo stesso albero**, più il manifest di root — e
+una sola sezione `## [X.Y.Z]` in `CHANGELOG.md` con almeno una voce `- `.
+Fallisce chiuso su glob che non scoprono nulla, forme di glob non supportate,
+heading duplicati, voci che appartengono alla sezione adiacente o al footer
+storico, e su qualsiasi `## [Unreleased]`.
+
+Tre call site, una sola implementazione:
+
+- `.github/workflows/release.yml` — **autorità**. Subito dopo il gate, sullo
+  stesso commit che il gate ha risolto (`steps.gate.outputs.sha`, passato via
+  `env`); un fallimento salta `verify` e i due job immagine.
+- `.husky/pre-push` — feedback anticipato sull'oggetto in push (`$local_sha`,
+  che `^{tree}` risolve sia per tag annotati che leggeri). Non è enforcement.
+- `scripts/release-prepare.sh` — autoverifica in modalità `--worktree`, quando
+  il tag non esiste ancora.
+
+`sync-version.js` diventa **solo scrittura** e richiede `--set`: niente
+`git describe`, niente `--check`, niente fallback di branch. `.husky/post-checkout`
+è stato eliminato — la sua premessa (la versione deriva dal tag più vicino) è
+esattamente ciò che questo giro abbandona.
+
+`.cliff.toml` salta i subject che iniziano per `Merge `. Conseguenza da
+aspettarsi: un candidato i cui unici commit nuovi sono merge viene **rifiutato
+in fase di prepare** — git-cliff non calcola nessuna nuova versione quando tutti
+i commit nuovi sono saltati, quindi `release:prepare` si ferma al controllo sul
+tag già esistente prima che parta uno qualsiasi dei due writer. Il rifiuto della
+sezione vuota in `check-release-tree.ts` non è ciò che lo ferma: è la rete di
+sicurezza per una sezione vuota che arrivi nell'albero di release per un'altra
+via. Voluto, un candidato senza modifiche non deve esistere.
+
+Falsificazione: `check-release-tree.test.ts` copre accettazione e rifiuto con lo
+stesso peso, più sei mutazioni verificate rosse — rimozione del rifiuto
+sugli heading duplicati, terminazione di sezione sul solo `## [`, rimozione
+dell'escaping della regex, match per prefisso invece che ancorato, rimozione
+della guardia zero-discovery, e lettura del working tree in modalità `--rev`.
+Un test di liveness esegue il checker sul repository reale a `HEAD`, con la
+versione letta dal manifest di root invece che scritta a mano.
 
 ---
 
