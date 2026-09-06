@@ -1,33 +1,51 @@
 #!/usr/bin/env node
 
 /**
- * Sincronizza le versioni nei package.json con il tag git corrente.
+ * Write one version into every package.json of the monorepo.
  *
- * Legge il tag git più vicino (es: v1.7.0-rc.1) e aggiorna tutti i package.json
- * nel monorepo con quella versione (senza il prefisso 'v').
+ * A writer, and nothing else. It used to have a read mode as well — `--check`,
+ * which compared the manifests against `git describe --tags --abbrev=0` — and
+ * that mode answered the wrong question: `git describe` returns the
+ * topologically *nearest* tag, not the tag anyone is releasing. A second tag on
+ * the same commit made it fail a correct tree, an annotated sibling took
+ * precedence over a lightweight one, pushing an older still-correct tag after
+ * HEAD had moved on failed a legitimate push, and with no tag reachable it
+ * compared against `0.0.0-<branch>`. There was no way to bind it to a tag:
+ * `--check` took no version and was declared incompatible with `--set`.
  *
- * Usage: node scripts/sync-version.js [--check]
- *   --check: solo leggi, non modificare (exit 1 se out of sync)
+ * Verifying that a tree claims a version is now
+ * `tools/scripts/check-release-tree.ts`, which is told the tag explicitly and
+ * reads the tree that tag names. Nothing under `scripts/` or `.husky/` calls
+ * `git describe` any more.
+ *
+ * Usage: node scripts/sync-version.js --set 1.11.0
+ *
+ * Called by `scripts/release-prepare.sh` with the version git-cliff computed.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 /**
- * Package.json da sincronizzare, **derivati dal workspace** e non elencati.
+ * Package.json files to write, **derived from the workspace layout** rather
+ * than listed.
  *
- * Un elenco scritto a mano ha un fallimento asimmetrico: una voce di troppo si
- * nota subito (file non trovato), una voce *mancante* no. `packages/calendar` è
- * nato senza essere aggiunto qui ed è rimasto a `1.10.0-dev.0` mentre
- * `--check` riportava OK: il controllo era verde su un monorepo disallineato.
+ * A hand-written list fails asymmetrically: an extra entry is noticed at once
+ * (file not found), a *missing* one is not. `packages/calendar` was created
+ * without being added here and stayed at `1.10.0-dev.0` while the check
+ * reported OK — green on a monorepo that was out of sync.
  *
- * Derivare l'elenco significa che un package nuovo è coperto dal momento in cui
- * esiste, senza che nessuno debba ricordarsene.
+ * The groups below mirror the `packages:` globs in `pnpm-workspace.yaml`
+ * (`apps/*`, `packages/*`) without reading them. That is a second definition
+ * and it is deliberate for now: `check-release-tree.ts` *does* read the YAML,
+ * from the released tree, and rejects a glob that discovers no manifest — so a
+ * third glob added to the workspace and missed here fails at prepare time
+ * rather than shipping a stale version. Reading the YAML from this CommonJS
+ * writer is a small follow-up if that ever happens.
  */
 function discoverPackages() {
   const root = path.join(__dirname, '..');
-  const found = ['package.json']; // la root fa parte del monorepo
+  const found = ['package.json']; // the root is part of the monorepo
 
   for (const group of ['apps', 'packages']) {
     const dir = path.join(root, group);
@@ -40,123 +58,60 @@ function discoverPackages() {
     }
   }
 
-  // Guardia zero-discovery: se la struttura cambia e il glob non trova più
-  // nulla, questo script diventerebbe un no-op silenzioso — e con lui il gate
-  // di allineamento in `.husky/pre-push`.
+  // Zero-discovery guard: if the layout changes and the groups above find
+  // nothing, this script would become a silent no-op.
   if (found.length < 2) {
     throw new Error(
-      `Trovato solo ${found.length} package.json sotto apps/ e packages/. ` +
-        'La struttura del monorepo è cambiata: aggiorna discoverPackages().'
+      `Found only ${found.length} package.json under apps/ and packages/. ` +
+        'The monorepo layout has changed: update discoverPackages().'
     );
   }
 
   return found.sort();
 }
 
-const PACKAGES = discoverPackages();
-
-const checkOnly = process.argv.includes('--check');
-
 /**
- * Versione da imporre, per il bump di release.
- *
- * Serve perché la modalità normale legge il tag **esistente**: al momento del
- * bump il tag nuovo non c'è ancora, quindi senza `--set` questo script non può
- * portare i package.json alla versione che stai per rilasciare — li lascerebbe
- * a quella precedente, e il guard in `.husky/pre-push` bloccherebbe il tag.
- *
- * Usage: node scripts/sync-version.js --set 1.11.0
+ * The version to write. Required: this script has no way to work out which
+ * release is being prepared, and every caller already knows.
  */
 const setIndex = process.argv.indexOf('--set');
-const explicitVersion =
+const version =
   setIndex !== -1 ? process.argv[setIndex + 1]?.replace(/^v/, '') : undefined;
 
-if (setIndex !== -1 && !explicitVersion) {
-  console.error('❌ `--set` richiede una versione. Es: --set 1.11.0');
+if (setIndex === -1) {
+  console.error('❌ `--set <version>` is required. Example: --set 1.11.0');
+  console.error('   Preparing a release? Use `pnpm release:prepare` instead.');
   process.exit(1);
 }
-if (explicitVersion && checkOnly) {
-  console.error('❌ `--set` e `--check` sono incompatibili.');
+if (!version) {
+  console.error('❌ `--set` requires a version. Example: --set 1.11.0');
+  process.exit(1);
+}
+if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(version)) {
+  console.error(`❌ "${version}" is not a valid semver version (X.Y.Z[-pre]).`);
   process.exit(1);
 }
 
-try {
-  let version;
+console.log(`📌 Requested version: ${version}`);
 
-  if (explicitVersion) {
-    if (!/^\d+\.\d+\.\d+(-[\w.]+)?$/.test(explicitVersion)) {
-      console.error(
-        `❌ "${explicitVersion}" non è una versione semver valida (X.Y.Z[-pre]).`
-      );
-      process.exit(1);
-    }
-    version = explicitVersion;
-    console.log(`📌 Versione richiesta: ${version}`);
-  } else {
-    // Leggi il tag git più vicino
-    let gitTag;
-    try {
-      gitTag = execSync('git describe --tags --abbrev=0', {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'], // Ignora stderr
-      }).trim();
-    } catch {
-      // Se non c'è tag, usa il nome del branch o un default
-      try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          encoding: 'utf-8',
-        }).trim();
-        gitTag = `v0.0.0-${branch}`;
-      } catch {
-        gitTag = 'v0.0.0-dev';
-      }
-    }
+for (const pkgPath of discoverPackages()) {
+  const fullPath = path.join(__dirname, '..', pkgPath);
 
-    // Estrai la versione (rimuovi il prefisso 'v')
-    version = gitTag.replace(/^v/, '');
-    console.log(`📌 Versione dal tag: ${gitTag} → ${version}`);
-  }
+  // Named per file: a malformed manifest is the failure worth reporting here,
+  // and a bare stack trace does not say which of the eight it was.
+  try {
+    const pkg = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
 
-  let hasChanges = false;
-
-  // Aggiorna ogni package.json
-  for (const pkgPath of PACKAGES) {
-    const fullPath = path.join(__dirname, '..', pkgPath);
-
-    if (!fs.existsSync(fullPath)) {
-      console.warn(`⚠️  File non trovato: ${pkgPath}`);
+    if (pkg.version === version) {
+      console.log(`✔️  ${pkgPath}: already at ${version}`);
       continue;
     }
 
-    const content = fs.readFileSync(fullPath, 'utf-8');
-    const pkg = JSON.parse(content);
-
-    if (pkg.version !== version) {
-      hasChanges = true;
-
-      if (checkOnly) {
-        console.log(
-          `❌ ${pkgPath}: ${pkg.version} → ${version} (out of sync)`
-        );
-      } else {
-        pkg.version = version;
-        fs.writeFileSync(fullPath, JSON.stringify(pkg, null, 2) + '\n');
-        console.log(`✅ ${pkgPath}: aggiornato a ${version}`);
-      }
-    } else {
-      console.log(`✔️  ${pkgPath}: già sincronizzato (${version})`);
-    }
-  }
-
-  if (checkOnly && hasChanges) {
-    console.error('\n❌ Versioni out of sync! Esegui: pnpm sync-version');
+    pkg.version = version;
+    fs.writeFileSync(fullPath, JSON.stringify(pkg, null, 2) + '\n');
+    console.log(`✅ ${pkgPath}: updated to ${version}`);
+  } catch (err) {
+    console.error(`❌ ${pkgPath}: ${err.message}`);
     process.exit(1);
   }
-
-  if (!hasChanges && !checkOnly) {
-    console.log('\n✨ Tutte le versioni sono sincronizzate!');
-  }
-} catch (err) {
-  console.error('❌ Errore:', err.message);
-  process.exit(1);
 }

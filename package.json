@@ -26,7 +26,6 @@
     "backup:open": "node scripts/lukebak-open.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "sync-version": "node scripts/sync-version.js",
-    "sync-version:check": "node scripts/sync-version.js --check",
     "db:seed": "pnpm --filter @luke/api db:seed",
     "check:platform": "tsx tools/scripts/check-platform-integrity.ts",
     "check:tsconfig": "tsx tools/scripts/check-tsconfig-integrity.ts",
