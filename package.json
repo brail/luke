@@ -25,7 +25,6 @@
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "backup:open": "node scripts/lukebak-open.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "deps:latest": "pnpm update --latest",
     "sync-version": "node scripts/sync-version.js",
     "sync-version:check": "node scripts/sync-version.js --check",
     "db:seed": "pnpm --filter @luke/api db:seed",

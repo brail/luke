@@ -76,9 +76,6 @@
     },
     "format": {
       "cache": false
-    },
-    "deps:latest": {
-      "cache": false
     }
   }
 }

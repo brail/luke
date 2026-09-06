@@ -60,9 +60,6 @@ Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js,
 # Installa dipendenze
 pnpm install
 
-# Aggiorna dipendenze all'ultima versione
-pnpm deps:latest
-
 # Build tutti i workspace
 pnpm build
 
@@ -110,7 +107,6 @@ pnpm dev
 | `pnpm changelog` | Genera `CHANGELOG.md` dal tag corrente via git-cliff |
 | `pnpm changelog:bump` | Genera `CHANGELOG.md` con bump automatico della versione |
 | `pnpm sync-version` | Allinea le versioni di tutti i `package.json` del monorepo |
-| `pnpm deps:latest` | Aggiorna tutte le dipendenze all'ultima versione |
 | `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
 | `pnpm check:drift` | Verifica integrità marker `luke-docs` e riferimenti nelle skill (bloccante in CI) |
 | `pnpm security` | Esegue la suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |

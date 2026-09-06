@@ -27,7 +27,6 @@
 pnpm install          # ✅ Installa dipendenze
 pnpm build            # ✅ Build tutti i workspace
 pnpm dev              # ✅ Avvia tutto in dev mode
-pnpm deps:latest      # ✅ Aggiorna dipendenze
 pnpm lint             # ✅ Lint tutti i file
 pnpm format           # ✅ Formatta con Prettier
 ```
