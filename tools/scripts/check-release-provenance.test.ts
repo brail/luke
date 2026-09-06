@@ -92,7 +92,12 @@ function topology(): Topology {
   return { repo, mainSha, mainOlderSha, trainSha, trainOlderSha };
 }
 
-function tagged(topo: Topology, tag: string, sha: string, expectedSha?: string) {
+function tagged(
+  topo: Topology,
+  tag: string,
+  sha: string,
+  expectedSha?: string
+) {
   git(topo.repo, 'tag', tag, sha);
   return checkReleaseProvenance({
     tag,
@@ -104,7 +109,12 @@ function tagged(topo: Topology, tag: string, sha: string, expectedSha?: string) 
   });
 }
 
-function rejects(topo: Topology, tag: string, sha: string, expectedSha?: string) {
+function rejects(
+  topo: Topology,
+  tag: string,
+  sha: string,
+  expectedSha?: string
+) {
   assert.throws(
     () => tagged(topo, tag, sha, expectedSha),
     ProvenanceError,
@@ -291,7 +301,15 @@ test('an older stable commit still qualifies for a stable tag', () => {
 
 test('the rc channel closes once the train has been merged into the stable line', () => {
   const topo = topology();
-  git(topo.repo, 'merge', '-q', '--no-ff', '-m', 'chore: merge release train', 'develop-2.2');
+  git(
+    topo.repo,
+    'merge',
+    '-q',
+    '--no-ff',
+    '-m',
+    'chore: merge release train',
+    'develop-2.2'
+  );
 
   // Same commit, same tag shape, and now legitimately unpublishable as an rc:
   // it is on main, so it is released as a stable tag or not at all.
@@ -321,7 +339,8 @@ test('an omitted, empty or whitespace expected SHA is rejected, not skipped', ()
           expectedSha,
         }),
       (err: unknown) =>
-        err instanceof ProvenanceError && /No expected commit given/.test(err.message),
+        err instanceof ProvenanceError &&
+        /No expected commit given/.test(err.message),
       `expected ${JSON.stringify(expectedSha)} to be rejected`
     );
   }
@@ -348,7 +367,8 @@ test('a value that cannot name a commit is rejected before any comparison', () =
           expectedSha: bad,
         }),
       (err: unknown) =>
-        err instanceof ProvenanceError && /is not a commit SHA/.test(err.message),
+        err instanceof ProvenanceError &&
+        /is not a commit SHA/.test(err.message),
       `expected ${bad} to be rejected`
     );
   }
@@ -440,7 +460,10 @@ test('the CLI writes exactly the key=value lines release.yml consumes', () => {
 });
 
 test("every release.yml `== 'true'` consumer names an output the CLI emits", () => {
-  const workflow = readFileSync(join(REPO_ROOT, '.github/workflows/release.yml'), 'utf-8');
+  const workflow = readFileSync(
+    join(REPO_ROOT, '.github/workflows/release.yml'),
+    'utf-8'
+  );
 
   const emitted = new Set([
     'channel',
@@ -453,15 +476,27 @@ test("every release.yml `== 'true'` consumer names an output the CLI emits", () 
   ]);
 
   const consumers = [
-    ...workflow.matchAll(/needs\.provenance\.outputs\.([a-z_]+)\s*==\s*'([^']*)'/g),
+    ...workflow.matchAll(
+      /needs\.provenance\.outputs\.([a-z_]+)\s*==\s*'([^']*)'/g
+    ),
   ];
-  assert.ok(consumers.length >= 6, 'expected the metadata blocks to gate on the outputs');
+  assert.ok(
+    consumers.length >= 6,
+    'expected the metadata blocks to gate on the outputs'
+  );
 
   for (const [, name, literal] of consumers) {
-    assert.ok(emitted.has(name), `release.yml reads outputs.${name}, which is never emitted`);
+    assert.ok(
+      emitted.has(name),
+      `release.yml reads outputs.${name}, which is never emitted`
+    );
     // Booleans reach the workflow as the strings String(boolean) produces.
     if (name.startsWith('publish_')) {
-      assert.equal(literal, 'true', `outputs.${name} must be compared against 'true'`);
+      assert.equal(
+        literal,
+        'true',
+        `outputs.${name} must be compared against 'true'`
+      );
     }
   }
 
@@ -469,8 +504,69 @@ test("every release.yml `== 'true'` consumer names an output the CLI emits", () 
   for (const name of new Set(consumers.map(([, n]) => n))) {
     assert.match(
       workflow,
-      new RegExp(`^\\s+${name}: \\$\\{\\{ steps\\.gate\\.outputs\\.${name} \\}\\}$`, 'm'),
+      new RegExp(
+        `^\\s+${name}: \\$\\{\\{ steps\\.gate\\.outputs\\.${name} \\}\\}$`,
+        'm'
+      ),
       `release.yml never maps steps.gate.outputs.${name} to a job output`
+    );
+  }
+});
+
+/**
+ * The provenance job answers half the question. `check-release-tree.ts` answers
+ * the other half — does the tree the gate authorized claim the version the tag
+ * carries — and it is authoritative only because this job runs it. A step that
+ * silently stopped being invoked, or that resolved the tag a second time
+ * instead of reading the gate's commit, would leave both suites green while the
+ * server-side check disappeared.
+ */
+test('the provenance job runs the tree checker on the commit the gate resolved', () => {
+  const workflow = readFileSync(
+    join(REPO_ROOT, '.github/workflows/release.yml'),
+    'utf-8'
+  );
+
+  // The `provenance:` job only, so a step added to another job cannot satisfy
+  // this. Jobs are the keys at exactly two spaces of indent.
+  const start = workflow.indexOf('\n  provenance:\n');
+  assert.notEqual(start, -1, 'release.yml has no `provenance` job');
+  const rest = workflow.slice(start + 1);
+  const nextJob = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+  const job = nextJob === -1 ? rest : rest.slice(0, nextJob);
+
+  const gate = job.indexOf('id: gate');
+  const treeCheck = job.indexOf('tools/scripts/check-release-tree.ts');
+  assert.notEqual(gate, -1, 'the provenance step lost its `id: gate`');
+  assert.notEqual(
+    treeCheck,
+    -1,
+    'the provenance job never runs check-release-tree.ts'
+  );
+  assert.ok(
+    treeCheck > gate,
+    'the tree check must follow the gate whose output it consumes'
+  );
+
+  // The triggering tag, verbatim — not a re-derivation, and not a literal.
+  assert.match(job.slice(treeCheck), /--tag "\$GITHUB_REF_NAME"/);
+
+  // The gate's own commit, carried through `env` rather than interpolated into
+  // the shell, and read back as a plain variable.
+  assert.match(job, /GATE_SHA: \$\{\{ steps\.gate\.outputs\.sha \}\}/);
+  assert.match(job.slice(treeCheck), /--rev "\$GATE_SHA"/);
+
+  // A failure of that step must be able to stop the release, which it can only
+  // do while the downstream jobs still hang off `provenance`.
+  assert.match(workflow, /^ {2}verify:\n(?: {4}.*\n)* {4}needs: provenance$/m);
+  for (const image of ['build-api', 'build-web']) {
+    assert.match(
+      workflow,
+      new RegExp(
+        `^ {2}${image}:\\n(?: {4}.*\\n)* {4}needs: \\[provenance, verify\\]$`,
+        'm'
+      ),
+      `${image} must stay behind both provenance and verify`
     );
   }
 });

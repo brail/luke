@@ -1,6 +1,10 @@
 name: Release
 
-# Triggered by a version tag: git tag v1.2.3 && git push --tags
+# Triggered by a version tag: git tag v1.2.3 && git push origin v1.2.3
+#
+# One named tag, never `--tags`: that pushes every local tag, and a clone can
+# hold candidates that were never meant for the remote. The provenance gate
+# rejects them, loudly, after they exist.
 on:
   push:
     tags:
@@ -78,11 +82,30 @@ jobs:
             --expected-sha "$GITHUB_SHA" \
             --github-output "$GITHUB_OUTPUT"
 
-  # ── Gate: nessuna immagine se la CI non è verde ──────────────────────────────
-  # Riusa ci.yml invece di duplicarne gli step: lint, typecheck, typecheck:test,
-  # unit test, integration e migrazioni. Nessuno è continue-on-error — dallo
-  # svuotamento della quarantena anche `integration` blocca il tag
-  # (docs/quality-hardening-plan.md §5).
+      # The gate proves the tag may publish from this line. It says nothing
+      # about what the tree contains, and nothing here did: an image was
+      # published whose package.json versions and whose release notes had never
+      # been compared with the tag. The only checks that existed lived in
+      # .husky/pre-push — skipped by `--no-verify`, absent from any other clone,
+      # and reading the working tree rather than the tagged one.
+      #
+      # `--rev` is the gate's own `sha` output, not a second resolution of the
+      # tag: the tree read here is exactly the tree the gate authorized. It
+      # travels through `env` because a `${{ }}` expression pasted into a shell
+      # is a value the shell then parses.
+      - name: Check release tree
+        env:
+          GATE_SHA: ${{ steps.gate.outputs.sha }}
+        run: |
+          pnpm exec tsx tools/scripts/check-release-tree.ts \
+            --tag "$GITHUB_REF_NAME" \
+            --rev "$GATE_SHA"
+
+  # ── Gate: no image unless CI is green ────────────────────────────────────────
+  # Reuses ci.yml instead of duplicating its steps: lint, typecheck,
+  # typecheck:test, unit tests, integration and migrations. None of them is
+  # continue-on-error — since the quarantine was emptied, `integration` blocks
+  # the tag as well (docs/quality-hardening-plan.md §5).
   verify:
     name: Verify
     needs: provenance
