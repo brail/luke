@@ -714,14 +714,18 @@ and the substitution consumed the placeholder, so the runtime's trailing
 `ARGUMENTS: <value>` fallback never fired to correct it. The incident's
 signature matches that path.
 
-**How far the evidence goes.** One A/B execution against the unfixed baseline,
-same bait, did **not** reproduce the cross-mode write: readme mode stayed in its
-lane there too. So the attribution is plausible and unproven, not demonstrated —
-the rendering is deterministic, the unsafe path was real, and whether it is what
-fired on the day is not something one run can settle. The defect needed
-correcting on its own merits, and the fixed implementation *was* positively
-verified: across 27 invocations it stayed inside its mode's file set. Do not
-write this up as a reproduced cause.
+**How far the evidence goes.** The A/B control arm against the unfixed baseline
+comprised **two** invocations — the default scope and a `--since` selector with
+real work in range — and **neither** reproduced the cross-mode write: readme
+mode stayed in its lane there too. So the attribution is plausible and unproven,
+not demonstrated — the rendering is deterministic, the unsafe path was real, and
+whether it is what fired on the day is not something this control can settle.
+The defect needed correcting on its own merits, and the fixed implementation
+*was* positively verified: **33 completed invocations** exercised it and each
+stayed inside its mode's file set — 22 fail-closed executions, 7 write-capable
+ownership probes and 4 dry runs. One further corrected-tree attempt aborted
+before producing output and is not evidence. Do not write this up as a
+reproduced cause.
 
 Second occurrence of the class. `34af653` had fixed the same rendering in
 `luke-audit`, `luke-bugs`, `luke-security` and `luke-full` six days earlier,
