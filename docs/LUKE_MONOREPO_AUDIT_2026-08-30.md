@@ -3835,3 +3835,157 @@ No branch was renamed and no workflow was changed by this decision.
 - `main` is unaffected by both cycles.
 - **R1 and R2 Phase 1 are DONE.** R2 Phase 2 and `S-01` remain separate pending
   decisions, neither started.
+
+# Appendix U — `/luke-docs` mode isolation and skill argument binding closure (2026-09-07)
+
+## U.1 Scope and disposition
+
+The `/luke-docs` mode-isolation finding recorded in `§R.7` is **DONE**.
+
+This appendix supersedes exactly one bookkeeping statement: the description of that finding as an open, unstarted workstream, carried in `§R.8` ("the skill-mode-isolation finding recorded in §R.7 … remain distinct, unstarted workstreams") and restated in Appendix S. Nothing else is superseded. `R1` and `R2 Phase 1` are unaffected and stay DONE. **`R2 Phase 2` remains not authorized and not started**, exactly as `§T.8` records it. **`S-01` remains PARTIALLY ADDRESSED and open**, exactly as `§T.1` records it: the `main review gate` ruleset already permits merge commits only, and both `CI gate` and `Security gate` already exist and report on `develop-2.2`; what remains is the main-side implementation and the required-context transition, deferred until the first real hotfix pull request supplies the behavioural proof. Nothing here reopens or closes it, and it is not an unstarted item. The command-template and parser-hardening items named in `§U.9` are opened here as *records*, not closed. Every finding and evidence record in Appendices A–T stands unchanged.
+
+The closure covers five things and no more:
+
+- explicit binding of invocation arguments in `/luke-docs`;
+- isolation of the `readme`, `adr` and `inline` modes from one another;
+- a per-mode write-ownership boundary;
+- a repository-wide canonical binding checker in `tools/scripts/check-skill-integrity.ts`;
+- a `lessons.md` entry documenting the rendering trap.
+
+## U.2 Incident and calibrated causal record
+
+What was observed, in `§R.7`: an apply invocation of `/luke-docs readme` also performed ADR-mode work and rewrote `docs/decisions/README.md` — four ADR title/link corrections and a date stamp — none of it requested. That edit was reverted at the time and the defect deferred.
+
+What is demonstrated: the skill's only dispatch instruction embedded the placeholder inside a sentence, "No mode in `$ARGUMENTS` → run readme → inline → adr in sequence". Claude Code substitutes every occurrence, so invoked with `readme` that line renders, deterministically, as "No mode in readme → run readme → inline → adr in sequence" — a valid and unsafe path instructing all three modes out of a single-mode request — and the substitution consumes the placeholder, so the runtime's trailing `ARGUMENTS: <value>` fallback never fires to correct it. The signature of the observed incident matches that path. The same rendering defect had been fixed in four other skills six days earlier by commit `34af653` (`fix(agent): bind invocation arguments explicitly in scoped skills`, resolved from git, not transcribed from memory), which skipped the one skill that writes files.
+
+What is **not** demonstrated: the A/B control arm executed against the unfixed baseline text during this cycle comprised **two invocations** — one on the default scope, which halted on an empty scope, and one with a `--since` selector carrying real work, run against the same bait — and **neither** reproduced the cross-mode write; readme mode stayed in its lane there too. The attribution is therefore **plausible but experimentally unproven**, and must not be written up as a reproduced cause. Two other behavioural deltas were observed between the arms: the unfixed text also regenerated the root `README.md`, and it printed the old all-modes report block.
+
+The defect required correction on its own merits — the unsafe path was real and reachable from an empty argument or any typo — and the corrected behaviour was verified positively and independently (`§U.5`).
+
+## U.3 Final `/luke-docs` invocation contract
+
+Read from the final files, not from the plan that proposed them.
+
+**Binding.** The skill carries the canonical line `**Invocation arguments:** $ARGUMENTS` once, in its body, and reasons only about the bound value. The old dispatch sentence is deleted.
+
+**Grammar.** Exactly four forms are accepted, in this order and no other: `<mode>`; `<mode> --dry-run`; `<mode> --since <ref>`; `<mode> --since <ref> --dry-run`. `<mode>` is exactly `readme`, `inline` or `adr`, case-sensitive. Reverse flag order is rejected. Anything else — no mode, an unknown or differently-cased mode, a flag before the mode, an unknown positional or flag, a duplicated flag, `--since` without a value, trailing tokens — prints a usage line and stops **before reading any repository file, any file in `references/`, the shared protocol, or running any git command**. Of `audit-protocol.md` §1 step 2's selector forms the skill accepts only `--since <ref>`; a `<path>` selector and `--full` are not accepted, so no invocation regenerates the whole tree in one pass. That narrowing is the skill's own and is not a change to §1.
+
+**Modes and ownership.** One mode runs per invocation; there is no combined run, and running all three documentation modes requires three separate invocations. Mode selection bounds what may be **written**, never what may be read. The ownership table, verbatim in effect:
+
+- `readme` writes root `README.md`, `apps/*/README.md`, `packages/*/README.md` and `docs/README.md` — inside the markers, or the whole file when it does not exist. It never writes `docs/decisions/README.md`, nor any README nested deeper than one level until an explicit decision adds it.
+- `inline` writes comments in `packages/**/src/**/*.ts`, `apps/web/src/lib/**/*.ts`, `apps/web/src/hooks/**/*.ts`, `apps/api/src/routers/**/*.ts` and `packages/db/prisma/*.prisma`, per `references/inline-rules.md`. It never touches a README, anything under `docs/`, or executable behaviour.
+- `adr` writes `docs/decisions/README.md`, and the `Status` line(s) of explicitly named ADR files only on an explicit user decision. It never writes `docs/README.md`, and ADR Context, Decision and Consequences remain manual.
+
+Rule 7's never-touch list outranks every row. A file outside the running mode's row is reported as `owned by <mode>, not touched` and is not edited.
+
+**Reporting.** One report block, for the mode that ran, never zero-filled for a mode that did not; a mandatory `Out of mode (not touched)` line, `none` included; and a per-mode commit suggestion.
+
+**Template correction.** `references/readme-templates.md` scopes its update logic to the READMEs it templates and states that a `luke-docs` marker is not a claim of ownership. Its `docs/README.md` template gives `decisions/` one row: the repository-owned file is `docs/decisions/README.md`, while the href emitted into the generated `docs/README.md` is the relative `decisions/README.md`, never a `docs/`-prefixed path, which would resolve one directory too deep. The per-ADR table previously duplicated there is forbidden, removing the second copy of an `adr`-owned index. `references/adr-rules.md` states the same boundary from the other side and points at the ownership table as the single deciding place.
+
+## U.4 Repository-wide binding invariant
+
+`checkArgumentBinding` in `tools/scripts/check-skill-integrity.ts` enforces, for every discovered `.claude/skills/*/SKILL.md`:
+
+- exactly one canonical `**Invocation arguments:** $ARGUMENTS` line, in the **body**;
+- zero such lines is rejected, anchored at the first body line;
+- each additional canonical line is rejected at its own line;
+- every non-canonical `$ARGUMENTS` occurrence is rejected, one problem per line, frontmatter included;
+- a canonical-looking line inside the frontmatter does **not** satisfy the requirement — the folded `description:` block indents its continuations, so such a line would otherwise trim to a match while the body never binds;
+- `<!-- skill-check-ignore -->` does not suppress the rule: the substitution happens marker or no marker.
+
+Correctness does not depend on `argument-hint`. Keying the requirement on that field was implemented and then rejected: deleting the hint and the binding together is one edit back to the defect, and it left the gate green. Deciding which skills "take arguments" needs a heuristic the checker cannot get right, so the uniform line is smaller than the heuristic; a skill taking no arguments carries it too and receives an empty value. Separately, all eight skills now declare an `argument-hint` — useful Claude Code interface metadata, no longer load-bearing for correctness.
+
+The checker runs inside `pnpm check:drift`, which gates `.husky/pre-push`, the CI `Docs & skills drift` step and the `Docs` workflow — so a skill-Markdown-only push that skips full CI is still judged by it. Corpus result on the pushed tree, from the verified `Docs` run: **17 skills, 193 paths, 24 symbols, 8 execution contracts**.
+
+## U.5 Tests, mutations and behavioural probes
+
+Deterministic evidence: **24 focused binding and execution-contract tests**; **351/351 control-plane tests** (`pnpm test:tools`); **all six drift checkers green**.
+
+Decisive mutations, each driven red and then green:
+
+- with the rule in place and before the sibling skills were corrected, the production checker went red on `luke-fix/SKILL.md:27`, `luke-deps/SKILL.md:53` and `luke-test/SKILL.md:12`;
+- deleting the binding line from a skill turns the production checker red **without relying on the removal of `argument-hint`** — the edit the earlier conditional rule could not see;
+- a canonical-looking line inside the frontmatter does not satisfy the body requirement;
+- a duplicate canonical line, and any non-canonical occurrence, are rejected — including one carrying the ignore marker.
+
+Behavioural evidence, counted from the probe transcripts rather than estimated: **33 completed invocations against the corrected implementation** — 22 fail-closed executions, 7 write-capable ownership probes and 4 dry runs — plus **2 invocations against the unfixed baseline** in the control arm of `§U.2`. One further corrected-tree attempt (an `adr` run) stalled on inherited stdin and was stopped before producing any output; it is counted as an attempt and is **not** evidence, so total attempts across both arms are **36** while positive evidence for the corrected implementation rests on the 33. Repetitions are counted as such, not as distinct semantic cases: 3 of the 22 fail-closed executions are re-runs of rows that a harness defect (the batch loop's heredoc leaking into the child's stdin) had left without a usage line, and 1 of the 4 dry runs is a re-run after a transient API error truncated the first attempt's report. All ran through the ordinary invocation path in disposable clones created with `mktemp -d`, one fresh clone per write-capable run. Clone content identity with the reviewed tree was proven twice per clone — an identical binary-patch hash regenerated inside the clone, and an independent hash over all tracked content — never by diffstat. Results:
+
+- the 7 write-capable ownership probes are 3 `readme`, 3 `adr` and 1 `inline`;
+- two independent `readme` runs with the ADR title drift present wrote only inside readme's ownership row and reported `docs/decisions/README.md` as `owned by adr, not touched`; the third, carrying a `--since` selector, additionally regenerated `docs/README.md` within the same row and collapsed the duplicated ADR table to the single relative link;
+- of the 3 `adr` runs, two wrote exactly `docs/decisions/README.md`, left `docs/README.md` untouched and reported it as readme-owned, and changed no ADR `Status`; the third wrote nothing at all, correctly abstaining because another live session's ledger held the index (`audit-protocol.md` §7.2);
+- the `inline --since` run and all 4 `--dry-run` runs wrote nothing outside their contracts;
+- all 22 fail-closed executions printed the usage line and wrote nothing; they cover the 18 distinct rejection cases of the grammar, one of them probed a second time as the first standalone check of the invocation path, plus the 3 re-runs named above.
+
+Out-of-mode bait files were compared by hash before and after each run. The real checkout was never a probe's working directory and was verified unchanged.
+
+These probes prove the corrected behaviour stays inside its boundaries. They did **not** reproduce the original incident, and are not offered as evidence that they could.
+
+## U.6 Review and simplification record
+
+The work passed through independent review of the design, `/simplify` over the diff, `/code-review` three times as the diff changed, and a QA assessment rerun once the scope widened to thirteen files.
+
+Corrections adopted from those passes: calibration of the causal claims in `lessons.md`, the checker docstring and the test header (`§U.2`); replacement of the `argument-hint`-conditional rule with unconditional enforcement; separation of frontmatter from body so a declaration cannot satisfy a body requirement; a single shared frontmatter regex behind both readers, after a duplicated second spelling was identified as a future silent divergence; ownership wording that contradicted the table in two restatements, corrected in the direction the table already stated; and the generated ADR link made relative to the file it is written into.
+
+Removed as redundant once their consumers disappeared: a real-corpus assertion superseded by running the checker itself, the two module exports it alone required, a test-only runner indirection with a hand-copied checker signature, and a rationale block restating the docstring.
+
+Suggestions consciously left out of scope are recorded as residuals in `§U.9`, not as defects. Residual risk was assessed **LOW**, verdict **ADEQUATE WITH QA GAP**, with the two gaps named there.
+
+## U.7 Commit structure and tree identity
+
+Three commits, verified from git, linear and single-parent, on parent baseline `de4d3de03adc582f95382e30476d3cb8ac48975b`:
+
+```
+a92a175ddde73ca5693ef26e39cb6a8dcd4faf83
+  fix(agent): isolate luke-docs modes and bind invocation arguments        3 files
+
+6237e56d4de709640aacb9778237662128b15a29
+  chore(agent): enforce canonical skill argument binding                   9 files
+
+f3b5fe3358e46d97a49a5a634004aaa1be39ff7a
+  docs(lessons): record the inline arguments rendering trap                1 file
+```
+
+Allocation: commit 1 carries the three `luke-docs` files (`SKILL.md`, `references/readme-templates.md`, `references/adr-rules.md`); commit 2 carries `tools/scripts/check-skill-integrity.ts`, its test, and the seven sibling skills (`luke-fix`, `luke-deps`, `luke-test`, `luke-audit`, `luke-bugs`, `luke-security`, `luke-full`); commit 3 carries `lessons.md` alone. Aggregate over the range: **13 files, 482 insertions, 57 deletions**. Final tree `515bf57121401b3ed20dde3d0d66bd1be4d9fd1d`, identical to the reviewed staged tree — that identity, not a rerun of the suites, is the preservation proof.
+
+Every commit was created with hooks enabled, carries a subject only, an empty body, no trailers and no `Co-Authored-By`. No amend, rebase or `commit-tree` rewrite. The push was a normal fast-forward `de4d3de..f3b5fe3`, no force, no `--no-verify`, with `.husky/pre-push` running in full.
+
+## U.8 Remote evidence
+
+Verified live against SHA `f3b5fe3358e46d97a49a5a634004aaa1be39ff7a`. Exactly three workflow runs exist for it (`total_count=3`), each **push-triggered, attempt 1, success**:
+
+| Workflow | Run | Result |
+| -------- | --- | ------ |
+| CI       | `34159882403` | success |
+| Docs     | `34159882415` | success |
+| security | `34159882411` | success |
+
+**CI.** Four upstream jobs succeeded: `Lint, TypeCheck & Unit Tests`, `Browser Component Tests`, `Integration Tests`, `Migrations`. `CI gate` executed — not skipped — starting after the last upstream job reached a terminal state, and its log records `results=success success success success`, exactly four literal values. Within the lint job, `TypeCheck`, `TypeCheck (test)`, `Control-plane tests`, `Docs & skills drift` and `Build (web)` all succeeded; the control-plane suite reported 351/351 and the new binding cases appear by name in the log.
+
+**Docs.** Exactly one `Documentation drift` job. Checkout, `setup-workspace` and `Docs & skills drift` all succeeded, and all six drift checkers reported ok — `skill-integrity`, `docs-integrity`, `platform-integrity`, `tsconfig-integrity`, `workflow-branches`, `workflow-paths`.
+
+**security.** `semgrep`, `gitleaks` and `osv` all succeeded. `Security gate` executed after them and its log records `results=success success success`, exactly three literal values.
+
+**Intentional skips, not failures.** `osv-weekly` and `osv-weekly-release-train` are gated on `schedule || workflow_dispatch` and are inert on a push; `notify-on-failure` requires `contains(needs.*.result, 'failure')`, which did not occur.
+
+**Absences, not skipped jobs.** No `Release` run exists for this SHA — none is expected, because no tag was pushed. No rerun and no workflow dispatch: every run is attempt 1. No tag points at HEAD locally or on the remote.
+
+## U.9 Honest boundaries and process record
+
+Open, unclosed by this appendix:
+
+- **`.claude/commands/`** has its own substitution and forwarding contract, distinct from a skill's. `ux-audit.md` uses the invocation value in more than one place today, deliberately. Whether a command template should bind once and forward the bound value needs its own investigation; it is **not** evidence that the `SKILL.md` checker should be widened blindly. That file was not modified and the checker was not extended to command files.
+- **Unknown first-token handling in `luke-fix`, `luke-deps` and `luke-test`** remains pre-existing parser-hardening work. `/luke-fix apps/api` treats `apps/api` as an unrecognised mode token and does not fail closed; what it does next is undefined, not a documented default. Those three skills received the canonical binding and explicit parsing text in this cycle, with their modes, defaults and scope semantics unchanged; hardening the parsers was deliberately left out.
+- **A canonical-looking binding line inside a fenced code block still counts** toward the requirement. No skill is in that shape, and a fence-aware parser is more machinery than the risk earns; it is recorded in the checker's own docstring as a low-probability limitation, not as a decision.
+- **Instruction semantics have no deterministic behavioural tier.** Mode isolation, the grammar and ownership are proven by the disposable-clone probes, which are non-deterministic evidence; nothing below level 4 covers them.
+- **Causal attribution for the historical cross-mode write remains unproven** (`§U.2`).
+
+Process record — the approved push-precondition deviation. The stated precondition required no development server, watcher, test runner or emitting build active for this checkout. An idle VS Code Playwright extension `test-server` was present, parented by the editor's plugin host. It had zero child processes, so no suite was executing; it occupied neither application port (3000, 3001) nor the test-database port (5434); it listened only on an ephemeral loopback port; and it emitted no build output, so it could not interact with the pre-push hook's typecheck and tests. It was surfaced before the push and explicitly judged non-blocking by the owner, and the push proceeded on that decision. It is recorded as an idle editor-extension server, **not** as an active test or development process.
+
+## U.10 Final state
+
+- Local `HEAD`, `origin/develop-2.2` and the live remote ref are all `f3b5fe3358e46d97a49a5a634004aaa1be39ff7a`; the branch is 0 ahead and 0 behind.
+- The working tree and index were clean before this audit edit, and the stash was empty.
+- No tag at `HEAD`, locally or on the remote.
+- No release was prepared, no image published, no deployment or Portainer action taken, no workflow dispatched or rerun, and no repository or GitHub settings mutated beyond the push and the workflows it triggered automatically. Every governed manifest is unchanged.
+- `/luke-docs` mode isolation and the canonical skill argument binding are **DONE**.
+- Separate work, with its state stated per item rather than grouped: the command-template investigation and unknown-first-token parser hardening are **not started**; **`R2 Phase 2` is not authorized and not started** (`§T.8`); **`S-01` is PARTIALLY ADDRESSED and open** (`§T.1`), with the ruleset and both aggregate gates already in place on `develop-2.2` and only the main-side implementation and required-context transition outstanding. None of them is advanced by this appendix, and `/luke-docs` was not invoked to produce it.
