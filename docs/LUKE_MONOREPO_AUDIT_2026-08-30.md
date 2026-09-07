@@ -3486,3 +3486,352 @@ The real checkout remained untouched at `d2afa2e504543ae82e3a8f9107d7bf4ed0e4dc1
 ## S.10 Final state and next work
 
 `P1/P2-08` is now governed by a recorded HOLD rather than remaining an unexamined open recommendation — the same status TypeScript 7 and the Prisma next major already carry in `platform-policy.md` §4. Per the ordering `§A.4` and every appendix through `§R.8` have maintained, `S-01` (branch protection) is the next architectural decision. The skill-mode-isolation finding recorded in `§R.7`, and the separate full documentation review / English-translation workstream, remain distinct, unstarted workstreams — neither is begun by this appendix, and `/luke-docs` was not invoked to produce it.
+
+---
+
+# Appendix T — R1/R2 closure: release provenance and topological version validation (2026-09-07)
+
+## T.1 Scope and disposition
+
+| Workstream | State |
+| --- | --- |
+| R1 — release-provenance hardening (the tagged tree must claim its own tag) | **DONE** |
+| R2 Phase 1 — explicit release-target validation | **DONE** |
+| The `git-cliff --bumped-version` version-derivation defect | **CLOSED** |
+| R2 Phase 2 — the git tag as the sole release identity | proposed, **not authorized, not started** |
+| `S-01` branch protection and the aggregate-gate ruleset transition | **PARTIALLY ADDRESSED, still open** — not closed here |
+
+`S-01` has moved without closing. The `main review gate` ruleset now permits
+merge commits only, and both aggregate gates — `CI gate` and `Security gate` —
+exist and report on `develop-2.2`. What remains is the half that matters for
+enforcement: `main` carries neither aggregate implementation, so its ruleset
+still requires the individual job names, and the required-context transition is
+deferred until the first real hotfix pull request produces those contexts on
+`main` as behavioural proof. `S-01` is therefore explicitly **outside** the
+closure Appendix T claims.
+
+No **real** release candidate was prepared in this checkout, no tag was created,
+no image was published and no deployment happened in either cycle. Disposable
+clones did execute `release:prepare` end to end as proof (T.5, T.8); nothing
+they produced reached this repository.
+
+The two cycles fix different halves of one lifecycle. **R1 made the published
+artifact accountable**: after a tag reaches the remote and before any artifact
+is built or published, `release.yml` proves that the tree that tag names
+actually claims it. R1 does not prevent an invalid tag object from existing on
+the remote — the push creates the tag first and the workflow runs afterwards —
+it prevents that tag from publishing anything. **R2 fixed how the candidate is
+prepared before any tag exists**: the version is now named by the operator and
+validated against the commit graph, instead of being inferred from a
+date-ordered walk. R1 without R2 verified a number nobody had checked was
+right; R2 without R1 would have chosen a correct number with nothing to prove
+the tree carried it.
+
+## T.2 Original failure and the architectural decision
+
+`scripts/release-prepare.sh` derived the next version from
+`git-cliff --bumped-version` with no range. With no range git-cliff walks the
+whole history in **date order** and closes a release wherever that walk meets a
+tagged commit — a position in a linearisation, not a boundary in the commit
+graph. Once a stable hotfix tag is merged into a release train, every train
+commit dated before it lands on the published side of that boundary.
+
+Measured on `develop-2.2` before the fix: the unbounded call answered
+**v2.1.5**, while the explicit range `v2.1.4..HEAD` contains two breaking
+Conventional Commits — `96f361b feat(calendar)!` and
+`612c9a6 feat(storage)!` — and therefore requires a **major** floor. Setting
+`topo_order = true` did not repair it: that option sorts tags, and the release
+partition remains a line. A routine main-to-train synchronisation was enough to
+cause the defect, and one did.
+
+A second, independent defect sat underneath: the version git-cliff bumps *from*
+is the newest-dated tag in the whole repository, reachable or not, and it keeps
+one arbitrary name per tagged commit — so an unmerged hotfix on `main`, or an
+annotated candidate sharing a commit with a stable tag, could become the base.
+
+**Adopted design.** The operator names the target; automation proves it.
+
+- the base is the highest stable tag **reachable from HEAD**;
+- release notes are generated over the explicit topological range `base..HEAD`;
+- git-cliff's own `bump_type` over that range is the **mandatory minimum**;
+- a target equal to or above the minimum passes, one below it is refused;
+- there is no bypass flag, because a gate that can be waived on the day it is
+  inconvenient is not a gate.
+
+Automatic inference was not repaired and not retained: no configuration of a
+range-less call can express a graph boundary.
+
+## T.3 R1 — tagged-tree authority
+
+- `tools/scripts/check-release-provenance.ts` remains the publication-line gate:
+  which git line a tag may publish from, and which registry tags it may produce.
+- `tools/scripts/check-release-tree.ts` reads **the exact tagged tree**, never
+  the working tree, resolving one tree object and reading it with git plumbing.
+- The governed manifest set is discovered from the `packages:` globs of **that
+  tree's** `pnpm-workspace.yaml`, plus the root manifest — not a hand-kept list.
+  A glob that discovers no manifest, and a glob shape other than `<dir>/*`, are
+  rejections.
+- Every governed manifest must declare one identity: `parseReleaseTag(tag).version`.
+- `CHANGELOG.md` must carry exactly one matching `## [<version>]` heading,
+  optionally dated, with at least one `- ` entry under it, and **no
+  `## [Unreleased]` heading anywhere** in the tree.
+- `.github/workflows/release.yml` runs the provenance gate and then the tree
+  check, both inside the `provenance` job, before `verify` and both image jobs;
+  a failure of either skips every downstream publication step.
+- `.husky/pre-push` runs the same checker on the object being pushed. It is
+  **early feedback, not enforcement**: `--no-verify` skips it and another clone
+  may not have it. `release.yml` is the authority.
+- `scripts/sync-version.js` became a **writer only**, requiring `--set`; its
+  `git describe` read mode was removed.
+- `.husky/post-checkout` was deleted: its premise — that the version derives
+  from the nearest tag — is exactly what this work abandons.
+- `.cliff.toml` skips commit *subjects* beginning `Merge `, which is the shape
+  git writes by default. It is a subject rule, not "is this a merge commit": a
+  conventional `chore: merge …` remains an ordinary commit.
+- The empty-section rejection in the tree checker is a **backstop**, not the
+  primary refusal of a merge-only candidate; R2 made the validator refuse such
+  a range before any writer runs (T.4).
+
+The six R1 commits, on baseline `3a508c120b40f56b191363e8bc9d939358061a63`:
+
+| SHA | Subject |
+| --- | --- |
+| `74cf67b910b62f7e33aa5866a1c02388fe0c7896` | `ci(release): add a checker binding the tagged tree to its tag` |
+| `98e89e156019a9ba0b5d4f90b2bd25808b91e084` | `ci(release): verify manifests and CHANGELOG in the provenance job` |
+| `bf2e7d90b37ed7343caa70831f805e0959159a3e` | `chore(release): route pre-push and release-prepare through the tree checker` |
+| `8a63342f845a94e15f44a39772ef884ea5f93b73` | `chore(release): make sync-version a writer only` |
+| `cdbb17c8430096c063ff1d190de07e70acaaa20a` | `chore(release): skip merge commits in changelog generation` |
+| `1efeeaa5c4862b4ad187821b4e64f47371ec2b9b` | `docs(release): document the tree checker as the release authority` |
+
+## T.4 R2 — the explicit-target validator
+
+The supported interface is now one command with one argument:
+
+```
+pnpm release:prepare <tag>          # v3.0.0-rc.1 | v3.0.0 | v3.0.1
+```
+
+backed by one validator CLI:
+
+```
+tools/scripts/check-release-train.ts --validate <tag> [--repo <path>]
+```
+
+Fail-closed guarantees, every one answered from tags and commit reachability
+with no timestamp consulted and neither the working tree nor the index read:
+
+- the repository must be a full clone;
+- `release:prepare` refreshes tags and `origin/main` itself before validating,
+  and aborts when it cannot — freshness is a precondition, not operator memory;
+- the target tag must not already exist anywhere;
+- one canonical tag grammar, owned by `parseReleaseTag` in the provenance
+  module and imported by the other checkers;
+- the base is the highest stable tag reachable from HEAD;
+- a stable tag that outranks that base but is not reachable is refused
+  ("merge the stable line first");
+- a candidate belonging to the requested target that exists but is not
+  reachable is refused;
+- at most one reachable open train;
+- an open train owns its target, and that target is frozen;
+- the RC counter must be contiguous — exactly one above the latest candidate,
+  or `rc.1` when no train is open;
+- the minimum Conventional-Commit bump is enforced for `rc.1` and for stable
+  publication;
+- **no floor is recalculated for subsequent candidates**: the target was frozen
+  when `rc.1` was cut, so only the counter moves;
+- graduation revalidates the frozen target against the current floor, so a
+  breaking change accepted mid-train is refused at publication and the train is
+  abandoned for a new one at the higher version;
+- git-cliff must return exactly one release for the validated range; more than
+  one means the base is not the boundary the caller believes it is;
+- the range must carry at least one releasable commit;
+- the `.cliff.toml` path, the range and the `--ignore-tags` pattern are passed
+  from the validator to the writer, so the number, the section and the
+  manifests cannot come from three different questions.
+
+Removed as part of the same change: the `auto`, `rc` and `stable` modes, the
+`--graduate` CLI of the train module, and the `--shape-only` mode of the
+provenance module. None retained a caller.
+
+## T.5 Tests, mutations and end-to-end evidence
+
+| Evidence | Result |
+| --- | --- |
+| R1 control-plane suite at its final push (CI run 34065152552) | **322/322** |
+| R2 `pnpm test:tools` at its final push (CI run 34117296118) | **340/340** |
+| R2 focused release-train suite | **25/25** |
+| R2 mutations applied to the final validator | **12, all red** on the test that names each |
+
+Every fixture commit carries an explicit author and committer date, and one
+case replays the whole topology shifted by ±400 days and compares verdicts —
+date-shift invariance is asserted, not assumed. The mutations that must go red
+include: base by `git describe`, base by newest-dated tag, no floor comparison,
+no frozen-target check, no counter-contiguity check, no collision guard, no
+one-release rule, no empty-range refusal, floor computed without the rc-ignore,
+unchecked config path, no shallow-clone refusal, and no unreachable-candidate
+guard.
+
+End-to-end proofs ran in **disposable clones with a bare origin**, never in the
+checkout:
+
+- a target below the floor (`v2.1.5-rc.1`, `v2.2.0-rc.1`) is refused with
+  **nothing written** — the working tree stays clean;
+- `v3.0.0-rc.1` prepares successfully: one `## [3.0.0-rc.1]` section, both
+  ⚠️ **BREAKING** markers present, no default-message merge entries, every
+  governed manifest aligned to `3.0.0-rc.1`, and the R1 tree checker reporting
+  `ok` on the result;
+- the CHANGELOG history below the new section is byte-identical;
+- the graduation path produces one section with no rc sub-headings, and a
+  below-floor graduation (`v2.2.0`) is refused on the stable line.
+
+**The 199 / 200 / 201 entry counts.** They are all measurements of
+`v2.1.4..HEAD`, taken at different SHAs and in different trees, so the SHA has
+to be named with the number.
+
+At the **pre-R2 baseline `1efeeaa5c4862b4ad187821b4e64f47371ec2b9b`**:
+
+- the range holds **204 raw commits**;
+- five `chore(release):` subjects are skipped by `.cliff.toml`;
+- git-cliff renders **199** entries.
+
+The disposable proofs then measured trees that are not this repository:
+
+- the RC proof added its own private `wip: R2 phase 1 (disposable clone)`
+  commit, producing **200**;
+- the stable proof additionally added the private
+  `release: merge the train into main` commit, producing **201**.
+
+At the **final R2 SHA `2d20f96aedb80a1a16a516c1dc84f784a4e62ec3`**, measured in
+this repository:
+
+- the range holds **206 raw commits**;
+- the same five `chore(release):` subjects are skipped;
+- the two real R2 commits are rendered;
+- git-cliff reports **201** entries.
+
+The two 201s are not the same number twice. The disposable 201 counts 199 real
+entries plus two commits that exist only inside a throwaway clone; the final
+201 counts the same 199 plus the two R2 commits that are genuinely in this
+repository's history. Neither disposable commit is part of that history, and
+neither will appear in any released changelog.
+
+## T.6 Commit structure and atomicity
+
+The two R2 commits, on baseline `1efeeaa5c4862b4ad187821b4e64f47371ec2b9b`:
+
+| SHA | Subject |
+| --- | --- |
+| `c37f09f8e2d244488a5601b2936103704daf7791` | `fix(release): prepare explicit targets from the topological base` |
+| `2d20f96aedb80a1a16a516c1dc84f784a4e62ec3` | `docs(release): document explicit targets and minimum bumps` |
+
+An earlier three-commit split was rejected on atomicity grounds. It would have
+removed the `--graduate` and `--shape-only` interfaces in one commit while
+`scripts/release-prepare.sh` still called them, leaving an intermediate commit
+whose supported release command invoked interfaces that no longer existed. The
+alternative — temporary compatibility shims, or splitting hunks to preserve a
+commit count — would have added code whose only purpose was to survive a commit
+boundary. The producers, their consumers, the shared tag grammar and their
+tests therefore change together in one implementation commit of nine files.
+
+Final tree identity, recorded before the first commit and verified after the
+second: **`5b58b02a7e76438ec3808872ed62cba61af22dd9`**. The aggregate diff and
+diffstat over both commits are byte-identical to the reviewed working-tree diff.
+
+## T.7 Remote evidence
+
+All six runs are `push`-triggered, **attempt 1**, on the SHA named.
+
+**R1 — `1efeeaa5c4862b4ad187821b4e64f47371ec2b9b`**
+
+| Workflow | Run | Conclusion |
+| --- | --- | --- |
+| CI | 34065152552 | success |
+| Docs | 34065152551 | success |
+| security | 34065152492 | success |
+
+**R2 — `2d20f96aedb80a1a16a516c1dc84f784a4e62ec3`**
+
+| Workflow | Run | Conclusion |
+| --- | --- | --- |
+| CI | 34117296118 | success |
+| Docs | 34117296073 | success |
+| security | 34117296146 | success |
+
+R2 detail, distinguishing success from intentional skip from absence:
+
+- **CI** — all four upstream jobs succeeded (`Lint, TypeCheck & Unit Tests`,
+  `Browser Component Tests`, `Integration Tests`, `Migrations`); `CI gate` ran
+  after them and succeeded; every substantive step succeeded, including Lint,
+  TypeCheck, TypeCheck (test), tools lint/typecheck, root-scripts typecheck,
+  control-plane tests, drift, unit tests, module contract and **Build (web)**.
+  No job or step was skipped, neutral or cancelled. Control-plane tests ran
+  **340/340**, including the new release-train and stable-line coverage and the
+  contract test pinning the tree checker into the release job.
+- **Docs** — exactly one `Documentation drift` job; checkout, setup-workspace
+  and `Docs & skills drift` succeeded; all six drift checkers green.
+- **security** — `semgrep`, `gitleaks`, `osv` and `Security gate` succeeded, the
+  gate starting after its three PR-relevant scans and receiving exactly three
+  literal `success` results. `osv-weekly`, `osv-weekly-release-train`
+  (schedule/dispatch only) and `notify-on-failure` (failure only) were
+  **intentional skips**.
+- **Absence** — no `Release` workflow ran at either SHA, because no tag was
+  pushed; no `pull_request` or `workflow_dispatch` run; no rerun or second
+  attempt; no fourth workflow.
+
+## T.8 Honest boundaries and remaining work
+
+- No real `pnpm release:prepare` was ever executed in this repository; every
+  end-to-end proof ran in a disposable clone.
+- No candidate tag and no stable tag was created, locally or remotely.
+- No release workflow ran, no image was published, nothing was deployed.
+- **R2 Phase 2 was not authorized and not started.** Workspace manifests remain
+  the current release identity, `sync-version.js` remains, and the tree
+  checker's manifest half remains in force.
+- `CHANGELOG.md` remains committed and generated from the validated range;
+  replacing it with GitHub Releases is a separate future decision.
+- Abandoning an open train still requires deleting its candidate tags — a
+  separately authorized operation with no tooling in Phase 1.
+- **`S-01` and the aggregate-gate ruleset transition remain incomplete.** Both
+  `CI gate` and `Security gate` exist only on `develop-2.2`; `main` carries
+  neither implementation and its ruleset still requires the individual job
+  names. The first real hotfix pull request remains their behavioural proof,
+  and neither context may be described as required today.
+- The minimum-bump floor is enforced where releases are *prepared*, not in
+  `release.yml`. A tag created by hand bypasses it; what the workflow still
+  proves independently is that the tagged tree claims its own tag (T.3).
+
+## T.9 Version and branch-name decision
+
+The validated minimum target for the current train is **v3.0.0**: the range
+`v2.1.4..HEAD` contains `96f361b feat(calendar)!` and
+`612c9a6 feat(storage)!`, so the floor is major and `v2.2.x` is refused.
+
+The branch remains named `develop-2.2`. This is an accepted **one-cycle naming
+mismatch**, not a provenance or SemVer exception:
+
+- the release tag and the validated commit range are the contract; the branch
+  name is an operational coordination label, and `release.yml` matches the train
+  by `RELEASE_TRAIN_BRANCH`, never by inferring a version from the name;
+- renaming a mature branch mid-cycle was rejected as governance churn with no
+  correctness benefit. The remote ruleset would **not** need modifying:
+  `release train integrity` (22082018) targets `refs/heads/develop-*` and
+  `refs/heads/release/*`, so any other `develop-*` name is already covered. The
+  cost is everything else — the branch lists and environment references in
+  `ci.yml`, `security.yml` and `release.yml`, creating and deleting the remote
+  branch, coordinating open work across the move, and the historical naming
+  churn — to change a label that no gate reads as a version;
+- the next train should be named coherently with its target when it is cut,
+  after this one is merged.
+
+No branch was renamed and no workflow was changed by this decision.
+
+## T.10 Final state
+
+- `develop-2.2` and `origin/develop-2.2` are both at
+  `2d20f96aedb80a1a16a516c1dc84f784a4e62ec3`, 0 ahead and 0 behind.
+- Working tree and index were clean before this audit edit; the stash is empty.
+- No tag at HEAD, locally or on the remote.
+- Every governed manifest is still at **2.1.4** — no release was prepared.
+- `main` is unaffected by both cycles.
+- **R1 and R2 Phase 1 are DONE.** R2 Phase 2 and `S-01` remain separate pending
+  decisions, neither started.
