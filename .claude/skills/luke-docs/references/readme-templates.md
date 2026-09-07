@@ -6,6 +6,11 @@ never touch it.
 
 ## Update logic (subsequent runs)
 
+**Every row below applies to the README files templated in this file, and to no
+other.** A `luke-docs` marker is not a claim of ownership: `docs/decisions/README.md`
+carries one and belongs to `adr` mode. The ownership table in `SKILL.md` decides,
+and it is the only place that does.
+
 | Situation                              | Behavior                                       |
 | ----------------------------------------- | ------------------------------------------------- |
 | README doesn't exist                      | Write everything from scratch with all markers    |
@@ -268,7 +273,15 @@ Only public exports from `src/index.ts`. Max 20 rows — if there are too many e
 <!-- luke-docs:start:index -->
 
 {Index of the contents of docs/, with links and one descriptive line for each file/directory.
-Generated from the file listing detected in Phase 1.}
+Generated from the file listing detected in Phase 1.
+
+A directory gets one row. The decisions row is one link to the ADR index. The
+repository-owned file is `docs/decisions/README.md`, but this template
+generates `docs/README.md`, so the href is relative to it — emit
+`[Decisioni architetturali](decisions/README.md)`, never a `docs/`-prefixed
+path, which would resolve one directory too deep. Never a per-ADR table
+either: that index is `adr`-owned, and a second copy here drifts from it and
+hands both modes a reason to edit the other's file.}
 
 <!-- luke-docs:end:index -->
 ```

@@ -101,6 +101,10 @@ without an explicit decision.
 
 ## Index `docs/decisions/README.md`
 
+`docs/README.md` links to this index and is **readme**-owned: a stale entry
+there is reported as `owned by readme, not touched`, never corrected here. What
+each mode may write is the ownership table in `SKILL.md`.
+
 Always fully regenerated, ascending numeric order:
 
 ```markdown
