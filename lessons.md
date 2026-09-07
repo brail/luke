@@ -701,3 +701,54 @@ producing identical files leave no visible damage.
 - A persistent task that emits nothing (`tsx watch`) may start before its
   package's build; one that emits (`tsc --watch`, `dev:types`) may not. Keep
   the two apart when reasoning about the graph.
+
+## An inline `$ARGUMENTS` renders into its sentence — bind it alone, and a writing skill fails closed on a missing mode (2026-09-07)
+
+`/luke-docs readme` was observed also running ADR work and rewriting
+`docs/decisions/README.md` (audit Appendix R §R.7). The dispatch instruction was
+one sentence with the placeholder inside it: "No mode in `$ARGUMENTS` → run
+readme → inline → adr in sequence". Claude Code substitutes every occurrence, so
+the invocation deterministically rendered it as "No mode in readme → run readme
+→ inline → adr in sequence" — a valid, unsafe path instructing all three modes —
+and the substitution consumed the placeholder, so the runtime's trailing
+`ARGUMENTS: <value>` fallback never fired to correct it. The incident's
+signature matches that path.
+
+**How far the evidence goes.** One A/B execution against the unfixed baseline,
+same bait, did **not** reproduce the cross-mode write: readme mode stayed in its
+lane there too. So the attribution is plausible and unproven, not demonstrated —
+the rendering is deterministic, the unsafe path was real, and whether it is what
+fired on the day is not something one run can settle. The defect needed
+correcting on its own merits, and the fixed implementation *was* positively
+verified: across 27 invocations it stayed inside its mode's file set. Do not
+write this up as a reproduced cause.
+
+Second occurrence of the class. `34af653` had fixed the same rendering in
+`luke-audit`, `luke-bugs`, `luke-security` and `luke-full` six days earlier,
+skipping the one skill that writes files, and left no entry here — which is
+plausibly why the writer was missed.
+
+- The placeholder goes on its own line, `**Invocation arguments:** $ARGUMENTS`,
+  and everything else reasons about the bound value. Enforced for every
+  `SKILL.md` by `tools/scripts/check-skill-integrity.ts`, unconditionally: every
+  skill carries exactly one such line in its body, and any occurrence off it, a
+  second one, or none at all is a failure. Keying the requirement on
+  `argument-hint:` was tried and rejected — deleting the hint and the binding
+  together is one edit back to the defect, and it stayed green.
+  `<!-- skill-check-ignore -->` is deliberately not honoured here: the
+  substitution happens marker or no marker.
+- A skill's fallthrough must be its **narrowest** behaviour. `luke-docs`' widest
+  write set was reachable from an empty value and from any typo, because an
+  unknown token had no branch; it now declares its accepted grammar and prints
+  usage for everything else, before reading a file. **That is one skill, not a
+  property of the family:** `luke-fix`, `luke-deps` and `luke-test` still have
+  no branch for an unrecognised first token — `/luke-fix apps/api` treats
+  `apps/api` as an unrecognised mode token and does not fail closed; what it
+  does next is undefined, not a documented default — and hardening those three
+  parsers is pending work, deliberately left out of the cycle that fixed
+  `luke-docs`.
+- Ownership belongs to the mode, not to the skill. Three modes sharing one
+  "all levels" scope and one report template naming every mode is an invitation:
+  `docs/decisions/README.md` matched readme's stated criteria in every word,
+  while being adr's only output. Each mode now names the paths it writes, and
+  anything else it notices is reported as `owned by <mode>, not touched`.
