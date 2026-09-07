@@ -295,12 +295,12 @@ esattamente ciò che questo giro abbandona.
 
 `.cliff.toml` salta i subject che iniziano per `Merge `. Conseguenza da
 aspettarsi: un candidato i cui unici commit nuovi sono merge viene **rifiutato
-in fase di prepare** — git-cliff non calcola nessuna nuova versione quando tutti
-i commit nuovi sono saltati, quindi `release:prepare` si ferma al controllo sul
-tag già esistente prima che parta uno qualsiasi dei due writer. Il rifiuto della
-sezione vuota in `check-release-tree.ts` non è ciò che lo ferma: è la rete di
-sicurezza per una sezione vuota che arrivi nell'albero di release per un'altra
-via. Voluto, un candidato senza modifiche non deve esistere.
+in fase di prepare** da `check-release-train.ts --validate`, perché il range
+validato non contiene nulla di rilasciabile — prima che parta uno qualsiasi dei
+due writer. Il rifiuto della sezione vuota in `check-release-tree.ts` non è ciò
+che lo ferma: è la rete di sicurezza per una sezione vuota che arrivi
+nell'albero di release per un'altra via. Voluto, un candidato senza modifiche
+non deve esistere.
 
 Falsificazione: `check-release-tree.test.ts` copre accettazione e rifiuto con lo
 stesso peso, più sei mutazioni verificate rosse — rimozione del rifiuto

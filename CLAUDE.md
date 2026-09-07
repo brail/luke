@@ -458,14 +458,16 @@ mid-train it cannot even deliver one — see the frozen-target note below.
 
 **Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
-1. `pnpm release:prepare` — the supported entry point, and the only one:
-   `changelog:bump` writes notes with no version and no check. It computes the
-   next version from conventional commits (`git-cliff --bumped-version`),
-   updates `CHANGELOG.md` (`--prepend`, never `--bump -o`: overwrites
-   hand-curated sections like the `[2.0.0]` rollup), syncs every `package.json`
-   to it atomically, then proves the result with
-   `check-release-tree.ts --worktree`. Never bump versions by hand:
-   `sync-version` is a **writer only** and requires `--set <version>`
+1. `pnpm release:prepare <tag>` — the supported entry point, and the only one:
+   `changelog:bump` writes notes with no version and no check. **You name the
+   release.** The script refreshes the tags and `origin/main` itself and fails
+   closed if it cannot, then `check-release-train.ts --validate` proves the name
+   (below) before anything is written. It then updates `CHANGELOG.md` over the
+   validated range (`--prepend`, never `--bump -o`: overwrites hand-curated
+   sections like the `[2.0.0]` rollup), syncs every `package.json` to it
+   atomically, and proves the result with `check-release-tree.ts --worktree`.
+   Never bump versions by hand: `sync-version` is a **writer only** and requires
+   `--set <version>`
 2. `git diff` — review CHANGELOG + version bumps
 3. `git commit -am "chore: bump version to X.Y.Z"`
 4. `git tag vX.Y.Z && git push origin vX.Y.Z` — one named tag, never
@@ -473,20 +475,39 @@ mid-train it cannot even deliver one — see the frozen-target note below.
    pushed; it is **early feedback, not enforcement** (`--no-verify` skips it,
    another clone may not have it). `release.yml` is authoritative
 
+**The version is named, and the commits set its floor.** The number is not
+inferred: `tools/scripts/check-release-train.ts --validate <tag>` proves the one
+you typed. The base is the highest stable tag **reachable from HEAD**, and the
+notes cover `base..HEAD` — a set difference on the commit graph, never a walk in
+date order. That distinction is the reason the checker exists:
+`git-cliff --bumped-version` takes no range and closes a release wherever its
+date-ordered walk meets a tagged commit, so once a stable hotfix is merged into
+the train every train commit dated before it lands on the published side of that
+line — breaking changes included — and the computed bump comes back too small.
+A routine main-to-train synchronisation is enough to cause it, and one did.
+
+The validator refuses a tag that exists anywhere, a base that is not reachable,
+a stable tag on another line that outranks that base (merge the hotfix first), a
+target that is not the open train's frozen one, an rc counter that skips, a
+range with nothing releasable in it, and — the SemVer rule above made
+mechanical — **any version below the minimum bump** git-cliff computes for the
+commits since the base. Equal to the minimum or higher passes; there is no
+override flag, because a gate that can be waived on the day it is inconvenient
+is not a gate. Nothing is written until every one of those has passed.
+
 **RC trains**: a release train produces several candidates for **one** stable
 target — `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z` — never a new stable version
-per candidate. `pnpm release:prepare rc` prepares the next candidate,
-`pnpm release:prepare stable` graduates the train to the target it was aimed
-at. Both are needed because `git-cliff --bumped-version` answers only one side
-at a time: before the first rc it returns the stable target, and from rc.1
-onward it increments the prerelease counter and never returns to a stable
-number on its own.
+per candidate. Name the candidate (`pnpm release:prepare v3.0.0-rc.2`) and the
+validator checks it against the train it can see: the target must be the one
+already cut, and the counter must advance by exactly one.
 
 The target is **frozen when rc.1 is cut**: a `feat!` landing mid-train moves
 `v2.2.0-rc.1` to `v2.2.0-rc.2`, not to `v3.0.0-rc.1`. That is the point — a
-train has one target — but it means a breaking change accepted after the first
-candidate must be released by starting a new train at the higher version, not
-by continuing the current one.
+train has one target — and the frozen target is validated, not merely
+documented: the candidate is accepted, and it is the *graduation* that then
+refuses, because the minimum bump has become major and `v2.2.0` is below it. A
+breaking change accepted after the first candidate is released by starting a new
+train at the higher version, not by continuing the current one.
 
 **Release flow**: push to `main` → CI only (lint + typecheck);
 tag `vX.Y.Z` → provenance gate → Docker build → `ghcr.io` → Portainer pull &
@@ -537,13 +558,13 @@ rule and not "is this a merge commit": a conventional `feat(x): merge …` or
 choice is that a merge given a custom subject (`git merge -m "sync train"`) is
 still rendered. Consequence to expect: a candidate whose only new commits are
 default-message merges — syncing `main` into the train, say — is **refused at
-prepare time**: git-cliff computes no new version when every new commit is
-skipped, so `release:prepare` stops at its existing-tag guard before either
-writer runs, and nothing is written. That is correct, a candidate with no
-changes should not exist, but it is a behaviour change. The empty-section
-rejection in `check-release-tree.ts` is not what refuses it — it is the
-backstop for an empty section that reaches the release tree by another route.
-Existing `CHANGELOG.md` sections are not rewritten.
+prepare time**, by the validator: the range it would render carries no
+releasable commit, so it stops before either writer runs and nothing is written.
+That is correct, a candidate with no changes should not exist, but it is a
+behaviour change. The empty-section rejection in `check-release-tree.ts` is not
+what refuses it — it is the backstop for an empty section that reaches the
+release tree by another route. Existing `CHANGELOG.md` sections are not
+rewritten.
 
 **A `develop-X.Y` branch dies on merge into `main`** — it is not reactivated,
 never backport onto a branch that has already been merged: the next feature
