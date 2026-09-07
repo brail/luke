@@ -41,6 +41,13 @@ evidence.
 | `toolchain`                 | Node / pnpm / base image / Actions lifecycle (§8)     | yes    |
 | `evaluate <proposal>`       | technology decision assessment (§11)                  | no     |
 
+**Invocation arguments:** $ARGUMENTS
+
+The first token of the bound value above is the mode from the table; an empty
+value is the review mode. What follows is that mode's own argument, as its
+section defines it — a workspace filter for `apply` and `security`, the
+proposal for `evaluate`.
+
 **This skill is deliberately not forked.** `apply`, `security` and `toolchain`
 run an approve-per-cycle loop with the user, and a forked context breaks it.
 The fork/background contract in `tools/scripts/check-skill-integrity.ts`
@@ -50,8 +57,8 @@ therefore does not apply here.
 sections its applicability table assigns to `/luke-deps`: §3 escalation to a
 deterministic rule, §4 `lessons.md` as a check input, §7 concurrent sessions.
 §1 diff scoping does **not** apply — the input here is the registry and the
-repository's own configuration, not the diff. A `$ARGUMENTS` path is a
-workspace filter (`apps/api`, `packages/nav`), never a git range.
+repository's own configuration, not the diff. A path in the invocation
+arguments is a workspace filter (`apps/api`, `packages/nav`), never a git range.
 
 **Ownership**: `.claude/skills/luke-shared/governance-map.md`. This skill owns
 platform, dependencies, toolchain and supply chain. It does not own application

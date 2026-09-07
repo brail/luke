@@ -24,7 +24,9 @@ concurrent sessions. You modify application code, not test files, so §7.2 and
 
 ## Configuration
 
-Parse $ARGUMENTS to determine which audit to use:
+**Invocation arguments:** $ARGUMENTS
+
+The first token of the bound value above selects which audit to use:
 
 - `audit` or empty → use Skill(luke-audit)
 - `bugs` → use Skill(luke-bugs)
@@ -32,7 +34,7 @@ Parse $ARGUMENTS to determine which audit to use:
 - `full` → use Skill(luke-full)
 
 Store the chosen audit skill as AUDIT_SKILL for use throughout the loop.
-Store the scope path if provided as a second argument (e.g. `/luke-fix bugs apps/api`).
+Store the second token, if present, as the scope path (e.g. `/luke-fix bugs apps/api`).
 
 ---
 

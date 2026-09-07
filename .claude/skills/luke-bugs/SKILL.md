@@ -8,6 +8,7 @@ description: >
   running its own exploit hunt.
   Use when asked to find bugs, do a bug assessment, or check for runtime issues.
   Scoping: default = diff vs merge-base. /luke-bugs apps/api | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: Explore
 background: false

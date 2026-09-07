@@ -7,6 +7,7 @@ description: >
   sharp-edges and insecure-defaults plugins.
   Use when asked to audit security or find vulnerabilities.
   Scoping: default = diff vs merge-base. /luke-security apps/api | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: Explore
 background: false

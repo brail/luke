@@ -16,10 +16,12 @@
  * ## Why no temporary repository here
  *
  * Unlike the platform and docs suites, these cases need no `git init` and no
- * `mkdtemp`: `checkExecutionContract` reads a string and appends to an array.
- * Passing synthetic frontmatter directly is the whole fixture. Nothing in this
- * file touches `.claude/skills/` — the real skills are never mutated, which is
- * what made the original one-time proof unrepeatable.
+ * `mkdtemp`: the checks read a string and append to an array. Passing synthetic
+ * frontmatter directly is the whole fixture. Nothing in this file touches
+ * `.claude/skills/` — the real skills are never mutated, which is what made the
+ * original one-time proof unrepeatable. The corpus is proven by running the
+ * checker itself: `pnpm check:drift` discovers every `SKILL.md` and each must
+ * carry its binding, so no separate liveness test is maintained here.
  *
  * ## What is deliberately NOT covered
  *
@@ -37,16 +39,28 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  ARGUMENT_BINDING,
+  checkArgumentBinding,
   checkExecutionContract,
+  IGNORE_MARKER,
   isRepoPath,
   isSymbolRef,
 } from './check-skill-integrity';
 import { type Problem } from './lib/report';
 
+const FIXTURE = '.claude/skills/fixture/SKILL.md';
+
 /** Runs the contract check over one synthetic SKILL.md body. */
 function run(content: string): Problem[] {
   const problems: Problem[] = [];
-  checkExecutionContract('.claude/skills/fixture/SKILL.md', content, problems);
+  checkExecutionContract(FIXTURE, content, problems);
+  return problems;
+}
+
+/** Runs the binding check over one synthetic SKILL.md body. */
+function runBinding(content: string): Problem[] {
+  const problems: Problem[] = [];
+  checkArgumentBinding(FIXTURE, content, problems);
   return problems;
 }
 
@@ -54,6 +68,17 @@ function run(content: string): Problem[] {
 function assertFailsWith(problems: Problem[], expected: string): void {
   assert.equal(problems.length, 1, `expected exactly one problem, got ${problems.length}`);
   assert.match(problems[0]!.message, new RegExp(expected));
+}
+
+/** Asserts exactly one problem, on the intended line and for the intended reason. */
+function assertOneProblemAt(
+  problems: Problem[],
+  line: number,
+  expected: string
+): void {
+  assertFailsWith(problems, expected);
+  assert.equal(problems[0]!.file, FIXTURE);
+  assert.equal(problems[0]!.line, line);
 }
 
 const READONLY_BODY = '\n# Fixture\n\nRead-only. Do NOT modify any file.\n';
@@ -150,6 +175,103 @@ test('tool order and spacing in disallowed-tools do not matter', () => {
     run(VALID_FORK.replace('Edit, Write, NotebookEdit', 'NotebookEdit,Write,  Edit')),
     []
   );
+});
+
+// ── Argument binding ────────────────────────────────────────────────────────
+//
+// Every SKILL.md carries exactly one canonical binding in its body, whatever its
+// frontmatter says. `checkArgumentBinding`'s docstring holds the reasoning and
+// the calibrated history — the rendering defect is demonstrated, the historical
+// cross-mode write was observed with a matching signature, and one A/B against
+// the unfixed text did not reproduce it. Kept in one place so the status cannot
+// be updated here and left stale there.
+
+/** Frontmatter plus a body, with whatever body lines the case needs. */
+function skill(body: string, hint = false): string {
+  const frontmatter = hint
+    ? "---\nname: fixture\nargument-hint: '[a|b]'\n---\n"
+    : '---\nname: fixture\n---\n';
+  return `${frontmatter}\n${body}`;
+}
+
+test('one canonical binding in the body is valid, with an argument-hint', () => {
+  assert.deepEqual(runBinding(skill(`${ARGUMENT_BINDING}\n`, true)), []);
+});
+
+test('one canonical binding in the body is valid, without an argument-hint', () => {
+  // Correctness does not depend on the hint: the binding is required either way.
+  assert.deepEqual(runBinding(skill(`${ARGUMENT_BINDING}\n`)), []);
+});
+
+test('no binding fails, with an argument-hint', () => {
+  assertOneProblemAt(runBinding(skill('# Fixture\n', true)), 5, 'no .* line in the body');
+});
+
+test('no binding fails, without an argument-hint too', () => {
+  // The case the previous, hint-keyed rule could not see: deleting the hint and
+  // the binding together was one edit back to the defect, and it stayed green.
+  assertOneProblemAt(runBinding(skill('# Fixture\n')), 4, 'no .* line in the body');
+});
+
+test('an occurrence inside a sentence fails, naming file and line', () => {
+  const problems = runBinding(
+    skill(`${ARGUMENT_BINDING}\n\nThen parse $ARGUMENTS again.\n`)
+  );
+  assertOneProblemAt(problems, 7, 'outside the binding line');
+});
+
+test('an inline occurrence with no binding is two problems, not one', () => {
+  const problems = runBinding(skill('Parse $ARGUMENTS to pick the mode.\n'));
+  assert.equal(problems.length, 2);
+  assert.match(problems[0]!.message, /outside the binding line/);
+  assert.match(problems[1]!.message, /no .* line in the body/);
+});
+
+test('the generic ignore marker does not suppress an inline occurrence', () => {
+  // The marker means "this reference to something removed is deliberate". It
+  // cannot mean "this substitution does not happen" — it does, marker or not.
+  const problems = runBinding(
+    skill(`${ARGUMENT_BINDING}\n\nParse $ARGUMENTS here. ${IGNORE_MARKER}\n`)
+  );
+  assertOneProblemAt(problems, 7, 'outside the binding line');
+});
+
+test('two inline occurrences are two problems, on their own lines', () => {
+  const problems = runBinding(
+    skill(`${ARGUMENT_BINDING}\n\nFirst $ARGUMENTS use.\nSecond $ARGUMENTS use.\n`)
+  );
+  assert.equal(problems.length, 2);
+  assert.deepEqual(
+    problems.map(problem => problem.line),
+    [7, 8]
+  );
+});
+
+test('an indented binding is still a binding — the placeholder is alone on its line', () => {
+  assert.deepEqual(runBinding(skill(`  ${ARGUMENT_BINDING}\n`, true)), []);
+});
+
+test('a second canonical binding fails, at the second line', () => {
+  const problems = runBinding(
+    skill(`${ARGUMENT_BINDING}\n\n${ARGUMENT_BINDING}\n`)
+  );
+  assertOneProblemAt(problems, 7, 'a second');
+});
+
+test('a canonical line inside the frontmatter does not count as a binding', () => {
+  // The folded `description:` block indents its continuation lines, so such a
+  // line trims to a match. Counting it would let a skill pass while its body
+  // never binds — and the occurrence is still substituted at runtime.
+  const problems = runBinding(
+    `---\nname: fixture\ndescription: >\n  ${ARGUMENT_BINDING}\n---\n\n# Fixture\n`
+  );
+  assert.equal(problems.length, 2, 'the frontmatter occurrence and the missing binding');
+  assert.deepEqual(
+    problems.map(problem => problem.line),
+    [4, 6]
+  );
+  assert.match(problems[0]!.message, /outside the binding line/);
+  assert.match(problems[1]!.message, /no .* line in the body/);
 });
 
 // ── Reference classification ────────────────────────────────────────────────

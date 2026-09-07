@@ -7,6 +7,7 @@ description: >
   frontend shadcn violations, and dev pattern failures.
   Use after vibe coding sessions or before releases.
   Scoping: default = diff vs merge-base. /luke-audit apps/web | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: Explore
 background: false

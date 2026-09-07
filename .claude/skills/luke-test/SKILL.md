@@ -29,6 +29,14 @@ usually not the first one.
 | `write`             | create or update tests for the scope                          | tests only |
 | `verify`            | run the evidence the scope requires, and report it honestly   | **no** |
 
+**Invocation arguments:** $ARGUMENTS
+
+The first token of the bound value above is the mode: an empty value or
+`assess` selects assess; `write` and `verify` keep the meanings in the table.
+The remainder is the scope selector, resolved per `audit-protocol.md` §1 — an
+explicit form wins, and an empty selector derives the default diff vs
+merge-base.
+
 **Bare `/luke-test` is `assess`.** The default QA action is to decide what
 proof is required, not to mutate the repository. `write` is one word away and
 the assessment names the command.

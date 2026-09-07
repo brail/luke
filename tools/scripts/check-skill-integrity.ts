@@ -31,7 +31,7 @@ import { isGitIgnored } from './lib/gitPaths';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
-const IGNORE_MARKER = '<!-- skill-check-ignore -->';
+export const IGNORE_MARKER = '<!-- skill-check-ignore -->';
 
 /** Directory di primo livello che rendono un token "path del repo". */
 const REPO_TOP_DIRS = [
@@ -205,10 +205,26 @@ const DIRECT_WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit'];
 /** The project-owned literal by which a skill declares itself read-only. */
 const READONLY_MARKER = 'Do NOT modify any file';
 
+/**
+ * The frontmatter block, matched once for every reader of it.
+ *
+ * Two spellings of this regex is two definitions of "what frontmatter is": the
+ * day one learns about CRLF or a trailing space after `---`, the other keeps
+ * the old shape, and a check that depends on where the body starts silently
+ * accepts a frontmatter line as a body line.
+ */
+const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
+
 /** Frontmatter body of a skill file, or null when it has none. */
 function frontmatter(content: string): string | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const match = content.match(FRONTMATTER_RE);
   return match ? match[1] : null;
+}
+
+/** 0-based index of the first body line: everything after the frontmatter. */
+function bodyStart(content: string): number {
+  const match = content.match(FRONTMATTER_RE);
+  return match ? match[0].split('\n').length : 0;
 }
 
 /** 1-based line of the first match, for anchoring a problem. */
@@ -287,6 +303,112 @@ export function checkExecutionContract(
   }
 }
 
+/** The one line on which a `SKILL.md` may spell the arguments placeholder. */
+export const ARGUMENT_BINDING = '**Invocation arguments:** $ARGUMENTS';
+
+/**
+ * `$ARGUMENTS` appears only on the canonical binding line.
+ *
+ * Claude Code substitutes every occurrence of the placeholder, so one written
+ * inside a sentence rewrites that sentence with the invocation. `luke-docs`
+ * carried "No mode in $ARGUMENTS -> run readme -> inline -> adr in sequence":
+ * invoked with `readme` that renders, deterministically, as an instruction to
+ * run all three modes — a valid and unsafe path out of a single-mode request.
+ * The substitution also consumes the placeholder, so the runtime's trailing
+ * `ARGUMENTS: <value>` fallback never fires to correct it.
+ *
+ * A `/luke-docs readme` run was separately observed doing ADR work and
+ * rewriting the ADR index, and its signature matches that path. It is not
+ * proven to be the cause: one A/B run against the unfixed text did not
+ * reproduce the cross-mode write. The rendering is the demonstrated fact; the
+ * attribution is plausible. Either way the path had to go.
+ *
+ * So the rule is unconditional: **every `SKILL.md` carries exactly one
+ * canonical binding line in its body**, whether or not its frontmatter declares
+ * `argument-hint:`. `audit-protocol.md` §1 step 1 asks for the binding in prose;
+ * fixing the exact line is what makes it checkable, and the failure message
+ * carries the literal so a skill written to the protocol can be repaired
+ * without reading this file.
+ *
+ * Keying the requirement on `argument-hint:` was tried and rejected: deleting
+ * the hint and the binding together left the gate green, so the one edit that
+ * reintroduces the defect was the one edit it could not see. Deciding which
+ * skills "take arguments" needs a heuristic this checker has no way to get
+ * right; a uniform line is smaller than the heuristic. A skill that takes no
+ * arguments still carries it and is handed an empty value.
+ *
+ * Indentation does not defeat the invariant — the placeholder is still alone on
+ * its line — so the comparison trims both ends. A binding only counts in the
+ * **body**, though: the folded `description:` block indents its continuation
+ * lines, so a canonical-looking line there would trim to a match and satisfy
+ * the requirement while the body still never binds. An occurrence inside the
+ * frontmatter is reported like any other.
+ *
+ * Known limit: a canonical line inside a fenced code block still counts. No
+ * skill is in that shape, and a fence-aware parser is more machinery than the
+ * risk earns — but it is a hole, not a decision.
+ *
+ * `<!-- skill-check-ignore -->` is deliberately NOT honoured here. That marker
+ * says "this reference to something removed is intentional"; it cannot say
+ * "this substitution does not happen", because it does happen. Honouring it
+ * would let the defect back in with a comment on top of it.
+ *
+ * Only `SKILL.md` is subject to this. `audit-protocol.md` and the `references/`
+ * files are read as references and never substituted, which is exactly why §1
+ * can quote the token while explaining it.
+ */
+export function checkArgumentBinding(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  let canonical = 0;
+  // The frontmatter is a declaration, never the place a skill reasons about its
+  // arguments.
+  const firstBodyLine = bodyStart(content);
+
+  content.split('\n').forEach((line, index) => {
+    if (!line.includes('$ARGUMENTS')) return;
+
+    if (index >= firstBodyLine && line.trim() === ARGUMENT_BINDING) {
+      canonical++;
+      if (canonical > 1) {
+        problems.push({
+          file: relPath,
+          line: index + 1,
+          message:
+            `a second \`${ARGUMENT_BINDING}\` line. One binding is where the ` +
+            'value lands; a second is a second copy of it, and nothing says ' +
+            'which one the skill reasons about.',
+        });
+      }
+      return;
+    }
+
+    problems.push({
+      file: relPath,
+      line: index + 1,
+      message:
+        '`$ARGUMENTS` outside the binding line. Claude Code substitutes every ' +
+        'occurrence, so the invocation is rendered into this sentence and the ' +
+        `placeholder is consumed. Bind it alone on \`${ARGUMENT_BINDING}\` and ` +
+        'reason about the bound value.',
+    });
+  });
+
+  if (canonical === 0) {
+    problems.push({
+      file: relPath,
+      line: firstBodyLine + 1,
+      message:
+        `no \`${ARGUMENT_BINDING}\` line in the body. Every skill carries one, ` +
+        'so the invocation has exactly one place to land and no sentence has to ' +
+        'spell the placeholder. A skill that takes no arguments carries it too ' +
+        'and is handed an empty value. See audit-protocol.md §1 step 1.',
+    });
+  }
+}
+
 function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
@@ -312,6 +434,7 @@ function main(): void {
     if (basename(file) === 'SKILL.md') {
       contracts++;
       checkExecutionContract(relPath, content, problems);
+      checkArgumentBinding(relPath, content, problems);
     }
 
     // Vincolo di capacità: un agente Explore non ha il tool Agent, quindi non
@@ -394,7 +517,9 @@ function main(): void {
       `[skill-integrity] ${problems.length} riferimenti rotti nelle skill:\n` +
         `${formatProblems(problems)}\n\n` +
         `Ripara la skill, oppure marca la riga con ${IGNORE_MARKER} se il ` +
-        'riferimento a qualcosa di rimosso è deliberato.'
+        'riferimento a qualcosa di rimosso è deliberato. Il marker non vale ' +
+        'per il binding di `$ARGUMENTS`: lì la sostituzione avviene comunque, ' +
+        'quindi la riga va corretta.'
     );
   }
 

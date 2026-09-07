@@ -8,6 +8,7 @@ description: >
   synthesizes them into a categorical health state with an owner per finding.
   Use before a release, after a long vibe coding period, or for a periodic
   full health check. Scoping: /luke-full apps/api | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: general-purpose
 background: false
