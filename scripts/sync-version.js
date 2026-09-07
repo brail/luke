@@ -20,7 +20,8 @@
  *
  * Usage: node scripts/sync-version.js --set 1.11.0
  *
- * Called by `scripts/release-prepare.sh` with the version git-cliff computed.
+ * Called by `scripts/release-prepare.sh` with the version the operator named,
+ * once `check-release-train.ts --validate` has approved it.
  */
 
 const fs = require('fs');
@@ -80,7 +81,9 @@ const version =
 
 if (setIndex === -1) {
   console.error('❌ `--set <version>` is required. Example: --set 1.11.0');
-  console.error('   Preparing a release? Use `pnpm release:prepare` instead.');
+  console.error(
+    '   Preparing a release? Use `pnpm release:prepare <tag>` instead.'
+  );
   process.exit(1);
 }
 if (!version) {

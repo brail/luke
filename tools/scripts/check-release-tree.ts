@@ -416,7 +416,8 @@ export function changelogSection(text: string, version: string): number {
   if (unreleased !== -1) {
     throw new ReleaseTreeError(
       `${CHANGELOG}:${unreleased + 1} still carries an "## [Unreleased]" heading. ` +
-        'A release tree has none: regenerate with `pnpm release:prepare`, which ' +
+        'A release tree has none: regenerate with `pnpm release:prepare <tag>`, ' +
+        'which ' +
         'always writes a versioned heading.'
     );
   }
@@ -455,7 +456,7 @@ export function changelogSection(text: string, version: string): number {
     throw new ReleaseTreeError(
       `${CHANGELOG} has ${headings.length} "## [${version}]" headings (lines ` +
         `${headings.map(i => i + 1).join(', ')}). Remove the duplicated section — ` +
-        'a second `release:prepare` for the same version produces this.'
+        'a second `release:prepare <tag>` for the same version produces this.'
     );
   }
 
@@ -506,7 +507,7 @@ export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
       throw new ReleaseTreeError(
         `${manifest} declares version ${declared}, but the tag names ${version}. ` +
           'Every governed manifest must carry the released version — run ' +
-          '`pnpm release:prepare`, never bump by hand.'
+          '`pnpm release:prepare <tag>`, never bump by hand.'
       );
     }
   }

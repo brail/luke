@@ -31,7 +31,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       if ! pnpm exec tsx tools/scripts/check-release-tree.ts \
         --tag "$tag" --rev "$local_sha" </dev/null; then
         echo ""
-        echo "   $tag not pushed. Regenerate with: pnpm release:prepare (or 'rc' / 'stable')"
+        echo "   $tag not pushed: the commit it names does not claim it."
+        echo "   Delete it (git tag -d $tag), fix or redo the bump, tag again."
         echo ""
         exit 1
       fi

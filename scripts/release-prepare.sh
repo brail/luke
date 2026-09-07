@@ -1,69 +1,77 @@
 #!/usr/bin/env bash
 #
-# Prepare a release: CHANGELOG + versions in every package.json.
+# Prepare the release you name: CHANGELOG + versions in every package.json.
 #
 # Does not commit and does not tag — those stay explicit decisions. It does the
 # mechanical part, which is where mistakes happen, and it is the only supported
 # entry point: `changelog:bump` writes notes with no version and no check.
 #
-# The version number has one source: `git-cliff --bumped-version`, computed
-# from the conventional commits. The same value lands in the CHANGELOG and in
-# the package.json files, so they cannot diverge — and before this script
-# returns, `check-release-tree.ts` proves it on the tree it just wrote, with the
-# same checker `release.yml` will run on the tagged tree after the push.
+#   pnpm release:prepare v3.0.0-rc.1     the next candidate of a release train
+#   pnpm release:prepare v3.0.0          graduate that train to its stable tag
+#   pnpm release:prepare v3.0.1          a hotfix on the stable line
 #
-# ── Modes ───────────────────────────────────────────────────────────────────
+# ── Why the version is named rather than computed ───────────────────────────
 #
-#   release:prepare            whatever git-cliff computes next (default)
-#   release:prepare rc         the next release candidate of the current train
-#   release:prepare stable     graduate the current rc train to its stable tag
+# It used to be `git-cliff --bumped-version`. With no range git-cliff walks the
+# whole history in date order and closes a release wherever that walk meets a
+# tagged commit — which is not a boundary in the commit graph. Once a stable
+# hotfix is merged into the train, every train commit dated before it lands on
+# the published side of that line, breaking changes included, and the computed
+# bump comes back too small. An explicit `base..HEAD` is a set difference on the
+# graph, which is the question that was meant all along.
 #
-# The modes exist because a release train produces several candidates for **one**
-# stable target — v3.0.0-rc.1, rc.2, … then v3.0.0 — and git-cliff only knows
-# how to answer that question from one side at a time:
+# So the operator names the release and `check-release-train.ts --validate`
+# proves it: the tag is free, the base is the highest stable reachable from
+# HEAD, an open train owns its own target, and the version is **not below** the
+# minimum bump the conventional commits since that base require — git-cliff's
+# own verdict on the range, with no override. It also returns the range and the
+# `--ignore-tags` value the notes must be rendered with, so the number, the
+# section and the manifests cannot come from three different questions.
 #
-# - before any rc tag exists it returns the next *stable* version, so `rc` mode
-#   is what turns v3.0.0 into v3.0.0-rc.1. Without it there was no way to
-#   prepare a candidate at all: `.husky/pre-push` refuses a tag with no matching
-#   CHANGELOG block, and nothing wrote one for an rc.
-# - once an rc tag is reachable it increments the *prerelease counter only*
-#   (rc.1 → rc.2), and keeps doing so no matter what lands afterwards. That is
-#   exactly the invariant we want mid-train — candidates never consume new
-#   stable versions — but it also means it will never return v3.0.0 again on
-#   its own, on this branch or on main after the merge.
-#
-# `stable` mode therefore does not ask git-cliff at all. It asks
-# `check-release-train.ts` which train is reachable and ungraduated, and derives
-# both the tag and the changelog range from that — see that file for why
-# proximity (`git describe`) was the wrong question and reachability is the
-# right one.
-#
-# Both derived tags are checked against `check-release-provenance.ts`, the same
-# shape rule `release.yml` enforces after the push.
+# Nothing is written until every one of those checks has passed.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-MODE="${1:-auto}"
-case "$MODE" in
-  auto | rc | stable) ;;
-  *)
-    echo "❌ Unknown mode \"$MODE\". Use: (nothing) | rc | stable" >&2
+# The stable line. Its name is also what `release.yml` calls STABLE_BRANCH.
+STABLE_BRANCH="main"
+STABLE_REF="origin/${STABLE_BRANCH}"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: pnpm release:prepare <tag>
+
+  <tag>   vX.Y.Z            a stable release, cut from the stable line
+          vX.Y.Z-rc.N       a release candidate, cut from the release train
+
+Examples:
+  pnpm release:prepare v3.0.0-rc.1
+  pnpm release:prepare v3.0.0
+EOF
+}
+
+TAG="${1:-}"
+
+if [ "$#" -gt 1 ]; then
+  echo "❌ One argument: the tag to prepare. Got $#." >&2
+  usage
+  exit 1
+fi
+
+case "$TAG" in
+  '')
+    echo "❌ Name the release you are preparing." >&2
+    usage
+    exit 1
+    ;;
+  auto | rc | stable)
+    echo "❌ \"$TAG\" was a mode, and the modes are gone: the version is now" >&2
+    echo "   named, not inferred. Say which release you are preparing." >&2
+    usage
     exit 1
     ;;
 esac
-
-# The stable line. Name only; the questions below are what matter.
-resolve_stable_ref() {
-  for candidate in origin/main main; do
-    if git rev-parse -q --verify "${candidate}^{commit}" >/dev/null 2>&1; then
-      printf '%s' "$candidate"
-      return 0
-    fi
-  done
-  return 1
-}
 
 # Is HEAD on the stable line? Echoes why when it is, nothing when it is not.
 #
@@ -108,119 +116,119 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-# Range the changelog section must cover. Only `stable` sets it: the other
-# modes are correctly served by `--unreleased`, whose boundary is the previous
-# tag.
-BASE=""
-
-if [ "$MODE" = "stable" ]; then
-  # Before anything else, and before `check-release-train.ts` is even consulted.
-  # That selector is deliberately branch-agnostic — it reasons about tag
-  # topology and nothing else — so on the release train it happily finds the
-  # ungraduated train and answers v3.0.0. Preparing there rewrote CHANGELOG.md
-  # and all seven package.json files, after which the pre-push hook accepted the
-  # tag (CHANGELOG and versions did match) and only release.yml refused it — by
-  # which point an invalid stable tag already existed on the remote. A
-  # publication gate that fails closed is not enough when it fails last.
-  if ! STABLE_REF=$(resolve_stable_ref); then
-    echo "❌ Cannot resolve the stable line (tried origin/main, main), so it is" >&2
-    echo "   unprovable that this commit belongs to it. Fetch main first." >&2
-    exit 1
-  fi
-
-  ON_STABLE=$(stable_line_reason)
-  if [ -z "$ON_STABLE" ]; then
-    echo "❌ HEAD is not on the stable line, so a stable tag cut here would be" >&2
-    echo "   refused by release.yml — after the push, with the tag already on the" >&2
-    echo "   remote. Merge the release train into ${STABLE_REF#origin/} first, then" >&2
-    echo "   graduate from there." >&2
-    echo "   Still on the train? The next candidate is: pnpm release:prepare rc" >&2
-    exit 1
-  fi
-  echo "🔒 Stable line confirmed: $ON_STABLE"
-
-  # Fails closed on its own for missing, unreachable, ambiguous and
-  # already-graduated states; nothing here needs to second-guess it.
-  TRAIN=$(pnpm exec tsx tools/scripts/check-release-train.ts --graduate)
-  TAG=$(printf '%s\n' "$TRAIN" | sed -n 's/^tag=//p' | tail -1)
-  BASE=$(printf '%s\n' "$TRAIN" | sed -n 's/^base=//p' | tail -1)
-  RCS=$(printf '%s\n' "$TRAIN" | sed -n 's/^candidates=//p' | tail -1)
-
-  if [ -z "$TAG" ]; then
-    echo "❌ check-release-train returned no tag. Refusing to guess." >&2
-    exit 1
-  fi
-  echo "🚂 Graduating the train: ${RCS:-(no candidates listed)}"
-else
-  BUMPED=$(pnpm exec git-cliff --bumped-version 2>/dev/null | tail -1)
-
-  if [ -z "$BUMPED" ]; then
-    echo "❌ git-cliff computed no version. Are there conventional commits since the last tag?" >&2
-    exit 1
-  fi
-
-  case "$MODE" in
-    auto)
-      TAG="$BUMPED"
-      ;;
-    rc)
-      # Already inside a train: git-cliff has advanced the counter for us and the
-      # stable target is fixed. Otherwise this is rc.1 of the target it just named.
-      case "$BUMPED" in
-        *-rc.*) TAG="$BUMPED" ;;
-        *) TAG="${BUMPED}-rc.1" ;;
-      esac
-      ;;
-  esac
-
-  # Once the train is merged, git-cliff still answers with the next rc — and an
-  # rc tag on the stable line is exactly what release.yml rejects. Refuse here,
-  # where the fix is one word, rather than after the tag is pushed.
-  case "$TAG" in
-    *-rc.*)
-      if ! STABLE_REF=$(resolve_stable_ref); then
-        echo "❌ Cannot resolve the stable line (tried origin/main, main), so it is" >&2
-        echo "   unprovable that this candidate does not sit on it. Fetch main first." >&2
-        exit 1
-      fi
-      ON_STABLE=$(stable_line_reason)
-      if [ -n "$ON_STABLE" ]; then
-        echo "❌ $ON_STABLE, so $TAG would be refused by release.yml:" >&2
-        echo "   code on the stable line is released as a stable tag, not as" >&2
-        echo "   another candidate." >&2
-        echo "   Use: pnpm release:prepare stable" >&2
-        exit 1
-      fi
-      ;;
-  esac
-fi
-
-if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-  echo "❌ Tag $TAG already exists. Nothing new to release on this line." >&2
+# Refreshed here, not left to whoever remembers. Every question below is asked
+# of local refs: whether the tag is already taken, whether a hotfix outranks
+# this line, where the stable line is. Stale local knowledge cannot answer any
+# of them, and the failure is silent — a tag that looks free, a base that looks
+# newest. Ordinary fetch, no prune: nothing local is discarded, and a ref that
+# only exists here can make the gate stricter, never laxer.
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "❌ No \`origin\` remote, so the tags and the stable line cannot be" >&2
+  echo "   refreshed — and neither collisions nor an unmerged hotfix could be" >&2
+  echo "   ruled out. Add the remote before preparing a release." >&2
   exit 1
 fi
 
-# One definition of what a release tag looks like, shared with the workflow gate.
-CHANNEL=$(pnpm exec tsx tools/scripts/check-release-provenance.ts --shape-only --tag "$TAG" | tail -1)
+echo "🌐 Refreshing tags and ${STABLE_REF}..."
+if ! git fetch --tags --quiet origin \
+  "+refs/heads/${STABLE_BRANCH}:refs/remotes/${STABLE_REF}"; then
+  echo "" >&2
+  echo "❌ Could not fetch from origin. A release prepared against stale refs" >&2
+  echo "   can collide with a tag that already exists or skip a hotfix that is" >&2
+  echo "   already published. Fix the connection and try again." >&2
+  exit 1
+fi
 
-VERSION="${TAG#v}"
+if ! git rev-parse -q --verify "${STABLE_REF}^{commit}" >/dev/null; then
+  echo "❌ ${STABLE_REF} does not exist even after fetching, so it is unprovable" >&2
+  echo "   which side of the stable line this commit is on." >&2
+  exit 1
+fi
 
-echo "📦 Next version: $TAG ($CHANNEL)"
+# One question, asked once; the glob below only decides which answer is the
+# acceptable one. It decides nothing about whether the tag is valid:
+# `parseReleaseTag`, through `--validate`, is the only grammar, and it rejects
+# anything malformed before a byte is written. A malformed tag therefore reaches
+# the stable arm first and is refused for the wrong reason before the right one
+# — pinned by `check-release-stable-line.test.ts` so it stays a known cost
+# rather than a surprise.
+ON_STABLE=$(stable_line_reason)
+
+case "$TAG" in
+  *-rc.*)
+    if [ -n "$ON_STABLE" ]; then
+      echo "❌ $ON_STABLE, so $TAG would be refused by release.yml:" >&2
+      echo "   code on the stable line is released as a stable tag, not as" >&2
+      echo "   another candidate." >&2
+      echo "   Releasing it? Name the stable version instead." >&2
+      exit 1
+    fi
+    ;;
+  *)
+    if [ -z "$ON_STABLE" ]; then
+      echo "❌ HEAD is not on the stable line, so a stable tag cut here would be" >&2
+      echo "   refused by release.yml — after the push, with the tag already on the" >&2
+      echo "   remote. Merge the release train into ${STABLE_BRANCH} first, then" >&2
+      echo "   graduate from there." >&2
+      echo "   Still on the train? Name the next candidate: <version>-rc.N" >&2
+      exit 1
+    fi
+    echo "🔒 Stable line confirmed: $ON_STABLE"
+    ;;
+esac
+
+# Fails closed on its own for a taken tag, a missing or unreachable base, an
+# unmerged hotfix, the wrong train, a counter that skips, a range with nothing
+# releasable in it, and any target below the minimum bump. Nothing here
+# second-guesses it; nothing has been written yet either.
+if ! VALIDATION=$(pnpm exec tsx tools/scripts/check-release-train.ts --validate "$TAG"); then
+  echo "" >&2
+  echo "   Nothing was written." >&2
+  exit 1
+fi
+
+# One field of the validator's answer. `tail -1` is not defence against a
+# duplicate key — the producer cannot emit one — but against a future line that
+# happens to start the same way.
+field() {
+  printf '%s\n' "$VALIDATION" | sed -n "s/^$1=//p" | tail -1
+}
+
+KIND=$(field kind)
+VERSION=$(field version)
+RANGE=$(field range)
+IGNORE=$(field ignore)
+CONFIG=$(field config)
+# `min` is deliberately outside the completeness check below: a candidate after
+# the first has a frozen target and no minimum, so an empty value is its correct
+# answer rather than a missing one.
+MIN=$(field min)
+
+if [ -z "$KIND" ] || [ -z "$VERSION" ] || [ -z "$RANGE" ] ||
+  [ -z "$IGNORE" ] || [ -z "$CONFIG" ]; then
+  echo "❌ check-release-train returned an incomplete answer. Refusing to guess." >&2
+  exit 1
+fi
+
+echo "📦 Preparing $TAG ($KIND) — notes from $RANGE${MIN:+, minimum $MIN}"
 echo
 
-if [ "$MODE" = "stable" ]; then
-  # The whole train, in one section. `--unreleased` would start at the final rc
-  # and normally find nothing after it; an explicit range reaches back to the
-  # previous stable release, and `--ignore-tags` erases the rc boundaries inside
-  # it so git-cliff emits one heading instead of one per candidate.
-  if [ -n "$BASE" ]; then
-    pnpm exec git-cliff "$BASE..HEAD" --ignore-tags '.*-rc\..*' --tag "$TAG" --prepend CHANGELOG.md
-  else
-    pnpm exec git-cliff --ignore-tags '.*-rc\..*' --tag "$TAG" --prepend CHANGELOG.md
-  fi
-else
-  pnpm exec git-cliff --unreleased --tag "$TAG" --prepend CHANGELOG.md
-fi
+# One section for the whole range. `--ignore-tags` comes from the validator
+# because it is part of the same decision: a candidate ignores every tag, so a
+# stable hotfix merged into the train does not split its section in two, while a
+# graduation ignores the rc tags only, so the whole train lands under one
+# heading instead of one per candidate.
+#
+# `--config` comes from the validator rather than being spelled again here:
+# git-cliff's default path is `cliff.toml`, so a stray file by that name would
+# silently replace this repository's configuration — and the notes must be
+# rendered under the very configuration the range and the minimum were computed
+# under.
+pnpm exec git-cliff "$RANGE" \
+  --config "$CONFIG" \
+  --ignore-tags "$IGNORE" \
+  --tag "$TAG" \
+  --prepend CHANGELOG.md
 echo "✅ CHANGELOG.md updated"
 echo
 
@@ -235,10 +243,10 @@ echo
 pnpm exec tsx tools/scripts/check-release-tree.ts --tag "$TAG" --worktree
 echo
 
-if [ "$CHANNEL" = "rc" ]; then
-  ORIGIN_HINT="the active release train — release.yml refuses an rc tag on a commit already on main"
+if [ "$KIND" = "stable" ]; then
+  ORIGIN_HINT="${STABLE_BRANCH} — release.yml refuses a stable tag on a commit that is not on ${STABLE_BRANCH}"
 else
-  ORIGIN_HINT="main — release.yml refuses a stable tag on a commit that is not on main"
+  ORIGIN_HINT="the active release train — release.yml refuses an rc tag on a commit already on ${STABLE_BRANCH}"
 fi
 
 cat <<EOF

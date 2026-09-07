@@ -49,12 +49,17 @@
  * Usage:
  *   tsx tools/scripts/check-release-provenance.ts --tag v2.2.0-rc.1 \
  *     --stable-ref origin/main --train-ref origin/develop-2.2
- *   tsx tools/scripts/check-release-provenance.ts --shape-only --tag v2.2.0-rc.1
  *
- * Run by `release.yml` before any build job, and in `--shape-only` form by
- * `scripts/release-prepare.sh`, so the tag that script tells you to push is
- * checked against the same two shapes the gate will later accept — one
- * definition, not a regex copied into bash that drifts from this one.
+ * Run by `release.yml` before any build job. There was a `--shape-only` mode
+ * that answered the shape question alone about a tag that does not exist yet;
+ * `release-prepare.sh` was its only caller, and it now gets the shape as part
+ * of `check-release-train.ts --validate`, so the mode was removed rather than
+ * kept as a second entry point nothing exercises.
+ *
+ * `parseReleaseTag` is the **only** definition of what a release tag is:
+ * `check-release-tree.ts` and `check-release-train.ts` both import it rather
+ * than restate it, so a tag one of them accepts is by construction one this
+ * gate will admit. Adding a shape here adds it everywhere, which is the point.
  * Regression-tested by `check-release-provenance.test.ts` (`pnpm test:tools`).
  */
 
@@ -79,6 +84,14 @@ export interface ReleaseTag {
   series: string;
   /** The rc counter, present only on `rc`. */
   rc?: number;
+  /**
+   * The three numbers the shapes below already matched, so a consumer that has
+   * to *order* releases — `check-release-train.ts` — never re-splits `version`
+   * with a second, weaker pattern of its own.
+   */
+  major: number;
+  minor: number;
+  patch: number;
 }
 
 /**
@@ -103,6 +116,9 @@ export function parseReleaseTag(tag: string): ReleaseTag | null {
       channel: 'stable',
       version: `${major}.${minor}.${patch}`,
       series: `${major}.${minor}`,
+      major: Number(major),
+      minor: Number(minor),
+      patch: Number(patch),
     };
   }
 
@@ -114,6 +130,9 @@ export function parseReleaseTag(tag: string): ReleaseTag | null {
       version: `${major}.${minor}.${patch}-rc.${counter}`,
       series: `${major}.${minor}`,
       rc: Number(counter),
+      major: Number(major),
+      minor: Number(minor),
+      patch: Number(patch),
     };
   }
 
@@ -357,21 +376,6 @@ function required(name: string): string {
  */
 function main(): void {
   const tag = required('tag');
-
-  // Shape without provenance, for a tag that does not exist yet. `release-prepare`
-  // asks this before printing the `git tag` line it hands the operator: a name
-  // this rejects is a name the gate would reject after the push, which is the
-  // expensive place to find out.
-  if (process.argv.includes('--shape-only')) {
-    const shape = parseReleaseTag(tag);
-    if (shape === null) {
-      throw new ProvenanceError(
-        `"${tag}" is not a release tag. Supported shapes: vX.Y.Z and vX.Y.Z-rc.N.`
-      );
-    }
-    console.log(shape.channel);
-    return;
-  }
 
   const decision = checkReleaseProvenance({
     tag,

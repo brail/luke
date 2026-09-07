@@ -205,12 +205,18 @@ test('parseReleaseTag classifies the two supported shapes and nothing else', () 
     channel: 'stable',
     version: '2.1.4',
     series: '2.1',
+    major: 2,
+    minor: 1,
+    patch: 4,
   });
   assert.deepEqual(parseReleaseTag('v10.0.0-rc.12'), {
     channel: 'rc',
     version: '10.0.0-rc.12',
     series: '10.0',
     rc: 12,
+    major: 10,
+    minor: 0,
+    patch: 0,
   });
   assert.equal(parseReleaseTag('v2.2.0-rc1'), null);
 });
