@@ -3989,3 +3989,335 @@ Process record — the approved push-precondition deviation. The stated precondi
 - No release was prepared, no image published, no deployment or Portainer action taken, no workflow dispatched or rerun, and no repository or GitHub settings mutated beyond the push and the workflows it triggered automatically. Every governed manifest is unchanged.
 - `/luke-docs` mode isolation and the canonical skill argument binding are **DONE**.
 - Separate work, with its state stated per item rather than grouped: the command-template investigation and unknown-first-token parser hardening are **not started**; **`R2 Phase 2` is not authorized and not started** (`§T.8`); **`S-01` is PARTIALLY ADDRESSED and open** (`§T.1`), with the ruleset and both aggregate gates already in place on `develop-2.2` and only the main-side implementation and required-context transition outstanding. None of them is advanced by this appendix, and `/luke-docs` was not invoked to produce it.
+
+# Appendix V — R2 Phase 2 closure: the git tag as the sole release identity (2026-09-09)
+
+## V.1 Scope and disposition
+
+| Workstream | State |
+| --- | --- |
+| R2 Phase 2 — the git tag as the sole release identity | **DONE** (implementation) |
+| Checkpoint 1 — normalized provenance version baked into both images | **DONE** |
+| Checkpoint 2 — private, versionless manifests; `sync-version` removed; tree checker reduced | **DONE** |
+| Advisory remediation forced mid-cycle (js-yaml, nodemailer) | **DONE** |
+| The first genuine RC path, end to end | **NOT PROVEN** — see `§V.8` |
+| `S-01` branch protection and the aggregate-gate ruleset transition | **PARTIALLY ADDRESSED, still open** — untouched here |
+
+This appendix supersedes exactly one class of bookkeeping statement: every place
+in Appendix T and Appendix U that records R2 Phase 2 as *not authorized and not
+started* — `§T.1`'s disposition row, `§T.8`'s "**R2 Phase 2 was not authorized
+and not started**", `§T.10`'s "R2 Phase 2 and `S-01` remain separate pending
+decisions", and the identical restatements in `§U.1` and `§U.10`. Those
+statements were true when written. **Their historical text is not changed**, and
+nothing else in Appendices A–U is superseded: every finding, measurement and
+evidence record in them stands. `S-01` is explicitly outside this closure and
+remains exactly as `§T.1` describes it.
+
+Phase 2 was authorized after Appendix U, in the order Appendix T proposed, with
+one approved amendment: **P2-A was folded into Checkpoint 2** rather than landing
+as its own commit, because `"private": true` is a precondition for a versionless
+manifest rather than an independent change.
+
+## V.2 Checkpoint 1 — the normalized version reaches every surface
+
+`53346490a63b538404cdc52e4d2bc0ec2083f04a`, 19 files, 639 insertions, 32 deletions.
+
+The provenance gate already emitted a **normalized** version — `parseReleaseTag`
+strips the `v` and keeps `-rc.N` — and `release.yml` already used it for every
+image tag. Both image build jobs nevertheless passed
+`APP_VERSION=${{ github.ref_name }}`, the raw tag *with* its `v`. Four defects
+followed from that one input, all measured before the change:
+
+- `sales.ts` composed `` `Luke - v${APP_VERSION}` ``, so every workbook exported
+  from a tagged image carried the document property `Luke - vv2.1.4`;
+- the API container entrypoint is plain `node`, never a pnpm wrapper, so
+  `npm_package_version` was never set and `/api/health`, `GET /` and the OTel
+  `service.version` resource reported the hardcoded `0.1.0` in every image;
+- `next.config.js` declared `env: { NEXT_PUBLIC_APP_VERSION: npm_package_version }`,
+  which Next spreads *after* the real environment and which therefore shadowed
+  the web Dockerfile's `ENV`, baking the manifest number into the bundle;
+- the same web build inlined `dev` under CI, because turbo's strict env mode
+  filters `npm_package_version` out — two builds of one commit disagreeing.
+
+The commit points both build args at `needs.provenance.outputs.version`, deletes
+the shadowing `env:` block, and routes every consumer through one accessor per
+runtime: `appVersion()` / `releaseIdentity()` in `apps/api/src/lib/appVersion.ts`
+— a deliberate zero-import leaf, because `instrument.ts` is loaded through
+`--require` before the OpenTelemetry instrumentations register — and
+`appVersionLabel()` / `appVersionText()` in `apps/web/src/lib/appVersion.ts`,
+which apply the display `v` exactly once and only before a digit, so the `dev`
+sentinel never renders as `vdev`. The backup pipeline keeps `releaseIdentity()`
+and therefore keeps persisting `null` when a build carries no release identity;
+collapsing it onto the `dev` fallback would have changed persisted metadata for
+local and test backups, which no evidence argued for.
+
+Coverage added with it: behavioural unit tests for both accessor pairs, real
+Chromium component tests proving each web consumer delegates rather than reading
+the environment itself, a Next-config contract (`env.NEXT_PUBLIC_APP_VERSION`
+absent, `npm_package_version` unread), and a `release.yml` contract asserting
+that each image job's `build-args` block contains **exactly**
+`APP_VERSION=${{ needs.provenance.outputs.version }}` — an equality, not a
+membership test, so a second arbitrary assignment is refused. Comments naming
+`github.ref_name` deliberately do not affect that verdict, and an anti-mutation
+pins that.
+
+## V.3 Checkpoint 1 evidence
+
+**Remote, re-queried.** `CI` run `34272122780` and `security` run `34272122823`,
+both `event=push`, both attempt 1, both `completed/success`. CI: `Lint, TypeCheck
+& Unit Tests`, `Browser Component Tests`, `Integration Tests`, `Migrations` and
+`CI gate` all success. security: `semgrep`, `gitleaks`, `osv` and `Security gate`
+all success; `osv-weekly`, `osv-weekly-release-train` (schedule/dispatch only)
+and `notify-on-failure` (failure only) intentionally skipped. No `Release` run
+exists for this SHA and none is expected — no tag was pushed.
+
+**Disposable local Docker proof.** Both images were built from the Checkpoint 1
+tree with `APP_VERSION=3.0.0-rc.1` passed explicitly, under a `p2proof` name
+space, and observed at four points: the API image config carried
+`APP_VERSION=3.0.0-rc.1` with no leading `v`; `/api/health` and `GET /` both
+returned `"version":"3.0.0-rc.1"` rather than `0.1.0`; the web client bundle
+inlined the value as `"3.0.0-rc.1".trim()`, which is the helper's environment
+read replaced at build time; and the rendered public `/login` page contained
+exactly one occurrence of `v3.0.0-rc.1` and none of `vv3.0.0-rc.1`. The
+unauthenticated tRPC `public.appInfo` returned `3.0.0-rc.1` from the same
+container. Every container, network, volume and image the proof created was
+removed afterwards, and no `p2proof` resource remained.
+
+**The Docker-cache exhaustion, and what was pruned.** The first image build
+failed with `ERR_PNPM_ENOSPC` at `pnpm install --frozen-lockfile`: Docker
+Desktop's 60 GB virtual disk was full while the host still had 175 GiB free.
+Nothing was reclaimed unilaterally. On explicit authorization limited to build
+cache, and only after confirming `Build Cache ACTIVE = 0` with no build running,
+`docker builder prune -f` reclaimed **21.07 GB** (175 records → 39; 21.73 GB →
+661.5 MB), taking free space in the VM from zero to 24.2 GB. **No image,
+container or volume was pruned**: measured before and after, Images stayed 30 /
+15.3 GB, Containers 12 / 1.897 GB and Local Volumes 67 / 8.782 GB, and the two
+running development containers plus every `luke*` volume were untouched. No
+`docker system prune`, `image prune`, `container prune` or `volume prune` was
+run, and no Docker Desktop setting was changed.
+
+**Honest boundaries of that proof.**
+
+- It is a **local** build. Nothing here exercised the real path from a pushed tag
+  through the provenance gate to a published image; the gate's output was
+  substituted by hand as a build argument. Only a first genuine RC can prove that
+  path, and none was produced.
+- The API image was observed at three points — image environment, `/api/health`,
+  `GET /`. The xlsx `manager` property and the OTel `service.version` resource
+  were **not** exercised in the running container (an export needs a populated
+  database, the resource needs a collector); both rest on their unit tests.
+- Two values had to be supplied at `docker run`: `LUKE_TRUSTED_PROXY_CIDR`, which
+  the API requires in production by design, and an `auth.strategy` row seeded
+  into the disposable database, because `CRITICAL_CONFIG_KEYS` blocks boot on an
+  unseeded one. Both are ordinary deployment configuration and disposable runtime
+  state; no repository file was modified for the proof.
+- A grep of the whole web build output matched `2.1.4` in **two files, both
+  `.js.map` source maps**, and in both the match is comment prose inside
+  `apps/web/src/lib/appVersion.ts` describing the historical `Luke - vv2.1.4`
+  defect. The client bundle (`.next/static`) and every non-source-map file
+  contain zero occurrences. It is documentation of the old behaviour, not a stale
+  runtime value — and it is the reason a negative bundle grep was removed from
+  the proof in favour of the deterministic Next-config contract.
+
+## V.4 Checkpoint 2 — the manifests stop carrying an identity
+
+`424be386cb1a21f0e8e86cc74242c431bdc728b7`, 16 files, 194 insertions, 666 deletions.
+
+All eight governed manifests are now **`private: true` and carry no `version`**;
+for the four that lacked it — `@luke/calendar`, `@luke/core`, `@luke/db`,
+`@luke/nav` — the version line became the private line. `scripts/sync-version.js`
+(120 lines) is deleted along with its `package.json` script and every executable
+and instructional reference to it. `release-prepare.sh` drops the sync step, so
+**`CHANGELOG.md` is the only file release preparation writes**, and its closing
+banner now proposes `chore(release): notes for <version>` instead of a version
+bump that no longer happens.
+
+`check-release-tree.ts` falls from 608 to 411 lines: `parseWorkspaceGlobs`,
+`governedManifests`, `manifestVersion`, the direct-child glob guard and the
+per-glob zero-discovery guard are removed with the manifest half, and the CLI
+summary now reports the CHANGELOG section alone. The checker no longer reads
+`pnpm-workspace.yaml` or any manifest. Its suite went from 47 tests to **33**:
+14 manifest and workspace-declaration cases deleted, and six rewritten rather
+than dropped — including the only test proving `--rev` and `--worktree` read
+different trees, re-expressed against a CHANGELOG divergence, and the liveness
+test, which now derives the release identity from the newest versioned
+`CHANGELOG.md` heading because no manifest declares one.
+
+Two consequences worth recording. First, the gate is narrower and now says so in
+`CLAUDE.md`: a `## [X.Y.Z]` heading with one bullet is something a person could
+type, so the tree checker proves the tagged tree ships notes for its tag and not
+that a release was prepared — the **number** is proved by
+`check-release-train.ts --validate`, the **line** by the provenance gate. That
+was equally true before, since the manifest half was also written by a script.
+Second, the `tools/*` prerequisite recorded in `CLAUDE.md` for porting this
+checker to `main` **is dissolved**: the zero-discovery guard that refused every
+tree cut from that line is gone with the manifest half, so `main`'s inert glob is
+dead configuration again. The port itself is not done and stays out of scope.
+
+## V.5 Disposable-clone evidence for Checkpoint 2
+
+A throwaway clone with its own bare origin, built from the real repository
+read-only; `release-prepare.sh` was never run in the real checkout.
+
+- `pnpm install --frozen-lockfile` succeeded with `pnpm-lock.yaml` **byte
+  identical** before and after (md5 unchanged, git reporting no change), and no
+  pnpm, turbo or Next warning mentioned a missing version.
+- All **11** internal workspace edges resolved as `link:` paths; every internal
+  dependency is a bare `workspace:*`, which resolves by name and ignores the
+  target's version.
+- `pnpm build`, `pnpm test`, `pnpm test:tools` (341/341), `pnpm check:drift`
+  (6/6) and `pnpm typecheck:root` all green. The clone's first `next build`
+  failed on `NEXTAUTH_SECRET env var required in production` — the clone has no
+  untracked `.env.local` — and compiled successfully when re-run with the exact
+  environment `ci.yml`'s `Build (web)` step uses. Diagnosed as an environment
+  gap, not attributed to versionless manifests.
+- `bash scripts/release-prepare.sh v3.0.0-rc.1` wrote **exactly one file**,
+  `CHANGELOG.md`: zero manifests touched, one `## [3.0.0-rc.1]` heading, zero
+  `## [Unreleased]` headings, 210 entries, and the checker's own `--worktree`
+  self-check returning `ok`.
+- The reduced checker **accepted** the committed bump for `v3.0.0-rc.1` and
+  **rejected** its parent with `CHANGELOG.md has no "## [3.0.0-rc.1]" heading`.
+- `osv-scanner scan -r .` read the lockfile, found 1287 packages and reported no
+  issues, confirming that versionless manifests do not change its reading.
+
+Nothing the clone produced reached this repository, and no tag was created in it.
+
+## V.6 The three commits
+
+| SHA | Subject |
+| --- | --- |
+| `53346490a63b538404cdc52e4d2bc0ec2083f04a` | `fix(release): bake the normalized release version into both images` |
+| `424be386cb1a21f0e8e86cc74242c431bdc728b7` | `refactor(release): make the git tag the sole release identity` |
+| `5c8e4e3358e1edbc3212245c5d2dec1a839497af` | `fix(deps): raise js-yaml and nodemailer past GHSA-2883-xcg3-v3hh and GHSA-8m3c-c648-2xjj` |
+
+The review form differed between them, and the difference is worth recording.
+Checkpoints 1 and 2 were reviewed **in staged form**, and each commit's tree was
+afterwards proven identical to the tree that had been reviewed. The advisory
+remediation was reviewed as an **unstaged three-file diff**; those exact three
+paths were then staged and committed with no further edits. All three were
+committed with hooks enabled and no `--no-verify`, and all three carry a
+subject-only message with an empty body and no trailers.
+
+## V.7 The intermediate security failure, and its remediation
+
+Checkpoint 2's push produced three runs: `CI` `34281423411` **success**, `Docs`
+`34281423403` **success** (one `Documentation drift` job, all six checkers
+green), and `security` `34281423412` **failure** — every run attempt 1. Within
+that run `semgrep` and `gitleaks` succeeded, `osv` failed, and `Security gate`
+correctly failed on `results=success success failure`; `notify-on-failure` ran
+and succeeded, which is its condition being met rather than a defect.
+
+`osv` reported two packages affected by two known vulnerabilities:
+**GHSA-2883-xcg3-v3hh** on `js-yaml` 4.3.1 (fixed 4.3.2) and
+**GHSA-8m3c-c648-2xjj** on `nodemailer` 9.0.5 (fixed 9.1.1). These advisories
+were **newly surfaced by OSV between the two scans, against an unchanged
+lockfile — not a regression from Checkpoint 2**: `pnpm-lock.yaml` is
+byte-identical between `53346490` and `424be386` (both blob
+`4105d5d25ca6f3bc68c161d88626da43c5a1d6c3`), and the same lockfile had passed
+`osv` in run `34272122823` roughly ninety minutes earlier. What is proven is the
+identical input and the different verdict; **when the advisories were published,
+or when the feed ingested them, was not measured** and is not claimed here.
+
+The remediation was scoped to those two findings. `nodemailer` is a **direct**
+dependency of `apps/api` and a transitive one through `next-auth` →
+`@auth/core`; its declared range moved `^9.0.5` → `^9.1.1`, a minor within-major
+needing no source or type change. `js-yaml` is **transitive and
+override-controlled**, reachable only by commitlint tooling
+(`@commitlint/cli` → `@commitlint/load` → `cosmiconfig`); its existing override
+floor was raised `>=4.3.1 <5` → `>=4.3.2 <5`, which preserves the original
+intent — it still excludes the `<=4.3.0` range that override was created for, and
+keeps the same cap — with the new GHSA id and reason recorded in the comment. No
+advisory was suppressed or ignored, no security workflow was touched, no bulk or
+unrelated upgrade was taken, and the lockfile was regenerated by pnpm rather than
+hand-edited.
+
+The lockfile delta was 34 lines and entirely explained: the two package entries
+and their integrity hashes, the `apps/api` importer specifier, the override
+string, and a `next-auth` key whose **peer suffix** was rewritten from
+`(nodemailer@9.0.5)` to `(nodemailer@9.1.1)` — the same `5.0.0-beta.32`, not a
+version move. No unrelated package changed; the total stayed 1287.
+
+Verification before the commit: `pnpm security:deps` exit 0 with "No issues
+found"; both vulnerable resolutions absent from the lockfile and one version of
+each resolved; `pnpm install --frozen-lockfile` stable; lint, typecheck, unit
+tests and the level-3 integration suite (42 files, 532 passed, 1 expected fail)
+green; and two targeted runtime proofs, a real `createTransport`/`sendMail`
+round trip on nodemailer 9.1.1 and commitlint still accepting a valid message and
+rejecting a malformed one through the js-yaml path.
+
+**New evidence, not a rerun.** The failed run was deliberately left at attempt 1;
+the fix produced its own. `5c8e4e33` pushed two runs, `CI` `34284379351` and
+`security` `34284379299`, both attempt 1 and both **success**. In the latter,
+`osv` scanned 1287 packages and reported "No issues found" at exit 0, with zero
+mentions of either GHSA id anywhere in the run log, and `Security gate` executed
+on `results=success success success`. No `Docs` run exists for that SHA — the
+commit touches no `docs/**` and no `.md` path — and no `Release` run exists for
+any of the three SHAs.
+
+## V.8 What is closed, and what is not
+
+R2 Phase 2 is closed as an **implementation**: the git tag is the sole release
+identity, every runtime and display surface reads the normalized value, and no
+second copy of the number exists to drift. That is a different claim from the
+release lifecycle being proven end to end.
+
+**No release was prepared in this repository, no tag was created, no image was
+published and nothing was deployed.** Every `release-prepare.sh` execution
+happened inside a disposable clone; every image built was a local, disposable one
+that was removed. The path from a pushed tag through the provenance gate, the
+tree checker and the image jobs to a published artifact remains exercised only in
+parts — by workflow-contract tests statically, by the local build for the
+Dockerfile-to-runtime and Dockerfile-to-bundle halves. **The first genuine RC is
+still the only thing that will prove it whole**, and it has not been produced.
+
+## V.9 Residual findings, left open
+
+None of the following is advanced or closed by this appendix:
+
+- **`procedure-coverage` bookkeeping.** The integration suite emits a non-fatal
+  teardown notice: `system` declares two uninvoked procedures while only
+  `system.triggerCalendarDigest` is actually uninvoked. Exit code 0, the
+  declaration file untouched by this work, and CI's `Integration Tests` green
+  throughout — stale bookkeeping that under-claims coverage.
+- **`apps/web/src/lib/README.md` is stale**: it documents a
+  `NEXT_PUBLIC_APP_VERSION` default of `1.0.0` that never matched the code and a
+  `getAppInfo()` / `getLoginDemoText()` API that no longer exists. Pre-existing,
+  outside both checkpoints, and not governed by a `luke-docs` marker, so
+  `check:drift` will not catch it.
+- **The dead AppConfig `app.version` key** — declared in the registry, never
+  seeded, never read. Removing it changes supported configuration and needs its
+  own authorization.
+- **Broader `luke-docs` findings, deliberately reverted.** Regenerating the
+  governed README release section also corrected unrelated drift across seven
+  READMEs (a Node engines mismatch, non-existent exported symbol names in
+  `packages/core`, five undocumented ESLint rules, a stale ADR table). All of it
+  was reverted as out of scope; only the `scripts` and `release` sections of the
+  root README were kept. The findings are real and remain unaddressed.
+- **Main-side porting.** The `tools/*` blocker is dissolved (`§V.4`), but the
+  checker, its suite and its callers are still absent from `main`.
+- **`S-01` and the aggregate-gate ruleset transition** remain exactly as `§T.1`
+  records them: both gates exist and report on `develop-2.2`, and `main` carries
+  neither implementation. What the required-context transition awaits is
+  **behavioural evidence from a real pull request targeting `main` that carries
+  coherent implementations of both gates** — not a hotfix specifically. A hotfix
+  would supply it if one occurs first; failing that, the intended proof point is
+  the release-train merge pull request into `main`. Either way the ruleset
+  transition stays unperformed until those contexts have actually reported
+  there.
+
+## V.10 Final state
+
+- Local `HEAD`, `origin/develop-2.2` and the live remote ref are all
+  `5c8e4e3358e1edbc3212245c5d2dec1a839497af`; the branch is 0 ahead and 0 behind.
+- The working tree and index were clean before this audit edit, and the stash was
+  empty.
+- No tag points at `HEAD`, locally or on the remote, and no tag was created at
+  any point in this work.
+- Every run for all three SHAs is attempt 1: no rerun, no workflow dispatch, no
+  `Release` run.
+- Every governed manifest is private and versionless; `pnpm-lock.yaml` changed
+  only in the advisory remediation commit.
+- No release prepared in this checkout, no image published, no deployment or
+  Portainer action, no GitHub settings mutated beyond the pushes and the workflows
+  they triggered automatically. `/luke-docs` was not invoked to produce this
+  appendix.
