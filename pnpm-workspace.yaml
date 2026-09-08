@@ -50,7 +50,13 @@ overrides:
   # is what stops it going back.
   fast-uri: '>=3.1.6 <4'
   # GHSA-5p4m-2wfm-xmqj su <=4.3.0. Range, per la stessa ragione di fast-uri.
-  js-yaml: '>=4.3.1 <5'
+  # Floor raised to 4.3.2 for GHSA-2883-xcg3-v3hh (prototype pollution via a
+  # crafted document) on <=4.3.1 — the version this floor previously allowed.
+  # Same cap, same intent: it still excludes <=4.3.0 and still refuses to drag
+  # transitive consumers onto a new major. Reached only by commitlint tooling
+  # (@commitlint/cli -> @commitlint/load -> cosmiconfig), never by application
+  # runtime code.
+  js-yaml: '>=4.3.2 <5'
   protobufjs: '7.6.5'
   sharp: '0.35.4'
   valibot: '>=1.4.2'
