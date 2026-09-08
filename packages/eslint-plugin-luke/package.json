@@ -1,6 +1,5 @@
 {
   "name": "eslint-plugin-luke",
-  "version": "2.1.4",
   "private": true,
   "type": "module",
   "main": "./index.js",

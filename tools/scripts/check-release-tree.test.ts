@@ -35,8 +35,6 @@ import {
   ReleaseTreeError,
   changelogSection,
   checkReleaseTree,
-  governedManifests,
-  parseWorkspaceGlobs,
   revTree,
   worktreeTree,
 } from './check-release-tree';
@@ -92,8 +90,14 @@ function git(repo: string, ...args: string[]): string {
 
 const DEFAULT_WORKSPACE = 'packages:\n  - apps/*\n  - packages/*\n';
 
-function manifest(name: string, version: string): string {
-  return `${JSON.stringify({ name, version, private: true }, null, 2)}\n`;
+/**
+ * A workspace manifest as the repository now writes them: a name, no version.
+ * The checker no longer reads these — they stay in the fixtures because a
+ * release tree really does contain them, and a tree the tests build should look
+ * like one.
+ */
+function manifest(name: string): string {
+  return `${JSON.stringify({ name, private: true }, null, 2)}\n`;
 }
 
 /**
@@ -145,13 +149,10 @@ function files(spec: TreeSpec): Record<string, string> {
   const base: Record<string, string> = {
     'pnpm-workspace.yaml': DEFAULT_WORKSPACE,
     'CHANGELOG.md': changelog(v),
-    'package.json': manifest('@luke/monorepo', v),
-    'apps/api/package.json': manifest('@luke/api', v),
-    'apps/web/package.json': manifest('@luke/web', v),
-    'packages/core/package.json': manifest('@luke/core', v),
-    // Not a workspace member: `apps/*` is a direct-child glob, so a manifest
-    // one level deeper is vendored code the release does not govern.
-    'apps/web/vendor/thing/package.json': manifest('vendored', '0.0.1'),
+    'package.json': manifest('@luke/monorepo'),
+    'apps/api/package.json': manifest('@luke/api'),
+    'apps/web/package.json': manifest('@luke/web'),
+    'packages/core/package.json': manifest('@luke/core'),
     'README.md': '# fixture\n',
   };
 
@@ -248,20 +249,6 @@ test('a CRLF tree is read the same as an LF one', () => {
   assert.equal(checkRev(repo, '2.2.0'), 1);
 });
 
-test('a manifest nested below a workspace member is ignored, not governed', () => {
-  // `apps/web/vendor/thing/package.json` sits at 0.0.1 in every fixture. If the
-  // glob were read as "anything under apps/", every case above would fail.
-  const repo = repoWith({ version: '2.2.0' });
-  const manifests = governedManifests(revTree(repo, 'HEAD'));
-
-  assert.deepEqual(manifests, [
-    'apps/api/package.json',
-    'apps/web/package.json',
-    'package.json',
-    'packages/core/package.json',
-  ]);
-});
-
 test('an annotated tag object resolves to the tree it points at', () => {
   const repo = repoWith({ version: '2.2.0-rc.3' });
   git(repo, 'tag', '-a', 'v2.2.0-rc.3', '-m', 'candidate');
@@ -297,8 +284,8 @@ test('a second tag on the same commit does not change the explicit tag verdict',
 });
 
 test('an uncommitted bump is accepted in --worktree mode', () => {
-  // Exactly release-prepare's state: git-cliff and sync-version have written,
-  // nothing is committed, no tag exists.
+  // Exactly release-prepare's state: git-cliff has written the section, nothing
+  // is committed, no tag exists.
   const repo = repoWith({ version: '2.1.4' });
   rewriteWorktree(repo, { version: '2.2.0-rc.1' });
 
@@ -307,191 +294,6 @@ test('an uncommitted bump is accepted in --worktree mode', () => {
       .entries,
     1
   );
-});
-
-// ── Rejecting: manifests ─────────────────────────────────────────────────────
-
-test('one workspace manifest off by a prerelease counter is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0-rc.2',
-    overrides: { 'apps/web/package.json': manifest('@luke/web', '2.2.0-rc.1') },
-  });
-  assert.match(
-    rejectsRev(repo, '2.2.0-rc.2').message,
-    /apps\/web\/package\.json declares version/
-  );
-});
-
-test('the root manifest alone being off is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: { 'package.json': manifest('@luke/monorepo', '2.1.4') },
-  });
-  assert.match(
-    rejectsRev(repo, '2.2.0').message,
-    /^package\.json declares version 2\.1\.4/
-  );
-});
-
-test('a manifest version carrying the leading v is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: {
-      'packages/core/package.json': manifest('@luke/core', 'v2.2.0'),
-    },
-  });
-  assert.match(rejectsRev(repo, '2.2.0').message, /declares version v2\.2\.0/);
-});
-
-test('a manifest with no version field is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: { 'apps/api/package.json': '{\n  "name": "@luke/api"\n}\n' },
-  });
-  assert.match(rejectsRev(repo, '2.2.0').message, /declares no `version`/);
-});
-
-test('a manifest whose version is not a string is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: {
-      'apps/api/package.json':
-        '{\n  "name": "@luke/api",\n  "version": null\n}\n',
-    },
-  });
-  assert.match(rejectsRev(repo, '2.2.0').message, /is not a\s+version string/);
-});
-
-test('an unparsable manifest is rejected, not skipped', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: {
-      'apps/api/package.json': '{ "name": "@luke/api", "version": }\n',
-    },
-  });
-  assert.match(rejectsRev(repo, '2.2.0').message, /is not valid JSON/);
-});
-
-test('a missing root manifest is rejected', () => {
-  const repo = repoWith({ version: '2.2.0', omit: ['package.json'] });
-  assert.match(rejectsRev(repo, '2.2.0').message, /package\.json is not in/);
-});
-
-// ── Rejecting: workspace declaration ─────────────────────────────────────────
-
-test('a configured glob discovering zero manifests is rejected', () => {
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: {
-      'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - services/*\n',
-    },
-  });
-  assert.match(
-    rejectsRev(repo, '2.2.0').message,
-    /"services\/\*" discovers no package\.json/
-  );
-});
-
-test('an unsupported glob shape is rejected rather than guessed at', () => {
-  for (const glob of [
-    'apps/**',
-    '**',
-    'apps',
-    '!apps/*',
-    'apps/*/*',
-    '/apps/*',
-    // A glob may not reach outside the repository. These discover nothing
-    // either way, but they must be refused for the right reason.
-    '../*',
-    './*',
-  ]) {
-    const repo = repoWith({
-      version: '2.2.0',
-      overrides: { 'pnpm-workspace.yaml': `packages:\n  - ${glob}\n` },
-    });
-    assert.match(
-      rejectsRev(repo, '2.2.0').message,
-      /not a direct-child glob/,
-      `expected ${glob} to be refused as an unsupported shape`
-    );
-  }
-});
-
-test('a glob is escaped before it becomes a pattern, so `.` is a dot', () => {
-  // `DIRECT_CHILD_GLOB` admits a dot in the prefix, and an unescaped `apps.x/*`
-  // is the pattern `apps` + any + `x`, which also governs `appsXx/`. The
-  // fixture separates the two: only the literal directory is at the released
-  // version, so escaping is the difference between accepting and rejecting.
-  const repo = repoWith({
-    version: '2.2.0',
-    overrides: { 'pnpm-workspace.yaml': 'packages:\n  - apps.x/*\n' },
-    extra: {
-      'apps.x/web/package.json': manifest('@luke/web', '2.2.0'),
-      'appsXx/web/package.json': manifest('vendored', '9.9.9'),
-    },
-  });
-
-  assert.deepEqual(governedManifests(revTree(repo, 'HEAD')), [
-    'apps.x/web/package.json',
-    'package.json',
-  ]);
-  assert.equal(checkRev(repo, '2.2.0'), 1);
-});
-
-test('a missing workspace file is rejected', () => {
-  const repo = repoWith({ version: '2.2.0', omit: ['pnpm-workspace.yaml'] });
-  assert.match(
-    rejectsRev(repo, '2.2.0').message,
-    /pnpm-workspace\.yaml is not in/
-  );
-});
-
-test('parseWorkspaceGlobs accepts the shapes the repository actually writes', () => {
-  assert.deepEqual(parseWorkspaceGlobs(DEFAULT_WORKSPACE), [
-    'apps/*',
-    'packages/*',
-  ]);
-  assert.deepEqual(
-    parseWorkspaceGlobs(
-      'packages:\n  # a comment\n  - \'apps/*\'\n\n  - "packages/*"  # trailing\n'
-    ),
-    ['apps/*', 'packages/*']
-  );
-  // The sequence ends at the next top-level key, not at the end of the file.
-  assert.deepEqual(
-    parseWorkspaceGlobs(
-      'packages:\n  - apps/*\n\nallowBuilds:\n  sharp: true\n'
-    ),
-    ['apps/*']
-  );
-  // A `packages:` further down that is *indented* is another key's value.
-  assert.deepEqual(
-    parseWorkspaceGlobs('packages:\n  - apps/*\n\nother:\n  packages: [x]\n'),
-    ['apps/*']
-  );
-});
-
-test('parseWorkspaceGlobs fails closed on everything it does not understand', () => {
-  const cases: Array<[string, RegExp]> = [
-    ['allowBuilds:\n  sharp: true\n', /declares no top-level `packages:` key/],
-    ['packages:\n', /with no entries/],
-    ['packages: [apps/*, packages/*]\n', /carries an inline value/],
-    [
-      'packages:\n  - apps/*\npackages:\n  - packages/*\n',
-      /declares `packages:` 2 times/,
-    ],
-    ['packages:\n  - apps/*\n    - packages/*\n', /inconsistent indentation/],
-    ['packages:\n  - apps/*\n  extra: true\n', /is not a `- <glob>` item/],
-    ["packages:\n  - ''\n", /empty `packages:` entry/],
-  ];
-
-  for (const [yaml, expected] of cases) {
-    assert.throws(
-      () => parseWorkspaceGlobs(yaml),
-      reason(expected),
-      `expected ${JSON.stringify(yaml)} to be refused`
-    );
-  }
 });
 
 // ── Rejecting: CHANGELOG ─────────────────────────────────────────────────────
@@ -589,14 +391,15 @@ test('duplicate matching headings are rejected in both orders', () => {
 });
 
 test('a stable tag is not satisfied by rc sections, nor an rc by the stable one', () => {
+  // A candidate's notes do not answer for the stable release, in either
+  // direction. The closing bracket in the heading prefix is what keeps
+  // `[2.2.0]` from matching `[2.2.0-rc.1]`.
   const rcOnly = repoWith({ version: '2.2.0-rc.1' });
   assert.match(
     rejectsRev(rcOnly, '2.2.0').message,
-    /declares version 2\.2\.0-rc\.1/
+    /has no "## \[2\.2\.0\]"/
   );
 
-  // Manifests aligned, CHANGELOG carrying the other spelling: isolates the
-  // heading half from the manifest half.
   const stableNotes = repoWith({
     version: '2.2.0-rc.1',
     overrides: { 'CHANGELOG.md': changelog('2.2.0') },
@@ -823,15 +626,19 @@ test('the CLI exits 0 with one ok line for a tree that claims its tag', () => {
     run.stdout,
     /^\[release-tree\] ok — v2\.2\.0-rc\.1 is claimed by/
   );
-  assert.match(run.stdout, /4 manifests at 2\.2\.0-rc\.1/);
-  assert.match(run.stdout, /CHANGELOG section with 1 entry\./);
+  assert.match(
+    run.stdout,
+    /CHANGELOG section for 2\.2\.0-rc\.1 with 1 entry\./
+  );
   assert.equal(run.stdout.trimEnd().split('\n').length, 1);
 });
 
 test('the CLI exits 1 with a REJECTED reason for a tree that does not', () => {
+  // The tree ships notes for another version: the one thing a release tree can
+  // still get wrong about the tag that publishes it.
   const repo = repoWith({
     version: '2.2.0',
-    overrides: { 'apps/web/package.json': manifest('@luke/web', '2.1.4') },
+    overrides: { 'CHANGELOG.md': changelog('2.1.4') },
   });
   git(repo, 'tag', 'v2.2.0');
 
@@ -839,7 +646,7 @@ test('the CLI exits 1 with a REJECTED reason for a tree that does not', () => {
   assert.equal(run.status, 1);
   assert.match(
     run.stderr,
-    /^\[release-tree\] REJECTED — apps\/web\/package\.json declares version/
+    /^\[release-tree\] REJECTED — CHANGELOG\.md has no "## \[2\.2\.0\]"/
   );
 });
 
@@ -895,20 +702,28 @@ test('the CLI in --rev mode ignores a divergent working tree', () => {
   // different trees.
   const repo = repoWith({ version: '2.2.0-rc.1' });
   git(repo, 'tag', 'v2.2.0-rc.1');
+  // The worktree has moved on to the next candidate's notes, which is exactly
+  // what preparing a release does before anything is committed or tagged.
   rewriteWorktree(repo, { version: '2.3.0-rc.1' });
 
   const rev = runCli(repo, ['--tag', 'v2.2.0-rc.1', '--rev', 'v2.2.0-rc.1']);
   assert.equal(rev.status, 0, rev.stderr);
-  assert.match(rev.stdout, /4 manifests at 2\.2\.0-rc\.1/);
+  assert.match(
+    rev.stdout,
+    /CHANGELOG section for 2\.2\.0-rc\.1 with 1 entry\./
+  );
 
   const wt = runCli(repo, ['--tag', 'v2.2.0-rc.1', '--worktree']);
   assert.equal(wt.status, 1);
-  assert.match(wt.stderr, /declares version 2\.3\.0-rc\.1/);
+  assert.match(wt.stderr, /has no "## \[2\.2\.0-rc\.1\]"/);
 });
 
 test('a tracked file deleted from the working tree is rejected, not skipped', () => {
   const repo = repoWith({ version: '2.2.0' });
-  unlinkSync(join(repo, 'apps/web/package.json'));
+  // CHANGELOG.md, because it is now the only file the checker reads: a tracked
+  // path that git lists but the filesystem no longer has must be an error, not
+  // a silently skipped check.
+  unlinkSync(join(repo, 'CHANGELOG.md'));
 
   const run = runCli(repo, ['--tag', 'v2.2.0', '--worktree']);
   assert.equal(run.status, 1);
@@ -919,22 +734,28 @@ test('a tracked file deleted from the working tree is rejected, not skipped', ()
 
 /**
  * The fixtures above prove the contract; this proves the contract admits the
- * real repository. The hand-curated `[2.0.0]` rollup, the `---` before the
- * `## Pre-1.9.0 history` footer and the eight real manifests all have to pass —
- * at every commit, including a bump commit whose tag does not exist yet.
+ * real repository. The hand-curated `[2.0.0]` rollup and the `---` before the
+ * `## Pre-1.9.0 history` footer both have to pass — at every commit, including
+ * one that has just prepared a release whose tag does not exist yet.
  *
  * The version is read from the tree rather than written here: a test pinned to
  * a release number goes red on the next release, which teaches everyone to
- * update the assertion instead of reading it.
+ * update the assertion instead of reading it. Its source used to be the root
+ * manifest; no manifest declares a version any more, so the newest section of
+ * `CHANGELOG.md` is what the tree says about itself.
  */
-test('this repository at HEAD claims the version its root manifest declares', () => {
+test('this repository at HEAD claims the newest version its CHANGELOG declares', () => {
   const tree = revTree(REPO_ROOT, 'HEAD');
-  const root: unknown = JSON.parse(tree.read('package.json'));
-  assert.ok(typeof root === 'object' && root !== null && 'version' in root);
-  const version = root.version;
-  if (typeof version !== 'string') {
-    throw new Error('the root package.json at HEAD declares no version string');
+  const heading = /^## \[(\d+\.\d+\.\d+(?:-rc\.\d+)?)\]/m.exec(
+    tree.read('CHANGELOG.md')
+  );
+  if (heading === null) {
+    throw new Error(
+      'CHANGELOG.md at HEAD carries no `## [X.Y.Z]` heading, so this tree ' +
+        'claims no version at all.'
+    );
   }
+  const version = heading[1];
 
   let result;
   try {
@@ -942,24 +763,19 @@ test('this repository at HEAD claims the version its root manifest declares', ()
   } catch (err) {
     // This runs on every push, not only a tag push, so its failure has to say
     // what to do about a repository that is not release-consistent — otherwise
-    // a new workspace package left at npm's default 1.0.0 blocks every push
-    // with a message about release tags and no obvious remedy.
+    // it blocks every push with a message about release tags and no obvious
+    // remedy.
     throw new Error(
-      `HEAD does not claim ${version}, the version its root package.json ` +
+      `HEAD does not claim ${version}, the newest version its CHANGELOG.md ` +
         `declares.\n  ${err instanceof Error ? err.message : String(err)}\n` +
-        '  A new workspace package still at its default version? ' +
-        `\`pnpm sync-version --set ${version}\`.\n` +
-        '  A hand-edited CHANGELOG.md, or a stray `## [Unreleased]` from ' +
-        '`changelog:bump`? Restore it.\n' +
+        '  A hand-edited CHANGELOG.md, a duplicated heading, or a stray ' +
+        '`## [Unreleased]` from `changelog:bump`? Restore it.\n' +
         '  This is the same check release.yml runs on a tagged tree, so a red ' +
         'here is a release that would be refused.',
       { cause: err }
     );
   }
 
-  assert.ok(
-    result.manifests.length >= 2,
-    'the workspace must govern more than the root'
-  );
+  assert.equal(result.version, version);
   assert.ok(result.entries >= 1);
 });

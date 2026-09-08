@@ -21,7 +21,7 @@ Stato: 🟢 fatto · 🟡 in corso · ⚪ da fare
 | Stile / tipi | eslint + `tsc --noEmit` in CI |
 | Commit | commitlint via `.husky/commit-msg` |
 | Env policy | `assertEnvPolicy()` blocca il boot in produzione |
-| Versioni | `sync-version` + `post-checkout` hook (§P6: il primo è diventato solo scrittura, il secondo è stato eliminato) |
+| Versioni | il tag git è l'unica identità di release (§P6: `sync-version` era diventato solo scrittura, il `post-checkout` hook era stato eliminato; entrambi sono ora rimossi, e nessun manifest dichiara una versione) |
 | Analisi LLM | `simplify` ad ogni implementazione, `luke-*` periodiche |
 
 ### Il buco
@@ -271,12 +271,15 @@ corretto, e senza tag raggiungibili confrontava con `0.0.0-<branch>`.
 
 `tools/scripts/check-release-tree.ts` è il checker condiviso che risponde alla
 domanda giusta: dato `--tag`, l'albero indicato da `--rev` (o `--worktree`)
-dichiara quella versione? Ogni `package.json` governato — globs `packages:` di
-`pnpm-workspace.yaml` letti **dallo stesso albero**, più il manifest di root — e
-una sola sezione `## [X.Y.Z]` in `CHANGELOG.md` con almeno una voce `- `.
-Fallisce chiuso su glob che non scoprono nulla, forme di glob non supportate,
-heading duplicati, voci che appartengono alla sezione adiacente o al footer
-storico, e su qualsiasi `## [Unreleased]`.
+dichiara quella versione?
+
+**Nell'implementazione originale (R1)** la risposta aveva due metà: ogni
+`package.json` governato — globs `packages:` di `pnpm-workspace.yaml` letti
+**dallo stesso albero**, più il manifest di root — doveva dichiarare la versione
+del tag, e `CHANGELOG.md` doveva avere una sola sezione `## [X.Y.Z]` con almeno
+una voce `- `. Falliva chiuso su glob che non scoprivano nulla, forme di glob
+non supportate, heading duplicati, voci appartenenti alla sezione adiacente o al
+footer storico, e su qualsiasi `## [Unreleased]`.
 
 Tre call site, una sola implementazione:
 
@@ -288,10 +291,19 @@ Tre call site, una sola implementazione:
 - `scripts/release-prepare.sh` — autoverifica in modalità `--worktree`, quando
   il tag non esiste ancora.
 
-`sync-version.js` diventa **solo scrittura** e richiede `--set`: niente
-`git describe`, niente `--check`, niente fallback di branch. `.husky/post-checkout`
-è stato eliminato — la sua premessa (la versione deriva dal tag più vicino) è
-esattamente ciò che questo giro abbandona.
+In R1 `sync-version.js` era diventato **solo scrittura** e richiedeva `--set`:
+niente `git describe`, niente `--check`, niente fallback di branch.
+`.husky/post-checkout` è stato eliminato — la sua premessa (la versione deriva
+dal tag più vicino) è esattamente ciò che quel giro abbandonava.
+
+**Stato attuale, dopo R2 Fase 2.** `sync-version.js` è stato rimosso del tutto e
+nessun `package.json` dichiara più una `version`: il tag git è l'unica identità
+di release, non esiste più una seconda copia del numero da tenere allineata, e
+`release:prepare` scrive **solo** `CHANGELOG.md`. Di conseguenza la metà
+manifest del checker non è stata indebolita ma eliminata: oggi
+`check-release-tree.ts` verifica **solo il contratto CHANGELOG** e non legge né
+i `package.json` né `pnpm-workspace.yaml`. I tre call site e le due modalità
+(`--rev` / `--worktree`) restano quelli descritti sopra.
 
 `.cliff.toml` salta i subject che iniziano per `Merge `. Conseguenza da
 aspettarsi: un candidato i cui unici commit nuovi sono merge viene **rifiutato
@@ -303,12 +315,28 @@ nell'albero di release per un'altra via. Voluto, un candidato senza modifiche
 non deve esistere.
 
 Falsificazione: `check-release-tree.test.ts` copre accettazione e rifiuto con lo
-stesso peso, più sei mutazioni verificate rosse — rimozione del rifiuto
-sugli heading duplicati, terminazione di sezione sul solo `## [`, rimozione
-dell'escaping della regex, match per prefisso invece che ancorato, rimozione
-della guardia zero-discovery, e lettura del working tree in modalità `--rev`.
-Un test di liveness esegue il checker sul repository reale a `HEAD`, con la
-versione letta dal manifest di root invece che scritta a mano.
+stesso peso.
+
+**Evidenza R1** (verificata allora, sul checker di allora): sei mutazioni
+verificate rosse — rimozione del rifiuto sugli heading duplicati, terminazione di
+sezione sul solo `## [`, rimozione dell'escaping della regex, match per prefisso
+invece che ancorato, rimozione della guardia zero-discovery, e lettura del
+working tree in modalità `--rev`.
+
+**Evidenza attuale**: cinque di quelle sei descrivono ancora il checker di oggi.
+La sesta — la guardia zero-discovery sui glob di `pnpm-workspace.yaml` — non ha
+più un bersaglio, perché la guardia è stata rimossa insieme alla metà manifest;
+resta qui come record storico, non come copertura corrente. La suite conta oggi
+**33 test** (`grep -c '^test(' tools/scripts/check-release-tree.test.ts`), dopo
+la cancellazione dei 14 casi che verificavano manifest e dichiarazione del
+workspace e la riscrittura di sei che esprimevano il proprio scenario attraverso
+una divergenza di manifest — inclusa quella che dimostra che `--rev` ignora un
+working tree divergente, oggi espressa su una divergenza di `CHANGELOG.md`.
+
+Il test di liveness esegue il checker sul repository reale a `HEAD`; l'identità
+di release non è scritta a mano ma derivata dal **primo heading versionato di
+`CHANGELOG.md`** (in R1 veniva letta dal manifest di root, che non dichiara più
+una versione).
 
 ---
 

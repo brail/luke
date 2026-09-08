@@ -30,28 +30,37 @@
  * ## What it proves
  *
  * For `parseReleaseTag(tag).version` — `X.Y.Z`, or `X.Y.Z-rc.N` for a
- * candidate:
+ * candidate: `CHANGELOG.md` has exactly one `## [<version>]` heading, optionally
+ * dated, and its section carries at least one `- ` entry.
  *
- * - every governed `package.json` declares exactly that version. The governed
- *   set is derived from the `packages:` globs in `pnpm-workspace.yaml` **read
- *   from the same tree**, plus the root manifest — not from a hard-coded list,
- *   and not from the workspace file of whatever happens to be checked out;
- * - `CHANGELOG.md` has exactly one `## [<version>]` heading, optionally dated,
- *   and its section carries at least one `- ` entry.
+ * That is the whole contract, and it used to be half of one. The other half
+ * required every governed `package.json` to declare the same version, which was
+ * a second spelling of the release identity maintained by a writer script. The
+ * git tag is now the only identity: no manifest carries a version, so there is
+ * nothing left to compare and nothing left to drift. What remains is the one
+ * claim a tree can still make about the tag that publishes it — that it ships
+ * release notes for it.
  *
- * Every one of those is a fail-closed rejection. A release that is prepared
- * correctly passes unchanged; only a tree that does not claim its own tag is
- * refused, and it is refused before any image exists.
+ * It is a fail-closed rejection. A release that is prepared correctly passes
+ * unchanged; only a tree that does not claim its own tag is refused, and it is
+ * refused before any image exists.
+ *
+ * This gate is deliberately narrow, and worth saying plainly: a `## [X.Y.Z]`
+ * heading with one bullet under it is something a person could type. It does
+ * not prove the release was prepared, and it never did — the manifest half was
+ * written by a script too. What proves the *number* is
+ * `check-release-train.ts --validate`, at prepare time, and what proves the
+ * *line* is the provenance gate.
  *
  * ## Reading one tree and no other
  *
  * `--rev` resolves the revision to a single tree object once and reads
  * everything out of it with git plumbing (`ls-tree`, `cat-file`). It never
  * touches HEAD, the index or the working tree — which is the whole point, since
- * the tagged tree and the checked-out tree routinely differ (at `v2.1.4` the
- * repository had 7 workspace manifests; the train has 8). Commit SHAs,
- * lightweight tags and annotated tag objects all resolve, because `^{tree}`
- * peels through a tag object to its commit and on to the tree.
+ * the tagged tree and the checked-out tree routinely differ: preparing the next
+ * release edits `CHANGELOG.md` in the worktree long before any tag names it.
+ * Commit SHAs, lightweight tags and annotated tag objects all resolve, because
+ * `^{tree}` peels through a tag object to its commit and on to the tree.
  *
  * `--worktree` reads the tracked working tree instead, and exists for exactly
  * one caller: `release-prepare.sh` checks what it has just written, at a moment
@@ -192,198 +201,7 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const WORKSPACE_FILE = 'pnpm-workspace.yaml';
-const ROOT_MANIFEST = 'package.json';
 const CHANGELOG = 'CHANGELOG.md';
-
-/**
- * The `packages:` sequence of `pnpm-workspace.yaml`, and only that.
- *
- * A YAML parser is not a dependency this control plane is willing to take for
- * one top-level list, so the grammar accepted here is deliberately tiny: a
- * `packages:` key at column zero followed by `  - <glob>` items. Everything a
- * real YAML file may legally contain and this does not understand — a flow
- * sequence, an anchor, a tab indent, a second `packages:` key — is **rejected**
- * rather than silently read as an empty list. Failing open here would mean
- * governing zero manifests and reporting success.
- */
-export function parseWorkspaceGlobs(yaml: string): string[] {
-  const lines = yaml.split(/\r?\n/);
-  const keys = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => /^packages:/.test(line));
-
-  if (keys.length === 0) {
-    throw new ReleaseTreeError(
-      `${WORKSPACE_FILE} declares no top-level \`packages:\` key, so the set of ` +
-        'governed manifests is undefined.'
-    );
-  }
-  if (keys.length > 1) {
-    throw new ReleaseTreeError(
-      `${WORKSPACE_FILE} declares \`packages:\` ${keys.length} times (lines ` +
-        `${keys.map(k => k.index + 1).join(', ')}). Refusing to guess which one governs.`
-    );
-  }
-
-  const start = keys[0].index;
-  const inline = lines[start].slice('packages:'.length).trim();
-  if (inline !== '' && !inline.startsWith('#')) {
-    throw new ReleaseTreeError(
-      `${WORKSPACE_FILE}:${start + 1} — \`packages:\` carries an inline value ` +
-        `(${inline}). Only a block sequence of \`  - <glob>\` items is understood.`
-    );
-  }
-
-  const globs: string[] = [];
-  let indent: string | null = null;
-
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
-
-    const item = /^([ ]+)-[ ]+(.*)$/.exec(line);
-    if (item === null) {
-      // The first line that is neither blank, comment nor item ends the
-      // sequence — unless it is indented, in which case it is a nested
-      // construct this parser does not understand and must not skip past.
-      if (/^\s/.test(line)) {
-        throw new ReleaseTreeError(
-          `${WORKSPACE_FILE}:${i + 1} — "${line.trim()}" is not a \`- <glob>\` item. ` +
-            'Only a plain block sequence is understood.'
-        );
-      }
-      break;
-    }
-
-    if (indent === null) indent = item[1];
-    if (item[1] !== indent) {
-      throw new ReleaseTreeError(
-        `${WORKSPACE_FILE}:${i + 1} — inconsistent indentation in the \`packages:\` ` +
-          'sequence. Only a flat list of items at one indent is understood.'
-      );
-    }
-
-    // A trailing `# comment` is YAML; a quoted scalar is too. Nothing else.
-    const value = item[2]
-      .replace(/\s+#.*$/, '')
-      .trim()
-      .replace(/^'(.*)'$/, '$1')
-      .replace(/^"(.*)"$/, '$1');
-
-    if (value === '') {
-      throw new ReleaseTreeError(
-        `${WORKSPACE_FILE}:${i + 1} — empty \`packages:\` entry.`
-      );
-    }
-    globs.push(value);
-  }
-
-  if (globs.length === 0) {
-    throw new ReleaseTreeError(
-      `${WORKSPACE_FILE} declares \`packages:\` with no entries, so no workspace ` +
-        'manifest would be governed.'
-    );
-  }
-  return globs;
-}
-
-/**
- * `apps/*` and `packages/*`: a fixed prefix and one `*` standing for a single
- * directory level. That is the whole shape this repository uses, and a shape it
- * does not use fails closed — `apps/**` would silently change which manifests
- * are governed, and a checker that guesses at that is worse than one that stops.
- *
- * `.` and `..` segments are refused by name rather than left to fail later.
- * `../*` would already have been rejected — no path git lists starts with `../`,
- * so it discovers nothing — but it would have been rejected for the wrong
- * reason, and "this glob governs nothing" reads like a workspace that moved
- * rather than a glob reaching outside the repository.
- */
-const DIRECT_CHILD_GLOB = /^(?!\/)(?:(?!\.\.?\/)[^*?[\]{}!/\s]+\/)+\*$/;
-
-function manifestPattern(glob: string): RegExp {
-  const prefix = glob.slice(0, -1);
-  return new RegExp(`^${escapeRegExp(prefix)}[^/]+/package\\.json$`);
-}
-
-/**
- * Every `package.json` the release governs: the root, plus one per workspace
- * member named by the globs.
- *
- * The per-glob zero-discovery guard is the point. `sync-version.js` guards only
- * the *total* (`found.length < 2`), so a monorepo that still had `apps/` would
- * pass with `packages/` silently contributing nothing. Here a configured glob
- * that discovers no manifest is a rejection: either the workspace moved and
- * this checker must be updated, or the tree is not the one anybody meant.
- */
-export function governedManifests(tree: ReleaseTree): string[] {
-  const paths = tree.paths;
-
-  if (!paths.has(WORKSPACE_FILE)) {
-    throw new ReleaseTreeError(
-      `${WORKSPACE_FILE} is not in ${tree.describe}, so which manifests the ` +
-        'release governs cannot be established.'
-    );
-  }
-  if (!paths.has(ROOT_MANIFEST)) {
-    throw new ReleaseTreeError(`${ROOT_MANIFEST} is not in ${tree.describe}.`);
-  }
-
-  const found = new Set<string>([ROOT_MANIFEST]);
-
-  for (const glob of parseWorkspaceGlobs(tree.read(WORKSPACE_FILE))) {
-    if (!DIRECT_CHILD_GLOB.test(glob)) {
-      throw new ReleaseTreeError(
-        `${WORKSPACE_FILE} declares the workspace glob "${glob}", which is not a ` +
-          'direct-child glob of the form `<dir>/*`. Refusing to guess which ' +
-          'manifests it governs.'
-      );
-    }
-
-    const pattern = manifestPattern(glob);
-    const matches = [...paths].filter(path => pattern.test(path));
-    if (matches.length === 0) {
-      throw new ReleaseTreeError(
-        `the workspace glob "${glob}" discovers no package.json in ${tree.describe}. ` +
-          'A glob that governs nothing is drift, not an empty set.'
-      );
-    }
-    for (const match of matches) found.add(match);
-  }
-
-  return [...found].sort();
-}
-
-function manifestVersion(tree: ReleaseTree, path: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(tree.read(path));
-  } catch (err) {
-    throw new ReleaseTreeError(
-      `${path} is not valid JSON in ${tree.describe}: ${(err as Error).message}`
-    );
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new ReleaseTreeError(`${path} does not contain a JSON object.`);
-  }
-  if (!('version' in parsed)) {
-    throw new ReleaseTreeError(
-      `${path} declares no \`version\`. Every governed manifest must share ` +
-        "the release tree's single declared release identity."
-    );
-  }
-
-  const version = parsed.version;
-  if (typeof version !== 'string' || version.trim() === '') {
-    throw new ReleaseTreeError(
-      `${path} declares \`version\` as ${JSON.stringify(version)}, which is not a ` +
-        'version string.'
-    );
-  }
-  return version;
-}
 
 /**
  * git-cliff emits `## [Unreleased]` whenever it runs without `--tag`, which is
@@ -491,8 +309,6 @@ export interface ReleaseTreeResult {
   version: string;
   /** What was read, echoed so a summary line cannot claim the wrong tree. */
   source: string;
-  /** Every governed manifest, verified. */
-  manifests: string[];
   /** Entries found under the version's CHANGELOG heading. */
   entries: number;
 }
@@ -500,25 +316,13 @@ export interface ReleaseTreeResult {
 export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
   const { tree, version } = input;
 
-  const manifests = governedManifests(tree);
-  for (const manifest of manifests) {
-    const declared = manifestVersion(tree, manifest);
-    if (declared !== version) {
-      throw new ReleaseTreeError(
-        `${manifest} declares version ${declared}, but the tag names ${version}. ` +
-          'Every governed manifest must carry the released version — run ' +
-          '`pnpm release:prepare <tag>`, never bump by hand.'
-      );
-    }
-  }
-
   const paths = tree.paths;
   if (!paths.has(CHANGELOG)) {
     throw new ReleaseTreeError(`${CHANGELOG} is not in ${tree.describe}.`);
   }
   const entries = changelogSection(tree.read(CHANGELOG), version);
 
-  return { version, source: tree.describe, manifests, entries };
+  return { version, source: tree.describe, entries };
 }
 
 /**
@@ -583,8 +387,7 @@ function main(): void {
 
   console.log(
     `[release-tree] ok — ${tag} is claimed by ${result.source}: ` +
-      `${result.manifests.length} manifests at ${result.version}, ` +
-      `CHANGELOG section with ${result.entries} ` +
+      `CHANGELOG section for ${result.version} with ${result.entries} ` +
       `${result.entries === 1 ? 'entry' : 'entries'}.`
   );
 }

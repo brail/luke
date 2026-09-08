@@ -104,12 +104,14 @@ pnpm dev
 | `pnpm typecheck` | Type check di tutti i workspace |
 | `pnpm format` | Formatta il codice con Prettier |
 | `pnpm db:seed` | Esegue il seed del database (`apps/api/prisma/seed.ts`) |
+| `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
+| `pnpm test:integration:local` | Alza il database di test e lancia la suite di integrazione |
+| `pnpm test:tools` | Test degli script di control-plane in `tools/scripts/` |
+| `pnpm check:drift` | Integrità di skill, marker/link della documentazione, piattaforma, tsconfig e workflow (bloccante in CI) |
+| `pnpm security` | Suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
+| `pnpm release:prepare <tag>` | Unico entry point di release: valida il tag e scrive la sezione di `CHANGELOG.md` |
 | `pnpm changelog` | Stampa su **stdout** l'output git-cliff senza range né versione: anteprima generica, **non** le note che produrrà `release:prepare` |
 | `pnpm changelog:bump` / `changelog:tag` | Riscrivono `CHANGELOG.md` con una sezione `## [Unreleased]`, **senza versione e senza verifiche** — mai per una release: usa `pnpm release:prepare <tag>` |
-| `pnpm sync-version --set X.Y.Z` | Scrive la versione in tutti i `package.json` del monorepo (solo scrittura, `--set` obbligatorio; di norma la invoca `release:prepare <tag>`) |
-| `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
-| `pnpm check:drift` | Verifica integrità marker `luke-docs` e riferimenti nelle skill (bloccante in CI) |
-| `pnpm security` | Esegue la suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
 
 Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
 <!-- luke-docs:end:scripts -->
@@ -814,9 +816,11 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 <!-- luke-docs:start:release -->
 Il progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per generare automaticamente il CHANGELOG via `git-cliff`. I commit sono validati dall'hook `.husky/commit-msg` (commitlint).
 
-Tag naming: `vX.Y.Z` (stable) o `vX.Y.Z-rc.N` (release candidate) — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su API/contratti.
+Tag naming: `vX.Y.Z` (stable) o `vX.Y.Z-rc.N` (release candidate) — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su un contratto di compatibilità supportato.
 
-**`pnpm release:prepare <tag>` è l'unico entry point supportato**: la versione la scegli tu. Lo script aggiorna da solo tag e `origin/main` (e si ferma se non ci riesce), poi `tools/scripts/check-release-train.ts --validate` verifica il tag **prima che venga scritto qualsiasi cosa**; solo dopo genera la sezione di CHANGELOG sul range validato, allinea i `package.json` e ricontrolla il risultato con `check-release-tree.ts`.
+**Il tag git è l'identità della release.** Nessun manifest dichiara una versione: non esiste un secondo numero da tenere allineato al tag, né da far driftare.
+
+**`pnpm release:prepare <tag>` è l'unico entry point supportato**: la versione la scegli tu. Lo script aggiorna da solo tag e `origin/main` (e si ferma se non ci riesce), poi `tools/scripts/check-release-train.ts --validate` verifica il tag **prima che venga scritto qualsiasi cosa**; solo dopo genera la sezione di CHANGELOG sul range validato e ricontrolla il risultato con `check-release-tree.ts --worktree`. **`CHANGELOG.md` è l'unico file che scrive.**
 
 Il validatore parte dall'ultimo tag stabile **raggiungibile da HEAD** e usa il range `base..HEAD` — una differenza di insiemi sul grafo, non una camminata in ordine di data. Rifiuta un tag che esiste già, una base non raggiungibile, un hotfix stabile su un'altra linea che la scavalca (prima va mergiato), un target diverso da quello congelato del treno aperto, un contatore rc che salta, un range senza nulla di rilasciabile, e **qualsiasi versione sotto il bump minimo** che git-cliff calcola sui commit dalla base: uguale o superiore passa, e non esiste un flag per aggirarlo.
 
@@ -831,7 +835,9 @@ pnpm release:prepare v3.0.1       # Hotfix sulla linea stabile
 pnpm changelog
 ```
 
-L'autorità è `.github/workflows/release.yml`: subito dopo il gate di provenance, lo stesso job esegue `tools/scripts/check-release-tree.ts` sull'esatto commit che il gate ha risolto e verifica che **quell'albero** dichiari la versione del tag — ogni `package.json` governato (globs `packages:` di `pnpm-workspace.yaml` letti dallo stesso albero, più il manifest di root) e una sola sezione `## [X.Y.Z]` in `CHANGELOG.md` con almeno una voce `- `. Se fallisce, `verify` e i due job di build non partono e nessuna immagine viene pubblicata.
+L'autorità è `.github/workflows/release.yml`: subito dopo il gate di provenance, lo stesso job esegue `tools/scripts/check-release-tree.ts` sull'esatto commit che il gate ha risolto e verifica che **quell'albero** abbia in `CHANGELOG.md` una sola sezione `## [X.Y.Z]` per la versione del tag, con almeno una voce `- `. Se fallisce, `verify` e i due job di build non partono e nessuna immagine viene pubblicata.
+
+È un controllo volutamente stretto: dimostra che l'albero taggato spedisce le note del proprio tag, non che una release sia stata preparata. Il **numero** lo dimostra `check-release-train.ts --validate` in fase di prepare; la **linea** il gate di provenance.
 
 `.husky/pre-push` esegue lo stesso checker sull'oggetto che stai pushando: è **feedback anticipato, non enforcement** — `--no-verify` lo salta e un altro clone può non averlo.
 

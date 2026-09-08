@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 #
-# Prepare the release you name: CHANGELOG + versions in every package.json.
+# Prepare the release you name: the CHANGELOG section for it.
+#
+# The git tag is the release identity. No manifest carries a version, so this
+# writes exactly one file.
 #
 # Does not commit and does not tag — those stay explicit decisions. It does the
 # mechanical part, which is where mistakes happen, and it is the only supported
@@ -25,8 +28,8 @@
 # HEAD, an open train owns its own target, and the version is **not below** the
 # minimum bump the conventional commits since that base require — git-cliff's
 # own verdict on the range, with no override. It also returns the range and the
-# `--ignore-tags` value the notes must be rendered with, so the number, the
-# section and the manifests cannot come from three different questions.
+# `--ignore-tags` value the notes must be rendered with, so the number and the
+# section cannot come from two different questions.
 #
 # Nothing is written until every one of those checks has passed.
 
@@ -232,14 +235,10 @@ pnpm exec git-cliff "$RANGE" \
 echo "✅ CHANGELOG.md updated"
 echo
 
-node scripts/sync-version.js --set "$VERSION"
-echo
-
-# Self-check of what the two writers above just produced, through the very
-# checker `release.yml` runs after the push and `.husky/pre-push` runs before it.
-# The tag does not exist yet, so the worktree is the only tree that carries this
-# version: a heading git-cliff emitted empty, or a package.json `--set` failed to
-# reach, surfaces here rather than at push time or in CI.
+# Self-check of what the writer above just produced, through the very checker
+# `release.yml` runs after the push and `.husky/pre-push` runs before it. The tag
+# does not exist yet, so the worktree is the only tree that carries this version:
+# a heading git-cliff emitted empty surfaces here rather than at push time or in CI.
 pnpm exec tsx tools/scripts/check-release-tree.ts --tag "$TAG" --worktree
 echo
 
@@ -253,8 +252,8 @@ cat <<EOF
 ──────────────────────────────────────────────────────────
   Ready. Three steps remain, deliberately manual:
 
-    git diff                       # review CHANGELOG and versions
-    git commit -am "chore: bump version to $VERSION"
+    git diff                       # review the CHANGELOG section
+    git commit -am "chore(release): notes for $VERSION"
     git tag $TAG && git push origin $TAG
 
   Tag from: $ORIGIN_HINT.

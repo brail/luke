@@ -464,12 +464,12 @@ mid-train it cannot even deliver one — see the frozen-target note below.
    closed if it cannot, then `check-release-train.ts --validate` proves the name
    (below) before anything is written. It then updates `CHANGELOG.md` over the
    validated range (`--prepend`, never `--bump -o`: overwrites hand-curated
-   sections like the `[2.0.0]` rollup), syncs every `package.json` to it
-   atomically, and proves the result with `check-release-tree.ts --worktree`.
-   Never bump versions by hand: `sync-version` is a **writer only** and requires
-   `--set <version>`
-2. `git diff` — review CHANGELOG + version bumps
-3. `git commit -am "chore: bump version to X.Y.Z"`
+   sections like the `[2.0.0]` rollup), and proves the result with
+   `check-release-tree.ts --worktree`. **`CHANGELOG.md` is the only file it
+   writes**: the git tag is the release identity, and no manifest carries a
+   version to keep in step with it
+2. `git diff` — review the CHANGELOG section
+3. `git commit -am "chore(release): notes for X.Y.Z"`
 4. `git tag vX.Y.Z && git push origin vX.Y.Z` — one named tag, never
    `--tags`. `.husky/pre-push` runs the same tree checker on the object being
    pushed; it is **early feedback, not enforcement** (`--no-verify` skips it,
@@ -521,33 +521,35 @@ any image is built (`tools/scripts/check-release-provenance.ts`).
 gate, the same job runs `tools/scripts/check-release-tree.ts` on the exact
 commit the gate resolved (`steps.gate.outputs.sha`, passed through `env`), and
 a failure skips `verify` and both image jobs. It proves, against **that tree**
-and never the working tree, that every governed `package.json` carries
-`parseReleaseTag(tag).version` and that `CHANGELOG.md` has exactly one
-`## [<version>]` heading — optionally dated — with at least one `- ` entry
-under it. The governed set comes from the `packages:` globs of the same tree's
-`pnpm-workspace.yaml` plus the root manifest; a glob that discovers no manifest,
-a glob shape other than `<dir>/*`, a duplicate heading, an entry that actually
-belongs to the next section or to the historical footer, and any
+and never the working tree, that `CHANGELOG.md` has exactly one
+`## [<version>]` heading for `parseReleaseTag(tag).version` — optionally dated —
+with at least one `- ` entry under it. A duplicate heading, an entry that
+actually belongs to the next section or to the historical footer, and any
 `## [Unreleased]` heading are all rejections. The same checker is what
 `release:prepare` and `.husky/pre-push` run, so one contract has one
 implementation — the hook predicts the workflow's verdict, it does not replace
 it.
 
-**Before any part of this checker can be ported to `main`, `main`'s
-`pnpm-workspace.yaml` has to lose its `tools/*` glob.** `main` still declares it
-and has no manifest under `tools/`, so the zero-discovery guard refuses every
-tree cut from that line — verified against `v2.1.4`, which is rejected today.
-The prerequisite covers the complete addition, not only the workflow step:
-`check-release-tree.test.ts` carries a liveness test that runs the checker on
-`HEAD` through `pnpm test:tools` on every push, so porting the checker and its
-suite alone turns `main`'s CI red at `Control-plane tests` before any release
-is attempted; the `.husky/pre-push` caller and the `release.yml` caller refuse
-every tag from that line for the same reason. Nothing is broken right now:
-`main` carries none of this, and the train's workspace file (which already
-dropped the glob) arrives in the same merge. Porting coherent `CI gate` and
-`Security gate` implementations for a hotfix, as the aggregate-gate note below
-describes, does not require porting this checker — if it is ported anyway, do
-the workspace fix first.
+**Say plainly what this gate is and is not.** It used to also require every
+governed `package.json` to declare the tag's version; no manifest carries a
+version any more, so that half is gone rather than weakened — there is no second
+identity left to compare, and none to drift. What remains is narrow on purpose:
+a `## [X.Y.Z]` heading with one bullet is something a person could type, so the
+tree gate does not prove a release was prepared, and it never did — the manifest
+half was written by a script too. The **number** is proved by
+`check-release-train.ts --validate` at prepare time, and the **line** by the
+provenance gate. This checker proves the tagged tree ships notes for its tag.
+
+**The `tools/*` prerequisite for porting this checker to `main` is gone.** It
+used to be that no part of `check-release-tree.ts` could be ported until
+`main`'s `pnpm-workspace.yaml` lost its inert `tools/*` glob: the checker read
+that file to decide which manifests it governed, and the per-glob zero-discovery
+guard refused every tree cut from a line declaring a glob with no manifest under
+it — `v2.1.4` was rejected on exactly that ground. The checker no longer reads
+`pnpm-workspace.yaml` at all, so the glob is once again nothing but dead
+configuration, and the checker, its liveness test, the `.husky/pre-push` caller
+and the `release.yml` caller can be ported whenever a hotfix wants them. The
+port itself is still work nobody has done.
 
 **Merge commits are excluded from generated release notes.** `.cliff.toml`
 skips commit *subjects* beginning `Merge `, which is the shape git writes by

@@ -1,6 +1,5 @@
 {
   "name": "@luke/monorepo",
-  "version": "2.1.4",
   "private": true,
   "packageManager": "pnpm@11.24.0+sha512.bd27e345e976dcb0be0b7a1228217b049a817e21b1f355c90dbe7dc46671895a8bc1e6d06c24554505ea93ea0b45f489a27ec1bfbc8de6a9659fca0f16fa0000",
   "engines": {
@@ -25,7 +24,6 @@
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "backup:open": "node scripts/lukebak-open.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "sync-version": "node scripts/sync-version.js",
     "db:seed": "pnpm --filter @luke/api db:seed",
     "check:platform": "tsx tools/scripts/check-platform-integrity.ts",
     "check:tsconfig": "tsx tools/scripts/check-tsconfig-integrity.ts",

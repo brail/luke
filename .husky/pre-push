@@ -5,13 +5,12 @@
 # It is not enforcement. `--no-verify` skips it and a clone that never ran
 # `pnpm install` does not have it — `release.yml` is the authority.
 #
-# What it replaced answered a different question twice. An inline awk counted
-# entries under the heading in the **working tree** CHANGELOG, and
-# `sync-version:check` compared the **working tree** manifests against
-# `git describe --tags --abbrev=0`: the topologically nearest tag, not the one
-# being pushed. A second tag on the same commit made it fail a correct tree;
-# pushing an older still-correct tag after HEAD moved on failed a legitimate
-# push; with no tag reachable it compared against `0.0.0-<branch>`.
+# What it replaced asked about the **working tree** rather than the object being
+# pushed, and resolved its expectation with `git describe --tags --abbrev=0` —
+# the topologically nearest tag, not the one being pushed. A second tag on the
+# same commit made it fail a correct tree; pushing an older still-correct tag
+# after HEAD moved on failed a legitimate push; with no tag reachable it
+# compared against `0.0.0-<branch>`.
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/tags/v*)
