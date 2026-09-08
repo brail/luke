@@ -3,8 +3,11 @@
 import Image from 'next/image';
 
 import { Badge } from '../../../components/ui/badge';
+import { appVersionLabel } from '../../../lib/appVersion';
 
 export default function AboutPage() {
+  const version = appVersionLabel();
+
   return (
     <div className="max-w-3xl mx-auto py-10 px-4 space-y-8">
       <div className="flex items-start gap-6">
@@ -18,9 +21,11 @@ export default function AboutPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold">Luke</h1>
-            <Badge variant="secondary" className="font-mono text-xs">
-              v{process.env.NEXT_PUBLIC_APP_VERSION}
-            </Badge>
+            {version && (
+              <Badge variant="secondary" className="font-mono text-xs">
+                {version}
+              </Badge>
+            )}
             {process.env.NODE_ENV === 'development' && (
               <Badge variant="outline" className="text-xs">
                 development

@@ -5,6 +5,7 @@
 
 import { PASSWORD_SPECIAL_CHARS, isDevelopment } from '@luke/core';
 
+import { appVersion } from '../lib/appVersion';
 import { getConfig, getPasswordPolicy } from '../lib/configManager';
 import { router, publicProcedure } from '../lib/trpc';
 
@@ -22,7 +23,7 @@ export const publicRouter = router({
 
       return {
         name: appName || 'Luke',
-        version: process.env.APP_VERSION ?? 'dev',
+        version: appVersion(),
         environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };
@@ -33,7 +34,7 @@ export const publicRouter = router({
       );
       return {
         name: 'Luke',
-        version: process.env.APP_VERSION ?? 'dev',
+        version: appVersion(),
         environment: isDevelopment() ? 'development' : 'production',
         timestamp: new Date().toISOString(),
       };

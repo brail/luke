@@ -2,9 +2,6 @@
 const nextConfig = {
   transpilePackages: ['@luke/core'],
   typedRoutes: true,
-  env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || 'dev',
-  },
   experimental: {
     externalDir: true,
     proxyTimeout: 360_000, // 6 min — query portafoglio impiegano ~3–4 min, +2 min di margine

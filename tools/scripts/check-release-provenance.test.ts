@@ -576,3 +576,92 @@ test('the provenance job runs the tree checker on the commit the gate resolved',
     );
   }
 });
+
+// ── The build argument both images are baked with ────────────────────────────
+
+/**
+ * Slice `release.yml` to one job body, the way the tree-checker test above slices `provenance:`.
+ */
+function jobBody(workflow: string, job: string): string {
+  const start = workflow.indexOf(`\n  ${job}:\n`);
+  assert.notEqual(start, -1, `release.yml declares no ${job} job`);
+  const rest = workflow.slice(start + 1);
+  const next = rest.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+  return next === -1 ? rest : rest.slice(0, next);
+}
+
+/**
+ * The `build-args:` block-scalar of a job body, with comments removed.
+ *
+ * The contract is over executable configuration only. `release.yml` mentions `github.ref_name` in
+ * prose at two places on purpose — explaining what the gate replaced — so a job-body-wide search for
+ * that string would be red against a correct workflow.
+ */
+function buildArgs(workflow: string, job: string): string[] {
+  const body = jobBody(workflow, job);
+  const start = body.indexOf('build-args: |');
+  assert.notEqual(start, -1, `${job} passes no build-args`);
+  const lines = body.slice(start).split('\n').slice(1);
+  const args: string[] = [];
+  for (const line of lines) {
+    // The block ends at the first line that is not part of it: a shallower key, or a blank run
+    // followed by one. Everything inside is indented past `build-args:` itself.
+    if (line.trim() === '') continue;
+    if (!/^ {12}/.test(line)) break;
+    const withoutComment = line.replace(/#.*$/, '').trim();
+    if (withoutComment !== '') args.push(withoutComment);
+  }
+  assert.ok(args.length > 0, `${job}'s build-args block is empty`);
+  return args;
+}
+
+test('both image jobs bake the provenance gate’s normalized version', () => {
+  const workflow = readFileSync(
+    join(REPO_ROOT, '.github/workflows/release.yml'),
+    'utf-8'
+  );
+
+  for (const job of ['build-api', 'build-web']) {
+    const appVersionArgs = buildArgs(workflow, job).filter(arg =>
+      arg.startsWith('APP_VERSION=')
+    );
+
+    // Equality, not membership. Membership would accept the correct assignment sitting beside a
+    // second one — `APP_VERSION=garbage`, or the stale `${{ github.ref_name }}` that carries the
+    // leading `v` and shipped `Luke - vv2.1.4` — where the last line wins and the contract would
+    // have been green about a value the image does not carry.
+    assert.deepEqual(
+      appVersionArgs,
+      ['APP_VERSION=${{ needs.provenance.outputs.version }}'],
+      `${job} must bake the gate's normalized version exactly once and bake nothing else into ` +
+        `APP_VERSION, got: ${appVersionArgs.join(', ') || '(none)'}`
+    );
+  }
+});
+
+test('a comment naming github.ref_name does not decide the build-args contract', () => {
+  // The anti-mutation. `release.yml` really does discuss `github.ref_name` in comments, and this
+  // test is what stops the contract above from being tightened into something red on prose.
+  const workflow = [
+    'jobs:',
+    '  build-api:',
+    '    steps:',
+    '      - name: Build and push',
+    '        with:',
+    '          # was: APP_VERSION=${{ github.ref_name }}, which carried the v',
+    '          build-args: |',
+    '            APP_VERSION=${{ needs.provenance.outputs.version }} # normalized',
+    '',
+    '  build-web:',
+    '    steps:',
+    '        with:',
+    '          build-args: |',
+    '            APP_VERSION=${{ needs.provenance.outputs.version }}',
+    '',
+  ].join('\n');
+
+  for (const job of ['build-api', 'build-web']) {
+    const args = buildArgs(workflow, job);
+    assert.deepEqual(args, ['APP_VERSION=${{ needs.provenance.outputs.version }}']);
+  }
+});

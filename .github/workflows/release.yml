@@ -161,7 +161,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ github.ref_name }}
+            APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
 
@@ -220,6 +220,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=http://${{ steps.hostname.outputs.value }}
             INTERNAL_API_URL=${{ needs.provenance.outputs.channel == 'rc' && 'http://api-rc:3001' || 'http://api:3001' }}
-            APP_VERSION=${{ github.ref_name }}
+            APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max

@@ -19,6 +19,7 @@ import { APP_STORAGE_BUCKETS, type IStorageProvider } from '@luke/core';
 import type { BackupScope, BackupTrigger, PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
+import { releaseIdentity } from '../appVersion';
 import { getBackupRetentionDays } from '../configManager';
 
 import { addFileEntry, addStreamEntry, createArchivePacker } from './archiveFormat';
@@ -256,7 +257,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     // once the upload has consumed the cipher's entire output (its readable side has ended).
     const authTag = cipher.getAuthTag();
 
-    const appVersion = process.env.APP_VERSION ?? null;
+    const appVersion = releaseIdentity();
     const schemaMigrationName = schemaMigrationNameOverride !== undefined
       ? schemaMigrationNameOverride
       : await getLatestMigrationName(prisma);

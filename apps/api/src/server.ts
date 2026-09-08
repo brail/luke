@@ -26,6 +26,7 @@ import {
 } from '@luke/core/server';
 import { createPrismaClient } from '@luke/db';
 
+import { appVersion } from './lib/appVersion';
 import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
 import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
@@ -338,7 +339,7 @@ async function registerHealthRoute() {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      version: process.env.npm_package_version || '0.1.0',
+      version: appVersion(),
       environment: isDevelopment() ? 'development' : 'production',
     };
   });
@@ -347,7 +348,7 @@ async function registerHealthRoute() {
   fastify.get('/', async (_request, _reply) => {
     return {
       message: 'Luke API is running!',
-      version: process.env.npm_package_version || '0.1.0',
+      version: appVersion(),
       endpoints: {
         health: '/api/health',
         livez: '/livez',
@@ -591,7 +592,8 @@ function setupGracefulShutdown() {
  * Allowed variables (API):
  *   DATABASE_URL              — Prisma, needed before DB boot
  *   PORT, HOST                — server bind
- *   NODE_ENV, npm_package_version — standard runtime
+ *   NODE_ENV                  — standard runtime
+ *   APP_VERSION               — build-time release identity (Docker ARG/ENV from the git tag)
  *   LUKE_CORS_ALLOWED_ORIGINS — deploy CORS override (not a secret)
  *   OTEL_*, LOG_LEVEL         — observability infra
  *

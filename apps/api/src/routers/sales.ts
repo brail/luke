@@ -17,6 +17,7 @@ import type { Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
+import { appVersion } from '../lib/appVersion';
 import { getConfig } from '../lib/configManager';
 import {
   triggerKimoSyncNow,
@@ -292,7 +293,7 @@ const portafoglioRouter = router({
         title: 'Analisi Vendite',
         subject: `${brand.name} - ${season.code}`,
         author: authorName,
-        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
+        manager: `Luke - v${appVersion()}`,
       });
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, '0');
@@ -498,7 +499,7 @@ const kimoRouter = router({
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
-        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
+        manager: `Luke - v${appVersion()}`,
       });
 
       const now = new Date();

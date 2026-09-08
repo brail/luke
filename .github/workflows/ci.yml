@@ -139,6 +139,11 @@ jobs:
           NEXTAUTH_SECRET: ci-build-placeholder-never-read-at-runtime
           NEXT_PUBLIC_API_URL: http://web.luke.invalid
           INTERNAL_API_URL: http://api.luke.invalid:3001
+          # Set so this build inlines NEXT_PUBLIC_APP_VERSION exactly as the Docker build does
+          # (whose `ARG APP_VERSION` defaults to the same sentinel). Without it, turbo's strict env
+          # mode filters the variable out and CI would exercise the un-inlined code shape while the
+          # image exercises the inlined one.
+          NEXT_PUBLIC_APP_VERSION: dev
           NODE_OPTIONS: --max-old-space-size=4096
 
   # Own job, not a step in `checks`: the browser download is the dominant cost

@@ -284,13 +284,6 @@ describe('Sales Router Integration', () => {
       expect(response.queryDurationMs).toBe(3200);
       expect(response.queryDurationMs).toBeGreaterThan(0);
     });
-
-    it('should use process.env.npm_package_version in Excel metadata', async () => {
-      const version = process.env.npm_package_version ?? 'unknown';
-
-      expect(typeof version).toBe('string');
-      expect(version.length).toBeGreaterThan(0);
-    });
   });
 
   describe('Error handling', () => {

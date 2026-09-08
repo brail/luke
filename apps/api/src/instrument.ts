@@ -25,6 +25,8 @@ import pino from 'pino';
 
 import { isDevelopment } from '@luke/core';
 
+import { appVersion } from './lib/appVersion';
+
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   formatters: {
@@ -41,7 +43,7 @@ let sdk: NodeSDK | null = null;
 if (otelEnabled) {
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: '@luke/api',
-    [ATTR_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
+    [ATTR_SERVICE_VERSION]: appVersion(),
     [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: isDevelopment() ? 'development' : 'production',
   });
 
