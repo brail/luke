@@ -34,26 +34,41 @@ import { isGitIgnored } from './lib/gitPaths';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 /**
- * I markdown **tracciati da git**.
+ * The Markdown files **tracked by git and present in the working tree**.
  *
- * Non una scansione del filesystem: `docs/access-porting/` e
- * `docs/merchandising-reference/` sono gitignored, e materiale escluso dal repo
- * non è documentazione del repo. Delegare a git significa anche che la
- * definizione resta una sola, in `.gitignore`, invece di una lista di SKIP_DIRS
- * da tenere in sync a mano.
+ * Not a filesystem scan: `docs/access-porting/` and
+ * `docs/merchandising-reference/` are gitignored, and material excluded from the
+ * repository is not the repository's documentation. Delegating to git also keeps
+ * that definition in one place, `.gitignore`, instead of a hand-maintained
+ * SKIP_DIRS list.
  *
- * `.claude/skills/` è escluso perché ha il proprio checker, con regole diverse.
+ * `.claude/skills/` is excluded because it has its own checker, with different
+ * rules.
+ *
+ * Both conditions are needed, for opposite reasons. `git ls-files` reads the
+ * **index**: it answers "which files does the repository declare", which is what
+ * keeps ignored and untracked material out. But the contents are read from the
+ * **working tree**, and the two sets diverge the moment someone deletes a file
+ * without `git add`: the index still lists it, the disk does not, and the
+ * `readFileSync` below died with an unhandled `ENOENT` and a stack trace instead
+ * of a diagnosis. An inventory whose purpose is reading must describe what can
+ * be read.
+ *
+ * `existsSync` is an inventory predicate here, not a `catch`: a file that is
+ * present but unreadable (permissions, say) still fails the checker, as it
+ * should. What is excluded is only what the working tree does not contain.
  */
-function trackedMarkdown(): string[] {
+export function trackedMarkdown(root: string): string[] {
   const output = execFileSync('git', ['ls-files', '-z', '*.md'], {
-    cwd: REPO_ROOT,
+    cwd: root,
     encoding: 'utf8',
   });
   return output
     .split('\0')
     .filter(Boolean)
     .filter(path => !path.startsWith('.claude/'))
-    .map(path => join(REPO_ROOT, path))
+    .map(path => join(root, path))
+    .filter(path => existsSync(path))
     .sort();
 }
 
@@ -183,16 +198,50 @@ function checkLinks(
 export function checkAdrIndex(root: string, problems: Problem[]): number {
   const indexPath = 'docs/decisions/README.md';
   const absoluteIndex = join(root, indexPath);
-  if (!existsSync(absoluteIndex)) return 0;
 
-  const adrFiles = execFileSync('git', ['ls-files', 'docs/decisions/*.md'], {
+  const tracked = execFileSync('git', ['ls-files', 'docs/decisions/*.md'], {
     cwd: root,
     encoding: 'utf8',
   })
     .split('\n')
-    .filter(Boolean)
+    .filter(Boolean);
+
+  // Same rule as `trackedMarkdown`: tracked **and** present. An ADR deleted
+  // without staging stayed in `git ls-files` and was counted as present, so the
+  // index row citing it did not read as dangling — the check confirmed an index
+  // pointing at a file that could no longer be read.
+  const adrFiles = tracked
+    .filter(path => existsSync(join(root, path)))
     .map(path => path.split('/').pop() ?? '')
     .filter(name => /^\d+-/.test(name));
+
+  if (!existsSync(absoluteIndex)) {
+    // Two different states, not one, and the ADR corpus is what separates them.
+    // A repository with no index and no ADRs never had the contract and is not
+    // judged: return zero. A repository that still has ADRs but no index has
+    // lost the contract it had, whatever git's index says about the file.
+    //
+    // Asking git whether the index file is still tracked is what this used to
+    // do, and it failed open one step later: staging the deletion — the state a
+    // commit and CI actually see — drops the path from `git ls-files`, and the
+    // completeness check would go quiet with every ADR still in place. The
+    // zero-discovery guard in `main` cannot cover it either, being conditioned
+    // on that same file existing.
+    if (adrFiles.length > 0) {
+      problems.push({
+        file: indexPath,
+        line: 1,
+        message:
+          `ci sono ${adrFiles.length} ADR nel working tree ma l'indice ` +
+          "non c'è. Finché è così la completezza dell'indice non è " +
+          'verificabile: annulla la sola cancellazione del file, senza ' +
+          'sovrascrivere le modifiche già presenti, oppure metti in stage la ' +
+          'rimozione deliberata insieme alla disposizione degli ADR che ' +
+          'indicizzava.',
+      });
+    }
+    return 0;
+  }
 
   const index = readFileSync(absoluteIndex, 'utf8');
   const linked = [...index.matchAll(/\|\s*\[(\d+)\]\(([^)]+)\)/g)];
@@ -237,7 +286,8 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
         line: 1,
         message:
           `la voce \`${number}\` dell'indice punta a \`${target}\`, che non è ` +
-          'un ADR tracciato.',
+          'un ADR del corpus: o non è tracciato, o è stato cancellato dal ' +
+          'working tree.',
       });
     }
   }
@@ -246,13 +296,13 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
 }
 
 function main(): void {
-  const files = trackedMarkdown();
+  const files = trackedMarkdown(REPO_ROOT);
 
   if (files.length === 0) {
     throw new Error(
-      '[docs-integrity] `git ls-files "*.md"` non restituisce nulla. O non ' +
-        'siamo in un repo git, o i markdown non sono tracciati: il controllo ' +
-        'passerebbe senza aver letto nulla.'
+      '[docs-integrity] nessun markdown tracciato e presente nel working tree. ' +
+        'O non siamo in un repo git, o i markdown non sono tracciati, o sono ' +
+        'stati tutti cancellati: il controllo passerebbe senza aver letto nulla.'
     );
   }
 
@@ -291,8 +341,9 @@ function main(): void {
   // verificato nulla.
   if (adrsChecked === 0 && existsSync(join(REPO_ROOT, 'docs/decisions/README.md'))) {
     throw new Error(
-      '[docs-integrity] indice ADR presente ma nessun ADR tracciato trovato. ' +
-        'La completezza dell\'indice sarebbe verde senza aver confrontato nulla.'
+      '[docs-integrity] indice ADR presente ma nessun ADR tracciato e presente ' +
+        'nel working tree. La completezza dell\'indice sarebbe verde senza aver ' +
+        'confrontato nulla.'
     );
   }
 
