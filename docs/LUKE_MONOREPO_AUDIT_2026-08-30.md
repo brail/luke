@@ -4321,3 +4321,242 @@ None of the following is advanced or closed by this appendix:
   Portainer action, no GitHub settings mutated beyond the pushes and the workflows
   they triggered automatically. `/luke-docs` was not invoked to produce this
   appendix.
+
+# Appendix W — `app.version` closure: a dead AppConfig key removed (2026-09-09)
+
+## W.1 Scope and disposition
+
+| Workstream | State |
+| --- | --- |
+| Removal of the dead AppConfig key `app.version` | **DONE** |
+| Migration, shim or deprecation layer | **NONE ADDED**, deliberately — see `§W.4` |
+| Procedure-coverage declaration for `config` | **ADJUSTED** 8 → 5 |
+| Tag, release, image publication, deployment | **NONE** |
+
+This appendix supersedes exactly one statement: the `§V.9` residual reading
+"**The dead AppConfig `app.version` key** — declared in the registry, never
+seeded, never read. Removing it changes supported configuration and needs its own
+authorization." That authorization was given, and the removal is done. **The
+historical text of `§V.9` is not changed**, and **this appendix closes
+`app.version` and nothing else**. Nothing in Appendices A–V is otherwise
+superseded.
+
+One `§V.9` residual was already closed before this work began, and this appendix
+neither reopens it nor claims credit for it: the `procedure-coverage` `system`
+bookkeeping notice was resolved by `420be14`, the immediate parent of the commit
+recorded here, which replaced the bare `uncovered: 2` count with the explicit
+list `['system.triggerCalendarDigest']`.
+
+The residuals **still open** after this closure are:
+
+- `apps/web/src/lib/README.md`, stale and ungoverned by a `luke-docs` marker;
+- the broader `/luke-docs` findings, deliberately reverted in Appendix V;
+- main-side porting of the release-tree checker, its suite and its callers;
+- `S-01` and the aggregate-gate ruleset transition;
+- the stale "29 chiavi/29 totali" AppConfig counts in `APP_CONFIG.md` and
+  `SETUP_STATUS.md`. They were already wrong before this change and are now off
+  by one more. Recorded here, not fixed.
+
+## W.2 What the key was, and when it died
+
+`app.version` entered in `f2b4e44` (2025-10-12) as a seeded row plus a reader:
+`public.appInfo` composed its response from `getConfig(prisma, 'app.version')`.
+`d30fef4` (2026-03-23, first shipped in `v1.3.0`) removed **both** the seed row
+and the reader. The registry declaration outlived them by six months.
+
+State at `420be14`, established by repository evidence: one declaration
+(`packages/core/src/schemas/config.ts`), no entry in `APP_CONFIG_DEFAULTS`, no
+seed row, no membership in `CRITICAL_CONFIG_KEYS` or either critical-key list,
+zero key-specific readers, zero literal writers, zero tests. Three documentation
+lines claimed it was supported configuration. "Zero readers" is about runtime
+consumers naming the key: the generic `config.get`, `config.list`,
+`config.getMultiple` and `config.exportJson` surfaces query the table by string
+and can still observe an orphan row, which is exactly the property `§W.4` relies
+on.
+
+It was nonetheless **reachable and writable** through the generic endpoints:
+prefix `app` is in `ALLOWED_PREFIXES`, `isAppConfigKey` answered true, and the
+schema was a bare `z.string()`. An administrator could persist
+`app.version = "9.9.9"` from `/maintenance/config`, and nothing would ever read
+it.
+
+## W.3 Why this is a breaking supported-configuration change
+
+Under the `CLAUDE.md` versioning contract, registered AppConfig keys and the
+values they accept **are** supported configuration. Removing the entry changes
+what an observable generic API does:
+
+- `config.set` and `config.update` accepted the key before and reject it with
+  `BAD_REQUEST` after;
+- `config.setMultiple` catches that rejection per item and returns a
+  `{ success: false, error }` entry for the key, rather than failing the whole
+  call;
+- `config.importJson` likewise reports a per-item error and continues with the
+  remaining items.
+
+That the key is semantically dead — no reader, no default, no seed — does not
+change what the generic contract observably does, so the honest label is
+breaking. Committed as `refactor(core)!:`, subject only, no body and no trailers.
+
+The label cost nothing here. The base reachable from `HEAD` is `v2.1.4`, and the
+range already contained two breaking commits — `96f361b feat(calendar)!` and
+`612c9a6 feat(storage)!` — so the minimum bump was **already major**. No `v3*`
+tag exists, so no candidate had been cut and no train target was frozen: the
+classification raised no target and disturbed no train.
+
+## W.4 The disposition, and what was deliberately not built
+
+The tag-derived `APP_VERSION` remains the **sole** release identity. It is
+injected as a Docker `ARG`/`ENV` from the provenance gate's normalized version
+and read by `apps/api/src/lib/appVersion.ts`, which states the rule this removal
+enforces: a running image must not be able to disagree with itself about which
+release it is. A registered `app.version` was a second, admin-writable identity
+that could contradict it — unused today, but available to the next
+`appInfo`-shaped feature.
+
+**No migration, no shim, no deprecation period, no compatibility layer.**
+Historical rows left by a pre-`v1.3.0` seed stay in the database, inert:
+
+- boot does not depend on the key — `CRITICAL_CONFIG_KEYS` is `auth.strategy`
+  alone, so `validateCriticalConfig` never consults it;
+- no runtime consumer reads it, so a stale value cannot steer behaviour;
+- `config.list` and `config.exportJson` query the table directly with no registry
+  filter, so the orphan row stays **visible and exportable** — which is how an
+  administrator finds it;
+- `deleteConfig` takes a plain `string` rather than an `AppConfigKey`, a choice
+  its own docstring justifies precisely so a key dropped from the registry does
+  not become a row the application can no longer remove, so the row stays
+  **deletable**;
+- new writes are **rejected**, and an old export re-imported produces a per-item
+  error for this key while the rest of the import proceeds. **That per-item error
+  is the compatibility boundary**, and it is the behaviour any unregistered key
+  already had.
+
+A Prisma migration deleting the row would have been a data-destructive change for
+a no-op. The precedent is `a6df06a`, which removed `storage.local.buckets` and
+left its rows orphaned and inert for the same reason.
+
+## W.5 The commit
+
+`36d972e732e8c52791bac8b4537f741ec3854dfe`, parent
+`420be14593a529c053320e5b8a82d6abc964fb3c`, tree
+`80c3361149f5e6df7a821e5db05069705ae2bfc3`, on `develop-2.2`.
+
+```
+refactor(core)!: drop the dead app.version AppConfig key
+```
+
+Six files, 49 insertions, 6 deletions:
+
+| File | Change |
+| --- | --- |
+| `packages/core/src/schemas/config.ts` | the registry line, deleted |
+| `packages/core/src/schemas/__tests__/config.test.ts` | focused regression assertion |
+| `apps/api/test/configWriteAuthority.integration.spec.ts` | focused compatibility test |
+| `apps/api/test/procedure-coverage.ts` | declaration 8 → 5, see `§W.7` |
+| `APP_CONFIG.md` | table row and JSON example, removed |
+| `SETUP_STATUS.md` | key removed from the category list |
+
+## W.6 Test evidence
+
+The unit assertion is the line that turns red if the key is re-added:
+`isAppConfigKey('app.version')` must be `false`. It sits inside the existing
+describe on the write path, alongside the prototype-pollution cases.
+
+The integration test proves the compatibility boundary through the **real
+generic flows**, against a real Postgres, with the historical row inserted
+straight into the table because no supported path creates it any more:
+
+| Flow | Observed |
+| --- | --- |
+| `config.list({ q: 'app.version' })` | returns the orphan row, `valuePreview` `0.1.0` |
+| `config.exportJson({ includeValues: true })` | contains it with its stored value |
+| `config.set` on the key | `BAD_REQUEST`; stored value still `0.1.0` |
+| `config.delete` on the key | resolves; the row is gone |
+
+The existing `importJson` test at the per-item rejection was **not** duplicated:
+it exercises the same `validateKey` path, and no `app.version`-specific failure
+mode was found.
+
+One claim in this closure is from code reading rather than a test: `config.update`
+on such a row returns `BAD_REQUEST` and never `NOT_FOUND`, because `validateKey`
+runs ahead of the `strictUpdate` existence check in `upsertConfig`.
+
+Suites at the committed tree: `@luke/core` 258 tests across 5 files;
+`@luke/api` unit 451 tests across 43 files; `@luke/api` integration 533 passed
+with 1 expected fail across 42 files. Lint, `typecheck` and `typecheck:test` green
+for `@luke/core` and `@luke/api`; `@luke/web` `typecheck` green; `pnpm check:drift`
+green across all six checkers.
+
+Two separate facts, not one: the web typecheck passed, and a repository reference
+scan found no binding to `app.version` anywhere under `apps/web`. The typecheck
+alone would not have proved the absence — the key was reachable as a runtime
+string through the generic config endpoints, which no type would have flagged.
+
+## W.7 The procedure-coverage adjustment, and why it was necessary
+
+`apps/api/test/procedure-coverage.ts` declared `config` as having **8** uninvoked
+procedures. The new integration test invokes three that the suite had never
+reached — `config.list`, `config.exportJson` and `config.delete` — so the honest
+number is **5**. The five still uninvoked are `config.get`, `config.update`,
+`config.getMultiple`, `config.setMultiple` and `config.exists`.
+
+This was not optional and not scope creep. `420be14` — the immediate parent —
+made that teardown **fail closed**, so the integration run exited 1 until the
+declaration matched reality. The gate's own message asks for the decrement. The
+`reason` string was corrected in the same edit, because it claimed `exportJson`
+had no test, which had just stopped being true. It stays in Italian to match every
+other entry in that file; rule 14 governs comments, and these are data fields.
+
+The `system` namespace bookkeeping notice recorded in `§V.9` is a **different**
+finding, and it was already resolved by `420be14` — the parent of this commit —
+which replaced that namespace's bare count with an explicit uninvoked list. The
+8 → 5 adjustment recorded here concerns the `config` namespace only.
+
+## W.8 Live CI evidence for the exact SHA
+
+Queried against the API at closure time, not copied from any earlier record:
+`gh run list --commit 36d972e732e8c52791bac8b4537f741ec3854dfe`, then
+`gh run view <id> --json jobs` for each.
+
+| Workflow | Run ID | Event | Attempt | Conclusion |
+| --- | --- | --- | --- | --- |
+| CI | `34327539009` | push | 1 | **success** |
+| Docs | `34327538986` | push | 1 | **success** |
+| security | `34327539027` | push | 1 | **success** |
+
+Job level:
+
+- **CI** — `Lint, TypeCheck & Unit Tests`, `Integration Tests`,
+  `Browser Component Tests`, `Migrations` and the aggregate `CI gate`, all
+  success.
+- **Docs** — `Documentation drift`, success.
+- **security** — `semgrep`, `gitleaks`, `osv` and the aggregate `Security gate`,
+  all success. Three jobs skipped, every one of them **conditionally by design,
+  not a failure**: `osv-weekly` and `osv-weekly-release-train` are gated on
+  `github.event_name == 'schedule' || 'workflow_dispatch'`, and
+  `notify-on-failure` on `contains(needs.*.result, 'failure')`.
+
+The commit carries both source and Markdown, so CI ran in full rather than being
+skipped by the documentation `paths-ignore` — `packages/core/src/schemas/config.ts`
+is not documentation-owned, which is the intended behaviour recorded in
+Appendix Q.
+
+## W.9 What did not happen
+
+No tag was created locally or on the remote, and none points at the SHA. No
+`Release` run exists for it — the most recent `Release` run is `935dc29` from
+2026-09-02, unrelated. Every run for the SHA is **attempt 1**: no rerun, no
+`workflow_dispatch`. No image was built or published, no deployment or Portainer
+action occurred, and no GitHub setting was mutated. `/luke-docs` was not invoked
+to produce this appendix.
+
+## W.10 Final state
+
+- `HEAD`, `origin/develop-2.2` and the live remote ref are all
+  `36d972e732e8c52791bac8b4537f741ec3854dfe`; the branch is 0 ahead and 0 behind.
+- The working tree was clean and the stash empty before this appendix was written.
+- Remaining tracked occurrences of the literal `app.version` are exactly three,
+  all intended: the focused core test, the focused integration test, and this
+  audit document. Zero remain in the registry, defaults, seed, runtime readers,
+  runtime writers, or any current documentation claim of support.
