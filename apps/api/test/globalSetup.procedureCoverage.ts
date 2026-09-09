@@ -44,48 +44,61 @@ export default async function setup(): Promise<() => Promise<void>> {
   rmSync(USAGE_DIR, { recursive: true, force: true });
 
   return async function teardown(): Promise<void> {
-    const artifacts: UsageArtifact[] = existsSync(USAGE_DIR)
-      ? readdirSync(USAGE_DIR)
-          .filter(name => name.endsWith('.json'))
-          .map(
-            name =>
-              JSON.parse(
-                readFileSync(join(USAGE_DIR, name), 'utf8')
-              ) as UsageArtifact
-          )
-      : [];
+    // Vitest prints a throw from a `globalSetup` teardown as "error during
+    // close" and leaves the exit code the tests earned: every fatal path in
+    // here — unreadable artifacts, no spec discovered, a partial run in CI,
+    // divergent inventories, the gate's own verdict — would otherwise be a
+    // notice on a green suite, which is how a stale declaration survived for
+    // weeks. One boundary around the whole body, so a path added later is
+    // fail-closed by default. The local partial run `return`s through it and
+    // stays a warning.
+    try {
+      const artifacts: UsageArtifact[] = existsSync(USAGE_DIR)
+        ? readdirSync(USAGE_DIR)
+            .filter(name => name.endsWith('.json'))
+            .map(
+              name =>
+                JSON.parse(
+                  readFileSync(join(USAGE_DIR, name), 'utf8')
+                ) as UsageArtifact
+            )
+        : [];
 
-    const allSpecs = discoverSpecFiles();
-    if (allSpecs.length === 0) {
-      throw new Error(
-        `[procedure-coverage] nessun file "*${SPEC_SUFFIX}" sotto ${TEST_DIR}. ` +
-          'La convenzione di naming è cambiata: il gate non ha nulla su cui ' +
-          'pronunciarsi, e tacere qui lo renderebbe inerte.'
-      );
-    }
-
-    const ran = new Set(artifacts.map(a => a.specFile));
-    const notRun = allSpecs.filter(spec => !ran.has(spec));
-
-    if (notRun.length > 0) {
-      // Partial run: the gate can't make a call on overall coverage.
-      //
-      // The escape hatch is **derived**, not declared: no variable to set
-      // and therefore none to forget switched on. Running a single spec
-      // locally is normal and gets a warning; in CI the pipeline always
-      // runs the whole suite, so a partial run is a defect — and silently
-      // skipping would again be the declared-and-never-run check.
-      const summary = `run parziale: ${ran.size}/${allSpecs.length} spec hanno registrato`;
-      if (process.env.CI) {
+      const allSpecs = discoverSpecFiles();
+      if (allSpecs.length === 0) {
         throw new Error(
-          `[procedure-coverage] ${summary}. Prime mancanti: ` +
-            notRun.slice(0, 5).join(', ')
+          `[procedure-coverage] nessun file "*${SPEC_SUFFIX}" sotto ${TEST_DIR}. ` +
+            'La convenzione di naming è cambiata: il gate non ha nulla su cui ' +
+            'pronunciarsi, e tacere qui lo renderebbe inerte.'
         );
       }
-      console.warn(`[procedure-coverage] ${summary} — gate non applicato.`);
-      return;
-    }
 
-    assertProcedureCoverage(artifacts);
+      const ran = new Set(artifacts.map(a => a.specFile));
+      const notRun = allSpecs.filter(spec => !ran.has(spec));
+
+      if (notRun.length > 0) {
+        // Partial run: the gate can't make a call on overall coverage.
+        //
+        // The escape hatch is **derived**, not declared: no variable to set
+        // and therefore none to forget switched on. Running a single spec
+        // locally is normal and gets a warning; in CI the pipeline always
+        // runs the whole suite, so a partial run is a defect — and silently
+        // skipping would again be the declared-and-never-run check.
+        const summary = `run parziale: ${ran.size}/${allSpecs.length} spec hanno registrato`;
+        if (process.env.CI) {
+          throw new Error(
+            `[procedure-coverage] ${summary}. Prime mancanti: ` +
+              notRun.slice(0, 5).join(', ')
+          );
+        }
+        console.warn(`[procedure-coverage] ${summary} — gate non applicato.`);
+        return;
+      }
+
+      assertProcedureCoverage(artifacts);
+    } catch (error) {
+      process.exitCode = 1;
+      throw error;
+    }
   };
 }

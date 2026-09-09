@@ -15,9 +15,11 @@
  *
  * The gate computes how many procedures in the namespace were actually not
  * invoked and compares it against `uncovered`. A new procedure without tests
- * raises the real number and the comparison fails; a new test lowers it and
- * fails again, forcing a decrement. In both cases the decision has to be made
- * while there's still context for it, not six months later.
+ * raises the real number and the comparison fails; the number falls — and the
+ * comparison fails again, forcing a decrement — either when a test starts
+ * invoking a procedure that wasn't covered, or when an uncovered procedure is
+ * removed from the router. In every case the decision has to be made while
+ * there's still context for it, not six months later.
  *
  * Accepted blind spot: a swap (one procedure removed, one added) leaves the
  * count stable. The escape hatch is per-namespace — `uncovered` also accepts
@@ -122,8 +124,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   system: {
     reason:
-      'about legge le versioni delle dipendenze, triggerCalendarDigest invia notifiche reali',
-    uncovered: 2,
+      'triggerCalendarDigest invia notifiche reali: invocarla dalla suite manderebbe email vere',
+    uncovered: ['system.triggerCalendarDigest'],
   },
 
   // ── Application domains with no tests at all: to be written ───────────────
@@ -359,7 +361,8 @@ export function assertProcedureCoverage(
       const direction =
         uncovered.length > declaration.uncovered
           ? 'sono comparse procedure nuove senza test'
-          : 'un test nuovo ne copre di più: decrementa il numero';
+          : 'la suite ne invoca di più, oppure alcune sono state rimosse dal ' +
+            'router: verifica quale dei due e decrementa il numero';
       problems.push(
         `"${ns}": dichiarate ${declaration.uncovered} procedure non invocate, ` +
           `ne risultano ${uncovered.length} — ${direction}.\n` +
