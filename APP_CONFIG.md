@@ -59,7 +59,6 @@ Il sistema utilizza 29 chiavi AppConfig organizzate in categorie funzionali.
 |                  | `auth.ldap.roleMapping`            | JSON    | ✓       | {}                  | LDAP → App role mapping   |
 |                  | `auth.strategy`                    | Enum    | -       | `local-first`       | Auth fallback strategy    |
 | **App**          | `app.name`                         | String  | -       | `Luke`              | Application name          |
-|                  | `app.version`                      | String  | -       | `0.1.0`             | Application version       |
 |                  | `app.environment`                  | String  | -       | `development`       | Environment type          |
 |                  | `app.locale`                       | String  | -       | `it-IT`             | Default locale            |
 |                  | `app.defaultTimezone`              | String  | -       | `Europe/Rome`       | Default timezone          |
@@ -434,7 +433,6 @@ Metadati applicazione e localizzazione.
 ```json
 {
   "app.name": "Luke",
-  "app.version": "0.1.0",
   "app.environment": "development",
   "app.locale": "it-IT",
   "app.defaultTimezone": "Europe/Rome",

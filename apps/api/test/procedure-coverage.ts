@@ -77,8 +77,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   config: {
     reason:
-      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; exportJson e le letture multiple non hanno test',
-    uncovered: 8,
+      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; list, exportJson e delete dalla spec sulla riga la cui chiave è uscita dal registry; restano le letture singole e multiple, setMultiple e update',
+    uncovered: 5,
   },
   me: {
     reason:

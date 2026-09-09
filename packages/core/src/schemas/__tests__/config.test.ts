@@ -94,6 +94,13 @@ describe('the registry is consulted on the write path, not only on the read path
     expect(isAppConfigKey('security.password')).toBe(false);
   });
 
+  it('does not carry app.version, whose reader was retired', () => {
+    // Declared for the `public.appInfo` reader removed in d30fef4, along with its seed row. The
+    // release identity is `APP_VERSION`, injected from the git tag (apps/api/src/lib/appVersion.ts);
+    // a registered key would be a second, admin-writable one that could disagree with it.
+    expect(isAppConfigKey('app.version')).toBe(false);
+  });
+
   it('does not mistake inherited Object properties for registered keys', () => {
     // `key in registry` would answer true for every one of these, and `saveConfig` would then
     // hand `AppConfigRegistry['toString']` to `safeParse`.

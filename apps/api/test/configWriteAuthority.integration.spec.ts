@@ -170,4 +170,43 @@ describe('AppConfig write authority', () => {
       ).toBeNull();
     });
   });
+
+  describe('a row whose key has left the registry', () => {
+    it('stays visible and deletable, and refuses a new write', async () => {
+      const caller = await createCallerAs('admin');
+
+      // What a pre-v1.3.0 seed left behind: `app.version` was seeded as '0.1.0' and read by
+      // `public.appInfo` until d30fef4 removed both. The registry entry outlived them and was
+      // dropped once the git tag became the sole release identity. Written straight to the table
+      // because no supported path creates it any more — that is the point.
+      await testPrisma.appConfig.create({
+        data: { key: 'app.version', value: '0.1.0', isEncrypted: false },
+      });
+
+      // Nothing filters listing or export through the registry, so an administrator can still see
+      // the orphan row. That visibility is what makes it removable rather than invisible clutter.
+      const listed = await caller.config.list({ q: 'app.version' });
+      expect(listed.items).toHaveLength(1);
+      expect(listed.items[0]).toMatchObject({ key: 'app.version', valuePreview: '0.1.0' });
+
+      const exported = await caller.config.exportJson({ includeValues: true });
+      expect(exported.configs).toContainEqual(
+        expect.objectContaining({ key: 'app.version', value: '0.1.0' }),
+      );
+
+      // The compatibility boundary: reading a historical row is fine, writing the key is not.
+      await expectToThrow(
+        caller.config.set({ key: 'app.version', value: '3.0.0', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+      expect(
+        (await testPrisma.appConfig.findUnique({ where: { key: 'app.version' } }))?.value,
+      ).toBe('0.1.0');
+
+      // `deleteConfig` takes a plain string precisely so a key dropped from the registry does not
+      // become a row the application can no longer remove.
+      await caller.config.delete({ key: 'app.version' });
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.version' } })).toBeNull();
+    });
+  });
 });

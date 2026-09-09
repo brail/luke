@@ -49,7 +49,6 @@ const jsonConfigSchema = <T extends z.ZodTypeAny>(inner: T) =>
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
   'app.name':            z.string().min(1),
-  'app.version':         z.string(),
   'app.environment':     z.string(),
   'app.locale':          z.string(),
   'app.defaultTimezone': z.string(),

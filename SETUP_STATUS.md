@@ -92,7 +92,7 @@ pnpm --filter @luke/api run seed
 | Categoria        | Chiavi                                                                            | Cifrato  | Uso                     |
 | ---------------- | --------------------------------------------------------------------------------- | -------- | ----------------------- |
 | **Auth**         | `auth.nextAuthSecret`, `auth.ldap.*`, `auth.strategy`                             | Parziale | Autenticazione          |
-| **App**          | `app.name`, `app.version`, `app.environment`, `app.locale`, `app.defaultTimezone` | -        | Metadati app            |
+| **App**          | `app.name`, `app.environment`, `app.locale`, `app.defaultTimezone`                | -        | Metadati app            |
 | **Security**     | `security.password.*`, `security.session.*`, `security.cors.*`                    | -        | Policy sicurezza        |
 | **Rate Limit**   | `rateLimit` (JSON)                                                                | -        | Politiche rate limiting |
 | **Integrations** | `integrations.ldap.*`, `integrations.smtp.*`                                      | -        | Timeout connessioni     |
