@@ -688,7 +688,7 @@ Il sistema utilizza configurazioni centralizzate in database con cifratura AES-2
 
 Per dettagli completi su:
 
-- Schema delle 29 chiavi AppConfig
+- Schema delle chiavi AppConfig
 - Policy di cifratura e validazione
 - RBAC e protezione chiavi critiche
 - Import/Export JSON sicuro

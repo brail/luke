@@ -42,7 +42,7 @@ Luke implementa un sistema di configurazione centralizzata che elimina completam
 
 ## Schema delle Chiavi
 
-Il sistema utilizza 29 chiavi AppConfig organizzate in categorie funzionali.
+Le chiavi AppConfig sono organizzate in categorie funzionali.
 
 ### Tabella Completa AppConfig
 

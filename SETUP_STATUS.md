@@ -87,7 +87,7 @@ pnpm --filter @luke/api run seed
 - **Master key**: `~/.luke/secret.key` (creata automaticamente)
 - **JWT secret**: Derivato via HKDF-SHA256 dalla master key (non in DB)
 
-### Configurazioni AppConfig (29 totali)
+### Configurazioni AppConfig
 
 | Categoria        | Chiavi                                                                            | Cifrato  | Uso                     |
 | ---------------- | --------------------------------------------------------------------------------- | -------- | ----------------------- |

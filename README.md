@@ -343,7 +343,7 @@ Per dettagli su rate-limiting, idempotency, session management, security headers
 
 ### Configurazioni AppConfig (Overview)
 
-Il sistema utilizza un database centralizzato (27 chiavi) per tutte le configurazioni sensibili:
+Il sistema utilizza un database centralizzato per tutte le configurazioni sensibili:
 
 - **Categorie**: Auth, App, Security, Rate Limit, Integrations, On-Demand
 - **Cifratura**: AES-256-GCM per segreti sensibili (LDAP, SMTP, Storage)
