@@ -33,7 +33,7 @@ Mention ISO 9001 and NAV integration if relevant.}
 
 <!-- luke-docs:end:overview -->
 
-## Struttura del monorepo
+## Monorepo Structure
 
 <!-- luke-docs:start:structure -->
 
@@ -41,11 +41,13 @@ Mention ISO 9001 and NAV integration if relevant.}
 
 <!-- luke-docs:end:structure -->
 
-## Prerequisiti
+## Prerequisites
 
 <!-- luke-docs:start:prerequisites -->
 
-{Versions from package.json engines + required runtimes: Node.js, pnpm, Docker, PostgreSQL, MinIO, MSSQL for NAV sync}
+{Required runtimes: Node.js, pnpm, Docker, PostgreSQL, S3-compatible storage,
+MSSQL for NAV sync. Name them without versions; manifests and runtime
+configuration are the live sources.}
 
 <!-- luke-docs:end:prerequisites -->
 
@@ -57,7 +59,7 @@ Mention ISO 9001 and NAV integration if relevant.}
 
 <!-- luke-docs:end:quickstart -->
 
-## Script disponibili
+## Available Scripts
 
 <!-- luke-docs:start:scripts -->
 
@@ -74,7 +76,7 @@ Don't invent details you can't verify from the codebase.}
 
 <!-- luke-docs:end:deployment -->
 
-## Architettura
+## Architecture
 
 <!-- luke-docs:start:architecture -->
 
@@ -83,11 +85,11 @@ Link to docs/decisions/ for architectural decisions.}
 
 <!-- luke-docs:end:architecture -->
 
-## Decisioni architetturali
+## Architectural Decisions
 
 <!-- luke-docs:start:adr-link -->
 
-Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](docs/decisions/README.md).
+Relevant architectural decisions are documented in [`docs/decisions/`](docs/decisions/README.md).
 
 <!-- luke-docs:end:adr-link -->
 
@@ -106,7 +108,7 @@ Tag naming: vX.Y.Z. commitlint + husky hooks active.}
 ## `apps/web/README.md`
 
 ```markdown
-# apps/web — Frontend Luke
+# apps/web — Luke Frontend
 
 <!-- luke-docs:start:overview -->
 
@@ -114,7 +116,7 @@ Tag naming: vX.Y.Z. commitlint + husky hooks active.}
 
 <!-- luke-docs:end:overview -->
 
-## Route principali
+## Main Routes
 
 <!-- luke-docs:start:routes -->
 
@@ -123,7 +125,7 @@ Use markdown indentation, not a table.}
 
 <!-- luke-docs:end:routes -->
 
-## Dipendenze interne
+## Internal Dependencies
 
 <!-- luke-docs:start:internal-deps -->
 
@@ -131,7 +133,7 @@ Use markdown indentation, not a table.}
 
 <!-- luke-docs:end:internal-deps -->
 
-## Variabili d'ambiente
+## Environment Variables
 
 <!-- luke-docs:start:env -->
 
@@ -139,7 +141,7 @@ Use markdown indentation, not a table.}
 
 <!-- luke-docs:end:env -->
 
-## Sviluppo locale
+## Local Development
 
 <!-- luke-docs:start:dev -->
 
@@ -153,7 +155,7 @@ Use markdown indentation, not a table.}
 ## `apps/api/README.md`
 
 ```markdown
-# apps/api — Backend Luke
+# apps/api — Luke Backend
 
 <!-- luke-docs:start:overview -->
 
@@ -161,7 +163,7 @@ Use markdown indentation, not a table.}
 
 <!-- luke-docs:end:overview -->
 
-## Router tRPC
+## tRPC Routers
 
 <!-- luke-docs:start:trpc-routers -->
 
@@ -170,7 +172,7 @@ Format: `namespace.*` — short description}
 
 <!-- luke-docs:end:trpc-routers -->
 
-## Packages interni utilizzati
+## Internal Packages
 
 <!-- luke-docs:start:internal-deps -->
 
@@ -178,7 +180,7 @@ Format: `namespace.*` — short description}
 
 <!-- luke-docs:end:internal-deps -->
 
-## Variabili d'ambiente
+## Environment Variables
 
 <!-- luke-docs:start:env -->
 
@@ -229,7 +231,7 @@ Content-addressed SHA256 key for revision photos.}
 
 <!-- luke-docs:end:overview -->
 
-## Utilizzato da
+## Used By
 
 <!-- luke-docs:start:dependents -->
 
@@ -237,7 +239,7 @@ Content-addressed SHA256 key for revision photos.}
 
 <!-- luke-docs:end:dependents -->
 
-## Export principali
+## Main Exports
 
 <!-- luke-docs:start:exports -->
 
@@ -246,7 +248,7 @@ Only public exports from `src/index.ts`. Max 20 rows — if there are too many e
 
 <!-- luke-docs:end:exports -->
 
-## Concetti chiave
+## Key Concepts
 
 <!-- luke-docs:start:concepts -->
 
@@ -254,7 +256,7 @@ Only public exports from `src/index.ts`. Max 20 rows — if there are too many e
 
 <!-- luke-docs:end:concepts -->
 
-## Esempio d'uso
+## Usage Example
 
 <!-- luke-docs:start:example -->
 
@@ -268,7 +270,7 @@ Only public exports from `src/index.ts`. Max 20 rows — if there are too many e
 ## `docs/README.md` (documentation index)
 
 ```markdown
-# Documentazione Luke
+# Luke Documentation
 
 <!-- luke-docs:start:index -->
 
@@ -278,7 +280,7 @@ Generated from the file listing detected in Phase 1.
 A directory gets one row. The decisions row is one link to the ADR index. The
 repository-owned file is `docs/decisions/README.md`, but this template
 generates `docs/README.md`, so the href is relative to it — emit
-`[Decisioni architetturali](decisions/README.md)`, never a `docs/`-prefixed
+`[Architectural decisions](decisions/README.md)`, never a `docs/`-prefixed
 path, which would resolve one directory too deep. Never a per-ADR table
 either: that index is `adr`-owned, and a second copy here drifts from it and
 hands both modes a reason to edit the other's file.}
@@ -297,4 +299,4 @@ hands both modes a reason to edit the other's file.}
 - [ ] The listed env vars match the real `.env.production.example`
 - [ ] The export list matches what `index.ts` actually exports
 - [ ] No hardcoded version number (use `package.json` as source of truth)
-- [ ] The "Struttura monorepo" table in the root README includes every workspace
+- [ ] The "Monorepo Structure" table in the root README includes every workspace

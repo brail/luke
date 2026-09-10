@@ -1,9 +1,8 @@
 # luke-docs — Inline comment rules (`inline` mode)
 
-Language: **English** for all inline comments (JSDoc, tRPC, Prisma `///`).
-No exception for Italian domain terms (e.g. "stagione"→season,
-"campionario"→collection/catalog, "reso"→return): always translate. See
-CLAUDE.md, Development Patterns section, rule 14.
+All inline comments (JSDoc, tRPC, Prisma `///`) are English under the canonical
+language policy in `CLAUDE.md`. This reference defines comment mechanics; it
+does not restate or extend that policy.
 
 ## Merge logic (applies to every phase)
 

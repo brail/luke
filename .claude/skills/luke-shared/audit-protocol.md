@@ -15,8 +15,9 @@ a finding to a remediator.
 
 ## Applicability
 
-Not every section applies to every skill: §2, §3 and §5 assume the skill
-produces _findings_, and `/luke-test`, `/luke-fix`, `/luke-docs` don't produce any.
+Not every section applies to every skill or mode: §2, §3 and §5 assume the
+selected operation produces _findings_. `/luke-test`, `/luke-fix`, and the
+three `/luke-docs` write modes do not; `/luke-docs audit` does.
 
 This table is the single place where applicability is written. It used to
 live in the line each skill used to point here, and every skill had invented
@@ -27,13 +28,13 @@ all — despite writing files.
 | §   | Rule                               | Applies to                                                                                             |
 | --- | ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 1   | Diff scoping                       | all except deps — its input is the registry, not the diff; a path argument there is a workspace filter |
-| 2   | Baseline                           | audit, bugs, security, full                                                                            |
-| 3   | Escalation to a deterministic rule | audit, bugs, security, full, deps                                                                      |
+| 2   | Baseline                           | audit, bugs, security, full; docs in `audit` mode only                                                 |
+| 3   | Escalation to a deterministic rule | audit, bugs, security, full, deps; docs in `audit` mode only                                           |
 | 4   | `lessons.md` as a check input      | audit, bugs, security, full, deps                                                                      |
-| 5   | Score honesty                      | audit, bugs, security, full                                                                            |
+| 5   | Score honesty                      | audit, bugs, security, full; docs in `audit` mode only                                                 |
 | 6   | No fan-out                         | whoever declares `agent: Explore`                                                                      |
-| 7   | Concurrent sessions                | all — §7.2 only for those who write files (test, fix, docs, deps)                                      |
-| 8   | Constraint vs heuristic            | audit, bugs, security, deps — anyone whose checklist turns a pattern into a finding                    |
+| 7   | Concurrent sessions                | all — §7.2 only for operations that write files (test, fix, docs write modes, deps)                    |
+| 8   | Constraint vs heuristic            | audit, bugs, security, deps; docs in `audit` mode only — anyone turning a pattern into a finding      |
 
 ---
 

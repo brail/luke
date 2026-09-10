@@ -9,17 +9,29 @@
 3. **Never `git commit` without explicit approval** — show the diff, ask for
    confirmation, wait for the go-ahead, then commit
 
-## Language Policy for Instruction Files
+## Canonical Language and Documentation Impact
 
-Every Claude instruction file — this `CLAUDE.md`, `lessons.md`, and
-everything under `.claude/` (skills, agents, commands) — is written **only
-in English**, regardless of what language the conversation is in. Same rule
-as code comments (rule 14 below): no exception, including for Italian
-domain vocabulary. Rationale: these files are read by the model, not by a
-human audience — English tokenizes more densely and the model follows
-instructions more reliably in it. This does NOT apply to content these
-skills *generate* for humans (README.md, ADRs in `docs/decisions/`) — see
-`.claude/skills/luke-docs/SKILL.md` for that separate policy.
+- Write mutable technical documentation, repository instructions, source
+  comments, developer-facing diagnostics and logs, and all other technical
+  prose only in English, regardless of the language of the conversation.
+- Italian is temporarily allowed only in genuine product UI and end-user
+  interaction pending the i18n cycle. Audience decides the exception, not the
+  source file containing the text.
+- Any future Italian documentation is derived from canonical English, never an
+  independently maintained source. Do not invent a translation layout or
+  pipeline before a real derived translation is authorized.
+- Preserve the existing language of frozen historical bodies. Write any new
+  material appended to them in English.
+- Before staging or requesting commit approval for any code change, report
+  `Documentation impact: none` with supporting evidence, or
+  `Documentation impact: update required` with the affected material and why.
+- For changes to architecture, public or API behavior, configuration,
+  operations, release or deployment, developer workflows, or repository
+  structure, invoke `/luke-docs audit --since <baseline>` automatically.
+  The audit is read-only; documentation writes remain separately reviewed.
+
+Rationale, rejected alternatives, and the one-time pre-ADR-015 translation
+exception: `docs/decisions/015-documentation-architecture-and-canonical-language.md`.
 
 ---
 

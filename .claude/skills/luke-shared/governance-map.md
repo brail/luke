@@ -31,7 +31,7 @@ were equally believable.
 | `luke-security`  | exploitable application security                                                       | dependency freshness and advisories                    | no                   | attack scenario + security regression proof      |
 | `luke-test`      | verification adequacy: which evidence a change needs, whether it exists, what it proved | application fixes, test-toolchain versions             | `write` mode only    | real test execution + QA GAP reporting           |
 | `luke-fix`       | controlled application remediation                                                     | platform, docs and test remediation                    | yes, after approval  | re-audit + `luke-test` verification              |
-| `luke-docs`      | README, JSDoc, Prisma field docs, ADR index                                            | architectural decisions, platform policy               | docs and comments only | docs integrity checker                         |
+| `luke-docs`      | documentation impact and semantic drift; README, JSDoc, Prisma field docs, ADR index    | code compliance, architectural decisions, platform policy | audit no / docs and comments yes | repository evidence + docs integrity checker |
 | `luke-full`      | orchestration and synthesis                                                            | any checklist of its own                               | no                   | child skill reports                              |
 
 ## 2. The boundary rule
@@ -52,6 +52,23 @@ Worked example: **workspace dependency version alignment**.
 - consumer: `luke-audit` may cite a platform failure that explains an application
   finding, but must not carry its own alignment scan.
 
+**Documentation semantics vs code compliance** use opposite directions and are
+not duplicate audits:
+
+- `/luke-docs audit` asks whether documentation accurately describes the code,
+  configuration, operations, and Accepted decisions in scope;
+- `/luke-audit` asks whether application code complies with `CLAUDE.md` and
+  Accepted ADRs.
+
+One change can expose both questions. Each skill reports only its direction and
+routes the other; neither becomes a second owner for the other's checklist.
+
+The same split applies to the deterministic layer. `luke-docs` owns which
+documentation invariants should exist and when a semantic finding is ready for
+promotion. `luke-deps` owns the mechanical correctness of the checker, CI
+runner, and gate that execute those invariants. Owning the runner does not grant
+ownership of the documentation policy it runs.
+
 ## 3. Where a finding goes
 
 **This table is the routing source.** `result-contract.md`, `/luke-full` and
@@ -70,7 +87,7 @@ rather than leaving the second to be inferred.
 | race, stale state, N+1, null crash, broken cleanup          | `luke-bugs`     | `luke-fix`        |
 | auth bypass, IDOR, injection, token weakness, data exposure | `luke-security` | `luke-fix`        |
 | missing or inadequate verification for a change             | `luke-test`     | `luke-test`       |
-| README / JSDoc / Prisma doc / ADR index drift               | `luke-docs`     | `luke-docs`       |
+| documentation impact; README / JSDoc / Prisma doc / ADR index or semantic drift | `luke-docs` | `luke-docs` |
 
 The two columns differ only where the skill that owns an invariant is not the
 one that may edit the code: an application finding is judged by its specialist
@@ -176,6 +193,10 @@ atomicity, not an attacker primitive.
 | Item                                              | Owner  | State                                                        |
 | ------------------------------------------------- | ------ | ------------------------------------------------------------ |
 | ADRs **006, 007, 008 and 009** at `Potentially stale` | user   | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten. ADR 012 mentions the phrase in prose about 007 — its own status is Accepted |
+| README-rooted documentation reachability          | `luke-docs` | approved for deterministic promotion; remains semantic until the checker and its negative fixtures exist |
+| canonical-language regression detection           | `luke-docs` | approved as an explicitly incomplete deterministic guard; remains semantic until the mutable corpus is migrated and the guard ships green |
+| owned documentation index surfaces                | `luke-docs` | approved for deterministic promotion; remains semantic until the exact surface rules are implemented |
+| one README for every workspace                    | `luke-docs` | approved for deterministic promotion; must not be enabled until every current workspace has a README |
 
 ### Known limit
 

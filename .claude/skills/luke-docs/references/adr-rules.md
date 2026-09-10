@@ -1,6 +1,8 @@
 # luke-docs — ADR rules (`adr` mode)
 
-Directory: `docs/decisions/` (MADR format). Language: **Italian**.
+Directory: `docs/decisions/` (MADR format). All new or updated technical prose
+is English under the canonical language policy in `CLAUDE.md`; ADR-015 records
+the rationale and the one-time migration exception for earlier ADRs.
 
 **An Accepted ADR is normative architecture, not documentation** — it outranks
 the implementation until a human supersedes it
@@ -14,34 +16,35 @@ is for navigation and is not proof that no other ADR exists.
 ## MADR format (mandatory)
 
 ```markdown
-# ADR-NNN — Titolo della decisione
+# ADR-NNN — Decision Title
 
 ## Status
 
 Accepted
 
-## Contesto
+## Context
 
-Perché questa decisione era necessaria. Vincoli, forze in gioco, alternative considerate.
+Why the decision was needed: constraints, forces, and alternatives considered.
 
-## Decisione
+## Decision
 
-Cosa abbiamo scelto e perché.
+What was chosen and why.
 
-## Conseguenze
+## Consequences
 
-Trade-off introdotti, vincoli architetturali, impatti su altri componenti.
+Trade-offs, architectural constraints, and effects on other components.
 ```
 
-**Numbering is three digits**, zero-padded, matching the tracked corpus
-(`001` … `014`). A four-digit number would start a second convention, and the
+**Numbering is three digits**, zero-padded, matching the tracked corpus. Derive
+the next number from the ADR files; never store the current highest number in
+this reference. A four-digit number would start a second convention, and the
 index and every cross-reference would then carry both.
 
 Allowed values for `Status`:
 
 - `Accepted` — active, validated decision
 - `Deprecated` — no longer applicable, replaced by different practice
-- `Superseded by [NNN — Titolo](NNN-titolo.md)` — replaced by a later ADR
+- `Superseded by [NNN — Title](NNN-title.md)` — replaced by a later ADR
 - `Potentially stale — review needed` — **legacy value, do not write it.** It
   exists on ADRs written before this mode was read-only about status; leave
   those alone and report them for decision rather than rewriting either way
@@ -105,19 +108,21 @@ without an explicit decision.
 there is reported as `owned by readme, not touched`, never corrected here. What
 each mode may write is the ownership table in `SKILL.md`.
 
-Always fully regenerated, ascending numeric order:
+Always fully regenerated in ascending numeric order. The title in every row is
+copied verbatim from the ADR H1 after removing the `ADR-NNN — ` prefix; never
+translate or paraphrase it.
 
 ```markdown
-# Decisioni architetturali
+# Architectural Decisions
 
 <!-- luke-docs:start:adr-index -->
 
-| #                      | Titolo                 | Status     |
+| #                      | Title                  | Status     |
 | ---------------------- | ---------------------- | ---------- |
-| [001](001-titolo.md)   | Titolo della decisione | Accepted   |
-| [002](002-titolo.md)   | Titolo della decisione | Deprecated |
+| [001](001-title.md)    | Decision Title         | Accepted   |
+| [002](002-title.md)    | Decision Title         | Deprecated |
 
-_Ultimo aggiornamento: {data corrente}_
+_Last updated: {current date}_
 
 <!-- luke-docs:end:adr-index -->
 ```

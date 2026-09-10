@@ -1,30 +1,32 @@
 ---
 name: luke-docs
 description: >
-  Documentation generator and maintainer for the Luke monorepo. Three modes:
-  readme (creates/updates the root README.md, apps/*/README.md,
-  packages/*/README.md and docs/README.md, with luke-docs markers), inline
-  (JSDoc on TypeScript exports, tRPC procedure comments, Prisma /// field
-  docs), adr (validates docs/decisions/ ADRs against the codebase and
-  maintains the index). Use when asked to
-  generate, update, or normalize documentation. Modes: /luke-docs readme |
-  inline | adr — one mode per invocation. Supports --since <git-ref> and
-  --dry-run.
-argument-hint: '<readme|inline|adr> [--since <git-ref>] [--dry-run]'
+  Documentation generator, maintainer, and impact auditor for the Luke
+  monorepo. Four modes: readme (creates/updates the root README.md,
+  apps/*/README.md, packages/*/README.md and docs/README.md, with luke-docs
+  markers), inline (JSDoc on TypeScript exports, tRPC procedure comments,
+  Prisma /// field docs), adr (validates docs/decisions/ ADRs against the
+  codebase and maintains the index), audit (read-only documentation-impact
+  and semantic-drift review). Use when asked to generate, update, normalize,
+  or review documentation, and after changes to architecture, public/API
+  behavior, configuration, operations, release/deployment, developer
+  workflows, or repository structure. One mode per invocation.
+argument-hint: '<readme|inline|adr> [<path>] [--since <git-ref>] [--dry-run] | audit [<path>] [--since <git-ref>] | audit --full'
 context: fork
 agent: general-purpose
 background: false
 ---
 
-# Luke Docs — Documentation generator and maintainer
+# Luke Docs — Documentation generator, maintainer, and impact auditor
 
-Three modes:
+Four modes:
 
 | Mode     | What it does                                                                                       | Details reference                |
 | -------- | ---------------------------------------------------------------------------------------------------- | --------------------------------- |
 | `readme` | Creates/updates root `README.md`, `apps/*/README.md`, `packages/*/README.md`, `docs/README.md`       | `references/readme-templates.md` |
 | `inline` | Normalizes source-code comments: JSDoc on TS exports, tRPC comments, Prisma field docs (`///`)       | `references/inline-rules.md`     |
 | `adr`    | Validates the ADRs in `docs/decisions/` against the codebase, reports conflicts, maintains the index | `references/adr-rules.md`        |
+| `audit`  | Audits documentation impact and semantic drift; reads and reports, but never writes                 | `references/audit-rules.md`      |
 
 ## Mode resolution — before anything else
 
@@ -33,43 +35,57 @@ Three modes:
 Resolve the value above **first**: before reading any repository file, any
 file in `references/`, the shared protocol, or running any git command. The
 first whitespace-separated token is the mode. **One mode runs per invocation**
-— there is no combined run; running all three documentation modes requires
-three separate invocations.
+— there is no combined run; running all four modes requires four separate
+invocations.
 
-Exactly these four forms are accepted, in this order and no other:
+`<write-mode>` below is exactly `readme`, `inline`, or `adr`, case-sensitive.
+Exactly these forms are accepted, in this order and no other:
 
-| Form                             | Effect                                        |
-| -------------------------------- | --------------------------------------------- |
-| `<mode>`                         | run `<mode>` on the default scope (§1)        |
-| `<mode> --dry-run`               | plan only, write nothing                      |
-| `<mode> --since <ref>`           | only files changed relative to `<ref>`        |
-| `<mode> --since <ref> --dry-run` | both                                          |
+| Form                                          | Effect                                        |
+| --------------------------------------------- | --------------------------------------------- |
+| `<write-mode>`                                | shared-protocol default scope                 |
+| `<write-mode> --dry-run`                      | default scope, plan only                      |
+| `<write-mode> --since <ref>`                  | files changed relative to `<ref>`             |
+| `<write-mode> --since <ref> --dry-run`        | changed files, plan only                      |
+| `<write-mode> <path>`                         | the owned target below `<path>`               |
+| `<write-mode> <path> --dry-run`               | path-scoped plan only                         |
+| `<write-mode> <path> --since <ref>`           | intersection of path and changed files        |
+| `<write-mode> <path> --since <ref> --dry-run` | path-and-diff scoped plan only                |
+| `audit`                                       | read-only audit on the shared default scope   |
+| `audit --since <ref>`                         | read-only audit of files changed from `<ref>` |
+| `audit <path>`                                | read-only audit below `<path>`                |
+| `audit <path> --since <ref>`                  | read-only audit of the path/diff intersection |
+| `audit --full`                                | read-only audit of the governed corpus        |
 
-`<mode>` is exactly `readme`, `inline` or `adr`, case-sensitive. `<ref>` is one
-token not starting with `--`; whether git can resolve it is git's answer, given
-later and before any write. Flag order is fixed: `--since <ref>` precedes
-`--dry-run`, and the reverse is rejected. Quoting is not supported, so a ref
-containing whitespace is not accepted.
+`<path>` and `<ref>` are each one token not starting with `--`. A path is
+repository-relative, contains no `..` segment, and is accepted only when it
+maps to the selected mode's ownership row below. Whether a path exists and
+whether git can resolve a ref are checked later, before any write. Flag order
+is fixed: the optional path precedes `--since <ref>`, which precedes
+`--dry-run`. Quoting is not supported, so paths or refs containing whitespace
+are not accepted. `--full` is exclusive to `audit`; `--dry-run` is exclusive
+to the three write modes because `audit` is already read-only.
 
 **Anything else fails closed.** Print
 
 ```
-luke-docs: usage — <readme|inline|adr> [--since <ref>] [--dry-run]
+luke-docs: usage — <readme|inline|adr> [<path>] [--since <ref>] [--dry-run] | audit [<path>] [--since <ref>] | audit --full
 ```
 
 and stop, having read nothing and written nothing:
 
-| Case                                | Example                                              |
-| ----------------------------------- | ---------------------------------------------------- |
-| no mode                             | bare invocation, or `--dry-run` alone                |
-| unknown or differently-cased mode   | `readm`, `ADR`, `Readme`, `all`                      |
-| a flag before the mode              | `--dry-run readme`                                   |
-| an unknown positional               | `readme apps/api`, `readme inline`                   |
-| an unknown flag                     | `readme --full`, `readme --force`                    |
-| a duplicated flag                   | `readme --dry-run --dry-run`                         |
-| `--since` without a non-flag value  | `readme --since`, `readme --since --dry-run`         |
-| reverse flag order                  | `readme --dry-run --since HEAD~1`                    |
-| tokens after the accepted form      | `readme --since HEAD~1 --dry-run extra`              |
+| Case                               | Example                                                       |
+| ---------------------------------- | ------------------------------------------------------------- |
+| no mode                            | bare invocation, or `--dry-run` alone                         |
+| unknown or differently-cased mode | `readm`, `ADR`, `Readme`, `all`                               |
+| a flag before the mode            | `--dry-run readme`                                            |
+| an unowned path                   | `readme docs/decisions/README.md`, `inline README.md`          |
+| more than one positional path     | `readme apps/api packages/core`                               |
+| an unknown or mode-invalid flag   | `readme --full`, `audit --dry-run`, `readme --force`           |
+| a duplicated flag                 | `readme --dry-run --dry-run`                                  |
+| `--since` without a value         | `readme --since`, `readme --since --dry-run`                   |
+| reverse flag order                | `readme --dry-run --since HEAD~1`                             |
+| tokens after the accepted form    | `readme packages/core --since HEAD~1 --dry-run extra`          |
 
 ## File ownership per mode
 
@@ -81,6 +97,7 @@ the mode needs; write only the paths in its row.
 | `readme` | root `README.md`; `apps/*/README.md`; `packages/*/README.md`; `docs/README.md` — inside the markers, or the whole file when it does not exist                                                      | `docs/decisions/README.md` (owned by `adr`); any README nested deeper than one level, until an explicit decision adds it   |
 | `inline` | comments in `packages/**/src/**/*.ts`, `apps/web/src/lib/**/*.ts`, `apps/web/src/hooks/**/*.ts`, `apps/api/src/routers/**/*.ts`, `packages/db/prisma/*.prisma`, per `references/inline-rules.md` | every README; anything under `docs/`; any change to executable behaviour                                                   |
 | `adr`    | `docs/decisions/README.md`; the `Status` line(s) of explicitly named ADR files, and only on an explicit user decision                                                                             | `docs/README.md` (owned by `readme`); ADR Context / Decision / Consequences, always manual                                 |
+| `audit`  | nothing — its report exists only in the session                                                                                                                                                   | every repository file and every tracked report                                                                            |
 
 Rule 7's never-touch list below wins over every row.
 
@@ -94,26 +111,26 @@ authority to write.
 templates, merge logic, and mandatory quality checklists.
 
 **Also read `.claude/skills/luke-shared/audit-protocol.md`** and apply the
-sections its applicability table assigns to `/luke-docs`: §1 scoping and §7
-concurrent sessions — you write files, so §7.2 applies to you. **Of §1 step 2's
-selector forms this skill accepts only `--since <ref>`** — the one its
-`argument-hint` has always advertised. A `<path>` selector and `--full` are not
-accepted, so there is today no invocation that regenerates the whole tree in one
-pass; that is a deliberate limit, not an oversight, and widening it means adding
-a form to the grammar above rather than guessing at one. The narrowing is this
-skill's own, not a change to §1.
+sections its applicability table assigns to the selected mode. §1 scoping and
+§7 concurrent sessions apply to all four modes; §7.2 applies only to the three
+write modes. The findings-related sections apply only to `audit`, as the shared
+table records. The grammar above deliberately narrows the shared selectors:
+`--full` is read-only and audit-only, while a write-mode path must map to that
+mode's ownership row. No invocation regenerates the whole documentation tree in
+one pass.
 
 **Ownership**: `.claude/skills/luke-shared/governance-map.md`. This skill owns
-generated documentation — README, JSDoc, Prisma field docs, ADR index — and no
-architectural or platform decision. Within it, ownership is per mode: the table
-above is where that is written, and every other statement of it points here.
+documentation impact and semantic documentation drift, plus generated README,
+JSDoc, Prisma field docs, and the ADR index. It owns no code-compliance,
+architectural, or platform decision. Within it, write ownership is per mode:
+the table above is where that is written, and every other statement points here.
 
 ---
 
 ## Mandatory rules (take precedence over everything else)
 
-1. **Read before write** — never generate content for a file without having
-   read it first.
+1. **Read before write** — in a write mode, never generate content for a file
+   without having read it first. `audit` never writes.
 2. **No SQL, no migrations, no test runner** — the `packages/db/prisma/*.prisma`
    files are read as text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
 3. **Parallel agents: max 3** simultaneously.
@@ -122,7 +139,8 @@ above is where that is written, and every other statement of it points here.
    resolution are **not** verified here: `tools/scripts/check-docs-integrity.ts`
    checks them, blocking in CI. It's pure parsing, and parsing entrusted to an
    LLM is a level-4 control where a level-2 one is enough.
-5. **Dry-run** — with `--dry-run`, print the plan without writing any file.
+5. **Dry-run** — in a write mode, `--dry-run` prints the plan without writing
+   any file. `audit --dry-run` is invalid because `audit` is always read-only.
 6. **No placeholders** — never `TBD`, `TODO`, `…`, `{to be filled in}` in
    generated text. If information is missing: omit the section and flag it
    in the report.
@@ -133,43 +151,69 @@ above is where that is written, and every other statement of it points here.
    anyone needs them (`.claude/skills/luke-deps/references/platform-policy.md`).
    A README that states a version is a second source of truth that drifts: the
    template here said `Next.js 15` while `apps/web` was on 16.
-9. **Always a final report** — files created/updated/unchanged, the symbols
-   documented (`inline` only), what stayed out of mode, and flagged issues.
-   One block, for the mode that ran; see the report section below.
-10. **Commit suggestion** at the end — the one for the mode that ran, from the
-   table in the report section. Never a text naming a mode that did not run.
+9. **Always a final report** — files created/updated/unchanged for write modes,
+   findings for `audit`, what stayed out of mode, and flagged issues. One block,
+   for the mode that ran; see the report section below.
+10. **Commit suggestion** at the end — the one for the write mode that ran,
+    from the report table. `audit` reports `none — read-only audit`. Never name
+    a mode that did not run.
 
 ## Language
 
-| Context                                                | Language     |
-| -------------------------------------------------------- | ------------- |
-| Inline comments (JSDoc, tRPC `/** */`, Prisma `///`)      | **English**  |
-| README.md (all levels) and ADRs                          | **Italian**  |
-
-No exception for Italian domain terms (e.g. "stagione"→season,
-"campionario"→collection/catalog, "reso"→return): always translate, even in
-inline comments. See CLAUDE.md, Development Patterns section, rule 14.
+All generated or updated technical prose is English. The canonical rule,
+including the temporary product-UI exception and the treatment of frozen
+historical material, is in `CLAUDE.md`; its rationale is ADR-015. This skill
+implements that policy and does not restate or extend it.
 
 ---
 
-## `--since <git-ref>` flag (optional)
+## Scope resolution
 
-Limits the work to only the files changed relative to the ref. Before Phase 1:
+After the grammar is accepted, resolve the selector through
+`audit-protocol.md` §1. An explicit selector always wins; never derive the
+default diff first.
 
-```bash
-git diff --name-only <git-ref> HEAD
-```
+**Path validation for write modes is fail-closed:**
 
-- `inline`: only process `.ts` / `.prisma` files in the diff
-- `readme`: regenerate a workspace's README only if at least one of its files
-  is in the diff, or if the README doesn't exist yet. Root `README.md`
-  regenerates when a root manifest or any workspace file is in the diff;
-  `docs/README.md` when any `docs/**/*.md` is
-- `adr`: only revalidate ADRs whose statements reference files in the diff, and
-  regenerate the index — unless the diff is empty, which stops the run below
-  before either happens
+- `readme` accepts `README.md`; `apps/<workspace>` or its `README.md`;
+  `packages/<workspace>` or its `README.md`; and `docs` or `docs/README.md`.
+  The workspace directory must contain a tracked `package.json`. A directory
+  maps to its one owned README; it does not recursively select nested READMEs.
+- `inline` accepts only a file or directory inside the source roots in the
+  ownership row. After recursive expansion, every selected file must match an
+  owned `.ts` or `.prisma` pattern.
+- `adr` accepts only `docs/decisions`, its `README.md`, or one tracked
+  `NNN-*.md` ADR. Selecting one ADR still permits regenerating the one shared
+  index; it never permits changing that ADR's Context, Decision, or
+  Consequences. A `Status` line changes only on an explicit user decision, per
+  the ownership table.
+- `audit` accepts any existing repository-relative file or directory because
+  code can create documentation impact. It writes nothing. `audit --full`
+  selects the governed Markdown corpus and reads code only as evidence.
 
-Empty list → stop: `No relevant file changed relative to <git-ref>. Nothing to do.`
+Reject absolute paths, `.` or an empty path token, `..` segments, paths outside
+the repository, and paths that do not satisfy the selected mode's rule. Do not
+reinterpret a rejected path as a default-scope invocation.
+
+For `--since <ref>`, first require git to resolve `<ref>`, then derive changed
+paths with `git diff --name-only <ref> HEAD`. A path plus `--since` is the
+intersection of that list and the validated path. For the default and
+`--since`-only scopes, the mode maps resolved paths to targets:
+
+- `inline`: owned `.ts` and `.prisma` files only;
+- `readme`: a workspace README when that workspace is selected; root
+  `README.md` when a root manifest or any workspace is selected; and
+  `docs/README.md` when a document below `docs/` is selected;
+- `adr`: ADRs whose decisions bear on the selected changes, plus the index;
+- `audit`: governed documentation affected by the selected code or document
+  paths, with directly relevant code and authorities read as evidence.
+
+An explicit `readme <path>` selects only the README mapped from that path,
+including a missing owned README. It never adds other missing READMEs. An
+explicit `adr <ADR path>` validates only that ADR and maintains the index.
+
+No relevant path after resolution → stop with
+`No relevant file in the resolved scope. Nothing to do.` and write nothing.
 
 ---
 
@@ -196,9 +240,8 @@ Build a dictionary: `workspace → { name, description, dependents[], envVars[],
 `references/readme-templates.md`, and no other README, in this order: root +
 apps (max 3 in parallel) → packages (max 3 in parallel) → `docs/README.md`.
 The order is fixed; the membership is not — regenerate only the targets the
-resolved scope selected, plus any README in the ownership row that does not
-exist yet. This is the same rule the `--since` section states, and it holds for
-the default scope too.
+resolved scope selected. A missing README is created only when its workspace is
+selected by the resolved scope. An explicit path selects exactly one target.
 
 **Phase 3 — Semantic consistency:** package names in "Used by"/"Internal
 dependencies" match the real names; sections omitted for missing information
@@ -247,6 +290,29 @@ is reported as `owned by readme, not touched`.
 
 ---
 
+## `audit` mode
+
+Read `references/audit-rules.md` and remain read-only for the entire mode.
+
+**Phase 1 — Establish impact:** resolve the scope, identify the documentation
+owned by or describing the changed surfaces, and load the relevant current
+authorities. A code-only scope is valid: the question is whether its behavior,
+architecture, configuration, operation, release process, developer workflow,
+or repository structure changed in a way documentation must reflect.
+
+**Phase 2 — Compare semantics:** verify claims in the affected documentation
+against repository evidence. Report stale, contradictory, missing, or
+misclassified current guidance with specific evidence. Do not duplicate
+mechanical link, marker, or ADR-index checks already owned by
+`tools/scripts/check-docs-integrity.ts`, and do not judge whether code complies
+with `CLAUDE.md` or an ADR — that belongs to `/luke-audit`.
+
+**Phase 3 — Report only:** apply the findings-related protocol sections, state
+the documentation-impact verdict, and emit the report in the session. Create
+no report file, modify no documentation, and suggest no commit.
+
+---
+
 ## Final report (mandatory format)
 
 One block, for the mode that ran. Never print a block — or a counter — for a
@@ -268,6 +334,7 @@ Suggested commit:
 | `readme` | `Created` / `Updated` / `Unchanged` file counts; `Sections omitted (missing info)`                                | `docs: update readme tree [luke-docs]`         |
 | `inline` | `JSDoc added` / `JSDoc updated` symbols; `tRPC comments`; `Prisma fields`; `Flagged stale code`                   | `docs: normalize inline comments [luke-docs]`  |
 | `adr`    | `Validated`; `Confirmed`; `ADR/CODE CONFLICT` (with evidence, awaiting decision); `Not verifiable`; `Status changed` (normally 0); `Index updated` | `docs: update adr validation [luke-docs]`      |
+| `audit`  | `Documentation impact`; `Confirmed findings`; `Needs decision`; `Suppressed by baseline`; `Files written: 0`      | `none — read-only audit`                       |
 
 The `Out of mode` line is **mandatory in every report**, `none` included: a
 missing line and an empty one are different claims, and only one of them says
