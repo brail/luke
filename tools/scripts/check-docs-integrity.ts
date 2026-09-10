@@ -1,29 +1,30 @@
 /**
- * Verifica marker e link della documentazione.
+ * Verifies documentation markers and links.
  *
- * ## Perché esiste
+ * ## Why it exists
  *
- * `/luke-docs` faceva questi due controlli come "Phase 3 — Verifica cross-link",
- * cioè affidava a un LLM del parsing puro. È un controllo di livello 4 dove ne
- * basta uno di livello 2: gratuito, ripetibile, e in CI su ogni push. La Phase 3
- * è stata cancellata dalla skill in cambio di questo file.
+ * `/luke-docs` used to perform these two checks as "Phase 3 — Cross-link
+ * verification", delegating pure parsing to an LLM. That is a level-4 control
+ * where a level-2 one is sufficient: free, repeatable, and run in CI on every
+ * push. Phase 3 was removed from the skill in exchange for this file.
  *
- * ## Cosa controlla
+ * ## What it checks
  *
- * 1. **Integrità dei marker** `luke-docs:start` / `luke-docs:end`: appaiati,
- *    non annidati, non orfani. Un marker sbilanciato fa sì che la rigenerazione
- *    successiva sovrascriva contenuto scritto a mano.
- * 2. **Link relativi**: ogni link markdown a un path relativo risolve su disco.
+ * 1. **Marker integrity** for `luke-docs:start` / `luke-docs:end`: paired,
+ *    non-nested, and non-orphaned. An unbalanced marker can make the next
+ *    regeneration overwrite hand-written content.
+ * 2. **Relative links**: every Markdown link to a relative path resolves on
+ *    disk.
  *
- * 3. **Completezza dell'indice ADR**: ogni ADR tracciato compare esattamente una
- *    volta in `docs/decisions/README.md`, ogni voce dell'indice punta a un ADR
- *    esistente, e nessun numero è duplicato.
+ * 3. **ADR index completeness**: every tracked ADR appears exactly once in
+ *    `docs/decisions/README.md`, every index entry points to an existing ADR,
+ *    and no number is duplicated.
  *
- * ## Nessuna lista di eccezioni
+ * ## No exception list
  *
- * Un link rotto va riparato o cancellato. Se qui comparisse una allow-list, il
- * checker diventerebbe arredamento — lo stesso motivo per cui la baseline delle
- * skill di audit richiede un motivo scritto per ogni voce.
+ * A broken link must be fixed or removed. An allowlist here would turn the
+ * checker into decoration — the same reason audit-skill baselines require a
+ * written rationale for every entry.
  */
 
 import { execFileSync } from 'child_process';
@@ -73,23 +74,23 @@ export function trackedMarkdown(root: string): string[] {
 }
 
 /**
- * Forma reale del marker: commento HTML **nominato**,
+ * Actual marker form: a **named** HTML comment,
  * `<!-- luke-docs:start:overview -->` / `<!-- luke-docs:end:overview -->`.
  *
- * Il match è sulla forma completa, non sulla sottostringa `luke-docs:start`:
- * altrimenti una riga di prosa che *cita* i marker (come questa, o come §6 di
- * `docs/quality-hardening-plan.md`) verrebbe letta come un blocco aperto. Il
- * nome serve ad appaiare i blocchi, non solo a contarli.
+ * The regex matches the complete form rather than the `luke-docs:start`
+ * substring. Otherwise, prose that *mentions* the markers (such as this text or
+ * section 6 of `docs/quality-hardening-plan.md`) would be read as an open
+ * block. The name pairs blocks rather than merely counting them.
  */
 const MARKER_RE = /<!--\s*luke-docs:(start|end):([\w-]+)\s*-->/g;
 
-/** Marker appaiati, non annidati, non orfani. */
-function checkMarkers(
+/** Checks for paired, non-nested, non-orphaned markers. */
+export function checkMarkers(
   file: string,
   lines: string[],
   problems: Problem[]
 ): number {
-  /** Nome del blocco → riga di apertura ancora da chiudere. */
+  /** Block name to the opening line that still needs to be closed. */
   const open = new Map<string, number>();
   let seen = 0;
 
@@ -104,7 +105,7 @@ function checkMarkers(
           problems.push({
             file,
             line: lineNumber,
-            message: `blocco \`${name}\` riaperto: quello di riga ${previous} non è chiuso.`,
+            message: `block \`${name}\` reopened: the one on line ${previous} is not closed.`,
           });
         } else {
           open.set(name, lineNumber);
@@ -113,7 +114,7 @@ function checkMarkers(
         problems.push({
           file,
           line: lineNumber,
-          message: `\`luke-docs:end:${name}\` orfano: nessuna apertura corrispondente.`,
+          message: `orphaned \`luke-docs:end:${name}\`: no matching opening marker.`,
         });
       }
     }
@@ -124,16 +125,16 @@ function checkMarkers(
       file,
       line: lineNumber,
       message:
-        `blocco \`${name}\` mai chiuso. Una rigenerazione sovrascriverebbe ` +
-        'tutto ciò che segue.',
+        `block \`${name}\` is never closed. Regeneration would overwrite ` +
+        'everything that follows.',
     });
   }
 
   return seen;
 }
 
-/** Ogni link markdown relativo deve risolvere. */
-function checkLinks(
+/** Checks that every relative Markdown link resolves. */
+export function checkLinks(
   absoluteFile: string,
   relPath: string,
   lines: string[],
@@ -146,28 +147,28 @@ function checkLinks(
     for (const match of line.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
       const target = match[1];
 
-      // Fuori scope: URL assoluti, mailto, ancore pure, template.
+      // Out of scope: absolute URLs, mailto links, pure anchors, and templates.
       if (/^(https?:|mailto:|#)/.test(target)) continue;
       if (/[<>*${}]/.test(target)) continue;
 
-      // Un'ancora si verifica solo per la parte di path.
+      // For a link with an anchor, check only the path portion.
       const [pathPart] = target.split('#');
       if (!pathPart) continue;
 
       checked++;
       const absolute = resolve(baseDir, pathPart);
 
-      // `docs/merchandising-reference/` e `docs/access-porting/` sono
-      // gitignored: i link a quelle directory risolvono sul disco di chi lavora
-      // e non in un checkout pulito. La stessa regola che sceglie *quali file*
-      // leggere (`git ls-files`) vale sui *target*, altrimenti è applicata a
-      // metà — ed è così che questo controllo è passato in locale ed è fallito
-      // in CI. Vedi `lib/gitPaths.ts`.
+      // `docs/merchandising-reference/` and `docs/access-porting/` are ignored
+      // by git: links to those directories resolve on a developer's disk but
+      // not in a clean checkout. The rule that selects *which files* to read
+      // (`git ls-files`) also applies to *targets*. Otherwise, it is only half
+      // applied — which is how this check passed locally and failed in CI. See
+      // `lib/gitPaths.ts`.
       if (!existsSync(absolute) && !isGitIgnored(absolute)) {
         problems.push({
           file: relPath,
           line: index + 1,
-          message: `il link \`${target}\` non risolve.`,
+          message: `link \`${target}\` does not resolve.`,
         });
       }
     }
@@ -177,23 +178,23 @@ function checkLinks(
 }
 
 /**
- * Completezza dell'indice ADR.
+ * ADR index completeness.
  *
- * Gli ADR 013 e 014 esistevano, erano Accepted, e l'indice generato si fermava
- * al 012: la manutenzione era stata rimandata, e nulla la reclamava. Questo
- * controllo impedisce che una manutenzione differita diventi drift permanente.
+ * ADRs 013 and 014 existed and were Accepted, but the generated index stopped
+ * at 012: maintenance had been deferred, and nothing required it. This check
+ * prevents deferred maintenance from becoming permanent drift.
  *
- * Cosa **non** fa: non è il canale di scoperta degli ADR. `luke-audit` legge i
- * file tracciati sotto `docs/decisions/` direttamente, proprio perché l'indice
- * non è prova di esistenza — un ADR fuori dall'indice resta visibile all'audit
- * architetturale. Qui si garantisce che l'indice **umano** resti completo e
- * coerente con il corpus tracciato: ogni ADR rappresentato esattamente una
- * volta, ogni voce che risolve a un ADR reale.
+ * What it does **not** do: this is not the ADR discovery channel. `luke-audit`
+ * reads tracked files under `docs/decisions/` directly because the index is not
+ * proof of existence — an ADR missing from the index remains visible to the
+ * architecture audit. This check keeps the **human** index complete and
+ * consistent with the tracked corpus: every ADR represented exactly once and
+ * every entry resolving to a real ADR.
  *
- * Deliberatamente **non** verifica lo `Status`: il repo usa due formati di
- * header (`## Status` e `**Status**:`), e lo stato di un ADR è comunque un
- * fatto semantico sotto decisione umana. Qui si controlla solo ciò che è
- * strutturale e non ambiguo.
+ * It deliberately does **not** verify `Status`: the repository uses two header
+ * formats (`## Status` and `**Status**:`), and an ADR's status is a semantic
+ * fact subject to human decision. This check covers only what is structural
+ * and unambiguous.
  */
 export function checkAdrIndex(root: string, problems: Problem[]): number {
   const indexPath = 'docs/decisions/README.md';
@@ -232,12 +233,11 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
         file: indexPath,
         line: 1,
         message:
-          `ci sono ${adrFiles.length} ADR nel working tree ma l'indice ` +
-          "non c'è. Finché è così la completezza dell'indice non è " +
-          'verificabile: annulla la sola cancellazione del file, senza ' +
-          'sovrascrivere le modifiche già presenti, oppure metti in stage la ' +
-          'rimozione deliberata insieme alla disposizione degli ADR che ' +
-          'indicizzava.',
+          `there are ${adrFiles.length} ADRs in the working tree but the index ` +
+          'is missing. Until it is restored, index completeness cannot be ' +
+          'verified: undo only the file deletion without overwriting existing ' +
+          'edits, or stage the deliberate removal together with the ' +
+          'disposition of the ADRs it indexed.',
       });
     }
     return 0;
@@ -246,7 +246,7 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
   const index = readFileSync(absoluteIndex, 'utf8');
   const linked = [...index.matchAll(/\|\s*\[(\d+)\]\(([^)]+)\)/g)];
 
-  // Numero -> file, dai file tracciati.
+  // ADR number to file, from tracked and present files.
   const byNumber = new Map<string, string>();
   for (const name of adrFiles) {
     const number = name.split('-')[0];
@@ -256,9 +256,9 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
         file: 'docs/decisions/',
         line: 1,
         message:
-          `numero ADR duplicato \`${number}\`: \`${existing}\` e \`${name}\`. ` +
-          'Il numero è il modo in cui una decisione viene citata: due file che ' +
-          'lo condividono rendono ambiguo ogni riferimento.',
+          `duplicate ADR number \`${number}\`: \`${existing}\` and \`${name}\`. ` +
+          'The number identifies a decision in citations, so two files sharing ' +
+          'it make every reference ambiguous.',
       });
     } else {
       byNumber.set(number, name);
@@ -273,8 +273,9 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
         file: indexPath,
         line: 1,
         message:
-          `l'ADR \`${name}\` non compare nell'indice. L'audit lo vede comunque ` +
-          '(legge i file, non l\'indice), ma l\'indice umano è incompleto.',
+          `ADR \`${name}\` does not appear in the index. The audit still sees ` +
+          'it because it reads files rather than the index, but the human ' +
+          'index is incomplete.',
       });
     }
   }
@@ -285,8 +286,8 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
         file: indexPath,
         line: 1,
         message:
-          `la voce \`${number}\` dell'indice punta a \`${target}\`, che non è ` +
-          'un ADR del corpus: o non è tracciato, o è stato cancellato dal ' +
+          `index entry \`${number}\` points to \`${target}\`, which is not an ` +
+          'ADR in the corpus: it is either untracked or deleted from the ' +
           'working tree.',
       });
     }
@@ -300,9 +301,10 @@ function main(): void {
 
   if (files.length === 0) {
     throw new Error(
-      '[docs-integrity] nessun markdown tracciato e presente nel working tree. ' +
-        'O non siamo in un repo git, o i markdown non sono tracciati, o sono ' +
-        'stati tutti cancellati: il controllo passerebbe senza aver letto nulla.'
+      '[docs-integrity] no Markdown file is tracked and present in the working ' +
+        'tree. Either this is not a git repository, Markdown files are not ' +
+        'tracked, or all of them were deleted: the check would pass without ' +
+        'reading anything.'
     );
   }
 
@@ -317,46 +319,45 @@ function main(): void {
     linksChecked += checkLinks(file, relPath, lines, problems);
   }
 
-  // Guardia zero-discovery: un'espressione regolare troppo stretta renderebbe
-  // questo script un no-op verde permanente, e nessuno se ne accorgerebbe.
+  // Zero-discovery guard: an overly narrow regular expression would turn this
+  // script into a permanently green no-op without anyone noticing.
   if (linksChecked === 0) {
     throw new Error(
-      `[docs-integrity] zero link estratti da ${files.length} file markdown. ` +
-        'Il pattern non matcha più nulla.'
+      `[docs-integrity] zero links extracted from ${files.length} Markdown files. ` +
+        'The pattern no longer matches anything.'
     );
   }
   if (markersSeen === 0) {
     throw new Error(
-      '[docs-integrity] nessun marker `luke-docs:` trovato. I README generati ne ' +
-        'contengono: se sono spariti tutti, o la sintassi è cambiata o la ' +
-        'generazione li ha persi. In entrambi i casi il controllo sui marker ' +
-        'sarebbe verde senza verificare nulla.'
+      '[docs-integrity] no `luke-docs:` marker found. Generated READMEs contain ' +
+        'them: if all markers disappeared, either the syntax changed or ' +
+        'generation lost them. In either case, the marker check would pass ' +
+        'without verifying anything.'
     );
   }
 
   const adrsChecked = checkAdrIndex(REPO_ROOT, problems);
 
-  // Stessa guardia zero-discovery del resto del file: se la scoperta degli ADR
-  // smette di trovarli, il controllo di completezza passerebbe senza aver
-  // verificato nulla.
+  // Same zero-discovery guard as the rest of the file: if ADR discovery stops
+  // finding them, the completeness check would pass without verifying anything.
   if (adrsChecked === 0 && existsSync(join(REPO_ROOT, 'docs/decisions/README.md'))) {
     throw new Error(
-      '[docs-integrity] indice ADR presente ma nessun ADR tracciato e presente ' +
-        'nel working tree. La completezza dell\'indice sarebbe verde senza aver ' +
-        'confrontato nulla.'
+      '[docs-integrity] ADR index present but no ADR is tracked and present in ' +
+        'the working tree. Index completeness would pass without comparing ' +
+        'anything.'
     );
   }
 
   if (problems.length > 0) {
     throw new Error(
-      `[docs-integrity] ${problems.length} problemi:\n${formatProblems(problems)}\n\n` +
-        'Ripara il link o cancellalo. Non aggiungere eccezioni.'
+      `[docs-integrity] ${problems.length} problems:\n${formatProblems(problems)}\n\n` +
+        'Fix or remove the link. Do not add exceptions.'
     );
   }
 
   console.log(
-    `[docs-integrity] ok — ${files.length} file, ${linksChecked} link, ` +
-      `${markersSeen} marker e ${adrsChecked} ADR indicizzati verificati.`
+    `[docs-integrity] ok — ${files.length} files, ${linksChecked} links, ` +
+      `${markersSeen} markers, and ${adrsChecked} indexed ADRs verified.`
   );
 }
 
