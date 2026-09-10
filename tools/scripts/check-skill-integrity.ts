@@ -1,26 +1,26 @@
 /**
- * Verifica che le skill in `.claude/skills/` non siano driftate dalla codebase.
+ * Verifies that skills in `.claude/skills/` have not drifted from the codebase.
  *
- * ## Perché esiste
+ * ## Why it exists
  *
- * `luke-test/SKILL.md` ha istruito per mesi ad aggiungere ogni nuova spec a
- * `test/integration-specs.ts` — un file eliminato — e a usare `hasTestDatabase()`,
- * una funzione rimossa proprio perché il pattern che abilitava faceva riportare
- * verde il job con zero test eseguiti. Una skill che insegna una struttura che non
- * esiste più è peggio di nessuna skill: il prossimo run scrive nel posto sbagliato
- * con l'helper cancellato.
+ * For months, `luke-test/SKILL.md` instructed agents to add every new spec to
+ * `test/integration-specs.ts` — a deleted file — and to use
+ * `hasTestDatabase()`, a function removed because its enabling pattern made the
+ * job report green with zero tests executed. A skill that teaches a structure
+ * that no longer exists is worse than no skill: the next run writes to the
+ * wrong place using a deleted helper.
  *
- * Le skill sono prose, e la prosa resta un controllo di livello 4. Ma i **fatti
- * verificabili** che affermano — path, simboli, capacità dell'agente — possono
- * salire a livello 2. È ciò che fa questo script.
+ * Skills are prose, and prose remains a level-4 control. The **verifiable
+ * facts** they assert — paths, symbols, and agent capabilities — can be raised
+ * to level 2. That is what this script does.
  *
- * ## Uscite volute
+ * ## Intentional references
  *
- * Un riferimento a qualcosa di rimosso può essere deliberato: le skill spiegano
- * anche cosa NON fare più, e citarlo è il punto. Quelle righe si marcano con
- * `<!-- skill-check-ignore -->`. Se ti ritrovi ad aggiungerne molti, il problema
- * è l'euristica o la skill — non aggiungere marker a raffica, o il checker
- * diventa arredamento.
+ * A reference to something removed can be deliberate: skills also explain what
+ * NOT to do anymore, and citing it is the point. Mark those lines with
+ * `<!-- skill-check-ignore -->`. If many such markers become necessary, the
+ * heuristic or the skill is the problem — do not add markers indiscriminately,
+ * or the checker becomes decoration.
  */
 
 import { execFileSync } from 'child_process';
@@ -33,7 +33,7 @@ import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
 export const IGNORE_MARKER = '<!-- skill-check-ignore -->';
 
-/** Directory di primo livello che rendono un token "path del repo". */
+/** Top-level directories that make a token a repository path. */
 const REPO_TOP_DIRS = [
   'apps/',
   'packages/',
@@ -47,7 +47,7 @@ const REPO_TOP_DIRS = [
   '.claude/',
 ];
 
-/** Estensioni che rendono un token un file, ovunque si trovi. */
+/** Extensions that make a token a file path regardless of its location. */
 const FILE_EXTENSIONS = [
   '.ts',
   '.tsx',
@@ -61,7 +61,7 @@ const FILE_EXTENSIONS = [
   '.sh',
 ];
 
-/** Tutti i file markdown delle skill. */
+/** All Markdown files belonging to skills. */
 function skillFiles(): string[] {
   if (!existsSync(SKILLS_DIR)) return [];
   return readdirSync(SKILLS_DIR, { recursive: true, withFileTypes: true })
@@ -71,41 +71,43 @@ function skillFiles(): string[] {
 }
 
 /**
- * Un token è un path del repo se contiene `/` e o sta sotto una directory nota
- * o ha un'estensione di file. Placeholder e glob restano fuori: `<nome>.yml`,
- * `apps/<app>/next.config.*` non sono affermazioni su file esistenti.
+ * A token is a repository path when it contains `/` and either sits below a
+ * known directory or has a file extension. Placeholders and globs stay out:
+ * `<name>.yml` and `apps/<app>/next.config.*` make no assertion about an
+ * existing file.
  */
 export function isRepoPath(token: string): boolean {
   if (!token.includes('/')) return false;
   if (/[<>*$\s()]/.test(token)) return false;
   if (token.startsWith('http')) return false;
-  if (token.startsWith('@')) return false; // package npm, non un path
+  if (token.startsWith('@')) return false; // npm package, not a path
   return (
     REPO_TOP_DIRS.some(dir => token.startsWith(dir)) ||
     FILE_EXTENSIONS.some(ext => token.endsWith(ext))
   );
 }
 
-/** Un token è un riferimento a simbolo se ha la forma `identificatore()`. */
+/** A token is a symbol reference when it has the form `identifier()`. */
 export function isSymbolRef(token: string): boolean {
   return /^[a-zA-Z_$][\w$]*\(\)$/.test(token);
 }
 
 /**
- * Frame di riferimento in cui un path citato da una skill può essere espresso.
+ * Reference frames in which a path cited by a skill may be expressed.
  *
- * Le skill parlano di path in prospettive diverse: `references/adr-rules.md` è
- * relativo alla skill, `apps/api/test/helpers.ts` alla root, `test/helpers.ts` a
- * `apps/api`, `lib/debug.ts` a `apps/web/src`. Provarli tutti è meno fragile che
- * pretendere una convenzione unica in un file di prosa.
+ * Skills describe paths from different perspectives: `references/adr-rules.md`
+ * is relative to the skill, `apps/api/test/helpers.ts` to the repository root,
+ * `test/helpers.ts` to `apps/api`, and `lib/debug.ts` to `apps/web/src`. Trying
+ * every real frame is less fragile than demanding a single convention in a
+ * prose file.
  */
 const PATH_ROOTS = [
   '',
-  // Le radici dei package non si elencano a mano: la lista precedente ometteva
-  // `packages/eslint-plugin-luke`, quindi ogni path citato rispetto a quel
-  // package veniva riportato come rotto — un falso positivo in un controllo che
-  // blocca la CI, cioè la pressione esatta che fa proliferare i marker di
-  // ignore. Come per `trackedMarkdown()`, il mondo lo dichiara git.
+  // Package roots are not listed by hand: the previous list omitted
+  // `packages/eslint-plugin-luke`, so every path cited relative to that package
+  // was reported as broken — a false positive in a CI-blocking check, exactly
+  // the pressure that makes ignore markers proliferate. As with
+  // `trackedMarkdown()`, git declares the world.
   ...execFileSync('git', ['ls-files', '*/package.json'], {
     cwd: REPO_ROOT,
     encoding: 'utf8',
@@ -113,8 +115,8 @@ const PATH_ROOTS = [
     .split('\n')
     .filter(Boolean)
     .map(p => dirname(p)),
-  // Non è la radice di un package, ma è un frame che le skill usano davvero
-  // (`lib/debug.ts` è relativo a qui).
+  // This is not a package root, but it is a frame skills actually use
+  // (`lib/debug.ts` is relative to it).
   'apps/web/src',
 ];
 
@@ -123,28 +125,29 @@ function pathResolves(token: string, skillDir: string): boolean {
   if (PATH_ROOTS.some(root => existsSync(join(REPO_ROOT, root, token)))) {
     return true;
   }
-  // Non trovato. Se git lo esclude — `.planning/ROADMAP.md`, citato da
-  // `luke-docs` — il repo non può pronunciarsi: esiste sul disco di chi lavora
-  // e non in un checkout pulito. Vedi `lib/gitPaths.ts`.
+  // Not found. If git ignores it — `.planning/ROADMAP.md`, cited by
+  // `luke-docs` — the repository cannot make a claim: it exists on a
+  // developer's disk but not in a clean checkout. See `lib/gitPaths.ts`.
   return isGitIgnored(token);
 }
 
 /**
- * Il simbolo esiste da qualche parte in apps/ o packages/.
+ * Whether the symbol exists somewhere under apps/ or packages/.
  *
- * Cerca l'**esistenza**, non l'export: una skill può citare legittimamente una
- * funzione module-local (`assertEnvPolicy()` in `server.ts` non è esportata, ma
- * l'affermazione della skill su di essa è vera). Ciò che va intercettato è il
- * riferimento a qualcosa che non esiste più.
+ * This checks **existence**, not exports: a skill may legitimately cite a
+ * module-local function (`assertEnvPolicy()` in `server.ts` is not exported,
+ * but the skill's assertion about it is true). What matters is catching a
+ * reference to something that no longer exists.
  */
 let declaredSymbols: Set<string> | null = null;
 
 function symbolExists(name: string): boolean {
-  // Una passata sola sul corpus, non una per simbolo. La versione precedente
-  // lanciava un `grep -q` ricorsivo su apps/ e packages/ per ogni token citato,
-  // duplicati inclusi: ~5s degli ~5,7s totali dello script, e il costo cresceva
-  // linearmente con le skill. Estrarre tutte le dichiarazioni in un colpo costa
-  // ~70ms e riduce i controlli successivi a lookup su Set.
+  // Scan the corpus once, not once per symbol. The previous version ran a
+  // recursive `grep -q` over apps/ and packages/ for every cited token,
+  // including duplicates: about 5s of the script's roughly 5.7s total, with
+  // cost growing linearly with the number of skills. Extracting every
+  // declaration at once takes about 70ms and reduces later checks to Set
+  // lookups.
   if (!declaredSymbols) {
     const output = execFileSync(
       'grep',
@@ -166,14 +169,14 @@ function symbolExists(name: string): boolean {
         .map(match => match.slice(match.indexOf(' ') + 1))
     );
 
-    // Stessa guardia zero-discovery del resto del file: un corpus vuoto vuol
-    // dire che il grep non matcha più, non che i simboli non esistono. Senza
-    // questa riga ogni riferimento risulterebbe rotto in blocco.
+    // Same zero-discovery guard as the rest of the file: an empty corpus means
+    // the grep no longer matches, not that no symbols exist. Without this
+    // guard, every reference would be reported as broken at once.
     if (declaredSymbols.size === 0) {
       throw new Error(
-        '[skill-integrity] nessuna dichiarazione estratta da apps/ e packages/. ' +
-          'Il pattern non matcha più nulla: proseguire segnalerebbe come rotto ' +
-          'ogni simbolo citato dalle skill.'
+        '[skill-integrity] no declaration extracted from apps/ and packages/. ' +
+          'The pattern no longer matches anything: continuing would report ' +
+          'every symbol cited by the skills as broken.'
       );
     }
   }
@@ -413,9 +416,9 @@ function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
     throw new Error(
-      '[skill-integrity] nessun file .md sotto .claude/skills/. Le skill sono ' +
-        'versionate: se questa directory è vuota, o il path è cambiato o ' +
-        'qualcosa le ha cancellate. Non è un successo.'
+      '[skill-integrity] no .md file found below .claude/skills/. Skills are ' +
+        'version-controlled: if this directory is empty, either the path ' +
+        'changed or something deleted them. This is not a success.'
     );
   }
 
@@ -437,8 +440,8 @@ function main(): void {
       checkArgumentBinding(relPath, content, problems);
     }
 
-    // Vincolo di capacità: un agente Explore non ha il tool Agent, quindi non
-    // può invocare subagenti. Vedi audit-protocol.md §6.
+    // Capability constraint: an Explore agent has no Agent tool and therefore
+    // cannot invoke subagents. See audit-protocol.md section 6.
     const declaresExplore = /^agent:\s*Explore\s*$/m.test(content);
     if (declaresExplore) {
       const forbidden = [
@@ -454,9 +457,9 @@ function main(): void {
             file: relPath,
             line: content.slice(0, match.index).split('\n').length,
             message:
-              `dichiara \`agent: Explore\` ma contiene "${match[0].trim()}". ` +
-              'Un agente Explore non ha il tool Agent: è una promessa che il ' +
-              'runtime non può mantenere. Vedi audit-protocol.md §6.',
+              `declares \`agent: Explore\` but contains "${match[0].trim()}". ` +
+              'An Explore agent has no Agent tool: this is a promise the ' +
+              'runtime cannot keep. See audit-protocol.md section 6.',
           });
         }
       }
@@ -472,7 +475,7 @@ function main(): void {
             problems.push({
               file: relPath,
               line: index + 1,
-              message: `il path \`${token}\` non esiste.`,
+              message: `path \`${token}\` does not exist.`,
             });
           }
         } else if (isSymbolRef(token)) {
@@ -482,7 +485,7 @@ function main(): void {
             problems.push({
               file: relPath,
               line: index + 1,
-              message: `\`${token}\` non esiste in apps/ né packages/.`,
+              message: `\`${token}\` does not exist in apps/ or packages/.`,
             });
           }
         }
@@ -490,14 +493,14 @@ function main(): void {
     });
   }
 
-  // Guardia zero-discovery: un'euristica ristretta per sbaglio non deve
-  // trasformare lo script in un no-op verde permanente. Stessa lezione della
-  // lista di tabelle memoizzata vuota in `apps/api/test/helpers/database.ts`.
+  // Zero-discovery guard: an accidentally narrow heuristic must not turn the
+  // script into a permanently green no-op. This is the same lesson as the
+  // empty memoized table list in `apps/api/test/helpers/database.ts`.
   if (pathRefs === 0 && symbolRefs === 0) {
     throw new Error(
-      `[skill-integrity] zero riferimenti estratti da ${files.length} file. ` +
-        "L'euristica non matcha più nulla: il controllo sarebbe verde senza " +
-        'aver verificato niente.'
+      `[skill-integrity] zero references extracted from ${files.length} files. ` +
+        'The heuristic no longer matches anything: the check would pass ' +
+        'without verifying anything.'
     );
   }
 
@@ -506,26 +509,26 @@ function main(): void {
   // silently vouch for zero skills.
   if (contracts === 0) {
     throw new Error(
-      `[skill-integrity] nessun SKILL.md fra ${files.length} file di skill. ` +
-        'Il contratto di esecuzione (fork/background/agent, tool di scrittura) ' +
-        'non sarebbe verificato su nessuna skill.'
+      `[skill-integrity] no SKILL.md among ${files.length} skill files. ` +
+        'The execution contract (fork/background/agent and write tools) would ' +
+        'not be verified for any skill.'
     );
   }
 
   if (problems.length > 0) {
     throw new Error(
-      `[skill-integrity] ${problems.length} riferimenti rotti nelle skill:\n` +
+      `[skill-integrity] ${problems.length} broken references in skills:\n` +
         `${formatProblems(problems)}\n\n` +
-        `Ripara la skill, oppure marca la riga con ${IGNORE_MARKER} se il ` +
-        'riferimento a qualcosa di rimosso è deliberato. Il marker non vale ' +
-        'per il binding di `$ARGUMENTS`: lì la sostituzione avviene comunque, ' +
-        'quindi la riga va corretta.'
+        `Fix the skill, or mark the line with ${IGNORE_MARKER} when the ` +
+        'reference to something removed is deliberate. The marker does not ' +
+        'apply to the `$ARGUMENTS` binding: substitution still happens there, ' +
+        'so the line must be fixed.'
     );
   }
 
   console.log(
-    `[skill-integrity] ok — ${files.length} skill, ${pathRefs} path, ` +
-      `${symbolRefs} simboli e ${contracts} contratti di esecuzione verificati.`
+    `[skill-integrity] ok — ${files.length} skills, ${pathRefs} paths, ` +
+      `${symbolRefs} symbols, and ${contracts} execution contracts verified.`
   );
 }
 
