@@ -27,7 +27,7 @@
   `Documentation impact: update required` with the affected material and why.
 - For changes to architecture, public or API behavior, configuration,
   operations, release or deployment, developer workflows, or repository
-  structure, invoke `/luke-docs audit --since <baseline>` automatically.
+  structure, invoke `/luke-docs audit` automatically.
   The audit is read-only; documentation writes remain separately reviewed.
 
 Rationale, rejected alternatives, and the one-time pre-ADR-015 translation
