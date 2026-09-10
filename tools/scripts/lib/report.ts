@@ -1,26 +1,27 @@
 /**
- * Radice del repo e formato dei problemi, condivisi dai checker di drift.
+ * Repository root and problem format shared by the drift checkers.
  *
- * Stessa ragione di `gitPaths.ts`: `check-docs-integrity` e `check-skill-integrity`
- * sono la coppia che diverge. `REPO_ROOT` era calcolato in tre punti con tre
- * profondità diverse di `..`, e `Problem` + il blocco che lo formatta e lancia
- * erano due copie carattere per carattere. Una regola condivisa fra due script
- * deve stare in un posto solo.
+ * This exists for the same reason as `gitPaths.ts`: `check-docs-integrity` and
+ * `check-skill-integrity` are the pair that tends to drift apart. `REPO_ROOT`
+ * used to be calculated in three places with three different `..` depths, and
+ * `Problem` plus the block that formats and throws it existed as two
+ * character-for-character copies. A rule shared by two scripts belongs in one
+ * place.
  */
 
 import { join } from 'path';
 
-/** Radice del repo, risolta rispetto a `tools/scripts/lib/`. */
+/** Repository root, resolved relative to `tools/scripts/lib/`. */
 export const REPO_ROOT = join(__dirname, '..', '..', '..');
 
-/** Un riferimento rotto, ancorato a file e riga. */
+/** A broken reference anchored to a file and line. */
 export interface Problem {
   file: string;
   line: number;
   message: string;
 }
 
-/** `  file:riga — messaggio`, una per riga. */
+/** `  file:line — message`, one per line. */
 export function formatProblems(problems: Problem[]): string {
   return problems.map(p => `  ${p.file}:${p.line} — ${p.message}`).join('\n');
 }
