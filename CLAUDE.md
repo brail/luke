@@ -33,6 +33,10 @@
 Rationale, rejected alternatives, and the one-time pre-ADR-015 translation
 exception: `docs/decisions/015-documentation-architecture-and-canonical-language.md`.
 
+Operational learning is maintained in [current lessons](lessons.md); entries
+retired after deterministic enforcement remain available in the
+[lessons archive](lessons-archive.md).
+
 ---
 
 ## Monorepo

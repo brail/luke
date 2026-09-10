@@ -32,13 +32,13 @@ Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js,
 <!-- luke-docs:start:structure -->
 | Workspace | Tipo | Descrizione |
 |-----------|------|-------------|
-| `apps/web` | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
-| `apps/api` | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
-| `packages/core` | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
+| [`apps/web`](apps/web/README.md) | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
+| [`apps/api`](apps/api/README.md) | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
+| [`packages/core`](packages/core/README.md) | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
 | `packages/db` | Package | Schema Prisma, migration versionate e client generato; `createPrismaClient` |
-| `packages/nav` | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
-| `packages/calendar` | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
-| `packages/eslint-plugin-luke` | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
+| [`packages/nav`](packages/nav/README.md) | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
+| [`packages/calendar`](packages/calendar/README.md) | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
+| [`packages/eslint-plugin-luke`](packages/eslint-plugin-luke/README.md) | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
 <!-- luke-docs:end:structure -->
 
 ## Quick Start
@@ -802,14 +802,20 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 
 ## Riferimenti Correlati
 
+- [Documentation index](docs/README.md) - Task-oriented entry point for architecture, runbooks, reference material, work items, and historical evidence
+- [Engineering rules](CLAUDE.md) - Operational and architectural rules for repository changes
+- [Agent instructions](AGENTS.md) - Codex instructions; Claude Code is governed by `CLAUDE.md`
+- [Changelog](CHANGELOG.md) - Release notes derived from Conventional Commits
+- [Repository tooling](tools/README.md) - Deterministic checks, release gates, one codemod, and historical reports
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
 - [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [Integration roadmap](INTEGRATIONS_ROADMAP.md) - Planned and deferred external integrations
 - [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV
 - [docs/collection-layout-versioning.md](docs/collection-layout-versioning.md) - Collection Layout Versioning — registro qualità ISO 9001:2015 per le revisioni del piano di collezione
 - [docs/storage-immutable-bucket.md](docs/storage-immutable-bucket.md) - Bucket immutabile per le foto delle revisioni
-- [docs/decisions/](docs/decisions/) - Architecture Decision Records
+- [Architecture Decision Records](docs/decisions/README.md) - Canonical decision index with status and supersession links
 
 ## Release
 

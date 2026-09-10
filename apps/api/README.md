@@ -4,6 +4,13 @@
 Backend di Luke — Fastify 5 + tRPC 11 + Prisma 7 su PostgreSQL 16. Espone tutte le procedure tRPC per dashboard, campionario, pricing, calendario milestone, statistiche NAV e gestione utenti. Include RBAC granulare `Resource:Action`, audit log su ogni mutazione, autenticazione locale/LDAP configurabile via AppConfig, e sicurezza enterprise (helmet, rate-limit, HKDF-SHA256, tokenVersion multi-layer).
 <!-- luke-docs:end:overview -->
 
+## Related documentation
+
+- [Security architecture and controls](SECURITY.md)
+- [RBAC coverage](RBAC_COVERAGE.md)
+- [Storage configuration](STORAGE_CONFIG.md)
+- [Audit analysis](AUDIT_ANALYSIS.md)
+
 ## Security Headers
 
 L'API implementa una baseline completa di HTTP security headers tramite Helmet, configurata centralmente in `src/lib/helmet.ts`.
