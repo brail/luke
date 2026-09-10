@@ -1,65 +1,59 @@
-# Documentazione Luke
+# Luke Documentation
 
 <!-- luke-docs:start:index -->
-## Architettura & Design
+## Getting started
 
-| File | Descrizione |
-|------|-------------|
-| [architecture-brand-flows.md](architecture-brand-flows.md) | Mappa architetturale dei flussi Brand — relazioni tra entità, lifecycle e transizioni di stato |
-| [collection-layout-versioning.md](collection-layout-versioning.md) | Sistema di revisioni del piano di collezione — registro qualità ISO 9001:2015, snapshot immutabili |
-| [storage-immutable-bucket.md](storage-immutable-bucket.md) | Bucket immutabile per foto revisioni — content-addressed storage, SHA-256 key, policy di retention |
-| [nav-integration.md](nav-integration.md) | Architettura integrazione Microsoft Dynamics NAV — pattern entità duale, sync differenziale, tabelle replica |
-| [google-calendar-setup.md](google-calendar-setup.md) | Setup integrazione Google Calendar — configurazione OAuth, provisioning calendario stagione, sync milestone |
-| [genoma-collezione-pianificazione.md](genoma-collezione-pianificazione.md) | Recepimento in Luke dell'algoritmo "Genoma della Collezione" — alert e monitoraggio avanzamento campionario |
-| [genoma-collezione-simplify-skipped.md](genoma-collezione-simplify-skipped.md) | Findings delle review `/simplify` non applicati durante l'implementazione del Genoma della Collezione, con motivazione dello skip |
-| [prisma-migration-workflow.md](prisma-migration-workflow.md) | Workflow per generare una migration Prisma versionata (Postgres temporaneo porta 5433 → `db push` su 5432) |
-| [rc-prod-clone.md](rc-prod-clone.md) | Procedura per clonare i dati di PROD su RC prima di promuovere una release stabile |
+Start with the [repository overview](../README.md) for the monorepo map and
+[`CLAUDE.md`](../CLAUDE.md) for the engineering rules that govern changes. Use
+the sections below to find architecture, procedures, reference material, active
+work, and preserved evidence.
 
-## Decisioni Architetturali (ADR)
+## Architecture and decisions
 
-Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisions/):
+| Resource | Purpose |
+|----------|---------|
+| [Architectural decisions](decisions/README.md) | Canonical index of Architecture Decision Records, including status and supersession links. |
+| [Brand flow architecture](architecture-brand-flows.md) | End-to-end map of Brand entities, API flows, UI boundaries, type safety, and security layers. |
+| [Collection Layout versioning](collection-layout-versioning.md) | Revision model for Collection Layout snapshots, history, immutable storage, and access control. |
+| [Immutable revision storage](storage-immutable-bucket.md) | Content-addressed storage and retention contract for Collection Layout revision images. |
+| [Microsoft Dynamics NAV integration](nav-integration.md) | One-way NAV-to-Luke synchronization architecture, data ownership, and operational boundaries. |
+| [Collection Genome planning](genoma-collezione-pianificazione.md) | Feasibility analysis mapping the Collection Genome model onto Luke's existing calendar and collection domains. |
 
-| # | Titolo |
-|---|--------|
-| [001](decisions/001-jwt-hs256-hkdf.md) | JWT HS256 con derivazione HKDF-SHA256 per i segreti |
-| [002](decisions/002-rbac-policy.md) | RBAC Policy e Enforcement (Resource:Action) |
-| [003](decisions/003-core-server-only.md) | Core Package — export server-only isolati |
-| [004](decisions/004-prisma-select-only.md) | Prisma Select-Only Pattern (prevenzione data leakage) |
-| [005](decisions/005-shared-zod-schemas.md) | Schemi Zod centralizzati in `@luke/core` |
-| [006](decisions/006-resource-action-permissions.md) | Sistema permessi Resource:Action unificato |
-| [007](decisions/007-storage-layer-refactor.md) | Refactor storage layer — interfaccia `IStorageProvider` |
-| [008](decisions/008-appconfig-env-policy.md) | AppConfig KV System e Env Policy |
-| [009](decisions/009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation |
-| [010](decisions/010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza |
-| [011](decisions/011-single-instance-scaling-constraint.md) | Vincolo di scalabilità a istanza singola |
+## How-to and runbooks
 
-Indice con Status aggiornato: [decisions/README.md](decisions/README.md).
+| Resource | Purpose |
+|----------|---------|
+| [Google Calendar setup](google-calendar-setup.md) | Provision and configure the Google Calendar integration. |
+| [Prisma migration workflow](prisma-migration-workflow.md) | Generate, review, and apply versioned migrations for the multi-file Prisma schema. |
+| [Production-to-RC data clone](rc-prod-clone.md) | Clone production data into RC without exposing the production master key. |
 
-## Analisi & Report
+## Reference
 
-| File | Descrizione |
-|------|-------------|
-| [audit-report-brand-management.md](audit-report-brand-management.md) | Report audit architetturale — gestione Brand |
-| [luke-taric-classifier.md](luke-taric-classifier.md) | Integrazione classificatore TARIC — categorizzazione doganale articoli |
-| [quality-hardening-plan.md](quality-hardening-plan.md) | Piano di consolidamento dei controlli qualità — dall'analisi statica alla verifica comportamentale |
+| Resource | Purpose |
+|----------|---------|
+| [TARIC classifier integration](luke-taric-classifier.md) | Target architecture and implementation outline for customs classification. |
+| [Merchandising reference](merchandising-reference/) | Local, git-ignored reference material for the merchandising domain. |
+| [Microsoft Access porting](access-porting/) | Local, git-ignored reverse-engineering notes and query analysis for Access migrations. |
 
-## Task e note tecniche
+## Work items
 
-| File | Descrizione |
-|------|-------------|
-| [TASK_calendar_ux_deferred_items.md](TASK_calendar_ux_deferred_items.md) | Backlog differito della UX review calendario/collection-layout (2026-07-10) |
-| [TASK_working_days_calendar_relevance.md](TASK_working_days_calendar_relevance.md) | Design doc storico: giorni lavorativi paese-aware per la criticità calendario (implementato 2026-07-10) |
-| [TASK_permission_button_inline_copies.md](TASK_permission_button_inline_copies.md) | 18 tooltip di permesso irraggiungibili da tastiera: copie inline di `PermissionButton` senza `tabIndex` (2026-08-29) |
-| [TASK_router_schemas_to_core.md](TASK_router_schemas_to_core.md) | 106 schemi di input inline nei router: quali spostare in `@luke/core` e con che criterio (2026-08-29) |
-| [TASK_url_check_enforcement.md](TASK_url_check_enforcement.md) | `codemod:check-urls` esiste ma non gira in CI né in husky: renderlo effettivo (2026-08-29) |
+| Resource | Purpose |
+|----------|---------|
+| [Deferred calendar UX work](TASK_calendar_ux_deferred_items.md) | Deferred calendar and Collection Layout UX improvements. |
+| [Permission button accessibility](TASK_permission_button_inline_copies.md) | Findings and remediation record for keyboard-inaccessible permission tooltips. |
+| [Router schemas in core](TASK_router_schemas_to_core.md) | Criteria and backlog for moving reusable router input schemas into `@luke/core`. |
+| [Hardcoded URL enforcement](TASK_url_check_enforcement.md) | Plan for promoting the existing URL codemod check into an enforced control. |
+| [Collection Genome deferred findings](genoma-collezione-simplify-skipped.md) | Review findings deliberately deferred during the Collection Genome implementation. |
+| [Quality hardening plan](quality-hardening-plan.md) | Living record of quality-control improvements and their evidence. |
 
-## Directory operative
+## Historical evidence
 
-| Directory | Descrizione |
-|-----------|-------------|
-| [merchandising-reference/](merchandising-reference/) | Materiali di riferimento per il dominio merchandising |
-| [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
-| [archive/](archive/) | Feature rimosse archiviate — es. what-if calendar solver (rimosso 2026-07) |
-
-*Ultimo aggiornamento: 2026-08-08*
+| Resource | Purpose |
+|----------|---------|
+| [Brand management architecture audit](audit-report-brand-management.md) | Historical audit and remediation record for Brand management. |
+| [Agent engineering and platform governance audit](LUKE_AGENT_PLATFORM_GOVERNANCE_AUDIT_2026-08-30_v3.md) | Frozen assessment of agent, platform, skill, and control-plane governance. |
+| [Monorepo audit and closure appendices](LUKE_MONOREPO_AUDIT_2026-08-30.md) | Append-only evidence ledger for the monorepo remediation program. |
+| [AppConfig write authority](TASK_appconfig_write_authority.md) | Implementation record for binding configuration writes and persisted-data allowlists to their authoritative contracts. |
+| [Country-aware working days](TASK_working_days_calendar_relevance.md) | Historical design and implementation record for country-aware calendar criticality. |
+| [Documentation archive](archive/README.md) | Index of retired designs and other frozen historical documents. |
 <!-- luke-docs:end:index -->
