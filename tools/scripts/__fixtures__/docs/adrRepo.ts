@@ -60,3 +60,24 @@ export const INDEX_ENTRY_WITHOUT_FILE: RepoFiles = {
     '| [003](003-missing.md) | Never written | Accepted |',
   ]),
 };
+
+/** A transitive graph whose directory link resolves through docs/README.md. */
+export const VALID_REACHABLE_REPO: RepoFiles = {
+  'README.md': '# Repository\n\n[Documentation](docs/)\n',
+  'docs/README.md': '# Documentation\n\n[Guide](guide.md)\n',
+  'docs/guide.md': '# Guide\n',
+  '.claude/skills/example.md': '# Excluded skill documentation\n',
+};
+
+/** One tracked document is outside the graph rooted at README.md. */
+export const ORPHANED_DOCUMENT_REPO: RepoFiles = {
+  ...VALID_REACHABLE_REPO,
+  'docs/orphan.md': '# Orphan\n',
+};
+
+/** A directory link must not imply that every Markdown descendant is indexed. */
+export const DIRECTORY_WITHOUT_INDEX_REPO: RepoFiles = {
+  'README.md': '# Repository\n\n[Visible](visible.md)\n[Docs](docs/)\n',
+  'visible.md': '# Visible\n',
+  'docs/guide.md': '# Guide without an index\n',
+};

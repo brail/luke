@@ -27,15 +27,19 @@ import { after, test } from 'node:test';
 
 import {
   ADR_MISSING_FROM_INDEX,
+  DIRECTORY_WITHOUT_INDEX_REPO,
   DUPLICATE_ADR_NUMBER,
   INDEX_ENTRY_WITHOUT_FILE,
+  ORPHANED_DOCUMENT_REPO,
   VALID_ADR_REPO,
+  VALID_REACHABLE_REPO,
   type RepoFiles,
 } from './__fixtures__/docs/adrRepo';
 import {
   checkAdrIndex,
   checkLinks,
   checkMarkers,
+  checkReachability,
   trackedMarkdown,
 } from './check-docs-integrity';
 import { type Problem } from './lib/report';
@@ -173,6 +177,79 @@ test('link validation checks relative paths and reports only unresolved targets'
       message: 'link `missing.md#section` does not resolve.',
     },
   ]);
+});
+
+test('reachability follows transitive links through a directory index', () => {
+  const dir = repo(VALID_REACHABLE_REPO);
+  const files = trackedMarkdown(dir);
+  const problems: Problem[] = [];
+
+  const reachable = checkReachability(dir, files, problems);
+
+  assert.equal(files.length, 3, 'skill documentation must stay outside the corpus');
+  assert.equal(reachable, 3);
+  assert.deepEqual(problems, []);
+});
+
+test('reachability reports every tracked document outside the root graph', () => {
+  const dir = repo(ORPHANED_DOCUMENT_REPO);
+  const files = trackedMarkdown(dir);
+  const problems: Problem[] = [];
+
+  const reachable = checkReachability(dir, files, problems);
+
+  assert.equal(reachable, 3);
+  assert.deepEqual(problems, [
+    {
+      file: 'docs/orphan.md',
+      line: 1,
+      message:
+        'document is not reachable from `README.md`. Link it from the ' +
+        'appropriate documentation index; do not add reachability exceptions.',
+    },
+  ]);
+});
+
+test('a directory link reaches only its tracked README index', () => {
+  const dir = repo(DIRECTORY_WITHOUT_INDEX_REPO);
+  const files = trackedMarkdown(dir);
+  const problems: Problem[] = [];
+
+  const reachable = checkReachability(dir, files, problems);
+
+  assert.equal(reachable, 2);
+  assert.deepEqual(problems, [
+    {
+      file: 'docs/guide.md',
+      line: 1,
+      message:
+        'document is not reachable from `README.md`. Link it from the ' +
+        'appropriate documentation index; do not add reachability exceptions.',
+    },
+  ]);
+});
+
+test('reachability fails closed when no link produces a graph edge', () => {
+  const dir = repo({
+    'README.md': '# Repository without links\n',
+    'docs/orphan.md': '# Orphan\n',
+  });
+  const files = trackedMarkdown(dir);
+
+  assert.throws(
+    () => checkReachability(dir, files, []),
+    /1 reachable, 1 orphaned.*link pattern may no longer match/s
+  );
+});
+
+test('reachability fails closed when the declared navigation root is absent', () => {
+  const dir = repo({ 'docs/guide.md': '# Guide\n' });
+  const files = trackedMarkdown(dir);
+
+  assert.throws(
+    () => checkReachability(dir, files, []),
+    /navigation root `README\.md` is not tracked and present/
+  );
 });
 
 /**

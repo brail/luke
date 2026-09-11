@@ -1,5 +1,5 @@
 /**
- * Verifies documentation markers and links.
+ * Verifies the integrity and navigability of the tracked Markdown corpus.
  *
  * ## Why it exists
  *
@@ -15,10 +15,11 @@
  *    regeneration overwrite hand-written content.
  * 2. **Relative links**: every Markdown link to a relative path resolves on
  *    disk.
- *
  * 3. **ADR index completeness**: every tracked ADR appears exactly once in
  *    `docs/decisions/README.md`, every index entry points to an existing ADR,
  *    and no number is duplicated.
+ * 4. **Reachability**: every tracked Markdown document outside `.claude/` is
+ *    reachable by relative links from the repository `README.md`.
  *
  * ## No exception list
  *
@@ -83,6 +84,18 @@ export function trackedMarkdown(root: string): string[] {
  * block. The name pairs blocks rather than merely counting them.
  */
 const MARKER_RE = /<!--\s*luke-docs:(start|end):([\w-]+)\s*-->/g;
+const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)\s]+)\)/g;
+
+/** Returns the path portion of a relative Markdown target, or null if skipped. */
+function relativePathPart(target: string): string | null {
+  // Out of scope: absolute URLs, mailto links, pure anchors, and templates.
+  if (/^(https?:|mailto:|#)/.test(target)) return null;
+  if (/[<>*${}]/.test(target)) return null;
+
+  // Anchors are checked separately; reachability and file existence use the path.
+  const [pathPart] = target.split('#');
+  return pathPart || null;
+}
 
 /** Checks for paired, non-nested, non-orphaned markers. */
 export function checkMarkers(
@@ -144,15 +157,9 @@ export function checkLinks(
   const baseDir = dirname(absoluteFile);
 
   lines.forEach((line, index) => {
-    for (const match of line.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+    for (const match of line.matchAll(MARKDOWN_LINK_RE)) {
       const target = match[1];
-
-      // Out of scope: absolute URLs, mailto links, pure anchors, and templates.
-      if (/^(https?:|mailto:|#)/.test(target)) continue;
-      if (/[<>*${}]/.test(target)) continue;
-
-      // For a link with an anchor, check only the path portion.
-      const [pathPart] = target.split('#');
+      const pathPart = relativePathPart(target);
       if (!pathPart) continue;
 
       checked++;
@@ -175,6 +182,97 @@ export function checkLinks(
   });
 
   return checked;
+}
+
+/**
+ * Checks that the tracked Markdown corpus is reachable from `README.md`.
+ *
+ * The root is a constant, not an inventory that grows with the corpus. Any
+ * reached Markdown file can link onward and therefore act as an index. A link
+ * to a directory contributes an edge only when that directory has a tracked
+ * and present `README.md`; the checker never crawls a directory merely because
+ * it exists on one developer's disk. This also leaves gitignored reference
+ * directories outside the governed corpus, matching `trackedMarkdown` and
+ * `checkLinks`.
+ */
+export function checkReachability(
+  root: string,
+  files: string[],
+  problems: Problem[]
+): number {
+  const byRelativePath = new Map(
+    files.map(file => [relative(root, file), file] as const)
+  );
+  const rootPath = 'README.md';
+
+  if (!byRelativePath.has(rootPath)) {
+    throw new Error(
+      '[docs-integrity] navigation root `README.md` is not tracked and present ' +
+        'in the working tree. Reachability cannot be verified.'
+    );
+  }
+
+  const reachable = new Set<string>([rootPath]);
+  const pending = [rootPath];
+  let traversedEdges = 0;
+
+  while (pending.length > 0) {
+    const currentPath = pending.shift();
+    if (currentPath === undefined) break;
+
+    const currentFile = byRelativePath.get(currentPath);
+    if (currentFile === undefined) continue;
+
+    const lines = readFileSync(currentFile, 'utf8').split('\n');
+    for (const line of lines) {
+      for (const match of line.matchAll(MARKDOWN_LINK_RE)) {
+        const pathPart = relativePathPart(match[1]);
+        if (!pathPart) continue;
+
+        const absoluteTarget = resolve(dirname(currentFile), pathPart);
+        const directTarget = relative(root, absoluteTarget);
+        const directoryIndex = join(directTarget, 'README.md');
+        let nextPath: string | null = null;
+        if (byRelativePath.has(directTarget)) {
+          nextPath = directTarget;
+        } else if (byRelativePath.has(directoryIndex)) {
+          nextPath = directoryIndex;
+        }
+
+        if (nextPath === null) continue;
+        traversedEdges++;
+
+        if (!reachable.has(nextPath)) {
+          reachable.add(nextPath);
+          pending.push(nextPath);
+        }
+      }
+    }
+  }
+
+  // Zero-discovery guard: a broken link parser must fail loudly rather than
+  // reporting a permanently green reachability check over only the root.
+  if (traversedEdges === 0 || reachable.size === 1) {
+    throw new Error(
+      '[docs-integrity] navigation traversal produced no closure beyond ' +
+        `\`README.md\`: 1 reachable, ${files.length - 1} orphaned. The link ` +
+        'pattern may no longer match the documentation graph.'
+    );
+  }
+
+  for (const relPath of byRelativePath.keys()) {
+    if (!reachable.has(relPath)) {
+      problems.push({
+        file: relPath,
+        line: 1,
+        message:
+          'document is not reachable from `README.md`. Link it from the ' +
+          'appropriate documentation index; do not add reachability exceptions.',
+      });
+    }
+  }
+
+  return reachable.size;
 }
 
 /**
@@ -336,6 +434,8 @@ function main(): void {
     );
   }
 
+  const reachableFiles = checkReachability(REPO_ROOT, files, problems);
+
   const adrsChecked = checkAdrIndex(REPO_ROOT, problems);
 
   // Same zero-discovery guard as the rest of the file: if ADR discovery stops
@@ -357,7 +457,8 @@ function main(): void {
 
   console.log(
     `[docs-integrity] ok — ${files.length} files, ${linksChecked} links, ` +
-      `${markersSeen} markers, and ${adrsChecked} indexed ADRs verified.`
+      `${markersSeen} markers, ${reachableFiles} reachable, and ${adrsChecked} ` +
+      'indexed ADRs verified.'
   );
 }
 
