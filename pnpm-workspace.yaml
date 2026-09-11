@@ -28,7 +28,16 @@ overrides:
   # nelle linee 1.x e 2.x, l'unica versione sana è la 5.0.8. Ha export duali
   # (ESM + CJS), quindi i consumer CJS come minimatch@3 continuano a funzionare.
   brace-expansion: '>=5.0.9'
-  hono: '>=4.12.34' # GHSA-8j4g-w8fx-2239
+  # Transitive only, through Prisma's `@prisma/dev` (via `@hono/node-server`);
+  # no workspace manifest depends directly on Hono. This override moves the
+  # resolved transitive version without coupling the advisory fix to a Prisma
+  # upgrade. Floor was >=4.12.34 for GHSA-8j4g-w8fx-2239; raised to
+  # 4.13.5 for GHSA-crvj-82cr-hjcx (CVE-2026-84363, query parser reads past the
+  # URL fragment), GHSA-g6gw-c38x-mqfc (CVE-2026-84364, unbounded dot-notation
+  # nesting in parseBody) and GHSA-gqvv-2mrq-wpjv (CVE-2026-84365, toSSG still
+  # writes outside the output directory). The <5 cap stops an uncapped floor
+  # from silently crossing into Hono 5.
+  hono: '>=4.13.5 <5'
   find-my-way: '>=9.7.0' # GHSA-c96f-x56v-gq3h — DoS via HTTP/2
   # Transitive via @prisma/config. GHSA-ggr8-5vv4-36mx — deepmerge()/
   # deepmergeInto() stack exhaustion on a crafted self-referential object
