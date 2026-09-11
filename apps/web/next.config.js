@@ -2,6 +2,9 @@
 const nextConfig = {
   transpilePackages: ['@luke/core', '@luke/api'],
   typedRoutes: true,
+  // Keep agent instructions centralized at the repository root; generated
+  // workspace files would create a competing authority.
+  agentRules: false,
   env: {
     NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || 'dev',
   },
