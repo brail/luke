@@ -42,10 +42,20 @@ overrides:
   # GHSA-fph4-wmhf-6fwf and GHSA-jqff-g426-hqxp (host confusion via skipped IDN
   # canonicalisation) on <=3.1.5.
   fast-uri: '>=3.1.6 <4'
-  # GHSA-5p4m-2wfm-xmqj su <=4.3.0. Range, per la stessa ragione di fast-uri.
-  js-yaml: '>=4.3.1 <5'
+  # GHSA-5p4m-2wfm-xmqj on <=4.3.0. Range, for the same reason as fast-uri.
+  # Floor raised to 4.3.2 for GHSA-2883-xcg3-v3hh (prototype pollution via a
+  # crafted document) on <=4.3.1 — the version this floor previously allowed.
+  # Same cap, same intent: it still excludes <=4.3.0 and still refuses to drag
+  # transitive consumers onto a new major.
+  js-yaml: '>=4.3.2 <5'
   protobufjs: '7.6.5'
-  sharp: '0.35.0'
+  # GHSA-rgj7-g3m4-5g8c (bundled libheif) is fixed in 0.35.4. This was an exact
+  # pin, and an exact pin outranks every workspace range: it kept forcing the
+  # vulnerable 0.35.0 even after the patch shipped, so bumping the dependency
+  # in apps/api alone could not move the resolved version. A capped range
+  # takes the patch and every later 0.35.x, while <0.36 still refuses to drag
+  # a new minor of a native binary in silently.
+  sharp: '>=0.35.4 <0.36'
   valibot: '>=1.4.2'
   # Transitive via prisma: the CLI package declares mysql2 as a regular
   # dependency pinned to an exact version (prisma@7.8.0 -> "mysql2": "3.15.3"),
