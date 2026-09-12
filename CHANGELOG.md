@@ -4,6 +4,16 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.1.6] - 2026-09-12
+
+### Fixed
+- **web**: Build API declarations before the web image
+
+### Other
+- Merge pull request #42 from brail/hotfix/web-docker-api-declarations
+
+fix(web): build API declarations before the web image
+
 ## [2.1.5] - 2026-09-12
 
 ### CI
