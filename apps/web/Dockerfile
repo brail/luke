@@ -42,6 +42,14 @@ RUN pnpm --filter @luke/core build
 RUN pnpm --filter @luke/nav build
 RUN pnpm --filter @luke/calendar build
 
+# `apps/web/tsconfig.json` lists `apps/api` among its project `references`, and
+# that project is `composite` with `declaration: true`. Next's type check
+# therefore needs `apps/api/dist/index.d.ts` to exist: without it TypeScript
+# reports TS6305, the `AppRouter` type degrades to tRPC's collision-guard
+# union, and dozens of TS2339 errors follow. It runs after the packages above
+# because `@luke/api` references `@luke/core` and imports the others.
+RUN pnpm --filter @luke/api build
+
 # Build Next.js app
 RUN pnpm --filter @luke/web build
 

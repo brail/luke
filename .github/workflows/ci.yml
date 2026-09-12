@@ -124,6 +124,42 @@ jobs:
             --to-schema ./prisma/schema.prisma \
             --exit-code
 
+  # The web image is the only place `next build` runs on this branch, and it is
+  # built here from the real Dockerfile so a missing build prerequisite fails at
+  # pull-request time instead of at tag time. v2.1.5 published an API image and
+  # no web image because the builder stage never built `@luke/api`, whose
+  # declarations `apps/web/tsconfig.json` references; nothing before the release
+  # run executed that ordering.
+  #
+  # A host-level `turbo run build --filter=@luke/web` would not have caught it:
+  # turbo builds workspace dependencies itself, so a Dockerfile missing that
+  # step still succeeds. Only building the image exercises the ordering the
+  # release actually uses.
+  #
+  # `push: false`, no registry login, no cache: nothing is published, and no
+  # cached layer may stand in for a step this job exists to execute. The build
+  # args are disposable non-secret placeholders on reserved `.invalid`
+  # hostnames, which the build inlines but never resolves.
+  web-image:
+    name: Web Image Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build web image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://web.luke.invalid
+            INTERNAL_API_URL=http://api.luke.invalid:3001
+            APP_VERSION=ci
+
   # The aggregate gate: the stable candidate context for `main`'s ruleset,
   # which today still requires the individual job names and cannot keep that
   # list in step with this file. The switch is a separate remote change, made
@@ -142,7 +178,7 @@ jobs:
   # runner default is not part of any contract.
   gate:
     name: CI gate
-    needs: [checks, integration, migrations]
+    needs: [checks, integration, migrations, web-image]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

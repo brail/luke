@@ -325,7 +325,10 @@ o rigenerazione completa del file: sovrascriverebbe sezioni curate a mano
 standard). `--prepend` tocca solo i commit dall'ultimo tag, il resto del file
 resta intatto.
 
-**Release flow**: push su `main` → solo CI (lint + typecheck);
+**Release flow**: push su `main` e pull request → CI (lint, typecheck, test,
+integration, migrazioni) più `Web Image Build`, che builda l'immagine web dal
+Dockerfile reale senza pubblicarla. È tra i job richiesti da `CI gate`, così un
+prerequisito di build mancante blocca la PR invece di emergere al tag;
 tag `vX.Y.Z` → build Docker → `ghcr.io` → Portainer pull & redeploy.
 **MAI cancellare il volume `luke_api_data`** — la master key vive lì.
 
