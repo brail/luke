@@ -4,6 +4,30 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [2.1.5] - 2026-09-12
+
+### CI
+- Add aggregate pull request gates
+
+### Fixed
+- **deps**: Patch Next.js unauthenticated RCE advisories
+- **deps**: Patch sharp, nodemailer, and js-yaml advisories
+- **deps**: Patch vitest and hono advisories
+
+### Other
+- Merge pull request #35 from brail/hotfix/next-rce-advisories
+
+fix(deps): patch Next.js unauthenticated RCE advisories
+- Merge pull request #37 from brail/hotfix/high-dependency-advisories
+
+fix(deps): patch sharp, nodemailer, and js-yaml advisories
+- Merge pull request #38 from brail/hotfix/medium-dependency-advisories
+
+fix(deps): patch vitest and hono advisories
+- Merge pull request #39 from brail/ci/aggregate-gates-main
+
+ci: add aggregate pull request gates
+
 ## [2.1.4] - 2026-09-02
 
 ### CI
