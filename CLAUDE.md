@@ -605,17 +605,25 @@ security.yml's `push` filter is **not** on the list: it matches `develop-*` and
 previous branch (local + remote): it's stale as soon as it's merged, keeping
 it around invites bad backports.
 
-**Documentation-only pushes skip CI by design.** A push whose complete
-changed-path set falls inside the documentation ownership allowlist
-(`push.paths-ignore` in `ci.yml`) intentionally gets no full CI run;
-`.github/workflows/docs.yml` observes that same push and runs
+**Documentation-only pushes skip CI by design — on `develop-2.2`.** A push
+whose complete changed-path set falls inside the documentation ownership
+allowlist (`push.paths-ignore` in that branch's `ci.yml`) intentionally gets no
+full CI run; `.github/workflows/docs.yml` observes that same push and runs
 `pnpm check:drift` instead, while `security.yml` stays path-blind and still
 runs on every covered branch push. Because the documentation-only commit
 carries forward the same runtime tree as the code-bearing commit before it,
 the applicable runtime-gate evidence for that tree is the last code-bearing
 push's CI run — not a CI run for the documentation-only SHA, which never
-exists and should never be sought. The allowlist is fail-closed and pinned by
-`tools/scripts/check-workflow-paths.ts`: change the checker and the workflows
+exists and should never be sought.
+
+`main` has neither half of that mechanism: no `paths-ignore` on its `push`
+trigger and no `docs.yml`. A documentation-only push to `main` therefore runs
+**full CI**, and the drift check is not lost — `main`'s `checks` job carries
+its own `Docs & skills drift` step running `pnpm check:drift`. So the
+documentation routing is a `develop-2.2` property, not a repository-wide one,
+and porting it to `main` is an open residual (Appendix X §X.10). The allowlist
+is fail-closed and pinned by `tools/scripts/check-workflow-paths.ts`, which
+likewise exists only on `develop-2.2`: change the checker and the workflows
 together, never one without the other, and never widen CI's `paths-ignore`
 with a global pattern like `**.md`. `CHANGELOG.md`, workflow files, Markdown
 inside a source tree and test inputs/fixtures are not documentation-owned —
@@ -625,7 +633,7 @@ test tree, never under `docs/`. Never add a path filter to CI's
 drift` job a required check on `main` — either would leave a required check
 Pending on every documentation PR.
 
-**The two aggregate gates `main` will require.** `ci.yml` and `security.yml`
+**The two aggregate gates `main` requires.** `ci.yml` and `security.yml`
 each declare one job whose only work is to fail unless every scan or check it
 `needs` succeeded: `CI gate` and `Security gate`. `Security gate` stands for
 every **PR-relevant** scan job — currently semgrep, gitleaks and OSV, not every
@@ -633,9 +641,9 @@ scan job in the file — and reports on every trigger but the weekly `schedule`;
 what is new is that this now includes pull requests targeting `main`, with no
 path filter on any trigger for the same reason given just above. Its
 `pull_request` targets `main` only, so it is not part of the cycle-switch
-checklist; it is to be required **eventually, and only on `main`**, never by a
-`develop-*` or `release/*` ruleset — that would leave a required context behind
-on a branch that dies at the end of the cycle.
+checklist; it is required **only on `main`**, never by a `develop-*` or
+`release/*` ruleset — that would leave a required context behind on a branch
+that dies at the end of the cycle.
 
 **Both** gated workflows pin the same `pull_request` activity set — `opened`,
 `synchronize`, `reopened`, `edited`. GitHub's default omits `edited`, which is
@@ -646,23 +654,33 @@ failure notifier are deliberately outside it — they answer a disclosure landin
 on unchanged code, and a push/schedule failure, neither of which a pull request
 can report.
 
-Both gates are pinned by
+Both gates **on `develop-2.2`** are pinned by
 `tools/scripts/check-workflow-paths.ts`, which derives each `needs` list from
 the workflow's own jobs, so a scan job added later is a build failure rather
 than a silently ungated one. It also refuses `continue-on-error:` anywhere in
 either gated workflow: that key turns a failure into the literal `success`,
 which is the one result an aggregate gate accepts, so a tolerated job would be
-green through the gate.
+green through the gate. That checker does not exist on `main`. The gates there
+are enforced by the ruleset but their dependency lists are **not** mechanically
+checked: a job added to `main`'s `ci.yml`, or a scan added to its
+`security.yml`, without the matching `needs` entry would be silently ungated,
+and the required context would report success over work it never waited for.
+Porting the checker to `main` is an open residual, tracked separately from the
+`check-release-tree.ts` port described in the release section above.
 
-The remote half is **not** done, and neither is `main`'s half. `main` carries
-**neither aggregate-gate implementation** — both jobs exist only on
-`develop-2.2` — and `main`'s ruleset still requires the individual job names.
-The `develop-2.2` version of `CI gate` is configured to report on pull requests
-targeting `main` or the train; `Security gate` on pull requests targeting
-`main`. Because the workflows a pull request is judged by are the ones on the
-branch, the first real hotfix has to port versions of both coherent with `main`
-before the ruleset can require either context. Do not describe either context
-as required today.
+The main-side implementation and the required-context transition — the two
+halves this section recorded as outstanding — are both done. `main` carries
+both aggregate-gate implementations as of `388ff776`, and the `main review gate` ruleset requires exactly `CI gate`
+and `Security gate` — strict, active, no bypass actors — in place of the
+individual job names it used to list. `main`'s `CI gate` needs `checks`,
+`integration` and `migrations`, the jobs that branch actually has; the
+`develop-2.2` version additionally needs `browser`, and the two lists are meant
+to differ. `CI gate` reports on pull requests targeting `main` or the train;
+`Security gate` on pull requests targeting `main`. Because the workflows a pull
+request is judged by are the ones on its own branch, a change to either gate
+has to land on `main` itself before `main`'s ruleset can depend on the new
+shape. The port, the transition and their evidence are recorded in
+`docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`, Appendix X.
 
 Note also what this design does not buy: it protects against accidental
 regressions and ordinary vulnerable changes, but it is not tamper-resistant — a

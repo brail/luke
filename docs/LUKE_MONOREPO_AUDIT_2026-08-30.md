@@ -4560,3 +4560,308 @@ to produce this appendix.
   all intended: the focused core test, the focused integration test, and this
   audit document. Zero remain in the registry, defaults, seed, runtime readers,
   runtime writers, or any current documentation claim of support.
+
+# Appendix X — `S-01` closure: aggregate gates on `main` and the required-context transition (2026-09-12)
+
+## X.1 Scope and disposition
+
+This appendix closes exactly one workstream.
+
+| Workstream | State |
+| --- | --- |
+| `S-01` branch protection and the aggregate-gate ruleset transition | **CLOSED** |
+| Main-side porting of the workflow checkers and the documentation routing | **open** — separate residual, never part of `S-01` |
+| Every other open item recorded in Appendices A–W | untouched here |
+
+It appends to Appendices A–W. No byte of any earlier appendix is modified, and
+no finding, measurement or evidence record in them is withdrawn. What it
+supersedes is the **open-status bookkeeping for `S-01`**, in exactly these
+places and nowhere else:
+
+- `§T.1` — the table row "`S-01` branch protection and the aggregate-gate
+  ruleset transition | **PARTIALLY ADDRESSED, still open**", and the sentence
+  "What remains is the half that matters for enforcement: `main` carries
+  neither aggregate implementation, so its ruleset still requires the
+  individual job names, and the required-context transition is deferred until
+  the first real hotfix pull request produces those contexts on `main` as
+  behavioural proof."
+- `§T.8` — the bullet in full: "**`S-01` and the aggregate-gate ruleset
+  transition remain incomplete.** Both `CI gate` and `Security gate` exist only
+  on `develop-2.2`; `main` carries neither implementation and its ruleset still
+  requires the individual job names. The first real hotfix pull request remains
+  their behavioural proof, and neither context may be described as required
+  today."
+- `§T.10` — the `S-01` half of "R2 Phase 2 and `S-01` remain separate pending
+  decisions, neither started." The `R2 Phase 2` half is untouched and stands.
+- `§U.1` — "**`S-01` remains PARTIALLY ADDRESSED and open**, exactly as `§T.1`
+  records it".
+- `§U.10` — "**`S-01` is PARTIALLY ADDRESSED and open** (`§T.1`)".
+- `§V.1` — the table row "`S-01` branch protection and the aggregate-gate
+  ruleset transition | **PARTIALLY ADDRESSED, still open** — untouched here".
+- `§V.9` — "**`S-01` and the aggregate-gate ruleset transition** remain exactly
+  as `§T.1` records them".
+- `§W.1` — the `S-01` entry in its list of workstreams left untouched by that
+  appendix.
+
+Deliberately **not** superseded: the statements recording what an earlier
+appendix did not close, because they remain accurate as history — `§T.1`'s
+"`S-01` is therefore explicitly **outside** the closure Appendix T claims" and
+`§V.1`'s "`S-01` is explicitly outside this closure". Nor is any residual
+belonging to another workstream touched by this closure; each keeps whatever
+status its own appendix gave it.
+
+The condition those open-status statements named has now been met, by a pull
+request that carried the implementations rather than by a hotfix — the
+behavioural proof they asked for, supplied by the porting pull request itself.
+
+## X.2 What was implemented on `main`
+
+Two workflow files, and nothing else:
+
+- **`CI gate`** in `.github/workflows/ci.yml` — an aggregate job over `checks`,
+  `integration` and `migrations`, `if: ${{ always() }}`, whose single step
+  accepts the literal `success` and nothing else.
+- **Pre-merge security scanning** in `.github/workflows/security.yml` — a
+  `pull_request` trigger, `branches: [main]`, with no path filter, because a
+  required check that a path filter skips reports Pending rather than Passed.
+- **`osv`** — the former `osv-push`, its condition widened from
+  `github.event_name == 'push'` to `github.event_name != 'schedule'`. Without
+  that change the job is skipped on a pull request and `Security gate` fails on
+  a skipped dependency instead of on a finding.
+- **`Security gate`** — an aggregate over `semgrep`, `gitleaks` and `osv`,
+  `if: ${{ always() && github.event_name != 'schedule' }}`.
+- **Pinned activity types** on both `pull_request` triggers —
+  `[opened, synchronize, reopened, edited]`. The default set omits `edited`,
+  which is what retargeting a pull request fires.
+- **`notify-on-failure`** gained `github.event_name != 'pull_request'`: on a
+  pull request the gate is the signal, and an issue per failed candidate is
+  noise nobody closes.
+
+Two differences from the `develop-2.2` originals were required, not stylistic.
+`CI gate`'s `needs` omits `browser`, a job that does not exist on `main`;
+copying the train's list verbatim would have produced an invalid workflow, and
+then *no* CI context would have reported at all. The documentation
+`paths-ignore` allowlist and `docs.yml` were deliberately not ported: they are
+one mechanism. Porting the allowlist alone would let a documentation-only push
+skip `ci.yml` with no `docs.yml` to run `pnpm check:drift` in its place, so
+those pushes would lose drift coverage specifically. `security.yml` is
+path-blind and would still scan them.
+
+## X.3 The pull request, and its pre-merge evidence
+
+Branch `ci/aggregate-gates-main`, one commit `8124a7ae013398f85442b1d232332d6072cf9d74`
+on base `9adff828cb89f7d5521ce8854a88a225ed57d275`, tree
+`23cfedea8f9632ed7a523a7456d314064c19fcf4`, opened as **PR #39**.
+
+| Workflow | Run ID | Event | Attempt | Conclusion |
+| --- | --- | --- | --- | --- |
+| CI | `34689231985` | pull_request | 1 | **success** |
+| security | `34689231978` | pull_request | 1 | **success** |
+
+Job level: `Lint, TypeCheck & Unit Tests`, `Integration Tests`, `Migrations` and
+the aggregate `CI gate`, all success; `semgrep`, `gitleaks`, `osv` and the
+aggregate `Security gate`, all success. Three jobs skipped, every one
+conditionally by design: `osv-weekly` and `osv-weekly-release-train` are gated
+on `schedule`/`workflow_dispatch`, and `notify-on-failure` was suppressed by its
+new `pull_request` guard.
+
+That `security` run is the **first run of that workflow with
+`event=pull_request` in this repository's history** — the pre-merge scanning
+half of this change, demonstrated rather than asserted.
+
+The bootstrap question this raised was settled before the work began: a pull
+request that introduces a `pull_request` trigger does execute it on itself,
+because the event runs in the context of the merge commit. The repository's own
+precedent is PR #23, whose run executed the head's job graph while the base
+branch declared a different one.
+
+## X.4 The merge, and the post-merge push evidence
+
+PR #39 was merged with a merge commit pinned to the reviewed head, producing
+`388ff776ed4ffda8778845df928b958fec8fec5b` with parents
+`9adff828…` then `8124a7ae…`, at 2026-09-12T11:45:13Z.
+
+| Workflow | Run ID | Event | Attempt | Conclusion |
+| --- | --- | --- | --- | --- |
+| CI | `34691864013` | push | 1 | **success** |
+| security | `34691864050` | push | 1 | **success** |
+
+Both aggregates reported success on that SHA, with the same three
+conditional skips. This run exercised the other half of the notifier's
+condition: on a push the `pull_request` guard passes, so `notify-on-failure`
+was armed and skipped only because no dependency failed. No
+`security-ci-failure` issue was created or updated at any point; the four
+pre-existing issues (#27, #29, #32, #36) remain closed with unchanged
+timestamps and comment counts.
+
+## X.5 The aggregate script, and its truth table
+
+Both gates are one literal, executed by an explicitly pinned `shell: bash`:
+
+```
+echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done
+```
+
+Executed locally against that exact string:
+
+| `RESULTS` | Exit |
+| --- | --- |
+| `success` | 0 |
+| `success success success` | 0 |
+| `failure` | 1 |
+| `cancelled` | 1 |
+| `skipped` | 1 |
+| `success failure` | 1 |
+| `success skipped` | 1 |
+| *(empty)* | 1 |
+
+The empty case is the one that is not redundant: a `needs` resolving to nothing
+would otherwise iterate zero times and pass, which is why the script counts its
+arguments before looping. `skipped` failing closed is what makes the job usable
+as a required context at all.
+
+## X.6 Two classes of evidence, and the boundary between them
+
+This distinction is recorded deliberately, because conflating the two would
+overstate what was proved.
+
+**Observed on GitHub, positively.** Six real workflow runs across three real
+SHAs — a `CI` run and a `security` run on each of the pull request, the merge
+commit and the proof pull request — in which both aggregates reported
+`success`, every upstream job succeeded, and every skip was a conditional skip
+by design. The required-context transition was then observed
+against a live pull request, at three successive ruleset states.
+
+**Tested only locally, negatively.** No intentionally failing run was created
+on `main`. The rejection semantics — `failure`, `cancelled`, `skipped`, a mixed
+set, and the empty set — were verified by executing the identical one-line
+script outside GitHub, as recorded in `§X.5`. The claim this supports is that
+the script rejects those inputs, not that a red dependency has been seen to turn
+either gate red in production. On `develop-2.2` that same literal is additionally
+executed by `tools/scripts/check-workflow-paths.ts`'s test suite; `main` carries
+no such suite, which is part of what `§X.10` leaves open.
+
+## X.7 The ruleset transition
+
+Ruleset `22132087`, "main review gate", moved in two deliberate steps, each
+preceded by a stage-relative guard and followed by a read-back comparison.
+
+| Stage | `updated_at` | Required contexts |
+| --- | --- | --- |
+| Before | `2026-09-06T16:17:25.001+02:00` | `Lint, TypeCheck & Unit Tests`, `Integration Tests`, `Migrations` |
+| Intermediate | `2026-09-12T14:25:24.602+02:00` | those three **plus** `CI gate` and `Security gate` |
+| Final | `2026-09-12T14:26:22.630+02:00` | `CI gate`, `Security gate` |
+
+Preserved unchanged across both writes: `strict_required_status_checks_policy:
+true`, `bypass_actors: []`, `enforcement: active`, `do_not_enforce_on_create:
+false`, `integration_id: 15368` on every context, and the entire `pull_request`
+rule with all its parameters. Each read-back was compared, normalised,
+against the payload sent and matched exactly; the only difference between the
+before and final states is the contexts list.
+
+Two properties of the method are worth recording because both were failure
+modes avoided rather than hazards imagined. First, the update payload is
+`{name, target, enforcement, conditions, bypass_actors, rules}` projected from
+the GET response, never the raw response itself, which carries read-only fields;
+that projection is also the only valid rollback payload. Second, the final
+required-check list is **explicitly assigned**:
+
+```json
+[{"context":"CI gate","integration_id":15368},{"context":"Security gate","integration_id":15368}]
+```
+
+An earlier draft of the plan derived it by *filtering* the before payload for
+those two names. Neither name exists there, so that filter would have produced
+an empty list — a ruleset requiring nothing at all, arrived at by a step whose
+purpose was to tighten enforcement. The list is asserted as exactly those two
+elements before the PUT and again on read-back.
+
+The ordering was equally load-bearing: the workflows reached `main` first, and
+only then did the ruleset name their contexts. With no bypass actors
+configured, requiring a context that no workflow on `main` can produce would
+have left every pull request waiting for a status nobody could report, and only
+another ruleset edit could have cleared it.
+
+## X.8 The proof pull request
+
+**PR #40**, `chore: ruleset transition proof`, branch
+`chore/ruleset-transition-proof` cut from `388ff776…` with a single empty
+commit `64285547ba3cc05160feadd0959cf3c568f63235`. Its tree is
+`23cfedea8f9632ed7a523a7456d314064c19fcf4` — byte-identical to `main`'s — and
+GitHub reported 0 files changed, +0/−0, so every check ran against unchanged
+code. Runs: CI `34693339341` and security `34693339393`, both `pull_request`,
+attempt 1, both success.
+
+Required checks observed on that one pull request, at each ruleset state:
+
+| Ruleset state | `gh pr checks --required` |
+| --- | --- |
+| Before | 3: the legacy job names, all pass |
+| Intermediate | 5: the legacy three plus both aggregates, all pass |
+| Final | 2: `CI gate` and `Security gate`, both pass |
+
+The pull request remained `MERGEABLE` with `mergeStateStatus=CLEAN` at the
+final state, which is the property that matters: the two aggregate contexts
+alone are sufficient to satisfy the ruleset. It was then **closed unmerged**
+(`mergedAt=null`), and its branch deleted locally and on the remote. The port
+branch `ci/aggregate-gates-main` was deliberately retained.
+
+## X.9 What did not happen
+
+No tag was created, no release prepared, no image built or published, no
+deployment or Portainer action. No `--no-verify`, no `--admin`, no
+auto-merge, squash or rebase: every commit and push in this cycle ran the full
+hook chain, and one push was legitimately refused by `pre-push` and fixed by
+provisioning rather than bypassed. Every run for every SHA is attempt 1 — no
+rerun, no `workflow_dispatch`. No ruleset other than `22132087` was read for
+modification, and `main integrity` and `release train integrity` are untouched.
+`/luke-docs audit` was run read-only over this change on 2026-09-12 and wrote
+nothing, as that mode does by construction. It is recorded here as a procedure
+followed, and its findings were acted on rather than deferred: the stale
+ruleset prose in the comment blocks of `tools/scripts/check-workflow-paths.ts`
+and the branch-unqualified documentation-only-push paragraph in `CLAUDE.md`
+were both corrected in the same change that carries this appendix. Those
+corrections are prose and comments only; no executable code was touched, and
+no residual recorded in `§X.10` is closed by them.
+
+That review was **not an exhaustive documentation cleanup**, and this appendix
+does not claim one. Two discrepancies are known and deliberately left in place:
+the aggregate-gate comment blocks in `ci.yml` and `security.yml` still describe
+the ruleset transition as pending, on `develop-2.2` and on `main` alike; and
+the cycle-switch checklist in `CLAUDE.md` does not yet distinguish the
+deterministic checker coverage that exists on this branch from the maintenance
+that `main`'s own copies of those workflows require. Both are documentation
+discrepancies, outside this closure and not closed by it. Neither affects the
+remote enforcement state verified in `§X.7`, which was read from the live
+ruleset rather than from any of that prose.
+
+## X.10 Final state, and what remains open
+
+- `main` is `388ff776ed4ffda8778845df928b958fec8fec5b` and carries both
+  aggregate implementations; ruleset `22132087` requires `CI gate` and
+  `Security gate`, strict, active, with no bypass actors.
+- `S-01` is **closed**. Both halves that `§T.1` left outstanding — the
+  main-side implementation and the required-context transition — are done and
+  evidenced above.
+
+Left open, and explicitly **not** closed by this appendix:
+
+- **Porting the workflow checkers and the documentation routing to `main`.**
+  This is a separate residual and was never part of `S-01`. Its blockers are
+  unchanged: `main` does not track `lessons-archive.md`, which the checker's
+  allowlist requires; it has no `docs.yml`, no `tools/tsconfig.json` and no
+  `tsconfig.base.json`; and it declares none of `lint:tools`,
+  `typecheck:tools`, `test:tools` or `check:workflows`. This residual concerns
+  `check-workflow-paths.ts`, `check-workflow-branches.ts` and `docs.yml`. It is
+  **distinct from, and does not rename or replace, the separately recorded
+  residual of porting `tools/scripts/check-release-tree.ts` and its callers to
+  `main`**, which the release section of `CLAUDE.md` tracks on its own terms.
+  Closing either leaves the other open.
+- **`main`'s gate dependency lists are not mechanically checked.** On
+  `develop-2.2`, `tools/scripts/check-workflow-paths.ts` derives each gate's
+  `needs` from the workflow's own jobs, so a job added without a `needs` entry
+  is a build failure. `main` has no such checker: a job added to its `ci.yml`
+  or a scan added to its `security.yml` without the corresponding `needs` entry
+  would be silently ungated, and the required context would report success over
+  work it never waited for. The gates are enforced on `main`; they are not yet
+  pinned there.

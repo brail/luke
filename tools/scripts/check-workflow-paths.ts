@@ -63,10 +63,13 @@
  *   `continue-on-error:` at any level, no `uses:` at all, and one single step
  *   whose `run:` is the pinned one-line script that treats the literal
  *   `success` as the only acceptable dependency result, run by an explicitly
- *   pinned `shell: bash`. That name is the stable candidate the ruleset on
- *   `main` will require in place of the individual job names — a separate
- *   remote change, deliberately deferred until a real train PR has produced
- *   the context. The list it will stand for must therefore be ci.yml's own,
+ *   pinned `shell: bash`. That name is what the ruleset on `main` now requires
+ *   in place of the individual job names, together with `Security gate`, since
+ *   the transition recorded in Appendix X §X.7 of the monorepo audit. That is
+ *   enforcement on `main`; this checker is the coverage on `develop-2.2`, and
+ *   the two are separate — `main` carries no copy of it, so the gates there
+ *   are required without their `needs` lists being pinned. The list this gate
+ *   stands for must therefore be ci.yml's own,
  *   compared against the file's jobs rather than a constant here, which makes
  *   a newly added job a missing `needs` entry instead of a silently unguarded
  *   one. The current remote context list is deliberately not encoded here:
@@ -123,9 +126,10 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
  * Branch protection names its contexts as strings: it cannot follow a rename
  * and never learns about a new job, so one name that carries the dependency on
  * everything else is meant to replace a list nobody can keep in step. The
- * ruleset still names the individual jobs today; swapping it for this one is a
- * separate remote change, deferred until a real train PR has produced this
- * context. Deliberately not paired with a pinned list of job names here
+ * ruleset on `main` now names exactly this context and `Security gate`, in
+ * place of the individual job names it used to list; that enforcement is
+ * remote state, while this checker pins only `develop-2.2`'s copies.
+ * Deliberately not paired with a pinned list of job names here
  * — neither ci.yml's, which is read from the file, nor the ruleset's, which is
  * not this checker's to know.
  */
