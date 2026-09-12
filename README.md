@@ -405,7 +405,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 ## Workflow
 
 <!-- luke-docs:start:deployment -->
-Il flusso di release è attivato dal push di un tag `vX.Y.Z`. GitHub Actions builda le immagini Docker e le pubblica su `ghcr.io`. Portainer rileva le nuove immagini e rideploya automaticamente lo stack. Push su `main` eseguono solo lint e typecheck — nessuna build immagine.
+Il flusso di release è attivato dal push di un tag `vX.Y.Z`. GitHub Actions builda le immagini Docker e le pubblica su `ghcr.io`. Portainer rileva le nuove immagini e rideploya automaticamente lo stack. Push su `main` e pull request eseguono la CI — lint, typecheck, test, migrazioni e `Web Image Build`, che builda l'immagine web dal Dockerfile reale come verifica, senza pubblicare nulla. Le immagini vengono buildate e pubblicate su `ghcr.io` solo dal push di un tag.
 
 Il volume `luke_api_data` contiene la master key (`~/.luke/secret.key`) e non va mai eliminato. In produzione, `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server.
 <!-- luke-docs:end:deployment -->
