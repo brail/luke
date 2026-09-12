@@ -10,6 +10,20 @@ on:
     # during the overlap. A pattern covers every train without a per-cycle
     # edit, so there is nothing left to keep in sync here.
     branches: [main, 'develop-*', 'release/*']
+  # Pre-merge scanning for the stable line. `main` is the only target: a train
+  # branch already gets every push scanned by the filter above, and a gate
+  # required on `develop-*` or `release/*` would be a second contract to
+  # retire at each cycle switch. No path filter, deliberately — a required
+  # check that a path filter skips reports Pending, not Passed, and blocks the
+  # merge it was supposed to guard.
+  # `types:` is pinned rather than defaulted: the default set is opened,
+  # synchronize and reopened, so a pull request opened against another branch
+  # and later retargeted at `main` — which fires `edited` — would produce no
+  # run at all, and the required check would sit Pending on a head SHA this
+  # gate never judged.
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
   schedule:
     - cron: '0 6 * * 1' # lunedì 06:00 UTC
   workflow_dispatch:
@@ -58,23 +72,53 @@ jobs:
 
       - run: gitleaks detect --source .
 
-  # Bloccante. Era `continue-on-error: true` — "report-only sui push", con il
-  # segnale vero delegato a `osv-weekly`. Ma `osv-weekly` non è mai partito una
-  # volta: GitHub esegue i trigger `schedule` usando i workflow del **branch di
-  # default**, e questo file non esiste su `main`. Risultato: l'unico job che
-  # girava era volutamente non bloccante, e quello bloccante non aveva un file da
-  # eseguire. Sono passate inosservate 24 vulnerabilità note, 3 delle quali
-  # critiche sul layer di autenticazione.
-  osv-push:
-    if: github.event_name == 'push'
+  # Blocking. Was `continue-on-error: true` — "report-only on push", with the
+  # real signal delegated to `osv-weekly`. GitHub evaluates `schedule`
+  # triggers using the workflow file committed on the **default branch**, so
+  # `osv-weekly` only ever fires if this file is present there — historically
+  # it wasn't, and `osv-weekly` never actually ran: the only job that did was
+  # deliberately non-blocking, and 24 known vulnerabilities went unnoticed, 3
+  # of them critical on the authentication layer. This file must stay on the
+  # default branch for `osv-weekly` to keep firing — see `osv-weekly` below.
+  #
+  # Runs on every trigger but `schedule`, because `Security gate` depends on
+  # it: a dependency that skipped on pull_request would fail that gate on a
+  # skipped job instead of on a finding. The weekly jobs keep their own
+  # `workflow_dispatch` clause, so a manual run scans through both paths —
+  # accepted, rather than narrowing a condition to avoid the overlap.
+  osv:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
-  # Copre il caso che il job su push non può coprire: una vulnerabilità
-  # divulgata dopo l'ultimo commit, su codice fermo. Resta inerte finché questo
-  # file non arriva anche su `main` — vedi il commento sopra.
+  # The same aggregate as ci.yml's `CI gate` — see there for why it runs
+  # `always()`, why it counts its arguments before looping, and why `shell:` is
+  # spelled out. One context standing for the three scans above, so the ruleset
+  # on `main` can require a single name instead of a list it cannot keep in
+  # step with this file; the switch is a separate remote change, made once a
+  # real pull request has produced this context.
+  #
+  # The extra `schedule` clause is this gate's own: it keeps the job off the
+  # weekly run, where all three dependencies are skipped by design and
+  # `notify-on-failure` is the signal instead.
+  gate:
+    name: Security gate
+    needs: [semgrep, gitleaks, osv]
+    if: ${{ always() && github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every scan to have succeeded
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done
+
+  # Covers what `osv` can't: a vulnerability disclosed after the last
+  # commit, on code that hasn't changed since. Fires only if this file is on
+  # the default branch — `schedule` triggers read from there, not from
+  # whichever branch last pushed — see the note above.
   osv-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -85,10 +129,10 @@ jobs:
   # Same job, aimed at the active release train, because the rule above cuts
   # both ways: a scheduled run reads the workflow from the default branch *and*
   # checks out the default branch, so `osv-weekly` covers `main` and nothing
-  # else. `osv-push` is the train's only coverage, and it rides on pushes —
-  # which stop precisely during the RC freeze, the weeks when the train is a
-  # deployed artifact under test and no longer changing. That is the window
-  # this job exists for.
+  # else. `osv` is the train's only coverage, and on a train it still rides on
+  # pushes — which stop precisely during the RC freeze, the weeks when the
+  # train is a deployed artifact under test and no longer changing. That is
+  # the window this job exists for.
   #
   # An explicit second job rather than a matrix over a branch list: the branch
   # is one name, changed once per cycle, and a matrix would buy generality this
@@ -117,9 +161,11 @@ jobs:
   # niente spam a ogni run settimanale che continua a fallire. Canale scelto:
   # GitHub Issue, perché non esiste uno Slack/webhook nel repo — niente nuovo
   # secret da gestire.
+  # Not on pull requests: there `Security gate` is the signal, reported on the
+  # PR itself, and an issue per failed candidate would be noise nobody closes.
   notify-on-failure:
-    needs: [semgrep, gitleaks, osv-push, osv-weekly, osv-weekly-release-train]
-    if: always() && contains(needs.*.result, 'failure')
+    needs: [semgrep, gitleaks, osv, osv-weekly, osv-weekly-release-train]
+    if: always() && github.event_name != 'pull_request' && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     permissions:
       issues: write

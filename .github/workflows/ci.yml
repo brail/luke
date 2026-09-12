@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main, develop-2.2]
+  # `types:` is pinned because GitHub's default set omits `edited`, which is
+  # what retargeting a pull request fires: without it, moving a PR onto either
+  # protected target produces no new run and the required checks stay Pending
+  # on a head SHA nothing judged.
   pull_request:
     branches: [main, develop-2.2]
+    types: [opened, synchronize, reopened, edited]
   # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
   # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
   # prima di costruire le immagini.
@@ -118,3 +123,31 @@ jobs:
             --from-migrations ./prisma/migrations \
             --to-schema ./prisma/schema.prisma \
             --exit-code
+
+  # The aggregate gate: the stable candidate context for `main`'s ruleset,
+  # which today still requires the individual job names and cannot keep that
+  # list in step with this file. The switch is a separate remote change, made
+  # once this context has reported on a real pull request; until then this job
+  # reports like any other.
+  #
+  # `always()` is what makes it a gate rather than a passenger: without it a
+  # failed, cancelled or skipped dependency would skip this job too, and a
+  # skipped check reports neutral rather than failed — worthless as a required
+  # context once the ruleset names it. Running unconditionally, it accepts the
+  # literal `success` and nothing else, and counts its arguments first because
+  # a `needs` that resolved to nothing would otherwise leave the loop with no
+  # iterations at all. The unquoted `$RESULTS` is that word split, deliberately.
+  #
+  # `shell:` is spelled out because the script's semantics are bash's, and the
+  # runner default is not part of any contract.
+  gate:
+    name: CI gate
+    needs: [checks, integration, migrations]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every job to have succeeded
+        shell: bash
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: echo "results=$RESULTS"; set -- $RESULTS; [ $# -gt 0 ] || exit 1; for r in "$@"; do [ "$r" = success ] || exit 1; done
