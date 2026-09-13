@@ -1,7 +1,7 @@
 # Luke API
 
 <!-- luke-docs:start:overview -->
-Backend di Luke — Fastify 5 + tRPC 11 + Prisma 7 su PostgreSQL 16. Espone tutte le procedure tRPC per dashboard, campionario, pricing, calendario milestone, statistiche NAV e gestione utenti. Include RBAC granulare `Resource:Action`, audit log su ogni mutazione, autenticazione locale/LDAP configurabile via AppConfig, e sicurezza enterprise (helmet, rate-limit, HKDF-SHA256, tokenVersion multi-layer).
+Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC procedure behind the dashboard — collection layout, pricing, milestone calendar, NAV sales statistics, user and company management — on the `/trpc` endpoint, plus the plain HTTP health and readiness probes documented below. It also owns the cross-cutting controls: granular `Resource:Action` RBAC, an audit log on every mutation, local/LDAP authentication selected by `auth.strategy` in AppConfig, and the security baseline (Helmet headers, per-IP and per-account rate limiting, HKDF-SHA256 derived secrets, multi-layer `tokenVersion` session revocation).
 <!-- luke-docs:end:overview -->
 
 ## Related documentation
@@ -162,111 +162,127 @@ Vedi `src/lib/config.ts` per dettagli.
 ## Router tRPC
 
 <!-- luke-docs:start:trpc-routers -->
-| Namespace | Descrizione |
+| Namespace | Description |
 |-----------|-------------|
-| `auditLog.*` | Consultazione audit trail — lookup "ultima modifica" per entità e pagina export completa |
-| `auth.*` | Autenticazione, logout, cambio password, reset password, verifica email |
-| `brand.*` | Gestione brand (CRUD, soft delete, logo upload) |
-| `catalog.*` | Liste master Brand/Season per selezione context, filtrate per whitelist utente |
-| `collectionCatalog.*` | Catalogo collezione |
-| `collectionLayout.*` | Piano campionario — layout, gruppi, righe, quote, drag-and-drop |
-| `collectionLayoutRevision.*` | Revisioni piano campionario (snapshot ISO 9001) |
-| `company.*` | Profilo aziendale, funzioni, team e scopi brand |
-| `config.*` | Chiavi AppConfig — configurazione runtime centralizzata |
-| `context.*` | Contesto utente corrente (brand/stagione attivi) |
-| `dashboard.*` | Widget dashboard — dati KPI, avanzamento stagione, ordini settimanali |
-| `editLock.*` | Lock di sessione del planning wizard (acquire/release/assert) |
-| `feedback.*` | Sistema feedback interno |
-| `health.*` | Health check e status API |
-| `holidays.*` | Festività nazionali e periodi di chiusura fornitori |
-| `integrations.google.*` | OAuth 2.0 Google Calendar — flusso di autorizzazione e binding |
-| `integrations.importExport.*` | Import ed export di dati |
-| `integrations.auth.*` | Configurazione e test connessione LDAP |
-| `integrations.mail.*` | Configurazione SMTP e invio email di test |
-| `integrations.nav.*` | Configurazione NAV, trigger sync manuale, log sync |
-| `integrations.storage.*` | Configurazione provider storage (locale / S3) |
-| `maintenance.backup.*` | Backup/restore del database applicativo |
-| `maintenance.mode.*` | Modalità manutenzione (lock scrittura, banner utenti) |
-| `me.*` | Profilo utente corrente, sessioni attive, revoca sessioni |
-| `merchandisingPlan.*` | Piano merchandising — specsheet, componenti, immagini |
-| `notifications.*` | Notifiche utente e preferenze notifica |
-| `phase.*` | Catalogo Phase unificato (stato produzione riga + calendario) |
-| `phaseAlert.*` | Motore alert di saturazione fase — calcolo on-demand, nessun risultato persistito |
-| `phaseHistory.*` | Storico transizioni di fase per dashboard di stagnazione predittiva |
-| `planningGroup.*` | CRUD PlanningGroup — scoping di CalendarEvent e CollectionLayoutRow |
-| `pricing.*` | Motore prezzi — parameter set, calcolo forward/inverse/margin |
-| `public.*` | Endpoint pubblici senza autenticazione |
-| `sales.*` | Statistiche portafoglio ordini e report Vendite+Bidone KIMO (replica NAV `nav_pf_*` / `nav_kimo_*`) |
-| `season.*` | Gestione stagioni (CRUD, soft delete) |
-| `seasonCalendar.*` | Calendario milestones stagionali, dipendenze, solver |
-| `sectionAccess.*` | Visibilità sezioni RBAC per utente (override user-level) |
-| `storage.*` | Upload file, conferma FileObject, download presigned URL |
-| `system.*` | Info di sistema e trigger manuale del digest calendario |
-| `users.*` | Gestione utenti — merge di `core` (CRUD), `admin` (revoca sessioni, verifica email) e `preferences.*` |
-| `vendors.*` | Gestione fornitori (CRUD, soft delete, periodi di chiusura) |
+| `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
+| `auth.*` | Authentication, logout, password change, password reset, email verification |
+| `brand.*` | Brand management (CRUD, soft delete, logo upload) |
+| `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
+| `collectionCatalog.*` | Collection catalog items |
+| `collectionLayout.*` | Collection plan — layout, groups, rows, quotations, drag-and-drop ordering |
+| `collectionLayoutRevision.*` | Collection plan revisions (ISO 9001 snapshots) |
+| `company.*` | Company profile, functions, teams and brand scopes |
+| `config.*` | AppConfig keys — centralized runtime configuration |
+| `context.*` | Current user context (active brand/season) |
+| `dashboard.*` | Dashboard widgets — KPI data, season progress, weekly sales |
+| `editLock.*` | Planning wizard session lock (acquire/release/assert) |
+| `feedback.*` | Internal feedback system |
+| `health.*` | Health check and API status |
+| `holidays.*` | National holidays and vendor closure periods |
+| `integrations.auth.*` | LDAP configuration and connection test |
+| `integrations.google.*` | Google Calendar OAuth 2.0 — authorization flow and binding |
+| `integrations.importExport.*` | Data import and export |
+| `integrations.mail.*` | SMTP configuration and test email delivery |
+| `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
+| `integrations.storage.*` | Storage provider configuration (local / S3) |
+| `maintenance.backup.*` | Backup and restore of the application database |
+| `maintenance.mode.*` | Maintenance mode (write lock, user-facing banner) |
+| `me.*` | Current user profile, active sessions, session revocation |
+| `merchandisingPlan.*` | Merchandising plan — specsheets, components, images |
+| `notifications.*` | User notifications and notification preferences |
+| `phase.*` | Unified Phase catalog (row production status + calendar) |
+| `phaseAlert.*` | Phase saturation alert engine — computed on demand, nothing persisted |
+| `phaseHistory.*` | Phase transition history for the predictive stagnation dashboard |
+| `planningGroup.*` | PlanningGroup CRUD — scoping for CalendarEvent and CollectionLayoutRow |
+| `pricing.*` | Pricing engine — parameter sets, forward/inverse/margin calculation |
+| `public.*` | Public endpoints, no authentication |
+| `sales.*` | Order portfolio statistics and the KIMO sales+returns report (NAV replicas `nav_pf_*` / `nav_kimo_*`) |
+| `season.*` | Season management (CRUD, soft delete) |
+| `seasonCalendar.*` | Seasonal milestone calendar, planning groups, templates and Google sync |
+| `sectionAccess.*` | Per-user RBAC section visibility (user-level override) |
+| `storage.*` | File upload, FileObject confirmation, presigned download URLs |
+| `system.*` | System information and manual calendar digest trigger |
+| `users.*` | User management — merge of `core` (CRUD), `admin` (session revocation, email verification) and `preferences.*` |
+| `vendors.*` | Vendor management (CRUD, soft delete, closure periods) |
 <!-- luke-docs:end:trpc-routers -->
 
 ## Packages interni utilizzati
 
 <!-- luke-docs:start:internal-deps -->
-- `@luke/core` — Schemi Zod, RBAC (`requirePermission`), `AppConfigRegistry`, `getConfigValue`, utility URL e storage, crypto server-only (`@luke/core/server`)
-- `@luke/nav` — Sync layer NAV, `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`, sync/query dedicati Portafoglio e KIMO (`syncPortafoglioNow`, `syncKimoNow`, `queryPortafoglioFromPg`, `queryKimoFromPg`)
-- `@luke/calendar` — Sync Google Calendar, solver dipendenze milestone, generazione feed iCal
+- `@luke/core` — Zod schemas, RBAC (`requirePermission`), `AppConfigRegistry`, `getConfigValue`, URL and storage utilities, server-only crypto (`@luke/core/server`)
+- `@luke/db` — Prisma schema, migrations, generated client and `createPrismaClient`; every Prisma type is imported from here, never from `@prisma/client`
+- `@luke/nav` — NAV sync layer: `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`, plus the dedicated Portafoglio and KIMO sync/query entry points (`syncPortafoglioNow`, `syncKimoNow`, `queryPortafoglioFromPg`, `queryKimoFromPg`)
+- `@luke/calendar` — Google Calendar sync and iCal feed generation
 <!-- luke-docs:end:internal-deps -->
 
 ## Variabili d'ambiente
 
 <!-- luke-docs:start:env -->
-| Variabile | Default | Descrizione |
-|-----------|---------|-------------|
-| `DATABASE_URL` | — | URL connessione PostgreSQL (richiesta) |
-| `PORT` | `3001` | Porta di ascolto del server |
-| `HOST` | `0.0.0.0` | Indirizzo di bind del server |
-| `NODE_ENV` | `development` | Runtime mode (`development` / `production` / `test`) |
-| `LUKE_CORS_ALLOWED_ORIGINS` | — | Origini CORS ammesse in produzione (separare con virgola) |
-| `OTEL_*` | — | OpenTelemetry — export trace (standard OTEL env vars) |
-| `LOG_LEVEL` | `info` | Livello log Pino (`trace` / `debug` / `info` / `warn` / `error`) |
-| `APP_VERSION` | `dev` | Versione applicativa iniettata a build-time (Docker `ARG`/`ENV` dal git tag in CI) — non un segreto, mai letta da AppConfig per evitare drift dall'immagine in esecuzione |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DATABASE_URL` | connection URL | — | PostgreSQL connection string. Required. |
+| `PORT` | number | `3001` | Server listen port |
+| `HOST` | address | `0.0.0.0` | Server bind address |
+| `NODE_ENV` | enum | `development` | Runtime mode (`development` / `production` / `test`) |
+| `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Origins CORS accepts in production |
+| `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |
+| `OTEL_ENABLED` | boolean | `true` | Set to `false` to disable tracing even with an endpoint configured (`src/instrument.ts`) |
+| `LOG_LEVEL` | enum | `info` | Pino log level (`trace` / `debug` / `info` / `warn` / `error`) |
+| `APP_VERSION` | string | absent | Release identity injected at build time as a Docker `ARG`/`ENV` from the git tag in CI. Not a secret, and never read from AppConfig so a running image cannot disagree with itself about which release it is. Absent means "no release identity"; display surfaces fall back to `dev` (`src/lib/appVersion.ts`) |
 
-Al boot, `assertEnvPolicy()` in `src/server.ts` verifica che nessuna variabile vietata sia presente (pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In produzione: `exit(1)`. Tutto il resto va in AppConfig (database).
+At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
 <!-- luke-docs:end:env -->
 
 ## Database
 
 <!-- luke-docs:start:database -->
-PostgreSQL 16 via Prisma 7. Schema, migration e client generato vivono in `@luke/db` (`packages/db/prisma/*.prisma`, multi-file per dominio); qui restano il seed e gli script `db:*` di dominio.
+PostgreSQL through Prisma. The schema, the migrations and the generated client all live in `@luke/db` (`packages/db/prisma/*.prisma`, a flat multi-file layout split by domain); what stays here is the seed and the domain `db:*` scripts, which apply business rules and import `apps/api/src/`.
 
 ```bash
-pnpm --filter @luke/db prisma:studio   # Apre Prisma Studio (browser)
-pnpm --filter @luke/api db:seed         # Seed iniziale (primo avvio)
-pnpm --filter @luke/api db:bootstrap    # Bootstrap sviluppo con dati di esempio
+pnpm --filter @luke/db prisma:studio    # Open Prisma Studio in the browser
+pnpm --filter @luke/api db:seed         # Initial seed (first boot)
+pnpm --filter @luke/api db:bootstrap    # Development bootstrap with sample data
 ```
 
-In produzione `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server. Le migration sono versionata in `prisma/migrations/`.
+Creating a migration is a workflow of its own, not a single command: see [`docs/prisma-migration-workflow.md`](../../docs/prisma-migration-workflow.md). Run any `prisma` CLI command from `packages/db/`, the only directory that resolves config, schema and migrations together. In production `entrypoint.sh` runs `prisma migrate deploy` before the server starts; the migrations are version-controlled in `packages/db/prisma/migrations/`.
 
-**Model principali** (78 totali): `User`, `Identity`, `LocalCredential`, `AppConfig`, `AuditLog`, `FileObject`, `Brand`, `Season`, `Vendor`, `VendorClosurePeriod`, `Phase`, `PlanningGroup`, `EditLock`, `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionLayoutRevision`, `PricingParameterSet`, `MerchandisingPlan`, `SeasonCalendar`, `CalendarEvent`, `MilestoneTemplate`, `GoogleCalendarBinding`, `GoogleEventMapping`, `NavVendor`, `NavBrand`, `NavSeason`, `NavPfSalesHeader`, `NavPfSalesLine`, `NavKimoSalesHeader`, `NavKimoSalesLine`, `CompanyProfile`, `CompanyTeam`, `Notification`, `DashboardConfig`, `BackupRecord`, `HolidayCountry`, `Holiday`, `SchedulerLock`.
+**79 models**, grouped by the schema file that owns them:
+
+- `identity.prisma` — `User`, `Identity`, `LocalCredential`, `UserToken`, `UserSectionAccess`, `UserPreference`
+- `platform.prisma` — `AppConfig`, `AuditLog`, `FileObject`, `EditLock`, `SchedulerLock`, `BackupRecord`, `Notification`, `NotificationPreference`, `NotificationDedupKey`, `DashboardConfig`, `DashboardTask`, `FeedbackSubmission`
+- `catalog.prisma` — `Brand`, `Season`, `Vendor`, `PricingParameterSet`, `NavSyncFilter`, `NavVendor`, `NavBrand`, `NavSeason`
+- `collection.prisma` — `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionRowQuotation`, `CollectionRowPhaseHistory`, `CollectionCatalogItem`, and the four `*Revision` snapshot models
+- `merchandising.prisma` — `MerchandisingPlan`, `MerchandisingPlanRow`, `MerchandisingSpecsheet`, `MerchandisingComponent`, `MerchandisingImage`
+- `calendar.prisma` — `SeasonCalendar`, `PlanningGroup`, `CalendarEvent`, `MilestoneTemplate`, `MilestoneTemplateItem`, `Phase`, `HolidayCountry`, `Holiday`, `VendorClosurePeriod`, `GoogleCalendarBinding`, `GoogleEventMapping`; `CalendarEventVisibility` and `MilestoneTemplateItemVisibility` grant company-function visibility, while `CalendarEventUserVisibility` and `CalendarEventPersonalNote` are per-user
+- `company.prisma` — `CompanyProfile`, `CompanyFunction`, `CompanyTeam`, `CompanyTeamMembership`, `CompanyTeamBrandScope`
+- `nav-analytics.prisma` — the `NavPf*` order-portfolio replica and `NavKimoSalesHeader` / `NavKimoSalesLine`
+
+`schema.prisma` itself holds only the `generator` and `datasource` blocks.
 <!-- luke-docs:end:database -->
 
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->
-Il sync NAV usa `packages/nav` con connessione diretta SQL Server via mssql. La configurazione (server, database, company, credenziali) è salvata cifrata in AppConfig — nessuna env var.
+NAV sync runs through `packages/nav`, which talks to SQL Server directly via `mssql`. Its configuration (server, database, company, credentials) is stored encrypted in AppConfig — no environment variable, and `packages/nav` never imports from `apps/api`: the config arrives injected as a `GetConfigFn`.
 
-Pattern: sync **unidirezionale NAV → Luke**. Ogni entità ha una tabella replica `nav_*` (fedele a NAV) e una tabella locale arricchita (`vendors`, `brands`, `seasons`). Il sync non scrive mai su NAV, non tocca `isActive`, non riattiva entità disabilitate manualmente.
+The pattern is a **one-way NAV → Luke sync**. Each entity has a `nav_*` replica table faithful to NAV and an enriched local table (`vendors`, `brands`, `seasons`). The sync never writes back to NAV, never touches `isActive`, and never reactivates an entity that was disabled by hand.
 
-Entità sincronizzate: **Vendor** (differenziale watermark), **Brand** (full sync), **Season** (full sync), **Portafoglio ordini** (replica `nav_pf_*` per statistiche vendite), **KIMO** (replica `nav_kimo_*` per il report Vendite+Bidone).
+Synchronized entities: **Vendor** (watermark differential), **Brand** (full sync), **Season** (full sync), **order portfolio** (`nav_pf_*` replica behind sales statistics), **KIMO** (`nav_kimo_*` replica behind the sales+returns report). Each entity is synced inside its own try/catch, so one failure does not block the others.
 
-Trigger sync: manuale via `/settings/nav-sync` nel frontend (Vendor/Brand/Season) o via `sales.statistics.kimo.triggerSync` (KIMO), oppure job periodico configurabile via AppConfig.
+Triggers: manually from `/settings/nav-sync` in the frontend (Vendor/Brand/Season) or via `sales.statistics.kimo.triggerSync` (KIMO), and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
+
+Table naming, NAV-side details and the decisions behind them: [`docs/nav-integration.md`](../../docs/nav-integration.md).
 <!-- luke-docs:end:nav -->
 
 ## Storage
 
 <!-- luke-docs:start:storage -->
-Il layer storage è astratto da `IStorageProvider` (da `@luke/core`). Il provider attivo è selezionato da `storage.type` in AppConfig — `local` o `s3` — senza env var né ricompilazione.
+The storage layer is abstracted behind `IStorageProvider` (from `@luke/core`). The active provider is selected by `storage.type` in AppConfig — `local` or `s3` — with no environment variable and no rebuild. Files are never handled outside a provider implementation, and destination paths are always produced by the builder functions rather than assembled by hand.
 
-**Upload a due fasi**: il file è caricato come `FileObject` pending (`confirmedAt = null`); la conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati sono rimossi dal job di cleanup periodico.
+**Two-phase upload**: the file is written as a pending `FileObject` (`confirmedAt = null`); confirmation happens in the same Prisma transaction that creates the owning entity. Abandoned pending files are reclaimed by the periodic cleanup (`src/lib/pendingFile.ts`).
 
-**Bucket validi**: `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `collection-row-pictures-revisions`, `merchandising-specsheet-images`, `company-assets`
+**Valid buckets** are declared once, in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`); `isValidBucket()` in `packages/core/src/storage/config.ts` derives from that tuple and additionally admits the internal `backups` bucket. The list is deliberately not repeated here — a second copy would drift from the type that gates it.
 
-Le immagini sono servite attraverso il proxy Next.js `/api/uploads/[...path]` — i bucket restano privati (non esposti pubblicamente).
+Images are served through the Next.js proxy `/api/uploads/[...path]`, so the buckets stay private and are never exposed directly.
 <!-- luke-docs:end:storage -->
