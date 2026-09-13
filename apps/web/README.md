@@ -1,93 +1,110 @@
 # apps/web — Frontend Luke
 
 <!-- luke-docs:start:overview -->
-Interfaccia utente web di Luke, costruita su Next.js con App Router, shadcn/ui e Tailwind CSS. Copre l'intera piattaforma gestionale — dal piano campionario alle statistiche di vendita — con RBAC granulare, temi light/dark e supporto Playwright per i test end-to-end.
+Luke's web interface: Next.js with the App Router, shadcn/ui components on Tailwind CSS, and NextAuth sessions. It renders the whole management platform — collection plan, pricing, seasonal calendar, sales statistics, administration and maintenance — behind section-level RBAC, with light/dark theming and a Playwright end-to-end suite. Every backend call goes through tRPC with types imported from `@luke/api`; in a containerized deployment the browser reaches only Next.js, which forwards `/trpc`, `/upload`, `/download` and the SSE endpoints to `apps/api` through the rewrites in `next.config.js`.
 <!-- luke-docs:end:overview -->
 
 ## Route principali
 
 <!-- luke-docs:start:routes -->
-Gruppo autenticato `(app)/`:
+Entry point:
 
-- `/dashboard` — Dashboard con widget configurabili per utente (KPI, avanzamento stagione, orologi, forex, ordini settimanali, attività personali)
-- `/about` — Pagina informativa: stack tecnologico e versione applicazione
-- `/admin/brands` — Gestione brand
-- `/admin/seasons` — Gestione stagioni
-- `/admin/vendors` — Gestione fornitori
-- `/admin/calendar-configuration` — Configurazione calendario milestones stagionale
-- `/admin/collection-layout-configuration` — Configurazione colonne del layout collezione
-- `/admin/phase-catalog` — Catalogo Phase unificato (ordinamento fasi produzione/calendario)
-- `/calendar` — Calendario milestones e scadenze stagionali (con sync Google Calendar)
-- `/product/collection-layout` — Piano campionario (layout a righe e gruppi, revisioni, quote)
-- `/product/collection-layout/revisions` — Storico revisioni del piano campionario (snapshot immutabili per controllo qualità ISO 9001)
-- `/product/controllo` — Cruscotto qualità dati e margini (data quality, breakdown margine, crosstab posizionamento)
-- `/product/merchandising-plan` — Piano merchandising con specsheet e immagini
-- `/product/pricing` — Motore di calcolo prezzi (forward / inverse / margin)
-- `/sales/statistics` — Statistiche portafoglio ordini e report KIMO (replica NAV in tempo reale)
-- `/settings/users` — Gestione utenti e ruoli
-- `/settings/mail` — Configurazione SMTP con test email
-- `/settings/ldap` — Autenticazione LDAP enterprise con test connessione
-- `/settings/storage` — Provider storage (locale / S3)
-- `/settings/nav` — Connessione SQL Server NAV
-- `/settings/nav-sync` — Controllo e log sincronizzazione NAV
-- `/settings/google` — Integrazione Google Calendar (flusso OAuth 2.0)
-- `/settings/company` — Profilo azienda
-- `/settings/collection-control` — Soglie di alert per la criticità del piano campionario
-- `/maintenance` — Indice sezione manutenzione
-- `/maintenance/config` — Gestione chiavi AppConfig (configurazione runtime centralizzata)
-- `/maintenance/audit-log` — Consultazione ed export dell'audit trail
-- `/maintenance/backup` — Backup e restore del database applicativo
-- `/maintenance/mode` — Modalità manutenzione (lock scrittura, banner utenti)
-- `/maintenance/import-export` — Import/export dati
-- `/profile` — Profilo e preferenze utente
-- `/notifications` — Centro notifiche utente
+- `/` — server component that redirects to `/dashboard` when a session exists, to `/login` otherwise
 
-Gruppo pubblico `(public)/`:
+Authenticated group `(app)/`:
 
-- `/login` — Pagina di login (locale / LDAP)
-- `/auth/reset` — Reset password via token email
-- `/auth/verify` — Verifica indirizzo email
-- `/auth/pending` — Schermata di attesa post-verifica
+- `/dashboard` — per-user configurable widgets (KPI stats, season progress, clocks, forex, weekly sales, personal tasks)
+- `/about` — application information: technology stack and running version
+- `/admin/brands` — brand management
+- `/admin/seasons` — season management
+- `/admin/vendors` — internal vendor registry
+- `/admin/calendar-configuration` — seasonal milestone calendar templates and template items
+- `/admin/collection-layout-configuration` — collection catalog: configurable options for the collection layout
+- `/admin/phase-catalog` — unified phase catalog, the production/calendar phase ordering shared by collection layout and calendar
+- `/calendar` — seasonal calendar with month, Gantt, week, day and list views, planning-group freeze and Google Calendar sync
+- `/product/collection-layout` — collection plan (groups and rows, quotations, drag-and-drop ordering)
+- `/product/collection-layout/revisions` — revision history, ISO 9001:2015 quality record
+- `/product/collection-layout/revisions/[revisionId]` — a single immutable revision snapshot
+- `/product/control` — phase planning and collection layout statistics
+- `/product/merchandising-plan` — merchandising plan with specsheets and images
+- `/product/pricing` — costs and prices engine (forward / inverse / margin)
+- `/sales/statistics` — order portfolio statistics and KIMO sales extraction, served from the NAV replica
+- `/settings/users` — user and role management, pending access requests
+- `/settings/mail` — SMTP configuration with test email
+- `/settings/ldap` — LDAP authentication with connection test
+- `/settings/storage` — storage provider (local filesystem / S3)
+- `/settings/nav` — Microsoft NAV SQL Server connection
+- `/settings/nav-sync` — NAV synchronization scheduling for master data, order portfolio and KIMO, with sync logs
+- `/settings/google` — Google Workspace integration (service account or OAuth 2.0) and per-product toggles
+- `/settings/company` — company profile and organizational structure
+- `/settings/collection-control` — calendar and phase alert thresholds
+- `/maintenance` — maintenance and diagnostics index
+- `/maintenance/config` — AppConfig keys, the centralized runtime configuration
+- `/maintenance/audit-log` — audit trail browsing and export
+- `/maintenance/backup` — encrypted database backup and restore
+- `/maintenance/mode` — maintenance mode (write lock, user banner)
+- `/maintenance/import-export` — data import/export in JSON, CSV or XLSX
+- `/profile` — user profile, preferences and security settings
+- `/notifications` — full notification history
+
+Public group `(public)/`:
+
+- `/login` — login page (local / LDAP)
+- `/auth/reset` — password reset through an emailed token
+- `/auth/verify` — email address verification
+- `/auth/pending` — waiting screen after verification
+
+Route handlers `api/`:
+
+- `/api/auth/[...nextauth]` — NextAuth handler
+- `/api/auth/force-logout` — server-side session teardown for a stale or revoked cookie, then redirect to `/login`
+- `/api/google/oauth/callback` — Google OAuth 2.0 callback
+- `/api/uploads/[...path]` — authenticated proxy that streams stored files from the API, with per-segment path validation
+
+Every other API path (`/trpc`, `/upload`, `/download`, `/session-events`, `/api/sse`, `/health`) is proxied to `apps/api` by the rewrites in `next.config.js`, which are active only when `INTERNAL_API_URL` is set.
 <!-- luke-docs:end:routes -->
 
 ## Dipendenze interne
 
 <!-- luke-docs:start:internal-deps -->
-- `@luke/core` — Schemi Zod, tipi condivisi, RBAC, URL builder, storage types
+- `@luke/core` — runtime dependency: Zod schemas, shared types, RBAC helpers, URL builders and storage contracts. Listed in `transpilePackages` in `next.config.js`
+- `@luke/api` — type-only devDependency: `AppRouter` plus the inferred `RouterOutputs` / `RouterInputs` types that give the tRPC client end-to-end typing. Resolved through the package's `exports` map to its emitted declarations, so nothing from it is bundled at runtime
 <!-- luke-docs:end:internal-deps -->
 
 ## Variabili d'ambiente
 
 <!-- luke-docs:start:env -->
-| Variabile | Descrizione | Richiesta |
-|-----------|-------------|-----------|
-| `INTERNAL_API_URL` | URL interno per i Next.js rewrites verso l'API (es. `http://api:3001`) | Sì |
-| `NEXT_PUBLIC_API_URL` | URL pubblico dell'API, baked nel bundle client (es. `http://localhost:3001`) | Sì |
-| `NEXT_PUBLIC_FRONTEND_URL` | URL pubblico del frontend, usato per i link nelle email | Sì |
-| `NEXTAUTH_URL` | URL canonico del frontend per NextAuth (es. `http://localhost:3000`) | Sì |
-| `NEXTAUTH_SECRET` | Secret NextAuth — derivato automaticamente dalla master key `~/.luke/secret.key` | Sì |
-| `COOKIE_SECURE` | `true` in produzione (HTTPS), `false` in sviluppo (HTTP) | No |
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base SSR and middleware call directly; unset in local development, where the rewrites are skipped | In containers |
+| `NEXT_PUBLIC_API_URL` | Public API URL, inlined into the client bundle at build time; falls back to `http://localhost:3001` | For production builds |
+| `NEXT_PUBLIC_FRONTEND_URL` | Public frontend URL used to build outbound links, such as the base URL sent with the SMTP test email; when unset, that test email is sent with an empty base URL | No |
+| `NEXTAUTH_URL` | Canonical frontend URL used by NextAuth for callbacks | In containers |
+| `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |
+| `COOKIE_SECURE` | In production, set to `false` when serving plain HTTP; any other value keeps the session cookie `Secure`. Outside production the cookie is never `Secure` | No |
+| `NEXT_PUBLIC_APP_VERSION` | Build-time version metadata injected from the git tag; absent under `pnpm dev`, where the UI shows a development marker instead | No |
 
-Tutte le altre configurazioni (SMTP, LDAP, storage, ecc.) vivono in AppConfig (database), non in variabili d'ambiente.
+Everything else — SMTP, LDAP, storage, NAV, Google — lives in AppConfig in the database, never in environment variables.
 <!-- luke-docs:end:env -->
 
 ## Sviluppo locale
 
 <!-- luke-docs:start:dev -->
 ```bash
-# Dalla root del monorepo (avvia tutti i workspace via Turbo)
+# From the monorepo root — starts every workspace through Turbo
 pnpm dev
 
-# Solo il frontend
+# Frontend only
 pnpm --filter @luke/web dev
 ```
 
-Il frontend è disponibile su `http://localhost:3000`.
-Richiede l'API attiva su `http://localhost:3001`.
+The frontend serves `http://localhost:3000` and expects the API on `http://localhost:3001`.
 
-Per i test E2E (Playwright):
+Tests:
 
 ```bash
-pnpm --filter @luke/web test:e2e
+pnpm --filter @luke/web test          # Vitest unit tests
+pnpm --filter @luke/web test:browser  # component tests in a real browser
+pnpm --filter @luke/web test:e2e      # Playwright smoke suite
 ```
 <!-- luke-docs:end:dev -->
