@@ -35,7 +35,7 @@ It is built as a pnpm + Turborepo monorepo with seven workspaces: a Next.js fron
 | [`apps/web`](apps/web/README.md) | App | Next.js frontend — dashboard, collection, pricing, calendar, sales |
 | [`apps/api`](apps/api/README.md) | App | Fastify + tRPC + Prisma backend — RBAC API, audit log, NAV integration |
 | [`packages/core`](packages/core/README.md) | Package | Zod schemas, RBAC, AppConfigRegistry, storage helpers and server-only crypto |
-| `packages/db` | Package | Schema Prisma, migration versionate e client generato; `createPrismaClient` |
+| [`packages/db`](packages/db/README.md) | Package | Prisma schema, versioned migrations and generated client; `createPrismaClient` |
 | [`packages/nav`](packages/nav/README.md) | Package | One-way Microsoft Dynamics NAV → PostgreSQL sync layer (mssql) |
 | [`packages/calendar`](packages/calendar/README.md) | Package | Google Calendar integration, milestone sync engine, iCal feed generation |
 | [`packages/eslint-plugin-luke`](packages/eslint-plugin-luke/README.md) | Package | Internal ESLint rules (e.g. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
