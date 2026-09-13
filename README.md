@@ -1,9 +1,9 @@
 # Luke Monorepo
 
 <!-- luke-docs:start:overview -->
-Luke è la piattaforma gestionale interna per la filiera moda wholesale. Gestisce il ciclo completo della stagione — dal piano campionario al pricing, dal merchandising alle statistiche portafoglio ordini — con integrazione nativa Microsoft Dynamics NAV come ERP di riferimento e supporto ai processi ISO 9001:2015 per il controllo qualità delle revisioni campionario.
+Luke is the internal management platform for the wholesale fashion supply chain. It covers the full season cycle — from the collection plan to pricing, from merchandising to order-portfolio statistics — with native Microsoft Dynamics NAV integration as the reference ERP, and support for the ISO 9001:2015 quality process that governs collection revisions.
 
-Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js, backend Fastify + tRPC, package condivisi per schemi/RBAC, schema e client Prisma, sync layer NAV, integrazione Google Calendar e un plugin ESLint interno per le regole di codifica specifiche di Luke.
+It is built as a pnpm + Turborepo monorepo with seven workspaces: a Next.js frontend, a Fastify + tRPC backend, and shared packages for schemas and RBAC, the Prisma schema and client, the NAV sync layer, the Google Calendar integration, and an internal ESLint plugin carrying Luke's own coding rules.
 <!-- luke-docs:end:overview -->
 
 ## Indice
@@ -30,15 +30,15 @@ Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js,
 ## Struttura
 
 <!-- luke-docs:start:structure -->
-| Workspace | Tipo | Descrizione |
+| Workspace | Type | Description |
 |-----------|------|-------------|
-| [`apps/web`](apps/web/README.md) | App | Frontend Next.js — dashboard, campionario, pricing, calendario, vendite |
-| [`apps/api`](apps/api/README.md) | App | Backend Fastify 5 + tRPC + Prisma — API RBAC, audit log, integrazione NAV |
-| [`packages/core`](packages/core/README.md) | Package | Schemi Zod, RBAC, AppConfigRegistry, utility storage e crypto server-only |
+| [`apps/web`](apps/web/README.md) | App | Next.js frontend — dashboard, collection, pricing, calendar, sales |
+| [`apps/api`](apps/api/README.md) | App | Fastify + tRPC + Prisma backend — RBAC API, audit log, NAV integration |
+| [`packages/core`](packages/core/README.md) | Package | Zod schemas, RBAC, AppConfigRegistry, storage helpers and server-only crypto |
 | `packages/db` | Package | Schema Prisma, migration versionate e client generato; `createPrismaClient` |
-| [`packages/nav`](packages/nav/README.md) | Package | Sync layer unidirezionale Microsoft Dynamics NAV → PostgreSQL (mssql) |
-| [`packages/calendar`](packages/calendar/README.md) | Package | Integrazione Google Calendar, feed iCal, solver dipendenze milestone |
-| [`packages/eslint-plugin-luke`](packages/eslint-plugin-luke/README.md) | Package | Regole ESLint interne (es. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
+| [`packages/nav`](packages/nav/README.md) | Package | One-way Microsoft Dynamics NAV → PostgreSQL sync layer (mssql) |
+| [`packages/calendar`](packages/calendar/README.md) | Package | Google Calendar integration, milestone sync engine, iCal feed generation |
+| [`packages/eslint-plugin-luke`](packages/eslint-plugin-luke/README.md) | Package | Internal ESLint rules (e.g. `no-uncommented-any`, `no-uncommented-tailwind-arbitrary`) |
 <!-- luke-docs:end:structure -->
 
 ## Quick Start
@@ -46,27 +46,27 @@ Sviluppato come monorepo pnpm + Turborepo con sette workspace: frontend Next.js,
 ### Prerequisiti
 
 <!-- luke-docs:start:prerequisites -->
-- Node.js >= 22.0.0
-- pnpm >= 10.0.0
-- Docker (per PostgreSQL locale e storage S3 opzionale)
-- PostgreSQL 16 (sviluppo e produzione)
-- Microsoft SQL Server (solo per la funzionalità di sync NAV)
+- Node.js and pnpm — the supported ranges are `engines` and `packageManager` in the root `package.json`, which is the only source for them
+- Docker — local PostgreSQL, the integration test database, and the S3-compatible storage container
+- PostgreSQL — development and production alike; the image is pinned in the `docker-compose.*.yml` files
+- An S3-compatible object store — only when `storage.type` is `s3` in AppConfig
+- Microsoft SQL Server — only for the NAV sync feature
 <!-- luke-docs:end:prerequisites -->
 
 ### Setup iniziale
 
 <!-- luke-docs:start:quickstart -->
 ```bash
-# Installa dipendenze
+# Install dependencies
 pnpm install
 
-# Build tutti i workspace
+# Build every workspace
 pnpm build
 
-# Esegui seed del database (genera segreti JWT e NextAuth)
-pnpm --filter @luke/api run seed
+# Seed the database
+pnpm db:seed
 
-# Avvia in modalità sviluppo
+# Start every workspace in development mode
 pnpm dev
 ```
 <!-- luke-docs:end:quickstart -->
@@ -96,24 +96,24 @@ pnpm dev
 ## Scripts Disponibili
 
 <!-- luke-docs:start:scripts -->
-| Script | Descrizione |
+| Script | Description |
 |--------|-------------|
-| `pnpm dev` | Avvia tutti i workspace in modalità sviluppo (via Turbo) |
-| `pnpm build` | Build completo di tutti i workspace |
-| `pnpm lint` | Lint di tutti i file TypeScript |
-| `pnpm typecheck` | Type check di tutti i workspace |
-| `pnpm format` | Formatta il codice con Prettier |
-| `pnpm db:seed` | Esegue il seed del database (`apps/api/prisma/seed.ts`) |
-| `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
-| `pnpm test:integration:local` | Alza il database di test e lancia la suite di integrazione |
-| `pnpm test:tools` | Test degli script di control-plane in `tools/scripts/` |
+| `pnpm dev` | Starts every workspace in development mode (via Turbo) |
+| `pnpm build` | Full build of every workspace |
+| `pnpm lint` | Lints every TypeScript file |
+| `pnpm typecheck` | Type checks every workspace |
+| `pnpm format` | Formats the code with Prettier |
+| `pnpm db:seed` | Seeds the database (`apps/api/prisma/seed.ts`) |
+| `pnpm test` | Runs every workspace's tests (via Turbo) |
+| `pnpm test:integration:local` | Brings the test database up and runs the integration suite |
+| `pnpm test:tools` | Tests for the control-plane scripts in `tools/scripts/` |
 | `pnpm check:drift` | Runs the blocking skill, documentation, platform, tsconfig, and workflow checks; see the [drift-check contracts](tools/README.md#drift-checks). |
-| `pnpm security` | Suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
-| `pnpm release:prepare <tag>` | Unico entry point di release: valida il tag e scrive la sezione di `CHANGELOG.md` |
-| `pnpm changelog` | Stampa su **stdout** l'output git-cliff senza range né versione: anteprima generica, **non** le note che produrrà `release:prepare` |
-| `pnpm changelog:bump` / `changelog:tag` | Riscrivono `CHANGELOG.md` con una sezione `## [Unreleased]`, **senza versione e senza verifiche** — mai per una release: usa `pnpm release:prepare <tag>` |
+| `pnpm security` | SAST (semgrep) + secrets (gitleaks) + dependencies (osv-scanner) |
+| `pnpm release:prepare <tag>` | The only release entry point: validates the tag and writes the `CHANGELOG.md` section |
+| `pnpm changelog` | Prints the git-cliff output to **stdout** with no range and no version: a generic preview, **not** the notes `release:prepare` will produce |
+| `pnpm changelog:bump` / `changelog:tag` | Rewrite `CHANGELOG.md` with an `## [Unreleased]` section, **with no version and no checks** — never for a release: use `pnpm release:prepare <tag>` |
 
-Workspace specifici: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
+Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
 <!-- luke-docs:end:scripts -->
 
 ## Convenzioni Naming
@@ -404,15 +404,15 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 ## Workflow
 
 <!-- luke-docs:start:deployment -->
-Il flusso di release è attivato dal push di un tag `vX.Y.Z`. GitHub Actions builda le immagini Docker e le pubblica su `ghcr.io`. Portainer rileva le nuove immagini e rideploya automaticamente lo stack. Push su `main` eseguono solo lint e typecheck — nessuna build immagine.
+The release flow is triggered by pushing a `vX.Y.Z` tag. A provenance gate proves the tag may publish from the line it was cut on, then GitHub Actions builds the Docker images and publishes them to `ghcr.io`; Portainer picks the new images up and redeploys the stack. Release-candidate artifacts come from the release train and publish `rc-latest`, stable artifacts come from `main` and publish `latest` plus the `X.Y` series tag. A push to a branch runs CI only — no image is ever built outside a tag.
 
-Il volume `luke_api_data` contiene la master key (`~/.luke/secret.key`) e non va mai eliminato. In produzione, `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server.
+The `luke_api_data` volume holds the master key (`~/.luke/secret.key`) and must never be deleted. In production, `entrypoint.sh` runs `prisma migrate deploy` before the server starts.
 <!-- luke-docs:end:deployment -->
 
 ## Architecture Decision Records (ADR)
 
 <!-- luke-docs:start:adr-link -->
-Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](docs/decisions/README.md).
+Relevant architectural decisions are documented in [`docs/decisions/`](docs/decisions/README.md).
 <!-- luke-docs:end:adr-link -->
 
 ## Error UX & User Experience
@@ -637,11 +637,11 @@ import {
 ## Tecnologie
 
 <!-- luke-docs:start:architecture -->
-Luke è un monorepo pnpm + Turborepo con sei workspace. Il backend (`apps/api`) espone API tRPC type-safe su Fastify 5, con PostgreSQL 16 via Prisma e autenticazione RBAC granulare (`resource:action`). Il frontend (`apps/web`) è un'app Next.js con App Router, shadcn/ui e React 19. La sincronizzazione con Microsoft Dynamics NAV avviene tramite `packages/nav` (mssql diretto, unidirezionale). Le milestone stagionali sono gestite da `packages/calendar` con integrazione Google Calendar e solver topologico delle dipendenze.
+Luke is a pnpm + Turborepo monorepo with seven workspaces. The backend (`apps/api`) exposes type-safe tRPC APIs on Fastify, over PostgreSQL through Prisma, with granular `resource:action` RBAC. The frontend (`apps/web`) is a Next.js App Router application built on shadcn/ui and React, and it consumes the API's router types end to end — a contract change fails the type check instead of reaching runtime. Microsoft Dynamics NAV synchronisation lives in `packages/nav` (direct mssql, one-way NAV → Luke). Season milestones are handled by `packages/calendar`, which syncs them to Google Calendar and generates the iCal feed.
 
-Stack: **Next.js 16** · **Fastify 5** · **tRPC 11** · **Prisma 7** · **PostgreSQL 16** · **TypeScript 6** · **Zod 4** · **pnpm 11** · **Turbo 2**
+Runtime configuration is not spread across environment variables: `.env` carries infrastructural bootstrap only, and everything else lives in the `AppConfig` table behind the registry in `@luke/core`.
 
-Per le decisioni architetturali chiave: [`docs/decisions/`](docs/decisions/README.md).
+The versions this stack currently sits on are read from the workspace manifests, never restated here. For the key architectural decisions: [`docs/decisions/`](docs/decisions/README.md).
 <!-- luke-docs:end:architecture -->
 
 ## Manutenzione Import
@@ -820,34 +820,34 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 ## Release
 
 <!-- luke-docs:start:release -->
-Il progetto usa [Conventional Commits](https://www.conventionalcommits.org/) per generare automaticamente il CHANGELOG via `git-cliff`. I commit sono validati dall'hook `.husky/commit-msg` (commitlint).
+The project uses [Conventional Commits](https://www.conventionalcommits.org/) to generate the CHANGELOG automatically through `git-cliff`. Commit messages are validated by the `.husky/commit-msg` hook (commitlint).
 
-Tag naming: `vX.Y.Z` (stable) o `vX.Y.Z-rc.N` (release candidate) — criteri SemVer: `patch` per fix/refactor, `minor` per nuove feature, `major` per breaking change su un contratto di compatibilità supportato.
+Tag naming: `vX.Y.Z` (stable) or `vX.Y.Z-rc.N` (release candidate) — SemVer criteria: `patch` for a fix or refactor, `minor` for new functionality, `major` for a breaking change to a supported compatibility contract.
 
-**Il tag git è l'identità della release.** Nessun manifest dichiara una versione: non esiste un secondo numero da tenere allineato al tag, né da far driftare.
+**The git tag is the release identity.** No manifest declares a version: there is no second number to keep aligned with the tag, and none to drift.
 
-**`pnpm release:prepare <tag>` è l'unico entry point supportato**: la versione la scegli tu. Lo script aggiorna da solo tag e `origin/main` (e si ferma se non ci riesce), poi `tools/scripts/check-release-train.ts --validate` verifica il tag **prima che venga scritto qualsiasi cosa**; solo dopo genera la sezione di CHANGELOG sul range validato e ricontrolla il risultato con `check-release-tree.ts --worktree`. **`CHANGELOG.md` è l'unico file che scrive.**
+**`pnpm release:prepare <tag>` is the only supported entry point**: you name the version. The script refreshes the tags and `origin/main` itself and stops if it cannot, then `tools/scripts/check-release-train.ts --validate` proves the tag **before anything is written**; only afterwards does it generate the CHANGELOG section over the validated range and re-check the result with `check-release-tree.ts --worktree`. **`CHANGELOG.md` is the only file it writes.**
 
-Il validatore parte dall'ultimo tag stabile **raggiungibile da HEAD** e usa il range `base..HEAD` — una differenza di insiemi sul grafo, non una camminata in ordine di data. Rifiuta un tag che esiste già, una base non raggiungibile, un hotfix stabile su un'altra linea che la scavalca (prima va mergiato), un target diverso da quello congelato del treno aperto, un contatore rc che salta, un range senza nulla di rilasciabile, e **qualsiasi versione sotto il bump minimo** che git-cliff calcola sui commit dalla base: uguale o superiore passa, e non esiste un flag per aggirarlo.
+The validator starts from the highest stable tag **reachable from HEAD** and uses the range `base..HEAD` — a set difference on the commit graph, not a walk in date order. It refuses a tag that already exists, a base that is not reachable, a stable hotfix on another line that outranks that base (merge it first), a target other than the open train's frozen one, an rc counter that skips, a range with nothing releasable in it, and **any version below the minimum bump** git-cliff computes for the commits since the base: equal or higher passes, and there is no flag to bypass it.
 
-`changelog:bump` e `changelog:tag` restano installati ma **non vanno usati**: scrivono un heading `## [Unreleased]`, che il checker rifiuta ovunque in un albero di release. Se ne hai eseguito uno per sbaglio: guarda `git diff CHANGELOG.md`, togli a mano solo la sezione `## [Unreleased]` che il comando ha aggiunto in testa, conserva ogni modifica che c'era già, e non rilanciare `release:prepare` sopra quell'output. Nessun ripristino integrale del file (`checkout`/`restore`/`reset`): butterebbe via anche il lavoro preesistente.
+`changelog:bump` and `changelog:tag` remain installed but **must not be used**: they write an `## [Unreleased]` heading, which the checker refuses anywhere in a release tree. If you ran one by mistake: read `git diff CHANGELOG.md`, remove by hand only the `## [Unreleased]` section the command prepended, keep every change that was already there, and do not run `release:prepare` on top of that output. Never restore the whole file (`checkout`/`restore`/`reset`): that would throw away the pre-existing work too.
 
 ```bash
-pnpm release:prepare v3.0.0-rc.1  # Primo candidato (non committa, non tagga)
-pnpm release:prepare v3.0.0-rc.2  # Candidato successivo dello stesso treno
-pnpm release:prepare v3.0.0       # Promuove il treno alla sua versione stabile
-pnpm release:prepare v3.0.1       # Hotfix sulla linea stabile
-# git-cliff senza range: output generico su stdout, non le note della release
+pnpm release:prepare v3.0.0-rc.1  # First candidate (does not commit or tag)
+pnpm release:prepare v3.0.0-rc.2  # Next candidate on the same train
+pnpm release:prepare v3.0.0       # Promote the train to its stable version
+pnpm release:prepare v3.0.1       # Hotfix on the stable line
+# git-cliff with no range: generic stdout preview, not the release notes
 pnpm changelog
 ```
 
-L'autorità è `.github/workflows/release.yml`: subito dopo il gate di provenance, lo stesso job esegue `tools/scripts/check-release-tree.ts` sull'esatto commit che il gate ha risolto e verifica che **quell'albero** abbia in `CHANGELOG.md` una sola sezione `## [X.Y.Z]` per la versione del tag, con almeno una voce `- `. Se fallisce, `verify` e i due job di build non partono e nessuna immagine viene pubblicata.
+`.github/workflows/release.yml` is authoritative: immediately after the provenance gate, the same job runs `tools/scripts/check-release-tree.ts` against the exact commit the gate resolved and verifies that **that tree** has exactly one `## [X.Y.Z]` section in `CHANGELOG.md` for the tag's version, with at least one `- ` entry. If it fails, `verify` and both image-build jobs do not start, and no image is published.
 
-È un controllo volutamente stretto: dimostra che l'albero taggato spedisce le note del proprio tag, non che una release sia stata preparata. Il **numero** lo dimostra `check-release-train.ts --validate` in fase di prepare; la **linea** il gate di provenance.
+This check is deliberately narrow: it proves that the tagged tree ships notes for its own tag, not that a release was prepared. `check-release-train.ts --validate` proves the **number** during preparation; the provenance gate proves the **line**.
 
-`.husky/pre-push` esegue lo stesso checker sull'oggetto che stai pushando: è **feedback anticipato, non enforcement** — `--no-verify` lo salta e un altro clone può non averlo.
+`.husky/pre-push` runs the same checker against the object being pushed: it is **early feedback, not enforcement** — `--no-verify` skips it, and another clone may not have it.
 
-Le note sono generate solo dai Conventional Commits: i merge commit (`Merge pull request …`, `Merge branch …`) sono esclusi. Di conseguenza un candidato i cui unici commit nuovi sono merge viene rifiutato in fase di prepare dal validatore — il range non contiene nulla di rilasciabile — prima che parta qualsiasi scrittura. Il rifiuto della sezione vuota in `check-release-tree.ts` non è ciò che lo ferma: resta come rete di sicurezza per una sezione vuota che arrivi nell'albero di release per un'altra via — è il comportamento voluto.
+Notes are generated only from Conventional Commits: merge commits (`Merge pull request …`, `Merge branch …`) are excluded. A candidate whose only new commits are merges is therefore rejected by the validator during preparation — the range contains nothing releasable — before any write starts. The empty-section rejection in `check-release-tree.ts` is not what stops it; that remains a backstop for an empty section reaching the release tree by another route. This is the intended behaviour.
 <!-- luke-docs:end:release -->
 
 ---
