@@ -135,8 +135,9 @@ the table above is where that is written, and every other statement points here.
    files are read as text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
 3. **Parallel agents: max 3** simultaneously.
 4. **Preserve markers** — never overwrite content outside the
-   `luke-docs:start/end` markers. Marker integrity, internal-link resolution,
-   and README-rooted reachability are **not** verified here:
+   `luke-docs:start/end` markers. Marker integrity, internal-link and supported
+   heading-fragment resolution, README-rooted reachability, owned index surfaces,
+   and exact ADR index titles are **not** verified here:
    `tools/scripts/check-docs-integrity.ts` checks them, blocking in CI. It's
    pure parsing, and parsing entrusted to an LLM is a level-4 control where a
    level-2 one is enough.
@@ -248,8 +249,9 @@ selected by the resolved scope. An explicit path selects exactly one target.
 dependencies" match the real names; sections omitted for missing information
 are flagged in the report.
 
-Link resolution, marker integrity, and README-rooted reachability are **not**
-to be verified by hand: `pnpm check:drift` checks them in CI. If it fails, the
+Link and supported heading-fragment resolution, marker integrity, owned index
+surfaces, ADR index titles, and README-rooted reachability are **not** to be
+verified by hand: `pnpm check:drift` checks them in CI. If it fails, the
 link must be fixed or removed — never added to an exceptions list, or the
 checker becomes furniture.
 
@@ -305,7 +307,8 @@ or repository structure changed in a way documentation must reflect.
 **Phase 2 — Compare semantics:** verify claims in the affected documentation
 against repository evidence. Report stale, contradictory, missing, or
 misclassified current guidance with specific evidence. Do not duplicate
-mechanical link, marker, README-rooted reachability, or ADR-index checks already owned by
+mechanical link, supported heading-fragment, marker, README-rooted reachability,
+owned-index-surface, or ADR-index completeness/title checks already owned by
 `tools/scripts/check-docs-integrity.ts`, and do not judge whether code complies
 with `CLAUDE.md` or an ADR — that belongs to `/luke-audit`.
 

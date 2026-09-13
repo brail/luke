@@ -20,12 +20,19 @@
  *    and no number is duplicated.
  * 4. **Reachability**: every tracked Markdown document outside `.claude/` is
  *    reachable by relative links from the repository `README.md`.
+ * 5. **Fragments** in inline Markdown links: same-file and tracked Markdown
+ *    targets, including directory README indexes, resolve to heading anchors.
+ * 6. **Owned indexes**: the docs hub links the ADR index once, without ADR
+ *    rows; each ADR index title matches the target H1, without its ADR prefix.
  *
  * ## No exception list
  *
  * A broken link must be fixed or removed. An allowlist here would turn the
  * checker into decoration — the same reason audit-skill baselines require a
  * written rationale for every entry.
+ * Unlike the skill checker, this checker has no inline ignore marker: skills
+ * sometimes cite deliberately removed paths, whereas navigation must resolve.
+ * Frozen historical documents are not exempt from structural checks.
  */
 
 import { execFileSync } from 'child_process';
@@ -44,7 +51,7 @@ import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
  * that definition in one place, `.gitignore`, instead of a hand-maintained
  * SKIP_DIRS list.
  *
- * `.claude/skills/` is excluded because it has its own checker, with different
+ * `.claude/**` is excluded because it has its own checker, with different
  * rules.
  *
  * Both conditions are needed, for opposite reasons. `git ls-files` reads the
@@ -394,6 +401,260 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
   return byNumber.size;
 }
 
+/** Hide fenced examples and HTML comments while preserving source line numbers. */
+function proseLines(text: string): string[] {
+  let fence = '';
+  return text
+    .replace(/<!--[\s\S]*?-->/g, match => match.replace(/[^\n]/g, ' '))
+    .split('\n')
+    .map(line => {
+      const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (fence) {
+        if (
+          delimiter &&
+          delimiter[1][0] === fence[0] &&
+          delimiter[1].length >= fence.length &&
+          !delimiter[2].trim()
+        )
+          fence = '';
+        return '';
+      }
+      if (delimiter) {
+        fence = delimiter[1];
+        return '';
+      }
+      return line;
+    });
+}
+
+/** Heading text, not link destinations or HTML tags, determines the anchor. */
+function headingText(text: string): string {
+  const code: string[] = [];
+  return text
+    .replace(/(`+)(.*?)\1/g, (_match, _ticks: string, contents: string) => {
+      code.push(contents);
+      return `\uE000${code.length - 1}\uE000`;
+    })
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]*>/g, '')
+    .replace(/([*~]+)(.*?)\1/g, '$2')
+    .replace(/(?<![\p{L}\p{N}])(_{1,2})(.+?)\1(?![\p{L}\p{N}])/gu, '$2')
+    .replace(
+      /\uE000(\d+)\uE000/g,
+      (_match, index: string) => code[Number(index)]
+    )
+    .replace(/&amp;/g, '&')
+    .replace(/&(?:lt|gt|quot|apos|nbsp);/g, '')
+    .trim();
+}
+
+/**
+ * ATX and single-line Setext headings outside fenced examples/comments.
+ * GitHub section-link rules: lowercase, punctuation removal, one hyphen per
+ * space (not whitespace collapsing), then collision-aware numeric suffixes.
+ * Tests cite GitHub's documentation and pin Unicode and duplicate collisions.
+ * This is not a full Markdown renderer: reference-style links, HTML headings,
+ * and block-container headings are outside the parser's supported syntax.
+ */
+export function headingAnchors(text: string): Set<string> {
+  const lines = proseLines(text);
+  const anchors = new Set<string>();
+  lines.forEach((line, index) => {
+    const atx = line.match(/^ {0,3}#{1,6}[ \t]+(.+)$/);
+    const setext = /^ {0,3}(?:=+|-+)\s*$/.test(lines[index + 1] ?? '');
+    const heading =
+      atx?.[1].replace(/[ \t]+#+[ \t]*$/, '') ??
+      (setext && line.trim() ? line.trim() : null);
+    if (heading === null) return;
+    const base = headingText(heading)
+      .toLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}_ -]/gu, '')
+      .replace(/ /g, '-');
+    let slug = base;
+    let suffix = 0;
+    while (anchors.has(slug)) slug = `${base}-${++suffix}`;
+    anchors.add(slug);
+  });
+  return anchors;
+}
+
+/**
+ * Same corpus as reachability, including frozen bodies. Raw HTML custom anchors
+ * leave a documented gap: per the approved plan, targets containing them are
+ * skipped rather than pretending the heading parser understands HTML anchors.
+ * Missing files remain checkLinks' responsibility; external fragments and
+ * non-Markdown targets are outside this check. No per-file exemption list.
+ */
+export function checkAnchors(
+  root: string,
+  files: string[],
+  problems: Problem[]
+): number {
+  const corpus = new Set(files);
+  const texts = new Map(files.map(file => [file, readFileSync(file, 'utf8')]));
+  const anchors = new Map(
+    files.map(file => [file, headingAnchors(texts.get(file) ?? '')])
+  );
+  let checked = 0;
+  for (const file of files) {
+    proseLines(texts.get(file) ?? '').forEach((line, index) => {
+      // Inline examples are not navigation links either.
+      const prose = line.replace(/(`+)[\s\S]*?\1/g, '');
+      for (const match of prose.matchAll(MARKDOWN_LINK_RE)) {
+        const target = match[1];
+        const hash = target.indexOf('#');
+        if (
+          hash < 0 ||
+          /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(target) ||
+          /[<>*${}]/.test(target)
+        )
+          continue;
+        const path = target.slice(0, hash);
+        let destination = path ? resolve(dirname(file), path) : file;
+        if (!corpus.has(destination))
+          destination = join(destination, 'README.md');
+        if (!corpus.has(destination)) continue;
+        const destinationProse = proseLines(texts.get(destination) ?? '')
+          .map(line => line.replace(/(`+)[\s\S]*?\1/g, ''))
+          .join('\n');
+        if (/<a\b[^>]*\b(?:name|id)\s*=/i.test(destinationProse)) continue;
+        let fragment: string;
+        try {
+          fragment = decodeURIComponent(target.slice(hash + 1));
+        } catch {
+          problems.push({
+            file: relative(root, file),
+            line: index + 1,
+            message: `fragment in \`${target}\` has invalid percent encoding.`,
+          });
+          continue;
+        }
+        if (!fragment) continue; // An empty fragment addresses the document top.
+        checked++;
+        if (!anchors.get(destination)?.has(fragment)) {
+          problems.push({
+            file: relative(root, file),
+            line: index + 1,
+            message: `fragment \`${target}\` does not resolve to a heading.`,
+          });
+        }
+      }
+    });
+  }
+  return checked;
+}
+
+/** Only the generated docs hub is constrained; ordinary ADR citations are free. */
+export function checkOwnedIndexSurfaces(
+  root: string,
+  problems: Problem[]
+): void {
+  const file = 'docs/README.md';
+  const absolute = join(root, file);
+  if (!existsSync(absolute)) {
+    problems.push({
+      file,
+      line: 1,
+      message:
+        'documentation hub is missing; its owned index cannot be checked.',
+    });
+    return;
+  }
+  const text = readFileSync(absolute, 'utf8');
+  const blocks = [
+    ...text.matchAll(
+      /<!--\s*luke-docs:start:index\s*-->([\s\S]*?)<!--\s*luke-docs:end:index\s*-->/g
+    ),
+  ];
+  if (blocks.length !== 1) {
+    problems.push({
+      file,
+      line: 1,
+      message: 'expected exactly one generated `index` block.',
+    });
+    return;
+  }
+  const block = blocks[0];
+  const startLine = text.slice(0, block.index).split('\n').length;
+  let indexLinks = 0;
+  proseLines(block[1]).forEach((line, index) => {
+    for (const match of line.matchAll(MARKDOWN_LINK_RE)) {
+      const path = relativePathPart(match[1]);
+      if (!path) continue;
+      const target = relative(root, resolve(root, 'docs', path));
+      if (target === 'docs/decisions/README.md' || target === 'docs/decisions')
+        indexLinks++;
+      if (/^docs\/decisions\/\d+-[^/]+\.md$/.test(target)) {
+        problems.push({
+          file,
+          line: startLine + index,
+          message:
+            'generated docs index must link the ADR index, not individual ADRs.',
+        });
+      }
+    }
+  });
+  if (indexLinks !== 1)
+    problems.push({
+      file,
+      line: startLine,
+      message: `expected exactly one link to \`decisions/README.md\`, found ${indexLinks}.`,
+    });
+}
+
+/** Pin both legacy colon and newer em-dash H1 prefixes without changing status. */
+export function checkAdrTitleMatch(
+  root: string,
+  files: string[],
+  problems: Problem[]
+): number {
+  const file = 'docs/decisions/README.md';
+  const absolute = join(root, file);
+  if (!files.includes(absolute)) return 0; // Missing index is diagnosed by checkAdrIndex.
+  const corpus = new Set(files);
+  const seen = new Set<string>();
+  let checked = 0;
+  proseLines(readFileSync(absolute, 'utf8')).forEach((line, index) => {
+    const row = line.match(/^\s*\|\s*\[(\d+)\]\(([^)]+)\)\s*\|\s*([^|]*)\|/);
+    if (!row) {
+      if (/^\s*\|\s*\[\d+\]\(/.test(line))
+        problems.push({
+          file,
+          line: index + 1,
+          message: 'ADR index row must contain a title cell.',
+        });
+      return;
+    }
+    const [, number, target, title] = row;
+    const report = (message: string): void => {
+      problems.push({ file, line: index + 1, message });
+    };
+    if (seen.has(number)) report(`duplicate ADR index entry \`${number}\`.`);
+    seen.add(number);
+    const destination = resolve(dirname(absolute), target);
+    if (
+      !corpus.has(destination) ||
+      !new RegExp(`^${number}-[^/]+\\.md$`).test(
+        relative(dirname(absolute), destination)
+      )
+    ) {
+      report(`ADR index entry \`${number}\` must target its tracked ADR file.`);
+      return;
+    }
+    checked++;
+    const h1 = proseLines(readFileSync(destination, 'utf8')).find(value =>
+      /^#\s+/.test(value)
+    );
+    const prefix = new RegExp(`^#\\s+ADR-${number}(?::|\\s+—)\\s+(.+?)\\s*$`);
+    const canonical = h1?.match(prefix)?.[1];
+    if (canonical === undefined)
+      report(`ADR \`${target}\` has no matching numbered H1.`);
+    else if (title.trim() !== canonical)
+      report(`ADR index title must match H1 exactly: \`${canonical}\`.`);
+  });
+  return checked;
+}
+
 function main(): void {
   const files = trackedMarkdown(REPO_ROOT);
 
@@ -437,10 +698,26 @@ function main(): void {
   const reachableFiles = checkReachability(REPO_ROOT, files, problems);
 
   const adrsChecked = checkAdrIndex(REPO_ROOT, problems);
+  const fragmentsChecked = checkAnchors(REPO_ROOT, files, problems);
+  if (fragmentsChecked === 0) {
+    throw new Error(
+      '[docs-integrity] zero heading fragments checked; navigation anchors were not verified.'
+    );
+  }
+  checkOwnedIndexSurfaces(REPO_ROOT, problems);
+  const titlesChecked = checkAdrTitleMatch(REPO_ROOT, files, problems);
+  if (titlesChecked === 0 && adrsChecked > 0) {
+    throw new Error(
+      '[docs-integrity] no ADR titles compared; the title parser discovered no rows.'
+    );
+  }
 
   // Same zero-discovery guard as the rest of the file: if ADR discovery stops
   // finding them, the completeness check would pass without verifying anything.
-  if (adrsChecked === 0 && existsSync(join(REPO_ROOT, 'docs/decisions/README.md'))) {
+  if (
+    adrsChecked === 0 &&
+    existsSync(join(REPO_ROOT, 'docs/decisions/README.md'))
+  ) {
     throw new Error(
       '[docs-integrity] ADR index present but no ADR is tracked and present in ' +
         'the working tree. Index completeness would pass without comparing ' +
@@ -458,7 +735,7 @@ function main(): void {
   console.log(
     `[docs-integrity] ok — ${files.length} files, ${linksChecked} links, ` +
       `${markersSeen} markers, ${reachableFiles} reachable, and ${adrsChecked} ` +
-      'indexed ADRs verified.'
+      `indexed ADRs verified; ${fragmentsChecked} fragments and ${titlesChecked} ADR titles checked.`
   );
 }
 

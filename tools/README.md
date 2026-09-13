@@ -17,7 +17,7 @@ The command runs these six checks in order and stops on the first failure:
 | Checker | Contract |
 |---------|----------|
 | [`check-skill-integrity.ts`](scripts/check-skill-integrity.ts) | Verifies paths, symbols, execution contracts, and argument binding referenced by Claude skills. |
-| [`check-docs-integrity.ts`](scripts/check-docs-integrity.ts) | Verifies tracked Markdown markers, relative links, reachability from the repository README, and the ADR index. |
+| [`check-docs-integrity.ts`](scripts/check-docs-integrity.ts) | Verifies tracked Markdown markers, relative links and heading fragments, reachability from the repository README, the owned docs index surface, and ADR index completeness and exact titles. |
 | [`check-platform-integrity.ts`](scripts/check-platform-integrity.ts) | Verifies workspace, dependency, runtime, and security-tooling invariants. |
 | [`check-tsconfig-integrity.ts`](scripts/check-tsconfig-integrity.ts) | Verifies the TypeScript configuration graph and runtime boundaries. |
 | [`check-workflow-branches.ts`](scripts/check-workflow-branches.ts) | Verifies that CI, security, and release workflows agree on the active release train. |
@@ -26,6 +26,13 @@ The command runs these six checks in order and stops on the first failure:
 The documentation and skill checkers derive their corpora from git rather than
 from hand-maintained file inventories. Their shared git-path and reporting
 behavior lives in [`scripts/lib/`](scripts/lib/).
+
+Fragment validation covers inline Markdown links to headings in the tracked
+corpus, including same-file links and directory README indexes. Fenced examples
+and HTML comments are excluded. Reference-style links, HTML headings and
+block-container headings are not parsed. Targets containing custom HTML anchors
+are skipped as a documented parser limitation, not a per-file ignore mechanism.
+Frozen historical documents remain subject to structural checks.
 
 ## Release gates
 

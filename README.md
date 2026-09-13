@@ -107,7 +107,7 @@ pnpm dev
 | `pnpm test` | Esegue i test di tutti i workspace (via Turbo) |
 | `pnpm test:integration:local` | Alza il database di test e lancia la suite di integrazione |
 | `pnpm test:tools` | Test degli script di control-plane in `tools/scripts/` |
-| `pnpm check:drift` | Checks skill integrity; documentation markers, links, README-rooted reachability, and the ADR index; platform; tsconfig; and workflows (blocking in CI) |
+| `pnpm check:drift` | Runs the blocking skill, documentation, platform, tsconfig, and workflow checks; see the [drift-check contracts](tools/README.md#drift-checks). |
 | `pnpm security` | Suite SAST (semgrep) + secrets (gitleaks) + dipendenze (osv-scanner) |
 | `pnpm release:prepare <tag>` | Unico entry point di release: valida il tag e scrive la sezione di `CHANGELOG.md` |
 | `pnpm changelog` | Stampa su **stdout** l'output git-cliff senza range né versione: anteprima generica, **non** le note che produrrà `release:prepare` |

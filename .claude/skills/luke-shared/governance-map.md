@@ -184,6 +184,8 @@ invariant is still semantic, the row says so — "moved" is not the same claim a
 | framework versions in README templates            | `luke-docs`   | manifests       | **live authority** — templates name a technology, never its version          |
 | ADR index completeness left to a generation pass  | `luke-docs`   | `check-docs-integrity` | **deterministic** — every tracked ADR indexed once, every entry resolving, no duplicate number. Not ADR discovery: `luke-audit` reads the files directly |
 | README-rooted documentation reachability left to semantic review | `luke-docs` | `check-docs-integrity` | **deterministic** — every tracked and present Markdown document outside `.claude/**` is reachable from `README.md`; no exceptions |
+| owned documentation index surfaces and ADR title reuse | `luke-docs` | `check-docs-integrity` | **deterministic** — the generated docs hub links the ADR index exactly once and no individual ADR; index titles match numbered ADR H1s; ordinary documents may cite any number of ADRs |
+| supported Markdown heading-fragment resolution | `luke-docs` | `check-docs-integrity` | **deterministic** — inline links to same-file or tracked Markdown headings, including directory indexes; parser limits and custom-HTML-anchor gap documented in `tools/README.md` |
 
 The `requirePermission` + non-transactional write case stayed in `luke-bugs`
 rather than moving: it is a check-then-act race whose defect is the missing
@@ -195,7 +197,6 @@ atomicity, not an attacker primitive.
 | ------------------------------------------------- | ------ | ------------------------------------------------------------ |
 | ADRs **006, 007, 008 and 009** at `Potentially stale` | user   | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten. ADR 012 mentions the phrase in prose about 007 — its own status is Accepted |
 | canonical-language regression detection           | `luke-docs` | approved as an explicitly incomplete deterministic guard; remains semantic until the mutable corpus is migrated and the guard ships green |
-| owned documentation index surfaces                | `luke-docs` | approved for deterministic promotion; remains semantic until the exact surface rules are implemented |
 | one README for every workspace                    | `luke-docs` | approved for deterministic promotion; must not be enabled until every current workspace has a README |
 
 ### Known limit

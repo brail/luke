@@ -109,8 +109,8 @@ there is reported as `owned by readme, not touched`, never corrected here. What
 each mode may write is the ownership table in `SKILL.md`.
 
 Always fully regenerated in ascending numeric order. The title in every row is
-copied verbatim from the ADR H1 after removing the `ADR-NNN — ` prefix; never
-translate or paraphrase it.
+copied verbatim from the ADR H1 after removing its `ADR-NNN — ` or legacy
+`ADR-NNN: ` prefix; never translate or paraphrase it. Preserve the source H1.
 
 ```markdown
 # Architectural Decisions
@@ -138,6 +138,6 @@ _Last updated: {current date}_
 - [ ] No new `Potentially stale` status was written — the value is legacy, read
       and reported only. ADRs 006, 007, 008 and 009 carry it from the old
       behavior and are awaiting an explicit decision
-- [ ] The `docs/decisions/README.md` index includes every file present in the
-      directory — enforced by `tools/scripts/check-docs-integrity.ts`, so a gap
-      is a red gate rather than a review item
+- [ ] `pnpm check:drift` passes ADR index completeness and exact-title checks
+      in `tools/scripts/check-docs-integrity.ts`; gaps and title drift are
+      blocking failures rather than manual review items

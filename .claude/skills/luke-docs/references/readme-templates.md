@@ -294,7 +294,8 @@ hands both modes a reason to edit the other's file.}
 
 - [ ] No placeholder text (`TBD`, `…`, `{to be filled in}`)
 - [ ] All code snippets are syntactically valid
-- [ ] All internal links `[text](#anchor)` resolve to existing sections
+- [ ] `pnpm check:drift` passes supported heading-fragment and owned-index checks;
+      parser limits are documented in `tools/README.md`, not silently assumed covered
 - [ ] The root README → `docs/decisions/README.md` link resolves
 - [ ] The listed env vars match the real `.env.production.example`
 - [ ] The export list matches what `index.ts` actually exports
