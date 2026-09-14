@@ -81,3 +81,43 @@ export const DIRECTORY_WITHOUT_INDEX_REPO: RepoFiles = {
   'visible.md': '# Visible\n',
   'docs/guide.md': '# Guide without an index\n',
 };
+
+/**
+ * Two workspaces declared by the globs, and three directories that are not
+ * workspaces: `packages/notes` matches a glob but holds no manifest, `tools`
+ * holds a manifest outside every glob, and `apps/web/fixtures/nested` holds one
+ * deeper than `apps/*` reaches. The `package.json` files are data for the same
+ * reason as the ADRs: committed, the real platform and documentation checkers
+ * would discover them.
+ */
+const WORKSPACES_WITHOUT_CORE_README: RepoFiles = {
+  'pnpm-workspace.yaml': 'packages:\n  - apps/*\n  - packages/*\n',
+  'package.json': '{ "name": "fixture-root" }\n',
+  'README.md': '# Repository\n',
+  'apps/web/package.json': '{ "name": "web" }\n',
+  'apps/web/README.md': '# Web\n',
+  'apps/web/fixtures/nested/package.json': '{ "name": "nested" }\n',
+  'packages/core/package.json': '{ "name": "core" }\n',
+  'packages/notes/guide.md': '# Notes without a manifest\n',
+  'tools/package.json': '{ "name": "tools" }\n',
+};
+
+/** Every workspace the globs declare has a tracked README. */
+export const VALID_WORKSPACE_REPO: RepoFiles = {
+  ...WORKSPACES_WITHOUT_CORE_README,
+  'packages/core/README.md': '# Core\n',
+};
+
+/** `packages/core` is a workspace, and its README is missing. */
+export const WORKSPACE_MISSING_README_REPO: RepoFiles =
+  WORKSPACES_WITHOUT_CORE_README;
+
+/**
+ * `apps` itself holds a manifest and no README, above workspaces of its own.
+ * Only a glob whose terminal `**` also matches zero levels discovers it, as
+ * pnpm does once it appends `/package.json` to `apps/**`.
+ */
+export const WORKSPACE_PARENT_WITHOUT_README_REPO: RepoFiles = {
+  ...VALID_WORKSPACE_REPO,
+  'apps/package.json': '{ "name": "apps" }\n',
+};

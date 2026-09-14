@@ -17,7 +17,7 @@ The command runs these six checks in order and stops on the first failure:
 | Checker | Contract |
 |---------|----------|
 | [`check-skill-integrity.ts`](scripts/check-skill-integrity.ts) | Verifies paths, symbols, execution contracts, and argument binding referenced by Claude skills. |
-| [`check-docs-integrity.ts`](scripts/check-docs-integrity.ts) | Verifies tracked Markdown markers, relative links and heading fragments, reachability from the repository README, the owned docs index surface, and ADR index completeness and exact titles. |
+| [`check-docs-integrity.ts`](scripts/check-docs-integrity.ts) | Verifies tracked Markdown markers, relative links and heading fragments, reachability from the repository README, a tracked README for every workspace declared by `pnpm-workspace.yaml`, the owned docs index surface, and ADR index completeness and exact titles. |
 | [`check-platform-integrity.ts`](scripts/check-platform-integrity.ts) | Verifies workspace, dependency, runtime, and security-tooling invariants. |
 | [`check-tsconfig-integrity.ts`](scripts/check-tsconfig-integrity.ts) | Verifies the TypeScript configuration graph and runtime boundaries. |
 | [`check-workflow-branches.ts`](scripts/check-workflow-branches.ts) | Verifies that CI, security, and release workflows agree on the active release train. |

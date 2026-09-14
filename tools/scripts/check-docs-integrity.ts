@@ -24,6 +24,9 @@
  *    targets, including directory README indexes, resolve to heading anchors.
  * 6. **Owned indexes**: the docs hub links the ADR index once, without ADR
  *    rows; each ADR index title matches the target H1, without its ADR prefix.
+ * 7. **Workspace READMEs**: every workspace `pnpm-workspace.yaml` declares — a
+ *    directory matched by its `packages:` globs that holds a tracked
+ *    `package.json` — has a tracked `README.md`.
  *
  * ## No exception list
  *
@@ -40,6 +43,7 @@ import { existsSync, readFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 
 import { isGitIgnored } from './lib/gitPaths';
+import { sequence } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 /**
@@ -280,6 +284,163 @@ export function checkReachability(
   }
 
   return reachable.size;
+}
+
+/**
+ * A `packages:` glob as an anchored matcher over repository-relative
+ * directories: a literal segment matches itself, `*` stays within one segment,
+ * and a whole `**` segment spans any number of segments, including none. A
+ * terminal `**` therefore also matches the directory before it — `apps/**`
+ * matches `apps` — because pnpm appends `/package.json` to every glob, and the
+ * `**` in that pattern matches zero levels. Everything else pnpm's glob engine
+ * would accept — `?`, character classes, braces, extglobs, `./` and `..`
+ * segments, consecutive `**` segments, trailing slashes, inline comments —
+ * throws rather than being approximated: a misread pattern silently drops or
+ * invents a workspace.
+ */
+function workspaceMatcher(pattern: string, declared: string): RegExp {
+  const segments = pattern.split('/');
+  if (
+    !/^[\w.*-]+(?:\/[\w.*-]+)*$/.test(pattern) ||
+    segments.some(
+      (segment, index) =>
+        segment === '.' ||
+        segment === '..' ||
+        (segment.includes('**') && segment !== '**') ||
+        (segment === '**' && segments[index + 1] === '**')
+    )
+  ) {
+    throw new Error(
+      `[docs-integrity] unsupported workspace glob \`${declared}\` in ` +
+        '`pnpm-workspace.yaml`: only literal segments, `*`, a whole `**` ' +
+        'segment and a leading `!` are understood. Extend the matcher and its ' +
+        'tests rather than letting the pattern be misread.'
+    );
+  }
+  // A terminal `**` after at least one segment makes the rest optional:
+  // `apps/**` compiles to `apps(?:/.+)?`.
+  const terminal = segments.length > 1 && segments[segments.length - 1] === '**';
+  const body = terminal ? segments.slice(0, -1) : segments;
+  const source = body
+    .map((segment, index) => {
+      const last = index === body.length - 1;
+      if (segment === '**') return last ? '.+' : '(?:[^/]+/)*';
+      const literal = segment.replace(/\./g, '\\.').replace(/\*/g, '[^/]*');
+      return last ? literal : `${literal}/`;
+    })
+    .join('');
+  return new RegExp(`^${source}${terminal ? '(?:/.+)?' : ''}$`);
+}
+
+/**
+ * Every pnpm workspace has a tracked `README.md`.
+ *
+ * A workspace is what `pnpm-workspace.yaml` says it is: a directory matched by
+ * its `packages:` globs that holds a `package.json`. Both halves are derived,
+ * never listed — the globs from the configuration, the manifests from
+ * `git ls-files` — so a new workspace is judged as soon as it exists, and a
+ * directory that merely sits under `packages/` is not one. As in
+ * `trackedMarkdown`, "exists" means tracked and present: an untracked manifest
+ * declares no workspace of this repository, and an untracked README documents
+ * none.
+ *
+ * Discovery fails closed. A missing configuration; a `packages:` list that is
+ * absent, declared more than once, empty, not a block sequence, or holding a
+ * line the strict reader cannot place; a glob outside the supported syntax; and
+ * globs that match no tracked manifest all throw, because each would otherwise
+ * pass over a partial or empty workspace list. There is deliberately no
+ * per-glob guard: a glob that matches nothing is dead configuration, not a
+ * documentation defect, and a per-glob zero-discovery guard is what once made
+ * the release tree checker reject a correct release.
+ */
+export function checkWorkspaceReadmes(
+  root: string,
+  files: string[],
+  problems: Problem[]
+): number {
+  const config = 'pnpm-workspace.yaml';
+  const absoluteConfig = join(root, config);
+  if (!existsSync(absoluteConfig)) {
+    throw new Error(
+      `[docs-integrity] \`${config}\` is missing, so no workspace can be ` +
+        'discovered and workspace READMEs cannot be verified.'
+    );
+  }
+
+  let globs: string[] | null;
+  try {
+    globs = sequence(readFileSync(absoluteConfig, 'utf8'), 'packages', {
+      strict: true,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `[docs-integrity] \`${config}\`: ${reason} Workspace discovery must not ` +
+        'act on a partial list.',
+      { cause: error }
+    );
+  }
+  if (globs === null || globs.length === 0) {
+    throw new Error(
+      `[docs-integrity] \`${config}\` declares no workspace globs: ` +
+        '`packages:` is absent, empty, or not a block sequence, so workspace ' +
+        'discovery would verify nothing.'
+    );
+  }
+
+  const include: RegExp[] = [];
+  const exclude: RegExp[] = [];
+  for (const glob of globs) {
+    if (glob.startsWith('!')) exclude.push(workspaceMatcher(glob.slice(1), glob));
+    else include.push(workspaceMatcher(glob, glob));
+  }
+  if (include.length === 0) {
+    throw new Error(
+      `[docs-integrity] \`${config}\` lists only exclusions, so no workspace ` +
+        'can be discovered.'
+    );
+  }
+
+  // Not wrapped in a catch: a git failure must stop the run, not read as a
+  // repository without workspaces.
+  const workspaces = execFileSync(
+    'git',
+    ['ls-files', '-z', '--', '*package.json'],
+    { cwd: root, encoding: 'utf8' }
+  )
+    .split('\0')
+    .filter(path => path.endsWith('/package.json'))
+    .filter(path => existsSync(join(root, path)))
+    .map(path => dirname(path))
+    .filter(
+      dir =>
+        include.some(matcher => matcher.test(dir)) &&
+        !exclude.some(matcher => matcher.test(dir))
+    )
+    .sort();
+
+  if (workspaces.length === 0) {
+    throw new Error(
+      `[docs-integrity] the \`packages:\` globs in \`${config}\` ` +
+        `(${globs.join(', ')}) match no tracked package.json, so workspace ` +
+        'READMEs would pass without checking anything.'
+    );
+  }
+
+  const corpus = new Set(files.map(file => relative(root, file)));
+  for (const workspace of workspaces) {
+    const readme = `${workspace}/README.md`;
+    if (corpus.has(readme)) continue;
+    problems.push({
+      file: readme,
+      line: 1,
+      message:
+        `workspace \`${workspace}\` has no tracked README.md. Every workspace ` +
+        `declared by \`${config}\` needs one; do not add exceptions.`,
+    });
+  }
+
+  return workspaces.length;
 }
 
 /**
@@ -696,6 +857,7 @@ function main(): void {
   }
 
   const reachableFiles = checkReachability(REPO_ROOT, files, problems);
+  const workspaceReadmes = checkWorkspaceReadmes(REPO_ROOT, files, problems);
 
   const adrsChecked = checkAdrIndex(REPO_ROOT, problems);
   const fragmentsChecked = checkAnchors(REPO_ROOT, files, problems);
@@ -734,7 +896,8 @@ function main(): void {
 
   console.log(
     `[docs-integrity] ok — ${files.length} files, ${linksChecked} links, ` +
-      `${markersSeen} markers, ${reachableFiles} reachable, and ${adrsChecked} ` +
+      `${markersSeen} markers, ${reachableFiles} reachable, ` +
+      `${workspaceReadmes} workspace READMEs, and ${adrsChecked} ` +
       `indexed ADRs verified; ${fragmentsChecked} fragments and ${titlesChecked} ADR titles checked.`
   );
 }

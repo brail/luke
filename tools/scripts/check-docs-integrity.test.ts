@@ -39,6 +39,9 @@ import {
   ORPHANED_DOCUMENT_REPO,
   VALID_ADR_REPO,
   VALID_REACHABLE_REPO,
+  VALID_WORKSPACE_REPO,
+  WORKSPACE_MISSING_README_REPO,
+  WORKSPACE_PARENT_WITHOUT_README_REPO,
   type RepoFiles,
 } from './__fixtures__/docs/adrRepo';
 import {
@@ -49,9 +52,11 @@ import {
   checkMarkers,
   checkReachability,
   checkOwnedIndexSurfaces,
+  checkWorkspaceReadmes,
   headingAnchors,
   trackedMarkdown,
 } from './check-docs-integrity';
+import { sequence } from './lib/pnpmWorkspace';
 import { type Problem } from './lib/report';
 
 const created: string[] = [];
@@ -513,6 +518,237 @@ test('reachability fails closed when the declared navigation root is absent', ()
   assert.throws(
     () => checkReachability(dir, files, []),
     /navigation root `README\.md` is not tracked and present/
+  );
+});
+
+/**
+ * Workspace discovery reads the fixture's own `pnpm-workspace.yaml` and its own
+ * tracked manifests, never Luke's: the live repository is judged by `main`.
+ */
+function workspaceCheck(files: RepoFiles): {
+  count: number;
+  problems: Problem[];
+} {
+  const dir = repo(files);
+  const problems: Problem[] = [];
+  const count = checkWorkspaceReadmes(dir, trackedMarkdown(dir), problems);
+  return { count, problems };
+}
+
+function withWorkspaceConfig(base: RepoFiles, yaml: string): RepoFiles {
+  return { ...base, 'pnpm-workspace.yaml': yaml };
+}
+
+test('every workspace declared by the globs has a tracked README', () => {
+  const { count, problems } = workspaceCheck(VALID_WORKSPACE_REPO);
+
+  // Two, not five: `packages/notes` has no manifest, `tools` is outside every
+  // glob, and `apps/web/fixtures/nested` is deeper than `apps/*` reaches.
+  assert.equal(count, 2);
+  assert.deepEqual(problems, []);
+});
+
+test('a workspace without a README is rejected', () => {
+  assert.deepEqual(workspaceCheck(WORKSPACE_MISSING_README_REPO).problems, [
+    {
+      file: 'packages/core/README.md',
+      line: 1,
+      message:
+        'workspace `packages/core` has no tracked README.md. Every workspace ' +
+        'declared by `pnpm-workspace.yaml` needs one; do not add exceptions.',
+    },
+  ]);
+});
+
+test('an untracked README does not document a workspace', () => {
+  const dir = repo(WORKSPACE_MISSING_README_REPO);
+  writeFileSync(join(dir, 'packages/core/README.md'), '# Core, never added\n');
+  const problems: Problem[] = [];
+
+  checkWorkspaceReadmes(dir, trackedMarkdown(dir), problems);
+
+  assert.deepEqual(
+    problems.map(problem => problem.file),
+    ['packages/core/README.md']
+  );
+});
+
+test('directories without a tracked package.json are not workspaces', () => {
+  // `packages/notes` matches `packages/*` with no manifest at all, and
+  // `packages/scratch` holds one that git does not track.
+  const dir = repo(VALID_WORKSPACE_REPO);
+  mkdirSync(join(dir, 'packages/scratch'));
+  writeFileSync(join(dir, 'packages/scratch/package.json'), '{}\n');
+  const problems: Problem[] = [];
+
+  assert.equal(checkWorkspaceReadmes(dir, trackedMarkdown(dir), problems), 2);
+  assert.deepEqual(problems, []);
+});
+
+test('discovery follows the workspace configuration, not directory names', () => {
+  const files = (yaml: string): string[] =>
+    workspaceCheck(
+      withWorkspaceConfig(VALID_WORKSPACE_REPO, yaml)
+    ).problems.map(problem => problem.file);
+
+  // Narrowing the globs drops a workspace; widening them adds one.
+  assert.equal(
+    workspaceCheck(
+      withWorkspaceConfig(VALID_WORKSPACE_REPO, 'packages:\n  - packages/*\n')
+    ).count,
+    1
+  );
+  assert.deepEqual(files('packages:\n  - apps/*\n  - packages/*\n  - tools\n'), [
+    'tools/README.md',
+  ]);
+
+  // A `**` segment spans any depth; a leading `!` excludes.
+  assert.deepEqual(files("packages:\n  - 'apps/**'\n  - packages/*\n"), [
+    'apps/web/fixtures/nested/README.md',
+  ]);
+  assert.deepEqual(
+    files("packages:\n  - 'apps/**'\n  - '!apps/web/fixtures/**'\n  - packages/*\n"),
+    []
+  );
+});
+
+test('a terminal `**` also matches zero directory levels, in inclusions and exclusions', () => {
+  const discovered = (yaml: string): { count: number; readmes: string[] } => {
+    const { count, problems } = workspaceCheck(
+      withWorkspaceConfig(WORKSPACE_PARENT_WITHOUT_README_REPO, yaml)
+    );
+    return { count, readmes: problems.map(problem => problem.file) };
+  };
+
+  // pnpm appends `/package.json` to `apps/**`, and that pattern matches
+  // `apps/package.json` too: `apps` is a workspace beside the ones below it.
+  assert.deepEqual(discovered("packages:\n  - 'apps/**'\n  - packages/*\n"), {
+    count: 4,
+    readmes: ['apps/README.md', 'apps/web/fixtures/nested/README.md'],
+  });
+
+  // An exclusion matches the same way: `!apps/web/**` removes `apps/web`
+  // itself, not only what sits below it, and `!apps/**` removes `apps` too.
+  assert.deepEqual(
+    discovered("packages:\n  - 'apps/**'\n  - '!apps/web/**'\n  - packages/*\n"),
+    { count: 2, readmes: ['apps/README.md'] }
+  );
+  assert.deepEqual(
+    discovered("packages:\n  - 'apps/**'\n  - '!apps/**'\n  - packages/*\n"),
+    { count: 1, readmes: [] }
+  );
+});
+
+test('a column-zero comment between workspace globs does not hide the globs after it', () => {
+  // Regression: the shared reader ended a sequence at the first line starting
+  // in column 0, so this comment silently dropped `packages/*`. `packages/core`
+  // is reachable only through the glob after the comment, and it has no
+  // README: the problem proves that glob was read, the count that nothing else
+  // was lost.
+  const yaml =
+    'packages:\n  - apps/*\n# Shared libraries\n  - packages/*\n' +
+    '  # An indented note\n\nallowBuilds:\n  esbuild: true\n';
+  const { count, problems } = workspaceCheck(
+    withWorkspaceConfig(WORKSPACE_MISSING_README_REPO, yaml)
+  );
+
+  assert.equal(count, 2);
+  assert.deepEqual(
+    problems.map(problem => problem.file),
+    ['packages/core/README.md']
+  );
+});
+
+test('the shared reader keeps its lenient default and rejects malformed blocks only when strict', () => {
+  const yaml = "key:\n  - 'a'\n  stray\n# note\n  - \"b\"\nnext: 1\n";
+
+  assert.deepEqual(sequence(yaml, 'key'), ['a', 'b']);
+  assert.equal(sequence('key: [a, b]\n', 'key'), null);
+
+  // Lenient compatibility for the platform policy readers: a deindented line
+  // ends the block, and a repeated key answers from its first declaration.
+  assert.deepEqual(sequence('key:\n  - a\n- b\n', 'key'), ['a']);
+  assert.deepEqual(sequence('key:\n  - a\nkey:\n  - b\n', 'key'), ['a']);
+
+  // Strict still ends the block at the next top-level key.
+  assert.deepEqual(
+    sequence('key:\n  - a\n# note\nnext: 1\nother:\n  - z\n', 'key', {
+      strict: true,
+    }),
+    ['a']
+  );
+  for (const [input, message] of [
+    [yaml, /`key` contains a line that is not a sequence item: `stray`\./],
+    ['key:\n  - a\n- b\n', /`key` contains an item that is not indented: `- b`\./],
+    [
+      'key:\n  - a\nb\n',
+      /`key` is followed by a line that is neither a comment nor a top-level key: `b`\./,
+    ],
+    ['key:\n  - a\nnext: 1\nkey:\n  - b\n', /`key` is declared more than once/],
+    ['key: [x]\nkey:\n  - a\n', /`key` is declared more than once/],
+  ] as const) {
+    assert.throws(() => sequence(input, 'key', { strict: true }), message);
+  }
+});
+
+test('workspace discovery fails closed instead of checking a partial or empty list', () => {
+  for (const [yaml, error] of [
+    ['allowBuilds:\n  esbuild: true\n', /declares no workspace globs/],
+    ["packages: ['apps/*', 'packages/*']\n", /declares no workspace globs/],
+    ['packages: # workspaces\n  - apps/*\n', /declares no workspace globs/],
+    ['packages:\n\nallowBuilds:\n  esbuild: true\n', /declares no workspace globs/],
+    [
+      'packages:\n  - apps/*\n  packages/*\n',
+      /not a sequence item: `packages\/\*`\. Workspace discovery must not act on a partial list/,
+    ],
+    [
+      'packages:\n  - apps/*\n- packages/*\n',
+      /item that is not indented: `- packages\/\*`\. Workspace discovery must not act on a partial list/,
+    ],
+    ['packages:\n- apps/*\n- packages/*\n', /item that is not indented: `- apps\/\*`/],
+    [
+      'packages:\n  - apps/*\npackages/*\n',
+      /neither a comment nor a top-level key: `packages\/\*`/,
+    ],
+    [
+      'packages:\n  - apps/*\nallowBuilds:\n  esbuild: true\npackages:\n  - packages/*\n',
+      /`packages` is declared more than once/,
+    ],
+    [
+      'packages:\n  - apps/* # applications\n',
+      /unsupported workspace glob `apps\/\* # applications`/,
+    ],
+    ['packages:\n  - apps/{web,core}\n', /unsupported workspace glob/],
+    ["packages:\n  - 'apps/**/**'\n", /unsupported workspace glob/],
+    ['packages:\n  - ./packages/*\n', /unsupported workspace glob/],
+    ['packages:\n  - ../elsewhere/*\n', /unsupported workspace glob/],
+    ["packages:\n  - '!apps/*'\n", /lists only exclusions/],
+    ['packages:\n  - services/*\n', /match no tracked package\.json/],
+  ] as const) {
+    assert.throws(
+      () => workspaceCheck(withWorkspaceConfig(VALID_WORKSPACE_REPO, yaml)),
+      error,
+      yaml
+    );
+  }
+});
+
+test('a missing workspace configuration and a failing git both throw', () => {
+  const dir = repo(VALID_WORKSPACE_REPO);
+  rmSync(join(dir, 'pnpm-workspace.yaml'));
+  assert.throws(
+    () => checkWorkspaceReadmes(dir, trackedMarkdown(dir), []),
+    /`pnpm-workspace\.yaml` is missing/
+  );
+
+  // Outside a repository `git ls-files` fails. That failure must surface, not
+  // read as a repository with no workspaces.
+  const notARepo = mkdtempSync(join(tmpdir(), 'luke-no-git-'));
+  created.push(notARepo);
+  writeFileSync(join(notARepo, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+  assert.throws(
+    () => checkWorkspaceReadmes(notARepo, [], []),
+    /Command failed: git ls-files/
   );
 });
 

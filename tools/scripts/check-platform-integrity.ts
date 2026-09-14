@@ -29,6 +29,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+import { scalar, sequence } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 // ---------------------------------------------------------------------------
@@ -371,30 +372,10 @@ function major(spec: string): string | null {
 // ---------------------------------------------------------------------------
 // pnpm-workspace.yaml
 //
-// Parsed by hand rather than with a YAML library: no workspace declares one as
-// a direct dependency, and reaching for a transitive copy would be a dependency
-// this repo has not agreed to. Only the handful of top-level keys the policy
-// covers are read, and every reader tolerates absence.
+// Read through `lib/pnpmWorkspace.ts`, the hand-written parser shared with the
+// documentation checker. Only the handful of top-level keys the policy covers
+// are read, and every reader here tolerates absence.
 // ---------------------------------------------------------------------------
-
-function scalar(yaml: string, key: string): string | null {
-  return yaml.match(new RegExp(`^${key}:[ \\t]*(\\S.*?)\\s*$`, 'm'))?.[1] ?? null;
-}
-
-function sequence(yaml: string, key: string): string[] | null {
-  const start = yaml.match(new RegExp(`^${key}:[ \\t]*$`, 'm'));
-  if (start?.index === undefined) return null;
-  const items: string[] = [];
-  for (const line of yaml.slice(start.index).split('\n').slice(1)) {
-    const item = line.match(/^[ \t]+-[ \t]+(.*?)\s*$/);
-    if (!item) {
-      if (/^\S/.test(line)) break;
-      continue;
-    }
-    items.push(item[1].replace(/^['"]|['"]$/g, ''));
-  }
-  return items;
-}
 
 /** Split an exclusion selector into its package pattern and optional version. */
 function splitSelector(selector: string): { pattern: string; version?: string } {
