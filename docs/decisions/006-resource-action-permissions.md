@@ -1,54 +1,54 @@
 # ADR-006: Resource/Action Permissions System
 
-**Status**: Potentially stale — review needed  
+**Status**: Superseded by [016 — Static Resource:Action Permissions and Server-Side Enforcement](016-static-resource-action-permissions.md)\
 **Date**: 2025-01-27  
 **Authors**: Luke Team
 
 ## Context
 
-Il sistema Luke aveva un'implementazione RBAC iniziale con controllo accesso basato su ruoli (`adminOrEditorProcedure`) e sezioni (`withSectionAccess`), ma il modello non scalava man mano che aggiungevamo nuove risorse e azioni.
+The Luke system had an initial RBAC implementation with access control based on roles (`adminOrEditorProcedure`) and sections (`withSectionAccess`), but the model did not scale as we added new resources and actions.
 
-### Problemi identificati:
+### Problems identified:
 
-1. **Granularità limitata**: Solo controllo per ruolo, non per azione specifica
-2. **Scalabilità**: Ogni nuova risorsa richiedeva modifiche hardcoded ai middleware
-3. **Inconsistenza**: Logica diversa tra API e frontend
-4. **Manutenibilità**: Controlli sparsi nei router senza pattern unificato
+1. **Limited granularity**: Control by role only, not by specific action
+2. **Scalability**: Every new resource required hardcoded changes to the middleware
+3. **Inconsistency**: Different logic between API and frontend
+4. **Maintainability**: Checks scattered across routers with no unified pattern
 
-### Esempi di limitazioni:
+### Examples of limitations:
 
 ```typescript
-// Prima: solo controllo ruolo
-adminOrEditorProcedure; // Permette tutto o niente
+// Before: role check only
+adminOrEditorProcedure; // Allows everything or nothing
 
-// Prima: controllo sezione generico
-withSectionAccess('settings'); // Non distingue read/write
+// Before: generic section check
+withSectionAccess('settings'); // Does not distinguish read/write
 ```
 
 ## Decision
 
-Implementare un sistema di **Resource/Action Permissions** con modello `Resource:Action` (es. `brands:create`, `users:read`).
+Implement a **Resource/Action Permissions** system with a `Resource:Action` model (e.g. `brands:create`, `users:read`).
 
-### Architettura scelta:
+### Chosen architecture:
 
-1. **Modello granulare**: `Permission = Resource:Action`
+1. **Granular model**: `Permission = Resource:Action`
 2. **Wildcard support**: `*:*`, `resource:*`, `resource:action`
-3. **Cache per-request**: Performance ottimizzata
-4. **Backward compatibility**: Mantiene `adminOrEditorProcedure` come alias
-5. **Integrazione graduale**: Coesistenza con `UserSectionAccess`
+3. **Per-request cache**: Optimized performance
+4. **Backward compatibility**: Keeps `adminOrEditorProcedure` as an alias
+5. **Gradual integration**: Coexistence with `UserSectionAccess`
 
-### Implementazione:
+### Implementation:
 
 ```typescript
-// Nuovo sistema
-requirePermission('brands:create') // Granulare
+// New system
+requirePermission('brands:create') // Granular
 requirePermission(['brands:create', 'brands:update']) // OR logic
 
 // Frontend
 const { can } = useAccess();
 can('brands:create') && <CreateButton />
 
-// Componenti
+// Components
 <AccessGate permission="brands:create">
   <CreateButton />
 </AccessGate>
@@ -76,22 +76,22 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 // Middleware factory
 export function requirePermission(permission: Permission | Permission[])
 
-// Helper per logica condizionale
+// Helper for conditional logic
 export function can(ctx: Context, permission: Permission): boolean
 
-// Cache per-request
+// Per-request cache
 ctx._permissionsCache: Map<string, boolean>
 ```
 
 ### 3. Frontend Integration (`apps/web`)
 
 ```typescript
-// Hook unificato
+// Unified hook
 export function useAccess() {
   const { can, canAll, canAny, isAdmin, isAdminOrEditor } = useAccess();
 }
 
-// Componenti conditional rendering
+// Conditional rendering components
 <AccessGate permission="brands:create">
   <CreateButton />
 </AccessGate>
@@ -100,83 +100,83 @@ export function useAccess() {
 ### 4. Backward Compatibility
 
 ```typescript
-// Mantiene funzionamento esistente
+// Keeps existing behavior working
 export const adminOrEditorProcedure = publicProcedure
   .use(loggingMiddleware)
-  .use(adminOrEditorMiddleware); // DEPRECATED ma funzionante
+  .use(adminOrEditorMiddleware); // DEPRECATED but working
 
-// Integrazione con UserSectionAccess
-withSectionAccess('settings'); // Internamente usa 'settings:read'
+// Integration with UserSectionAccess
+withSectionAccess('settings'); // Internally uses 'settings:read'
 ```
 
 ## Consequences
 
 ### Positive:
 
-- ✅ **Granularità**: Controllo fine per ogni azione
-- ✅ **Scalabilità**: Aggiunta nuove risorse senza modifiche hardcoded
-- ✅ **Consistenza**: Stesso modello API/FE
-- ✅ **Performance**: Cache per-request, zero overhead
-- ✅ **DX**: Hook e componenti riusabili
+- ✅ **Granularity**: Fine-grained control for every action
+- ✅ **Scalability**: New resources added without hardcoded changes
+- ✅ **Consistency**: Same model for API/FE
+- ✅ **Performance**: Per-request cache, zero overhead
+- ✅ **DX**: Reusable hooks and components
 - ✅ **Backward compatibility**: Zero breaking changes
 
 ### Negative:
 
-- ❌ **Complessità iniziale**: Curva di apprendimento per sviluppatori
-- ❌ **Migration effort**: Refactor graduale dei router esistenti
-- ❌ **Configuration overhead**: Più permissions da gestire
+- ❌ **Initial complexity**: Learning curve for developers
+- ❌ **Migration effort**: Gradual refactor of existing routers
+- ❌ **Configuration overhead**: More permissions to manage
 
-### Mitigazioni:
+### Mitigations:
 
-- **Documentazione**: Esempi chiari e pattern guide
-- **Migration path**: Refactor incrementale, coesistenza temporanea
-- **Tooling**: Helper e shortcut per casi comuni
+- **Documentation**: Clear examples and pattern guides
+- **Migration path**: Incremental refactor, temporary coexistence
+- **Tooling**: Helpers and shortcuts for common cases
 
 ## Migration Strategy
 
 ### Phase 1: Foundation (✅ Completed)
 
-- [x] Core types e helpers
-- [x] API middleware con cache
-- [x] Frontend hook e componenti
-- [x] Test unitari e integration
+- [x] Core types and helpers
+- [x] API middleware with cache
+- [x] Frontend hook and components
+- [x] Unit and integration tests
 
 ### Phase 2: Router Migration (🔄 In Progress)
 
-- [x] Brand router migrato
+- [x] Brand router migrated
 - [ ] Users router
 - [ ] Config router
 - [ ] Audit router
 
 ### Phase 3: Cleanup (📋 Planned)
 
-- [ ] Deprecation warnings per `adminOrEditorProcedure`
-- [ ] Rimozione codice legacy
-- [ ] Documentazione completa
+- [ ] Deprecation warnings for `adminOrEditorProcedure`
+- [ ] Legacy code removal
+- [ ] Complete documentation
 
 ## Examples
 
 ### Before vs After:
 
 ```typescript
-// BEFORE: Controllo generico
-adminOrEditorProcedure; // Tutto o niente
+// BEFORE: Generic check
+adminOrEditorProcedure; // All or nothing
 
-// AFTER: Controllo granulare
-requirePermission('brands:create'); // Solo creazione brand
-requirePermission('brands:update'); // Solo modifica brand
-requirePermission('brands:delete'); // Solo eliminazione brand
+// AFTER: Granular check
+requirePermission('brands:create'); // Brand creation only
+requirePermission('brands:update'); // Brand update only
+requirePermission('brands:delete'); // Brand deletion only
 ```
 
 ### Frontend Usage:
 
 ```tsx
-// BEFORE: Controllo manuale
+// BEFORE: Manual check
 {
   user.role === 'admin' || user.role === 'editor' ? <CreateButton /> : null;
 }
 
-// AFTER: Controllo dichiarativo
+// AFTER: Declarative check
 <AccessGate permission="brands:create">
   <CreateButton />
 </AccessGate>;
@@ -185,10 +185,10 @@ requirePermission('brands:delete'); // Solo eliminazione brand
 ### Multiple Permissions:
 
 ```typescript
-// OR logic: almeno una permission
+// OR logic: at least one permission
 requirePermission(['brands:create', 'brands:update'])
 
-// Frontend: tutte le permissions
+// Frontend: all permissions
 <AccessAll permissions={['brands:read', 'brands:update']}>
   <AdvancedEditor />
 </AccessAll>
@@ -198,9 +198,9 @@ requirePermission(['brands:create', 'brands:update'])
 
 ### Logging:
 
-- Structured logs per FORBIDDEN: `{traceId, userId, permission, resource, action}`
-- NO PII in logs (solo IDs)
-- Audit trail per violazioni
+- Structured logs for FORBIDDEN: `{traceId, userId, permission, resource, action}`
+- NO PII in logs (IDs only)
+- Audit trail for violations
 
 ### Metrics (Future):
 
@@ -214,14 +214,14 @@ requirePermission(['brands:create', 'brands:update'])
 ```typescript
 // Context-aware permissions
 hasPermission(user, 'brands:update', { brandId: 'brand-123' });
-// Verifica ownership o team membership
+// Verifies ownership or team membership
 ```
 
 ### Phase 3: Dynamic Permissions
 
 ```typescript
 // Runtime configuration via UI
-// Permissions per team/progetto
+// Permissions per team/project
 // Time-based access
 ```
 
