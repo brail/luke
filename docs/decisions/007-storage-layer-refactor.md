@@ -2,22 +2,22 @@
 
 ## Status
 
-Potentially stale — review needed
+Superseded by [017 — Key-Based Storage References and Two-Phase Upload Confirmation](017-key-based-storage-and-two-phase-upload.md)
 
 ## Context
 
-Il sistema di storage precedente aveva diverse limitazioni architetturali:
+The previous storage system had several architectural limitations:
 
-1. **URL nel database**: i modelli (`Brand.logoUrl`, `CollectionLayoutRow.pictureUrl`, `MerchandisingImage.imageUrl`) salvavano URL completi. Cambiare provider o configurazione URL richiedeva una migrazione dati.
-2. **Provider unico**: solo filesystem locale. Impossibile usare MinIO o altri object storage senza riscrivere tutta la logica.
-3. **Upload immediato e definitivo**: nessun meccanismo per upload "pending" — impossibile caricare un file prima di creare l'entità che lo referenzia.
-4. **Validazione duplicata**: `streamToBuffer`, `validateMagicBytes`, `validateFile` riscritti identicamente in ogni service di upload.
+1. **URLs in the database**: the models (`Brand.logoUrl`, `CollectionLayoutRow.pictureUrl`, `MerchandisingImage.imageUrl`) stored full URLs. Changing the provider or the URL configuration required a data migration.
+2. **Single provider**: local filesystem only. Using MinIO or any other object storage was impossible without rewriting all of the logic.
+3. **Immediate and final upload**: no mechanism for "pending" uploads — a file could not be uploaded before creating the entity that references it.
+4. **Duplicated validation**: `streamToBuffer`, `validateMagicBytes`, `validateFile` rewritten identically in every upload service.
 
 ## Decision
 
-### 1. Archiviare chiavi, non URL
+### 1. Store keys, not URLs
 
-I campi URL nei modelli sono stati sostituiti con campi `key`:
+The URL fields in the models were replaced with `key` fields:
 
 ```
 Brand.logoUrl     → Brand.logoKey
@@ -25,9 +25,9 @@ CollectionLayoutRow.pictureUrl → CollectionLayoutRow.pictureKey
 MerchandisingImage.imageUrl    → MerchandisingImage.key
 ```
 
-L'URL pubblico viene calcolato a runtime tramite `makeUrlResolver(prisma)` o `resolvePublicUrl(prisma, bucket, key)`. Cambiare provider o configurazione non richiede più migrazioni dati.
+The public URL is computed at runtime through `makeUrlResolver(prisma)` or `resolvePublicUrl(prisma, bucket, key)`. Changing the provider or the configuration no longer requires data migrations.
 
-### 2. Interfaccia `IStorageProvider` con capabilities
+### 2. `IStorageProvider` interface with capabilities
 
 ```typescript
 interface IStorageProvider {
@@ -43,32 +43,32 @@ interface IStorageProvider {
 }
 ```
 
-Provider implementati: `LocalStorageProvider`, `MinioStorageProvider`. Il provider attivo è selezionato da `storage.type` in AppConfig.
+Implemented providers: `LocalStorageProvider`, `MinioStorageProvider`. The active provider is selected by `storage.type` in AppConfig.
 
 ### 3. Two-Phase Upload — FileObject.confirmedAt
 
-Gli upload sono ora in due fasi:
+Uploads now happen in two phases:
 
 ```
 Phase 1 — Upload pending:
   POST /upload/brand-logos → putObject(ctx, { pending: true })
-  → FileObject creato con confirmedAt = null
-  → Ritorna { fileObjectId, publicUrl }
+  → FileObject created with confirmedAt = null
+  → Returns { fileObjectId, publicUrl }
 
-Phase 2 — Conferma al submit del form:
+Phase 2 — Confirmation on form submit:
   trpc.brand.create({ ..., fileObjectId })
   → tx: Brand.create + FileObject.update(confirmedAt = now) + Brand.update(logoKey)
-  → Se il form viene abbandonato, il cleanup job rimuove i file pending non confermati
+  → If the form is abandoned, the cleanup job removes the unconfirmed pending files
 ```
 
-Il campo `FileObject.confirmedAt = null` indica file pending. Il cleanup job periodico rimuove i file con `confirmedAt IS NULL` più vecchi di N ore.
+The `FileObject.confirmedAt = null` field marks a pending file. The periodic cleanup job removes files with `confirmedAt IS NULL` older than N hours.
 
 ### 4. URL Resolver Pattern
 
-Per evitare N letture DB consecutive quando si risolvono molti URL:
+To avoid N consecutive DB reads when resolving many URLs:
 
 ```typescript
-// Un solo read DB per risolvere tutti gli URL di una lista
+// A single DB read to resolve every URL in a list
 const resolve = await makeUrlResolver(prisma);
 const brands = results.map(b => ({
   ...b,
@@ -76,91 +76,91 @@ const brands = results.map(b => ({
 }));
 ```
 
-`resolvePublicUrl(prisma, bucket, key)` è una convenience wrapper che chiama `makeUrlResolver` internamente — utile per URL singoli nei service.
+`resolvePublicUrl(prisma, bucket, key)` is a convenience wrapper that calls `makeUrlResolver` internally — useful for single URLs in services.
 
-### 5. Validazione immagini centralizzata
+### 5. Centralized image validation
 
-Le funzioni duplicate `streamToBuffer`, `validateMagicBytes`, `validateImageFile` sono state estratte in `apps/api/src/lib/imageUpload.ts`:
+The duplicated functions `streamToBuffer`, `validateMagicBytes`, `validateImageFile` were extracted into `apps/api/src/lib/imageUpload.ts`:
 
 ```typescript
 export function validateImageFile(
   file: { mimetype: string; size: number; filename: string },
   config: { allowedMimes: readonly string[]; maxSizeBytes: number; allowedExtensions: readonly string[] }
-): string  // ritorna sanitizedFilename
+): string  // returns sanitizedFilename
 
 export function validateMagicBytes(buffer: Buffer, mimetype: string): boolean
 
 export async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer>
 ```
 
-Ogni service definisce il proprio `IMAGE_CONFIG` con limiti specifici (brand logo: 2MB, foto riga: 5MB, specsheet: 10MB).
+Each service defines its own `IMAGE_CONFIG` with specific limits (brand logo: 2MB, row picture: 5MB, specsheet: 10MB).
 
-### 6. Proxy URL per MinIO
+### 6. Proxy URL for MinIO
 
-Con MinIO, i bucket rimangono privati. Le immagini vengono servite tramite la route autenticata Next.js `/api/uploads/[...path]` che verifica la sessione e proxia la richiesta al provider. L'URL generato è sempre nella forma `/api/uploads/{bucket}/{key}` indipendentemente dal provider.
+With MinIO, the buckets remain private. Images are served through the authenticated Next.js route `/api/uploads/[...path]`, which verifies the session and proxies the request to the provider. The generated URL always has the form `/api/uploads/{bucket}/{key}`, regardless of the provider.
 
-Con storage locale e `enableProxy=true` (default), lo stesso proxy viene usato per consistenza.
+With local storage and `enableProxy=true` (default), the same proxy is used for consistency.
 
-## Configurazione
+## Configuration
 
-Tutte le chiavi vivono in AppConfig:
+All keys live in AppConfig:
 
-| Chiave | Tipo | Default | Descrizione |
+| Key | Type | Default | Description |
 |--------|------|---------|-------------|
-| `storage.type` | `local` \| `minio` | `local` | Provider attivo |
-| `storage.local.basePath` | string | `/data/uploads` | Directory base locale |
-| `storage.local.enableProxy` | boolean | `true` | Forza proxy URL anche in locale |
-| `storage.local.publicBaseUrl` | string | `""` | Base URL pubblico (se proxy disabilitato) |
-| `storage.minio.endpoint` | string | — | Endpoint MinIO (es. `minio:9000`) |
+| `storage.type` | `local` \| `minio` | `local` | Active provider |
+| `storage.local.basePath` | string | `/data/uploads` | Local base directory |
+| `storage.local.enableProxy` | boolean | `true` | Forces proxy URLs for local storage too |
+| `storage.local.publicBaseUrl` | string | `""` | Public base URL (if the proxy is disabled) |
+| `storage.minio.endpoint` | string | — | MinIO endpoint (e.g. `minio:9000`) |
 | `storage.minio.accessKey` | string (encrypted) | — | Access key |
 | `storage.minio.secretKey` | string (encrypted) | — | Secret key |
-| `storage.minio.bucket` | string | `luke` | Nome bucket MinIO |
-| `storage.minio.useSSL` | boolean | `false` | HTTPS verso MinIO |
-| `storage.minio.presignedPutTtl` | number | `3600` | TTL URL presigned upload (sec) |
-| `storage.minio.presignedGetTtl` | number | `3600` | TTL URL presigned download (sec) |
+| `storage.minio.bucket` | string | `luke` | MinIO bucket name |
+| `storage.minio.useSSL` | boolean | `false` | HTTPS to MinIO |
+| `storage.minio.presignedPutTtl` | number | `3600` | Presigned upload URL TTL (sec) |
+| `storage.minio.presignedGetTtl` | number | `3600` | Presigned download URL TTL (sec) |
 
-## Bucket validi
+## Valid buckets
 
-Definiti in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`), unica lista:
+Defined in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`), the only list:
 
-- `uploads` — file generici
-- `exports` — PDF/XLSX generati
-- `assets` — asset statici
-- `brand-logos` — loghi brand (confermati)
-- `temp-brand-logos` — *(deprecato, rimosso nel refactor)*
-- `collection-row-pictures` — foto righe collection layout
-- `temp-collection-row-pictures` — *(deprecato, rimosso nel refactor)*
-- `merchandising-specsheet-images` — immagini specsheet
+- `uploads` — generic files
+- `exports` — generated PDF/XLSX
+- `assets` — static assets
+- `brand-logos` — brand logos (confirmed)
+- `temp-brand-logos` — *(deprecated, removed in the refactor)*
+- `collection-row-pictures` — collection layout row pictures
+- `temp-collection-row-pictures` — *(deprecated, removed in the refactor)*
+- `merchandising-specsheet-images` — specsheet images
 
-## Conseguenze
+## Consequences
 
 ### Positive
 
-- **Provider swap senza migrazioni**: cambiare da local a MinIO richiede solo AppConfig, zero data migration.
-- **Upload atomici**: il file pending + conferma nella stessa transaction Prisma — nessuna inconsistenza se il form viene abbandonato.
-- **URL sempre corretti**: calcolati a runtime, mai stale nel DB.
-- **Validazione DRY**: un'unica funzione per tutti gli upload immagine.
+- **Provider swap without migrations**: switching from local to MinIO requires only AppConfig, zero data migration.
+- **Atomic uploads**: the pending file + confirmation in the same Prisma transaction — no inconsistency if the form is abandoned.
+- **Always-correct URLs**: computed at runtime, never stale in the DB.
+- **DRY validation**: a single function for every image upload.
 
 ### Negative / Trade-off
 
-- **DB read extra per URL**: ogni response che include URL fa una lettura AppConfig per il resolver. Mitigato da `makeUrlResolver` per batch + cache provider singleton.
-- **Cleanup job necessario**: i file pending non confermati devono essere rimossi periodicamente. Il job `retryFailedCleanups` in `brandLogo.service.ts` gestisce anche questo caso.
+- **Extra DB read for URLs**: every response that includes URLs performs an AppConfig read for the resolver. Mitigated by `makeUrlResolver` for batches + the singleton provider cache.
+- **Cleanup job required**: unconfirmed pending files must be removed periodically. The `retryFailedCleanups` job in `brandLogo.service.ts` also handles this case.
 
-## File chiave
+## Key files
 
-| File | Ruolo |
+| File | Role |
 |------|-------|
-| `packages/core/src/storage/types.ts` | Interfaccia `IStorageProvider`, tipi bucket |
-| `packages/core/src/storage/config.ts` | Schema Zod configurazione storage |
-| `apps/api/src/storage/index.ts` | Factory provider, `putObject`, `readFileBuffer`, `deleteObjectByKey` |
-| `apps/api/src/storage/providers/local.ts` | Provider filesystem locale |
+| `packages/core/src/storage/types.ts` | `IStorageProvider` interface, bucket types |
+| `packages/core/src/storage/config.ts` | Zod schema for the storage configuration |
+| `apps/api/src/storage/index.ts` | Provider factory, `putObject`, `readFileBuffer`, `deleteObjectByKey` |
+| `apps/api/src/storage/providers/local.ts` | Local filesystem provider |
 | `apps/api/src/lib/storageUrl.ts` | `makeUrlResolver`, `resolvePublicUrl` |
 | `apps/api/src/lib/imageUpload.ts` | `validateImageFile`, `validateMagicBytes`, `streamToBuffer` |
-| `apps/api/src/lib/export/image.ts` | `fetchImageBufferFromUrl`, `fetchImageDataUriFromUrl` (per export PDF/XLSX) |
-| `apps/api/src/routers/storage.ts` | tRPC router — config CRUD, test connessione, presigned URL |
-| `apps/web/src/app/api/uploads/[...path]/route.ts` | Proxy Next.js autenticato |
+| `apps/api/src/lib/export/image.ts` | `fetchImageBufferFromUrl`, `fetchImageDataUriFromUrl` (for PDF/XLSX export) |
+| `apps/api/src/routers/storage.ts` | tRPC router — config CRUD, connection test, presigned URL |
+| `apps/web/src/app/api/uploads/[...path]/route.ts` | Authenticated Next.js proxy |
 
 ## Related ADRs
 
-- ADR-003: Core Server Only (i provider storage sono server-only)
-- ADR-005: Shared Zod Schemas (schema config in `@luke/core`)
+- ADR-003: Core Server Only (the storage providers are server-only)
+- ADR-005: Shared Zod Schemas (config schemas in `@luke/core`)

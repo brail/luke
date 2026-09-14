@@ -9,7 +9,7 @@
 | [004](004-prisma-select-only.md) | Prisma Select-Only Pattern | Accepted |
 | [005](005-shared-zod-schemas.md) | Shared Zod Schemas Pattern | Accepted |
 | [006](006-resource-action-permissions.md) | Resource/Action Permissions System | Superseded by [016](016-static-resource-action-permissions.md) |
-| [007](007-storage-layer-refactor.md) | Storage Layer Refactor — Key-Based Storage, MinIO Support, Two-Phase Upload | Potentially stale — review needed |
+| [007](007-storage-layer-refactor.md) | Storage Layer Refactor — Key-Based Storage, MinIO Support, Two-Phase Upload | Superseded by [017](017-key-based-storage-and-two-phase-upload.md) |
 | [008](008-appconfig-env-policy.md) | AppConfig KV System e Env Policy | Potentially stale — review needed |
 | [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Potentially stale — review needed |
 | [010](010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza | Accepted |
@@ -19,6 +19,7 @@
 | [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Accepted |
 | [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Accepted |
 | [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Accepted |
+| [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Accepted |
 
 _Last updated: 2026-09-14_
 <!-- luke-docs:end:adr-index -->
