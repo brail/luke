@@ -11,7 +11,7 @@
 | [006](006-resource-action-permissions.md) | Resource/Action Permissions System | Superseded by [016](016-static-resource-action-permissions.md) |
 | [007](007-storage-layer-refactor.md) | Storage Layer Refactor — Key-Based Storage, MinIO Support, Two-Phase Upload | Superseded by [017](017-key-based-storage-and-two-phase-upload.md) |
 | [008](008-appconfig-env-policy.md) | AppConfig KV System and Env Policy | Superseded by [018](018-runtime-configuration-and-bootstrap-environment.md) |
-| [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Potentially stale — review needed |
+| [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Superseded by [019](019-tokenversion-session-revocation.md) |
 | [010](010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza | Accepted |
 | [011](011-single-instance-scaling-constraint.md) | Vincolo Single-Instance e Stato Process-Local | Accepted |
 | [012](012-generic-s3-storage-provider.md) | Provider Storage S3 Generico (rename da MinIO) + Swap a SeaweedFS | Accepted |
@@ -21,6 +21,7 @@
 | [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Accepted |
 | [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Accepted |
 | [018](018-runtime-configuration-and-bootstrap-environment.md) | Database-Backed Runtime Configuration and Bootstrap-Only Environment | Accepted |
+| [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Accepted |
 
 _Last updated: 2026-09-14_
 <!-- luke-docs:end:adr-index -->

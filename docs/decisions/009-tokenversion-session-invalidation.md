@@ -2,55 +2,55 @@
 
 ## Status
 
-Potentially stale — review needed
+Superseded by [019 — Server-Side Session Revocation with tokenVersion](019-tokenversion-session-revocation.md)
 
-## Contesto
+## Context
 
-I JWT sono stateless per design: una volta emesso, un token è valido fino alla scadenza naturale (8h) anche se l'utente viene bannato, cambia password, o un admin revoca le sue sessioni. Questo crea una finestra di accesso incontrollato fino a 8 ore.
+JWTs are stateless by design: once issued, a token is valid until its natural expiry (8h) even if the user is banned, changes password, or an admin revokes their sessions. This creates a window of uncontrolled access of up to 8 hours.
 
-Il requisito era: invalidazione immediata (< 1s) in tutti questi scenari:
-- Admin revoca sessioni di un utente
-- Utente cambia password
+The requirement was: immediate invalidation (< 1s) in all of these scenarios:
+- Admin revokes a user's sessions
+- User changes password
 - Hard logout (`auth.logoutAll`)
-- Admin disabilita un account
+- Admin disables an account
 
-Un approccio blocklist JWT introduce overhead su ogni request e complessità di cleanup. L'approccio session-token in DB richiede query per ogni chiamata autenticata.
+A JWT blocklist approach introduces overhead on every request and cleanup complexity. The session-token-in-DB approach requires a query for every authenticated call.
 
-## Decisione
+## Decision
 
-Introduzione di `tokenVersion` — un contatore intero su `User` — verificato a 4 layer indipendenti.
+Introduction of `tokenVersion` — an integer counter on `User` — verified at 4 independent layers.
 
-### Meccanismo base
+### Base mechanism
 
-`tokenVersion` è baked nel JWT al momento dell'emissione. Ad ogni request protetta, il server confronta `jwt.tokenVersion` con `user.tokenVersion` dal DB (con cache 5min per-request). Se divergono → 401.
+`tokenVersion` is baked into the JWT at issuance. On every protected request, the server compares `jwt.tokenVersion` with `user.tokenVersion` from the DB (with a 5min per-request cache). If they diverge → 401.
 
-Per invalidare tutte le sessioni di un utente: `user.tokenVersion += 1`. Tutti i token emessi precedentemente diventano immediatamente invalidi.
+To invalidate all of a user's sessions: `user.tokenVersion += 1`. All previously issued tokens become invalid immediately.
 
-### 4 Layer di verifica
+### 4 verification layers
 
-| Layer | Dove | Trigger |
+| Layer | Where | Trigger |
 |-------|------|---------|
-| **API Middleware** | `apps/api/src/lib/permissions.ts` | Ogni chiamata tRPC protetta |
-| **NextAuth Callback** | `apps/web/src/app/api/auth/[...nextauth]` | Refresh JWT (ogni 4h) — ritorna `null` → logout automatico |
-| **Next.js Middleware** | `apps/web/src/middleware.ts` | Navigazione tra pagine |
-| **Client Hook** | `apps/web/src/hooks/use-session-verification.ts` | Polling ogni 10s + focus/visibility change |
+| **API Middleware** | `apps/api/src/lib/permissions.ts` | Every protected tRPC call |
+| **NextAuth Callback** | `apps/web/src/app/api/auth/[...nextauth]` | JWT refresh (every 4h) — returns `null` → automatic logout |
+| **Next.js Middleware** | `apps/web/src/middleware.ts` | Navigation between pages |
+| **Client Hook** | `apps/web/src/hooks/use-session-verification.ts` | Polling every 10s + focus/visibility change |
 
-### Invalidazione immediata
+### Immediate invalidation
 
-- **Cache API**: invalidata in < 1ms su write di `tokenVersion`
-- **Client**: il polling ogni 10s garantisce redirect in < 10s dopo revoca
-- **Navigazione**: il middleware Next.js blocca la navigazione server-side immediatamente
+- **API cache**: invalidated in < 1ms on a `tokenVersion` write
+- **Client**: polling every 10s guarantees a redirect in < 10s after revocation
+- **Navigation**: the Next.js middleware blocks navigation server-side immediately
 
-### Scenari che incrementano `tokenVersion`
+### Scenarios that increment `tokenVersion`
 
-- `me.revokeAllSessions` — utente revoca le proprie sessioni
-- `users.admin.revokeUserSessions` — admin revoca sessioni di altri
-- Cambio password (`auth.changePassword`)
+- `me.revokeAllSessions` — user revokes their own sessions
+- `users.admin.revokeUserSessions` — admin revokes other users' sessions
+- Password change (`auth.changePassword`)
 - Hard logout (`auth.logoutAll`)
 
-## Conseguenze
+## Consequences
 
-- Ogni operazione di revoca sessioni richiede un write su `User.tokenVersion` — non può essere dimenticato in nuovi endpoint di "logout" o "revoca"
-- La cache 5min è un trade-off deliberato: riduce i DB hit su API ad alto traffico al costo di un ritardo massimo di 5min per la propagazione (accettabile perché il client-side hook copre il gap)
-- Aggiungere un nuovo scenario di invalidazione richiede di incrementare `tokenVersion` — è sufficiente, non servono altre operazioni
-- Il NextAuth callback deve rimanere sincronizzato con la logica API: se uno dei due smette di verificare `tokenVersion`, un layer cade silenziosamente
+- Every session revocation operation requires a write to `User.tokenVersion` — it cannot be forgotten in new "logout" or "revoke" endpoints
+- The 5min cache is a deliberate trade-off: it reduces DB hits on high-traffic APIs at the cost of a maximum 5min propagation delay (acceptable because the client-side hook covers the gap)
+- Adding a new invalidation scenario requires incrementing `tokenVersion` — that is sufficient, no other operations are needed
+- The NextAuth callback must stay in sync with the API logic: if either one stops verifying `tokenVersion`, a layer fails silently
