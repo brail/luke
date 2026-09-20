@@ -1,39 +1,39 @@
-# ADR-012 — Provider Storage S3 Generico (rename da MinIO) + Swap a SeaweedFS
+# ADR-012 — Generic S3 Storage Provider (Renamed from MinIO) + Swap to SeaweedFS
 
 ## Status
 
 Accepted
 
-## Contesto
+## Context
 
-Il provider storage S3-compatible introdotto in [ADR-007](./007-storage-layer-refactor.md) è sempre stato implementato tramite l'SDK generico `@aws-sdk/client-s3` (nessuna chiamata specifica a un'API MinIO), ma il naming in tutto il codebase — classe `MinioProvider`, chiavi AppConfig `storage.minio.*`, procedura tRPC `testMinioConnection`, copy in UI — presumeva MinIO come unico backend possibile.
+The S3-compatible storage provider introduced in [ADR-007](./007-storage-layer-refactor.md) has always been implemented through the generic `@aws-sdk/client-s3` SDK (no call specific to a MinIO API), but the naming throughout the codebase — the `MinioProvider` class, the `storage.minio.*` AppConfig keys, the `testMinioConnection` tRPC procedure, the UI copy — assumed MinIO was the only possible backend.
 
-A dicembre 2025 MinIO ha annunciato la modalità maintenance-only per la community edition; la repo GitHub è stata archiviata (prima a febbraio 2026, poi di nuovo ad aprile 2026): nessun nuovo binario, nessuna patch di sicurezza, nessuno sviluppo. Lo stack Luke usava `minio/minio:latest` in tutti e 4 i file `docker-compose.*.yml` — un vendor lock-in su un progetto ora abbandonato.
+In December 2025 MinIO announced maintenance-only mode for the community edition; the GitHub repository was archived (first in February 2026, then again in April 2026): no new binaries, no security patches, no development. The Luke stack used `minio/minio:latest` in all 4 `docker-compose.*.yml` files — vendor lock-in on a now-abandoned project.
 
-## Decisione
+## Decision
 
-### 1. Rename generico, non un altro rename vendor-specifico
+### 1. A generic rename, not another vendor-specific one
 
-Rinominare `minio` → `s3` (non `seaweedfs`) in tutto il codebase: classe `MinioProvider` → `S3Provider` (`apps/api/src/storage/providers/s3.ts`), schema `minioStorageConfigSchema` → `s3StorageConfigSchema`, chiavi AppConfig `storage.minio.*` → `storage.s3.*`, `storageTypeSchema` `'local' | 'minio'` → `'local' | 's3'`, procedura tRPC `testMinioConnection` → `testS3Connection`. Rinominare a un vendor specifico avrebbe ripetuto lo stesso errore: se anche SeaweedFS smettesse di essere mantenuto, servirebbe lo stesso lavoro di rename da capo. Il codice era già scritto in modo agnostico (solo AWS SDK v3) — mancava solo il naming coerente.
+Rename `minio` → `s3` (not `seaweedfs`) throughout the codebase: the `MinioProvider` → `S3Provider` class (`apps/api/src/storage/providers/s3.ts`), the `minioStorageConfigSchema` → `s3StorageConfigSchema` schema, the `storage.minio.*` → `storage.s3.*` AppConfig keys, `storageTypeSchema` `'local' | 'minio'` → `'local' | 's3'`, the `testMinioConnection` → `testS3Connection` tRPC procedure. Renaming to a specific vendor would have repeated the same mistake: if SeaweedFS also stopped being maintained, the same rename work would be needed all over again. The code was already written in a vendor-agnostic way (AWS SDK v3 only) — only consistent naming was missing.
 
-### 2. SeaweedFS come backend nello stack Docker
+### 2. SeaweedFS as the backend in the Docker stack
 
-Tutti e 4 i `docker-compose.*.yml` sostituiscono `minio/minio:latest` con `chrislusf/seaweedfs:latest` (modalità all-in-one: `weed server -s3`, master+volume+filer+S3 gateway in un solo container, stessa topologia a container singolo di MinIO). Verificato empiricamente (non solo per compatibilità dichiarata) che l'SDK S3 generico usato da `S3Provider` funziona contro il gateway S3 di SeaweedFS: `HeadBucket`/`CreateBucket`, `PutObject`/`GetObject` con round-trip del Content-Type, `CopyObject` (usato da `fixContentType`), e generazione di URL presigned SigV4.
+All 4 `docker-compose.*.yml` files replace `minio/minio:latest` with `chrislusf/seaweedfs:latest` (all-in-one mode: `weed server -s3`, master+volume+filer+S3 gateway in a single container, the same single-container topology as MinIO). Verified empirically (not merely from declared compatibility) that the generic S3 SDK used by `S3Provider` works against SeaweedFS's S3 gateway: `HeadBucket`/`CreateBucket`, `PutObject`/`GetObject` with Content-Type round-trip, `CopyObject` (used by `fixContentType`), and SigV4 presigned URL generation.
 
-### 3. Sidecar `minio-init` eliminato, non riscritto
+### 3. The `minio-init` sidecar removed, not rewritten
 
-Il sidecar `mc`-based (`minio-init`/`minio-rc-init`) creava bucket, impostava policy `anonymous download` e regole ILM su bucket `temp-*`. Verificato che tutte e tre le funzioni sono ridondanti o morte, non solo "probabilmente inutili":
-- creazione bucket: già gestita idempotentemente da `S3Provider.init()`, con una lista bucket più corretta di quella di `minio-init` (include `collection-row-pictures-revisions`, che `minio-init` non creava);
-- policy pubblica: `storageUrl.ts` instrada sempre il provider `s3` tramite il proxy autenticato — nessun caller usa mai un URL pubblico diretto (`getPublicUrl()` non ha chiamanti a runtime per il provider S3);
-- bucket `temp-*` + regole ILM: architettura superata, nessun codice attuale scrive più su bucket `temp-*` — il cleanup reale (`setupTempFileCleanup()`, righe `FileObject` con `confirmedAt: null`) opera sui bucket reali.
+The `mc`-based sidecar (`minio-init`/`minio-rc-init`) created buckets, set an `anonymous download` policy and ILM rules on `temp-*` buckets. Verified that all three functions are redundant or dead, not merely "probably useless":
+- bucket creation: already handled idempotently by `S3Provider.init()`, with a more correct bucket list than `minio-init`'s (it includes `collection-row-pictures-revisions`, which `minio-init` did not create);
+- public policy: `storageUrl.ts` always routes the `s3` provider through the authenticated proxy — no caller ever uses a direct public URL (`getPublicUrl()` has no runtime callers for the S3 provider);
+- `temp-*` buckets + ILM rules: a superseded architecture, no current code writes to `temp-*` buckets any more — the real cleanup (`setupTempFileCleanup()`, `FileObject` rows with `confirmedAt: null`) operates on the real buckets.
 
-SeaweedFS non ha un equivalente diretto di `mc`; dato che nessuna delle tre funzioni serve più, non è stato scritto un sostituto.
+SeaweedFS has no direct equivalent of `mc`; since none of the three functions is needed any more, no replacement was written.
 
-### 4. Script di migrazione unico, non uno per vendor
+### 4. A single migration script, not one per vendor
 
-`apps/api/scripts/migrate-storage.ts` sostituisce il precedente `migrate-storage-to-minio.ts` (hardcoded local→MinIO). Un solo script parametrizzato su `--from`/`--to` (`local`/`s3`), con override `--from-s3-*`/`--to-s3-*` per costruire un provider S3 ad-hoc da credenziali CLI — necessario per il caso reale (MinIO esistente → nuova istanza SeaweedFS, nessuna delle due necessariamente quella puntata da AppConfig al momento della migrazione). Stesso script gestisce anche `local→s3` per chi parte da zero. Flag opzionale `--fix-mime` corregge Content-Type generici sia sul record `FileObject` (Postgres) sia sui metadati dell'oggetto S3 di destinazione — il vecchio script correggeva solo il secondo, lasciando la route di download by-id a servire comunque l'header sbagliato.
+`apps/api/scripts/migrate-storage.ts` replaces the previous `migrate-storage-to-minio.ts` (hardcoded local→MinIO). A single script parameterised on `--from`/`--to` (`local`/`s3`), with `--from-s3-*`/`--to-s3-*` overrides to build an ad-hoc S3 provider from CLI credentials — necessary for the real case (an existing MinIO → a new SeaweedFS instance, neither of them necessarily the one AppConfig points at during the migration). The same script also handles `local→s3` for anyone starting from scratch. The optional `--fix-mime` flag corrects generic Content-Types both on the `FileObject` record (Postgres) and on the destination S3 object's metadata — the old script corrected only the latter, leaving the download-by-id route serving the wrong header anyway.
 
-## Non fatto
+## Not Done
 
-- `docs/decisions/007-storage-layer-refactor.md` non è stato riscritto: è un record storico di cosa fu deciso in quel momento (già marcato "Potentially stale — review needed"), non un documento vivo.
-- Object Lock/retention WORM su SeaweedFS non è verificato in questo progetto — vedi [docs/storage-immutable-bucket.md](../storage-immutable-bucket.md).
+- `docs/decisions/007-storage-layer-refactor.md` was not rewritten: it is a historical record of what was decided at that time (already marked "Potentially stale — review needed"), not a living document.
+- Object Lock/WORM retention on SeaweedFS is not verified in this project — see [docs/storage-immutable-bucket.md](../storage-immutable-bucket.md).

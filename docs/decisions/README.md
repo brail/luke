@@ -14,7 +14,7 @@
 | [009](009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation | Superseded by [019](019-tokenversion-session-revocation.md) |
 | [010](010-section-access-precedence.md) | Section Access with Four Precedence Layers | Accepted |
 | [011](011-single-instance-scaling-constraint.md) | Single-Instance Constraint and Process-Local State | Accepted |
-| [012](012-generic-s3-storage-provider.md) | Provider Storage S3 Generico (rename da MinIO) + Swap a SeaweedFS | Accepted |
+| [012](012-generic-s3-storage-provider.md) | Generic S3 Storage Provider (Renamed from MinIO) + Swap to SeaweedFS | Accepted |
 | [013](013-asset-derivative-pipeline.md) | Automatic Asset Derivative Pipeline (Thumb/Card/Export) | Accepted |
 | [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Accepted |
 | [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Accepted |
