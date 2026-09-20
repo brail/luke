@@ -1,4 +1,4 @@
-# ADR-002: RBAC Policy e Enforcement
+# ADR-002: RBAC Policy and Enforcement
 
 ## Status
 
@@ -6,104 +6,104 @@ Superseded by [006 — Resource/Action Permissions System](006-resource-action-p
 
 ## Context
 
-Il progetto Luke è un sistema enterprise multi-tenant che richiede:
+The Luke project is a multi-tenant enterprise system that requires:
 
-- **Controllo accessi granulare**: Diversi livelli di privilegi per utenti
-- **Sicurezza per default**: Principio del minimo privilegio
-- **Audit trail**: Tracciamento completo degli accessi privilegiati
-- **Manutenibilità**: Codice DRY senza duplicazione di logica RBAC
-- **Testing**: Coverage verificabile per tutti i controlli di accesso
+- **Granular access control**: Different privilege levels for users
+- **Security by default**: Principle of least privilege
+- **Audit trail**: Complete tracking of privileged access
+- **Maintainability**: DRY code with no duplication of RBAC logic
+- **Testing**: Verifiable coverage for every access check
 
-Il sistema deve gestire operazioni sensibili come:
+The system must handle sensitive operations such as:
 
-- Gestione utenti (creazione, modifica, eliminazione)
-- Configurazioni di sistema (LDAP, autenticazione)
-- Visualizzazione dati sensibili (audit log, configurazioni)
+- User management (creation, modification, deletion)
+- System configuration (LDAP, authentication)
+- Viewing sensitive data (audit log, configuration)
 
 ## Decision
 
-Abbiamo implementato un sistema RBAC centralizzato con le seguenti caratteristiche:
+We implemented a centralized RBAC system with the following characteristics:
 
-### Modello Ruoli
+### Role Model
 
 ```typescript
 enum Role {
-  admin = 'admin', // Tutti i permessi
-  editor = 'editor', // Lettura e modifica
-  viewer = 'viewer', // Solo lettura
+  admin = 'admin', // All permissions
+  editor = 'editor', // Read and modify
+  viewer = 'viewer', // Read only
 }
 ```
 
-### Middleware Composabili
+### Composable Middleware
 
 ```typescript
-// Middleware per singolo ruolo
+// Middleware for a single role
 export function withRole(role: Role): MiddlewareFunction;
 
-// Middleware per ruoli multipli
+// Middleware for multiple roles
 export function roleIn(roles: Role[]): MiddlewareFunction;
 
-// Alias predefiniti
+// Predefined aliases
 export const adminOnly: MiddlewareFunction;
 export const adminOrEditor: MiddlewareFunction;
 export const authenticatedOnly: MiddlewareFunction;
 ```
 
-### Enforcement Multi-Livello
+### Multi-Level Enforcement
 
-1. **Middleware tRPC**: Controllo automatico su ogni endpoint
-2. **Helper Functions**: Controlli condizionali nel codice
-3. **Type Safety**: TypeScript per prevenire errori a compile-time
+1. **tRPC middleware**: Automatic check on every endpoint
+2. **Helper functions**: Conditional checks in code
+3. **Type safety**: TypeScript to catch errors at compile time
 
-### Policy Centralizzata
+### Centralized Policy
 
-- **Definizioni**: `@luke/core` package
-- **Implementazione**: `apps/api/src/lib/rbac.ts`
-- **Testing**: Coverage documentato in `RBAC_COVERAGE.md`
+- **Definitions**: `@luke/core` package
+- **Implementation**: `apps/api/src/lib/rbac.ts`
+- **Testing**: Coverage documented in `RBAC_COVERAGE.md`
 
 ## Consequences
 
-### ✅ Vantaggi
+### ✅ Advantages
 
-- **Codice DRY**: Zero duplicazione di logica RBAC nei router
-- **Type Safety**: Controlli a compile-time con TypeScript
-- **Testing Centralizzato**: Coverage verificabile e documentato
-- **Audit Automatico**: Log di tutti gli accessi privilegiati
-- **Manutenibilità**: Modifiche RBAC in un solo posto
-- **Composabilità**: Middleware riusabili e combinabili
+- **DRY code**: Zero duplication of RBAC logic in the routers
+- **Type safety**: Compile-time checks with TypeScript
+- **Centralized testing**: Verifiable and documented coverage
+- **Automatic audit**: Log of every privileged access
+- **Maintainability**: RBAC changes in one place only
+- **Composability**: Reusable and combinable middleware
 
 ### ⚠️ Trade-off
 
-- **Performance**: Check su ogni chiamata protetta (mitigato con cache)
-- **Complessità**: Apprendimento pattern middleware per nuovi sviluppatori
-- **Token Invalidation**: Cambio ruoli richiede incremento `tokenVersion`
+- **Performance**: A check on every protected call (mitigated with a cache)
+- **Complexity**: New developers must learn the middleware pattern
+- **Token invalidation**: A role change requires incrementing `tokenVersion`
 
-### 🔧 Implicazioni Operative
+### 🔧 Operational Implications
 
-- **Onboarding**: Sviluppatori devono conoscere pattern middleware
-- **Testing**: Obbligatorio testare tutti i path RBAC
-- **Monitoring**: Log di accessi negati per security analysis
-- **Deploy**: Cambio ruoli richiede invalidazione sessioni attive
+- **Onboarding**: Developers must know the middleware pattern
+- **Testing**: Testing every RBAC path is mandatory
+- **Monitoring**: Log of denied access for security analysis
+- **Deploy**: A role change requires invalidating active sessions
 
-## Implementazione
+## Implementation
 
-### Esempio Router
+### Router Example
 
 ```typescript
 export const usersRouter = router({
-  // Solo admin
+  // Admin only
   create: adminOnly.input(CreateUserSchema).mutation(async ({ ctx, input }) => {
-    // Logica creazione utente
+    // User creation logic
   }),
 
-  // Admin o editor
+  // Admin or editor
   list: adminOrEditor.input(ListUsersSchema).query(async ({ ctx, input }) => {
-    // Logica lista utenti
+    // User list logic
   }),
 
-  // Solo utente autenticato
+  // Authenticated user only
   profile: authenticatedOnly.query(async ({ ctx }) => {
-    // Logica profilo personale
+    // Personal profile logic
   }),
 });
 ```
@@ -111,17 +111,17 @@ export const usersRouter = router({
 ### Helper Functions
 
 ```typescript
-// Controlli condizionali
+// Conditional checks
 if (isAdmin(session)) {
-  // Logica admin-only
+  // Admin-only logic
 }
 
 if (canModifyUser(session, targetUserId)) {
-  // Logica modifica utente
+  // User modification logic
 }
 
 if (canViewUser(session, targetUserId)) {
-  // Logica visualizzazione utente
+  // User viewing logic
 }
 ```
 
@@ -129,44 +129,44 @@ if (canViewUser(session, targetUserId)) {
 
 ```typescript
 describe('RBAC Enforcement', () => {
-  it('admin può accedere a tutti gli endpoint', async () => {
+  it('admin can access every endpoint', async () => {
     const adminSession = createSession({ role: 'admin' });
-    // Test tutti gli endpoint
+    // Test every endpoint
   });
 
-  it('editor non può accedere a endpoint admin-only', async () => {
+  it('editor cannot access admin-only endpoints', async () => {
     const editorSession = createSession({ role: 'editor' });
     await expect(adminOnlyEndpoint(editorSession)).rejects.toThrow('FORBIDDEN');
   });
 });
 ```
 
-## Policy Dettagliate
+## Detailed Policies
 
 ### Admin (`admin`)
 
-- **Permessi**: Tutti (`*`)
-- **Operazioni**: CRUD completo su utenti, configurazioni, audit
-- **Restrizioni**: Non può eliminare se stesso, non può rimuovere ultimo admin
+- **Permissions**: All (`*`)
+- **Operations**: Full CRUD on users, configuration, audit
+- **Restrictions**: Cannot delete itself, cannot remove the last admin
 
 ### Editor (`editor`)
 
-- **Permessi**: `read`, `update`
-- **Operazioni**: Visualizzazione e modifica utenti, configurazioni
-- **Restrizioni**: Non può modificare ruoli, non può accedere a configurazioni sensibili
+- **Permissions**: `read`, `update`
+- **Operations**: Viewing and modifying users, configuration
+- **Restrictions**: Cannot modify roles, cannot access sensitive configuration
 
 ### Viewer (`viewer`)
 
-- **Permessi**: `read`
-- **Operazioni**: Solo visualizzazione dati
-- **Restrizioni**: Nessuna modifica, solo lettura profilo personale
+- **Permissions**: `read`
+- **Operations**: Data viewing only
+- **Restrictions**: No modification, read-only on the personal profile
 
 ## Security Considerations
 
 ### Token Version Enforcement
 
 ```typescript
-// Cambio ruolo → incremento tokenVersion
+// Role change → tokenVersion increment
 await prisma.user.update({
   where: { id: userId },
   data: {
@@ -175,14 +175,14 @@ await prisma.user.update({
   },
 });
 
-// Invalidazione immediata cache
+// Immediate cache invalidation
 invalidateTokenVersionCache(userId);
 ```
 
 ### Audit Logging
 
 ```typescript
-// Log automatico per operazioni privilegiate
+// Automatic log for privileged operations
 await logAudit(ctx, {
   action: 'USER_ROLE_CHANGED',
   resource: 'user',
@@ -194,39 +194,39 @@ await logAudit(ctx, {
 ### Rate Limiting
 
 ```typescript
-// Rate limit specifico per operazioni RBAC
+// Rate limit specific to RBAC operations
 const rbacRateLimit = withRateLimit({
   max: 10,
-  windowMs: 15 * 60 * 1000, // 15 minuti
+  windowMs: 15 * 60 * 1000, // 15 minutes
   keyGenerator: ctx => `rbac:${ctx.session.user.id}`,
 });
 ```
 
-## Alternative Considerate
+## Alternatives Considered
 
 ### ACL (Access Control Lists)
 
-- ❌ Complessità gestione permessi granulari
-- ❌ Performance overhead per check multipli
-- ❌ Difficile testing e manutenzione
+- ❌ Complexity of managing granular permissions
+- ❌ Performance overhead for multiple checks
+- ❌ Difficult testing and maintenance
 
-### RBAC con Permessi Dinamici
+### RBAC with Dynamic Permissions
 
-- ❌ Complessità eccessiva per use case attuali
-- ❌ Over-engineering per sistema monorepo
-- ❌ Difficile audit e compliance
+- ❌ Excessive complexity for current use cases
+- ❌ Over-engineering for a monorepo system
+- ❌ Difficult audit and compliance
 
-### Controlli Manuali nei Router
+### Manual Checks in the Routers
 
-- ❌ Duplicazione codice
-- ❌ Inconsistenze tra endpoint
-- ❌ Difficile testing e manutenzione
+- ❌ Code duplication
+- ❌ Inconsistencies between endpoints
+- ❌ Difficult testing and maintenance
 
 ## References
 
 - [RBAC Standard](https://csrc.nist.gov/Projects/role-based-access-control)
 - [OWASP Access Control](https://owasp.org/www-community/Access_Control_Cheat_Sheet)
-- Implementazione: `apps/api/src/lib/rbac.ts`
+- Implementation: `apps/api/src/lib/rbac.ts`
 - Coverage: `apps/api/RBAC_COVERAGE.md`
-- Esempi: `apps/api/src/routers/users.ts:145`
+- Examples: `apps/api/src/routers/users.ts:145`
 - Schema: `packages/core/src/rbac.ts`

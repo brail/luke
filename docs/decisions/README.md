@@ -4,7 +4,7 @@
 | # | Title | Status |
 |---|--------|--------|
 | [001](001-jwt-hs256-hkdf.md) | JWT HS256 with HKDF-SHA256 Derivation | Accepted |
-| [002](002-rbac-policy.md) | RBAC Policy e Enforcement | Superseded by [006](006-resource-action-permissions.md) |
+| [002](002-rbac-policy.md) | RBAC Policy and Enforcement | Superseded by [006](006-resource-action-permissions.md) |
 | [003](003-core-server-only.md) | Core Package Server-Only Exports | Accepted |
 | [004](004-prisma-select-only.md) | Prisma Select-Only Pattern | Accepted |
 | [005](005-shared-zod-schemas.md) | Shared Zod Schemas Pattern | Accepted |
