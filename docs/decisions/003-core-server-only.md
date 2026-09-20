@@ -6,24 +6,24 @@
 
 ## Context
 
-Il progetto Luke è un monorepo con codice condiviso tra:
+The Luke project is a monorepo with code shared between:
 
-- **Frontend**: Next.js 15 con App Router (client-side rendering)
+- **Frontend**: Next.js 15 with App Router (client-side rendering)
 - **Backend**: Fastify 5 + tRPC (server-side only)
-- **Shared**: Utilities, schemi, logica business comune
+- **Shared**: Utilities, schemas, common business logic
 
-Il problema critico è il **rischio di data leakage**: codice server-only (segreti, crypto, DB access) potrebbe essere accidentalmente importato nel frontend, causando:
+The critical problem is the **risk of data leakage**: server-only code (secrets, crypto, DB access) could be imported into the frontend by accident, causing:
 
-- **Bundle bloat**: Codice server incluso nel bundle client
-- **Security risk**: Segreti esposti nel browser
-- **Runtime errors**: Codice server eseguito in ambiente browser
-- **Performance**: Bundle client più pesanti del necessario
+- **Bundle bloat**: Server code included in the client bundle
+- **Security risk**: Secrets exposed in the browser
+- **Runtime errors**: Server code executed in a browser environment
+- **Performance**: Client bundles heavier than necessary
 
 ## Decision
 
-Abbiamo implementato un sistema di **split exports** con controlli runtime:
+We implemented a **split exports** system with runtime checks:
 
-### Struttura Package
+### Package Structure
 
 ```
 @luke/core/
@@ -61,63 +61,63 @@ Abbiamo implementato un sistema di **split exports** con controlli runtime:
 ```typescript
 // packages/core/src/crypto/secrets.server.ts
 if (typeof window !== 'undefined') {
-  throw new Error('secrets.server.ts può essere importato solo server-side');
+  throw new Error('secrets.server.ts can only be imported server-side');
 }
 ```
 
 ### Import Patterns
 
 ```typescript
-// ✅ Safe per client e server
+// ✅ Safe for client and server
 import { UserSchema, Role } from '@luke/core';
 
 // ✅ Server-only (API, SSR, build-time)
 import { getApiJwtSecret } from '@luke/core/server';
 
-// ❌ Errore runtime se importato nel client
+// ❌ Runtime error if imported in the client
 import { getMasterKey } from '@luke/core/server';
 ```
 
 ## Consequences
 
-### ✅ Vantaggi
+### ✅ Advantages
 
-- **Zero Risk Leakage**: Impossibile importare segreti nel frontend
-- **Tree Shaking Efficace**: Bundle client contiene solo codice necessario
-- **Fail-Fast**: Errore esplicito se import errato
-- **Type Safety**: TypeScript previene import errati a compile-time
-- **Performance**: Bundle client più leggeri e veloci
-- **Security**: Nessun segreto mai esposto nel browser
+- **Zero Risk Leakage**: Impossible to import secrets into the frontend
+- **Effective Tree Shaking**: The client bundle contains only necessary code
+- **Fail-Fast**: Explicit error on a wrong import
+- **Type Safety**: TypeScript prevents wrong imports at compile time
+- **Performance**: Lighter and faster client bundles
+- **Security**: No secret is ever exposed in the browser
 
 ### ⚠️ Trade-off
 
-- **Complessità Build**: Gestione multipli entry point
-- **Dev Experience**: Import path diversi da ricordare
-- **Bundle Size**: Duplicazione di codice tra bundle (accettabile)
-- **Learning Curve**: Sviluppatori devono conoscere pattern import
+- **Build Complexity**: Managing multiple entry points
+- **Dev Experience**: Different import paths to remember
+- **Bundle Size**: Code duplication between bundles (acceptable)
+- **Learning Curve**: Developers must know the import pattern
 
-### 🔧 Implicazioni Operative
+### 🔧 Operational Implications
 
-- **Build Process**: Compilazione separata per safe/server exports
-- **Import Rules**: Documentazione chiara su cosa importare dove
-- **Testing**: Test separati per client/server imports
-- **Deploy**: Verificare che bundle client non contenga codice server
+- **Build Process**: Separate compilation for safe/server exports
+- **Import Rules**: Clear documentation on what to import where
+- **Testing**: Separate tests for client/server imports
+- **Deploy**: Check that the client bundle contains no server code
 
-## Implementazione
+## Implementation
 
 ### Server-Only Module
 
 ```typescript
 // packages/core/src/crypto/secrets.server.ts
 /**
- * @luke/core/crypto - Gestione sicura dei segreti (SERVER-ONLY)
+ * @luke/core/crypto - Secure secret management (SERVER-ONLY)
  *
- * ⚠️ IMPORTANTE: Questo modulo può essere importato solo server-side
+ * ⚠️ IMPORTANT: This module can only be imported server-side
  */
 
-// Runtime check: fail se eseguito nel browser
+// Runtime check: fail if executed in the browser
 if (typeof window !== 'undefined') {
-  throw new Error('secrets.server.ts può essere importato solo server-side');
+  throw new Error('secrets.server.ts can only be imported server-side');
 }
 
 export function getMasterKey(): Buffer {
@@ -135,7 +135,7 @@ export function getNextAuthSecret(): string {
 
 ```typescript
 // packages/core/src/index.ts
-// Safe per client e server
+// Safe for client and server
 export * from './schemas/user';
 export * from './schemas/appConfig';
 export * from './rbac';
@@ -147,9 +147,9 @@ export * from './pricing';
 ```typescript
 // packages/core/src/server/index.ts
 /**
- * @luke/core/server - Moduli server-only
+ * @luke/core/server - Server-only modules
  *
- * ⚠️ IMPORTANTE: Non importare questi moduli in componenti client
+ * ⚠️ IMPORTANT: Do not import these modules in client components
  */
 
 // Export crypto utilities (server-only)
@@ -179,9 +179,9 @@ export * from '../crypto/secrets.server.js';
 }
 ```
 
-## Esempi d'Uso
+## Usage Examples
 
-### ✅ Corretto - Frontend
+### ✅ Correct - Frontend
 
 ```typescript
 // apps/web/src/components/UserForm.tsx
@@ -195,7 +195,7 @@ const formSchema = UserSchema.pick({
 });
 ```
 
-### ✅ Corretto - Backend
+### ✅ Correct - Backend
 
 ```typescript
 // apps/api/src/lib/jwt.ts
@@ -206,18 +206,18 @@ const secret = getApiJwtSecret();
 const token = jwt.sign(payload, secret, { algorithm: 'HS256' });
 ```
 
-### ❌ Errore - Frontend
+### ❌ Error - Frontend
 
 ```typescript
 // apps/web/src/components/SomeComponent.tsx
 import { getApiJwtSecret } from '@luke/core/server';
-// Runtime Error: "secrets.server.ts può essere importato solo server-side"
+// Runtime Error: "secrets.server.ts can only be imported server-side"
 ```
 
-### ❌ Errore - Build
+### ❌ Error - Build
 
 ```typescript
-// Questo causerà errore di build se importato nel frontend
+// This will cause a build error if imported into the frontend
 import { getMasterKey } from '@luke/core/server';
 ```
 
@@ -227,7 +227,7 @@ import { getMasterKey } from '@luke/core/server';
 
 ```typescript
 describe('Server-only imports', () => {
-  it('dovrebbe fallire se importato nel browser', () => {
+  it('should fail if imported in the browser', () => {
     // Mock window object
     Object.defineProperty(global, 'window', {
       value: {},
@@ -236,7 +236,7 @@ describe('Server-only imports', () => {
 
     expect(() => {
       require('@luke/core/server');
-    }).toThrow('secrets.server.ts può essere importato solo server-side');
+    }).toThrow('secrets.server.ts can only be imported server-side');
   });
 });
 ```
@@ -245,7 +245,7 @@ describe('Server-only imports', () => {
 
 ```typescript
 describe('Bundle analysis', () => {
-  it('bundle client non dovrebbe contenere codice server', () => {
+  it('client bundle should not contain server code', () => {
     const bundleContent = fs.readFileSync('dist/client/bundle.js', 'utf8');
     expect(bundleContent).not.toContain('getMasterKey');
     expect(bundleContent).not.toContain('secrets.server');
@@ -253,41 +253,41 @@ describe('Bundle analysis', () => {
 });
 ```
 
-## Alternative Considerate
+## Alternatives Considered
 
-### Single Package con Runtime Checks
+### Single Package with Runtime Checks
 
-- ❌ Bundle bloat: codice server incluso nel client
-- ❌ Security risk: possibilità di leakage accidentale
-- ❌ Performance: bundle client più pesanti
+- ❌ Bundle bloat: server code included in the client
+- ❌ Security risk: possibility of accidental leakage
+- ❌ Performance: heavier client bundles
 
-### Package Separati
+### Separate Packages
 
-- ❌ Duplicazione: codice comune duplicato
-- ❌ Manutenzione: aggiornamenti in più posti
-- ❌ Type Safety: perdita di type safety tra package
+- ❌ Duplication: common code duplicated
+- ❌ Maintenance: updates in more places
+- ❌ Type Safety: loss of type safety between packages
 
 ### Build-time Exclusions
 
-- ❌ Complessità: configurazione build complessa
-- ❌ Errori silenti: import errati non rilevati
-- ❌ Dev Experience: difficoltà debugging
+- ❌ Complexity: complex build configuration
+- ❌ Silent errors: wrong imports not detected
+- ❌ Dev Experience: debugging difficulty
 
-## Monitoring e Alerting
+## Monitoring and Alerting
 
 ### Bundle Analysis
 
 ```bash
-# Verifica che bundle client non contenga codice server
+# Check that the client bundle contains no server code
 pnpm build:analyze
 ```
 
 ### Runtime Monitoring
 
 ```typescript
-// Log errori di import server-only nel client
+// Log server-only import errors in the client
 if (typeof window !== 'undefined' && error.message.includes('server-side')) {
-  logger.error('Import server-only nel client', { stack: error.stack });
+  logger.error('Server-only import in the client', { stack: error.stack });
 }
 ```
 
@@ -296,6 +296,6 @@ if (typeof window !== 'undefined' && error.message.includes('server-side')) {
 - [Node.js Package Exports](https://nodejs.org/api/packages.html#exports)
 - [TypeScript Module Resolution](https://www.typescriptlang.org/docs/handbook/module-resolution.html)
 - [Webpack Tree Shaking](https://webpack.js.org/guides/tree-shaking/)
-- Implementazione: `packages/core/src/server/index.ts`
+- Implementation: `packages/core/src/server/index.ts`
 - Runtime check: `packages/core/src/crypto/secrets.server.ts:16-18`
-- Esempio uso: `apps/api/src/lib/jwt.ts:13`
+- Usage example: `apps/api/src/lib/jwt.ts:13`
