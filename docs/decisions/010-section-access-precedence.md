@@ -1,50 +1,50 @@
-# ADR-010 — Section Access a 4 Layer di Precedenza
+# ADR-010 — Section Access with Four Precedence Layers
 
 ## Status
 
 Accepted
 
-## Contesto
+## Context
 
-La visibilità delle sezioni UI (es. `product.pricing`, `settings.ldap`, `admin.vendors`) non può essere governata solo dal ruolo RBAC. Esistono esigenze ortogonali:
+The visibility of UI sections (e.g. `product.pricing`, `settings.ldap`, `admin.vendors`) cannot be governed by the RBAC role alone. There are orthogonal requirements:
 
-- **Kill switch operativo**: disabilitare una sezione globalmente per tutti (manutenzione, feature flag)
-- **Override per utente**: concedere o negare l'accesso a una sezione per un singolo utente indipendentemente dal ruolo (es. un `viewer` con accesso temporaneo a pricing)
-- **Default per ruolo configurabile a runtime**: modificare i default di visibilità per un ruolo senza deploy (es. nascondere `sales.statistics` al `viewer` per una specifica stagione)
-- **Fallback deterministico**: in assenza di override, il sistema deve convergere su un valore basato su ciò che il ruolo può fare (`RBAC Resource:Action`)
+- **Operational kill switch**: disable a section globally for everyone (maintenance, feature flag)
+- **Per-user override**: grant or deny access to a section for a single user regardless of their role (e.g. a `viewer` with temporary access to pricing)
+- **Per-role defaults configurable at runtime**: change the visibility defaults for a role without a deploy (e.g. hiding `sales.statistics` from the `viewer` for a specific season)
+- **Deterministic fallback**: in the absence of an override, the system must converge on a value based on what the role can do (`RBAC Resource:Action`)
 
-Un singolo layer non copre tutti e quattro i requisiti contemporaneamente.
+A single layer does not cover all four requirements at once.
 
-## Decisione
+## Decision
 
-`effectiveSectionAccess()` in `packages/core/src/rbac/effectiveAccess.ts` risolve la visibilità di una sezione applicando 4 layer in ordine di precedenza decrescente:
+`effectiveSectionAccess()` in `packages/core/src/rbac/effectiveAccess.ts` resolves the visibility of a section by applying 4 layers in decreasing order of precedence:
 
 ```
-0. Kill switch globale    — disabledSections[] da AppConfig
-1. Override utente        — UserSectionAccess.enabled (bool | null)
-2. Default ruolo runtime  — AppConfig rbac.sectionAccessDefaults (JSON)
-3. Fallback RBAC          — SECTION_TO_PERMISSION → hasPermission()
+0. Global kill switch     — disabledSections[] from AppConfig
+1. User override          — UserSectionAccess.enabled (bool | null)
+2. Runtime role default   — AppConfig rbac.sectionAccessDefaults (JSON)
+3. RBAC fallback          — SECTION_TO_PERMISSION → hasPermission()
 ```
 
-Il primo layer che produce un risultato non-`auto` / non-`null` vince. Il layer 3 è sempre definito (non può restituire `null`).
+The first layer that produces a non-`auto` / non-`null` result wins. Layer 3 is always defined (it cannot return `null`).
 
-### Configurazione delle sezioni
+### Section configuration
 
-Ogni sezione è definita in **tre posti in sync** in `packages/core/src/schemas/rbac.ts`:
+Every section is defined in **three places in sync** in `packages/core/src/schemas/rbac.ts`:
 
-1. `sectionEnum` — chiave della sezione
-2. `SECTION_TO_PERMISSION` — mappa sezione → `Resource:Action`
-3. `SECTION_ACCESS_DEFAULTS` — visibilità default per ruolo (version-controlled)
+1. `sectionEnum` — the section key
+2. `SECTION_TO_PERMISSION` — maps a section → `Resource:Action`
+3. `SECTION_ACCESS_DEFAULTS` — default visibility per role (version-controlled)
 
-I default per-ruolo a runtime vivono in AppConfig (`rbac.sectionAccessDefaults`). Dopo ogni write su chiavi RBAC in AppConfig, `invalidateRbacCache()` deve essere chiamata.
+The runtime per-role defaults live in AppConfig (`rbac.sectionAccessDefaults`). After every write to RBAC keys in AppConfig, `invalidateRbacCache()` must be called.
 
-### Override utente
+### User override
 
-`UserSectionAccess` ha tre stati: `enabled=true`, `enabled=false`, `assente` (nessun override). L'assenza delega al layer successivo — non è equivalente a `false`.
+`UserSectionAccess` has three states: `enabled=true`, `enabled=false`, `absent` (no override). Absence delegates to the next layer — it is not equivalent to `false`.
 
-## Conseguenze
+## Consequences
 
-- Aggiungere una nuova sezione richiede aggiornamento sincrono di tre posti: `sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`. Dimenticarne uno causa comportamento non deterministico (layer 3 non trova la permission e nega per default)
-- `invalidateRbacCache()` va chiamato dopo ogni write su `rbac.*` in AppConfig — se dimenticato, i cambi di default ruolo non si propagano fino al prossimo restart
-- Il layer 0 (kill switch) è pensato per emergenze operative e manutenzione — non per access control di sicurezza (usare `requirePermission` per quello)
-- Il layer 1 (override utente) permette escalation controllata di privilegi di visibilità senza toccare il ruolo dell'utente — utile per demo o onboarding temporaneo
+- Adding a new section requires updating three places in sync: `sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`. Forgetting one causes non-deterministic behaviour (layer 3 does not find the permission and denies by default)
+- `invalidateRbacCache()` must be called after every write to `rbac.*` in AppConfig — if forgotten, role default changes do not propagate until the next restart
+- Layer 0 (kill switch) is intended for operational emergencies and maintenance — not for security access control (use `requirePermission` for that)
+- Layer 1 (user override) allows controlled escalation of visibility privileges without touching the user's role — useful for demos or temporary onboarding
