@@ -6,42 +6,42 @@
 
 ## Context
 
-Il progetto Luke gestisce dati sensibili che devono essere protetti da **data leakage**:
+The Luke project handles sensitive data that must be protected from **data leakage**:
 
-- **Password hash**: `LocalCredential.passwordHash` (irreversibile ma sensibile)
-- **Segreti cifrati**: Configurazioni LDAP con password cifrate
-- **PII sensibili**: Metadata utenti, informazioni personali
-- **Audit data**: Log di accesso e modifiche utenti
+- **Password hash**: `LocalCredential.passwordHash` (irreversible but sensitive)
+- **Encrypted secrets**: LDAP configuration with encrypted passwords
+- **Sensitive PII**: User metadata, personal information
+- **Audit data**: Access log and user changes
 
-Il problema critico è che Prisma, per default, restituisce **tutti i campi** di un modello:
+The critical problem is that Prisma returns **every field** of a model by default:
 
 ```typescript
-// ❌ PERICOLOSO - Espone tutti i campi
+// ❌ DANGEROUS - Exposes every field
 const user = await prisma.user.findUnique({
   where: { id: userId },
 });
-// Include: passwordHash, metadata, localCredential, etc.
+// Includes: passwordHash, metadata, localCredential, etc.
 ```
 
-Questo può causare:
+This can cause:
 
-- **Data leakage**: Campi sensibili esposti in API response
-- **Security breach**: Password hash o segreti in log/network
-- **Compliance issues**: Violazione GDPR/privacy regulations
-- **Performance**: Fetch di dati non necessari
+- **Data leakage**: Sensitive fields exposed in API responses
+- **Security breach**: Password hashes or secrets in logs/network
+- **Compliance issues**: Violation of GDPR/privacy regulations
+- **Performance**: Fetching unnecessary data
 
 ## Decision
 
-Abbiamo adottato il pattern **Prisma Select-Only** con le seguenti regole:
+We adopted the **Prisma Select-Only** pattern with the following rules:
 
-### Regola Fondamentale
+### Fundamental Rule
 
-**MAI** usare `findMany()`, `findUnique()`, `findFirst()` senza `select` esplicito.
+**NEVER** use `findMany()`, `findUnique()`, `findFirst()` without an explicit `select`.
 
-### Pattern Whitelist
+### Whitelist Pattern
 
 ```typescript
-// ✅ CORRETTO - Solo campi sicuri
+// ✅ CORRECT - Safe fields only
 const user = await prisma.user.findUnique({
   where: { id: userId },
   select: {
@@ -59,23 +59,23 @@ const user = await prisma.user.findUnique({
 });
 ```
 
-### Campi Sempre Esclusi
+### Always-Excluded Fields
 
 ```typescript
-// ❌ MAI includere questi campi
+// ❌ NEVER include these fields
 const SENSITIVE_FIELDS = [
   'passwordHash', // LocalCredential
-  'localCredential', // Intera relazione
+  'localCredential', // Entire relation
   'metadata', // Identity metadata
-  'value', // AppConfig (può essere cifrato)
-  'auditLogs', // Log sensibili
+  'value', // AppConfig (may be encrypted)
+  'auditLogs', // Sensitive logs
 ];
 ```
 
-### Relazioni Sicure
+### Safe Relations
 
 ```typescript
-// ✅ Corretto - Solo campi sicuri delle relazioni
+// ✅ Correct - Only safe fields from the relations
 const user = await prisma.user.findUnique({
   where: { id: userId },
   select: {
@@ -95,32 +95,32 @@ const user = await prisma.user.findUnique({
 
 ## Consequences
 
-### ✅ Vantaggi
+### ✅ Advantages
 
-- **Zero Data Leakage**: Solo campi esplicitamente approvati esposti
-- **Audit Semplificato**: Review su `select` block invece di tutto il codice
-- **Performance**: Fetch solo campi necessari (meno network, meno memory)
-- **Security by Default**: Impossibile esporre dati sensibili per errore
-- **Compliance**: Rispetto automatico di privacy regulations
-- **Type Safety**: TypeScript inferisce tipi corretti dai select
+- **Zero Data Leakage**: Only explicitly approved fields are exposed
+- **Simplified Audit**: Review the `select` block instead of all the code
+- **Performance**: Fetch only necessary fields (less network, less memory)
+- **Security by Default**: Impossible to expose sensitive data by mistake
+- **Compliance**: Automatic respect for privacy regulations
+- **Type Safety**: TypeScript infers correct types from the select
 
 ### ⚠️ Trade-off
 
-- **Verbosità**: `select` block ripetitivi (mitigabile con helper functions)
-- **Manutenzione**: Aggiornare tutti i select se schema cambia
-- **Learning Curve**: Sviluppatori devono conoscere pattern
-- **Code Review**: Review obbligatorio per nuove query Prisma
+- **Verbosity**: Repetitive `select` blocks (mitigable with helper functions)
+- **Maintenance**: Update every select if the schema changes
+- **Learning Curve**: Developers must know the pattern
+- **Code Review**: Mandatory review for new Prisma queries
 
-### 🔧 Implicazioni Operative
+### 🔧 Operational Implications
 
-- **Code Review**: Verificare `select` in ogni PR
-- **Testing**: Test che verificano assenza di campi sensibili
-- **Monitoring**: Log di query senza select per audit
-- **Documentation**: Esempi chiari per onboarding sviluppatori
+- **Code Review**: Check `select` in every PR
+- **Testing**: Tests that verify the absence of sensitive fields
+- **Monitoring**: Log of queries without select for audit
+- **Documentation**: Clear examples for developer onboarding
 
-## Implementazione
+## Implementation
 
-### Esempio Corretto - User Profile
+### Correct Example - User Profile
 
 ```typescript
 // apps/api/src/routers/me.ts:31-51
@@ -150,7 +150,7 @@ const user = await ctx.prisma.user.findUnique({
 });
 ```
 
-### Esempio Corretto - User List
+### Correct Example - User List
 
 ```typescript
 // apps/api/src/routers/users.ts:200-218
@@ -178,7 +178,7 @@ const users = await ctx.prisma.user.findMany({
 });
 ```
 
-### Helper Functions (Futuro)
+### Helper Functions (Future)
 
 ```typescript
 // packages/core/src/prisma/selects.ts
@@ -200,7 +200,7 @@ export const IDENTITY_SAFE_FIELDS = {
   providerId: true,
 } as const;
 
-// Uso
+// Usage
 const user = await prisma.user.findUnique({
   where: { id },
   select: {
@@ -212,7 +212,7 @@ const user = await prisma.user.findUnique({
 });
 ```
 
-### ESLint Rule (Futuro)
+### ESLint Rule (Future)
 
 ```typescript
 // .eslintrc.js
@@ -230,7 +230,7 @@ module.exports = {
 
 ```typescript
 describe('Prisma Select Pattern', () => {
-  it('dovrebbe escludere campi sensibili', async () => {
+  it('should exclude sensitive fields', async () => {
     const user = await prisma.user.findUnique({
       where: { id: 'test-id' },
       select: { id: true, email: true },
@@ -247,7 +247,7 @@ describe('Prisma Select Pattern', () => {
 
 ```typescript
 describe('API Response Security', () => {
-  it('API response non dovrebbe contenere campi sensibili', async () => {
+  it('API response should not contain sensitive fields', async () => {
     const response = await request(app)
       .get('/api/trpc/me.get')
       .set('Authorization', `Bearer ${token}`);
@@ -262,16 +262,16 @@ describe('API Response Security', () => {
 
 ```typescript
 describe('Bundle Security', () => {
-  it('bundle non dovrebbe contenere query senza select', () => {
+  it('bundle should not contain queries without select', () => {
     const bundleContent = fs.readFileSync('dist/bundle.js', 'utf8');
     expect(bundleContent).not.toMatch(/prisma\.user\.findUnique\(\{[^}]*\}\)/);
   });
 });
 ```
 
-## Schema Sensibile
+## Sensitive Schema
 
-### Modelli con Dati Sensibili
+### Models with Sensitive Data
 
 ```prisma
 // packages/db/prisma/schema.prisma
@@ -279,7 +279,7 @@ describe('Bundle Security', () => {
 model LocalCredential {
   id           String   @id @default(uuid())
   identityId   String   @unique
-  passwordHash String   // ❌ SENSIBILE - Mai esporre
+  passwordHash String   // ❌ SENSITIVE - Never expose
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -289,7 +289,7 @@ model Identity {
   userId     String
   provider   Provider
   providerId String
-  metadata   Json?    // ❌ SENSIBILE - Può contenere PII
+  metadata   Json?    // ❌ SENSITIVE - May contain PII
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
@@ -297,41 +297,41 @@ model Identity {
 model AppConfig {
   id         String   @id @default(uuid())
   key        String   @unique
-  value      String   // ❌ SENSIBILE - Può essere cifrato
+  value      String   // ❌ SENSITIVE - May be encrypted
   isEncrypted Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
 ```
 
-## Alternative Considerate
+## Alternatives Considered
 
 ### Prisma Middleware
 
-- ❌ Complessità: Middleware per filtrare campi
-- ❌ Performance: Overhead su ogni query
-- ❌ Debugging: Difficile tracciare filtri applicati
+- ❌ Complexity: Middleware to filter fields
+- ❌ Performance: Overhead on every query
+- ❌ Debugging: Hard to trace applied filters
 
 ### DTO Pattern
 
-- ❌ Duplicazione: DTO per ogni endpoint
-- ❌ Manutenzione: Aggiornare DTO quando schema cambia
-- ❌ Type Safety: Perdita di type safety Prisma
+- ❌ Duplication: A DTO for every endpoint
+- ❌ Maintenance: Update the DTO when the schema changes
+- ❌ Type Safety: Loss of Prisma type safety
 
 ### Database Views
 
-- ❌ Complessità: Gestione view separate
-- ❌ Performance: Overhead database
-- ❌ Manutenzione: Sincronizzazione view con schema
+- ❌ Complexity: Managing separate views
+- ❌ Performance: Database overhead
+- ❌ Maintenance: Synchronizing views with the schema
 
-## Monitoring e Compliance
+## Monitoring and Compliance
 
 ### Audit Logging
 
 ```typescript
-// Log query senza select per audit
+// Log queries without select for audit
 if (!query.select) {
-  logger.warn('Query Prisma senza select', {
+  logger.warn('Prisma query without select', {
     model: query.model,
     operation: query.action,
     userId: ctx.session?.user?.id,
@@ -342,7 +342,7 @@ if (!query.select) {
 ### Security Scanning
 
 ```bash
-# Verifica assenza di campi sensibili in output
+# Check the absence of sensitive fields in the output
 pnpm test:security-scan
 ```
 
@@ -351,6 +351,6 @@ pnpm test:security-scan
 - [Prisma Select Fields](https://www.prisma.io/docs/concepts/components/prisma-client/select-fields)
 - [OWASP Data Protection](https://owasp.org/www-community/controls/Implementing_Data_Protection)
 - [GDPR Compliance](https://gdpr.eu/data-protection-by-design-and-by-default/)
-- Esempi: `apps/api/src/routers/me.ts:31-51`
-- Esempi: `apps/api/src/routers/users.ts:200-218`
+- Examples: `apps/api/src/routers/me.ts:31-51`
+- Examples: `apps/api/src/routers/users.ts:200-218`
 - Schema: `packages/db/prisma/schema.prisma:67-78`
