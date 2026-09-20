@@ -6,25 +6,25 @@
 
 ## Context
 
-Il progetto Luke utilizza Zod per validazione dati sia nel backend (tRPC) che nel frontend (React Hook Form). Attualmente esistono schemi duplicati:
+The Luke project uses Zod for data validation both in the backend (tRPC) and in the frontend (React Hook Form). Duplicated schemas currently exist:
 
 - `apps/api/src/routers/brand.ts`: `brandInputSchema`, `brandIdSchema`
 - `apps/web/src/app/(app)/settings/brands/_components/BrandDialog.tsx`: `brandFormSchema`
 
-Questo crea:
+This creates:
 
-- **Debito tecnico**: Modifiche schema richiedono sync manuale
-- **Rischio drift**: Frontend e backend possono divergere
-- **Manutenzione costosa**: Duplicazione di logica di validazione
+- **Technical debt**: Schema changes require manual syncing
+- **Drift risk**: Frontend and backend can diverge
+- **Costly maintenance**: Duplication of validation logic
 
 ## Decision
 
-Centralizzare tutti gli schemi Zod in `packages/core/src/schemas/` per garantire:
+Centralize every Zod schema in `packages/core/src/schemas/` to guarantee:
 
-1. **DRY (Don't Repeat Yourself)**: Un'unica fonte di verità
-2. **Type-safety end-to-end**: Tipi inferiti condivisi
-3. **Manutenibilità**: Modifiche in un solo punto
-4. **Coerenza**: Pattern uniforme per tutti i modelli
+1. **DRY (Don't Repeat Yourself)**: A single source of truth
+2. **End-to-end type safety**: Shared inferred types
+3. **Maintainability**: Changes in a single place
+4. **Consistency**: A uniform pattern for every model
 
 ## Implementation Pattern
 
@@ -55,7 +55,7 @@ export const BrandSchema = z.object({
   updatedAt: z.date(),
 });
 
-// Tipi inferiti
+// Inferred types
 export type BrandInput = z.infer<typeof BrandInputSchema>;
 export type BrandId = z.infer<typeof BrandIdSchema>;
 export type Brand = z.infer<typeof BrandSchema>;
@@ -71,13 +71,13 @@ export const brandRouter = router({
   create: adminOrEditorProcedure
     .input(BrandInputSchema)
     .mutation(async ({ input, ctx }) => {
-      // input è tipizzato come BrandInput
+      // input is typed as BrandInput
     }),
 
   remove: adminOrEditorProcedure
     .input(BrandIdSchema)
     .mutation(async ({ input, ctx }) => {
-      // input.id è tipizzato come string (UUID)
+      // input.id is typed as string (UUID)
     }),
 });
 ```
@@ -107,50 +107,50 @@ const form = useForm<BrandInput>({
 export * from './schemas/brand';
 export * from './schemas/user';
 export * from './schemas/appConfig';
-// ... altri schemi
+// ... other schemas
 ```
 
 ## Migration Strategy
 
 ### Phase 1: Backend (Immediate)
 
-- ✅ Creare `packages/core/src/schemas/brand.ts`
-- ✅ Migrare `apps/api/src/routers/brand.ts`
-- ✅ Testare che tRPC procedures funzionino
+- ✅ Create `packages/core/src/schemas/brand.ts`
+- ✅ Migrate `apps/api/src/routers/brand.ts`
+- ✅ Test that the tRPC procedures work
 
 ### Phase 2: Frontend (Future)
 
-- Migrare `BrandDialog.tsx` per usare `BrandInputSchema`
-- Aggiornare altri componenti che usano schemi locali
-- Rimuovere schemi duplicati
+- Migrate `BrandDialog.tsx` to use `BrandInputSchema`
+- Update other components that use local schemas
+- Remove duplicated schemas
 
 ### Phase 3: New Models
 
-- Applicare pattern a Season, Product, Collection
-- Documentare guidelines per nuovi schemi
+- Apply the pattern to Season, Product, Collection
+- Document guidelines for new schemas
 
 ## Benefits
 
-1. **Type Safety**: Errori di tipo catturati a compile-time
-2. **Consistency**: Validazione identica frontend/backend
-3. **Maintainability**: Modifiche schema in un solo punto
-4. **Developer Experience**: IntelliSense completo
-5. **Testing**: Schemi riutilizzabili nei test
+1. **Type Safety**: Type errors caught at compile time
+2. **Consistency**: Identical validation in frontend/backend
+3. **Maintainability**: Schema changes in a single place
+4. **Developer Experience**: Complete IntelliSense
+5. **Testing**: Schemas reusable in tests
 
 ## Trade-offs
 
 ### Pros
 
-- Eliminazione duplicazione codice
-- Type-safety end-to-end
-- Manutenibilità migliorata
-- Pattern scalabile per nuovi modelli
+- Elimination of code duplication
+- End-to-end type safety
+- Improved maintainability
+- A pattern that scales to new models
 
 ### Cons
 
 - Overhead build: `@luke/core` → `api` → `web`
-- Coupling tra frontend e backend
-- Learning curve per sviluppatori
+- Coupling between frontend and backend
+- Learning curve for developers
 
 ## Examples
 
@@ -190,22 +190,22 @@ import { BrandInputSchema } from '@luke/core';
 
 ### Schema Naming
 
-- `{Model}InputSchema`: Per create/update operations
-- `{Model}IdSchema`: Per operazioni su singolo record
-- `{Model}Schema`: Per output completo
-- `{Model}ListInputSchema`: Per query con filtri
+- `{Model}InputSchema`: For create/update operations
+- `{Model}IdSchema`: For operations on a single record
+- `{Model}Schema`: For the complete output
+- `{Model}ListInputSchema`: For queries with filters
 
 ### Validation Rules
 
-- Usare messaggi di errore in italiano
-- Definire limiti ragionevoli (max length, etc.)
-- Includere validazioni business logic quando appropriato
-- Usare `.optional()` e `.nullable()` esplicitamente
+- Use error messages in Italian
+- Define reasonable limits (max length, etc.)
+- Include business-logic validations when appropriate
+- Use `.optional()` and `.nullable()` explicitly
 
 ### Type Exports
 
-- Esportare sempre i tipi inferiti
-- Usare naming consistente: `{Model}Input`, `{Model}Id`, `{Model}`
+- Always export the inferred types
+- Use consistent naming: `{Model}Input`, `{Model}Id`, `{Model}`
 
 ## Related ADRs
 
