@@ -3,7 +3,7 @@
 <!-- luke-docs:start:adr-index -->
 | # | Title | Status |
 |---|--------|--------|
-| [001](001-jwt-hs256-hkdf.md) | JWT HS256 con Derivazione HKDF-SHA256 | Accepted |
+| [001](001-jwt-hs256-hkdf.md) | JWT HS256 with HKDF-SHA256 Derivation | Accepted |
 | [002](002-rbac-policy.md) | RBAC Policy e Enforcement | Superseded by [006](006-resource-action-permissions.md) |
 | [003](003-core-server-only.md) | Core Package Server-Only Exports | Accepted |
 | [004](004-prisma-select-only.md) | Prisma Select-Only Pattern | Accepted |
