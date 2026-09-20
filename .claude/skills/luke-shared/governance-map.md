@@ -196,7 +196,6 @@ atomicity, not an attacker primitive.
 
 | Item                                              | Owner  | State                                                        |
 | ------------------------------------------------- | ------ | ------------------------------------------------------------ |
-| ADRs **006, 007, 008 and 009** at `Potentially stale` | user   | written by the old auto-mutating behavior; awaiting an explicit decision, deliberately not rewritten. ADR 012 mentions the phrase in prose about 007 — its own status is Accepted |
 | canonical-language regression detection           | `luke-docs` | approved as an explicitly incomplete deterministic guard; remains semantic until the mutable corpus is migrated and the guard ships green |
 
 ### Known limit

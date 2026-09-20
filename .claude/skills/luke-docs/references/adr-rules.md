@@ -46,8 +46,9 @@ Allowed values for `Status`:
 - `Deprecated` — no longer applicable, replaced by different practice
 - `Superseded by [NNN — Title](NNN-title.md)` — replaced by a later ADR
 - `Potentially stale — review needed` — **legacy value, do not write it.** It
-  exists on ADRs written before this mode was read-only about status; leave
-  those alone and report them for decision rather than rewriting either way
+  was written before this mode was read-only about status, and no current ADR
+  carries it. If one ever does, leave it alone and report it for decision
+  rather than rewriting it either way
 
 ---
 
@@ -136,8 +137,7 @@ _Last updated: {current date}_
 - [ ] Every contradiction was reported as `ADR/CODE CONFLICT`, not resolved
 - [ ] Every `ADR/CODE CONFLICT` in the report has specific detail (what contradicts what)
 - [ ] No new `Potentially stale` status was written — the value is legacy, read
-      and reported only. ADRs 006, 007, 008 and 009 carry it from the old
-      behavior and are awaiting an explicit decision
+      and reported only
 - [ ] `pnpm check:drift` passes ADR index completeness and exact-title checks
       in `tools/scripts/check-docs-integrity.ts`; gaps and title drift are
       blocking failures rather than manual review items
