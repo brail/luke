@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { effectiveSectionAccess } from '@luke/core';
+import { effectiveSectionAccess, SECTION_ACCESS_DEFAULTS } from '@luke/core';
 
 import { router, publicProcedure } from '../src/lib/trpc';
 
@@ -15,6 +15,13 @@ import type { Context } from '../src/lib/trpc';
 
 describe('Section Access Overrides', () => {
   describe('effectiveSectionAccess', () => {
+    // These call the resolver directly, so `sectionAccessDefaults` is whatever the test
+    // passes. An empty map here is a unit-test shape, **not** the production state when
+    // AppConfig holds no `rbac.sectionAccessDefaults` row: `getRbacConfig` always merges
+    // the complete `SECTION_ACCESS_DEFAULTS` table as the base, so in production layer 2
+    // always has an entry for a known role and the permission fallback is reached only
+    // through an explicit `'auto'`. The production no-row and malformed-row paths are
+    // covered in `sectionAccess.integration.spec.ts`.
     it('should allow access when override is enabled=true', () => {
       const result = effectiveSectionAccess({
         role: 'viewer',
@@ -39,7 +46,9 @@ describe('Section Access Overrides', () => {
       expect(result).toBe(false);
     });
 
-    it('should fallback to role permissions when no override', () => {
+    it('falls back to role permissions when the defaults map has no entry for the section', () => {
+      // The empty map is passed directly; it does not represent "no AppConfig row"
+      // (see the note above this describe block).
       // Admin has access to settings
       const adminResult = effectiveSectionAccess({
         role: 'admin',
@@ -71,6 +80,49 @@ describe('Section Access Overrides', () => {
         section: 'settings',
       });
       expect(editorResult).toBe(false);
+    });
+
+    it("resolves an explicit 'auto' role default through the RBAC permission fallback", () => {
+      // `sales` is the discriminator: the static table denies it to a viewer while the
+      // permission fallback grants it, so `true` can only have come from layer 3 — a
+      // static answer would be `false`. Asserting the table first means that if the
+      // default ever changes, this test reports a dead discriminator instead of passing
+      // for the wrong reason. `sales` is one of the sections named in the 32 measured
+      // divergences recorded in `packages/core/src/server/rbacConfig.ts`.
+      expect(SECTION_ACCESS_DEFAULTS.viewer.sales).toBe(false);
+
+      const auto = effectiveSectionAccess({
+        role: 'viewer',
+        sectionAccessDefaults: { viewer: { sales: 'auto' } },
+        userOverride: undefined,
+        section: 'sales',
+      });
+      expect(auto).toBe(true);
+
+      // Contrast: any value other than 'auto' decides at layer 2 and never reaches the
+      // fallback, which is what makes 'auto' the only route to it.
+      const disabled = effectiveSectionAccess({
+        role: 'viewer',
+        sectionAccessDefaults: { viewer: { sales: 'disabled' } },
+        userOverride: undefined,
+        section: 'sales',
+      });
+      expect(disabled).toBe(false);
+    });
+
+    it('denies an unrecognised role at the permission fallback', () => {
+      // A role outside `Roles` has no entry in the merged defaults, so layer 2 coerces to
+      // 'auto' and layer 3 decides. `hasPermission` grants an unknown role nothing, so the
+      // section is denied: the fallback fails closed rather than throwing or opening up.
+      // The map is populated for another role, matching the production shape where the
+      // merged base always carries the three known roles.
+      const result = effectiveSectionAccess({
+        role: 'auditor',
+        sectionAccessDefaults: { viewer: { sales: 'disabled' } },
+        userOverride: undefined,
+        section: 'sales',
+      });
+      expect(result).toBe(false);
     });
 
     it('should follow precedence: deny > allow > role', () => {
