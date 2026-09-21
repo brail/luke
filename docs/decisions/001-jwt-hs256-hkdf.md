@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** - 2024-01-XX
+Superseded by [020 — Master Key Scope and Rotation Limits](020-master-key-scope-and-rotation-limits.md)
 
 ## Context
 
