@@ -521,7 +521,7 @@ I test verificano:
 #### Secrets
 
 - **Test**: Derivazione segreti JWT via HKDF
-- **Fallback**: 503 se master key non disponibile
+- **Fallback**: 503 if secret derivation fails. A missing or replaced key is **not** detected here: `getMasterKey` creates a new key when the file is absent, and this probe derives `api.jwt` without being able to tell one key from another ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md))
 
 #### LDAP (Opzionale)
 
@@ -576,6 +576,8 @@ Durante l'avvio, il server esegue verifiche critiche che devono passare:
 3. **Secret Derivation**: `deriveSecret('api.jwt')`
 
 Se qualsiasi verifica fallisce, il processo termina con `process.exit(1)` per garantire che il server non si avvii in uno stato inconsistente.
+
+**Known limit — this is not a guarantee that the master key is the expected one.** `validateMasterKey()` only checks that the key file is 32 bytes, and when the file is **absent** `getMasterKey()` creates a new one, so the check passes. A lost or replaced master key therefore does not stop startup here; it surfaces later as decryption failures at the point of use, or at boot only when a key listed in `CRITICAL_CONFIG_KEYS` is itself stored encrypted, since `validateCriticalConfig` reads those through the decrypting reader. See [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
 ### Configurazione Kubernetes
 

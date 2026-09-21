@@ -151,7 +151,7 @@ Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @lu
   - `nextauth.secret` → NextAuth web sessions
   - `cookie.secret` → Fastify cookie firmati
 - **Scope**: Server-only, mai esposto via HTTP
-- **Rotazione**: Rigenera `~/.luke/secret.key` per invalidare tutti i token
+- **Rotation**: replacing `~/.luke/secret.key` is **not** a supported way to revoke sessions. It does invalidate API JWTs, but the same key also decrypts every `isEncrypted` `AppConfig` row and unwraps every backup's data-encryption key, so replacing it without keeping the original leaves those unreadable. Scope and consequences: [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md). For supported session revocation: [ADR-019](docs/decisions/019-tokenversion-session-revocation.md)
 - **Nessun endpoint pubblico**: Segreti mai esposti via API
 
 ### Health & Readiness
@@ -692,7 +692,7 @@ pnpm install
 - **Ports**: Frontend (3000), Backend (3001) - configurabili via AppConfig
 - **Caching**: Turborepo cache in `.turbo/` (ignorato da git)
 - **Segreti JWT**: Derivati automaticamente dalla master key via HKDF-SHA256 (nessun database)
-- **Rotazione Segreti**: Rigenera `~/.luke/secret.key` per invalidare tutti i token
+- **Secret rotation**: replacing `~/.luke/secret.key` is **not** a supported revocation procedure — it also leaves encrypted `AppConfig` rows and existing backups unreadable unless the original key is kept. See [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md)
 - **Nessun .env**: I segreti non devono mai essere committati in file .env (solo NEXT*PUBLIC*\* se necessario)
 - **Export sicuro**: I segreti cifrati nell'export mostrano sempre `[ENCRYPTED]`, mai il plaintext
 

@@ -601,7 +601,7 @@ I valori sensibili sono cifrati con **AES-256-GCM**.
 - **Claim standard**: `iss: 'urn:luke'`, `aud: 'luke.api'`, `exp`, `nbf`
 - **Clock tolerance**: ±60 secondi per gestire skew temporale
 - **Scope**: Server-only, mai esposto via HTTP
-- **Rotazione**: Rigenera master key per invalidare tutti i token
+- **Rotation**: regenerating the master key is **not** a supported way to revoke sessions. It does invalidate API JWTs, but the same key decrypts every `isEncrypted` `AppConfig` row and unwraps every backup's data-encryption key, so regenerating it without keeping the original leaves those unreadable — see [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md). For supported session revocation see [ADR-019](docs/decisions/019-tokenversion-session-revocation.md)
 - **Nessun endpoint pubblico**: Il secret JWT non è mai esposto via API
 
 ### Session Hardening
@@ -735,10 +735,9 @@ Per configurazioni dettagliate, esempi per ambiente e test, consulta:
 
 ### Errore "Master key deve essere di 32 bytes"
 
-```bash
-rm ~/.luke/secret.key
-pnpm --filter @luke/api seed
-```
+**Do not delete `~/.luke/secret.key`.** The error means the existing file is not 32 bytes; deleting it makes the API generate a new key on the next start, and every `isEncrypted` `AppConfig` row and every existing backup then becomes unreadable — permanently, if no copy of the original file survives. Reseeding does not repair them: the seed skips rows that already exist.
+
+Restore the original 32-byte key from wherever it is held (in Docker, the `luke_api_data` volume). If the file is genuinely lost, see [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md) for what is and is not recoverable.
 
 ### Errore "Database locked"
 
@@ -883,7 +882,7 @@ curl -sSf http://localhost:3001/readyz
 
 **Note importanti**:
 
-- Il server termina con `exit(1)` se la master key o i segreti non sono disponibili all'avvio (fail-fast)
+- The server exits with `exit(1)` when the master key file exists but is not 32 bytes, or when secret derivation fails. A **missing** file is not an error: `getMasterKey` creates a new key and startup continues, so a lost or replaced key does not stop the server here — see [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md)
 - I provider opzionali come LDAP hanno timeout breve (2s) e non bloccano il readiness se falliscono
 - I dettagli degli errori sono loggati internamente ma non esposti nella risposta HTTP per sicurezza
 

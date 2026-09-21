@@ -154,7 +154,7 @@ const domains = {
 
 - Ogni dominio ha un segreto indipendente
 - Compromissione di un segreto non impatta gli altri
-- Rotazione master key invalida tutti i derivati
+- Replacing the master key invalidates every derived secret — and also leaves every `isEncrypted` `AppConfig` row and every wrapped backup key unreadable, unless the original key is kept ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md))
 - Nessun segreto salvato in database
 
 ### Cifratura Configurazioni
@@ -645,39 +645,11 @@ curl -H "x-luke-trace-id: trace-abc-123" \
 
 ### Rotazione Segreti
 
-**Frequenza**: Ogni 90 giorni o in caso di compromissione.
+Master-key rotation is **not a supported procedure** on an instance that already holds data, and no schedule for it is recommended. The procedure previously documented here — export the configuration, move `~/.luke/secret.key` aside, re-enter the LDAP, SMTP and storage credentials — has been removed because it did not work: `config.exportJson` returns `[ENCRYPTED]` instead of plaintext, so the export preserved none of the values it was meant to protect, and the re-entry list omitted backup data-encryption keys entirely.
 
-**Procedura**:
+The master key does not only sign tokens. It is the AES-256-GCM key for every `isEncrypted` `AppConfig` row and the wrapping key for every backup's data-encryption key, so replacing it leaves those rows and those backups unreadable unless the original key is retained. No re-encryption or re-entry routine exists to repair them.
 
-1. **Backup configurazioni**:
-
-   ```bash
-   curl -X POST http://localhost:3001/trpc/config.exportJson \
-     -H "Authorization: Bearer TOKEN" \
-     -d '{"includeValues":true}' > backup.json
-   ```
-
-2. **Genera nuova master key**:
-
-   ```bash
-   mv ~/.luke/secret.key ~/.luke/secret.key.backup
-   # Riavvia server: genera automaticamente nuova key
-   ```
-
-3. **Aggiorna configurazioni cifrate**:
-   - Reimposta password LDAP
-   - Reimposta credenziali SMTP
-   - Reimposta storage credentials
-
-4. **Verifica funzionamento**:
-
-   ```bash
-   # Test LDAP
-   curl -X POST http://localhost:3001/trpc/integrations.testLdap
-
-   # Test SMTP
-   curl -X POST http://localhost:3001/trpc/integrations.testSmtp
-   ```
+To revoke sessions, use the mechanisms described in [ADR-019](docs/decisions/019-tokenversion-session-revocation.md). A re-encryption routine for `AppConfig` and a rewrap for stored backup keys would make rotation viable; both are a separate, security-reviewed project, and until they exist there is no rotation runbook to follow. Full scope and consequences: [ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
 ### Backup Configurazioni
 
@@ -764,7 +736,6 @@ alerts:
 - [ ] Solo admin possono accedere a `/settings/*`
 - [ ] Rate limiting attivo su endpoint config
 - [ ] HTTPS obbligatorio in produzione
-- [ ] Rotazione segreti schedulata
 - [ ] Test periodici LDAP/SMTP
 
 ---
