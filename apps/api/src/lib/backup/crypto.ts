@@ -5,8 +5,22 @@
  * AES-256-GCM so arbitrarily large payloads never sit fully in memory. The DEK itself is
  * small, so it is wrapped (encrypted) with the existing server master key via the same
  * whole-string AES-256-GCM primitive already used for AppConfig secrets — this reuses
- * `encryptValue`/`decryptValue` rather than re-implementing master-key crypto, and means
- * the master key can be rotated without re-encrypting every historical backup blob.
+ * `encryptValue`/`decryptValue` rather than re-implementing master-key crypto.
+ *
+ * What that does and does not buy, because the distinction matters (ADR-020): rotating the
+ * master key never requires re-encrypting a backup *blob*, since the blob is sealed with its
+ * DEK rather than with the master key. It does invalidate the *wrapped DEK* that makes the
+ * blob readable — `wrapDek`/`unwrapDek` are `encryptValue`/`decryptValue`, so every stored
+ * `BackupRecord.wrappedDekHex`, and the copy in each `.meta.json` sidecar, can only be
+ * unwrapped with the key that wrote it. No rewrap routine exists, so a replaced master key
+ * leaves historical backups intact and unreadable.
+ *
+ * The passphrase pair is the exception, and it is asymmetric. An existing `.lukebak` export
+ * stays recoverable without the old master key, because `unwrapDekWithPassphrase` derives its
+ * key from the operator passphrase with Argon2id. Producing that export does not:
+ * `maintenance.backup.prepareExport` calls `unwrapDek` with the master key before
+ * `wrapDekWithPassphrase` re-seals the DEK. An export is therefore a precaution that has to
+ * precede a key change, never a recovery after one.
  */
 
 import {
