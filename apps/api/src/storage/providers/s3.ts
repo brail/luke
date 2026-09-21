@@ -26,6 +26,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+import { APP_STORAGE_BUCKETS } from '@luke/core';
 import type {
   IStorageCapabilities,
   IStorageProvider,
@@ -90,19 +91,17 @@ export class S3Provider implements IStorageProvider {
 
   /**
    * Ensures all known buckets exist, creating any that are missing.
+   *
+   * Derived from `APP_STORAGE_BUCKETS` rather than respelled here: since the `mc`-based
+   * sidecar was removed (ADR-012), this is the only path that creates buckets on an
+   * S3-compatible backend, so a bucket added to the shared list and forgotten here would
+   * never be created and its first upload would fail at runtime. `backups` is appended
+   * because it is deliberately not an application bucket — it is excluded from
+   * `APP_STORAGE_BUCKETS` so a backup never enumerates prior backup blobs — but it must
+   * still exist on the backend.
    */
   async init(): Promise<void> {
-    const allBuckets: StorageBucket[] = [
-      'uploads',
-      'exports',
-      'assets',
-      'brand-logos',
-      'collection-row-pictures',
-      'collection-row-pictures-revisions',
-      'merchandising-specsheet-images',
-      'company-assets',
-      'backups',
-    ];
+    const allBuckets: StorageBucket[] = [...APP_STORAGE_BUCKETS, 'backups'];
 
     await Promise.all(allBuckets.map(async bucket => {
       try {
