@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** - 2024-01-XX
+Superseded by [023 — Outbound Boundary for Sensitive Data](023-sensitive-data-outbound-boundary.md)
 
 ## Context
 
