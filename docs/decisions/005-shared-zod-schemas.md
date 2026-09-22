@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** - 2025-01-26
+Superseded by [024 — Shared Validation Schemas and Message Audience](024-shared-schemas-and-message-audience.md)
 
 ## Context
 

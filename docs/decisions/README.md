@@ -7,7 +7,7 @@
 | [002](002-rbac-policy.md) | RBAC Policy and Enforcement | Superseded by [006](006-resource-action-permissions.md) |
 | [003](003-core-server-only.md) | Core Package Server-Only Exports | Superseded by [022](022-core-package-export-boundary.md) |
 | [004](004-prisma-select-only.md) | Prisma Select-Only Pattern | Superseded by [023](023-sensitive-data-outbound-boundary.md) |
-| [005](005-shared-zod-schemas.md) | Shared Zod Schemas Pattern | Accepted |
+| [005](005-shared-zod-schemas.md) | Shared Zod Schemas Pattern | Superseded by [024](024-shared-schemas-and-message-audience.md) |
 | [006](006-resource-action-permissions.md) | Resource/Action Permissions System | Superseded by [016](016-static-resource-action-permissions.md) |
 | [007](007-storage-layer-refactor.md) | Storage Layer Refactor — Key-Based Storage, MinIO Support, Two-Phase Upload | Superseded by [017](017-key-based-storage-and-two-phase-upload.md) |
 | [008](008-appconfig-env-policy.md) | AppConfig KV System and Env Policy | Superseded by [018](018-runtime-configuration-and-bootstrap-environment.md) |
@@ -26,6 +26,7 @@
 | [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Accepted |
 | [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Accepted |
 | [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
+| [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
 
 _Last updated: 2026-09-22_
 <!-- luke-docs:end:adr-index -->
