@@ -5,7 +5,7 @@
 |---|--------|--------|
 | [001](001-jwt-hs256-hkdf.md) | JWT HS256 with HKDF-SHA256 Derivation | Superseded by [020](020-master-key-scope-and-rotation-limits.md) |
 | [002](002-rbac-policy.md) | RBAC Policy and Enforcement | Superseded by [006](006-resource-action-permissions.md) |
-| [003](003-core-server-only.md) | Core Package Server-Only Exports | Accepted |
+| [003](003-core-server-only.md) | Core Package Server-Only Exports | Superseded by [022](022-core-package-export-boundary.md) |
 | [004](004-prisma-select-only.md) | Prisma Select-Only Pattern | Accepted |
 | [005](005-shared-zod-schemas.md) | Shared Zod Schemas Pattern | Accepted |
 | [006](006-resource-action-permissions.md) | Resource/Action Permissions System | Superseded by [016](016-static-resource-action-permissions.md) |
@@ -24,6 +24,7 @@
 | [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Accepted |
 | [020](020-master-key-scope-and-rotation-limits.md) | Master Key Scope and Rotation Limits | Accepted |
 | [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Accepted |
+| [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Accepted |
 
-_Last updated: 2026-09-21_
+_Last updated: 2026-09-22_
 <!-- luke-docs:end:adr-index -->

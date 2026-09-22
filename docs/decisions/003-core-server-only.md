@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** - 2024-01-XX
+Superseded by [022 — Core Package Client/Server Export Boundary](022-core-package-export-boundary.md)
 
 ## Context
 
