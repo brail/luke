@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [021 — Section Access Resolution: Static Base and Runtime Overrides](021-section-access-static-base-and-overrides.md)
 
 ## Context
 

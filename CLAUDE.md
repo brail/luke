@@ -273,11 +273,17 @@ Two distinct layers that must stay in sync.
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 
 - Access evaluated by `effectiveSectionAccess()`, 4-level precedence:
-  kill switch → user override → AppConfig role defaults → RBAC fallback
+  kill switch → user override → role default → RBAC fallback
 - **New section = update THREE places in sync**: `sectionEnum`,
   `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS` (all three roles)
-- `SECTION_ACCESS_DEFAULTS` is static (version-controlled); per-role runtime
-  override lives in AppConfig (`rbac.sectionAccessDefaults`)
+- The role default is the static `SECTION_ACCESS_DEFAULTS` table as the **base**,
+  with the AppConfig key (`rbac.sectionAccessDefaults`) merged over it per role.
+  With that key absent or written through the supported paths, a known role with
+  no override for a section takes the static value, and the RBAC fallback is
+  reached only by an explicit `'auto'` or by a role outside `Roles`, which it
+  denies. The reader does not validate the stored shape or its values, so a row
+  written directly to the database is outside that guarantee. Rationale:
+  `docs/decisions/021-section-access-static-base-and-overrides.md`
 - Always `invalidateRbacCache()` after writing to RBAC keys in AppConfig
 
 ## LDAP
