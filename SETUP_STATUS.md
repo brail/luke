@@ -1,5 +1,13 @@
 # Luke Monorepo - Status Setup
 
+> **Historical setup snapshot and roadmap — not current operating guidance.**
+> This file records the state of the initial setup and what was planned next. Most
+> of its claims have not been kept current: several name versions, dependencies and
+> helpers that no longer match the code. Individual lines may have been corrected
+> since, so do not read an accurate entry as evidence that its neighbours are. For
+> current reference use `README.md`, `API_SETUP.md`, `APP_CONFIG.md` and
+> `OPERATIONS.md`, and treat the manifests and `docs/decisions/` as authoritative.
+
 ## Completato con Successo
 
 ### Struttura Monorepo
@@ -47,7 +55,7 @@ pnpm format           # ✅ Formatta con Prettier
 - ✅ **Error handling uniforme** - TRPCError in tutti i router
 - ✅ **LDAP enterprise authentication** - con role mapping e strategia configurabile
 - ✅ **Principio "mai decrypt in bulk"** - implementato nel config router
-- ✅ **Section Access Overrides** - sistema override per sezioni con precedenza deny > allow > role
+- ✅ **Section Access Overrides** - per-section visibility resolved in four layers: kill switch, per-user override, role default (static table with AppConfig override), then the RBAC permission fallback
 - ✅ **Paginazione e filtri** - per config.list con output strutturato
 - ✅ **Visualizzazione sicura** - con modalità masked/raw e audit log
 - ✅ **Email transazionali** - reset password e verifica email con token hash SHA-256

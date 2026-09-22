@@ -534,47 +534,41 @@ Configurazioni storage cifrate create on-demand per integrazioni file storage.
 
 ### Role-Based Access Control
 
-| Procedura                        | Ruolo Richiesto   | Descrizione                  |
-| -------------------------------- | ----------------- | ---------------------------- |
-| `config.list`                    | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.get`                     | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.viewValue` (mode=masked) | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.viewValue` (mode=raw)    | `adminProcedure`  | Solo admin                   |
-| `config.exists`                  | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.getMultiple`             | `loggedProcedure` | Qualsiasi utente autenticato |
-| `config.set`                     | `adminProcedure`  | Solo admin                   |
-| `config.update`                  | `adminProcedure`  | Solo admin                   |
-| `config.delete`                  | `adminProcedure`  | Solo admin                   |
-| `config.setMultiple`             | `adminProcedure`  | Solo admin                   |
-| `config.exportJson`              | `adminProcedure`  | Solo admin                   |
-| `config.importJson`              | `adminProcedure`  | Solo admin                   |
+Every procedure in the config router is a `protectedProcedure` carrying
+`requirePermission('config:read')` for reads, or `requirePermission('config:update')`
+for writes and for JSON export/import — `exportJson` requires the write permission
+despite being a read. **Only `admin` holds either permission today** — the `editor`
+and `viewer` roles grant no `config:*` permission at all, so no non-admin reaches any
+of these procedures, reads included. The router is the source of truth for which
+procedure needs which permission; this document does not mirror it.
 
 ### Section Access Overrides
 
-Sistema di override per controllare l'accesso alle sezioni del sistema per singoli utenti.
+Controls which UI sections a user can see. The sections themselves are declared in `sectionEnum` (`packages/core/src/schemas/rbac.ts`), which is the list — this document does not repeat it.
 
-#### Precedenza
+#### Precedence
 
-deny (enabled=false) > allow (enabled=true) > role (fallback RBAC)
+`effectiveSectionAccess()` applies four layers, highest first:
 
-#### Sezioni Disponibili
+0. **Kill switch** — a section named in `app.sections.disabled` is hidden from everyone.
+1. **Per-user override** — `UserSectionAccess.enabled`; an absent override delegates to the next layer rather than denying.
+2. **Role default** — the static `SECTION_ACCESS_DEFAULTS` table as the base, with the AppConfig key `rbac.sectionAccessDefaults` merged over it per role.
+3. **RBAC fallback** — `SECTION_TO_PERMISSION` → `hasPermission()`.
 
-- `settings`: Configurazioni di sistema (users, storage, auth, mail)
-- `maintenance`: Strumenti di manutenzione (config, import/export)
+With `rbac.sectionAccessDefaults` absent or written through the supported paths, layer 3 is reached only when the role default is an explicit `'auto'`, or for a role outside `Roles`. The reader does not validate a stored row, so a row written directly to the database falls outside that guarantee — see [ADR-021](docs/decisions/021-section-access-static-base-and-overrides.md) for the exact limits.
 
 #### Safety Rule
 
-Non è possibile rimuovere l'accesso ai settings all'ultimo amministratore per evitare lock-out amministrativo.
+At least one administrator must retain effective access to **every** section in `ADMIN_RECOVERY_SECTIONS` — currently `settings` and `settings.users` — so that an RBAC misconfiguration stays correctable from within the application. The invariant is enforced from several sides: `sectionAccess.set` and `sectionAccess.setRoleDefaults` refuse a change that would break it, and so do demoting, deactivating or deleting a user. Layer 0 has its own guard — `saveSectionsDisabledGuarded` refuses any write to `app.sections.disabled` that would disable `settings` while an active administrator exists, since the kill switch outranks every layer below it.
 
-#### Gestione
+#### Management
 
-UI amministrativa: `/settings/access`
+Per-user overrides are written from two dialogs on `/settings/users` — the user access dialog, and the approval dialog when an account is approved — both calling `sectionAccess.set`. The per-role defaults are a separate surface: `sectionAccess.setRoleDefaults` currently has no web caller and is reachable only as tRPC.
 
 ### Frontend Protection
 
-- **Route `/settings/*`**: Solo amministratori possono accedere
-- **Middleware Next.js**: Verifica ruolo prima di servire pagina
-- **Form Reset**: Configurazioni si resettano al cambio sessione (logout/login)
+- **Route `/settings/*`**: guarded server-side by `assertSectionAccess('settings')` in `apps/web/src/app/(app)/settings/layout.tsx` — by the precedence above, not by a role check.
+- **`apps/web/src/proxy.ts`**: matches `/(app)(.*)` but is a plain passthrough; it performs no role or section check. Section-level enforcement is the layout guards' job.
 
 ---
 
@@ -733,7 +727,7 @@ alerts:
 - [ ] Master key con permessi 0600
 - [ ] Backup configurazioni cifrati e protetti
 - [ ] Audit log abilitato e monitorato
-- [ ] Solo admin possono accedere a `/settings/*`
+- [ ] Verify that `/settings/*` uses the server-side section-access guard and that configuration APIs enforce their permissions separately
 - [ ] Rate limiting attivo su endpoint config
 - [ ] HTTPS obbligatorio in produzione
 - [ ] Test periodici LDAP/SMTP

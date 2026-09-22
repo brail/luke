@@ -11,7 +11,12 @@ type SectionDefault = 'auto' | 'enabled' | 'disabled';
 type EffectiveAccessParams = {
   /** Role of the user being evaluated */
   role: string;
-  /** Per-role section access defaults loaded from AppConfig */
+  /**
+   * Per-role section defaults, already resolved by the caller. `getRbacConfig`
+   * builds this map from the static `SECTION_ACCESS_DEFAULTS` base with any
+   * AppConfig per-role override merged over it; this resolver never reads
+   * AppConfig itself. See ADR-021.
+   */
   sectionAccessDefaults: Record<
     string,
     Partial<Record<Section, SectionDefault>>
@@ -28,7 +33,7 @@ type EffectiveAccessParams = {
  * Resolves whether a user can access a section, applying four precedence layers in order:
  * 0. Global kill switch (`disabledSections`)
  * 1. Per-user override (`disabled > enabled > absent`)
- * 2. Per-role AppConfig default (`disabled > enabled > auto`)
+ * 2. Per-role default from the supplied map (`disabled > enabled > auto`)
  * 3. Role RBAC fallback via `SECTION_TO_PERMISSION`
  *
  * @returns `true` if access is granted, `false` otherwise
@@ -47,7 +52,7 @@ export function effectiveSectionAccess({
   if (userOverride?.enabled === false) return false;
   if (userOverride?.enabled === true) return true;
 
-  // 2) Role default from AppConfig
+  // 2) Role default from the supplied map (static base + AppConfig override)
   const roleDefaults = sectionAccessDefaults[role] || {};
   const defaultForSection = roleDefaults[section] ?? 'auto';
 
