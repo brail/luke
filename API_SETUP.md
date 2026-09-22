@@ -384,12 +384,13 @@ curl -H "Authorization: Bearer YOUR_TOKEN" "http://localhost:3001/trpc/config.ge
 
 **Modalità disponibili**:
 
-- `masked`: disponibile per tutti gli utenti autenticati, valori cifrati mostrano `[ENCRYPTED]`
-- `raw`: solo admin, decritta i valori cifrati, genera audit log obbligatorio
+- `masked`: requires `config:read`, which only `admin` holds today; encrypted values show `[ENCRYPTED]`, and no audit record is written
+- `raw`: the same `config:read` permission plus an inline admin-role check; decrypts encrypted values and writes a mandatory audit record
 
 ```bash
-# Modalità masked (qualsiasi utente autenticato)
-curl "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.url",mode:"masked"})))')"
+# Modalità masked (requires config:read — admin only today)
+curl -H "Authorization: Bearer $TOKEN" \
+     "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.url",mode:"masked"})))')"
 
 # Modalità raw (solo admin, audit obbligatorio)
 curl -H "Authorization: Bearer YOUR_TOKEN" -H "x-luke-trace-id: trace-123" "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.password",mode:"raw"})))')"

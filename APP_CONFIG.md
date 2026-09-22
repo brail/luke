@@ -25,7 +25,7 @@ Luke implementa un sistema di configurazione centralizzata che elimina completam
 - **Database-driven**: Tutte le configurazioni memorizzate in `AppConfig` table
 - **Zero file .env**: Nessun file di configurazione da committare o gestire
 - **Cifratura nativa**: AES-256-GCM per segreti sensibili
-- **Visualizzazione controllata**: Modalità masked/raw con audit obbligatorio
+- **Visualizzazione controllata**: modalità masked/raw — raw writes a mandatory audit record, masked writes none
 - **RBAC integrato**: Solo admin possono modificare configurazioni
 - **Import/Export sicuro**: Backup e restore con protezione segreti
 - **Validazione rigorosa**: Formato chiavi e valori validati
@@ -215,8 +215,8 @@ Luke implementa due modalità di visualizzazione per proteggere i segreti:
 
 | Modalità | Accesso      | Valori Cifrati | Audit Log | Use Case                      |
 | -------- | ------------ | -------------- | --------- | ----------------------------- |
-| `masked` | Tutti utenti | `[ENCRYPTED]`  | No        | Listing, verifica chiavi      |
-| `raw`    | Solo admin   | Plaintext      | Sì        | Debug, export, configurazione |
+| `masked` | `config:read` — admin only today | `[ENCRYPTED]` | No | Listing, verifica chiavi |
+| `raw` | `config:read` plus an inline admin-role check | Plaintext | Sì | Debug, export, configurazione |
 
 #### Principio "Mai Decrypt in Bulk"
 
@@ -231,10 +231,11 @@ Luke implementa due modalità di visualizzazione per proteggere i segreti:
 
 #### Esempi Visualizzazione
 
-**Modalità Masked** (qualsiasi utente):
+**Modalità Masked** (requires `config:read`, held only by `admin` today):
 
 ```bash
-curl "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.password",mode:"masked"})))')"
+curl -H "Authorization: Bearer $TOKEN" \
+     "http://localhost:3001/trpc/config.viewValue?input=$(node -e 'console.log(encodeURIComponent(JSON.stringify({key:"auth.ldap.password",mode:"masked"})))')"
 ```
 
 Output:
