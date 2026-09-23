@@ -339,7 +339,6 @@ Pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASS
 Per dettagli su rate-limiting, idempotency, session management, security headers e readiness checks, consulta:
 
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate
 
 ### Configurazioni AppConfig (Overview)
 
@@ -351,7 +350,11 @@ Il sistema utilizza un database centralizzato per tutte le configurazioni sensib
 - **Protezione accesso**: Solo amministratori possono modificare configurazioni
 - **Reset automatico**: Form si resettano al cambio di sessione
 
-Per la tabella completa delle chiavi, policy di cifratura e best practices, consulta [APP_CONFIG.md](APP_CONFIG.md).
+Registered keys and their validation schemas are defined in
+[AppConfigRegistry](packages/core/src/schemas/config.ts). See
+[ADR-018](docs/decisions/018-runtime-configuration-and-bootstrap-environment.md)
+for the runtime-configuration and bootstrap-environment decision, and
+[Password policy](OPERATIONS.md#password-policy) for storage and fallback behavior.
 
 ### Sincronizzazione Utenti
 
@@ -808,7 +811,6 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [Changelog](CHANGELOG.md) - Release notes derived from Conventional Commits
 - [Repository tooling](tools/README.md) - Deterministic checks, release gates, one codemod, and historical reports
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 - [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV

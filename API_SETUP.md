@@ -683,19 +683,13 @@ Per configurazioni dettagliate, esempi pratici e best practices, consulta:
 - **Composizione**: Guardie combinabili per logica complessa
 - **Type-safe**: Context tRPC con session garantita
 
-### Configurazioni (AppConfig)
+### Runtime configuration (AppConfig)
 
-Il sistema utilizza configurazioni centralizzate in database con cifratura AES-256-GCM per segreti.
-
-Per dettagli completi su:
-
-- Schema delle chiavi AppConfig
-- Policy di cifratura e validazione
-- RBAC e protezione chiavi critiche
-- Import/Export JSON sicuro
-- Audit log e tracing
-
-Consulta [APP_CONFIG.md](APP_CONFIG.md).
+See [AppConfigRegistry](packages/core/src/schemas/config.ts) for registered keys
+and validation schemas, and [ADR-018](docs/decisions/018-runtime-configuration-and-bootstrap-environment.md)
+for the runtime-configuration and bootstrap-environment decision.
+Password-policy storage and fallback behavior are documented in
+[OPERATIONS.md](OPERATIONS.md#password-policy).
 
 ## Architettura
 
@@ -910,7 +904,6 @@ readinessProbe:
 ## Riferimenti Correlati
 
 - [README.md](README.md) - Documentazione principale del progetto
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 - [docs/decisions/](docs/decisions/) - Architecture Decision Records

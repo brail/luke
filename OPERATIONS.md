@@ -4,6 +4,7 @@ Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting
 
 ## Indice
 
+- [Password policy](#password-policy)
 - [Security Hardcoded Values](#security-hardcoded-values)
 - [Rate Limiting](#rate-limiting)
 - [Idempotency](#idempotency)
@@ -16,6 +17,24 @@ Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting
 - [Riferimenti Correlati](#riferimenti-correlati)
 
 ---
+
+## Password policy
+
+AppConfig persists values as strings: password-policy flags use `"true"` and
+`"false"`, not JSON booleans. The authoritative keys and validation rules live
+in [AppConfigRegistry](packages/core/src/schemas/config.ts).
+
+`security.password.minLength` accepts integers from 8 to 128. Writes through
+`saveConfig` reject values outside that range. When reading an absent or invalid
+stored value, `getPasswordPolicy` falls back to the corresponding field of
+`DEFAULT_PASSWORD_POLICY`; for minimum length that default is 12. A stored
+value below 8 therefore falls back to 12 rather than being clamped to 8.
+See [the configuration reader](apps/api/src/lib/configManager.ts).
+
+The special-character requirement uses the explicit `PASSWORD_SPECIAL_CHARS`
+allowlist in [the shared password schema](packages/core/src/schemas/password.ts).
+A tilde, backtick or space does not satisfy that requirement; this does not
+mean those characters are forbidden elsewhere in a password.
 
 ## Security Hardcoded Values
 
@@ -823,7 +842,6 @@ defaultOptions: {
 
 - [README.md](README.md) - Documentazione principale del progetto
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 
 ---

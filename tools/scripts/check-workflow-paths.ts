@@ -111,7 +111,6 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
   'lessons.md',
   'lessons-archive.md',
   'API_SETUP.md',
-  'APP_CONFIG.md',
   'OPERATIONS.md',
   'apps/*/README.md',
   'packages/*/README.md',
