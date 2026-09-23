@@ -108,6 +108,7 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
   'docs/**/*.pdf',
   'README.md',
   'CLAUDE.md',
+  'AGENTS.md',
   'lessons.md',
   'lessons-archive.md',
   'OPERATIONS.md',

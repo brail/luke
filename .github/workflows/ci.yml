@@ -14,6 +14,7 @@ on:
       - 'docs/**/*.pdf'
       - 'README.md'
       - 'CLAUDE.md'
+      - 'AGENTS.md'
       - 'lessons.md'
       - 'lessons-archive.md'
       - 'OPERATIONS.md'
