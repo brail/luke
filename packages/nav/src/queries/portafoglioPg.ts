@@ -720,6 +720,7 @@ LEFT JOIN landed_cost lc
   ON al."Article" = lc.no_
 `;
 
+  // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2...); every value is bound as a parameter, never interpolated
   const rows = await prisma.$queryRawUnsafe<PortafoglioRow[]>(sql, ...p.values);
   return rows;
 }

@@ -11,7 +11,14 @@ rules:
       `js/Printer` è cambiata fra pdfmake 0.2 e 0.3 senza che il typecheck se ne
       accorgesse, lasciando quattro export rotti in produzione. Usare
       `createPdfBuffer(def)`.
+    # pdfmake 0.3 is reached through its public singleton (`require('pdfmake')`,
+    # `createPdf`); the 0.2 `js/Printer` patterns stay as a guard against the old
+    # internal API. `import type` from 'pdfmake/interfaces' is not matched.
     pattern-either:
+      - pattern: require('pdfmake')
+      - pattern: import $X from 'pdfmake'
+      - pattern: import * as $X from 'pdfmake'
+      - pattern: $P.createPdf(...)
       - pattern: require('pdfmake/js/Printer')
       - pattern: import $X from 'pdfmake/js/Printer'
       - pattern: $P.createPdfKitDocument(...)

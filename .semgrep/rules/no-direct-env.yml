@@ -30,4 +30,3 @@ rules:
         - '/apps/web/tests/**'
         - '/apps/web/playwright.config.ts'
         - '/packages/core/src/runtime/env.ts'
-        - '/next.config.js'

@@ -13,6 +13,16 @@ async function badPrismaExecute(prisma: PrismaClient, id: string) {
   await prisma.$executeRawUnsafe(`DELETE FROM users WHERE id = '${id}'`);
 }
 
+async function badPrismaTyped(prisma: PrismaClient, id: string) {
+  // ruleid: luke-prisma-raw-unsafe
+  await prisma.$queryRawUnsafe<{ id: string }[]>(`SELECT * FROM users WHERE id = '${id}'`);
+}
+
+async function badPrismaExecuteTyped(prisma: PrismaClient, id: string) {
+  // ruleid: luke-prisma-raw-unsafe
+  await prisma.$executeRawUnsafe<number>(`DELETE FROM users WHERE id = '${id}'`);
+}
+
 async function goodPrisma(prisma: PrismaClient, id: string) {
   // ok: luke-prisma-raw-unsafe
   await prisma.$queryRaw(Prisma.sql`SELECT * FROM users WHERE id = ${id}`);

@@ -5,9 +5,13 @@ rules:
     message: >-
       $queryRawUnsafe/$executeRawUnsafe vietati: usa $queryRaw/$executeRaw con
       Prisma.sql tagged template, mai stringhe interpolate a mano.
+    # Match the member expression, not the call: a call pattern such as
+    # `$P.$queryRawUnsafe(...)` does not match a call with type arguments
+    # (`$P.$queryRawUnsafe<T>(...)`), and neither does a `<$T>` variant. The
+    # member expression covers both forms and an aliased reference as well.
     pattern-either:
-      - pattern: $P.$queryRawUnsafe(...)
-      - pattern: $P.$executeRawUnsafe(...)
+      - pattern: $P.$queryRawUnsafe
+      - pattern: $P.$executeRawUnsafe
     paths:
       exclude:
         - '/apps/api/test/**'

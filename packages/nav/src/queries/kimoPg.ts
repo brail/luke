@@ -215,6 +215,7 @@ GROUP BY
 ORDER BY "trademarkCode", "salespersonCodeNav"
   `;
 
+  // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2...); every value is bound as a parameter, never interpolated
   const rows = await prisma.$queryRawUnsafe<KimoRow[]>(sql, ...p.values);
   return rows;
 }
