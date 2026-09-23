@@ -442,18 +442,6 @@ export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaCl
   return getMissingPhasesForCompletion(events, row.phase?.order ?? null);
 }
 
-/** DB-fetching counterpart of `getActivePhaseFromEvents` for single-row callers. */
-export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient): Promise<ActivePhaseResult> {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-    select: { phase: { select: { order: true } } },
-  });
-  if (!row) return { status: 'no-calendar' };
-
-  const events = await getApplicableEventsForRow(rowId, prisma);
-  return getActivePhaseFromEvents(events, row.phase?.order ?? null);
-}
-
 /**
  * Resolves the deadline for an active-phase result: always the event's current `endAt ?? startAt`,
  * live and freely editable even after freeze. The frozen baseline (`baselineStartAt`/`baselineEndAt`,
@@ -533,16 +521,6 @@ function criticalityFromActivePhase(
 }
 
 /**
- * Resolves the deadline for a single row's active phase (see `deadlineFromActivePhase`).
- *
- * @returns `null` if the row has no active phase.
- */
-export async function computeDeadline(rowId: string, prisma: PrismaClient) {
-  const active = await getActivePhaseForRow(rowId, prisma);
-  return deadlineFromActivePhase(active);
-}
-
-/**
  * Frozen outcome for a row the user explicitly marked as concluded: how its completion date landed
  * against the last planned milestone (`getCompletionDeadlineEvent`). Positive `daysVsDeadline` means
  * concluded ahead of the deadline, negative means after it — same sign convention as the live
@@ -587,9 +565,8 @@ export function completionOutcome(
  * (or default) alert thresholds. `null` means no alert applies — the row has no active phase and
  * has not been marked as concluded.
  *
- * Does its own row query (phase + vendor country in one shot) rather than delegating to
- * `getActivePhaseForRow` — that helper only selects `phase`, and a second `findUnique` just to
- * also get `vendor.countryCode` would be a redundant round-trip on the same row.
+ * Does its own row query, selecting phase, completion and vendor country in one shot, so a single
+ * `findUnique` serves the whole computation.
  */
 export async function computeCriticality(rowId: string, now: Date, prisma: PrismaClient) {
   const [row, thresholds] = await Promise.all([

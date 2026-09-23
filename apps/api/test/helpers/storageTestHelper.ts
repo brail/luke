@@ -9,8 +9,6 @@ import type { PrismaClient } from '@luke/db';
 
 import { resetStorageProvider } from '../../src/storage';
 
-import type { Context } from '../../src/lib/trpc';
-
 export interface MockFileObject {
   id: string;
   bucket: string;
@@ -119,58 +117,6 @@ export class MockStorageProvider {
     this.files.clear();
     this.nextId = 1;
   }
-}
-
-/**
- * Creates a test context with a mock storage provider
- */
-export async function createTestContextWithMockStorage(): Promise<
-  Context & { mockStorage: MockStorageProvider }
-> {
-  const { createContextForRole } = await import('./testContext');
-  const context = await createContextForRole();
-
-  const mockStorage = new MockStorageProvider();
-
-  // Mock the storage provider in the context
-  const originalPrisma = context.prisma;
-  context.prisma = {
-    ...originalPrisma,
-    fileObject: {
-      ...originalPrisma.fileObject,
-      create: async (data: any) => {
-        // Simulate fileObject creation in the DB
-        const fileObject = await originalPrisma.fileObject.create(data);
-        return fileObject;
-      },
-      findFirst: async (params: any) => {
-        // For moveTempLogoToBrand tests
-        if (params.where?.bucket === 'temp-brand-logos') {
-          const files = mockStorage.getFilesByBucket('temp-brand-logos');
-          if (files.length > 0) {
-            const file = files[0];
-            return {
-              id: file.id,
-              bucket: file.bucket,
-              key: file.key,
-              contentType: file.contentType,
-              size: file.size,
-              createdAt: file.createdAt,
-            };
-          }
-        }
-        return originalPrisma.fileObject.findFirst(params);
-      },
-      delete: async (params: any) => {
-        return originalPrisma.fileObject.delete(params);
-      },
-    },
-  } as any;
-
-  return {
-    ...context,
-    mockStorage,
-  };
 }
 
 /**

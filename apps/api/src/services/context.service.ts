@@ -281,31 +281,6 @@ export async function setContext(
 }
 
 /**
- * Reads the org-level context defaults (default brand and season) from AppConfig.
- *
- * @returns Parsed AppContextDefaults, or an empty object if not configured.
- */
-export async function getContextDefaults(
-  prisma: PrismaClient
-): Promise<AppContextDefaults> {
-  const appConfig = await prisma.appConfig.findUnique({
-    where: { key: 'app.context.defaults' },
-  });
-
-  if (!appConfig) {
-    return { context: {} };
-  }
-
-  try {
-    const parsed = JSON.parse(appConfig.value);
-    return AppContextDefaultsSchema.parse(parsed);
-  } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
-    return { context: {} };
-  }
-}
-
-/**
  * Reads the sidebar menu collapsed/expanded states for a user.
  *
  * @returns A map of menu name to collapsed boolean. Empty object if no preference is saved.

@@ -17,14 +17,6 @@ export function updatePresence(userId: string): void {
 }
 
 /**
- * Returns `true` if the user sent a heartbeat within the last 2 minutes.
- */
-export function isUserOnline(userId: string): boolean {
-  const lastSeen = presenceMap.get(userId);
-  return lastSeen !== undefined && Date.now() - lastSeen < ONLINE_TTL_MS;
-}
-
-/**
  * Returns the set of user IDs whose last heartbeat is within the 2-minute TTL.
  * Expired entries are removed from the map as a side effect.
  */

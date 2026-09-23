@@ -10,8 +10,6 @@ import pino from 'pino';
 
 import { idempotencyStore } from './idempotency';
 
-import type { FastifyRequest } from 'fastify';
-
 const logger = pino({ level: 'info' });
 
 /**
@@ -106,30 +104,3 @@ export function withIdempotency() {
     return mutationResult;
   };
 }
-
-/**
- * Returns `true` if the request carries an `Idempotency-Key` header.
- */
-export function hasIdempotencyKey(ctx: { req: FastifyRequest }): boolean {
-  return !!ctx.req.headers['idempotency-key'];
-}
-
-/**
- * Extracts the `Idempotency-Key` header value from the request.
- *
- * @returns The key string, or `null` if the header is absent.
- */
-export function getIdempotencyKey(ctx: { req: FastifyRequest }): string | null {
-  const header = ctx.req.headers['idempotency-key'];
-  return (Array.isArray(header) ? header[0] : header) || null;
-}
-
-/**
- * Static configuration constants for the tRPC idempotency middleware.
- */
-export const IDEMPOTENCY_TRPC_CONFIG = {
-  headerName: 'idempotency-key',
-  uuidRegex:
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  supportedTypes: ['mutation'] as const,
-} as const;

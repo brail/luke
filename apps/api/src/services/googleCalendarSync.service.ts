@@ -98,24 +98,6 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
   };
 }
 
-/**
- * Loads a calendar event and maps it to the MilestoneForSync shape expected by @luke/calendar.
- */
-export async function getMilestoneForSync(
-  milestoneId: string,
-  prisma: PrismaClient
-): Promise<MilestoneForSync> {
-  const m = await prisma.calendarEvent.findUniqueOrThrow({
-    where: { id: milestoneId },
-    include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
-  });
-  return mapMilestone({
-    ...m,
-    visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })),
-    planningGroupName: m.planningGroup.name,
-  });
-}
-
 // ─── SyncContext builder ──────────────────────────────────────────────────────
 
 /**

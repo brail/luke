@@ -6,7 +6,6 @@
  *   trace/span IDs and a business-level `x-luke-trace-id` to every request logger.
  * - `pinoSerializers` — custom Pino serializers that redact sensitive fields
  *   (passwords, secrets, tokens, PII) before log output.
- * - `createTraceLogger` — helper for creating a trace-aware child logger in tRPC procedures.
  */
 
 import { randomUUID } from 'crypto';
@@ -14,7 +13,7 @@ import { randomUUID } from 'crypto';
 import { trace } from '@opentelemetry/api';
 import serializers from 'pino-std-serializers';
 
-import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
+import type { FastifyRequest, FastifyReply } from 'fastify';
 
 /** Patterns used to identify sensitive field names that should be redacted in logs. */
 const sensitivePatterns = [
@@ -124,24 +123,4 @@ export function pinoTraceMiddleware(
   reply.header('x-luke-trace-id', xTraceId);
 
   done();
-}
-
-/**
- * Creates a Pino child logger enriched with the current OpenTelemetry trace and span IDs.
- *
- * Useful for manual logging inside tRPC procedures where the request-scoped logger
- * is not directly available.
- */
-export function createTraceLogger(
-  baseLogger: FastifyBaseLogger,
-  additionalFields: Record<string, unknown> = {}
-) {
-  const span = trace.getActiveSpan();
-  const spanContext = span?.spanContext();
-
-  return baseLogger.child({
-    traceId: spanContext?.traceId || 'n/a',
-    spanId: spanContext?.spanId || 'n/a',
-    ...additionalFields,
-  });
 }

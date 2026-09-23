@@ -18,9 +18,6 @@ if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 }
 
-process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only';
-process.env.ENCRYPTION_KEY = 'test-encryption-key-32-chars-long';
-
 /**
  * In-memory stores of production modules, zeroed before every test.
  *

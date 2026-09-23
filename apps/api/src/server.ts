@@ -206,17 +206,6 @@ async function registerSecurityPlugins(): Promise<string[]> {
   return corsConfig.origins;
 }
 
-// /**
-//  * Registra route OPTIONS per tRPC (gestione CORS preflight)
-//  */
-// async function _registerTRPCOptions() {
-//   // Gestisci richieste OPTIONS per tRPC
-//   fastify.options('/trpc/*', async (_request, reply) => {
-//     // CORS headers sono già gestiti dal plugin CORS
-//     reply.status(204).send();
-//   });
-// }
-
 /** Registers the tRPC Fastify adapter at the `/trpc` prefix. */
 async function registerTRPCPlugin() {
   await fastify.register(fastifyTRPCPlugin, {

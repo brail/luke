@@ -382,11 +382,3 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
     return next();
   });
 }
-
-/**
- * Internal rate-limit store configuration constants.
- */
-export const RATE_LIMIT_CONFIG_EXPORT = {
-  maxSize: 1000,
-  cleanupIntervalMs: 60 * 1000, // 1 minute
-} as const;

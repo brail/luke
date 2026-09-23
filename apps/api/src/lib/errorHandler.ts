@@ -69,8 +69,6 @@ export function createStandardError(
  * Converts a `StandardError` into a `TRPCError` with the appropriate tRPC error code.
  */
 export function toTRPCError(error: StandardError): TRPCError {
-  // const httpStatus = getHttpStatusFromErrorCode(error.code);
-
   return new TRPCError({
     code: getTRPCCodeFromErrorCode(error.code),
     message: error.message,

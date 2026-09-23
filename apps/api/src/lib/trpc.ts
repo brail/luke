@@ -181,11 +181,6 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Public procedure with automatic request logging.
- */
-export const loggedProcedure = publicProcedure.use(loggingMiddleware);
-
-/**
  * Procedure that requires a valid authenticated session.
  */
 export const protectedProcedure = publicProcedure

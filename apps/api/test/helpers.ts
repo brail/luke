@@ -336,7 +336,6 @@ export {
 } from './helpers/database';
 export {
   MockStorageProvider,
-  createTestContextWithMockStorage,
   createTestFile,
   createValidPngBuffer,
   createValidJpegBuffer,
