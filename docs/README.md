@@ -13,7 +13,6 @@ work, and preserved evidence.
 | Resource | Purpose |
 |----------|---------|
 | [Architectural decisions](decisions/README.md) | Canonical index of Architecture Decision Records, including status and supersession links. |
-| [Brand flow architecture](architecture-brand-flows.md) | End-to-end map of Brand entities, API flows, UI boundaries, type safety, and security layers. |
 | [Collection Layout versioning](collection-layout-versioning.md) | Revision model for Collection Layout snapshots, history, immutable storage, and access control. |
 | [Immutable revision storage](storage-immutable-bucket.md) | Content-addressed storage and retention contract for Collection Layout revision images. |
 | [Microsoft Dynamics NAV integration](nav-integration.md) | One-way NAV-to-Luke synchronization architecture, data ownership, and operational boundaries. |
