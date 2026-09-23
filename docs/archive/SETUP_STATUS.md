@@ -1,12 +1,14 @@
 # Luke Monorepo - Status Setup
 
-> **Historical setup snapshot and roadmap — not current operating guidance.**
-> This file records the state of the initial setup and what was planned next. Most
-> of its claims have not been kept current: several name versions, dependencies and
-> helpers that no longer match the code. Individual lines may have been corrected
-> since, so do not read an accurate entry as evidence that its neighbours are. For
-> current reference use `README.md`, `API_SETUP.md`, `APP_CONFIG.md` and
-> `OPERATIONS.md`, and treat the manifests and `docs/decisions/` as authoritative.
+> **Archived setup snapshot — not current operating guidance.**
+> This record describes the initial setup and roadmap, with some later corrections.
+> Its historical body is preserved; versions, configuration keys, commands and
+> security claims below may be obsolete. Do not use them as operating instructions.
+> The API_SETUP.md and APP_CONFIG.md links in the historical references point to
+> their preserved Git revision, not current guidance. Other links were adjusted
+> for this file's archive location.
+> For current documentation, start at the [repository README](../../README.md)
+> and the [documentation index](../README.md).
 
 ## Completato con Successo
 
@@ -368,10 +370,10 @@ pnpm --filter @luke/db prisma:studio
 
 ## Riferimenti Correlati
 
-- [README.md](README.md) - Documentazione principale del progetto
-- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
-- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+- [README.md](../../README.md) - Documentazione principale del progetto
+- [API_SETUP.md](https://github.com/brail/luke/blob/4ec9e1a7482f31a90a38ea81e0b86a175767f68c/API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
+- [APP_CONFIG.md](https://github.com/brail/luke/blob/4ec9e1a7482f31a90a38ea81e0b86a175767f68c/APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
+- [OPERATIONS.md](../../OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 
 ---
 

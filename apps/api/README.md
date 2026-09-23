@@ -11,6 +11,23 @@ Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC proc
 - [Storage configuration](STORAGE_CONFIG.md)
 - [Audit analysis](AUDIT_ANALYSIS.md)
 
+## Password reset and email verification audit events
+
+The authentication service (`src/services/auth.service.ts`) records these action
+names for the password-reset and email-verification flows:
+
+| Action | Flow |
+|--------|------|
+| `PASSWORD_RESET_REQUESTED` | Password-reset requests |
+| `PASSWORD_CHANGED` | Password-reset confirmation |
+| `EMAIL_VERIFICATION_SENT` | Email-verification requests; also emitted by `src/lib/emailHelpers.ts` |
+| `EMAIL_VERIFIED` | Email-verification confirmation |
+
+These names do not imply success: inspect the audit row's `result` and available
+metadata, such as `reason`. Failure paths also use these actions. A generic
+success response to a password-reset request does not prove that an email was
+sent; the service deliberately avoids disclosing whether the account exists.
+
 ## Security Headers
 
 L'API implementa una baseline completa di HTTP security headers tramite Helmet, configurata centralmente in `src/lib/helmet.ts`.

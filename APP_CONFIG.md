@@ -740,7 +740,7 @@ alerts:
 - [README.md](README.md) - Documentazione principale del progetto
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo API con esempi endpoint
 - [OPERATIONS.md](OPERATIONS.md) - Parametri runtime e configurazioni per ambiente
-- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 
 ---
 

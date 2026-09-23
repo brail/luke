@@ -810,7 +810,7 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
 - [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
-- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
+- [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 - [docs/nav-integration.md](docs/nav-integration.md) - Architettura integrazione NAV
 - [docs/collection-layout-versioning.md](docs/collection-layout-versioning.md) - Collection Layout Versioning — registro qualità ISO 9001:2015 per le revisioni del piano di collezione
 - [docs/storage-immutable-bucket.md](docs/storage-immutable-bucket.md) - Bucket immutabile per le foto delle revisioni
