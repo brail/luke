@@ -226,31 +226,19 @@ Eventi registrati:
 
 Metadati logged: `userId`, `bucket`, `key`, `size` (niente contenuti)
 
-## Estensibilità Futura
+## Provider implementation status
 
-L'architettura `IStorageProvider` permette di aggiungere facilmente:
+The storage factory in `src/storage/index.ts` implements local filesystem and
+S3-compatible storage. `SambaStorageProvider` and `GDriveStorageProvider` are
+unimplemented extension ideas, not available providers.
 
-- **SAMBA**: `SambaStorageProvider implements IStorageProvider`
-- **Google Drive**: `GDriveStorageProvider implements IStorageProvider`
-- **S3**: `S3StorageProvider implements IStorageProvider`
-
-Factory pattern in `storage/index.ts`:
-
-```typescript
-export function createStorageProvider(config) {
-  switch (config.type) {
-    case 'local':
-      return new LocalFsProvider(config);
-    case 'samba':
-      return new SambaStorageProvider(config);
-    case 'gdrive':
-      return new GDriveStorageProvider(config);
-    // ...
-  }
-}
-```
-
-Zero refactor del router tRPC o service layer.
+The legacy `storage.smb` and `storage.drive` AppConfig keys have registered Zod
+schemas and can be saved through `integrations.storage.saveConfig` with
+`config:update` permission. No storage provider or current web UI consumes
+those configurations. `integrations.storage.testConnection` requires
+`config:read` but returns placeholder success without contacting either
+service; its result does not establish connectivity. This scaffold dates to
+October 2025 (`e38fd81d`) and does not constitute a working integration.
 
 ## Testing
 

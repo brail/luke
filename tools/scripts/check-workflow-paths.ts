@@ -114,7 +114,6 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
   'APP_CONFIG.md',
   'OPERATIONS.md',
   'SETUP_STATUS.md',
-  'INTEGRATIONS_ROADMAP.md',
   'apps/*/README.md',
   'packages/*/README.md',
   'tools/README.md',
