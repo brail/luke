@@ -12,7 +12,6 @@ import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
   getConfig,
-  // listConfigs,
   listConfigsPaged,
   deleteConfig,
 } from '../lib/configManager';
@@ -36,16 +35,6 @@ const CRITICAL_KEYS = new Set([
   'auth.ldap.url',
   'auth.ldap.searchBase',
   'auth.ldap.searchFilter',
-
-  // Remove non-existent keys (derived via HKDF, not in DB):
-  // 'nextauth.secret', // NON esiste nel DB, derivato via HKDF
-  // 'jwt.secret', // NON esiste nel DB, derivato via HKDF
-  // 'security.encryption.key', // NON esiste, master key in ~/.luke/secret.key
-
-  // Mail and Storage (on-demand, not critical for boot)
-  // 'mail.smtp', // On-demand, creato dall'admin
-  // 'storage.smb', // On-demand, creato dall'admin
-  // 'storage.drive', // On-demand, creato dall'admin
 ]);
 
 /**

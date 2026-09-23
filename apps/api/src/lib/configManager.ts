@@ -362,45 +362,6 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
 }
 
 /**
- * Returns all configuration entries, optionally decrypting encrypted values.
- *
- * @param prisma - Prisma client.
- * @param decrypt - When `true`, encrypted values are decrypted. Defaults to `true`.
- * @returns Array of configuration records.
- */
-export async function listConfigs(
-  prisma: PrismaClient,
-  decrypt: boolean = true
-): Promise<Array<{ key: string; value: string; isEncrypted: boolean }>> {
-  const configs = await prisma.appConfig.findMany({
-    orderBy: { key: 'asc' },
-  });
-
-  return configs.map(config => ({
-    key: config.key,
-    value:
-      config.isEncrypted && decrypt
-        ? (() => {
-            try {
-              return decryptValue(config.value);
-            } catch (error) {
-              logger.error(
-                {
-                  key: config.key,
-                  error:
-                    error instanceof Error ? error.message : 'Unknown error',
-                },
-                'Errore decifratura config'
-              );
-              return '[ERRORE DECIFRATURA]';
-            }
-          })()
-        : config.value,
-    isEncrypted: config.isEncrypted,
-  }));
-}
-
-/**
  * Returns a paginated, filterable list of configuration entries.
  *
  * **Security**: Encrypted values are never decrypted in this function.
@@ -546,43 +507,6 @@ export async function deleteConfig(
 
   if (RBAC_CACHE_KEYS.test(key)) {
     invalidateRbacCache();
-  }
-}
-
-/**
- * Reads and decrypts a secret value from the database.
- * Unlike `getConfig`, this function enforces that the entry must be encrypted;
- * calling it on a plaintext entry throws rather than returning the raw value.
- *
- * @returns Decrypted secret value.
- * @throws {Error} If the key does not exist, is not encrypted, or decryption fails.
- */
-export async function getSecret(
-  prisma: PrismaClient,
-  key: string
-): Promise<string> {
-  const config = await prisma.appConfig.findUnique({
-    where: { key },
-  });
-
-  if (!config) {
-    throw new Error(`Segreto '${key}' non trovato in AppConfig`);
-  }
-
-  if (!config.isEncrypted) {
-    throw new Error(
-      `La configurazione '${key}' non è cifrata. Usa getConfig() per valori non cifrati.`
-    );
-  }
-
-  try {
-    return decryptValue(config.value);
-  } catch (error) {
-    logger.error(
-      { key, error: error instanceof Error ? error.message : 'Unknown error' },
-      'Errore decifratura segreto'
-    );
-    throw new Error(`Impossibile decifrare segreto: ${key}`, { cause: error });
   }
 }
 
