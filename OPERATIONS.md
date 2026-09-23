@@ -841,7 +841,7 @@ defaultOptions: {
 ## Riferimenti Correlati
 
 - [README.md](README.md) - Documentazione principale del progetto
-- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
+- [API documentation](apps/api/README.md) - API reference, LDAP resilience and local tracing
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
 
 ---

@@ -11,6 +11,39 @@ Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC proc
 - [Storage configuration](STORAGE_CONFIG.md)
 - [Audit analysis](AUDIT_ANALYSIS.md)
 
+## LDAP resilience and authentication fallback
+
+`src/lib/ldapClient.ts` owns the resilient LDAP client; its settings come from
+`auth.ldap.resilience.*` in AppConfig. With the defaults in
+`packages/core/src/schemas/appConfig.ts`, its circuit breaker opens after five
+consecutive failed operations. After a ten-second cooldown, the next operation
+enters half-open state. One successful operation closes it by default; a failure
+reopens it. `halfOpenMaxAttempts` counts successful half-open operations toward
+closure, not concurrent requests: it does not limit admission to one request.
+
+The breaker belongs to each `ResilientLdapClient` instance. Authentication creates
+a new client per attempt, so this is not a shared breaker across login requests.
+
+Error handling in the LDAP client is distinct from the authentication strategy:
+
+| Condition | Client behavior |
+|-----------|-----------------|
+| Circuit already open, cooldown not elapsed | `SERVICE_UNAVAILABLE` |
+| Invalid credentials during bind | `UNAUTHORIZED`, without retry |
+| Invalid search filter or syntax | `BAD_REQUEST`, without retry |
+| Search network error | Initially mapped to `BAD_GATEWAY` and retried; the retry loop can remap the final error to `SERVICE_UNAVAILABLE` based on its message |
+| Network error recognized after retries are exhausted | `SERVICE_UNAVAILABLE` |
+
+`src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
+or `ldap-first` using `auth.strategy`. In `ldap-first`, local authentication is
+attempted after LDAP returns no user, including when `src/lib/ldapAuth.ts`
+converts rejected user credentials to `null`. It also follows infrastructure
+errors (`SERVICE_UNAVAILABLE` or `BAD_GATEWAY`); other tRPC errors are rethrown.
+This is not a guarantee that local fallback happens only during an LDAP outage.
+Local fallback still requires an active Luke account, a LOCAL identity with a
+stored credential and a valid local password. Disabling only the directory
+account does not necessarily disable that local access path.
+
 ## Password reset and email verification audit events
 
 The authentication service (`src/services/auth.service.ts`) records these action
@@ -250,6 +283,30 @@ Vedi `src/lib/config.ts` per dettagli.
 
 At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
 <!-- luke-docs:end:env -->
+
+### Local trace collector
+
+For an API process running on the host, this disposable collector exposes OTLP
+gRPC and the Jaeger UI on loopback. It follows the
+[Jaeger all-in-one example](https://www.jaegertracing.io/docs/2.21/getting-started/)
+with only the two ports needed here:
+
+```bash
+docker run --rm --name luke-jaeger \
+  -p 127.0.0.1:4317:4317 \
+  -p 127.0.0.1:16686:16686 \
+  cr.jaegertracing.io/jaegertracing/jaeger:2.21.0
+```
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` in the API process
+environment and leave `OTEL_ENABLED` unset or set to `true`. The compiled API's
+`start` script preloads `src/instrument.ts`'s compiled output; the `dev` script
+does not preload it. Setting the variables alone is not sufficient without
+loading that instrumentation bootstrap before the server.
+
+Open `http://localhost:16686` to inspect traces for service `@luke/api`.
+The collector uses transient in-memory storage: stopping it loses the traces.
+This command is documentation-verified, not an end-to-end tracing smoke test.
 
 ## Database
 
