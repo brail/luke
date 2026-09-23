@@ -152,7 +152,7 @@ function bandsForPhase(thresholds: CollectionAlertThresholds, phaseValue: string
   return thresholds.default.bands;
 }
 
-// ─── Working-days deadline countdown (docs/TASK_working_days_calendar_relevance.md) ─────────────
+// ─── Working-days deadline countdown (docs/country-aware-working-days.md) ─────────────
 
 /** Pre-fetched data shared across every day-count resolution in one request — company's home
  * country plus every `Holiday` row for any country code that could be needed (company + every

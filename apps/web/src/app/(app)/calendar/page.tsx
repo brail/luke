@@ -189,8 +189,7 @@ export default function CalendarPage() {
   // ─── Planning vs maintenance state ───────────────────────────────────────
   // Derived from PlanningGroup.frozenAt (no new endpoint — planningGroup.list already returns it
   // for the group-management dialog). "Planning" means at least one group has events not yet
-  // frozen; "maintenance" means every group with events is frozen. See
-  // docs/TASK_calendar_ux_deferred_items.md §6 for the design rationale.
+  // frozen; "maintenance" means every group with events is frozen.
   const { data: planningGroups } = trpc.planningGroup.list.useQuery(
     { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
     { enabled }

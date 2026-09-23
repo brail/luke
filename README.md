@@ -310,7 +310,6 @@ Luke adotta una separazione netta tra **bootstrap infrastrutturale** e **configu
 > sono 429 sporadici che nel browser arrivano come "Backend non raggiungibile" e
 > nelle suite E2E come login falliti. `apps/api/.env` è gitignored, quindi la riga
 > non arriva da sola su una macchina nuova.
-> Dettagli: [`docs/quality-hardening-plan.md`](docs/quality-hardening-plan.md) §5.
 
 #### Cosa può stare in `.env` — Web (eccezioni framework)
 

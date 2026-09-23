@@ -26,10 +26,9 @@ type CompletionInfo = Extract<RowCriticality, { state: 'completed' }>;
 type CriticalityBand = RowCriticality['band'];
 
 /**
- * "gg lavorativi (IT+CN)" / "gg di calendario" — l'unità che ogni tooltip di questa feature deve
- * enunciare allo stesso modo: mostrare "gg" per entrambi i modi sarebbe ingannevolmente preciso
- * su cosa si sta davvero contando (vedi `calendarDaysRelevance`, e
- * docs/TASK_working_days_calendar_relevance.md).
+ * "gg lavorativi (IT+CN)" / "gg di calendario" — the unit every tooltip of this feature must state
+ * the same way: showing "gg" for both modes would be misleadingly precise about what is actually
+ * being counted (see `calendarDaysRelevance` and docs/country-aware-working-days.md).
  */
 function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: string[]): string {
   if (daysMode !== 'working') return 'gg di calendario';

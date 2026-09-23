@@ -90,9 +90,8 @@ export function trackedMarkdown(root: string): string[] {
  * `<!-- luke-docs:start:overview -->` / `<!-- luke-docs:end:overview -->`.
  *
  * The regex matches the complete form rather than the `luke-docs:start`
- * substring. Otherwise, prose that *mentions* the markers (such as this text or
- * section 6 of `docs/quality-hardening-plan.md`) would be read as an open
- * block. The name pairs blocks rather than merely counting them.
+ * substring. Otherwise, prose that *mentions* the markers (such as this text)
+ * would be read as an open block. The name pairs blocks rather than merely counting them.
  */
 const MARKER_RE = /<!--\s*luke-docs:(start|end):([\w-]+)\s*-->/g;
 const MARKDOWN_LINK_RE = /\[[^\]]*\]\(([^)\s]+)\)/g;

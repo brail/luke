@@ -105,7 +105,7 @@ jobs:
   # Reuses ci.yml instead of duplicating its steps: lint, typecheck,
   # typecheck:test, unit tests, integration and migrations. None of them is
   # continue-on-error — since the quarantine was emptied, `integration` blocks
-  # the tag as well (docs/quality-hardening-plan.md §5).
+  # the tag as well.
   verify:
     name: Verify
     needs: provenance

@@ -50,8 +50,8 @@ enum SeasonCalendarStatus {
 /// Which holiday calendar(s) count toward an event's working-days deadline countdown, if any.
 /// Null (unset) means the deadline countdown stays in plain calendar days — this is opt-in per
 /// event/template item, not a default behavior change. COMPANY resolves to `CompanyProfile.countryCode`;
-/// VENDOR resolves per-row to `CollectionLayoutRow.vendor.countryCode`; BOTH excludes a day only if
-/// it's a working day in both calendars. See docs/TASK_working_days_calendar_relevance.md.
+/// VENDOR resolves per-row to `CollectionLayoutRow.vendor.countryCode`; BOTH counts a day as working
+/// only if it is a working day in both calendars. See docs/country-aware-working-days.md.
 enum CalendarDaysRelevance {
   COMPANY
   VENDOR

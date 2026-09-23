@@ -26,7 +26,7 @@ export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
 /**
  * Which holiday calendar(s) count toward an event's working-days deadline countdown. Unset means
  * the countdown stays in plain calendar days (default, opt-in only). See
- * docs/TASK_working_days_calendar_relevance.md for the full design and resolution rules.
+ * docs/country-aware-working-days.md for the full design and resolution rules.
  */
 export const CALENDAR_DAYS_RELEVANCE = ['COMPANY', 'VENDOR', 'BOTH'] as const;
 export type CalendarDaysRelevance = (typeof CALENDAR_DAYS_RELEVANCE)[number];
