@@ -57,7 +57,6 @@ Questi endpoint sono pubblici e non richiedono autenticazione:
 | Endpoint            | Guardia           | Ruoli Autorizzati | Note di Sicurezza           |
 | ------------------- | ----------------- | ----------------- | --------------------------- |
 | `auth.login`        | `publicProcedure` | Pubblico          | Autenticazione utenti       |
-| `integrations.test` | `publicProcedure` | Pubblico          | Test endpoint (placeholder) |
 
 ### 🟠 Config Granular Access
 
