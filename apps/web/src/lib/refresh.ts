@@ -6,8 +6,7 @@ import { trpc } from './trpc';
  * consistent and de-duplicated cache invalidation after mutations.
  *
  * @returns Object with invalidation functions keyed by domain
- *   (`me`, `users`, `storageConfig`, `storageFiles`, `ldapConfig`,
- *   `context`, `company`, `allStorage`).
+ *   (`me`, `users`, `storageConfig`, `company`).
  *
  * @example
  * ```typescript
@@ -36,16 +35,6 @@ export function useRefresh() {
     // Storage config
     storageConfig: () => utils.storage.getConfig.invalidate(),
 
-    // Storage files
-    storageFiles: (bucket?: string) =>
-      utils.storage.list.invalidate(bucket ? { bucket } : undefined),
-
-    // LDAP integration
-    ldapConfig: () => utils.integrations.auth.getLdapConfig.invalidate(),
-
-    // Context management
-    context: () => utils.context.get.invalidate(),
-
     // Company structure (functions, teams)
     company: async () => {
       await Promise.all([
@@ -54,12 +43,5 @@ export function useRefresh() {
         utils.company.team.getById.invalidate(),
       ]);
     },
-
-    // Helper compositi per invalidazioni multiple
-    allStorage: () =>
-      Promise.all([
-        utils.storage.getConfig.invalidate(),
-        utils.storage.list.invalidate(),
-      ]),
   };
 }

@@ -30,13 +30,3 @@ export const LOCALES: LocaleOption[] = [
   { value: 'zh-CN', label: '中文 (简体)' },
   { value: 'zh-TW', label: '中文 (繁體)' },
 ];
-
-/** Finds a `LocaleOption` by its BCP 47 value, or `undefined` if not found. */
-export function findLocaleByValue(value: string): LocaleOption | undefined {
-  return LOCALES.find(locale => locale.value === value);
-}
-
-/** Returns the application default locale (`it-IT`). */
-export function getDefaultLocale(): string {
-  return 'it-IT';
-}

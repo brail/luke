@@ -435,7 +435,6 @@ Il frontend implementa un sistema di gestione errori professionale e coerente:
 ### Componenti Riusabili
 
 - **`ErrorState`**: Display strutturato di errori con slot personalizzabili
-- **`EmptyState`**: Messaggi per dataset vuoti con azioni suggerite
 - **`RetryButton`**: Bottone "Riprova" con gestione auto-refresh o callback
 - **`ErrorBoundary`**: Class component per wrapping di sezioni critiche
 
@@ -556,21 +555,6 @@ import { KeyValueGrid } from '@/components/settings/KeyValueGrid';
   <FormField name="username" ... />
   <FormField name="from" ... />
 </KeyValueGrid>
-```
-
-#### FeatureToggleCard
-
-Card per toggle abilitazione feature (es. LDAP, Mail, Storage).
-
-```tsx
-import { FeatureToggleCard } from '@/components/settings/FeatureToggleCard';
-
-<FeatureToggleCard
-  title="Abilita LDAP"
-  description="Attiva autenticazione enterprise"
-  enabled={enabled}
-  onToggle={setEnabled}
-/>;
 ```
 
 ### Pattern Standard

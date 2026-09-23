@@ -59,8 +59,6 @@ const nextConfig = {
       { source: '/upload/:path*',  destination: `${apiUrl}/upload/:path*` },
       // Streamed downloads (backup blob/export, audit log CSV, season calendar exports)
       { source: '/download/:path*', destination: `${apiUrl}/download/:path*` },
-      // SSE session invalidation
-      { source: '/session-events', destination: `${apiUrl}/session-events` },
       // SSE notifications push
       { source: '/api/sse',        destination: `${apiUrl}/api/sse` },
       // Health check passthrough

@@ -61,7 +61,7 @@ Route handlers `api/`:
 - `/api/google/oauth/callback` — Google OAuth 2.0 callback
 - `/api/uploads/[...path]` — authenticated proxy that streams stored files from the API, with per-segment path validation
 
-Every other API path (`/trpc`, `/upload`, `/download`, `/session-events`, `/api/sse`, `/health`) is proxied to `apps/api` by the rewrites in `next.config.js`, which are active only when `INTERNAL_API_URL` is set.
+Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`, `/health`) is proxied to `apps/api` by the rewrites in `next.config.js`, which are active only when `INTERNAL_API_URL` is set.
 <!-- luke-docs:end:routes -->
 
 ## Dipendenze interne
@@ -132,18 +132,14 @@ const { mutate: saveConfig, isPending } = useStandardMutation({
 `onSuccess` and `onError` callbacks are available for logic that goes beyond the
 toast, such as closing a dialog or navigating.
 
-`useRefresh()` provides eight helpers:
+`useRefresh()` provides four helpers:
 
 | Helper | Invalidates |
 |---|---|
 | `me` | the current user's profile |
 | `users` | the active and pending user lists |
 | `storageConfig` | the storage configuration |
-| `storageFiles(bucket?)` | the file list, optionally for one bucket |
-| `ldapConfig` | the LDAP integration configuration |
-| `context` | the brand and season context |
 | `company` | the company functions and teams |
-| `allStorage` | the storage configuration and file list together |
 
 Prefer these helpers to manual `refetch()` calls and to ad-hoc `onSuccess`
 invalidations. The React Query client in [`src/lib/trpc.tsx`](src/lib/trpc.tsx)

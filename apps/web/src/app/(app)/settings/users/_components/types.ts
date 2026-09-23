@@ -43,15 +43,6 @@ export type SortColumn =
 /** Sort direction. */
 export type SortOrder = 'asc' | 'desc';
 
-/** Identifiers for the actions available in the per-user dropdown menu. */
-export type UserAction =
-  | 'edit'
-  | 'disable'
-  | 'revokeSessions'
-  | 'hardDelete'
-  | 'forceLocalAccess'
-  | 'revokeLocalAccess';
-
 /**
  * Callbacks for each user action emitted by `UserActionsMenu`.
  */
@@ -83,14 +74,6 @@ export interface ToolbarHandlers {
 }
 
 /**
- * Current sort state shared between the toolbar and the table.
- */
-export interface SortState {
-  sortBy: SortColumn;
-  sortOrder: SortOrder;
-}
-
-/**
  * Read-only state props consumed by `UsersToolbar`.
  */
 export interface ToolbarProps {
@@ -116,12 +99,6 @@ export interface TableProps {
  * A missing key means the role default applies; `true`/`false` is an explicit override.
  */
 export type SectionOverrideMap = Partial<Record<string, boolean>>;
-
-/**
- * Brand-scoped season access map.
- * `null` value means all seasons are allowed for that brand; a string array is an explicit allowlist.
- */
-export type SeasonAccessMap = Record<string, string[] | null>;
 
 /** Minimal user shape required by `ApproveUserDialog`. */
 export type UserForApproval = {

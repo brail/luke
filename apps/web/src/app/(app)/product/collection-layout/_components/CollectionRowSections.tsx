@@ -51,7 +51,6 @@ export type CollectionGroup = RouterOutputs['collectionLayout']['get'] extends i
   : never;
 
 export type CollectionRow = CollectionGroup extends { rows: Array<infer R> } ? R : never;
-export type CollectionRowQuotation = CollectionRow extends { quotations: Array<infer Q> } ? Q : never;
 
 export type { PricingParameterSet };
 
