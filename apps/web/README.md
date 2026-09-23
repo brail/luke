@@ -108,3 +108,45 @@ pnpm --filter @luke/web test:browser  # component tests in a real browser
 pnpm --filter @luke/web test:e2e      # Playwright smoke suite
 ```
 <!-- luke-docs:end:dev -->
+
+## Client data refresh after mutations
+
+tRPC mutations go through `useStandardMutation`
+([`src/lib/useStandardMutation.ts`](src/lib/useStandardMutation.ts)), which runs
+the mutation, shows the success or error toast and invalidates the affected
+React Query caches through a named helper from `useRefresh()`
+([`src/lib/refresh.ts`](src/lib/refresh.ts)):
+
+```typescript
+const refresh = useRefresh();
+const saveConfigMutation = trpc.storage.saveConfig.useMutation();
+
+const { mutate: saveConfig, isPending } = useStandardMutation({
+  mutateFn: saveConfigMutation.mutateAsync,
+  invalidate: refresh.storageConfig,
+  onSuccessMessage: '…', // product UI text
+  onErrorMessage: '…',
+});
+```
+
+`onSuccess` and `onError` callbacks are available for logic that goes beyond the
+toast, such as closing a dialog or navigating.
+
+`useRefresh()` provides eight helpers:
+
+| Helper | Invalidates |
+|---|---|
+| `me` | the current user's profile |
+| `users` | the active and pending user lists |
+| `storageConfig` | the storage configuration |
+| `storageFiles(bucket?)` | the file list, optionally for one bucket |
+| `ldapConfig` | the LDAP integration configuration |
+| `context` | the brand and season context |
+| `company` | the company functions and teams |
+| `allStorage` | the storage configuration and file list together |
+
+Prefer these helpers to manual `refetch()` calls and to ad-hoc `onSuccess`
+invalidations. The React Query client in [`src/lib/trpc.tsx`](src/lib/trpc.tsx)
+sets queries to a 60-second `staleTime`, one retry and no refetch on window
+focus, and mutations to no retry, so a failed mutation is never resubmitted
+automatically.

@@ -336,9 +336,9 @@ Pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASS
 
 ### Configurazioni Runtime
 
-Per dettagli su rate-limiting, idempotency, session management, security headers e readiness checks, consulta:
-
-- [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
+- Rate limiting, idempotency and password policy: [OPERATIONS.md](OPERATIONS.md)
+- Security headers and health and readiness checks: [API documentation](apps/api/README.md)
+- Session revocation: [ADR-019](docs/decisions/019-tokenversion-session-revocation.md)
 
 ### Configurazioni AppConfig (Overview)
 
