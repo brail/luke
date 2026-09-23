@@ -105,7 +105,6 @@ export class WorkflowPathError extends Error {}
  */
 export const CI_DOCUMENTATION_PATHS_IGNORE = [
   'docs/**/*.md',
-  'docs/**/*.pdf',
   'README.md',
   'CLAUDE.md',
   'AGENTS.md',

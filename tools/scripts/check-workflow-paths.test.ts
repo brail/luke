@@ -795,8 +795,9 @@ test('a missing docs.yml is reported', () => {
 test('a Docs trigger narrower or wider than pinned is reported', () => {
   const narrower = problems({ docs: DOCS.replace("['docs/**', '**.md']", "['**.md']") });
   assert.ok(narrower.some(p => /missing `docs\/\*\*`/.test(p.message)));
-  // The tracked PDF under docs/ is then ignored by CI and observed by nobody.
-  assert.ok(narrower.some(p => /docs\/plan\.pdf.*observed by no workflow/.test(p.message)));
+  // Without `**.md`, the root Markdown CI ignores is then observed by nobody.
+  const noMarkdown = problems({ docs: DOCS.replace("['docs/**', '**.md']", "['docs/**']") });
+  assert.ok(noMarkdown.some(p => /README\.md.*observed by no workflow/.test(p.message)));
 
   only({ docs: DOCS.replace("['docs/**', '**.md']", "['docs/**', '**.md', 'apps/**']") }, /`apps\/\*\*`, which is not part/);
 });
@@ -933,7 +934,6 @@ test('which paths skip CI, and which of them the Docs workflow still observes', 
   const rows: Array<[path: string, skips: boolean, observed: boolean]> = [
     // Documentation-owned: CI skipped, Docs observes.
     ['docs/a.md', true, true],
-    ['docs/a.pdf', true, true],
     ['docs/decisions/001-first.md', true, true],
     ['docs/archive/deep/nested/note.md', true, true],
     ['docs/archive/SETUP_STATUS.md', true, true],
@@ -954,6 +954,7 @@ test('which paths skip CI, and which of them the Docs workflow still observes', 
     ['SETUP_STATUS.md', false, true],
     ['APP_CONFIG.md', false, true],
     ['API_SETUP.md', false, true],
+    ['docs/a.pdf', false, true],
     ['docs/helper.ts', false, true],
     ['docs/image.png', false, true],
     ['docs/data.json', false, true],
