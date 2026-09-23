@@ -1,5 +1,13 @@
 # Luke — TARIC Classifier Integration
 
+> **Archived design proposal — not implemented, not current guidance.**
+> This document outlines a `customs` module that was never built: no TARIC
+> classification code exists in the repository, and the files it names were
+> planned, not created. It is preserved as a project proposal whose future is
+> undecided; its original language and contents are kept. For current
+> documentation, start at the [repository README](../../README.md) and the
+> [documentation index](../README.md).
+
 ## Obiettivo
 
 Implementare un modulo `customs` in Luke che, dato un prodotto NAV (descrizione + composizione),

@@ -30,7 +30,6 @@ work, and preserved evidence.
 
 | Resource | Purpose |
 |----------|---------|
-| [TARIC classifier integration](luke-taric-classifier.md) | Target architecture and implementation outline for customs classification. |
 | [Merchandising reference](merchandising-reference/) | Local, git-ignored reference material for the merchandising domain. |
 | [Microsoft Access porting](access-porting/) | Local, git-ignored reverse-engineering notes and query analysis for Access migrations. |
 

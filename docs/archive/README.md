@@ -9,3 +9,4 @@ navigation without turning the archived material into current guidance.
 | [What-If Engine and domain integration task](TASK_v2_what_if_engine.md) | Original implementation plan for a deterministic seasonal-planning solver and its domain integration. |
 | [What-If Calendar Solver archive](what-if-calendar-solver.md) | Design, data model, API, UI, and source snapshot preserved when the solver was removed in July 2026. |
 | [Initial setup snapshot and roadmap](SETUP_STATUS.md) | Initial monorepo setup and planned work, with later corrections; frozen as historical evidence, not current operating guidance. |
+| [TARIC classifier proposal](luke-taric-classifier.md) | Proposed customs classification module (CN/TARIC code and duty lookup for NAV products), never implemented; preserved as a project proposal whose future is undecided. |
