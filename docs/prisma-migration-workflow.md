@@ -1,73 +1,80 @@
 # Prisma Migration Workflow
 
-Ogni modifica fisica al datamodel — model, enum, field, relation, mapping,
-default, index o constraint, in uno qualunque dei file `packages/db/prisma/*.prisma`
-— richiede una migration versionata. Una modifica limitata alla configurazione
-`generator`/`datasource` in `schema.prisma` non la richiede, quando un
-`prisma migrate diff` autorevole prova che non c'è differenza fisica di schema
-(es. il cambio di generator del Cycle 11).
-Lo schema è multi-file (uno `schema.prisma` con solo generator/datasource, più un
-file per dominio — `identity.prisma`, `platform.prisma`, `catalog.prisma`, ecc.):
-`prisma.config.ts` dichiara `schema: 'prisma'`, quindi il CLI legge l'intera
-cartella `prisma/`, non il singolo file. Il workflow usa un Postgres temporaneo su
-porta 5433 per generare la migration, poi la applica al DB dev (porta 5432) con
-`db push`.
+Every physical datamodel change — a model, enum, field, relation, mapping,
+default, index or constraint, in any of the `packages/db/prisma/*.prisma` files —
+requires a versioned migration. A change confined to `generator`/`datasource`
+configuration in `schema.prisma` does not, when an authoritative
+`prisma migrate diff` proves there is no physical schema difference (for example
+the Cycle 11 generator switch).
+The schema is multi-file: a `schema.prisma` holding only the generator and
+datasource, plus one file per domain — `identity.prisma`, `platform.prisma`,
+`catalog.prisma`, and so on. `prisma.config.ts` declares `schema: 'prisma'`, so
+the CLI reads the whole `prisma/` directory, not a single file. The workflow
+generates the migration against a temporary Postgres on port 5433, then aligns
+the development database (port 5432) with `db push`.
 
-Schema, migration e `prisma.config.ts` vivono in `@luke/db`, quindi ogni comando
-`prisma` va eseguito da `packages/db/`: è l'unica directory da cui il CLI risolve
-tutti e tre. Restano invece in `@luke/api` il seed e gli script `db:*` di dominio
-(bootstrap, reset NAV, backfill), che applicano regole applicative e importano
-`apps/api/src/`.
+The schema, the migrations and `prisma.config.ts` live in `@luke/db`, so every
+`prisma` command runs from `packages/db/`: it is the only directory from which
+the CLI resolves all three. The seed and the domain `db:*` scripts (bootstrap,
+NAV reset, backfills) stay in `@luke/api`, because they apply business rules and
+import `apps/api/src/`.
 
-## Workflow obbligatorio
+## Required workflow
 
 ```bash
-pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
+pnpm --filter @luke/db db:migrate:new <descriptive_name>
 git add packages/db/prisma/migrations packages/db/prisma/*.prisma
 ```
 
-Lo script (`packages/db/scripts/new-migration.sh`) fa i quattro passi che prima erano da eseguire a
-mano: avvia il Postgres usa-e-getta sulla 5433, attende che risponda, genera la migration contro
-quello, lo ferma anche se qualcosa fallisce a metà, e allinea il DB di sviluppo con `db push`.
-Il file prodotto in `prisma/migrations/` va committato insieme al/i file `.prisma` modificato/i.
+The script (`packages/db/scripts/new-migration.sh`) performs the four steps that
+used to be manual: it starts the throwaway Postgres on 5433, waits until it
+answers, generates the migration against it, stops it even when a step fails
+midway, and aligns the development database with `db push`. The file it produces
+in `prisma/migrations/` is committed together with the modified `.prisma` file or
+files.
 
-**Perché un DB temporaneo e non quello di sviluppo**: il DB dev è allineato con `db push`, quindi
-il suo `_prisma_migrations` non riflette lo storico versionato. `migrate dev` lo leggerebbe come
-drift e proporrebbe di resettarlo, cancellando i dati.
+**Why a temporary database rather than the development one:** the development
+database is aligned with `db push`, so its `_prisma_migrations` table does not
+reflect the versioned history. `migrate dev` would read that as drift and offer to
+reset it, deleting the data.
 
-### Note su Prisma 7 (valgono per qualunque comando `prisma` a mano)
+### Prisma 7 notes (for any `prisma` command run by hand)
 
-- **`--skip-seed` non esiste più**, né su `migrate dev` né su `migrate reset`.
-- **Il CLI non carica più `.env` da solo.** Un `npx prisma db push` nudo fallisce con
-  `The datasource.url property is required in your Prisma config file` — messaggio fuorviante,
-  perché `prisma.config.ts` la `datasource.url` ce l'ha: la legge da `process.env.DATABASE_URL`,
-  che però non è popolata. Caricare l'env prima (`set -a && . ../../apps/api/.env && set +a`,
-  come fanno gli script in `packages/db/package.json`) oppure passare `--url` esplicita.
-  La `.env` è quella di `apps/api`: `DATABASE_URL` è bootstrap infrastrutturale del deployment
-  (Env Policy in `CLAUDE.md`), non configurazione di `@luke/db` — c'è un solo database, quindi
-  un solo posto dove è dichiarato.
+- **`--skip-seed` no longer exists**, on neither `migrate dev` nor `migrate reset`.
+- **The CLI no longer loads `.env` by itself.** A bare `npx prisma db push` fails
+  with `The datasource.url property is required in your Prisma config file` — a
+  misleading message, because `prisma.config.ts` does have a `datasource.url`: it
+  reads it from `process.env.DATABASE_URL`, which is simply not populated. Load
+  the environment first (`set -a && . ../../apps/api/.env && set +a`, as the
+  scripts in `packages/db/package.json` do) or pass an explicit `--url`.
+  The `.env` is the one in `apps/api`: `DATABASE_URL` is infrastructural bootstrap
+  for the deployment (Env Policy in `CLAUDE.md`), not `@luke/db` configuration —
+  there is one database, so it is declared in one place.
 
-## Produzione
+## Production
 
-- `entrypoint.sh` esegue `prisma migrate deploy` al boot del container
-- Mai `prisma migrate reset` in produzione
-- Baseline `20260318134249_init` versionata in git (`prisma/migrations/` non è in `.gitignore`)
+- `apps/api/entrypoint.sh` runs `prisma migrate deploy` when the container boots.
+- Never run `prisma migrate reset` in production.
+- The `20260318134249_init` baseline is versioned in git (`prisma/migrations/` is
+  not in `.gitignore`).
 
-## Troubleshooting: `migrate deploy` bloccato da drift con `db push`
+## Troubleshooting: `migrate deploy` blocked by `db push` drift
 
-`db push` non scrive su `_prisma_migrations`. Se in passato è stato lanciato
-`migrate deploy` sullo stesso DB dev, può fallire a metà (es. `CREATE TYPE` già
-esistente) lasciando una riga con `finished_at = NULL` che blocca ogni deploy
-successivo.
+`db push` does not write to `_prisma_migrations`. If `migrate deploy` was run in
+the past against the same development database, it can fail midway (for example
+on a `CREATE TYPE` that already exists) and leave a row with
+`finished_at = NULL` that blocks every later deploy.
 
-**Diagnosi:**
+**Diagnosis:**
 
 ```bash
 docker exec luke-db-1 psql -U luke -d luke -c "SELECT migration_name FROM _prisma_migrations m1 WHERE finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM _prisma_migrations m2 WHERE m2.migration_name = m1.migration_name AND m2.finished_at IS NOT NULL) ORDER BY migration_name;"
 ```
 
-**Fix (solo dev, mai in prod):** verificare che lo schema live rispecchi già
-l'effetto netto delle migration bloccate (confrontare con `\d` contro il contenuto
-di `migration.sql`), poi `prisma migrate resolve --applied <nome>` per ciascuna in
-ordine cronologico (serve `DATABASE_URL` esplicita: `set -a; source .env; set +a`).
-Mai `resolve --applied` senza aver verificato che il DB rifletta davvero quello stato.
+**Fix (development only, never in production):** check that the live schema
+already reflects the net effect of the blocked migrations (compare `\d` output
+with the content of `migration.sql`), then run
+`prisma migrate resolve --applied <name>` for each of them in chronological order,
+from `packages/db/` with the environment loaded
+(`set -a && . ../../apps/api/.env && set +a`). Never run `resolve --applied`
+without first verifying that the database really reflects that state.

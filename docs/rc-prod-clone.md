@@ -1,107 +1,107 @@
-# Clonare PROD su RC prima di una release
+# Cloning PROD into RC before a release
 
-Procedura per far sì che il tag `vX.Y.Z-rc.N` venga validato contro dati reali di
-produzione — non solo un database RC vuoto/stantio — **prima** di promuoverlo a
-release stabile.
+Procedure for validating a `vX.Y.Z-rc.N` tag against real production data — not
+just an empty or stale RC database — **before** promoting it to a stable release.
 
-## Perché non un clone diretto del database
+## Why not a direct database clone
 
-Un approccio "pull" ovvio sarebbe: rete condivisa tra gli stack Docker prod e RC,
-un ruolo Postgres read-only su prod, e la master key di prod copiata sul volume
-RC (così i valori cifrati in `AppConfig` restano leggibili). Scartato perché:
+The obvious "pull" approach would be a Docker network shared between the prod and
+RC stacks, a read-only Postgres role on prod, and prod's master key copied to the
+RC volume so that encrypted `AppConfig` values stay readable. Rejected because:
 
-- la master key di prod (`~/.luke/secret.key`) non deve mai lasciare il suo
-  volume — è la root of trust di tutta l'app (deriva `nextauth.secret`,
-  `api.jwt`, `cookie.secret`, decifra ogni segreto in `AppConfig`). Copiarla su
-  RC significa che compromettere RC ⊇ compromettere prod
-- richiede una rete Docker condivisa tra i due stack, altrimenti isolati
-- richiede una credenziale Postgres di prod residente in configurazione RC
+- prod's master key (`~/.luke/secret.key`) must never leave its volume. It is the
+  root of trust of the whole application: it derives `nextauth.secret`, `api.jwt`
+  and `cookie.secret`, and decrypts every secret in `AppConfig`. Copying it to RC
+  means that compromising RC includes compromising prod;
+- it needs a Docker network shared between two otherwise isolated stacks;
+- it needs a prod Postgres credential stored in RC's configuration.
 
-Questo è esattamente ciò che fa oggi `scripts/refresh-rc-db.sh` (vedi commento
-in testa al file) — tenuto in vita solo come fallback finché questo flusso non
-è stato validato su `main`, poi da ritirare.
+`scripts/refresh-rc-db.sh` takes a variant of that route (see the comment at the
+top of the file): with both stacks on the same Docker host, it streams `pg_dump`
+from prod into RC and copies prod's master key into the RC API container. It is
+kept only as a fallback until the flow below has been used successfully in a real
+release, and is then to be retired.
 
-## L'alternativa: il sistema di backup/export/import esistente
+## The alternative: the existing backup, export and import system
 
-`apps/api/src/lib/backup/` implementa già l'invariante che serve: un pacchetto
-`.lukebak` portabile, la cui DEK è ri-wrappata con una passphrase (Argon2id)
-invece che con la master key del server — decifrabile su qualunque istanza,
-senza che nessuna master key attraversi il confine tra prod e RC.
+`apps/api/src/lib/backup/` already implements the invariant this needs: a portable
+`.lukebak` package whose DEK is re-wrapped with a passphrase (Argon2id) instead of
+the server's master key — decryptable on any instance, without any master key
+crossing the boundary between prod and RC.
 
-`scripts/rc-prod-clone.ts` orchestra questo flusso via HTTP/tRPC — le stesse
-API che userebbe un admin dalla dashboard, nessun accesso privilegiato in più:
+`scripts/rc-prod-clone.ts` orchestrates this flow over HTTP and tRPC, through the
+same APIs an administrator would use from the dashboard, with no extra privileged
+access:
 
-1. Login su PROD (`auth.login`, credenziali chieste a runtime, mai salvate)
-2. Crea un backup `DB` fresco (o riusa uno esistente con `--backup-id`)
-3. `maintenance.backup.prepareExport` con una passphrase generata a caso dallo
-   script (mai stampata, mai riusata) → scarica il pacchetto `.lukebak` dal
-   link firmato a scadenza breve
-4. Login su RC, upload del pacchetto su `/upload/backup-import`
-5. `checkRestoreCompatibility` sullo schema:
-   - **OLDER** → `runMigrationBridge`: applica le migration pendenti di questa
-     release in un database temporaneo disposable, **senza toccare il database
-     reale di RC** — è questo lo step che prova concretamente che le migration
-     si applicano bene a dati veri di prod
-   - **SAME** → si procede diretti al restore
-   - **NEWER_OR_UNKNOWN** → blocco duro, nessun bypass (stessa regola che
-     applica il prodotto stesso)
-6. Conferma interattiva (skippabile con `--yes`) + `backup.restore` sul
-   database reale di RC
+1. Log into PROD (`auth.login`; credentials prompted at runtime, never stored).
+2. Create a fresh `DB` backup, or reuse an existing one with `--backup-id`.
+3. `maintenance.backup.prepareExport` with a passphrase the script generates at
+   random (never printed, never reused), then download the `.lukebak` package from
+   the short-lived signed link.
+4. Log into RC and upload the package to `/upload/backup-import`.
+5. `checkRestoreCompatibility` on the schema:
+   - **OLDER** → `runMigrationBridge` applies this release's pending migrations in
+     a disposable temporary database, **without touching RC's real database**.
+     This is the step that concretely proves the migrations apply cleanly to real
+     production data.
+   - **SAME** → proceed straight to the restore.
+   - **NEWER_OR_UNKNOWN** → hard stop, no bypass (the same rule the product itself
+     enforces).
+6. Interactive confirmation (skippable with `--yes`), then `backup.restore` on RC's
+   real database.
 
-Nessuna rete condivisa, nessuna credenziale Postgres di prod in RC, nessuna
-master key che esce dal suo volume — attraversa il confine solo un file
-cifrato + una passphrase generata ad-hoc, entrambi scartati a fine run.
+No shared network, no prod Postgres credential in RC, no master key leaving its
+volume: only an encrypted file and a one-off generated passphrase cross the
+boundary, and both are discarded at the end of the run.
 
-## Prerequisiti
+## Prerequisites
 
-- Backup system disponibile su entrambe le istanze (prod e RC)
-- Un account admin su **prod** con permessi `maintenance:read`,
-  `maintenance:backup_create`, `maintenance:backup_export`
-- Un account admin su **RC** con permessi `maintenance:read`,
-  `maintenance:backup_restore`
-- `@luke/api` e `@trpc/client` installati alla root (`pnpm install`)
+- The backup system available on both instances (prod and RC).
+- An admin account on **prod** with `maintenance:read`, `maintenance:backup_create`
+  and `maintenance:backup_export`.
+- An admin account on **RC** with `maintenance:read` and
+  `maintenance:backup_restore`.
+- `@luke/api` and `@trpc/client` installed at the root (`pnpm install`).
 
-## Uso
+## Usage
 
 ```bash
 pnpm rc:clone --prod-url https://luke.example.com --rc-url http://rc.luke.febos.local
 ```
 
-Opzioni:
+Options:
 
-| Flag | Default | Note |
+| Flag | Default | Notes |
 |---|---|---|
-| `--backup-id <id>` | crea un backup nuovo | riusa un backup PROD già completato |
-| `--label <text>` | `rc-clone-<timestamp>` | etichetta del backup creato/importato |
-| `--restore-files` | `false` | replica anche gli oggetti storage (bucket) |
-| `--wipe-audit-log` | `false` | di default l'audit log corrente di RC viene preservato |
-| `--yes` | `false` | salta la conferma interattiva pre-restore |
+| `--backup-id <id>` | creates a new backup | reuses an already completed PROD backup |
+| `--label <text>` | `rc-clone-<timestamp>` | label of the created or imported backup |
+| `--restore-files` | `false` | also replicates storage objects (buckets) |
+| `--wipe-audit-log` | `false` | by default RC's current audit log is preserved |
+| `--yes` | `false` | skips the interactive pre-restore confirmation |
 
-`--prod-url`/`--rc-url` sono sempre obbligatori (niente env var equivalenti:
-`process.env.*` diretto è vietato fuori da `apps/api/scripts/**`, vedi
-`.semgrep/rules/no-direct-env.yml`).
+`--prod-url` and `--rc-url` are always required, with no equivalent environment
+variables: the direct `process.env` rule in `.semgrep/rules/no-direct-env.yml`
+covers the root `scripts/` directory.
 
-Username/password vengono chiesti in modo interattivo (password mai
-echeggiata) — mai passarli come argomento CLI, finirebbero nella history della
-shell.
+Username and password are prompted interactively, and the password is never
+echoed. Never pass them as command-line arguments: they would end up in the shell
+history.
 
-## Limitazioni note
+## Known limitations
 
-- I valori sensibili di `AppConfig` (password LDAP/SMTP) restano cifrati a
-  livello colonna con la master key di **prod** (cifratura indipendente dalla
-  DEK del backup, vedi `apps/api/src/lib/configManager.ts`). Dopo il restore,
-  leggerli su RC lancia un errore a runtime nel punto d'uso (non al boot) —
-  voluto: RC non può mai riusare in modo silente le credenziali reali di prod
-  verso sistemi esterni. Da reimpostare a mano con valori RC-appropriati se
-  serve LDAP/SMTP funzionante su RC.
-- Il pacchetto `.lukebak` viene bufferizzato interamente in memoria in fase di
-  upload (nessun client multipart streaming in scope). Accettabile per backup
-  `DB`-only; da rivedere se mai esteso a `DB_AND_FILES`.
+- Sensitive `AppConfig` values (LDAP and SMTP passwords) remain encrypted at column
+  level with **prod's** master key — encryption independent of the backup's DEK;
+  see `apps/api/src/lib/configManager.ts`. After the restore, reading them on RC
+  throws at runtime at the point of use, not at boot. This is intended: RC can
+  never silently reuse real production credentials against external systems.
+  Reset them by hand with RC-appropriate values if RC needs working LDAP or SMTP.
+- The `.lukebak` package is buffered entirely in memory during upload (no
+  streaming multipart client in scope). Acceptable for `DB`-only backups; to be
+  revisited if the flow is ever extended to `DB_AND_FILES`.
 
-## Relazione con `refresh-rc-db.sh`
+## Relationship with `refresh-rc-db.sh`
 
-I due script coesistono temporaneamente. `refresh-rc-db.sh` resta il fallback
-operativo finché questo flusso — che dipende dal sistema di backup, non ancora
-su `main` — non è stato usato con successo in almeno una release reale.
-Deprecare/rimuovere `refresh-rc-db.sh` è una decisione separata, da prendere
-solo dopo quella validazione.
+The two scripts coexist for now. `refresh-rc-db.sh` remains the operational
+fallback until this flow has been used successfully in at least one real release.
+Deprecating or removing `refresh-rc-db.sh` is a separate decision, to be taken
+only after that validation.
