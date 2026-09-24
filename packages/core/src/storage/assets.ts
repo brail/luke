@@ -10,8 +10,6 @@
  * in `ASSET_KINDS` — not a new copy of validate/buffer/magic-bytes/putObject.
  */
 
-import { z } from 'zod';
-
 import type { StorageBucket } from './types.js';
 
 /** Bump to force regeneration of every derivative (e.g. a preset's dimensions changed). */
@@ -19,7 +17,6 @@ export const ASSET_PIPELINE_VERSION = 1;
 
 export const ASSET_VARIANTS_TUPLE = ['thumb', 'card', 'export'] as const;
 export type AssetVariant = (typeof ASSET_VARIANTS_TUPLE)[number];
-export const assetVariantSchema = z.enum(ASSET_VARIANTS_TUPLE);
 
 export type VariantOutputFormat = 'webp' | 'auto';
 
@@ -57,7 +54,6 @@ export const ASSET_KINDS_TUPLE = [
   'specsheet-image',
 ] as const;
 export type AssetKind = (typeof ASSET_KINDS_TUPLE)[number];
-export const assetKindSchema = z.enum(ASSET_KINDS_TUPLE);
 
 export interface AssetKindSpec {
   bucket: StorageBucket;

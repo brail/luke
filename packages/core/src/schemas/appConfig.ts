@@ -1,29 +1,6 @@
 import { z } from 'zod';
 
 /**
- * Shape of a single AppConfig record as persisted in the database (generic KV entry).
- */
-export const AppConfigSchema = z.object({
-  /** Configuration identifier key */
-  key: z.string().min(1),
-
-  /** Configuration value (generic serializable object) */
-  value: z.unknown(),
-
-  /** Configuration version for managing updates */
-  version: z.number().int().positive(),
-
-  /** Configuration creation date */
-  createdAt: z.date(),
-
-  /** Last update date */
-  updatedAt: z.date(),
-});
-
-/** TypeScript type inferred from `AppConfigSchema`. */
-export type AppConfig = z.infer<typeof AppConfigSchema>;
-
-/**
  * Rate limiting policy for a single endpoint category.
  * `keyBy` controls whether the limit is per IP address or per authenticated user.
  */

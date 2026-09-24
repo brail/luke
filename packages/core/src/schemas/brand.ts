@@ -119,26 +119,6 @@ export type Brand = z.infer<typeof BrandSchema>;
 export type BrandListInput = z.infer<typeof BrandListInputSchema>;
 export type BrandUpdateInput = z.infer<typeof BrandUpdateInputSchema>;
 
-/** Input schema for validating a brand logo file upload request. */
-export const BrandLogoUploadSchema = z.object({
-  /** UUID of the brand */
-  brandId: z.string().uuid('Brand ID deve essere un UUID valido'),
-
-  /** File information */
-  file: z.object({
-    /** Original file name */
-    filename: z.string().min(1, 'Nome file obbligatorio'),
-
-    /** MIME type of the file */
-    mimetype: z.string().min(1, 'MIME type obbligatorio'),
-
-    /** File size in bytes */
-    size: z.number().int().positive('Dimensione file deve essere positiva'),
-  }),
-});
-
-export type BrandLogoUpload = z.infer<typeof BrandLogoUploadSchema>;
-
 /**
  * Normalizes a brand code for consistency: trims whitespace, uppercases,
  * and strips any character that is not A–Z, 0–9, `_`, `-`, or space.

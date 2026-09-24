@@ -73,16 +73,9 @@ export * from './storage/assets.js';
 
 // Re-export runtime environment utilities
 export {
-  getApiBaseUrl as getEnvApiBaseUrl,
-  getFrontendBaseUrl as getEnvFrontendBaseUrl,
   isDevelopment,
   isProduction,
-  isServer,
-  getEnvConfig,
-  validateEnvConfig,
   getConfigValue,
-  getApiBaseUrlFromConfig,
-  getFrontendBaseUrlFromConfig,
 } from './runtime/env.js';
 
 // Re-export network URL utilities
@@ -96,15 +89,11 @@ export {
   buildCollectionRowPictureUploadUrl,
   buildTempCollectionRowPictureUploadUrl,
   buildSpecsheetImageUploadUrl,
-  buildTempSpecsheetImageUploadUrl,
   buildBackupExportDownloadUrl,
   buildBackupImportUrl,
   buildAuditLogExportUrl,
   buildTrpcUrl,
   buildSeasonCalendarExportUrl,
-  isLocalhostUrl,
-  isApiUrl,
-  extractPathFromUrl,
   type UrlOptions,
 } from './net/url.js';
 

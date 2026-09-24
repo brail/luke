@@ -41,20 +41,18 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
 export type CollectionGender = (typeof COLLECTION_GENDER)[number];
 
-/** Default strategy catalog values — used to seed `CollectionCatalogItem` on migration. */
+/**
+ * Default strategy catalog values. The `CollectionCatalogItem` rows were seeded by migration SQL,
+ * which spells the values itself; nothing reads this constant to seed them.
+ */
 export const DEFAULT_CATALOG_STRATEGY = ['CORE', 'INNOVATION'] as const;
 /** Default line-status catalog values. */
 export const DEFAULT_CATALOG_LINE_STATUS = ['CARRY_OVER', 'NEW'] as const;
-/** Default style-status catalog values. */
-export const DEFAULT_CATALOG_STYLE_STATUS = ['CARRY_OVER', 'NEW'] as const;
-// Kept for backward compatibility — export and xlsx/pdf services still reference these aliases.
+// The collection-layout group form and the API integration tests read the defaults through these aliases.
 export const COLLECTION_STRATEGY = DEFAULT_CATALOG_STRATEGY;
 export type CollectionStrategy = (typeof COLLECTION_STRATEGY)[number];
 export const COLLECTION_STATUS = DEFAULT_CATALOG_LINE_STATUS;
 export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
-
-/** Default price-positioning catalog values. */
-export const DEFAULT_CATALOG_PRICE_POSITIONING = ['ENTRY', 'MID_MARKET', 'PREMIUM', 'LUXURY'] as const;
 
 /** All catalog dimension types managed via the `CollectionCatalogItem` table. */
 export const COLLECTION_CATALOG_TYPES = [

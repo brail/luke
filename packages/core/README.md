@@ -38,8 +38,8 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 
 | Area | Representative exports |
 |------|------------------------|
-| Network URLs | `buildApiUrl`, `buildTrpcUrl`, upload and download URL builders, `extractPathFromUrl` |
-| Dates and pricing | date formatting and parsing helpers, `calcMaxSupplierCost`, `roundRetailPrice` |
+| Network URLs | `buildApiUrl`, `buildTrpcUrl`, upload and download URL builders |
+| Dates and pricing | date formatting and working-day helpers, `calcMaxSupplierCost`, `roundRetailPrice` |
 | Storage | `IStorageProvider`, `APP_STORAGE_BUCKETS`, `isValidBucket`, local and S3 configuration schemas, asset kinds and variants |
 | Sanitisation | `sanitizeFileName`, `isPathSafe`, text and Zod helpers |
 

@@ -32,39 +32,6 @@ export function formatDate(date: Date, locale: string = 'it-IT'): string {
 }
 
 /**
- * Converts a string to a Date object
- *
- * @param input - String to convert to date
- * @returns Date object or null if parsing fails
- *
- * @example
- * ```typescript
- * parseDate('2024-01-15') // Date object
- * parseDate('15/01/2024') // Date object
- * parseDate('invalid') // null
- * ```
- */
-export function parseDate(input: string): Date | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
-
-  try {
-    // Try direct parsing first
-    const date = new Date(input);
-
-    // Verify that the date is valid
-    if (isNaN(date.getTime())) {
-      return null;
-    }
-
-    return date;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Formats a date with time according to local conventions
  *
  * @param date - The date to format

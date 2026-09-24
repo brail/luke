@@ -69,29 +69,3 @@ export const CalendarEventUserVisibilityInputSchema = z.object({
   userIds: z.array(z.string().uuid()).min(1),
 });
 export type CalendarEventUserVisibilityInput = z.infer<typeof CalendarEventUserVisibilityInputSchema>;
-
-// Output schemas for web consumption
-/** Full company function as returned by the API. */
-export const CompanyFunctionSchema = z.object({
-  id: z.string().uuid(),
-  slug: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  order: z.number().int(),
-  isActive: z.boolean(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
-export type CompanyFunction = z.infer<typeof CompanyFunctionSchema>;
-
-/** Full company team as returned by the API. */
-export const CompanyTeamSchema = z.object({
-  id: z.string().uuid(),
-  functionId: z.string().uuid(),
-  name: z.string(),
-  description: z.string().nullable(),
-  isActive: z.boolean(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-});
-export type CompanyTeam = z.infer<typeof CompanyTeamSchema>;

@@ -158,16 +158,6 @@ export function buildSpecsheetImageUploadUrl(
   return buildApiUrl(`/upload/specsheet-image/${specsheetId}`, options);
 }
 
-/**
- * Builds the upload URL for a temporary specsheet image.
- * The file is committed to a permanent key when the specsheet is saved.
- */
-export function buildTempSpecsheetImageUploadUrl(
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl('/upload/specsheet-image/temp', options);
-}
-
 // Raw (non-tRPC) endpoints the *browser* calls directly must live under `/download/` (streamed
 // GET) or `/upload/` (streamed POST). In production the browser can only reach Next.js (apps/api
 // publishes no port — see docker-compose.prod.yml), so such a path is reachable only if
@@ -229,39 +219,6 @@ export function buildTrpcUrl(
 }
 
 /**
- * Checks if a URL is a localhost URL
- *
- * @param url - URL to check
- * @returns true if URL points to localhost
- */
-export function isLocalhostUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Checks if a URL is an API URL (points to our backend)
- *
- * @param url - URL to check
- * @returns true if URL points to our API
- */
-export function isApiUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const apiBaseUrl = getCoreApiBaseUrl();
-    const apiParsed = new URL(apiBaseUrl);
-
-    return parsed.origin === apiParsed.origin;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Builds the export download URL for a season calendar.
  *
  * Authenticated with a Bearer token by the caller (`fetch`), not a signed query token — these
@@ -290,23 +247,4 @@ export function buildSeasonCalendarExportUrl(
     if (params.viewDate) query.set('viewDate', params.viewDate.toISOString());
   }
   return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`, options);
-}
-
-/**
- * Extracts the path from a full URL
- *
- * @param url - Full URL
- * @returns Path portion of the URL
- *
- * @example
- * extractPathFromUrl('http://localhost:3001/trpc/auth.login')
- * // → '/trpc/auth.login'
- */
-export function extractPathFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.pathname;
-  } catch {
-    return null;
-  }
 }

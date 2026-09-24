@@ -89,19 +89,6 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
 } as const;
 
 /**
- * Returns the parent section for a dot-notation sub-section, or `null` if already a top-level section.
- *
- * @example
- * getParentSection('settings.ldap') // → 'settings'
- * getParentSection('dashboard')     // → null
- */
-export function getParentSection(section: Section): Section | null {
-  const dot = section.indexOf('.');
-  if (dot === -1) return null;
-  return section.slice(0, dot) as Section;
-}
-
-/**
  * Static default section visibility per role.
  * `true` = visible by default; `false` = hidden (requires an admin override to enable).
  *

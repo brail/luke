@@ -6,16 +6,9 @@ import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsS
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 
 /**
- * Central registry of all AppConfig keys with their Zod validation schemas.
- *
- * All values stored in the database are raw strings; `z.coerce.*` schemas handle
- * automatic type conversion. Add new keys here to gain compile-time type safety
- * and automatic validation on boot via `validateCriticalConfig()`.
- */
-/**
  * A boolean setting, as AppConfig stores it: a string.
  *
- * `booleanConfigSchema` follows JavaScript truthiness, so every non-empty string is `true` — the
+ * `z.coerce.boolean()` follows JavaScript truthiness, so every non-empty string is `true` — the
  * literal `"false"` included. A setting declared that way can be switched on and never off, and
  * the failure is silent: the value is in the database, the admin sees it, and nothing applies it.
  * `configManager.getBackupScheduleSettings` already sidesteps this with a hand-written string
@@ -46,6 +39,13 @@ const jsonConfigSchema = <T extends z.ZodTypeAny>(inner: T) =>
     })
     .pipe(inner);
 
+/**
+ * Central registry of all AppConfig keys with their Zod validation schemas.
+ *
+ * All values stored in the database are raw strings; `z.coerce.*` schemas handle
+ * automatic type conversion. Add new keys here to gain compile-time type safety
+ * and automatic validation on boot via `validateCriticalConfig()`.
+ */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
   'app.name':            z.string().min(1),

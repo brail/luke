@@ -164,7 +164,7 @@ const BROWSER_LIB_PREFIXES = ['lib.dom', 'lib.webworker', 'lib.scripthost'];
 /**
  * The only browser library `isomorphic` may carry.
  *
- * `packages/core` needs it for three `typeof window` guards — the ones that
+ * `packages/core` needs it for two `typeof window` guards — the ones that
  * decide which side the package is running on. It does not need DOM.Iterable,
  * DOM.AsyncIterable, ScriptHost or WebWorker.ImportScripts, which arrived only
  * because the config named no `lib` at all.
