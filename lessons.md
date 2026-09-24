@@ -678,6 +678,15 @@ validation failed with no mounted message to show. Writing the rule down is not
 the same as applying it to every instance — when a rule is added, sweep the
 whole file for the pattern, not just the lines being edited.
 
+**Postscript 3 (2026-09-24).** Evidence can be right and still lost on the way
+to the verdict. The cleanup's O6 dossier filed `sectionAccess.getForMe` under
+"no caller, no test, delete" although the search run for it an hour earlier had
+listed `sectionAccess.integration.spec.ts` beside it; the reviewer caught it,
+and the deletion would have left that spec calling a procedure that no longer
+existed. The classification had been written from memory of the table, not
+from the table. Build the verdict column from the evidence column mechanically,
+and next to every "no caller" name the search that established it.
+
 ## A Turbo `dev` task that emits must depend on its own `build` (2026-09-03)
 
 While simplifying the Cycle 9 build lifecycle, the first prototype relaxed
