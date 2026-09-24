@@ -1,5 +1,5 @@
 /**
- * Post-freeze immutability predicates for calendar events (project_calendar_event_maintainability).
+ * Post-freeze immutability predicates for calendar events.
  * Single source of truth for both apps/api (server-side enforcement) and apps/web (client-side UX
  * mirror) — each side adapts its own event shape (nested `planningGroup.frozenAt` on the server,
  * flattened `planningGroupFrozenAt` on the client) into `frozenAt` before calling these.

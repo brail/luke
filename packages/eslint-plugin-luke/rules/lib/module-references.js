@@ -66,7 +66,7 @@ export function moduleReferenceVisitors(onReference) {
       // `source` is the canonical field on typescript-estree's TSImportType —
       // the literal itself. `argument` is a deprecated getter that wraps it in
       // a TSLiteralType and may go; a rule reading it would go silent, not
-      // fail. Pinned by `lib/__tests__/module-references.test.js`.
+      // fail. Pinned by `rules/__tests__/module-references.test.js`.
       const s = staticSpecifier(node.source);
       if (s) onReference({ node: s.node, specifier: s.value, typeOnly: true, form: 'import() type' });
     },

@@ -154,7 +154,7 @@ export async function getSectionsDisabled(
  * deliberately does NOT invalidate the cache or check any invariant. The
  * only legitimate caller is `sectionAccessRouter.setRoleDefaults`, which
  * wraps this in its own `$transaction` with `acquireLastAdminLock` +
- * `countAdminsWithSettingsAccess` before calling it, and invalidates the
+ * `countRecoveryCapableAdmins` before calling it, and invalidates the
  * cache itself after the transaction commits. There is no safe
  * non-transactional variant: an unguarded convenience wrapper existed here
  * before and, being unused, was one accidental call away from silently
