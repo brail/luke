@@ -2,7 +2,7 @@
  * Unit tests for `syncRowQuotations` (collectionRow.quotation.service.ts) — the buffered
  * create/update/delete reconciliation used by the row save in the drawer. Prisma is mocked with
  * only the methods the function touches (findMany, deleteMany, update, create) — see
- * `.claude/skills/luke-test/SKILL.md` §2. The row's existence and its brand/season scope are the
+ * `.claude/skills/luke-test/SKILL.md` §3.3. The row's existence and its brand/season scope are the
  * caller's responsibility (`resolveRowBrandAccess`/`resolveGroupBrandAccess` in the router), no
  * longer this function's — see `layoutScope` passed explicitly.
  */

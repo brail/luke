@@ -187,6 +187,18 @@ async function buildWorkingDaysContext(
   return { companyCountryCode, holidays };
 }
 
+/** Whether a `calendarDaysRelevance` value makes the company's holiday calendar count. Shared by
+ * `resolveDaysCount` (the deadline countdown) and `resolveHolidayOverlapsForGroup` (the freeze-time
+ * warning) so the two can't drift on what each relevance mode means. */
+function appliesToCompany(relevance: CalendarDaysRelevance): boolean {
+  return relevance === 'COMPANY' || relevance === 'BOTH';
+}
+
+/** Whether a `calendarDaysRelevance` value makes a vendor's holiday calendar count — see `appliesToCompany`. */
+function appliesToVendor(relevance: CalendarDaysRelevance): boolean {
+  return relevance === 'VENDOR' || relevance === 'BOTH';
+}
+
 /**
  * Resolves the day count between two dates, honoring `relevance` when set: `null` keeps the
  * existing plain-calendar-days behavior (`daysBetween`, unchanged for every event not explicitly
@@ -201,18 +213,6 @@ async function buildWorkingDaysContext(
  * explicitly rather than `countryCodes: []`, because `isWorkingDay` treats an empty country list
  * as "apply every fetched holiday regardless of country," the opposite of what's wanted here.
  */
-/** Whether a `calendarDaysRelevance` value makes the company's holiday calendar count. Shared by
- * `resolveDaysCount` (the deadline countdown) and `resolveHolidayOverlapsForGroup` (the freeze-time
- * warning) so the two can't drift on what each relevance mode means. */
-function appliesToCompany(relevance: CalendarDaysRelevance): boolean {
-  return relevance === 'COMPANY' || relevance === 'BOTH';
-}
-
-/** Whether a `calendarDaysRelevance` value makes a vendor's holiday calendar count — see `appliesToCompany`. */
-function appliesToVendor(relevance: CalendarDaysRelevance): boolean {
-  return relevance === 'VENDOR' || relevance === 'BOTH';
-}
-
 function resolveDaysCount(
   from: Date,
   to: Date,

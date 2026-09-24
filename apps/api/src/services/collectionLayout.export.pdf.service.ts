@@ -100,7 +100,10 @@ const PHOTO_MARGIN = [2, 15, 2, 15] as [number, number, number, number];
 const IMAGE_WIDTH  = 44;
 const IMAGE_HEIGHT = 20;
 
-// ─── Margin computation (mirrors usePricingCalc.ts) ──────────────────────────
+// ─── Margin computation ───────────────────────────────────────────────────────
+// Same landed-cost formula as the web's `computeRowMargin`
+// (apps/web/src/app/(app)/product/_shared/pricingCalc.ts), but the averaging has drifted:
+// this is an unweighted mean over the quotations, the web weights them by SKU.
 
 function computeMarginResult(
   quotations: QuotationWithParamSet[],

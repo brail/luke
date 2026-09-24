@@ -256,7 +256,7 @@ async function snapshotEventBaselines(
   );
 }
 
-// ─── Post-freeze immutability (project_calendar_event_maintainability, Fase 4) ──
+// ─── Post-freeze immutability ─────────────────────────────────────────────────
 
 /** Minimal shape needed to evaluate whether a calendar event is post-freeze locked. */
 type LockableEvent = {
@@ -306,11 +306,11 @@ export async function rescheduleMilestone(
 }
 
 /**
- * Non-blocking sanity check (project_calendar_event_maintainability, Fase 6): flags when a phase
- * event's date is out of order relative to its sibling phase events in the same planning group — an
- * earlier phase scheduled after a later one, or vice versa. Returns a human message or null. This is
- * a soft warning surfaced on save (toast); it does NOT block, and reintroduces no phase dependency
- * graph (the what-if solver stays removed) — it only compares `Phase.order` against `endAt ?? startAt`.
+ * Non-blocking sanity check: flags when a phase event's date is out of order relative to its sibling
+ * phase events in the same planning group — an earlier phase scheduled after a later one, or vice
+ * versa. Returns a human message or null. This is a soft warning surfaced on save (toast); it does
+ * NOT block, and reintroduces no phase dependency graph (the what-if solver stays removed) — it only
+ * compares `Phase.order` against `endAt ?? startAt`.
  */
 export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaClient): Promise<string | null> {
   const event = await prisma.calendarEvent.findUnique({
@@ -405,7 +405,7 @@ export async function listMilestonesDb(
  * The owner function always receives a read-write visibility; all others are read-only.
  *
  * @param calendarId - The planning group's calendar id, already resolved by the caller (e.g. via
- *   `resolvePlanningGroupWithBrandAccess`) — a group's calendar is immutable once created, so
+ *   `resolvePlanningGroupBrandAccess`) — a group's calendar is immutable once created, so
  *   there's no staleness risk in reusing it instead of re-fetching the group here.
  */
 export async function createMilestone(

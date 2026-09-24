@@ -427,7 +427,7 @@ describe('Brand Logo Upload Service', () => {
       // Decision reversed. It used to pass silently, on the grounds that
       // "the logo is optional and a dangling reference isn't a reason to
       // reject saving the other fields". The realistic case, though, isn't
-      // a made-up id: it's the hourly reaper that swept away the pending
+      // a made-up id: it's the pending-file reaper that swept away the pending
       // `FileObject` while the user was distracted. The no-op saved the
       // brand without a logo while showing "updated" — data loss with a
       // success toast.

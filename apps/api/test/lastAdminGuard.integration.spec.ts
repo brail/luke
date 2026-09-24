@@ -1,6 +1,6 @@
 /**
  * `lastAdminGuard` — real enforcement through the tRPC endpoints, not against
- * a mock. `sectionAccess.spec.ts` only exercises `countAdminsWithSettingsAccess`
+ * a mock. `sectionAccess.spec.ts` only exercises `countRecoveryCapableAdmins`
  * with a fake `PrismaClient`: no test touches `assertNotLastAdminWithSettingsAccess`,
  * `acquireLastAdminLock`, or the real transaction of `users.update`/`softDelete`/
  * `hardDelete`. This suite covers both, including the race that

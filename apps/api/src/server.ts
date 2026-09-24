@@ -199,7 +199,8 @@ async function registerSecurityPlugins(): Promise<string[]> {
   // Middleware for trace ID correlation with Pino logs
   fastify.addHook('onRequest', pinoTraceMiddleware);
 
-  // Rate limiting now handled via per-route tRPC middleware
+  // Per-procedure rate limits (login, config mutations, ...) are applied on top of the
+  // permissive global limit above by the `withRateLimit` tRPC middleware (lib/ratelimit.ts)
 
   // Idempotency is handled at the tRPC middleware level for specific procedures
 
@@ -234,7 +235,6 @@ async function registerTRPCPlugin() {
         );
       },
     },
-    // Handle OPTIONS requests for CORS
     useWSS: false,
   });
 }
@@ -584,6 +584,7 @@ function setupGracefulShutdown() {
  *   NODE_ENV                  — standard runtime
  *   APP_VERSION               — build-time release identity (Docker ARG/ENV from the git tag)
  *   LUKE_CORS_ALLOWED_ORIGINS — deploy CORS override (not a secret)
+ *   LUKE_TRUSTED_PROXY_CIDR   — reverse-proxy range for `trustProxy`, read before any DB exists
  *   OTEL_*, LOG_LEVEL         — observability infra
  *
  * Web container exceptions (not touched by this guard):

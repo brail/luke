@@ -95,7 +95,7 @@ export const phaseAlertRouter = router({
    * Overwrites `collectionControl.alertThresholds` — the admin-configured criticality bands
    * consumed by `resolveAlertThresholds`. Same `config:update` gate as the other AppConfig-backed
    * settings pages (mail/ldap/storage), not `collection_alert:*` — `COLLECTION_ALERT` only grants
-   * `read` in `RESOURCE_ACTIONS`, and this is config administration, not alert-engine usage.
+   * `read` in `VALID_RESOURCE_ACTIONS`, and this is config administration, not alert-engine usage.
    *
    * @auth {config:update}
    * @input {CollectionAlertThresholdsSchema} — default bands + optional per-Phase overrides.

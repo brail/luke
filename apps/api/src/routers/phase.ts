@@ -21,7 +21,6 @@ function codeForOrder(order: number): string {
   return String(order + 1).padStart(2, '0');
 }
 
-/** Open row, reduced to the context needed in the guard's error message. */
 /** Open rows on a phase, already aggregated per layout: `{ brand/season code → count }`. */
 type OpenRowsByScope = { scope: string; count: number }[];
 

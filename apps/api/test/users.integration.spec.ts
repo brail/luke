@@ -1,5 +1,5 @@
 /**
- * `users.update` — admin password reset (plan: docs/TASK_admin_password_reset_fix.md).
+ * `users.update` — admin password reset.
  *
  * `UpdateUserInputSchema` never had a `password` field: the "Edit user" dialog
  * collected it, but the server silently discarded it. This suite covers the privilege guard (`*:*`),

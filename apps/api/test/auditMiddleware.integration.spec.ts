@@ -14,8 +14,8 @@
  * `withAuditLog`'s own `try/catch` fails to observe it, so every failed mutation that uses this
  * middleware is being logged as `result: 'SUCCESS'` in `AuditLog` instead of `'FAILURE'`.
  *
- * Impact: `withAuditLog` is used across most mutation routers in this codebase (users, config,
- * calendar, pricing, ...). If this reproduces over real HTTP too (not just the `createCaller`
+ * Impact: `withAuditLog` wraps the mutations of the two users routers (`users.admin.router.ts`,
+ * `users.core.router.ts`); the other routers audit by calling `logAudit()` directly. If this reproduces over real HTTP too (not just the `createCaller`
  * path every integration test in this suite uses — that distinction is NOT yet verified, see the
  * open question below), the audit trail for every failed mutation using it is silently wrong:
  * `AuditLog.result` says `SUCCESS` for actions that failed. This is a compliance/forensic

@@ -2,9 +2,10 @@
  * Deferred commit of the collection row drawer: `rows.create`/`rows.update` now
  * sync quotations + phase + planning group within the same row transaction,
  * with a single consolidated audit for the row (plus one for each quotation
- * touched, as before) — instead of the immediate mutations
- * (`quotations.create/update/delete`, `rows.changePhase`, removed) that wrote
- * to the DB regardless of the drawer's Save/Cancel.
+ * touched, as before) — instead of the immediate mutations the drawer used to
+ * call (`quotations.create/update/delete`, which still exist but have no UI
+ * caller, and `rows.changePhase`, removed) that wrote to the DB regardless of
+ * the drawer's Save/Cancel.
  *
  * Covers: quotation sync (create/update/delete by diff), a quotation id
  * foreign to the row (BAD_REQUEST, rollback of the entire transaction), phase/

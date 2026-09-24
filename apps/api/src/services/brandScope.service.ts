@@ -54,8 +54,8 @@ export interface BrandScopeCtx {
 /**
  * The user's team-membership access (brand IDs + function IDs), resolved once.
  *
- * Memoizes the **promise**, not the value: `seasonCalendar.listEvents` and
- * `copyFromSeason` fire multiple guards in parallel with `Promise.all`, and
+ * Memoizes the **promise**, not the value: `seasonCalendar.deleteMilestones`
+ * fires one `assertBrandAccess` per brand in parallel with `Promise.all`, and
  * with a value cache each one would start before the first had finished,
  * missing it every time. Result: one `companyTeamMembership.findMany` per
  * request instead of one per guard, and zero for admins — and, since brand

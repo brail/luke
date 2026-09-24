@@ -441,16 +441,6 @@ export async function createRow(
 }
 
 /**
- * Updates fields on a collection row. Validates gender against the layout's filter
- * and, if moving to a different group, ensures the destination belongs to the same layout.
- *
- * @param existingRow - Caller-fetched row state, reused instead of a redundant internal
- *   `findUnique` — the row-drawer save path (only caller) already fetches this for its own
- *   before/after audit diff.
- * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
- * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
- */
-/**
  * The error that freezes a completed row. A completed row shows an outcome measured against its
  * phase and its planning group's milestones: moving either without reopening it would change
  * that outcome after the fact. The other fields stay editable — completion concerns progress,
@@ -468,6 +458,17 @@ function completedRowConflict(count: number): TRPCError {
   });
 }
 
+/**
+ * Updates fields on a collection row. Validates gender against the layout's filter
+ * and, if moving to a different group, ensures the destination belongs to the same layout.
+ *
+ * @param existingRow - Caller-fetched row state, reused instead of a redundant internal
+ *   `findUnique` — the row-drawer save path (only caller) already fetches this for its own
+ *   before/after audit diff.
+ * @throws {TRPCError} CONFLICT if the row is completed and the phase or planning group changes.
+ * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
+ * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
+ */
 export async function updateRow(
   rowId: string,
   input: Partial<CollectionLayoutRowInput>,

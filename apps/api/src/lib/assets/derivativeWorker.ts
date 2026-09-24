@@ -10,8 +10,8 @@
  * - `registerDerivativeScheduler` — periodic reconciliation tick (every 5 min) that
  *   picks up whatever the immediate path missed: a crashed process, a variant that
  *   failed and needs a retry, or a backfilled master (`scripts/backfill-asset-derivatives.ts`).
- *   Sequential per-master processing with individual try/catch, same shape as every
- *   other tick-based sweep in this directory (`retryFailedCleanups`, `checkFeedback`) —
+ *   Sequential per-master processing with individual try/catch, same shape as the
+ *   other tick-based sweeps (e.g. `checkFeedback` in `lib/feedbackSyncScheduler.ts`) —
  *   already safe (concurrency 1), no separate cap needed there.
  *
  * `enqueueDerivatives` is the one that needs a cap: it fires once per upload, and a

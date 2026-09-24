@@ -312,7 +312,7 @@ export const storageRouter = router({
           // Pending, not confirmed: this confirms the **transfer**, not the
           // linking to an entity. Whoever links it calls `confirmPendingFile`,
           // which requires `confirmedAt === null`. Welcome side effect: an
-          // abandoned upload ends up under the hourly reaper instead of staying
+          // abandoned upload ends up under the pending-file reaper instead of staying
           // forever.
           confirmedAt: null,
         },

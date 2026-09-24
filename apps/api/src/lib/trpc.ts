@@ -197,5 +197,5 @@ export const adminProcedure = publicProcedure
   .use(authMiddleware)
   .use(adminMiddleware);
 
-/** Re-exported for backward compatibility. */
+/** Re-exported so routers and services import `Context` from the same module as the procedure builders. */
 export type { Context };

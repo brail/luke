@@ -162,14 +162,6 @@ export function resetStorageProvider(): void {
   providerInitPromise = null;
 }
 
-/**
- * Uploads a file to the active storage provider and persists its metadata to the DB.
- *
- * Sanitizes the filename before upload and computes a SHA-256 checksum.
- * Creates a FileObject record (unconfirmed when `pending: true`) and writes an audit log entry.
- *
- * @returns Metadata of the stored object, including its generated key and checksum.
- */
 /** Minimal shape both `putObject`/`putDerivativeObject`'s Prisma `create()` results and `listObjects`'s `findMany()` rows satisfy — enough to build a `StoredObjectMeta`. */
 type FileObjectRow = {
   id: string;
@@ -206,6 +198,14 @@ function toStoredObjectMeta(row: FileObjectRow): StoredObjectMeta {
   };
 }
 
+/**
+ * Uploads a file to the active storage provider and persists its metadata to the DB.
+ *
+ * Sanitizes the filename before upload and computes a SHA-256 checksum.
+ * Creates a FileObject record (unconfirmed when `pending: true`) and writes an audit log entry.
+ *
+ * @returns Metadata of the stored object, including its generated key and checksum.
+ */
 export async function putObject(
   ctx: Context,
   params: {

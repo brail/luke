@@ -98,7 +98,8 @@ export const backupRouter = router({
     }),
 
   /**
-   * Returns a single backup's current state — used by the frontend to poll job progress.
+   * Returns a single backup's current state — polled by `scripts/rc-prod-clone.ts` to wait for a
+   * job to finish (the backup page polls `list` instead).
    *
    * @auth {maintenance:read}
    * @input `{ id: string }` — the backup record id.

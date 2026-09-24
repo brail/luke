@@ -150,7 +150,7 @@ export const brandRouter = router({
             userId: ctx.session!.user.id,
           });
           // A dead id is an error, not a no-op. The realistic trigger isn't a
-          // malicious id: it's the hourly reaper that swept up the pending file
+          // malicious id: it's the pending-file reaper that swept up the file
           // while the user was distracted. Without this, the brand saves without
           // a logo and the UI says "created" — data loss with a success toast.
           if (!confirmedKey) {
