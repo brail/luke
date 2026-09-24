@@ -754,7 +754,7 @@ export default [
     // CommonJS by format: `module.exports` / `require()` with no `"type":
     // "module"` above them. Stated so ESLint parses them as scripts rather
     // than guessing from the extension.
-    files: ['scripts/**/*.js', 'apps/web/*.config.js', 'commitlint.config.js'],
+    files: ['apps/web/*.config.js', 'commitlint.config.js'],
     languageOptions: { sourceType: 'commonjs' },
   },
   {
@@ -838,16 +838,10 @@ export default [
       '**/dist-scripts/**',
       '**/build/**',
       '**/.next/**',
-      'packages/core/src/**/*.js',
-      'packages/nav/src/**/*.js',
-      'packages/calendar/src/**/*.js',
       '**/.turbo/**',
       '**/*.d.ts',
       '**/*.js.map',
       '**/*.d.ts.map',
-      '**/turbo.json',
-      '**/pnpm-lock.yaml',
-      '**/pnpm-workspace.yaml',
     ],
   },
 ];

@@ -8,16 +8,21 @@ node_modules
 
 # Next.js build output (rebuilt inside Docker)
 apps/web/.next
-apps/web/out
 
 # TypeScript build info
 **/*.tsbuildinfo
 **/tsconfig.tsbuildinfo
 
-# Compiled API output (rebuilt inside Docker)
+# Compiled output (rebuilt inside Docker)
 apps/api/dist
+apps/api/dist-scripts
 packages/core/dist
 packages/db/dist
+packages/nav/dist
+packages/calendar/dist
+
+# Turborepo cache
+**/.turbo
 
 # The Prisma client, regenerated inside Docker by `@luke/db`'s build. Copying a
 # host-generated one in would ship whatever schema the host last had.
@@ -40,14 +45,25 @@ packages/db/src/generated
 .vscode
 *.swp
 
-# Test output
+# Test output, including the Playwright storageState of an authenticated session
 coverage
-**/.vitest-cache
+apps/web/playwright-report
+apps/web/test-results
+apps/web/.vitest-attachments
+apps/web/tests/.auth
+
+# Logs
+**/*.log
 
 # Docs
 docs/
 *.md
-!apps/api/prisma/migrations/**/*.md
+
+# Local tooling state: Claude Code, git hooks, planning notes, session memory
+.claude
+.husky
+.planning
+.remember
 
 # External apps
 EXTERNAL_APPS/

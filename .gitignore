@@ -4,28 +4,30 @@ EXTERNAL_APPS/
 # Merchandising domain reference files (Excel, binary)
 docs/merchandising-reference/
 
-# Claude Code: skill, hook e settings condivisi sono versionati — sono il tooling
-# che fa rispettare CLAUDE.md, e tenerli fuori da git li lasciava su una sola
-# macchina, non revisionabili e senza backup.
+# Claude Code: the shared skills, hooks and settings are versioned — they are the
+# tooling that enforces CLAUDE.md, and keeping them out of git left them on one
+# machine, unreviewable and without a backup.
 #
-# `.claude/*` e non `.claude/`: una directory esclusa non viene percorsa da git,
-# e nessuna negazione sotto di essa può più rientrare. `!.claude/skills/**` sotto
-# `.claude/` sarebbe silenziosamente inerte.
+# `.claude/*`, not `.claude/`: git does not descend into an excluded directory,
+# so no negation below it can bring anything back. `!.claude/skills/**` under
+# `.claude/` would be silently inert.
 #
-# `*` non matcha `/`, quindi la prima riga esclude solo il livello immediato
-# (settings.local.json, scheduled_tasks.lock, worktrees, .DS_Store) e non
-# impedisce la discesa nelle directory riammesse.
+# `*` does not match `/`, so the first line excludes only the immediate level
+# (settings.local.json, scheduled_tasks.lock, worktrees, .DS_Store) and does not
+# stop git descending into the re-included directories.
 .claude/*
 !.claude/skills/
 !.claude/hooks/
 !.claude/settings.json
-# Ridondante con `.claude/*` oggi. Resta perché è l'unico file che non deve mai
-# finire in git: sopravvive a un futuro `!.claude/*.json`.
+# Redundant with `.claude/*` today. It stays because this is the one file that
+# must never reach git: it survives a future `!.claude/*.json`.
 .claude/settings.local.json
-#CLAUDE.md
 
 # Planning/roadmap docs (local only)
 .planning/
+
+# Session memory written by the `remember` Claude Code plugin (local only)
+.remember/
 
 # Dependencies
 node_modules/
@@ -58,10 +60,6 @@ build/
 
 # Logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 
 # Runtime data
 pids
@@ -73,7 +71,7 @@ pids
 coverage/
 *.lcov
 
-# Playwright: report, artefatti dei fallimenti e storageState autenticato
+# Playwright: report, failure artefacts and the authenticated storageState
 playwright-report/
 test-results/
 # Failure screenshots written by Vitest Browser Mode on a failing assertion.
@@ -82,51 +80,11 @@ blob-report/
 .playwright/
 apps/web/tests/.auth/
 
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
 # Optional eslint cache
 .eslintcache
 
-# Microbundle cache
-.rpt2_cache/
-.rts2_cache_cjs/
-.rts2_cache_es/
-.rts2_cache_umd/
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
+# Output of 'pnpm pack'
 *.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# Next.js build output
-.next
-
-# Nuxt.js build / generate output
-.nuxt
-
-# Gatsby files
-.cache/
-public
-!apps/web/public
-
-# Storybook build outputs
-.out
-.storybook-out
 
 # Temporary folders
 tmp/
@@ -148,15 +106,9 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Prisma
-apps/api/prisma/dev.db.backup*
-
 # Access DB and porting docs
 *.accdb
 docs/access-porting/
-
-
-
 
 # Prisma client generated into `@luke/db` by `prisma generate` (root `postinstall`).
 # Source, not build output, but derived from `packages/db/prisma/*.prisma`

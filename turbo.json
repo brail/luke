@@ -73,9 +73,6 @@
       "dependsOn": ["^build"],
       "cache": false,
       "env": ["TEST_DATABASE_URL", "PGGSSENCMODE"]
-    },
-    "format": {
-      "cache": false
     }
   }
 }
