@@ -39,6 +39,7 @@ import {
 import { UserAvatar } from '../../../components/UserAvatar';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useFormatDate } from '../../../hooks/useFormatDate';
+import { triggerBlobDownload } from '../../../lib/download';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
@@ -167,13 +168,7 @@ export default function ProfilePage() {
     const blob = new Blob([JSON.stringify(profileData, null, 2)], {
       type: 'application/json',
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `profile_${user.username}.json`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerBlobDownload(blob, `profile_${user.username}.json`);
 
     toast.success('Profilo esportato con successo');
   };

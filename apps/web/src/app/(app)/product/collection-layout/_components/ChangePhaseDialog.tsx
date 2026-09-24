@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { PhaseSelect } from '../../../../../components/PhaseSelect';
+import { NO_PHASE_VALUE, PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -21,8 +21,6 @@ interface Props {
   onChanged: (phaseId: string | null, note?: string) => void;
   currentPhaseId: string | null;
 }
-
-const NO_PHASE_VALUE = '_none';
 
 /**
  * Cambio fase informato per una singola riga — picker puramente locale, nessuna mutation di rete:

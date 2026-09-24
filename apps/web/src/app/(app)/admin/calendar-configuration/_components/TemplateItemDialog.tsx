@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import type { RouterOutputs } from '@luke/api';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../../components/CalendarDaysRelevanceSelect';
-import { PhaseSelect } from '../../../../../components/PhaseSelect';
+import { NO_PHASE_VALUE, PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
@@ -86,7 +86,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       setRelDelta('0');
       reset({
         title: item?.title ?? '',
-        phaseId: item?.phaseId ?? '_none',
+        phaseId: item?.phaseId ?? NO_PHASE_VALUE,
         calendarDaysRelevance: item?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
         visibilityFunctionIds: item
           ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [])
@@ -115,7 +115,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   const onSubmit = (values: FormValues) => {
     const payload = {
       title: values.title.trim(),
-      phaseId: values.phaseId === '_none' ? null : values.phaseId,
+      phaseId: values.phaseId === NO_PHASE_VALUE ? null : values.phaseId,
       calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),

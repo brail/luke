@@ -16,7 +16,7 @@ import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../com
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../components/PermissionButton';
-import { PhaseSelect } from '../../../../components/PhaseSelect';
+import { NO_PHASE_VALUE, PhaseSelect } from '../../../../components/PhaseSelect';
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -95,7 +95,7 @@ interface Props {
 interface EventFormData {
   title: string;
   description: string;
-  /** `_none` when no phase is linked — the select needs a non-empty sentinel. */
+  /** `NO_PHASE_VALUE` when no phase is linked — the select needs a non-empty sentinel. */
   phaseId: string;
   /** `NO_RELEVANCE_VALUE` when the deadline is counted in plain calendar days. */
   calendarDaysRelevance: string;
@@ -221,7 +221,7 @@ export function CalendarEventDialog({
   const form = useForm<EventFormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      title: '', description: '', phaseId: '_none', calendarDaysRelevance: NO_RELEVANCE_VALUE,
+      title: '', description: '', phaseId: NO_PHASE_VALUE, calendarDaysRelevance: NO_RELEVANCE_VALUE,
       planningGroupId: '', visibilityFunctionIds: [], allDay: defaultAllDay,
       publishExternally: true, startDate: '', startTime: '', endDate: '', endTime: '',
     },
@@ -276,7 +276,7 @@ export function CalendarEventDialog({
     form.reset({
       title: event?.title ?? '',
       description: event?.description ?? '',
-      phaseId: event?.phaseId ?? '_none',
+      phaseId: event?.phaseId ?? NO_PHASE_VALUE,
       calendarDaysRelevance: event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
       planningGroupId: '',
       visibilityFunctionIds: event ? event.visibilities.map(v => v.functionId) : [],
@@ -442,7 +442,7 @@ export function CalendarEventDialog({
     const payload = {
       title: data.title.trim(),
       description: data.description.trim() || undefined,
-      phaseId: data.phaseId === '_none' ? null : data.phaseId,
+      phaseId: data.phaseId === NO_PHASE_VALUE ? null : data.phaseId,
       calendarDaysRelevance: data.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (data.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
       visibilityFunctionIds: data.visibilityFunctionIds,
       startAt: startIso,

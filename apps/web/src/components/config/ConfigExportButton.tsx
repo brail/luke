@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
+import { triggerBlobDownload } from '../../lib/download';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
 
@@ -45,19 +46,10 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
         note: 'I valori cifrati sono sostituiti con [ENCRYPTED] per sicurezza',
       };
 
-      // Crea e scarica il file
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json',
       });
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = generateExportFileName();
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      triggerBlobDownload(blob, generateExportFileName());
 
       toast.success(`Esportate ${result.count} configurazioni`);
     } catch (error) {

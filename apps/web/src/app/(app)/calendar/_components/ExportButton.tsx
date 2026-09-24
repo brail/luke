@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../../../components/ui/dropdown-menu';
+import { triggerBlobDownload } from '../../../../lib/download';
 
 interface Props {
   seasonId: string;
@@ -36,15 +37,7 @@ async function downloadExport(
     throw new Error(`Export failed: ${res.status}`);
   }
 
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objectUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(objectUrl);
+  triggerBlobDownload(await res.blob(), filename);
 }
 
 /**

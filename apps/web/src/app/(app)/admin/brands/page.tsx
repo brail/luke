@@ -67,7 +67,7 @@ export default function BrandsPage() {
 
   const updateMutation = trpc.brand.update.useMutation({
     onSuccess: updatedBrand => {
-      invalidateContext(updatedBrand.id);
+      invalidateContext();
       setIsDialogOpen(false);
       setEditingBrand(null);
       toast.success('Brand aggiornato con successo');
@@ -83,7 +83,7 @@ export default function BrandsPage() {
 
   const removeMutation = trpc.brand.remove.useMutation({
     onSuccess: removedBrand => {
-      invalidateContext(removedBrand.id);
+      invalidateContext();
       toast.success('Brand disattivato');
 
       if (currentBrand?.id === removedBrand.id) {
@@ -97,7 +97,7 @@ export default function BrandsPage() {
 
   const restoreMutation = trpc.brand.restore.useMutation({
     onSuccess: restoredBrand => {
-      invalidateContext(restoredBrand.id);
+      invalidateContext();
       toast.success(`Brand "${restoredBrand.name}" riattivato`);
     },
     onError: error => {
@@ -107,7 +107,7 @@ export default function BrandsPage() {
 
   const unlinkMutation = trpc.brand.unlink.useMutation({
     onSuccess: unlinkedBrand => {
-      invalidateContext(unlinkedBrand.id);
+      invalidateContext();
       setUnlinkingBrand(null);
       toast.success(`Brand "${unlinkedBrand.name}" scollegato da NAV e disattivato`);
     },
