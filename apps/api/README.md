@@ -4,13 +4,6 @@
 Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC procedure behind the dashboard — collection layout, pricing, milestone calendar, NAV sales statistics, user and company management — on the `/trpc` endpoint, plus the plain HTTP health and readiness probes documented below. It also owns the cross-cutting controls: granular `Resource:Action` RBAC, an audit log on every mutation, local/LDAP authentication selected by `auth.strategy` in AppConfig, and the security baseline (Helmet headers, per-IP and per-account rate limiting, HKDF-SHA256 derived secrets, multi-layer `tokenVersion` session revocation).
 <!-- luke-docs:end:overview -->
 
-## Related documentation
-
-- [Security architecture and controls](SECURITY.md)
-- [RBAC coverage](RBAC_COVERAGE.md)
-- [Storage configuration](STORAGE_CONFIG.md)
-- [Audit analysis](AUDIT_ANALYSIS.md)
-
 ## LDAP resilience and authentication fallback
 
 `src/lib/ldapClient.ts` owns the resilient LDAP client; its settings come from
@@ -206,15 +199,13 @@ readinessProbe:
 - **Readiness**: `/readyz` - Kubernetes readiness probe
 - **tRPC**: `/trpc` - Endpoint principale tRPC
 
-## Configurazione
+## Configuration
 
-L'API supporta configurazione tramite:
-
-- Variabili d'ambiente
-- Database configuration (tramite tRPC)
-- File di configurazione
-
-Vedi `src/lib/config.ts` per dettagli.
+Runtime configuration lives in the `AppConfig` table. `src/lib/configManager.ts` reads it and
+validates each key against `AppConfigRegistry` (`packages/core/src/schemas/config.ts`); admins
+edit it from the settings pages through tRPC. Environment variables carry only the bootstrap
+values in the environment table below, and no configuration file is read. Rationale:
+[ADR-018](../../docs/decisions/018-runtime-configuration-and-bootstrap-environment.md).
 
 ### Hardening & Shutdown semantics
 
@@ -368,9 +359,23 @@ Table naming, NAV-side details and the decisions behind them: [`docs/nav-integra
 <!-- luke-docs:start:storage -->
 The storage layer is abstracted behind `IStorageProvider` (from `@luke/core`). The active provider is selected by `storage.type` in AppConfig — `local` or `s3` — with no environment variable and no rebuild. Files are never handled outside a provider implementation, and destination paths are always produced by the builder functions rather than assembled by hand.
 
-**Two-phase upload**: the file is written as a pending `FileObject` (`confirmedAt = null`); confirmation happens in the same Prisma transaction that creates the owning entity. Abandoned pending files are reclaimed by the periodic cleanup (`src/lib/pendingFile.ts`).
+**Two-phase upload**: the file is written as a pending `FileObject` (`confirmedAt = null`); confirmation happens in the same Prisma transaction that creates the owning entity. Abandoned pending files are reclaimed by the periodic cleanup (`setupTempFileCleanup` in `src/server.ts`).
 
 **Valid buckets** are declared once, in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`); `isValidBucket()` in `packages/core/src/storage/config.ts` derives from that tuple and additionally admits the internal `backups` bucket. The list is deliberately not repeated here — a second copy would drift from the type that gates it.
 
 Images are served through the Next.js proxy `/api/uploads/[...path]`, so the buckets stay private and are never exposed directly.
 <!-- luke-docs:end:storage -->
+
+### Provider implementation status
+
+The storage factory in `src/storage/index.ts` implements local filesystem and
+S3-compatible storage. `SambaStorageProvider` and `GDriveStorageProvider` are
+unimplemented extension ideas, not available providers.
+
+The legacy `storage.smb` and `storage.drive` AppConfig keys have registered Zod
+schemas and can be saved through `integrations.storage.saveConfig` with
+`config:update` permission. No storage provider or current web UI consumes
+those configurations. `integrations.storage.testConnection` requires
+`config:read` but returns placeholder success without contacting either
+service; its result does not establish connectivity. This scaffold dates to
+October 2025 (`e38fd81d`) and does not constitute a working integration.

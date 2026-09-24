@@ -1,8 +1,7 @@
 # Repository Tooling
 
-`tools/` contains repository-wide deterministic checks, their tests, one
-codemod, and historical reports. Application runtime code does not depend on
-this directory.
+`tools/` contains repository-wide deterministic checks, their tests and one
+codemod. Application runtime code does not depend on this directory.
 
 ## Drift checks
 
@@ -72,11 +71,3 @@ before applying them:
 pnpm codemod:check-urls
 pnpm codemod:eliminate-urls
 ```
-
-## Historical reports
-
-These reports preserve the evidence from earlier one-time cleanup work. They
-are historical records, not instructions to rerun removed scripts:
-
-- [Import optimization report](reports/import-optimization-final-report.md)
-- [Unused-files analysis](reports/unused-files.report.md)
