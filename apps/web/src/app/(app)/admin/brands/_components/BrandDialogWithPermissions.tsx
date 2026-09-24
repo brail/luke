@@ -12,6 +12,7 @@ import type { RouterOutputs } from '@luke/api';
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
 import { buildTempBrandLogoUploadUrl } from '@luke/core';
 
+import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -40,11 +41,6 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
 import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
 import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
@@ -70,39 +66,6 @@ interface BrandDialogWithPermissionsProps {
   brand?: BrandItem | null;
   onSubmit: (data: BrandInput) => Promise<void>;
   isLoading: boolean;
-}
-
-/**
- * Wraps a form field with a tooltip when the field is disabled.
- *
- * @param disabled - Whether the wrapped field should be treated as disabled.
- * @param tooltip - Tooltip message shown when disabled is true.
- */
-function DisabledFieldWrapper({
-  children,
-  disabled,
-  tooltip,
-}: {
-  children: React.ReactNode;
-  disabled: boolean;
-  tooltip: string;
-}) {
-  if (!disabled || !tooltip) {
-    return <>{children}</>;
-  }
-
-  return (
-    <Tooltip>
-      {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
-          or `focus`, so with `asChild` directly on the field the tooltip would never open
-          — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
-          where a disabled field cannot be reached. */}
-      <TooltipTrigger asChild>
-        <div tabIndex={0}>{children}</div>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
-  );
 }
 
 /**
@@ -367,9 +330,10 @@ export function BrandDialogWithPermissions({
             {/* Logo Upload */}
             <div className="space-y-2">
               <FormLabel>Logo</FormLabel>
-              <DisabledFieldWrapper
-                disabled={!brandPerms.canUpdate}
+              <PermissionTooltip
+                hasPermission={brandPerms.canUpdate || !disabledFieldTooltip}
                 tooltip={disabledFieldTooltip}
+                className="flex w-full cursor-not-allowed"
               >
                 <FileDropZone
                   onFile={handleLogoUpload}
@@ -432,7 +396,7 @@ export function BrandDialogWithPermissions({
                     </div>
                   </div>
                 </FileDropZone>
-              </DisabledFieldWrapper>
+              </PermissionTooltip>
             </div>
 
             {/* Code */}
@@ -447,14 +411,16 @@ export function BrandDialogWithPermissions({
                       <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
                     )}
                   </FormLabel>
-                  <DisabledFieldWrapper
-                    disabled={isNavFieldReadOnly}
+                  <PermissionTooltip
+                    hasPermission={!isNavFieldReadOnly}
                     tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
+                    className="flex w-full cursor-not-allowed"
                   >
                     <FormControl>
                       <Input
                         placeholder="es. nike-2024"
                         disabled={isLoading || isNavFieldReadOnly}
+                        className="disabled:pointer-events-none"
                         {...field}
                         onChange={e => {
                           field.onChange(e);
@@ -463,7 +429,7 @@ export function BrandDialogWithPermissions({
                         }}
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                   {codePreview && codePreview !== field.value && (
                     <p className="text-xs text-muted-foreground">
                       Verrà salvato come: <strong>{codePreview}</strong>
@@ -486,18 +452,20 @@ export function BrandDialogWithPermissions({
                       <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
                     )}
                   </FormLabel>
-                  <DisabledFieldWrapper
-                    disabled={isNavFieldReadOnly}
+                  <PermissionTooltip
+                    hasPermission={!isNavFieldReadOnly}
                     tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
+                    className="flex w-full cursor-not-allowed"
                   >
                     <FormControl>
                       <Input
                         placeholder="es. Nike, Adidas"
                         disabled={isLoading || isNavFieldReadOnly}
+                        className="disabled:pointer-events-none"
                         {...field}
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                   <FormMessage />
                 </FormItem>
               )}
@@ -524,14 +492,18 @@ export function BrandDialogWithPermissions({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Collega a NAV</FormLabel>
-                    <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                    <PermissionTooltip
+                      hasPermission={!isFormDisabled}
+                      tooltip={disabledFieldTooltip}
+                      className="flex w-full cursor-not-allowed"
+                    >
                       <Select
                         value={field.value ?? '__none__'}
                         onValueChange={v => field.onChange(v === '__none__' ? null : v)}
                         disabled={isFormDisabled || isLoading}
                       >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="disabled:pointer-events-none">
                             <SelectValue placeholder="Nessun collegamento NAV" />
                           </SelectTrigger>
                         </FormControl>
@@ -544,7 +516,7 @@ export function BrandDialogWithPermissions({
                           ))}
                         </SelectContent>
                       </Select>
-                    </DisabledFieldWrapper>
+                    </PermissionTooltip>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -563,18 +535,20 @@ export function BrandDialogWithPermissions({
                       Il brand sarà disponibile per la selezione
                     </p>
                   </div>
-                  <DisabledFieldWrapper
-                    disabled={isFormDisabled}
+                  <PermissionTooltip
+                    hasPermission={!isFormDisabled}
                     tooltip={disabledFieldTooltip}
+                    className="cursor-not-allowed"
                   >
                     <FormControl>
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
                         disabled={isLoading || isFormDisabled}
+                        className="disabled:pointer-events-none"
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                 </FormItem>
               )}
             />
