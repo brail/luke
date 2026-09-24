@@ -569,9 +569,9 @@ export const usersCoreRouter = router({
               // recovery flow trusts `email`, and `requireEmailVerification`
               // gates on this column, so carrying the old timestamp over would
               // leave the account verified for an address nobody proved.
-              // `me.ts:172`, `me.ts:227` and `users.admin.router.ts:475` already
-              // do this on the self-service paths; this was the one cross-user
-              // path that did not.
+              // `me.update` and `me.changeEmail` already do this on the
+              // self-service paths; this was the one cross-user path that did
+              // not.
               ...(updateData.email !== undefined && updateData.email !== existingUser.email
                 ? { emailVerifiedAt: null }
                 : {}),

@@ -257,7 +257,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `sectionAccess.*` | Per-user RBAC section visibility (user-level override) |
 | `storage.*` | File upload, FileObject confirmation, presigned download URLs |
 | `system.*` | System information and manual calendar digest trigger |
-| `users.*` | User management — merge of `core` (CRUD), `admin` (session revocation, email verification) and `preferences.*` |
+| `users.*` | User management — merge of `core` (CRUD), `admin` (pending LDAP user approval, session revocation, email-verification override, local-access bypass) and `preferences.*` |
 | `vendors.*` | Vendor management (CRUD, soft delete, closure periods) |
 <!-- luke-docs:end:trpc-routers -->
 

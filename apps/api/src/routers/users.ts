@@ -12,8 +12,9 @@ import { userPreferencesRouter } from './users.preferences.router';
 /**
  * Router for user management
  * Merge of:
- * - usersCoreRouter: list, getById, create, update, softDelete, hardDelete
- * - usersAdminRouter: revokeUserSessions, forceVerifyEmail, changeEmail
+ * - usersCoreRouter: user CRUD, soft/hard delete, heartbeat
+ * - usersAdminRouter: pending LDAP user approval, session revocation, email-verification
+ *   override, local-access bypass for LDAP/OIDC users
  * - userPreferencesRouter: preferences (menu collapsible states, etc)
  */
 export const usersRouter = t.mergeRouters(

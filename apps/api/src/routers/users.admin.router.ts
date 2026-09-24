@@ -1,6 +1,6 @@
 /**
- * Admin procedures for users
- * revokeUserSessions, forceVerifyEmail, forceLocalAccess, revokeLocalAccess, changeEmail
+ * Admin procedures for users: pending LDAP user approval, session revocation,
+ * email-verification override, and the local-access bypass for LDAP/OIDC users.
  */
 
 import { randomBytes } from 'crypto';
@@ -14,7 +14,7 @@ import { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { createResetToken, sendVerificationEmail } from '../lib/emailHelpers';
+import { createResetToken } from '../lib/emailHelpers';
 import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { hashPassword } from '../lib/password';
@@ -436,77 +436,5 @@ export const usersAdminRouter = router({
         success: true,
         message: `Accesso locale revocato per ${result.username}`,
       };
-    }),
-
-  /**
-   * Changes the current user's email, resets emailVerifiedAt, and sends a new verification email.
-   *
-   * @auth {users:update}
-   * @input {{ newEmail: string }}
-   * @output {{ success: true, message: string }}
-   */
-  changeEmail: protectedProcedure
-    .use(requirePermission('users:update'))
-    .use(withRateLimit('userMutations'))
-    .input(
-      z.object({
-        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const { newEmail } = input;
-      const userId = ctx.session.user.id;
-
-      // Verify email uniqueness
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email: newEmail, id: { not: userId } },
-      });
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Email già in uso',
-        });
-      }
-
-      // Update email + reset verification
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: { email: newEmail, emailVerifiedAt: null },
-      });
-
-      // Audit EMAIL_CHANGED (no PII)
-      await logAudit(ctx, {
-        action: 'EMAIL_CHANGED',
-        targetType: 'User',
-        targetId: userId,
-        result: 'SUCCESS',
-        metadata: {},
-      });
-
-      // Send verification using the DRY helper
-      try {
-        await sendVerificationEmail(
-          ctx.prisma,
-          {
-            userId,
-            reason: 'email_changed',
-            actorId: userId,
-          },
-          ctx
-        );
-
-        return {
-          success: true,
-          message:
-            'Email aggiornata. Controlla la nuova casella per verificarla.',
-        };
-      } catch {
-        return {
-          success: true,
-          message:
-            'Email aggiornata ma invio verifica fallito. Richiedi un nuovo link.',
-        };
-      }
     }),
 });

@@ -88,7 +88,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   users: {
     reason:
       'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); forceLocalAccess e revokeLocalAccess dalla spec sul bypass LDAP/OIDC (usersLocalAccess.integration.spec.ts); heartbeat e le preferenze menu no',
-    uncovered: 9,
+    uncovered: 8,
   },
   seasonCalendar: {
     reason:
