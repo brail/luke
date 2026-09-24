@@ -220,7 +220,7 @@ values in the environment table below, and no configuration file is read. Ration
 | Namespace | Description |
 |-----------|-------------|
 | `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
-| `auth.*` | Authentication, logout, password change, password reset, email verification |
+| `auth.*` | Login, API token refresh, password reset, email verification, LDAP pending-approval email flow |
 | `brand.*` | Brand management (CRUD, soft delete, logo upload) |
 | `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
 | `collectionCatalog.*` | Collection catalog items |

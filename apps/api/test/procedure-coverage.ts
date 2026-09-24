@@ -63,7 +63,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   auth: {
     reason:
       'login, refreshToken, confirmPasswordReset e requestPasswordReset coperte (rate limit, idempotenza, retrocessione di ruolo, policy password sul token di reset, catena di takeover SEC-A); il resto è flussi email, che richiedono SMTP reale',
-    uncovered: 8,
+    uncovered: 5,
   },
   brand: {
     reason:

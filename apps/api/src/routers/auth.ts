@@ -1,6 +1,8 @@
 /**
  * tRPC router for authentication
- * Handles login, logout, and session verification
+ * Handles login, API token refresh, password reset, email verification and the LDAP
+ * pending-approval email flow. Logout is NextAuth `signOut()` on the web side; revoking every
+ * session is `me.revokeAllSessions`.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -29,7 +31,6 @@ import {
 } from '../lib/trpc';
 import {
   authenticateUser,
-  logoutAllSessions,
   requestPasswordReset,
   confirmPasswordReset,
   requestEmailVerification,
@@ -72,43 +73,6 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       return await authenticateUser(ctx, input);
     }),
-
-  /**
-   * Logs out the current session; cookie removal is handled by NextAuth on the web layer.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {{ success: true, message: string }}
-   */
-  logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
-    // Cookie API removed: Web handles logout via NextAuth signOut()
-    return { success: true, message: 'Logout effettuato con successo' };
-  }),
-
-  /**
-   * Invalidates all sessions for the current user by incrementing tokenVersion.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {Result from logoutAllSessions().}
-   */
-  logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
-    return await logoutAllSessions(ctx);
-  }),
-
-  /**
-   * Returns the current authenticated user's session info.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {{ user: SessionUser }} — user object from the current session.
-   */
-  me: protectedProcedure.query(async ({ ctx }) => {
-    // The session is already verified by the middleware
-    return {
-      user: ctx.session.user,
-    };
-  }),
 
   /**
    * Re-mints a fresh API access token for the current session.

@@ -380,51 +380,6 @@ export async function authenticateUser(
 }
 
 /**
- * Invalidates all active sessions for the current user by incrementing tokenVersion.
- *
- * @throws {TRPCError} UNAUTHORIZED if the caller is not authenticated.
- */
-export async function logoutAllSessions(ctx: Context) {
-  if (!ctx.session?.user) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Non autenticato',
-    });
-  }
-
-  const userId = ctx.session.user.id;
-
-  // Increment tokenVersion
-  await ctx.prisma.user.update({
-    where: { id: userId },
-    data: { tokenVersion: { increment: 1 } },
-  });
-
-  // Invalidate cache (dynamic import to avoid cycles if needed, or direct if lib/trpc is safe)
-  // Here we assume lib/trpc is importable. If it creates a cycle, better to move the cache logic.
-  // For now we import dynamically, as the router used to do, for safety.
-  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
-  invalidateTokenVersionCache(userId);
-
-  await logAudit(ctx, {
-    action: 'AUTH_LOGOUT_ALL',
-    targetType: 'Auth',
-    targetId: userId,
-    result: 'SUCCESS',
-    metadata: {
-      success: true,
-      reason: 'user_initiated',
-    },
-  });
-
-  return {
-    success: true,
-    message:
-      'Tutte le sessioni sono state revocate. Effettua nuovamente il login.',
-  };
-}
-
-/**
  * Sends a password reset email to the given address. Always returns a generic success
  * response to prevent email enumeration, even if the user does not exist.
  *

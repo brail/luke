@@ -187,8 +187,8 @@ Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @lu
 
 #### Logout & Revoca Sessioni
 
-- **Soft Logout**: `auth.logout` (solo clear cookie/session)
-- **Hard Logout**: `auth.logoutAll` + `me.revokeAllSessions` (incrementa `tokenVersion`)
+- **Soft Logout**: NextAuth `signOut()` on the web side (clears the session cookie; the API is not called)
+- **Hard Logout**: `me.revokeAllSessions` (increments `tokenVersion`)
 - **Revoca Admin**: Admin può revocare sessioni di altri utenti con invalidazione immediata
 - **Redirect Immediato**: Utente target viene logout automaticamente in < 1s
 
