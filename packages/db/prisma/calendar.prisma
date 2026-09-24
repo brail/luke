@@ -363,7 +363,8 @@ model HolidayCountry {
   /// ISO 3166-1 alpha-2 country code (PK).
   code   String  @id
   name   String
-  /// When false, this country is excluded from holiday sync and closure calculations.
+  /// Not read by any query today: an inactive country is still synced and still counts in closure
+  /// calculations. Whether to drop the column is an open decision.
   active Boolean @default(true)
 
   /// Public holidays defined for this country.

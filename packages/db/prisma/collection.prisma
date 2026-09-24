@@ -164,7 +164,7 @@ model CollectionRowQuotation {
 }
 
 /// Full history of phase transitions for a collection row — distinct from AuditLog, queried directly
-/// for plan-vs-actual KPIs (Fase 5/6). No unique on (rowId, phaseId): a row can regress or re-advance
+/// for plan-vs-actual KPIs. No unique on (rowId, phaseId): a row can regress or re-advance
 /// through phases, and every transition is recorded, not just the latest.
 model CollectionRowPhaseHistory {
   id               String              @id @default(uuid())

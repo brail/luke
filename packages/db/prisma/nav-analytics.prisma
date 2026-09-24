@@ -442,7 +442,8 @@ model NavPfDdtPicking {
 
 // ─── KIMO-FASHION Table Replicas ────────────────────────────────────────────
 // Prefix nav_kimo_ to distinguish them from nav_pf_* (portfolio).
-// Fed by nav-kimo-sync.ts (separate background scheduler).
+// Fed by syncKimoNow (packages/nav/src/sync/kimo.ts), run by its own background
+// scheduler (apps/api/src/lib/kimoSyncScheduler.ts).
 // Sync state shared with nav_pf_sync_state (same schema, prefix nav_kimo_).
 
 /// Read-only replica of [Company$KIMO-FASHION Sales Order Hdr] from NAV. Incrementally synced via rowversion.
