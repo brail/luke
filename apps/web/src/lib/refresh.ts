@@ -11,8 +11,9 @@ import { trpc } from './trpc';
  * @example
  * ```typescript
  * const refresh = useRefresh();
+ * const updateProfileMutation = trpc.me.updateProfile.useMutation();
  * const { mutate } = useStandardMutation({
- *   mutateFn: trpc.me.updateProfile.mutateAsync,
+ *   mutateFn: updateProfileMutation.mutateAsync,
  *   invalidate: refresh.me,
  * });
  * ```

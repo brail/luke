@@ -83,7 +83,7 @@ export function SectionHeader({ title }: { title: string }) {
 /**
  * Fixed-height label for the compact Pianificazione fields. Forces phase and
  * planning-group labels to the same height so the two selects below them align
- * even when the phase label carries criticality/variance badges. Shared so the
+ * even when the phase label carries the criticality badge. Shared so the
  * height can't drift between the fields.
  */
 const PLANNING_FIELD_LABEL = 'flex h-6 items-center';
@@ -400,7 +400,7 @@ interface PlanningSectionProps {
   onRequestChangePlanningGroup?: () => void;
   /** Edit mode only — opens the "Cambia fase" confirmation dialog instead of editing inline. */
   onRequestChangePhase?: () => void;
-  /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
+  /** Present only in edit mode — enables the criticality badge next to the phase field. */
   rowId?: string;
   /** Valorizzato = riga conclusa: fase e gruppo si bloccano finché non viene riaperta. */
   completedAt?: Date | string | null;
@@ -410,9 +410,8 @@ interface PlanningSectionProps {
 
 /**
  * Planning/status band shown full-width above the identity grid: planning group
- * and phase, with the criticality and scheduling-variance badges those two
- * fields drive. Kept apart from the identity fields so process/status reads at
- * a glance.
+ * and phase, with the criticality badge those two fields drive. Kept apart from
+ * the identity fields so process/status reads at a glance.
  *
  * Ospita anche il controllo di conclusione: è lo stato che blocca proprio i due campi qui sotto,
  * quindi sta accanto a loro invece che nell'header del drawer (dove collideva con la X di chiusura,

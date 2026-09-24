@@ -39,7 +39,8 @@ interface PermissionTooltipProps {
  * the span never sees the hover and the tooltip is keyboard-only — the same defect in a new place.
  * `PermissionButton` gets this for free: `buttonVariants` already carries the class.
  *
- * @param hasPermission - Boolean prop from `usePermission` — do NOT call as a function.
+ * @param hasPermission - Whether the user holds the permission, a boolean such as
+ *   `can('resource:action')` from `usePermission` — not the `can` function itself.
  * @param tooltip - Message shown when `hasPermission` is false.
  * @param className - Extra classes for the wrapper span, which is `inline-flex` by default. It
  *   applies only in the denied branch — the permitted branch has no span — so use it to neutralise

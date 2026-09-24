@@ -92,9 +92,6 @@ interface Props {
   onDeleted?: () => void;
 }
 
-// TODO(Fase5): motore alert avrà bisogno dello stesso calcolo di scostamento lato server —
-// se estratto in helper condiviso, mantenere identica la semantica di arrotondamento (daysBetween).
-/** Days elapsed between the frozen baseline start and the current start, or null if not frozen / unchanged. */
 interface EventFormData {
   title: string;
   description: string;
@@ -161,6 +158,7 @@ const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | u
   reason: 'reason',
 };
 
+/** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
 function describeBaselineDrift(event: ExistingEvent): string | null {
   if (!event.baselineStartAt) return null;
   const diff = daysBetween(new Date(event.baselineStartAt), new Date(event.startAt));

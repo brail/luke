@@ -15,7 +15,7 @@ import type { LockTarget, WizardLockSession } from '../useWizardLock';
  *   translation from the layout query's `status` ('pending' | 'error' | 'success') and what it
  *   resolved to into `LockTarget[] | null`. `null` for anything but a settled success is the whole
  *   fix: it is what stops the wizard from acquiring an incomplete — or unknown — set instead of
- *   waiting. `PlanningWizard.browser.test.tsx` proves the same distinction end to end, including
+ *   waiting. `planningWizardReadiness.browser.test.tsx` proves the same distinction end to end, including
  *   the query-error case this file's pure tests cover in isolation.
  * - `useWizardLock` — given that `null | LockTarget[]` sequence, acquires exactly once, only once
  *   the set is complete, and keeps renew/release pinned to what was actually granted.
@@ -413,9 +413,9 @@ describe('useWizardLock — acquisition, renewal and release lifecycle', () => {
   });
 
   test('ordering B — cleanup runs before acquisition resolves: the cancelled continuation releases the just-granted set once', async () => {
-    // A cleanup that only read `acquiredTargetsRef.current` would miss this ordering: the ref is
+    // A cleanup that only read `grantedRef.current` would miss this ordering: the ref is
     // still null when cleanup runs, since acquisition hasn't populated it yet. The async
-    // continuation's own `cancelled` check is what catches the grant once it lands late.
+    // continuation's own `obsolete` check is what catches the grant once it lands late.
     const grant = deferred<ReturnType<typeof lockRecord>>();
     acquireManyMock.mockImplementationOnce(() => grant.promise);
 
@@ -424,7 +424,7 @@ describe('useWizardLock — acquisition, renewal and release lifecycle', () => {
     await vi.waitFor(() => expect(acquireManyMock).toHaveBeenCalledTimes(1));
     await hook.unmount();
 
-    // Nothing to release yet — the grant hasn't arrived, and acquiredTargetsRef was never set.
+    // Nothing to release yet — the grant hasn't arrived, and grantedRef was never set.
     expect(releaseMock).not.toHaveBeenCalled();
 
     // The server responds after the caller has already left.

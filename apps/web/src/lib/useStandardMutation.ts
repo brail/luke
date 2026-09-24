@@ -5,7 +5,7 @@ import { getTrpcErrorMessage } from './trpcErrorMessages';
 
 /** Options for `useStandardMutation`. */
 type Options<TInput, TResult> = {
-  /** The async mutation function to execute (e.g. `trpc.entity.create.mutateAsync`). */
+  /** The async mutation function to execute (e.g. the `mutateAsync` of `trpc.entity.create.useMutation()`). */
   mutateFn: (input: TInput) => Promise<TResult>;
 
   /** Called after a successful mutation to invalidate related React Query caches. */
@@ -30,34 +30,35 @@ type Options<TInput, TResult> = {
 /**
  * Standardized mutation hook implementing the DRY pattern.
  *
- * Eliminates `onSuccess`/`onError`/`toast`/`invalidate` duplication by providing
- * a uniform wrapper for every mutation in the application.
+ * Wraps a tRPC mutation with cache invalidation and optional success/error toasts, so the
+ * call site doesn't repeat the `onSuccess`/`onError`/`toast`/`invalidate` boilerplate.
+ * Opt-in: most mutations in the application call `.useMutation()` directly.
  *
  * @example
  * ```typescript
  * const refresh = useRefresh();
+ * const saveConfigMutation = trpc.storage.saveConfig.useMutation();
  *
- * const { mutate, isPending } = useStandardMutation({
- *   mutateFn: trpc.me.updateProfile.mutateAsync,
- *   invalidate: refresh.me,
- *   onSuccessMessage: 'Profilo aggiornato con successo',
- *   onErrorMessage: 'Errore durante l\'aggiornamento',
+ * const { mutate: saveConfig, isPending } = useStandardMutation({
+ *   mutateFn: saveConfigMutation.mutateAsync,
+ *   invalidate: refresh.storageConfig,
+ *   onSuccessMessage: 'Storage configuration saved',
+ *   onErrorMessage: 'Error while saving',
  * });
  *
  * // Usage
- * await mutate({ firstName: 'Mario', lastName: 'Rossi' });
+ * await saveConfig(values);
  * ```
  *
  * @example With custom callbacks
  * ```typescript
- * const { mutate, isPending } = useStandardMutation({
- *   mutateFn: trpc.users.create.mutateAsync,
+ * const rejectMutation = trpc.users.rejectPending.useMutation();
+ *
+ * const { mutate: reject } = useStandardMutation({
+ *   mutateFn: rejectMutation.mutateAsync,
  *   invalidate: refresh.users,
- *   onSuccessMessage: 'Utente creato',
- *   onSuccess: (data) => {
- *     setDialogOpen(false);
- *     router.push(`/users/${data.id}`);
- *   },
+ *   onSuccessMessage: 'User rejected',
+ *   onSuccess: () => setRejectTarget(null),
  * });
  * ```
  */

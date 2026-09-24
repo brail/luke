@@ -65,7 +65,8 @@ function TooltipWrapped({
  * State 2 is opt-in because a wrapper the caller did not ask for is a tab stop the caller did not
  * ask for. A button with a visible label has nothing to explain and stays in state 3.
  *
- * @param hasPermission - Boolean prop from `usePermission` — do NOT call as a function.
+ * @param hasPermission - Whether the user holds the permission, a boolean such as
+ *   `can('resource:action')` from `usePermission` — not the `can` function itself.
  * @param tooltip - Message shown when `hasPermission` is false.
  * @param infoTooltip - Label shown when the permission is there; names the action for an
  *   icon-only button. Omit it for a button whose text already says what it does.
