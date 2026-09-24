@@ -14,11 +14,11 @@ env:
   REGISTRY: ghcr.io
   API_IMAGE: ghcr.io/brail/luke-api
   WEB_IMAGE: ghcr.io/brail/luke-web
-  PNPM_VERSION: '10.32.1'
   # The two lines a release may come from. `main` is permanent; the release
   # train is the temporary branch of the current cycle and changes with it —
-  # the same per-cycle edit already required by the `branches` lists in ci.yml
-  # and security.yml (CLAUDE.md, "When switching develop branch").
+  # one of the per-cycle edits, with the `branches` lists in ci.yml and
+  # security.yml's own RELEASE_TRAIN_BRANCH (CLAUDE.md, "When switching develop
+  # branch"; enforced by `pnpm check:workflows`).
   STABLE_BRANCH: main
   RELEASE_TRAIN_BRANCH: develop-2.2
 
@@ -102,10 +102,10 @@ jobs:
             --rev "$GATE_SHA"
 
   # ── Gate: no image unless CI is green ────────────────────────────────────────
-  # Reuses ci.yml instead of duplicating its steps: lint, typecheck,
-  # typecheck:test, unit tests, integration and migrations. None of them is
-  # continue-on-error — since the quarantine was emptied, `integration` blocks
-  # the tag as well.
+  # Reuses ci.yml instead of duplicating its steps: every ci.yml job, the same
+  # set its `CI gate` aggregates. None of them is continue-on-error
+  # (tools/scripts/check-workflow-paths.ts refuses the key), so each one blocks
+  # the tag.
   verify:
     name: Verify
     needs: provenance

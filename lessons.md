@@ -486,9 +486,7 @@ proposing a backport onto a `develop-*` branch, check with
 aligned or abandoned after merge: a branch stuck at an old merge commit is
 stale by default, not the other way around. The dead branch should then be
 deleted (local + remote) as soon as its successor is cut — see CLAUDE.md §
-Versioning & Release for the steps (update `branches` in
-`ci.yml`/`security.yml`, delete the previous one; `dependabot.yml` isn't
-involved, it always targets the default `main`).
+Versioning & Release for the steps.
 
 ---
 

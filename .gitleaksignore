@@ -1,14 +1,16 @@
-# Falsi positivi verificati in Fase 0 (TASK_static_analysis.md) — nessun secret reale.
-# Formato: <commit>:<file>:<rule-id>:<line> (fingerprint gitleaks)
+# Verified false positives — no real secret.
+# Format: <commit>:<file>:<rule-id>:<line> (gitleaks fingerprint)
+# Fingerprints are commit-pinned and `security:secrets` scans the full history,
+# so an entry stays even after its file is changed or deleted.
 
-# CLAUDE.md — prosa documentale ("auth, RBAC/section...") matcha generic-api-key
+# CLAUDE.md — documentation prose ("auth, RBAC/section...") matches generic-api-key
 539b3a8cfe371f791093b7e1bcc098846c2619d4:CLAUDE.md:generic-api-key:9
 17b2bb58eaed47cbf914a9546f442df87862da89:CLAUDE.md:generic-api-key:404
 
-# settings/google/page.tsx — placeholder JSX di esempio, mai una chiave reale
+# settings/google/page.tsx — example JSX placeholder, never a real key
 3555997218bba72ba2fb69aa2e4f6ac97604c3cb:apps/web/src/app/(app)/settings/google/page.tsx:private-key:330
 
-# API_SETUP.md — "Bearer YOUR_TOKEN" letterale nella doc, non un token reale
+# API_SETUP.md (deleted, historical) — literal "Bearer YOUR_TOKEN" in the docs, not a real token
 d39a83dfe21ba7b1cc844475e6e329c022a7d74f:API_SETUP.md:curl-auth-header:770
 d39a83dfe21ba7b1cc844475e6e329c022a7d74f:API_SETUP.md:curl-auth-header:777
 d39a83dfe21ba7b1cc844475e6e329c022a7d74f:API_SETUP.md:curl-auth-header:788
@@ -19,5 +21,5 @@ d39a83dfe21ba7b1cc844475e6e329c022a7d74f:API_SETUP.md:curl-auth-header:795
 18645d246ed6abf7f99a2fe591696a227896c789:API_SETUP.md:curl-auth-header:265
 18645d246ed6abf7f99a2fe591696a227896c789:API_SETUP.md:curl-auth-header:303
 
-# apps/api/test/setup.ts — fixture di test, valore fisso non sensibile
+# apps/api/test/setup.ts (value since removed, historical) — fixed test fixture, not sensitive
 bfd9219b7734fc620be956efa48890e907037d5e:apps/api/test/setup.ts:generic-api-key:12

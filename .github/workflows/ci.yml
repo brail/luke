@@ -28,17 +28,16 @@ on:
   pull_request:
     branches: [main, develop-2.2]
     types: [opened, synchronize, reopened, edited]
-  # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
-  # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
-  # prima di costruire le immagini.
+  # Callable from release.yml: a tag fires neither the push nor the pull_request
+  # trigger, so without this there would be no CI run to depend on before the
+  # images are built.
   workflow_call:
 
 jobs:
-  # Lint, typecheck e unit test stanno insieme perché condividono esattamente lo
-  # stesso ambiente e nessuno dei tre ha bisogno di un database. Separarli
-  # costava un secondo setup completo (checkout + install + prisma generate) per
-  # guadagnare un parallelismo che `pnpm test` — cache turbo, nessun servizio —
-  # non giustifica.
+  # Lint, typecheck and unit tests share one job because they need exactly the
+  # same environment and none of them needs a database. Splitting them cost a
+  # second full setup (checkout + install + prisma generate) to buy parallelism
+  # that `pnpm test` — turbo cache, no services — does not justify.
   checks:
     name: Lint, TypeCheck & Unit Tests
     runs-on: ubuntu-latest
@@ -52,8 +51,8 @@ jobs:
       - name: TypeCheck
         run: pnpm typecheck
 
-      # I file sotto test/ non rientrano in tsconfig.json (rootDir: src).
-      # Senza questo step il codice di test può marcire a livello di tipi senza segnalazione.
+      # Files under test/ are outside tsconfig.json (rootDir: src). Without this
+      # step, test code could rot at the type level without anything reporting it.
       - name: TypeCheck (test)
         run: pnpm typecheck:test
 
@@ -80,10 +79,9 @@ jobs:
       - name: Control-plane tests
         run: pnpm test:tools
 
-      # Skill e documentazione affermano fatti sulla codebase (path, simboli,
-      # link) che possono driftare in silenzio: `luke-test` ha istruito per mesi
-      # ad aggiungere le spec a un file eliminato. Qui quei fatti diventano
-      # bloccanti.
+      # Skills and docs state facts about the codebase (paths, symbols, links)
+      # that can drift silently: for months `luke-test` told readers to add specs
+      # to a deleted file. Here those facts become blocking.
       - name: Docs & skills drift
         run: pnpm check:drift
 
@@ -233,13 +231,13 @@ jobs:
           PGPASSWORD=luke_migrate psql -h localhost -U luke -d luke_migrate \
             -c 'CREATE DATABASE luke_shadow;'
 
-      # Stesso comando di entrypoint.sh in produzione: se fallisce qui,
-      # sarebbe fallito al deploy.
+      # Same command as entrypoint.sh in production: if it fails here, it would
+      # have failed at deploy.
       - name: Apply migrations from scratch
         run: pnpm --filter @luke/db exec prisma migrate deploy
 
-      # I file .prisma e prisma/migrations/ possono divergere silenziosamente.
-      # --exit-code: 0 nessuna differenza, 2 drift rilevato.
+      # The .prisma files and prisma/migrations/ can diverge silently.
+      # --exit-code: 0 no difference, 2 drift detected.
       - name: Schema drift check
         run: |
           pnpm --filter @luke/db exec prisma migrate diff \
@@ -247,12 +245,10 @@ jobs:
             --to-schema ./prisma \
             --exit-code
 
-  # The aggregate gate: the stable candidate context for `main`'s ruleset,
-  # which today still requires the individual job names and cannot keep that
-  # list in step with this file. The switch is a separate remote change, made
-  # once a real train PR has produced this context successfully; until then
-  # this job reports like any other. Its `needs` is what will let one name
-  # stand for all of them, and tools/scripts/check-workflow-paths.ts pins that
+  # The aggregate gate: the one context `main`'s ruleset requires in place of
+  # the individual job names, a list it could not keep in step with this file.
+  # Its `needs` is what lets one name stand for all of them, and
+  # tools/scripts/check-workflow-paths.ts pins that
   # list to ci.yml's own jobs, along with the rest of this job.
   #
   # `always()` is what makes it a gate rather than a passenger: without it a

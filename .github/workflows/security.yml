@@ -25,7 +25,7 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
   schedule:
-    - cron: '0 6 * * 1' # lunedì 06:00 UTC
+    - cron: '0 6 * * 1' # Monday 06:00 UTC
   workflow_dispatch:
 
 env:
@@ -44,16 +44,16 @@ jobs:
       - name: Install semgrep (OSS, LGPL-2.1)
         run: pip install semgrep
 
-      - name: Semgrep - community ruleset (bloccante)
+      - name: Semgrep - community ruleset (blocking)
         run: semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error
 
-      # Directory intera filtrata per severità: una regola ERROR nuova entra da
-      # sola in tutti i gate, senza modifiche sincronizzate qui, in
-      # `security:sast` e in `.husky/pre-commit`.
-      - name: Semgrep - regole custom ERROR-tier (bloccante)
+      # The whole directory, filtered by severity: a new ERROR rule joins every
+      # gate on its own, with no synchronised edit here, in `security:sast` and
+      # in `.husky/pre-commit`.
+      - name: Semgrep - custom ERROR-tier rules (blocking)
         run: semgrep scan --config .semgrep/rules/ --severity ERROR --error
 
-      - name: Semgrep - luke-mutation-requires-permission (WARNING, non bloccante)
+      - name: Semgrep - luke-mutation-requires-permission (WARNING, non-blocking)
         run: semgrep scan --config .semgrep/rules/mutation-requires-permission.yml
 
   gitleaks:
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
 
-      - name: Install gitleaks (CLI OSS/MIT — non gitleaks-action, che richiede licenza commerciale)
+      - name: Install gitleaks (OSS/MIT CLI — not gitleaks-action, which requires a commercial license)
         run: |
           curl -sSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
           tar -xzf gitleaks.tar.gz gitleaks
@@ -96,9 +96,8 @@ jobs:
   # The same aggregate as ci.yml's `CI gate` — see there for why it runs
   # `always()`, why it counts its arguments before looping, and why `shell:` is
   # spelled out. One context standing for the three scans above, so the ruleset
-  # on `main` can require a single name instead of a list it cannot keep in
-  # step with this file; the switch is a separate remote change, made once a
-  # real pull request has produced this context.
+  # on `main` requires a single name instead of a list it could not keep in
+  # step with this file.
   #
   # The extra `schedule` clause is this gate's own: it keeps the job off the
   # weekly run, where all three dependencies are skipped by design and
@@ -155,15 +154,14 @@ jobs:
           ref: ${{ env.RELEASE_TRAIN_BRANCH }}
       - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
 
-  # `contains(needs.*.result, 'failure')` ignora gli skip: i job push-only sono
-  # 'skipped' (non 'failure') sui trigger schedule, e viceversa, quindi questo
-  # gate si comporta correttamente su entrambi i trigger. `if: always()` è
-  # necessario perché senza, un job 'skipped' tra i needs farebbe skippare
-  # anche questo. Dedup via ricerca issue aperta con label `security-ci-failure`
-  # — un'unica issue aggiornata a commenti finché qualcuno non la chiude,
-  # niente spam a ogni run settimanale che continua a fallire. Canale scelto:
-  # GitHub Issue, perché non esiste uno Slack/webhook nel repo — niente nuovo
-  # secret da gestire.
+  # `contains(needs.*.result, 'failure')` ignores skips: the push-only jobs are
+  # 'skipped' (not 'failure') on schedule triggers, and vice versa, so this job
+  # behaves correctly on both. `if: always()` is needed because without it a
+  # 'skipped' job among the needs would skip this one too. Deduplicated by
+  # searching for an open issue labelled `security-ci-failure` — one issue,
+  # updated with comments until someone closes it, instead of spam on every
+  # weekly run that keeps failing. Channel: a GitHub Issue, because the repo
+  # has no Slack/webhook — no new secret to manage.
   # Not on pull requests: there `Security gate` is the signal, reported on the
   # PR itself, and an issue per failed candidate would be noise nobody closes.
   notify-on-failure:
