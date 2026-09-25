@@ -6,6 +6,20 @@
 import { z } from 'zod';
 
 /**
+ * Supported LDAP authentication strategies — the one list the `auth.strategy` AppConfig schema,
+ * the LDAP config schemas below and the API's config reader all derive from.
+ * `local-first` tries local credentials before LDAP; `ldap-only` disables local login entirely.
+ */
+export const LDAP_STRATEGIES = [
+  'local-first',
+  'ldap-first',
+  'local-only',
+  'ldap-only',
+] as const;
+
+export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];
+
+/**
  * Input schema for saving LDAP configuration.
  * `roleMapping` must be a valid JSON string mapping LDAP group names to Luke role names.
  */
@@ -37,7 +51,7 @@ export const ldapConfigSchema = z.object({
       },
       { message: 'Role Mapping deve essere un JSON valido' }
     ),
-  strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
+  strategy: z.enum(LDAP_STRATEGIES),
 });
 
 /**
@@ -54,7 +68,7 @@ export const ldapConfigResponseSchema = z.object({
   groupSearchBase: z.string(),
   groupSearchFilter: z.string(),
   roleMapping: z.string(), // JSON string
-  strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
+  strategy: z.enum(LDAP_STRATEGIES),
 });
 
 /** Input schema for testing LDAP user search by username. */
@@ -102,16 +116,3 @@ export type LdapConnectionTestResponse = z.infer<
   typeof ldapConnectionTestResponseSchema
 >;
 export type LdapOperationResponse = z.infer<typeof ldapOperationResponseSchema>;
-
-/**
- * Supported LDAP authentication strategies. Must match the `auth.strategy` AppConfig value.
- * `local-first` tries local credentials before LDAP; `ldap-only` disables local login entirely.
- */
-export const LDAP_STRATEGIES = [
-  'local-first',
-  'ldap-first',
-  'local-only',
-  'ldap-only',
-] as const;
-
-export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];

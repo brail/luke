@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { Permission } from '@luke/core';
+import type { LockEntityType } from '@luke/db';
 
 import { can } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -15,14 +16,29 @@ import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.ser
 
 import type { Context } from '../lib/trpc';
 
-const LockEntityTypeSchema = z.enum(['SEASON_CALENDAR', 'COLLECTION_LAYOUT']);
+// Bound to the Prisma enum: an entry the enum does not have fails to compile.
+const LOCK_ENTITY_TYPES = ['SEASON_CALENDAR', 'COLLECTION_LAYOUT'] as const satisfies readonly LockEntityType[];
+const LockEntityTypeSchema = z.enum(LOCK_ENTITY_TYPES);
 const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.string().uuid() });
 const AcquireManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 const ReleaseManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 
-/** SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout update rights. */
-function permissionFor(entityType: z.infer<typeof LockEntityTypeSchema>): Permission {
-  return entityType === 'SEASON_CALENDAR' ? 'season_calendar:update' : 'collection_layout:update';
+/**
+ * SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout
+ * update rights. Exhaustive over the Prisma enum: a new lock type fails to compile here instead of
+ * silently inheriting one of these permissions.
+ */
+function permissionFor(entityType: LockEntityType): Permission {
+  switch (entityType) {
+    case 'SEASON_CALENDAR':
+      return 'season_calendar:update';
+    case 'COLLECTION_LAYOUT':
+      return 'collection_layout:update';
+    default: {
+      const unhandled: never = entityType;
+      throw new Error(`Unhandled lock entity type: ${String(unhandled)}`);
+    }
+  }
 }
 
 /**

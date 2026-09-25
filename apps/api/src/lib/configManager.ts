@@ -22,6 +22,7 @@ import {
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
+  type LdapStrategy,
   Roles,
 } from '@luke/core';
 import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
@@ -49,7 +50,7 @@ export interface LdapConfig {
   groupSearchBase: string;
   groupSearchFilter: string;
   roleMapping: Record<string, string>;
-  strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
+  strategy: LdapStrategy;
 }
 
 // Exported for reuse by other AES-256-GCM modules (e.g. apps/api/src/lib/backup/crypto.ts)

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import { LDAP_STRATEGIES } from './ldap.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 
 /**
@@ -57,7 +58,7 @@ export const AppConfigRegistry = {
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
+  'auth.strategy':                       z.enum(LDAP_STRATEGIES),
   'auth.requireEmailVerification':       booleanConfigSchema,
   'auth.nextAuthSecret':                 z.string().min(32),
 
