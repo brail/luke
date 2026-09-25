@@ -98,7 +98,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   integrations: {
     reason:
       'solo saveLdapConfig; tutto il resto parla con sistemi esterni reali (NAV via mssql, Google OAuth, SMTP, storage S3) e serve un layer di fake prima di poter testare',
-    uncovered: 26,
+    uncovered: 24,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────

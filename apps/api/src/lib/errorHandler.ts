@@ -182,7 +182,7 @@ export class SecureLogger {
 }
 
 /**
- * Factory helpers for common integration error scenarios (SMTP, storage, config).
+ * Factory helpers for integration error scenarios (currently SMTP).
  */
 export class IntegrationErrorHandler {
   static handleSMTPError(error: unknown): StandardError {
@@ -192,30 +192,6 @@ export class IntegrationErrorHandler {
       {
         originalError: error instanceof Error ? error.message : String(error),
         type: 'smtp_connection_failed',
-      }
-    );
-  }
-
-  static handleStorageError(provider: string, error: unknown): StandardError {
-    return createStandardError(
-      ErrorCode.STORAGE_ERROR,
-      `Errore connessione storage ${provider}`,
-      {
-        provider,
-        originalError: error instanceof Error ? error.message : String(error),
-        type: 'storage_connection_failed',
-      }
-    );
-  }
-
-  static handleConfigError(key: string, error: unknown): StandardError {
-    return createStandardError(
-      ErrorCode.CONFIG_ERROR,
-      `Errore salvataggio configurazione ${key}`,
-      {
-        configKey: key,
-        originalError: error instanceof Error ? error.message : String(error),
-        type: 'config_save_failed',
       }
     );
   }

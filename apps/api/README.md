@@ -239,7 +239,6 @@ values in the environment table below, and no configuration file is read. Ration
 | `integrations.importExport.*` | Data import and export |
 | `integrations.mail.*` | SMTP configuration and test email delivery |
 | `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
-| `integrations.storage.*` | Storage provider configuration (local / S3) |
 | `maintenance.backup.*` | Backup and restore of the application database |
 | `maintenance.mode.*` | Maintenance mode (write lock, user-facing banner) |
 | `me.*` | Current user profile, active sessions, session revocation |
@@ -372,10 +371,9 @@ The storage factory in `src/storage/index.ts` implements local filesystem and
 S3-compatible storage. `SambaStorageProvider` and `GDriveStorageProvider` are
 unimplemented extension ideas, not available providers.
 
-The legacy `storage.smb` and `storage.drive` AppConfig keys have registered Zod
-schemas and can be saved through `integrations.storage.saveConfig` with
-`config:update` permission. No storage provider or current web UI consumes
-those configurations. `integrations.storage.testConnection` requires
-`config:read` but returns placeholder success without contacting either
-service; its result does not establish connectivity. This scaffold dates to
-October 2025 (`e38fd81d`) and does not constitute a working integration.
+The legacy `storage.smb` and `storage.drive` AppConfig keys still have
+registered Zod schemas. No dedicated procedure writes them any more, though the
+generic `config.*` write procedures still accept them (`storage` is an allowed
+prefix and both keys are registered), and no storage provider or web UI reads
+them. Storage configuration (local / S3) goes through
+`storage.getConfig`/`saveConfig`.
