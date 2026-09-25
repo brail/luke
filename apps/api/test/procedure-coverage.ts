@@ -77,8 +77,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   config: {
     reason:
-      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; list, exportJson e delete dalla spec sulla riga la cui chiave è uscita dal registry; restano le letture singole e multiple, setMultiple e update',
-    uncovered: 4,
+      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; list, exportJson e delete dalla spec sulla riga la cui chiave è uscita dal registry; restano le letture multiple, setMultiple e update',
+    uncovered: 3,
   },
   me: {
     reason:
@@ -137,7 +137,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   merchandisingPlan: {
     reason:
       'nessun test scritto: piano, righe, specsheet, componenti e immagini sono tutti scoperti',
-    uncovered: 14,
+    uncovered: 13,
   },
   notifications: {
     reason: 'nessun test scritto, incluse le preferenze e il ticket SSE',

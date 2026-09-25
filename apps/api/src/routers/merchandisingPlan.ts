@@ -384,48 +384,6 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Adds an image to a specsheet. The first image added is automatically set as default.
-   *
-   * @auth merchandising_plan:update
-   * @input { specsheetId, key, caption? }
-   * @output The created MerchandisingImage
-   */
-  addImage: protectedProcedure
-    .use(requirePermission('merchandising_plan:update'))
-    .use(withRateLimit('configMutations'))
-    .input(
-      z.object({
-        specsheetId: z.string().uuid(),
-        key: z.string(),
-        caption: z.string().optional().nullable(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const result = await ctx.prisma.$transaction(async tx => {
-        const existingCount = await tx.merchandisingImage.count({
-          where: { specsheetId: input.specsheetId },
-        });
-        return tx.merchandisingImage.create({
-          data: {
-            specsheetId: input.specsheetId,
-            key: input.key,
-            isDefault: existingCount === 0,
-            order: existingCount,
-            caption: input.caption ?? null,
-          },
-        });
-      });
-      await logAudit(ctx, {
-        action: 'MERCHANDISING_IMAGE_ADD',
-        targetType: 'MerchandisingSpecsheet',
-        targetId: input.specsheetId,
-        result: 'SUCCESS',
-        metadata: { imageId: result.id },
-      });
-      return result;
-    }),
-
-  /**
    * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted.
    *
    * @auth merchandising_plan:update

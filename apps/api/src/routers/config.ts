@@ -110,14 +110,6 @@ function redact(value: string | null, max: number = 32): string | null {
 }
 
 /**
- * Schema for retrieving a configuration
- */
-const GetConfigSchema = z.object({
-  key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
-  decrypt: z.boolean().optional().default(false),
-});
-
-/**
  * Schema for setting a configuration
  */
 const SetConfigSchema = z.object({
@@ -169,7 +161,7 @@ const ListConfigsSchema = z.object({
  * Schema for viewing a configuration value in a safe mode
  *
  * @example
- * // Masked mode (any authenticated user)
+ * // Masked mode (requires config:read — admin only today)
  * { key: "auth.ldap.password", mode: "masked" }
  *
  * @example
@@ -181,7 +173,7 @@ const ViewValueSchema = z.object({
   key: z.string().min(1),
   /**
    * Display mode:
-   * - 'masked': encrypted values show [ENCRYPTED], available to all authenticated users
+   * - 'masked': encrypted values show [ENCRYPTED]; requires config:read (admin only today)
    * - 'raw': decrypts encrypted values, requires admin role and generates a mandatory audit log
    */
   mode: z.enum(['masked', 'raw']).default('masked'),
@@ -290,7 +282,8 @@ async function upsertConfig(
 
 export const configRouter = router({
   /**
-   * Lists AppConfig entries with pagination, filtering by key prefix, category, and encryption status.
+   * Lists AppConfig entries with pagination: search by key substring, filter by category (key prefix)
+   * and encryption status.
    *
    * @auth {config:read}
    * @input {ListConfigsSchema} — q, category, isEncrypted, sortBy, sortDir, page, pageSize.
@@ -310,51 +303,6 @@ export const configRouter = router({
         pageSize: input.pageSize,
       });
     }),
-
-  /**
-   * Fetches a single AppConfig value by key; decrypt=true requires admin role.
-   *
-   * @auth {config:read; admin required for decrypt=true}
-   * @input {GetConfigSchema} — key, optional decrypt flag.
-   * @output {{ key, value, isEncrypted }} — value is [ENCRYPTED] if encrypted and not decrypted.
-   */
-  get: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(GetConfigSchema)
-    .query(async ({ input, ctx }) => {
-    // If decrypt=true, verifies that the user is admin
-    if (input.decrypt && ctx.session?.user?.role !== 'admin') {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Accesso negato: richiesto ruolo admin per decrittare valori',
-      });
-    }
-
-    const config = await ctx.prisma.appConfig.findUnique({
-      where: { key: input.key },
-    });
-
-    if (!config) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Configurazione '${input.key}' non trovata`,
-      });
-    }
-
-    let finalValue = config.value;
-    if (input.decrypt && config.isEncrypted) {
-      const { decryptValue } = await import('../lib/configManager.js');
-      finalValue = decryptValue(config.value);
-    } else if (!input.decrypt && config.isEncrypted) {
-      finalValue = '[ENCRYPTED]';
-    }
-
-    return {
-      key: input.key,
-      value: finalValue,
-      isEncrypted: config.isEncrypted,
-    };
-  }),
 
   /**
    * Views a config value in masked or raw mode; raw mode requires admin and generates an audit log.
