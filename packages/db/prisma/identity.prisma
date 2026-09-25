@@ -152,13 +152,13 @@ model UserToken {
   @@map("user_tokens")
 }
 
-/// Per-user override for section visibility. Takes precedence over role defaults and AppConfig in the 4-level access evaluation.
+/// Per-user override for section visibility. For a leaf section it takes precedence over role defaults and AppConfig in the 4-level access evaluation; a row on a parent section is inert, since parents are derived from their children (ADR-025).
 model UserSectionAccess {
   id        String   @id @default(uuid())
   /// FK to User. Cascade delete: overrides are removed when the user is deleted.
   userId    String
-  /// Dot-notation section key (e.g. 'settings', 'maintenance'). Must match sectionEnum.
-  section   String // 'settings' | 'maintenance'
+  /// Dot-notation section key (e.g. 'settings.users', 'maintenance.backup'). Must match sectionEnum.
+  section   String // e.g. 'settings.users' | 'maintenance.backup'
   /// true = explicitly allow access; false = explicitly deny access.
   enabled   Boolean // true=allow, false=deny
   createdAt DateTime @default(now())

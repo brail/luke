@@ -1,7 +1,8 @@
 /**
  * tRPC middleware for section-level access control.
- * Enforces the four-tier precedence: kill switch > user override > role default > RBAC permission.
- * Delegates evaluation to `effectiveSectionAccess` from @luke/core.
+ * Delegates evaluation to `effectiveSectionAccess` from @luke/core: the four-tier precedence
+ * (kill switch > user override > role default > RBAC permission) for leaf sections, and parent
+ * sections derived from their children (ADR-025).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -12,13 +13,12 @@ import {
 } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 
-import { getOverride } from '../services/sectionAccess.service';
+import { listOverridesForUser } from '../services/sectionAccess.service';
 
 import { t } from './t';
 
 /**
- * Creates a tRPC middleware that guards a named section.
- * Precedence: kill switch > user override > role default > RBAC permission fallback.
+ * Creates a tRPC middleware that guards a named section, resolved by `effectiveSectionAccess`.
  *
  * @param section - Section identifier to protect (e.g. `'product.pricing'`).
  * @returns tRPC middleware that throws `FORBIDDEN` when access is denied.
@@ -34,40 +34,22 @@ export function withSectionAccess(section: Section) {
 
     const user = ctx.session.user;
 
-    // Fetch override and RBAC config in parallel (disabledSections lives inside rbacConfig)
-    const [override, rbacConfig] = await Promise.all([
-      getOverride(ctx.prisma, user.id, section).catch(() => null),
+    // The whole override map, not the one row for `section`: a parent section is derived from
+    // its children (ADR-025). No `.catch(() => null)` on the read: an unreadable override must
+    // fail the request, not silently fall through to the role default and widen access.
+    const [overrides, rbacConfig] = await Promise.all([
+      listOverridesForUser(ctx.prisma, user.id),
       getRbacConfig(ctx.prisma),
     ]);
-    const { disabledSections } = rbacConfig;
 
-    // 1. Kill switch: if the section is globally disabled, deny access
-    if (disabledSections.includes(section)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: `Sezione ${section} temporaneamente disabilitata`,
-      });
-    }
-
-    // 2. User override: if the user has a specific override, honor it
-    if (override) {
-      if (!override.enabled) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: `Accesso negato alla sezione ${section} (override utente)`,
-        });
-      }
-      // If the override is enabled, proceed without further checks
-      return next();
-    }
-
-    // 3. effectiveSectionAccess evaluates: role defaults → RBAC permission fallback
+    // One resolver, the core's: this middleware used to re-implement the kill switch and the
+    // override levels inline, a second copy that would now disagree with derived parents.
     const allowed = effectiveSectionAccess({
       role: user.role,
       sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
-      userOverride: undefined, // Already checked above
+      userOverrides: new Map(overrides.map(o => [o.section, o.enabled])),
       section,
-      disabledSections,
+      disabledSections: rbacConfig.disabledSections,
     });
 
     if (!allowed) {

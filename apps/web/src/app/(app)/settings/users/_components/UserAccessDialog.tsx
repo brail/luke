@@ -15,14 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { Label } from '../../../../../components/ui/label';
-import { Switch } from '../../../../../components/ui/switch';
+import { leafOverridesOnly } from '../../../../../lib/sectionTree';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
+import { SectionAccessList } from './SectionAccessList';
 import {
   ALL_SECTIONS,
-  SECTION_LABELS,
   type SectionOverrideMap,
   type UserListItem,
 } from './types';
@@ -65,39 +64,12 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
     serverSectionOverrides?.forEach(o => {
       if (o.enabled !== null) sectionMap[o.section] = o.enabled;
     });
-    setPendingSection(sectionMap);
+    setPendingSection(leafOverridesOnly(sectionMap));
     setIsDirty(false);
   }, [open, loadingSection, serverSectionOverrides]);
 
   const getRoleDefault = (section: Section): boolean =>
     sectionDefaults?.computedRoleDefaults?.[user.role]?.[section] ?? false;
-
-  const getSectionValue = (section: Section): boolean => {
-    if (section in pendingSection) return pendingSection[section]!;
-    return getRoleDefault(section);
-  };
-
-  const handleSectionToggle = (section: Section, checked: boolean) => {
-    setPendingSection(prev => {
-      const next = { ...prev };
-      if (checked === getRoleDefault(section)) {
-        delete next[section];
-      } else {
-        next[section] = checked;
-      }
-      return next;
-    });
-    setIsDirty(true);
-  };
-
-  const handleSectionReset = (section: Section) => {
-    setPendingSection(prev => {
-      const next = { ...prev };
-      delete next[section];
-      return next;
-    });
-    setIsDirty(true);
-  };
 
   const setSectionMutation = trpc.sectionAccess.set.useMutation();
   const [isSaving, setIsSaving] = useState(false);
@@ -131,7 +103,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
         const fresh = await utils.sectionAccess.getByUser.fetch({ userId: user.id });
         const sectionMap: SectionOverrideMap = {};
         fresh?.forEach(o => { if (o.enabled !== null) sectionMap[o.section as Section] = o.enabled!; });
-        setPendingSection(sectionMap);
+        setPendingSection(leafOverridesOnly(sectionMap));
         toast.error(`${failures.length} sezione/i non aggiornata/e`);
         return;
       }
@@ -173,45 +145,15 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
             {/* Section overrides */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
-              <div className="space-y-2">
-                {ALL_SECTIONS.map(section => {
-                  const isOverridden = section in pendingSection;
-                  const effectiveValue = getSectionValue(section);
-                  const roleDefault = getRoleDefault(section);
-
-                  return (
-                    <div key={section} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={`section-${section}`} className="text-sm font-normal">
-                          {SECTION_LABELS[section]}
-                        </Label>
-                        <span className="text-xs text-muted-foreground">
-                          {isOverridden
-                            ? '(override)'
-                            : `(default: ${roleDefault ? 'sì' : 'no'})`}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          id={`section-${section}`}
-                          checked={effectiveValue}
-                          onCheckedChange={checked => handleSectionToggle(section, checked)}
-                        />
-                        {isOverridden && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-1 text-xs text-muted-foreground"
-                            onClick={() => handleSectionReset(section)}
-                          >
-                            Reset
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <SectionAccessList
+                overrides={pendingSection}
+                onChange={next => {
+                  setPendingSection(next);
+                  setIsDirty(true);
+                }}
+                roleDefault={getRoleDefault}
+                disabledSections={sectionDefaults?.disabledSections ?? []}
+              />
             </div>
 
             {/* Brand access info */}

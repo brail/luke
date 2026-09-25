@@ -52,6 +52,8 @@ export type Section = z.infer<typeof sectionEnum>;
 /**
  * Maps each section key to the `Resource:Action` permission required to access it.
  * Single source of truth shared between API and Web. Do not duplicate this mapping.
+ * Only leaf entries are consulted: a parent section is derived from its children (ADR-025),
+ * and its entry is kept because the map is exhaustive over `sectionEnum`.
  */
 export const SECTION_TO_PERMISSION: Record<Section, string> = {
   dashboard: 'dashboard:read',
@@ -91,6 +93,8 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
 /**
  * Static default section visibility per role.
  * `true` = visible by default; `false` = hidden (requires an admin override to enable).
+ * Parent entries do not decide access — a parent is derived from its children (ADR-025) — but
+ * they must equal that derived value, which `sectionHierarchy.test.ts` pins for every role.
  *
  * This is the version-controlled source of truth — it does not live in the database.
  * Per-user overrides are layered on top at runtime by `effectiveSectionAccess`.

@@ -24,8 +24,10 @@ import {
   type LdapResilienceConfig,
   Roles,
 } from '@luke/core';
-import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
+import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
 import type { BackupScope, Prisma, PrismaClient } from '@luke/db';
+
+import { countRecoveryCapableAdmins } from '../services/sectionAccess.service';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
@@ -122,11 +124,18 @@ const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
 /**
  * `app.sections.disabled` is the RBAC kill switch: it beats every other
  * access layer, including the admin `*:*` fallback (see
- * `effectiveSectionAccess`). Disabling `'settings'` while an admin exists
- * would lock everyone — admins included — out of the only in-app place to
- * undo it. Guarded here, the single chokepoint every write to this key goes
- * through (generic `config.set`/`config.update`, gated only by the
- * editor-shared `config:update` permission — no admin check upstream).
+ * `effectiveSectionAccess`). A list that leaves no admin able to reach user
+ * administration would lock everyone — admins included — out of the only
+ * in-app place to undo it. Guarded here, the single chokepoint every write to
+ * this key goes through (generic `config.set`/`config.update`, gated only by
+ * the editor-shared `config:update` permission — no admin check upstream).
+ *
+ * The guard asks that question directly, through the same recovery count the
+ * other last-admin guards use, rather than looking for `'settings'` in the
+ * list: disabling `settings.users` alone locks administration out too, and so
+ * does disabling every `settings.*` child, since a parent is derived from its
+ * children (ADR-025). A list that does not make things worse is accepted, so
+ * a system with no recovery-capable admin (a fresh install) stays writable.
  */
 async function saveSectionsDisabledGuarded(
   prisma: PrismaClient,
@@ -140,16 +149,19 @@ async function saveSectionsDisabledGuarded(
     // `string[]` would need a cast. A second parse of a ten-element array is the cheaper price.
     const disabled = parseConfigValue('app.sections.disabled', rawValue);
 
-    if (disabled.includes('settings')) {
-      await acquireLastAdminLock(tx);
-      const adminCount = await tx.user.count({ where: { role: 'admin', isActive: true } });
-      if (adminCount > 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            "Questa configurazione disabiliterebbe Settings per tutti, admin inclusi — nessun modo di annullarla dall'app.",
-        });
-      }
+    // Lock before reading, like every other writer of the last-admin invariant.
+    await acquireLastAdminLock(tx);
+    const { sectionAccessDefaults, disabledSections: current } = await getRbacConfig(tx, {
+      bypassCache: true,
+    });
+    const before = await countRecoveryCapableAdmins(tx, sectionAccessDefaults, current);
+    const after = await countRecoveryCapableAdmins(tx, sectionAccessDefaults, disabled);
+    if (before > 0 && after === 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message:
+          "Questa configurazione toglierebbe a tutti gli amministratori l'accesso alla gestione utenti — nessun modo di annullarla dall'app.",
+      });
     }
 
     await tx.appConfig.upsert({

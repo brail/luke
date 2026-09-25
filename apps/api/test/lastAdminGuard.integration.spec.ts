@@ -68,9 +68,13 @@ describe('lastAdminGuard — enforcement reale', () => {
    * section maps to `users:read`: whoever loses it can no longer create or
    * promote anyone, so it's the same lockout as `settings`, through another
    * door. Found by testing manually on RC, not by a test.
+   *
+   * Only `settings.users` is exercised: `settings` is derived from its children (ADR-025), so
+   * `set` refuses to switch it at all, and the way to take it from a user is to take its
+   * children — `settings.users` among them.
    */
   describe('sezioni di recupero', () => {
-    it.each(['settings', 'settings.users'] as const)(
+    it.each(['settings.users'] as const)(
       "togliere '%s' all'unico admin è rifiutato",
       async section => {
         const { user: admin, session } = await createTestUser('admin');
@@ -85,7 +89,7 @@ describe('lastAdminGuard — enforcement reale', () => {
       }
     );
 
-    it.each(['settings', 'settings.users'] as const)(
+    it.each(['settings.users'] as const)(
       "togliere '%s' a un admin è consentito se ne resta un altro",
       async section => {
         const { user: target, session } = await createTestUser('admin');

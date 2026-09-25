@@ -13,10 +13,11 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
+import { SECTION_ACCESS_DEFAULTS, childSectionsOf } from '@luke/core';
 import type { Role, Section } from '@luke/core';
+import { invalidateRbacCache } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
@@ -86,7 +87,7 @@ describe('sectionAccess — permessi delle procedure', () => {
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       await expect(
-        caller.set({ userId: target.id, section: 'settings', enabled: false })
+        caller.set({ userId: target.id, section: 'settings.users', enabled: false })
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
       await expect(
@@ -113,10 +114,10 @@ describe('sectionAccess — override per utente', () => {
     const { user: target } = await createTestUser('viewer');
     const caller = callerFor(adminSession);
 
-    await caller.set({ userId: target.id, section: 'product', enabled: true });
+    await caller.set({ userId: target.id, section: 'product.pricing', enabled: true });
 
     await expect(caller.getByUser({ userId: target.id })).resolves.toEqual([
-      { section: 'product', enabled: true },
+      { section: 'product.pricing', enabled: true },
     ]);
   });
 
@@ -125,10 +126,10 @@ describe('sectionAccess — override per utente', () => {
     const { user: target } = await createTestUser('viewer');
     const caller = callerFor(adminSession);
 
-    await caller.set({ userId: target.id, section: 'product', enabled: false });
+    await caller.set({ userId: target.id, section: 'product.pricing', enabled: false });
     const removed = await caller.set({
       userId: target.id,
-      section: 'product',
+      section: 'product.pricing',
       enabled: null,
     });
 
@@ -144,7 +145,7 @@ describe('sectionAccess — override per utente', () => {
     const { user: other } = await createTestUser('viewer');
     const admin = callerFor(adminSession);
 
-    await admin.set({ userId: other.id, section: 'product', enabled: true });
+    await admin.set({ userId: other.id, section: 'product.pricing', enabled: true });
 
     await expect(admin.getForMe()).resolves.toEqual([]);
   });
@@ -225,14 +226,33 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('setRoleDefaults rifiuta anche la revoca di settings', async () => {
+  it('setRoleDefaults refuses switching off every settings child for admins', async () => {
+    // `settings` is derived from its children (ADR-025): taking it from the admin role means
+    // taking every `settings.*` child, which takes `settings.users` with it.
     const { session } = await createTestUser('admin');
+    const allSettingsOff = Object.fromEntries(
+      childSectionsOf('settings').map(child => [child, 'disabled' as const])
+    );
 
     await expect(
       callerFor(session).setRoleDefaults({
-        sectionAccessDefaults: defaultsFor({ admin: { settings: 'disabled' } }),
+        sectionAccessDefaults: defaultsFor({ admin: allSettingsOff }),
       })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('a parent value in the role defaults no longer governs access (ADR-025)', async () => {
+    // Still accepted — the per-role map stays exhaustive over `sectionEnum` (ADR-025) — but
+    // ignored: `settings` follows its children, which stay enabled for the admin role.
+    const { session } = await createTestUser('admin');
+    const caller = callerFor(session);
+
+    await expect(
+      caller.setRoleDefaults({
+        sectionAccessDefaults: defaultsFor({ admin: { settings: 'disabled' } }),
+      })
+    ).resolves.toEqual({ success: true });
+    expect((await caller.getEffectiveForMe()).settings).toBe(true);
   });
 
   it('setRoleDefaults accetta una config che lascia gli admin operativi', async () => {
@@ -250,10 +270,10 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
     const { session: viewerSession } = await createTestUser('viewer');
 
     const before = await callerFor(viewerSession).getEffectiveForMe();
-    expect(before.product).toBe(true);
+    expect(before['product.pricing']).toBe(true);
 
     await callerFor(session).setRoleDefaults({
-      sectionAccessDefaults: defaultsFor({ viewer: { product: 'disabled' } }),
+      sectionAccessDefaults: defaultsFor({ viewer: { 'product.pricing': 'disabled' } }),
     });
 
     // `invalidateRbacCache()` is an explicit CLAUDE.md rule after every
@@ -261,7 +281,7 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
     // old value until the cache expires — and the defect would only show up in
     // production, as a change that "doesn't take".
     const after = await callerFor(viewerSession).getEffectiveForMe();
-    expect(after.product).toBe(false);
+    expect(after['product.pricing']).toBe(false);
   });
 });
 
@@ -359,7 +379,7 @@ describe('sectionAccess — validazione input', () => {
     await expect(
       callerFor(session).set({
         userId: ghost,
-        section: 'product',
+        section: 'product.pricing',
         enabled: true,
       })
     ).rejects.toThrow();
@@ -367,5 +387,110 @@ describe('sectionAccess — validazione input', () => {
     await expect(
       prisma.userSectionAccess.count({ where: { userId: ghost } })
     ).resolves.toBe(0);
+  });
+});
+
+describe('sectionAccess — parent sections are derived from their children (ADR-025)', () => {
+  // `config.set` on the kill switch invalidates the RBAC cache, but truncating the tables between
+  // tests does not: without this, a list written here would outlive its test in the 60 s cache.
+  afterEach(() => {
+    invalidateRbacCache();
+  });
+
+  it('turns the parent on for a viewer given only one child', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: viewer, session: viewerSession } = await createTestUser('viewer');
+
+    await callerFor(adminSession).set({ userId: viewer.id, section: 'admin.brands', enabled: true });
+
+    const effective = await callerFor(viewerSession).getEffectiveForMe();
+    expect(effective['admin.brands']).toBe(true);
+    // What the `/admin` layout checks: before ADR-025 this stayed false and bounced the viewer.
+    expect(effective.admin).toBe(true);
+    expect(effective['admin.seasons']).toBe(false);
+  });
+
+  it('turns the parent off when every child is switched off, whatever the role default says', async () => {
+    const { session: adminSession, user: admin } = await createTestUser('admin');
+    await createTestUser('admin'); // a second way out, so the recovery guard stays quiet
+    const caller = callerFor(adminSession);
+
+    for (const child of childSectionsOf('product')) {
+      await caller.set({ userId: admin.id, section: child, enabled: false });
+    }
+
+    const effective = await caller.getEffectiveForMe();
+    expect(effective.product).toBe(false);
+  });
+
+  it('refuses to switch a parent section and still accepts null to clear an old row', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { user: viewer } = await createTestUser('viewer');
+    const caller = callerFor(adminSession);
+
+    for (const enabled of [true, false]) {
+      await expect(
+        caller.set({ userId: viewer.id, section: 'admin', enabled })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    }
+    await expect(prisma.userSectionAccess.count({ where: { userId: viewer.id } })).resolves.toBe(0);
+
+    // A row written before ADR-025 is meaningless now; `null` must still be able to remove it.
+    await prisma.userSectionAccess.create({
+      data: { userId: viewer.id, section: 'admin', enabled: true },
+    });
+    await expect(
+      caller.set({ userId: viewer.id, section: 'admin', enabled: null })
+    ).resolves.toBeNull();
+    await expect(prisma.userSectionAccess.count({ where: { userId: viewer.id } })).resolves.toBe(0);
+  });
+
+  it('follows the derived parent in the section middleware', async () => {
+    // `storage.getConfig` is gated on `withSectionAccess('settings')`. With every settings child
+    // off, the derived `settings` is off too, whatever the admin role default says.
+    const { session: adminSession, user: admin } = await createTestUser('admin');
+    await createTestUser('admin');
+    const caller = createCallerWithSession(adminSession);
+
+    await expect(caller.storage.getConfig()).resolves.toBeDefined();
+
+    for (const child of childSectionsOf('settings')) {
+      await caller.sectionAccess.set({ userId: admin.id, section: child, enabled: false });
+    }
+    await expect(caller.storage.getConfig()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  });
+
+  describe('kill switch (app.sections.disabled)', () => {
+    async function writeKillSwitch(session: UserSession, sections: string[]) {
+      return createCallerWithSession(session).config.set({
+        key: 'app.sections.disabled',
+        value: JSON.stringify(sections),
+        encrypt: false,
+      });
+    }
+
+    it('refuses a list that switches off every settings child', async () => {
+      const { session } = await createTestUser('admin');
+      await expect(
+        writeKillSwitch(session, [...childSectionsOf('settings')])
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('refuses a list that switches off settings.users alone', async () => {
+      // Before ADR-025 the guard only looked for `'settings'` in the list, so this passed and
+      // locked every admin out of user administration.
+      const { session } = await createTestUser('admin');
+      await expect(writeKillSwitch(session, ['settings.users'])).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+    });
+
+    it('accepts switching off every sales child, which hides sales as well', async () => {
+      const { session } = await createTestUser('admin');
+      await writeKillSwitch(session, [...childSectionsOf('sales')]);
+
+      const effective = await callerFor(session).getEffectiveForMe();
+      expect(effective.sales).toBe(false);
+    });
   });
 });

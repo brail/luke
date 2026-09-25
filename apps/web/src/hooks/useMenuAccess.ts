@@ -6,10 +6,10 @@ import { useSectionAccess } from './useSectionAccess';
 
 /**
  * Returns the sidebar visibility map for the current user, derived from
- * `useSectionAccess`. Parent sections (settings, maintenance, admin) act as
- * master switches: a sub-item is visible only when both the parent section and
- * its own sub-section are enabled. A parent dropdown is shown only when at
- * least one of its sub-items is visible.
+ * `useSectionAccess`. A sub-item is visible when its own sub-section is enabled;
+ * the `parent &&` term below is redundant but harmless, since a parent section is
+ * derived from its children (ADR-025). A parent dropdown is shown when at least
+ * one of its sub-items is visible.
  *
  * @returns Object with boolean flags for each sidebar entry and grouped
  *   sub-item maps (`settingsItems`, `maintenanceItems`, `adminItems`, `productItems`,

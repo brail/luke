@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { sectionEnum, Roles } from '@luke/core';
+import { childSectionsOf, sectionEnum, Roles } from '@luke/core';
 import type { Section } from '@luke/core';
 import { getRbacConfig, invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server';
 
@@ -157,6 +157,8 @@ export const sectionAccessRouter = router({
 
   /**
    * Sets a section access override for a user; blocks removal of settings access from the last admin.
+   * A parent section is derived from its children (ADR-025): switching it on or off is refused, and
+   * `null` is still accepted, so an override stored before ADR-025 can be removed.
    *
    * @auth {admin}
    * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
@@ -167,6 +169,13 @@ export const sectionAccessRouter = router({
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       const { userId, section, enabled } = input;
+
+      if (enabled !== null && childSectionsOf(section).length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `La sezione ${section} dipende dalle sue sottosezioni: abilita o disabilita quelle.`,
+        });
+      }
 
       const result = await ctx.prisma.$transaction(async tx => {
         // Safety check: prevent removing settings access from the last

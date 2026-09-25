@@ -22,13 +22,17 @@ describe('Section Access Overrides', () => {
     // always has an entry for a known role and the permission fallback is reached only
     // through an explicit `'auto'`. The production no-row and malformed-row paths are
     // covered in `sectionAccess.integration.spec.ts`.
+    //
+    // The four levels govern **leaf** sections; a parent is derived from its children (ADR-025,
+    // covered in `packages/core/src/rbac/__tests__/sectionHierarchy.test.ts`). The leaf here is
+    // `settings.storage`, whose permission fallback (`config:read`) grants the admin and denies
+    // the editor and the viewer — the same split `settings` had before parents were derived.
     it('should allow access when override is enabled=true', () => {
       const result = effectiveSectionAccess({
         role: 'viewer',
-
         sectionAccessDefaults: {},
-        userOverride: { enabled: true },
-        section: 'settings',
+        userOverrides: new Map([['settings.storage', true]]),
+        section: 'settings.storage',
       });
 
       expect(result).toBe(true);
@@ -37,10 +41,9 @@ describe('Section Access Overrides', () => {
     it('should deny access when override is enabled=false', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-
         sectionAccessDefaults: {},
-        userOverride: { enabled: false },
-        section: 'settings',
+        userOverrides: new Map([['settings.storage', false]]),
+        section: 'settings.storage',
       });
 
       expect(result).toBe(false);
@@ -49,53 +52,33 @@ describe('Section Access Overrides', () => {
     it('falls back to role permissions when the defaults map has no entry for the section', () => {
       // The empty map is passed directly; it does not represent "no AppConfig row"
       // (see the note above this describe block).
-      // Admin has access to settings
-      const adminResult = effectiveSectionAccess({
-        role: 'admin',
+      const resolve = (role: string) =>
+        effectiveSectionAccess({
+          role,
+          sectionAccessDefaults: {},
+          userOverrides: undefined,
+          section: 'settings.storage',
+        });
 
-        sectionAccessDefaults: {},
-        userOverride: undefined,
-        section: 'settings',
-      });
-      expect(adminResult).toBe(true);
-
-      // Viewer has no access to settings
-      const viewerResult = effectiveSectionAccess({
-        role: 'viewer',
-
-        sectionAccessDefaults: {},
-        userOverride: undefined,
-        section: 'settings',
-      });
-      expect(viewerResult).toBe(false);
-
-      // Editor has no access to settings: the section is admin-only by design
-      // (`SECTION_ACCESS_DEFAULTS.editor.settings === false`, no `settings:*`
-      // grant in the role). With empty defaults the RBAC fallback denies.
-      const editorResult = effectiveSectionAccess({
-        role: 'editor',
-
-        sectionAccessDefaults: {},
-        userOverride: undefined,
-        section: 'settings',
-      });
-      expect(editorResult).toBe(false);
+      expect(resolve('admin')).toBe(true);
+      expect(resolve('viewer')).toBe(false);
+      // No `config:read` in the editor role: the fallback denies.
+      expect(resolve('editor')).toBe(false);
     });
 
     it("resolves an explicit 'auto' role default through the RBAC permission fallback", () => {
-      // `sales` is the discriminator: the static table denies it to a viewer while the
-      // permission fallback grants it, so `true` can only have come from layer 3 — a
-      // static answer would be `false`. Asserting the table first means that if the
-      // default ever changes, this test reports a dead discriminator instead of passing
-      // for the wrong reason. `sales` is one of the sections named in the 32 measured
-      // divergences recorded in `packages/core/src/server/rbacConfig.ts`.
-      expect(SECTION_ACCESS_DEFAULTS.viewer.sales).toBe(false);
+      // `sales.statistics` is the discriminator: the static table denies it to a viewer while
+      // the permission fallback (`sales:read`) grants it, so `true` can only have come from
+      // layer 3 — a static answer would be `false`. Asserting the table first means that if
+      // the default ever changes, this test reports a dead discriminator instead of passing
+      // for the wrong reason.
+      expect(SECTION_ACCESS_DEFAULTS.viewer['sales.statistics']).toBe(false);
 
       const auto = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { sales: 'auto' } },
-        userOverride: undefined,
-        section: 'sales',
+        sectionAccessDefaults: { viewer: { 'sales.statistics': 'auto' } },
+        userOverrides: undefined,
+        section: 'sales.statistics',
       });
       expect(auto).toBe(true);
 
@@ -103,9 +86,9 @@ describe('Section Access Overrides', () => {
       // fallback, which is what makes 'auto' the only route to it.
       const disabled = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { sales: 'disabled' } },
-        userOverride: undefined,
-        section: 'sales',
+        sectionAccessDefaults: { viewer: { 'sales.statistics': 'disabled' } },
+        userOverrides: undefined,
+        section: 'sales.statistics',
       });
       expect(disabled).toBe(false);
     });
@@ -118,9 +101,9 @@ describe('Section Access Overrides', () => {
       // merged base always carries the three known roles.
       const result = effectiveSectionAccess({
         role: 'auditor',
-        sectionAccessDefaults: { viewer: { sales: 'disabled' } },
-        userOverride: undefined,
-        section: 'sales',
+        sectionAccessDefaults: { viewer: { 'sales.statistics': 'disabled' } },
+        userOverrides: undefined,
+        section: 'sales.statistics',
       });
       expect(result).toBe(false);
     });
@@ -129,20 +112,18 @@ describe('Section Access Overrides', () => {
       // Deny override should always deny
       const denyResult = effectiveSectionAccess({
         role: 'admin',
-
         sectionAccessDefaults: {},
-        userOverride: { enabled: false },
-        section: 'settings',
+        userOverrides: new Map([['settings.storage', false]]),
+        section: 'settings.storage',
       });
       expect(denyResult).toBe(false);
 
       // Allow override should always allow
       const allowResult = effectiveSectionAccess({
         role: 'viewer',
-
         sectionAccessDefaults: {},
-        userOverride: { enabled: true },
-        section: 'settings',
+        userOverrides: new Map([['settings.storage', true]]),
+        section: 'settings.storage',
       });
       expect(allowResult).toBe(true);
     });
@@ -150,10 +131,20 @@ describe('Section Access Overrides', () => {
     it('should deny access when section is globally disabled', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-
         sectionAccessDefaults: {},
-        userOverride: undefined,
-        section: 'settings',
+        userOverrides: undefined,
+        section: 'settings.storage',
+        disabledSections: ['settings.storage'],
+      });
+      expect(result).toBe(false);
+    });
+
+    it('should deny access when the parent section is globally disabled', () => {
+      const result = effectiveSectionAccess({
+        role: 'admin',
+        sectionAccessDefaults: {},
+        userOverrides: new Map([['settings.storage', true]]),
+        section: 'settings.storage',
         disabledSections: ['settings'],
       });
       expect(result).toBe(false);
@@ -162,11 +153,10 @@ describe('Section Access Overrides', () => {
     it('should allow access when section is not globally disabled', () => {
       const result = effectiveSectionAccess({
         role: 'admin',
-
         sectionAccessDefaults: {},
-        userOverride: undefined,
-        section: 'settings',
-        disabledSections: ['maintenance'], // settings not disabled
+        userOverrides: undefined,
+        section: 'settings.storage',
+        disabledSections: ['maintenance'], // settings.storage not disabled
       });
       expect(result).toBe(true);
     });
@@ -191,25 +181,34 @@ describe('Section Access Overrides', () => {
       expect(count).toBe(1);
     });
 
-    it('non conta un admin a cui manca una sola sezione di recupero', async () => {
-      const { countRecoveryCapableAdmins, ADMIN_RECOVERY_SECTIONS } =
-        await import('../src/services/sectionAccess.service');
+    it('does not count an admin who lost settings.users', async () => {
+      const { countRecoveryCapableAdmins } = await import('../src/services/sectionAccess.service');
 
-      // The recovery surface is a conjunction: losing just one is enough.
-      // The real case that motivated the fix is `settings.users` — whoever loses it
-      // can no longer create or promote, even while keeping `settings`.
-      for (const missing of ADMIN_RECOVERY_SECTIONS) {
-        const mockPrisma = {
-          user: {
-            findMany: async () => [
-              { sectionAccess: [{ section: missing, enabled: false }] },
-            ],
-          },
-        } as any;
+      // The real case that motivated the guard: whoever loses `settings.users` can no longer
+      // create or promote anyone, even while other settings pages stay reachable.
+      const mockPrisma = {
+        user: {
+          findMany: async () => [
+            { sectionAccess: [{ section: 'settings.users', enabled: false }] },
+          ],
+        },
+      } as any;
 
-        const count = await countRecoveryCapableAdmins(mockPrisma, {}, []);
-        expect(count, `senza ${missing}`).toBe(0);
-      }
+      expect(await countRecoveryCapableAdmins(mockPrisma, {}, [])).toBe(0);
+    });
+
+    it('ignores an override on the derived settings parent (ADR-025)', async () => {
+      const { countRecoveryCapableAdmins } = await import('../src/services/sectionAccess.service');
+
+      // `settings` is derived from its children: an override stored on it no longer switches
+      // anything off, so this admin — `settings.users` still on — remains a way out.
+      const mockPrisma = {
+        user: {
+          findMany: async () => [{ sectionAccess: [{ section: 'settings', enabled: false }] }],
+        },
+      } as any;
+
+      expect(await countRecoveryCapableAdmins(mockPrisma, {}, [])).toBe(1);
     });
   });
 
@@ -237,7 +236,7 @@ describe('Section Access Overrides', () => {
         },
         prisma: {
           userSectionAccess: {
-            findUnique: async () => null, // No override
+            findMany: async () => [], // No override
           },
           // `getRbacConfig` reads rbac.sectionAccessDefaults and app.sections.disabled:
           // no row → static defaults, no section disabled.

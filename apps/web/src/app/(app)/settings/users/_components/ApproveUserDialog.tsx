@@ -4,7 +4,6 @@ import { ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { SECTION_ACCESS_DEFAULTS } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
@@ -16,7 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { Label } from '../../../../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -24,15 +22,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../../components/ui/select';
-import { Switch } from '../../../../../components/ui/switch';
 import { trpc } from '../../../../../lib/trpc';
 
-import {
-  ALL_SECTIONS,
-  SECTION_LABELS,
-  type SectionOverrideMap,
-  type UserForApproval,
-} from './types';
+import { SectionAccessList } from './SectionAccessList';
+import { type SectionOverrideMap, type UserForApproval } from './types';
 
 // Keys in SectionOverrideMap are always valid Section values
 const toSection = (s: string) => s as Section;
@@ -66,33 +59,14 @@ export function ApproveUserDialog({
     { enabled: open && !!selectedFunctionId }
   );
 
+  // The runtime defaults (static table + AppConfig override), the same ones the server resolves
+  // with — not the static table alone, which ignores a per-role override stored in AppConfig.
+  const { data: sectionDefaults } = trpc.sectionAccess.getDefaults.useQuery(undefined, {
+    enabled: open,
+  });
+
   const getRoleDefault = (section: Section): boolean =>
-    SECTION_ACCESS_DEFAULTS[pendingRole]?.[section] ?? false;
-
-  const getSectionValue = (section: Section): boolean => {
-    if (section in pendingSection) return pendingSection[section]!;
-    return getRoleDefault(section);
-  };
-
-  const handleSectionToggle = (section: Section, checked: boolean) => {
-    setPendingSection(prev => {
-      const next = { ...prev };
-      if (checked === getRoleDefault(section)) {
-        delete next[section];
-      } else {
-        next[section] = checked;
-      }
-      return next;
-    });
-  };
-
-  const handleSectionReset = (section: Section) => {
-    setPendingSection(prev => {
-      const next = { ...prev };
-      delete next[section];
-      return next;
-    });
-  };
+    sectionDefaults?.computedRoleDefaults?.[pendingRole]?.[section] ?? false;
 
   const updateUserMutation = trpc.users.update.useMutation();
   const setSectionMutation = trpc.sectionAccess.set.useMutation();
@@ -172,53 +146,12 @@ export function ApproveUserDialog({
 
           <div>
             <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
-            <div className="space-y-2">
-              {ALL_SECTIONS.map(section => {
-                const isOverridden = section in pendingSection;
-                const effectiveValue = getSectionValue(section);
-                const roleDefault = getRoleDefault(section);
-
-                return (
-                  <div
-                    key={section}
-                    className="flex items-center justify-between py-1"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Label
-                        htmlFor={`section-${section}`}
-                        className="text-sm font-normal"
-                      >
-                        {SECTION_LABELS[section]}
-                      </Label>
-                      <span className="text-xs text-muted-foreground">
-                        {isOverridden
-                          ? '(override)'
-                          : `(default: ${roleDefault ? 'sì' : 'no'})`}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id={`section-${section}`}
-                        checked={effectiveValue}
-                        onCheckedChange={checked =>
-                          handleSectionToggle(section, checked)
-                        }
-                      />
-                      {isOverridden && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-1 text-xs text-muted-foreground"
-                          onClick={() => handleSectionReset(section)}
-                        >
-                          Reset
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <SectionAccessList
+              overrides={pendingSection}
+              onChange={setPendingSection}
+              roleDefault={getRoleDefault}
+              disabledSections={sectionDefaults?.disabledSections ?? []}
+            />
           </div>
 
           <div>

@@ -29,7 +29,7 @@ export async function getSectionDefaults(prisma: PrismaClient) {
       Object.fromEntries(
         ALL_SECTIONS.map(section => [
           section,
-          effectiveSectionAccess({ role, sectionAccessDefaults, userOverride: null, section, disabledSections }),
+          effectiveSectionAccess({ role, sectionAccessDefaults, userOverrides: null, section, disabledSections }),
         ])
       ),
     ])
@@ -40,7 +40,8 @@ export async function getSectionDefaults(prisma: PrismaClient) {
 
 /**
  * Computes effective section access for a user across all four evaluation layers
- * (kill switch → user override → role defaults → RBAC fallback).
+ * (kill switch → user override → role defaults → RBAC fallback), with parent sections
+ * derived from their children (ADR-025).
  *
  * @returns A map of every section to its resolved boolean access value.
  */
@@ -57,36 +58,17 @@ export async function computeEffectiveForUser(
   const overrideMap = new Map(overrides.map(o => [o.section, o.enabled]));
 
   return Object.fromEntries(
-    ALL_SECTIONS.map(section => {
-      const override = overrideMap.get(section);
-      return [
-        section,
-        effectiveSectionAccess({
-          role,
-          sectionAccessDefaults,
-          userOverride: override !== undefined ? { enabled: override } : null,
-          section,
-          disabledSections,
-        }),
-      ];
-    })
-  ) as Record<Section, boolean>;
-}
-
-/**
- * Returns the explicit section access override for a specific user and section, or null if none exists.
- */
-export async function getOverride(
-  prisma: PrismaClient,
-  userId: string,
-  section: Section
-) {
-  return prisma.userSectionAccess.findFirst({
-    where: {
-      userId,
+    ALL_SECTIONS.map(section => [
       section,
-    },
-  });
+      effectiveSectionAccess({
+        role,
+        sectionAccessDefaults,
+        userOverrides: overrideMap,
+        section,
+        disabledSections,
+      }),
+    ])
+  ) as Record<Section, boolean>;
 }
 
 /**
@@ -171,8 +153,12 @@ type SectionAccessDefaults = Record<
   Partial<Record<Section, 'auto' | 'enabled' | 'disabled'>>
 >;
 
-/** A user's per-section override, in the shape `effectiveSectionAccess` accepts. */
-type OverrideBySection = Map<string, { enabled: boolean }>;
+/**
+ * A user's per-section overrides, in the shape `effectiveSectionAccess` accepts. Only the
+ * recovery sections are loaded: `settings` is derived from its children (ADR-025), and an
+ * effective `settings.users` already makes it effective, so the conjunction needs no other row.
+ */
+type OverrideBySection = Map<string, boolean>;
 
 function hasEveryRecoverySection(
   overrides: OverrideBySection,
@@ -183,7 +169,7 @@ function hasEveryRecoverySection(
     effectiveSectionAccess({
       role: 'admin',
       sectionAccessDefaults,
-      userOverride: overrides.get(section) ?? null,
+      userOverrides: overrides,
       section,
       disabledSections,
     })
@@ -217,7 +203,7 @@ export async function countRecoveryCapableAdmins(
 
   return admins.filter(admin =>
     hasEveryRecoverySection(
-      new Map(admin.sectionAccess.map(a => [a.section, { enabled: a.enabled }])),
+      new Map(admin.sectionAccess.map(a => [a.section, a.enabled])),
       sectionAccessDefaults,
       disabledSections
     )
@@ -257,14 +243,14 @@ export async function countRecoveryCapableAdminsAfterChange(
     if (admin.id === userId && changedSection === null) return false;
 
     const overrides: OverrideBySection = new Map(
-      admin.sectionAccess.map(a => [a.section, { enabled: a.enabled }])
+      admin.sectionAccess.map(a => [a.section, a.enabled])
     );
 
     if (admin.id === userId && changedSection !== null) {
       if (hypotheticalEnabled === null) {
         overrides.delete(changedSection);
       } else {
-        overrides.set(changedSection, { enabled: hypotheticalEnabled });
+        overrides.set(changedSection, hypotheticalEnabled);
       }
     }
 

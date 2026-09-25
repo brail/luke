@@ -23,10 +23,11 @@
 | [018](018-runtime-configuration-and-bootstrap-environment.md) | Database-Backed Runtime Configuration and Bootstrap-Only Environment | Accepted |
 | [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Accepted |
 | [020](020-master-key-scope-and-rotation-limits.md) | Master Key Scope and Rotation Limits | Accepted |
-| [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Accepted |
+| [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Superseded by [025](025-section-access-resolution-derived-parents.md) |
 | [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Accepted |
 | [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
 | [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
+| [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Accepted |
 
-_Last updated: 2026-09-22_
+_Last updated: 2026-09-24_
 <!-- luke-docs:end:adr-index -->

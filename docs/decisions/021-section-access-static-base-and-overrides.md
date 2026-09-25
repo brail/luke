@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [025 — Section Access Resolution: Derived Parents over a Static Base](025-section-access-resolution-derived-parents.md)
 
 ## Context
 

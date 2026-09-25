@@ -49,6 +49,11 @@ export * from './schemas/rbac.js';
 
 // Re-export effective access with explicit exports to avoid conflicts
 export { effectiveSectionAccess } from './rbac/effectiveAccess.js';
+export {
+  ancestorSectionsOf,
+  childSectionsOf,
+  parentSectionOf,
+} from './rbac/sectionHierarchy.js';
 
 // Re-export auth/permissions
 export * from './auth/permissions.js';
