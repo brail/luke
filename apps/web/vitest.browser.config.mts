@@ -66,6 +66,10 @@ export default defineConfig({
       // on a cold `.vite` cache. Without this, `vi.mock('next/navigation', ...)` produces
       // "useSearchParams is not a function" instead of actually intercepting the module.
       'next/navigation',
+      // Added for AboutVersionBadge.browser.test.tsx, which mounts about/page.tsx: same
+      // "discovered mid-run" reload on a cold `.vite` cache, which failed the first run of the
+      // suite three times on 2026-09-25 (the second run, on a warm cache, always passed).
+      'next/image',
     ],
   },
   oxc: {
