@@ -22,6 +22,7 @@ import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maint
 import { hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
 import { checkPasswordAgainstPolicy } from './passwordPolicy.service';
 
@@ -562,7 +563,6 @@ export async function confirmPasswordReset(
     });
   });
 
-  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userToken.userId);
 
   await logAudit(ctx, {

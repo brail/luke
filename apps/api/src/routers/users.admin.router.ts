@@ -20,7 +20,8 @@ import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer'
 import { hashPassword } from '../lib/password';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure, invalidateTokenVersionCache } from '../lib/trpc';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { router, protectedProcedure } from '../lib/trpc';
 
 export const usersAdminRouter = router({
   /**

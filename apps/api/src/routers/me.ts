@@ -19,11 +19,8 @@ import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
-import {
-  protectedProcedure,
-  router,
-  invalidateTokenVersionCache,
-} from '../lib/trpc';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { protectedProcedure, router } from '../lib/trpc';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 

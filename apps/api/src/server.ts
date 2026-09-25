@@ -18,7 +18,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
 
-import { isDevelopment, isProduction } from '@luke/core';
+import { IMAGE_BUCKETS, isDevelopment, isProduction } from '@luke/core';
 import {
   validateMasterKey,
   deriveSecret,
@@ -377,7 +377,8 @@ function setupTempFileCleanup() {
           // own `confirmedAt`/age would delete its storage object while the FileObject
           // row for the (still-linked) master survives, leaving a dangling reference.
           parentId: null,
-          bucket: { in: ['brand-logos', 'company-assets', 'collection-row-pictures', 'merchandising-specsheet-images'] },
+          // Every asset kind's bucket: each one takes pending uploads (ASSET_KINDS in core).
+          bucket: { in: [...IMAGE_BUCKETS] },
           createdAt: { lt: oneHourAgo },
         },
       });

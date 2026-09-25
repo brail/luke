@@ -19,8 +19,6 @@ import { verifyTokenVersion } from './tokenVersionCache';
 import type { Context } from './context';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-export { invalidateTokenVersionCache } from './tokenVersionCache';
-
 /**
  * Creates a tRPC context for an incoming Fastify request.
  * Authenticates the request, assigns a traceId, and injects dependencies.

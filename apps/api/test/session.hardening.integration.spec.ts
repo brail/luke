@@ -9,7 +9,7 @@ import { PrismaClient } from '@luke/db';
 
 import { authenticateRequest, createToken } from '../src/lib/auth';
 import { signJWT } from '../src/lib/jwt';
-import { invalidateTokenVersionCache } from '../src/lib/trpc';
+import { invalidateTokenVersionCache } from '../src/lib/tokenVersionCache';
 
 import {
   createCallerWithSession,
