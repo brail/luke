@@ -615,33 +615,6 @@ export const configRouter = router({
     }),
 
   /**
-   * Checks whether an AppConfig key exists and whether its value is encrypted.
-   *
-   * @auth {config:read}
-   * @input {{ key: string }}
-   * @output {{ key, exists: boolean, isEncrypted?: boolean }}
-   */
-  exists: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(
-      z.object({
-        key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const config = await ctx.prisma.appConfig.findUnique({
-        where: { key: input.key },
-        select: { key: true, isEncrypted: true },
-      });
-
-      return {
-        key: input.key,
-        exists: !!config,
-        isEncrypted: config?.isEncrypted,
-      };
-    }),
-
-  /**
    * Exports all AppConfig entries as JSON; encrypted values are always shown as [ENCRYPTED].
    *
    * @auth {config:update}

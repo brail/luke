@@ -232,7 +232,6 @@ values in the environment table below, and no configuration file is read. Ration
 | `dashboard.*` | Dashboard widgets — KPI data, season progress, weekly sales |
 | `editLock.*` | Planning wizard session lock (acquire/release/assert) |
 | `feedback.*` | Internal feedback system |
-| `health.*` | Health check and API status |
 | `holidays.*` | National holidays and vendor closure periods |
 | `integrations.auth.*` | LDAP configuration and connection test |
 | `integrations.google.*` | Google Calendar OAuth 2.0 — authorization flow and binding |

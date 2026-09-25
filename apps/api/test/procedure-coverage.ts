@@ -73,12 +73,12 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   company: {
     reason:
       'struttura e team coperti sul percorso principale; restano getById, reorder, restore e updateMemberRole',
-    uncovered: 6,
+    uncovered: 5,
   },
   config: {
     reason:
       'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; list, exportJson e delete dalla spec sulla riga la cui chiave è uscita dal registry; restano le letture singole e multiple, setMultiple e update',
-    uncovered: 5,
+    uncovered: 4,
   },
   me: {
     reason:
@@ -88,7 +88,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   users: {
     reason:
       'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); forceLocalAccess e revokeLocalAccess dalla spec sul bypass LDAP/OIDC (usersLocalAccess.integration.spec.ts); heartbeat e le preferenze menu no',
-    uncovered: 8,
+    uncovered: 7,
   },
   seasonCalendar: {
     reason:
@@ -151,7 +151,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   vendors: {
     reason:
       'nessun test scritto. Stesso pattern CRUD + soft delete di brand, che invece è coperto',
-    uncovered: 8,
+    uncovered: 7,
   },
   season: {
     reason:
@@ -199,11 +199,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     reason:
       'nessun test sul router. `context.service` è coperto da companyAccess, le due procedure get/set no',
     uncovered: 2,
-  },
-  health: {
-    reason:
-      'nessun test scritto. Il readiness HTTP è coperto da readyz, questa è la sonda sul layer di contesto',
-    uncovered: 1,
   },
   public: {
     reason:

@@ -18,7 +18,6 @@ import { contextRouter } from './context';
 import { dashboardRouter } from './dashboard';
 import { editLockRouter } from './editLock';
 import { feedbackRouter } from './feedback';
-import { healthRouter } from './health';
 import { holidaysRouter } from './holidays';
 import { integrationsRouter } from './integrations';
 import { maintenanceRouter } from './maintenance';
@@ -60,7 +59,6 @@ export const appRouter = router({
   merchandisingPlan: merchandisingPlanRouter,
   config: configRouter,
   context: contextRouter,
-  health: healthRouter,
   integrations: integrationsRouter,
   maintenance: maintenanceRouter,
   public: publicRouter,

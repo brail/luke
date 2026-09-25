@@ -164,32 +164,6 @@ const companyFunctionRouter = router({
     }),
 
   /**
-   * Returns a company function by ID, including its teams and their membership counts.
-   *
-   * @auth company_function:read
-   * @input { id }
-   * @output CompanyFunction with teams
-   */
-  getById: protectedProcedure
-    .use(requirePermission('company_function:read'))
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const fn = await ctx.prisma.companyFunction.findUnique({
-        where: { id: input.id },
-        include: {
-          teams: {
-            include: {
-              _count: { select: { memberships: true } },
-            },
-            orderBy: [{ name: 'asc' }],
-          },
-        },
-      });
-      if (!fn) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
-      return fn;
-    }),
-
-  /**
    * Creates a company function. Rejects on slug collision, suggesting restore if the existing one is inactive.
    *
    * @auth company_function:create

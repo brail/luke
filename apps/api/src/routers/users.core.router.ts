@@ -162,60 +162,6 @@ export const usersCoreRouter = router({
     }),
 
   /**
-   * Returns a user by ID; non-admin users may only fetch their own profile.
-   *
-   * @auth {users:read}
-   * @input {UserIdSchema}
-   * @output {User with identities}
-   */
-  getById: protectedProcedure
-    .use(requirePermission('users:read'))
-    .input(UserIdSchema)
-    .query(async ({ input, ctx }) => {
-      // RBAC: self-profile or admin only
-      if (
-        input.id !== ctx.session.user.id &&
-        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
-      ) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Puoi visualizzare solo il tuo profilo',
-        });
-      }
-
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          identities: {
-            select: {
-              id: true,
-              provider: true,
-              providerId: true,
-            },
-          },
-        },
-      });
-
-      if (!user) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente non trovato',
-        });
-      }
-
-      return user;
-    }),
-
-  /**
    * Creates a new user with a local identity and hashed password within a transaction.
    *
    * @auth {users:create}

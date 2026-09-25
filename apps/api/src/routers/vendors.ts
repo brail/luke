@@ -84,29 +84,6 @@ export const vendorsRouter = router({
     }),
 
   /**
-   * Returns a single vendor by ID.
-   *
-   * @auth {vendors:read}
-   * @input {VendorIdSchema}
-   * @output {Vendor}
-   */
-  getById: protectedProcedure
-    .use(requirePermission('vendors:read'))
-    .input(VendorIdSchema)
-    .query(async ({ ctx, input }) => {
-      const vendor = await ctx.prisma.vendor.findUnique({
-        where: { id: input.id },
-        select: VENDOR_SELECT,
-      });
-
-      if (!vendor) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
-      }
-
-      return vendor;
-    }),
-
-  /**
    * Creates a new vendor; enforces unique navVendorId if provided.
    *
    * @auth {vendors:create}
