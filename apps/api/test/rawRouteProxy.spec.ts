@@ -161,7 +161,7 @@ describe('raw route proxying', () => {
 
   it('finds the raw routes at all (guards the scanner itself against silently matching nothing)', () => {
     expect(routes.length).toBeGreaterThan(5);
-    expect(routes.map(r => r.path)).toContain('/download/backup/:id');
+    expect(routes.map(r => r.path)).toContain('/download/backup/:id/export');
   });
 
   it('registers every browser-facing raw route under a proxied prefix', () => {

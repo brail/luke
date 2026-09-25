@@ -1,13 +1,14 @@
 /**
  * Raw Fastify route for downloading a passphrase-protected, instance-portable backup export
- * package (`.lukebak`). Same streaming rationale as `backupDownload.ts` (payload can be many
- * GB) — the only difference is the response body is the export envelope (header + original
- * ciphertext), built by prepending `encodeExportHeader(payload.header)` to the same blob stream
- * `backupDownload.ts` sends unchanged.
+ * package (`.lukebak`). Deliberately not a tRPC procedure and not the generic
+ * `/uploads/:bucket/*` proxy: the payload can be many GB, so it must stream (see
+ * `streamRawResponse`), and the "backups" bucket is excluded from the generic proxy on purpose.
+ * The response body is the export envelope: `encodeExportHeader(payload.header)` followed by the
+ * stored ciphertext, unchanged.
  *
- * Authorized the same way as `backupDownload.ts`: a short-lived signed token
- * (`maintenance.backup.prepareExport` mints it) rather than a Bearer session — the permission
- * check (`maintenance:backup_export`) already happened when the token was minted.
+ * Authorized via a short-lived signed token (`maintenance.backup.prepareExport` mints it) rather
+ * than a Bearer session, since a plain browser navigation can't set an Authorization header; the
+ * permission check (`maintenance:backup_export`) already happened when the token was minted.
  */
 
 import { PassThrough, type Readable } from 'stream';

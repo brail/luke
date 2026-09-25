@@ -1,7 +1,7 @@
 /**
  * Raw Fastify route for streaming the audit log as CSV.
  *
- * Same rationale as `backupDownload.ts`: not a tRPC procedure, so the browser can download via
+ * Same rationale as `backupExportDownload.ts`: not a tRPC procedure, so the browser can download via
  * a native `<a href>` instead of buffering into a JS `Blob`. Authorized via a short-lived signed
  * token (`auditLog.getExportLink` mints it after checking `audit:read_all`) rather than a Bearer
  * session — the token encodes the filters applied on the audit log page, not a stored file

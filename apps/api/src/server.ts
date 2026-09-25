@@ -54,7 +54,6 @@ import { runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storageUpload';
 import { appRouter } from './routers';
 import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
-import { registerBackupDownloadRoute } from './routes/backupDownload';
 import { registerBackupExportDownloadRoute } from './routes/backupExportDownload';
 import { registerBackupImportRoute } from './routes/backupImport';
 import brandLogoRoutes from './routes/brandLogo.routes';
@@ -669,7 +668,6 @@ const start = async () => {
     await registerTRPCPlugin();
     await registerMultipart(); // Global multipart (required by all upload routes)
     await registerStoragePlugin(); // Storage upload/download routes
-    await registerBackupDownloadRoute(fastify, prisma); // Backup blob download (admin-only, streamed)
     await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
     await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log CSV export (admin-only, streamed)
     await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload

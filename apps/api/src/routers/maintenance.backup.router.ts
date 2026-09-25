@@ -36,7 +36,7 @@ import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceM
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getStorageProvider } from '../storage';
-import { signDownloadToken, signExportToken } from '../utils/downloadToken';
+import { signExportToken } from '../utils/downloadToken';
 
 import type { StagedRestore } from '../lib/backup/restorePipeline';
 
@@ -115,34 +115,6 @@ export const backupRouter = router({
       });
       if (!record) throw new TRPCError({ code: 'NOT_FOUND', message: 'Backup non trovato' });
       return serializeRecord(record);
-    }),
-
-  /**
-   * Mints a short-lived (5 min) signed download token for a completed backup's encrypted blob,
-   * to be appended to `/download/backup/:id?token=...`.
-   *
-   * No UI calls this: the Download button was removed once it became clear the raw `.enc` blob
-   * is not usable on its own. Its DEK is wrapped with *this* server's master key, and the iv and
-   * auth tag live in `BackupRecord`/the `.meta.json` sidecar, none of which travel with the
-   * downloaded file. `prepareExport` (`.lukebak`) is the portable artifact. This is kept only for
-   * fetching the raw blob by hand alongside its sidecar; if that need never materializes, this
-   * procedure and its route are dead weight and should go.
-   *
-   * @auth {maintenance:read}
-   * @input `{ id: string }` — the backup record id.
-   * @output `{ token, filename }` — signed download token and the blob's filename.
-   */
-  getDownloadLink: protectedProcedure
-    .use(requirePermission('maintenance:read'))
-    .input(BackupIdSchema)
-    .mutation(async ({ ctx, input }) => {
-      const record = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
-      if (!record || record.status !== 'COMPLETED' || !record.filename) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Backup non trovato o non completato' });
-      }
-
-      const token = signDownloadToken({ bucket: 'backups', key: record.filename });
-      return { token, filename: record.filename };
     }),
 
   /**
