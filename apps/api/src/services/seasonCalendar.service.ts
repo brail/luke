@@ -7,6 +7,7 @@ import {
   isEventDeleteLocked as isEventDeleteLockedCore,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
+  type SeasonCalendarStatus,
 } from '@luke/core';
 import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@luke/db';
 
@@ -98,7 +99,7 @@ export async function getOrCreateCalendar(
  */
 export async function updateCalendarStatus(
   calendarId: string,
-  status: 'DRAFT' | 'ACTIVE' | 'ARCHIVED',
+  status: SeasonCalendarStatus,
   prisma: PrismaClient
 ) {
   return prisma.seasonCalendar.update({ where: { id: calendarId }, data: { status } });

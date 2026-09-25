@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { DEFAULT_WARNING_LEAD_MINUTES } from '@luke/core';
+import { DEFAULT_WARNING_LEAD_MINUTES, type MaintenanceModeStatus } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -19,7 +19,7 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
-const STATUS_LABEL: Record<'INACTIVE' | 'SCHEDULED' | 'ACTIVE', string> = {
+const STATUS_LABEL: Record<MaintenanceModeStatus, string> = {
   INACTIVE: 'Inattiva',
   SCHEDULED: 'Pianificata',
   ACTIVE: 'Attiva',

@@ -6,6 +6,8 @@
 import * as nodemailer from 'nodemailer';
 import { z } from 'zod';
 
+import { mailTestSchema } from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import { saveConfig } from '../lib/configManager';
 import { toTRPCError, IntegrationErrorHandler, SecureLogger } from '../lib/errorHandler';
@@ -95,11 +97,7 @@ export const mailRouter = router({
    */
   test: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(
-      z.object({
-        testEmail: z.string().email().optional(),
-      })
-    )
+    .input(mailTestSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const logger = new SecureLogger(ctx.logger);

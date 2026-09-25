@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import type { PricingMode } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -19,10 +20,9 @@ interface PricingCalculatorProps {
   parameterSet: PricingParameterSet | null;
 }
 
-type CalcMode = 'forward' | 'inverse' | 'margin';
 
 interface CalcResult {
-  mode: CalcMode;
+  mode: PricingMode;
   [key: string]: unknown;
 }
 
@@ -78,7 +78,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
     setResult(null);
   }, [parameterSet?.id]);
 
-  const resolveMode = (): { mode: CalcMode; valid: boolean } => {
+  const resolveMode = (): { mode: PricingMode; valid: boolean } => {
     const hasPurchase =
       purchasePrice.trim() !== '' && !isNaN(Number(purchasePrice));
     const hasRetail = retailPrice.trim() !== '' && !isNaN(Number(retailPrice));
@@ -350,7 +350,7 @@ function ResultRows({
 }: {
   result: Record<string, unknown>;
   parameterSet: PricingParameterSet;
-  mode: CalcMode;
+  mode: PricingMode;
 }) {
   const pc = parameterSet.purchaseCurrency;
   const sc = parameterSet.sellingCurrency;

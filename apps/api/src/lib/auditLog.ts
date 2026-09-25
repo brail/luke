@@ -6,7 +6,7 @@
  * `/download/audit-log` CSV route, so neither has to import from the other.
  */
 
-import { fullName, type AuditLogFilters } from '@luke/core';
+import { fullName, type AuditLogFilters, type AuditLogResult } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import type { Context } from './trpc';
@@ -22,7 +22,7 @@ export interface AuditParams {
   /** Primary key of the affected entity, if applicable. */
   targetId?: string;
   /** Outcome of the operation. Defaults to 'SUCCESS'. */
-  result?: 'SUCCESS' | 'FAILURE';
+  result?: AuditLogResult;
   /**
    * Supplemental data. Typed against `SAFE_KEY_LIST` so an unlisted key fails the build at
    * the call site instead of being silently stored as `[REDACTED]` — nested keys are still

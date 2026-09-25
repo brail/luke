@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import type { CalendarDaysRelevance } from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../../components/CalendarDaysRelevanceSelect';
 import { NO_PHASE_VALUE, PhaseSelect } from '../../../../../components/PhaseSelect';
@@ -116,7 +117,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
     const payload = {
       title: values.title.trim(),
       phaseId: values.phaseId === NO_PHASE_VALUE ? null : values.phaseId,
-      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
+      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as CalendarDaysRelevance) /* the select offers only CALENDAR_DAYS_RELEVANCE values besides the sentinel */,
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),

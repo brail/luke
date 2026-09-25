@@ -10,6 +10,7 @@ import {
   CalendarEventBaseSchema,
   MilestoneCancelInputSchema,
   MilestoneRescheduleInputSchema,
+  type CalendarDaysRelevance,
 } from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
@@ -443,7 +444,7 @@ export function CalendarEventDialog({
       title: data.title.trim(),
       description: data.description.trim() || undefined,
       phaseId: data.phaseId === NO_PHASE_VALUE ? null : data.phaseId,
-      calendarDaysRelevance: data.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (data.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
+      calendarDaysRelevance: data.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (data.calendarDaysRelevance as CalendarDaysRelevance) /* the select offers only CALENDAR_DAYS_RELEVANCE values besides the sentinel */,
       visibilityFunctionIds: data.visibilityFunctionIds,
       startAt: startIso,
       endAt: endIso,

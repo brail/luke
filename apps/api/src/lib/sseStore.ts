@@ -7,6 +7,8 @@
  * the client opens the SSE connection, then exchanged for the user identity.
  */
 
+import type { MaintenanceModeStatus } from '@luke/core';
+
 import type { FastifyReply } from 'fastify';
 
 // --- Connection pool ---
@@ -33,7 +35,7 @@ export type SSEEvent =
   | { type: 'notification'; payload: Record<string, unknown> }
   | { type: 'sync-state'; entity: string; isRunning: boolean }
   | { type: 'calendar-updated'; seasonId: string }
-  | { type: 'maintenance-mode'; status: 'INACTIVE' | 'SCHEDULED' | 'ACTIVE'; scheduledAt: string | null; message: string | null }
+  | { type: 'maintenance-mode'; status: MaintenanceModeStatus; scheduledAt: string | null; message: string | null }
   | { type: 'heartbeat' };
 
 function pushToUser(userId: string, event: SSEEvent): void {
