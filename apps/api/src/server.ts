@@ -241,8 +241,8 @@ async function registerTRPCPlugin() {
 /**
  * Registers `@fastify/multipart` globally with a 50 MB file size limit.
  *
- * This is the maximum allowed by the generic storage upload endpoint. Individual
- * domain services (brand logo, collection pictures, etc.) enforce stricter limits.
+ * A global ceiling for every multipart route. The per-asset-kind upload routes (brand logo,
+ * collection pictures, etc.) enforce stricter limits; the backup import raises it per request.
  */
 async function registerMultipart() {
   await fastify.register(multipart, {
@@ -253,7 +253,7 @@ async function registerMultipart() {
   });
 }
 
-/** Registers the generic storage upload/download plugin. */
+/** Registers the generic storage asset proxy (`/uploads/:bucket/*`). */
 async function registerStoragePlugin() {
   await fastify.register(storagePlugin, { prisma });
 }
@@ -667,7 +667,7 @@ const start = async () => {
     const corsAllowedOrigins = await registerSecurityPlugins(); // CORS must be registered before tRPC
     await registerTRPCPlugin();
     await registerMultipart(); // Global multipart (required by all upload routes)
-    await registerStoragePlugin(); // Storage upload/download routes
+    await registerStoragePlugin(); // Storage asset proxy (/uploads/:bucket/*)
     await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
     await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log CSV export (admin-only, streamed)
     await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload

@@ -46,13 +46,6 @@ const NOT_BROWSER_FACING = [
   '/api/sse',     // SSE — has its own dedicated rewrite (not a wildcard prefix)
   '/__test__/boom', // registered only when NODE_ENV=test, to exercise the error handler
   '/uploads/:bucket/*', // authenticated asset proxy — reached through Next's app/api/uploads route handler
-  // The two /storage/* routes below are handed to the browser as absolute URLs built from
-  // AppConfig (`storage.publicBaseUrl`, falling back to `app.baseUrl`) rather than from
-  // NEXT_PUBLIC_API_URL, so a next.config.js rewrite is not what makes them reachable and this
-  // test cannot judge them. Whether that configured base actually resolves is a separate,
-  // deployment-level question — see docs, not this list.
-  '/storage/download',
-  '/storage/upload/:uploadId',
 ] as const;
 
 type ExemptPath = (typeof NOT_BROWSER_FACING)[number];

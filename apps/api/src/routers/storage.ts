@@ -1,7 +1,8 @@
 /**
  * tRPC router for Storage
  *
- * Procedures for storage file management with RBAC and AuditLog
+ * Upload slots (`requestUpload`/`confirmUpload`), the S3 connection test and the storage
+ * configuration.
  */
 
 import { randomUUID } from 'crypto';
@@ -11,48 +12,15 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, isValidBucket, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
+import { APP_STORAGE_BUCKETS, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
 
 import { deleteConfig, getConfig, getConfigOrDefault, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
-import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
+import { resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
-import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
-
-/**
- * Schema for list files
- */
-const ListFilesSchema = z.object({
-  bucket: z.string().optional(),
-  limit: z.number().int().positive().max(100).optional(),
-  cursor: z.string().optional(),
-});
-
-/**
- * Schema for delete file
- */
-const DeleteFileSchema = z.object({
-  id: z.string().uuid(),
-});
-
-/**
- * Schema for get download link
- */
-const GetDownloadLinkSchema = z.object({
-  id: z.string().uuid(),
-});
-
-/**
- * Schema for create upload
- */
-const CreateUploadSchema = z.object({
-  bucket: z.enum(APP_STORAGE_BUCKETS),
-  originalName: z.string().min(1).max(255),
-  contentType: z.string().optional(),
-  size: z.number().int().positive(),
-});
+import { resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
+import { signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 const RequestUploadSchema = z.object({
   bucket: z.enum(APP_STORAGE_BUCKETS),
@@ -74,140 +42,6 @@ const ConfirmUploadSchema = z.object({
  * Storage Router
  */
 export const storageRouter = router({
-  /**
-   * Lists stored file objects with optional bucket filter and cursor-based pagination.
-   *
-   * @auth {config:read}
-   * @input {ListFilesSchema} — optional: bucket, limit, cursor.
-   * @output {{ items: FileObjectMetadata[], nextCursor: string | null }}
-   */
-  list: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(ListFilesSchema)
-    .query(async ({ input, ctx }) => {
-      // Validate bucket if specified
-      if (input.bucket && !isValidBucket(input.bucket)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Bucket non valido',
-        });
-      }
-
-      const result = await listObjects(ctx.prisma, {
-        bucket: input.bucket as any, // Safe: validated by isValidBucket() guard above
-        limit: input.limit,
-        cursor: input.cursor,
-      });
-
-      return {
-        items: result.items.map(item => ({
-          id: item.id,
-          bucket: item.bucket,
-          key: item.key,
-          originalName: item.originalName,
-          size: item.size,
-          contentType: item.contentType,
-          checksumSha256: item.checksumSha256,
-          createdBy: item.createdBy,
-          createdAt: item.createdAt.toISOString(),
-        })),
-        nextCursor: result.nextCursor,
-      };
-    }),
-
-  /**
-   * Returns metadata for a single file object; enforces ownership or admin/editor role.
-   *
-   * @auth {authenticated (ownership or admin/editor)}
-   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
-   * @output {FileObjectMetadata}
-   */
-  getMetadata: protectedProcedure
-    .input(GetDownloadLinkSchema)
-    .query(async ({ input, ctx }) => {
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Verify ownership or admin/editor
-      const isOwner = metadata.createdBy === ctx.session.user.id;
-      const isAdminOrEditor = ['admin', 'editor'].includes(
-        ctx.session.user.role
-      );
-
-      if (!isOwner && !isAdminOrEditor) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Non hai i permessi per accedere a questo file',
-        });
-      }
-
-      return {
-        id: metadata.id,
-        bucket: metadata.bucket,
-        key: metadata.key,
-        originalName: metadata.originalName,
-        size: metadata.size,
-        contentType: metadata.contentType,
-        checksumSha256: metadata.checksumSha256,
-        createdBy: metadata.createdBy,
-        createdAt: metadata.createdAt.toISOString(),
-      };
-    }),
-
-  /**
-   * Issues a signed download URL (TTL 5 min) for a file object; enforces ownership or admin/editor role.
-   *
-   * @auth {authenticated (ownership or admin/editor)}
-   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
-   * @output {{ url: string, expiresIn: 300 }}
-   */
-  getDownloadLink: protectedProcedure
-    .input(GetDownloadLinkSchema)
-    .mutation(async ({ input, ctx }) => {
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Verify ownership or admin/editor
-      const isOwner = metadata.createdBy === ctx.session.user.id;
-      const isAdminOrEditor = ['admin', 'editor'].includes(
-        ctx.session.user.role
-      );
-
-      if (!isOwner && !isAdminOrEditor) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Non hai i permessi per scaricare questo file',
-        });
-      }
-
-      // Generate signed token (TTL 5 minutes)
-      const token = signDownloadToken({
-        bucket: metadata.bucket,
-        key: metadata.key,
-      });
-
-      // Build URL using the same base configured for the storage proxy
-      const baseUrl = await getStorageBaseUrl(ctx.prisma);
-      const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
-
-      return {
-        url: downloadUrl,
-        expiresIn: 300, // 5 minutes in seconds
-      };
-    }),
-
   /**
    * Requests an upload slot; returns a presigned PUT URL for S3-compatible storage or proxy fallback info for local storage.
    *
@@ -322,67 +156,6 @@ export const storageRouter = router({
         fileObjectId: fileObject.id,
         publicUrl,
         key: slot.key,
-      };
-    }),
-
-  /**
-   * Legacy upload slot endpoint — generates an uploadId and proxy URL; use requestUpload for new code.
-   *
-   * @auth {authenticated}
-   * @input {CreateUploadSchema} — bucket, originalName, contentType, size.
-   * @output {{ uploadId: string, uploadUrl: string, bucket: string, maxSizeBytes: number }}
-   */
-  createUpload: protectedProcedure
-    .input(CreateUploadSchema)
-    .mutation(async ({ input, ctx }) => {
-      const maxSizeMB = await getConfigOrDefault(ctx.prisma, 'storage.local.maxFileSizeMB');
-      const maxSizeBytes = maxSizeMB * 1024 * 1024;
-
-      if (input.size > maxSizeBytes) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `File troppo grande. Massimo ${maxSizeMB}MB`,
-        });
-      }
-
-      const uploadId = randomUUID();
-      const baseUrl = await getStorageBaseUrl(ctx.prisma);
-      const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
-
-      return {
-        uploadId,
-        uploadUrl,
-        bucket: input.bucket,
-        maxSizeBytes,
-      };
-    }),
-
-  /**
-   * Deletes a file object and its underlying storage object.
-   *
-   * @auth {config:update}
-   * @input {DeleteFileSchema} — { id: string (UUID) }
-   * @output {{ success: true, message: string }}
-   */
-  delete: protectedProcedure
-    .use(requirePermission('config:update'))
-    .input(DeleteFileSchema)
-    .mutation(async ({ input, ctx }) => {
-      // Verify existence
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Delete file and metadata
-      await deleteObject(ctx, input.id);
-
-      return {
-        success: true,
-        message: 'File cancellato con successo',
       };
     }),
 

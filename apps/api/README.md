@@ -255,7 +255,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `season.*` | Season management (CRUD, soft delete) |
 | `seasonCalendar.*` | Seasonal milestone calendar, planning groups, templates and Google sync |
 | `sectionAccess.*` | Per-user RBAC section visibility (user-level override) |
-| `storage.*` | File upload, FileObject confirmation, presigned download URLs |
+| `storage.*` | Upload slots and FileObject confirmation (presigned S3 uploads), S3 connection test, storage configuration |
 | `system.*` | System information and manual calendar digest trigger |
 | `users.*` | User management — merge of `core` (CRUD), `admin` (pending LDAP user approval, session revocation, email-verification override, local-access bypass) and `preferences.*` |
 | `vendors.*` | Vendor management (CRUD, soft delete, closure periods) |

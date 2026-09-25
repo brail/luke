@@ -90,7 +90,7 @@ function verifySignature(payload: string, signature: string): boolean {
 /**
  * Signs a payload (exp + variant-specific fields) in the
  * `base64url(payload).base64url(signature)` format, shared by all token variants
- * (plain download, export with an attached header, audit log CSV export, ...).
+ * (upload slot, backup export with an attached header, audit log CSV export).
  */
 function signTokenPayload<T extends BaseTokenPayload>(payload: T): string {
   const payloadStr = JSON.stringify(payload);
@@ -162,49 +162,6 @@ function verifyTokenPayload<T extends BaseTokenPayload>(token: string, requiredK
 }
 
 /**
- * Download token payload
- */
-export interface DownloadTokenPayload extends BaseTokenPayload {
-  bucket: StorageBucket;
-  key: string;
-}
-
-/**
- * Generates a signed token for downloading a file
- *
- * Token format: base64url(payload).base64url(signature)
- *
- * @example
- * const token = signDownloadToken({ bucket: 'uploads', key: '2025/10/file.pdf' });
- * // Returns: "eyJidWNrZXQiOiJ1cGxvYWRzI...".abcd1234...
- */
-export function signDownloadToken(params: {
-  bucket: StorageBucket;
-  key: string;
-  exp?: number;
-}): string {
-  const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
-  return signTokenPayload<DownloadTokenPayload>({ bucket: params.bucket, key: params.key, exp });
-}
-
-/**
- * Verifies and decodes a download token
- *
- * @throws Error if the token is invalid or expired
- *
- * @example
- * try {
- *   const { bucket, key } = verifyDownloadToken(token);
- *   // Download file from bucket/key
- * } catch (error) {
- *   // Invalid token
- * }
- */
-export function verifyDownloadToken(token: string): DownloadTokenPayload {
-  return verifyTokenPayload<DownloadTokenPayload>(token, ['bucket', 'key']);
-}
-
-/**
  * Upload token payload — binds an upload slot to bucket, key **and user**.
  *
  * `confirmUpload` used to accept bucket and key directly from the input, without
@@ -262,8 +219,8 @@ export function verifyUploadToken(token: string): UploadTokenPayload {
 }
 
 /**
- * Export token payload — same stateless HMAC signature as `DownloadTokenPayload`, but also
- * includes the `.lukebak` envelope header (already passphrase-encrypted, never the secret
+ * Export token payload — the shared stateless HMAC signature over bucket and key, plus
+ * the `.lukebak` envelope header (already passphrase-encrypted, never the secret
  * in plaintext) so the streaming route doesn't need to re-read the DB to reconstruct it.
  */
 export interface ExportTokenPayload extends BaseTokenPayload {
@@ -272,7 +229,7 @@ export interface ExportTokenPayload extends BaseTokenPayload {
   header: BackupExportHeader;
 }
 
-/** Signs a token for exporting a backup (same HMAC as `signDownloadToken`, extended payload). */
+/** Signs a token for exporting a backup: the shared HMAC over bucket, key and the export header. */
 export function signExportToken(params: {
   bucket: StorageBucket;
   key: string;

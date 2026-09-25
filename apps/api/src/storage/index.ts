@@ -20,7 +20,7 @@ import {
   type StorageBucket,
   type StoredObjectMeta,
 } from '@luke/core';
-import type { Prisma, PrismaClient } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
@@ -162,7 +162,7 @@ export function resetStorageProvider(): void {
   providerInitPromise = null;
 }
 
-/** Minimal shape both `putObject`/`putDerivativeObject`'s Prisma `create()` results and `listObjects`'s `findMany()` rows satisfy — enough to build a `StoredObjectMeta`. */
+/** Minimal shape `putObject`/`putDerivativeObject`'s Prisma `create()` results satisfy — enough to build a `StoredObjectMeta`. */
 type FileObjectRow = {
   id: string;
   bucket: string;
@@ -344,131 +344,6 @@ export async function putDerivativeObject(
 }
 
 /**
- * Retrieves file metadata from the DB by FileObject ID.
- *
- * @returns The stored object metadata, or `null` if not found.
- */
-export async function getObjectMetadata(
-  prisma: PrismaClient,
-  id: string
-): Promise<StoredObjectMeta | null> {
-  const fileObject = await prisma.fileObject.findUnique({
-    where: { id },
-  });
-
-  if (!fileObject) {
-    return null;
-  }
-
-  return toStoredObjectMeta(fileObject);
-}
-
-/**
- * Downloads a file from storage by its FileObject ID.
- *
- * Fetches metadata from DB, retrieves the stream from the provider, and writes an audit log entry.
- *
- * @returns An object containing the readable stream and the file metadata.
- */
-export async function getObject(
-  ctx: Context,
-  id: string
-): Promise<{
-  stream: NodeJS.ReadableStream;
-  metadata: StoredObjectMeta;
-}> {
-  const provider = await getStorageProvider(ctx.prisma);
-
-  // Retrieve metadata
-  const metadata = await getObjectMetadata(ctx.prisma, id);
-  if (!metadata) {
-    throw new Error('File non trovato');
-  }
-
-  // Download via the provider
-  const { stream } = await provider.get({
-    bucket: metadata.bucket,
-    key: metadata.key,
-  });
-
-  // Log audit
-  await logAudit(ctx, {
-    action: 'FILE_DOWNLOADED',
-    targetType: 'FileObject',
-    targetId: id,
-    result: 'SUCCESS',
-    metadata: {
-      bucket: metadata.bucket,
-      key: metadata.key,
-    },
-  });
-
-  return {
-    stream,
-    metadata,
-  };
-}
-
-/**
- * Deletes a file from storage and removes its metadata from the DB.
- *
- * Writes an audit log entry on success.
- */
-export async function deleteObject(ctx: Context, id: string): Promise<void> {
-  const provider = await getStorageProvider(ctx.prisma);
-
-  // Retrieve metadata
-  const metadata = await getObjectMetadata(ctx.prisma, id);
-  if (!metadata) {
-    throw new Error('File non trovato');
-  }
-
-  // The FK's onDelete:Cascade removes derivative *rows* once the master row is
-  // deleted below, but Postgres cascade never touches the storage provider — a
-  // derivative's physical object must be removed here explicitly, or it becomes
-  // a permanent orphan on disk/S3 (same fix already applied to the temp-file
-  // reaper in server.ts, extended here to every confirmed-delete call site).
-  const derivatives = await ctx.prisma.fileObject.findMany({
-    where: { parentId: id },
-    select: { bucket: true, key: true },
-  });
-  for (const derivative of derivatives) {
-    try {
-      await provider.delete({ bucket: derivative.bucket as StorageBucket, key: derivative.key });
-    } catch (err) {
-      ctx.logger?.warn(
-        { err, bucket: derivative.bucket, key: derivative.key },
-        'Failed to delete derivative file from storage'
-      );
-    }
-  }
-
-  // Delete from provider
-  await provider.delete({
-    bucket: metadata.bucket,
-    key: metadata.key,
-  });
-
-  // Delete metadata from DB
-  await ctx.prisma.fileObject.delete({
-    where: { id },
-  });
-
-  // Log audit
-  await logAudit(ctx, {
-    action: 'FILE_DELETED',
-    targetType: 'FileObject',
-    targetId: id,
-    result: 'SUCCESS',
-    metadata: {
-      bucket: metadata.bucket,
-      key: metadata.key,
-      originalName: metadata.originalName,
-    },
-  });
-}
-
-/**
  * Deletes a file from storage and the DB by bucket and key, without requiring its FileObject ID.
  *
  * Used to clean up old file versions (e.g. brand logo, row picture) when only the key
@@ -559,49 +434,6 @@ export async function readFileBuffer(
     logger?.warn({ err, bucket, key }, 'readFileBuffer: failed to read file');
     return null;
   }
-}
-
-/**
- * Returns a cursor-paginated list of stored file metadata from the DB.
- *
- * Results are ordered by creation time (newest first).
- *
- * @returns Page of file metadata and an optional cursor for the next page.
- */
-export async function listObjects(
-  prisma: PrismaClient,
-  params: {
-    bucket?: StorageBucket;
-    limit?: number;
-    cursor?: string;
-  }
-): Promise<{
-  items: StoredObjectMeta[];
-  nextCursor?: string;
-}> {
-  const limit = params.limit || 50;
-
-  // Cursor-based paginated query
-  const where: Prisma.FileObjectWhereInput = {};
-  if (params.bucket) {
-    where.bucket = params.bucket;
-  }
-  // Use Prisma's built-in cursor (consistent with orderBy: createdAt desc)
-  // Avoids id > cursor / createdAt desc mismatch that caused skipped/duplicated pages
-  const items = await prisma.fileObject.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    take: limit + 1,
-    ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
-  });
-
-  const hasMore = items.length > limit;
-  const results = hasMore ? items.slice(0, limit) : items;
-
-  return {
-    items: results.map(toStoredObjectMeta),
-    nextCursor: hasMore ? results[results.length - 1]?.id : undefined,
-  };
 }
 
 /**

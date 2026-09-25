@@ -115,7 +115,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   storage: {
     reason:
       'saveConfig e getConfig coperte dalle spec su autorità in scrittura e default di AppConfig; il resto sono operazioni su file reali via IStorageProvider e il MockStorageProvider è cablato solo nelle spec brandLogo',
-    uncovered: 8,
+    uncovered: 3,
   },
   maintenance: {
     reason:
