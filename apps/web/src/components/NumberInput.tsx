@@ -6,9 +6,9 @@ import type { ComponentProps } from 'react';
 
 
 /**
- * Input numerico che disabilita il cambio valore via scroll wheel.
- * Il browser nativo incrementa/decrementa i number input sullo scroll —
- * questo comportamento è indesiderato nei form con molti campi.
+ * Numeric input that disables changing the value with the scroll wheel.
+ * The browser natively increments/decrements number inputs on scroll —
+ * unwanted behaviour in forms with many fields.
  */
 export function NumberInput(props: Omit<ComponentProps<typeof Input>, 'type'>) {
   return (

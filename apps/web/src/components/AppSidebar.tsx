@@ -93,7 +93,7 @@ export default function AppSidebar() {
     await signOut({ callbackUrl: '/login' });
   };
 
-  // Genera le iniziali da firstName e lastName
+  // Build the initials from firstName and lastName
   const getUserInitials = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
       return `${firstName[0]}${lastName[0]}`.toUpperCase();
@@ -107,7 +107,7 @@ export default function AppSidebar() {
     return 'U';
   };
 
-  // Genera il nome completo da firstName e lastName
+  // Build the full name from firstName and lastName
   const getFullName = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
       return `${firstName} ${lastName}`;
@@ -136,7 +136,7 @@ export default function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
 
-        {/* Menu compatto senza sezioni */}
+        {/* Compact menu without sections */}
         <SidebarMenu>
           {/* Dashboard */}
           {menuAccess.dashboard && (
@@ -150,7 +150,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Calendario (trasversale — OR su planning.*) */}
+          {/* Calendar (cross-cutting — OR over planning.*) */}
           {menuAccess.calendar && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
@@ -162,7 +162,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Vendite con submenu collapsabile */}
+          {/* Sales with a collapsible submenu */}
           {menuAccess.sales && (
             <SidebarMenuItem>
               <Collapsible
@@ -198,7 +198,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Prodotto con submenu collapsabile */}
+          {/* Product with a collapsible submenu */}
           {menuAccess.product && (
             <SidebarMenuItem>
               <Collapsible
@@ -271,11 +271,10 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarContent>
 
-      {/* Menu Sistema - Dropdown (utility menus) */}
+      {/* System menu - Dropdown (utility menus) */}
       {menuAccess.showSystemSection && (
         <SidebarFooter className="py-2">
           <div className="flex flex-col gap-1">
-            {/* Amministrazione */}
             {menuAccess.admin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -340,7 +339,6 @@ export default function AppSidebar() {
               </DropdownMenu>
             )}
 
-            {/* Impostazioni */}
             {menuAccess.settings && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -431,7 +429,6 @@ export default function AppSidebar() {
               </DropdownMenu>
             )}
 
-            {/* Manutenzione */}
             {menuAccess.maintenance && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -494,7 +491,7 @@ export default function AppSidebar() {
         </SidebarFooter>
       )}
 
-      {/* Footer con dropdown utente - sempre visibile */}
+      {/* Footer with the user dropdown - always visible */}
       <SidebarFooter>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -46,7 +46,7 @@ export function ConfigToolbar({
         />
       </div>
 
-      {/* Filtro Tipo */}
+      {/* Type filter */}
       <Select
         value={
           filterEncrypted === undefined
@@ -79,7 +79,7 @@ export function ConfigToolbar({
         </SelectContent>
       </Select>
 
-      {/* Filtro Categoria */}
+      {/* Category filter */}
       <Select
         value={filterCategory || 'all'}
         onValueChange={value =>

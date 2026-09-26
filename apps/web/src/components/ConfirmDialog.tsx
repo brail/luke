@@ -123,7 +123,7 @@ export function ConfirmDialog({
     actionRef.current?.focus({ preventScroll: true });
   };
 
-  // Icone per diversi tipi di azione
+  // Icons for the different action types
   const getIcon = () => {
     switch (actionType) {
       case 'delete':

@@ -21,27 +21,27 @@ interface BrandAvatarProps {
 }
 
 /**
- * Componente Avatar per visualizzare il logo di un brand
+ * Avatar component that displays a brand logo.
  *
- * Mostra il logo del brand se disponibile, altrimenti mostra
- * le prime 2 lettere del codice come fallback.
+ * Shows the brand logo if available, otherwise shows
+ * the first 2 letters of the code as a fallback.
  */
 export function BrandAvatar({
   brand,
   size = 'sm',
   className,
 }: BrandAvatarProps) {
-  // Determina le dimensioni in base alla prop size
+  // Determine the dimensions from the size prop
   const sizeClasses = {
     sm: 'h-6 w-6',
     md: 'h-8 w-8',
     lg: 'h-10 w-10',
   };
 
-  // Genera le iniziali dal codice (prime 2 caratteri)
+  // Build the initials from the code (first 2 characters)
   const initials = brand.code.substring(0, 2).toUpperCase();
 
-  // Cache-busting stabile basato sull'ID del brand invece di Date.now()
+  // Stable cache-busting based on the brand ID instead of Date.now()
   const logoUrlWithCacheBust = useMemo(() => {
     if (!brand.logoUrl) return null;
     return `${brand.logoUrl}?v=${brand.id}`;

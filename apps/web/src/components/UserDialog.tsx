@@ -64,7 +64,7 @@ export function UserDialog({
   isSelfEdit = false,
   canResetPassword = true,
 }: UserDialogProps) {
-  void open; // Usa il parametro open per evitare warning
+  void open; // Use the open parameter to avoid a warning
 
   const handleCancel = () => {
     onOpenChange(false);

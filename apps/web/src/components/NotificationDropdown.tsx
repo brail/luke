@@ -97,7 +97,7 @@ export function NotificationDropdown() {
           </div>
         </div>
 
-        {/* Lista — 360px: fits ~6 notification rows before scrolling; no exact Tailwind scale match */}
+        {/* List — 360px: fits ~6 notification rows before scrolling; no exact Tailwind scale match */}
         <div className="max-h-[360px] overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">

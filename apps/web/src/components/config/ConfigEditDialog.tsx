@@ -126,7 +126,7 @@ export function ConfigEditDialog({
       });
       onOpenChange();
     } catch {
-      // Error handling è gestito dal componente padre
+      // Error handling is done by the parent component
     }
   };
 

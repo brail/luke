@@ -28,12 +28,12 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
     setIsExporting(true);
 
     try {
-      // Usa il nuovo endpoint exportJson
+      // Use the new exportJson endpoint
       const result = await exportMutation.mutateAsync({
         includeValues: true, // Include valori ma i cifrati mostrano [ENCRYPTED]
       });
 
-      // Prepara i dati per l'export
+      // Prepare the data for the export
       const exportData = {
         configs: result.configs.map(config => ({
           key: config.key,
@@ -53,7 +53,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
 
       toast.success(`Esportate ${result.count} configurazioni`);
     } catch (error) {
-      debugError("Errore durante l'export:", error);
+      debugError("Error during export:", error);
       toast.error("Errore durante l'esportazione");
     } finally {
       setIsExporting(false);

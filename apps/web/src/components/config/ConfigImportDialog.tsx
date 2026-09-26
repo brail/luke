@@ -132,7 +132,7 @@ export function ConfigImportDialog({
           }
         }
 
-        // Valida e determina status per ogni configurazione
+        // Validate and determine the status of each configuration
         const previewData: ImportPreview[] = await Promise.all(
           configs.map(async config => {
             const validation = validateConfig(config);
@@ -156,7 +156,7 @@ export function ConfigImportDialog({
         setPreview(previewData);
         setStep('preview');
       } catch (error) {
-        debugError('Errore parsing file:', error);
+        debugError('File parse error:', error);
         toast.error('Errore nel parsing del file JSON');
       }
     };
@@ -185,7 +185,7 @@ export function ConfigImportDialog({
     let progressInterval: ReturnType<typeof setInterval> | null = null;
 
     try {
-      // Progress bar funzionale durante l'import
+      // Working progress bar during the import
       progressInterval = setInterval(() => {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 200);
@@ -208,9 +208,9 @@ export function ConfigImportDialog({
         toast.error(
           `${result.errorCount} configurazioni non sono state importate`
         );
-        // Mostra dettagli errori se disponibili
+        // Show error details if available
         if (result.errors && result.errors.length > 0) {
-          debugError('Errori di importazione:', result.errors);
+          debugError('Import errors:', result.errors);
         }
       }
 
@@ -218,7 +218,7 @@ export function ConfigImportDialog({
       setPreview([]);
       setStep('upload');
     } catch (error) {
-      debugError("Errore durante l'import:", error);
+      debugError("Error during import:", error);
       toast.error("Errore durante l'importazione");
     } finally {
       if (progressInterval !== null) clearInterval(progressInterval);

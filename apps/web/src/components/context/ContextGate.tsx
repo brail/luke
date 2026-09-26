@@ -68,11 +68,11 @@ const SeasonCreateFormSchema: z.ZodType<SeasonCreateFormData, SeasonCreateFormDa
   });
 
 /**
- * Modale bloccante per la selezione iniziale del context
+ * Blocking modal for the initial context selection.
  *
- * Appare quando non ci sono Brand o Season attivi (FAILED_PRECONDITION).
- * Non può essere chiusa finché non viene selezionato un Brand e Season validi.
- * Se il DB è vuoto, offre la creazione inline di brand/season (solo per chi ha i permessi).
+ * Appears when there is no active Brand or Season (FAILED_PRECONDITION).
+ * It cannot be closed until a valid Brand and Season are selected.
+ * If the DB is empty, it offers inline creation of brand/season (only for those with the permissions).
  */
 export function ContextGate() {
   const { needsSetup } = useAppContext();
@@ -80,7 +80,7 @@ export function ContextGate() {
   const { can } = usePermission();
   const utils = trpc.useUtils();
 
-  // Selezione context
+  // Context selection
   const [selectedBrandId, setSelectedBrandId] = useState<string>('');
   const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
 
@@ -127,7 +127,7 @@ export function ContextGate() {
       try {
         await setContext({ brandId: selectedBrandId, seasonId: selectedSeasonId });
       } catch {
-        // L'errore è già gestito da useContextMutation
+        // The error is already handled by useContextMutation
       }
     }
   };
@@ -145,7 +145,7 @@ export function ContextGate() {
     });
   };
 
-  // Un brand è disponibile se ci sono brands nella lista O se è appena stato creato (selectedBrandId è set)
+  // A brand is available if there are brands in the list OR one was just created (selectedBrandId is set)
   const noBrands = !brandsLoading && brands.length === 0 && !selectedBrandId;
   const noSeasons = !!selectedBrandId && !seasonsLoading && seasons.length === 0 && !selectedSeasonId;
   const isConfirmEnabled = selectedBrandId && selectedSeasonId && !isPending;
@@ -288,7 +288,7 @@ export function ContextGate() {
             )}
           </div>
 
-          {/* Season — mostrata solo quando c'è un brand selezionato */}
+          {/* Season — shown only when a brand is selected */}
           {!noBrands && !!selectedBrandId && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Season</label>
@@ -398,7 +398,6 @@ export function ContextGate() {
             </div>
           )}
 
-          {/* Conferma */}
           <div className="flex justify-end pt-4">
             <Button
               onClick={handleConfirm}

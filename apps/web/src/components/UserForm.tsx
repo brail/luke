@@ -124,7 +124,7 @@ export function UserForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-          {/* Prima riga: Email e Username */}
+          {/* Row 1: Email and Username */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email */}
             <div className="space-y-2">
@@ -181,9 +181,8 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Seconda riga: Nome e Cognome */}
+          {/* Row 2: First and last name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Nome */}
             <div className="space-y-2">
               <Label htmlFor="firstName">Nome</Label>
               <Input
@@ -205,7 +204,6 @@ export function UserForm({
               )}
             </div>
 
-            {/* Cognome */}
             <div className="space-y-2">
               <Label htmlFor="lastName">Cognome</Label>
               <Input
@@ -228,9 +226,8 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Terza riga: Ruolo e Password */}
+          {/* Row 3: Role and Password */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Ruolo */}
             <div className="space-y-2">
               <Label htmlFor="role">Ruolo *</Label>
               <select
@@ -305,7 +302,7 @@ export function UserForm({
                   </p>
                 )}
 
-              {/* Indicatori validazione password */}
+              {/* Password validation indicators */}
               <PasswordValidationIndicators
                 password={formData.password || ''}
                 confirmPassword={formData.confirmPassword || ''}
@@ -319,7 +316,7 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Conferma Password - Solo se necessario */}
+          {/* Confirm password - only when needed */}
           {(mode === 'create' ||
             (mode === 'edit' &&
               formData.password &&
@@ -352,7 +349,6 @@ export function UserForm({
               </div>
             )}
 
-          {/* Attivo */}
           <div className="flex items-center space-x-2">
             <input
               id="isActive"
@@ -376,7 +372,7 @@ export function UserForm({
           </div>
       </div>
 
-      {/* Pulsanti */}
+      {/* Buttons */}
       <div className="flex justify-end space-x-2 px-6 py-4 border-t shrink-0">
         <Button
           type="button"

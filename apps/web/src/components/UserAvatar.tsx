@@ -3,9 +3,9 @@ import React from 'react';
 import { cn } from '../lib/utils';
 
 interface UserAvatarProps {
-  /** Nome dell'utente */
+  /** User first name */
   firstName: string;
-  /** Cognome dell'utente */
+  /** User last name */
   lastName: string;
   /** Dimensione dell'avatar */
   size?: 'sm' | 'md' | 'lg';
@@ -14,8 +14,8 @@ interface UserAvatarProps {
 }
 
 /**
- * Genera un colore consistente basato su una stringa
- * Usa un hash semplice per garantire lo stesso colore per lo stesso nome
+ * Generates a consistent colour from a string.
+ * Uses a simple hash so the same name always gets the same colour.
  */
 function generateColorFromName(name: string): string {
   let hash = 0;
@@ -23,13 +23,13 @@ function generateColorFromName(name: string): string {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
 
-  // Genera un colore HSL con saturazione e luminosità fisse
+  // Generate an HSL colour with fixed saturation and lightness
   const hue = Math.abs(hash) % 360;
   return `hsl(${hue}, 70%, 50%)`;
 }
 
 /**
- * Estrae le iniziali da nome e cognome
+ * Extracts the initials from first and last name.
  */
 function getInitials(firstName: string, lastName: string): string {
   const firstInitial = firstName.charAt(0).toUpperCase();
@@ -70,7 +70,7 @@ export function UserAvatar({
   // Genera le iniziali
   const initials = getInitials(firstName, lastName);
 
-  // Genera il colore di background basato sul nome completo
+  // Generate the background colour from the full name
   const backgroundColor = generateColorFromName(`${firstName} ${lastName}`);
 
   // Ottieni le classi per la dimensione

@@ -33,10 +33,10 @@ export function TimezoneUpdateDialog() {
   const [hasShownForSession, setHasShownForSession] = useState(false);
   const refresh = useRefresh();
 
-  // Usa i dati aggiornati dall'API invece della sessione NextAuth
+  // Use the fresh data from the API instead of the NextAuth session
   const { data: userData } = trpc.me.get.useQuery(undefined, {
     enabled: !!session?.accessToken,
-    staleTime: 5 * 60 * 1000, // 5 minuti - riduce richieste API
+    staleTime: 5 * 60 * 1000, // 5 minutes - reduces API requests
   });
 
   // Mutation tRPC
@@ -60,14 +60,14 @@ export function TimezoneUpdateDialog() {
       return;
     }
 
-    // Mostra dialog solo al primo accesso post-login
+    // Show the dialog only on the first access after login
     if (status === 'authenticated' && !hasShownForSession) {
-      // Rileva timezone dal browser
+      // Detect the timezone from the browser
       try {
         const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const userTz = userData?.timezone; // Usa dati dall'API
+        const userTz = userData?.timezone; // Use the data from the API
 
-        // Se diverso e sessione attiva, mostra dialog solo una volta per sessione
+        // If different and the session is active, show the dialog only once per session
         if (browserTz && userTz && browserTz !== userTz && session?.user) {
           setDetectedTimezone(browserTz);
           setHasShownForSession(true);
@@ -75,8 +75,8 @@ export function TimezoneUpdateDialog() {
           setTimeout(() => setOpen(true), 2000);
         }
       } catch (error) {
-        // Ignora errori di rilevamento timezone
-        debugWarn('Impossibile rilevare timezone browser:', error);
+        // Ignore timezone detection errors
+        debugWarn('Unable to detect the browser timezone:', error);
       }
     }
   }, [userData?.timezone, session?.user, status, hasShownForSession]);
@@ -84,7 +84,7 @@ export function TimezoneUpdateDialog() {
   const handleUpdate = () => {
     if (!detectedTimezone) return;
 
-    // Invia solo il timezone aggiornato
+    // Send only the updated timezone
     updateTimezone({
       timezone: detectedTimezone,
     });
@@ -92,7 +92,7 @@ export function TimezoneUpdateDialog() {
 
   const handleDismiss = () => {
     setOpen(false);
-    // Non mostrare più per questa sessione
+    // Do not show it again for this session
     setDetectedTimezone(null);
   };
 
