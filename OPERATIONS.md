@@ -46,28 +46,24 @@ first source that yields a valid one:
    "keyBy": "ip" | "userId" | "username" }`, and `keyBy` defaults to `"ip"` when
    omitted. The schema is `RateLimitConfigSchema` in
    [`packages/core/src/schemas/appConfig.ts`](packages/core/src/schemas/appConfig.ts).
-2. **Environment** — `LUKE_RATE_LIMIT_<BUCKET>_MAX`, `_WINDOW` and `_KEY_BY`, with
-   the bucket name upper-cased (for example `LUKE_RATE_LIMIT_LOGINBYUSERNAME_MAX`).
-   Consulted only when AppConfig yields no valid policy for that bucket; a
-   variable left unset takes the default.
-3. **Defaults** — `RATE_LIMIT_POLICY_DEFAULTS` in
+2. **Defaults** — `RATE_LIMIT_POLICY_DEFAULTS` in
    [`apps/api/src/lib/rateLimitPolicy.ts`](apps/api/src/lib/rateLimitPolicy.ts).
 
 Consequences of that resolution:
 
 - **The AppConfig value is validated as a whole.** If any entry fails the schema —
   a non-positive `max`, an unknown `keyBy` — no bucket takes its AppConfig
-  override, and every bucket falls through to the environment or the default. A
+  override, and every bucket falls through to its default. A
   JSON syntax error has the same effect. The syntax error is logged as a warning;
   the schema failure is not. A time window with an invalid format affects only its
   own bucket, and is logged.
 - **Omitting `keyBy` keys the bucket by IP.** For `loginByUsername`, which exists
   to limit attempts per account across many addresses, that silently removes the
   protection it is there for.
-- **The environment tier sits outside the bootstrap-only environment policy** in
-  `CLAUDE.md`; [ADR-018](docs/decisions/018-runtime-configuration-and-bootstrap-environment.md)
-  records it as an observed gap. Its values are not validated, while AppConfig
-  entries are. Prefer AppConfig.
+- **There is no environment tier.** `LUKE_RATE_LIMIT_<BUCKET>_*` variables were
+  read until 2026-09-27 without validation (a non-numeric maximum disabled the
+  limit) and sat outside the bootstrap-only environment policy in `CLAUDE.md`;
+  they are now ignored.
 
 ### Buckets
 

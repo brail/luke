@@ -134,9 +134,10 @@ function parseTimeWindow(window: string): number {
 
 /**
  * Resolves the effective rate-limit policy for a named route.
- * Resolution order: AppConfig (`rateLimit` JSON key) → environment variables
- * (`LUKE_RATE_LIMIT_<ROUTE>_MAX/WINDOW/KEY_BY`) → built-in defaults.
- * Invalid or malformed config at any tier falls through to the next tier.
+ * Resolution order: AppConfig (`rateLimit` JSON key) → built-in defaults; an invalid or
+ * malformed AppConfig value falls through to the defaults. There is no environment tier: it read
+ * `parseInt` unchecked (a non-numeric max became `NaN`, which disables the limit) and sat outside
+ * the env policy.
  *
  * @param routeName - Route identifier; must be present in the RATE_LIMIT_POLICY_DEFAULTS map.
  * @param prisma - Prisma client used to read AppConfig.
@@ -171,29 +172,7 @@ export async function resolveRateLimitPolicy(
     logger.warn({ err: error }, 'Failed to parse AppConfig rateLimit');
   }
 
-  // 2) ENV fallback (e.g. LUKE_RATE_LIMIT_LOGIN_MAX, LUKE_RATE_LIMIT_LOGIN_WINDOW, LUKE_RATE_LIMIT_LOGIN_KEY_BY)
-  const envKey = routeName.toUpperCase();
-  const maxEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_MAX`];
-  const windowEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_WINDOW`];
-  const keyByEnv = process.env[`LUKE_RATE_LIMIT_${envKey}_KEY_BY`];
-
-  if (maxEnv || windowEnv || keyByEnv) {
-    const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
-    try {
-      return {
-        max: maxEnv ? parseInt(maxEnv, 10) : def.max,
-        windowMs: windowEnv
-          ? parseTimeWindow(windowEnv)
-          : parseTimeWindow(def.timeWindow),
-        keyBy: (keyByEnv as 'ip' | 'userId' | 'username') || def.keyBy,
-      };
-    } catch (error) {
-      logger.warn({ err: error, routeName }, 'Invalid ENV rate limit config');
-      // Fall back to defaults if ENV is malformed
-    }
-  }
-
-  // 3) Safe defaults
+  // 2) Safe defaults
   const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
   return {
     max: def.max,
