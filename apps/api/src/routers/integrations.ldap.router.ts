@@ -5,9 +5,8 @@
 
 import { TRPCError } from '@trpc/server';
 import { Client } from 'ldapts';
-import { z } from 'zod';
 
-import { ldapConfigSchema } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
@@ -322,13 +321,13 @@ export const ldapRouter = router({
    * Tests the LDAP user search using the configured searchFilter with the given username.
    *
    * @auth {config:update}
-   * @input {{ username: string }} — username to search for (LDAP-escaped to prevent injection).
+   * @input {ldapSearchTestSchema} — username to search for (LDAP-escaped to prevent injection).
    * @output {{ success: true, message: string, results: Array<{ dn, attributes }> }}
    */
   testLdapSearch: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('ldapTest'))
-    .input(z.object({ username: z.string().min(1).max(256) }))
+    .input(ldapSearchTestSchema)
     .mutation(async ({ input, ctx }) => {
       let client: Client | null = null;
 

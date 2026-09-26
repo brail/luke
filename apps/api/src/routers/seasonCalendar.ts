@@ -29,6 +29,7 @@ import {
   ApplyTemplateInputSchema,
   MilestoneCancelInputSchema,
   MilestoneRescheduleInputSchema,
+  MilestoneTemplateInputSchema,
   MilestoneTemplateItemBaseSchema,
   SEASON_CALENDAR_STATUS,
   partialWithoutDefaults,
@@ -782,10 +783,7 @@ export const seasonCalendarRouter = router({
    */
   createTemplate: protectedProcedure
     .use(requirePermission('milestone_template:create'))
-    .input(z.object({
-      name: z.string().min(1).max(100),
-      description: z.string().optional(),
-    }))
+    .input(MilestoneTemplateInputSchema)
     .mutation(async ({ input, ctx }) => {
       const result = await createTemplate(input, ctx.prisma);
       await logAudit(ctx, { action: 'MILESTONE_TEMPLATE_CREATE', targetType: 'MilestoneTemplate', targetId: result.id, result: 'SUCCESS', metadata: { name: result.name } });
@@ -801,11 +799,7 @@ export const seasonCalendarRouter = router({
    */
   updateTemplate: protectedProcedure
     .use(requirePermission('milestone_template:update'))
-    .input(z.object({
-      id: z.string().uuid(),
-      name: z.string().min(1).max(100).optional(),
-      description: z.string().optional(),
-    }))
+    .input(z.object({ id: z.string().uuid() }).and(partialWithoutDefaults(MilestoneTemplateInputSchema)))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const result = await updateTemplate(id, data, ctx.prisma);

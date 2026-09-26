@@ -92,13 +92,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   seasonCalendar: {
     reason:
-      'listMilestones and grantUserVisibility by the visibility spec (brand scope + grant hardening), getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone by the lifecycle spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
-    uncovered: 24,
+      'listMilestones and grantUserVisibility by the visibility spec (brand scope + grant hardening), getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
+    uncovered: 22,
   },
   integrations: {
     reason:
-      'saveLdapConfig, and mail.saveConfig, which only writes AppConfig; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 23,
+      'saveLdapConfig, mail.saveConfig, which only writes AppConfig, and auth.testLdapSearch, whose input is refused before any directory is contacted; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 22,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────

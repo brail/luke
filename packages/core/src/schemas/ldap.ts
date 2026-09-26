@@ -73,7 +73,11 @@ export const ldapConfigResponseSchema = z.object({
 
 /** Input schema for testing LDAP user search by username. */
 export const ldapSearchTestSchema = z.object({
-  username: z.string().min(1, 'Username è obbligatorio'),
+  // Bounds the filter string sent to the directory; nothing else does.
+  username: z
+    .string()
+    .min(1, 'Username è obbligatorio')
+    .max(256, 'Username troppo lungo (max 256 caratteri)'),
 });
 
 /** Response shape for an LDAP search test, including matched entries and effective search config. */
