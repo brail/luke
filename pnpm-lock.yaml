@@ -8,10 +8,8 @@ overrides:
   uuid@<11.1.1: '>=11.1.1'
   postcss@<8.5.18: '>=8.5.18'
   nanoid: '>=3.3.17 <4'
-  '@hono/node-server@<1.19.13': '>=1.19.13'
   '@opentelemetry/propagator-jaeger': 2.9.0
   brace-expansion: '>=5.0.9'
-  hono: '>=4.12.34'
   find-my-way: '>=9.7.0'
   deepmerge-ts: '>=8.0.2'
   fast-uri: '>=3.1.6 <4'
@@ -119,9 +117,6 @@ importers:
       '@fastify/rate-limit':
         specifier: ^11.2.0
         version: 11.2.0
-      '@grpc/grpc-js':
-        specifier: ^1.11.0
-        version: 1.14.4
       '@luke/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
@@ -161,12 +156,6 @@ importers:
       '@trpc/server':
         specifier: ^11.18.0
         version: 11.18.0(typescript@6.0.3)
-      '@types/jsonwebtoken':
-        specifier: ^9.0.10
-        version: 9.0.10
-      '@types/pg':
-        specifier: ^8.23.1
-        version: 8.23.1
       argon2:
         specifier: ^0.45.1
         version: 0.45.1
@@ -185,12 +174,6 @@ importers:
       ldapts:
         specifier: ^9.0.0
         version: 9.0.0
-      mssql:
-        specifier: ^12.7.0
-        version: 12.7.0
-      next-auth:
-        specifier: 5.0.0-beta.32
-        version: 5.0.0-beta.32(next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@9.1.1)(react@19.2.8)
       nodemailer:
         specifier: ^9.1.1
         version: 9.1.1
@@ -225,9 +208,9 @@ importers:
       '@prisma/client':
         specifier: ^7.10.0
         version: 7.10.0(prisma@7.10.0(@types/node@24.13.2)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@6.0.3))(typescript@6.0.3)
-      '@types/mssql':
-        specifier: ^12.3.0
-        version: 12.3.0
+      '@types/jsonwebtoken':
+        specifier: ^9.0.10
+        version: 9.0.10
       '@types/node':
         specifier: ^24.7.2
         version: 24.13.2
@@ -237,6 +220,9 @@ importers:
       '@types/pdfmake':
         specifier: ^0.3.2
         version: 0.3.3
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@types/supertest':
         specifier: ^7.2.1
         version: 7.2.1
@@ -359,7 +345,7 @@ importers:
         version: 16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       next-auth:
         specifier: 5.0.0-beta.32
-        version: 5.0.0-beta.32(next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@9.1.1)(react@19.2.8)
+        version: 5.0.0-beta.32(next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -471,6 +457,9 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
+      '@types/node':
+        specifier: ^24.7.2
+        version: 24.13.2
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -511,9 +500,6 @@ importers:
 
   packages/nav:
     dependencies:
-      '@luke/core':
-        specifier: workspace:*
-        version: link:../core
       '@luke/db':
         specifier: workspace:*
         version: link:../db
@@ -6652,15 +6638,13 @@ snapshots:
 
   '@alloc/quick-lru@5.2.0': {}
 
-  '@auth/core@0.41.3(nodemailer@9.1.1)':
+  '@auth/core@0.41.3':
     dependencies:
       '@panva/hkdf': 1.2.1
       jose: 6.2.3
       oauth4webapi: 3.8.6
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
-    optionalDependencies:
-      nodemailer: 9.1.1
 
   '@aws-sdk/checksums@3.1000.29':
     dependencies:
@@ -11804,13 +11788,11 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next-auth@5.0.0-beta.32(next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(nodemailer@9.1.1)(react@19.2.8):
+  next-auth@5.0.0-beta.32(next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8):
     dependencies:
-      '@auth/core': 0.41.3(nodemailer@9.1.1)
+      '@auth/core': 0.41.3
       next: 16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       react: 19.2.8
-    optionalDependencies:
-      nodemailer: 9.1.1
 
   next@16.3.3(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.62.1)(@types/node@24.13.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
