@@ -148,7 +148,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort */ });
   });
 
-  it('riporta i dati al backup e non perde nessun evento del registro', async () => {
+  it('brings the data back to the backup and loses no activity log event', async () => {
     // --- state at the moment of the backup ---
     await prisma.user.create({
       data: { id: 'u1', email: 'old@x.it', username: 'olduser', firstName: 'Old', role: 'admin' },
@@ -192,7 +192,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     // The trail keeps them all, in both directions, without duplicating a1.
     const audit = await prisma.auditLog.findMany({ orderBy: { id: 'asc' } });
     expect(audit.map(a => a.action)).toEqual(['BEFORE_BACKUP', 'AFTER_BACKUP', 'BY_USER_NOT_IN_BACKUP']);
-    expect(merged).toBe(2); // a1 esiste già nello snapshot ripristinato: ON CONFLICT DO NOTHING
+    expect(merged).toBe(2); // a1 already exists in the restored snapshot: ON CONFLICT DO NOTHING
 
     // Attribution: kept where the user still exists, nulled where the restore removed them.
     expect(audit.find(a => a.id === 'a2')?.actorId).toBe('u1');
@@ -204,7 +204,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(Number(leftovers[0].n)).toBe(0);
   }, 120_000);
 
-  it('rifiuta un archivio che pg_restore non sa leggere, senza toccare il database', async () => {
+  it('rejects an archive pg_restore cannot read, without touching the database', async () => {
     const { readFileSync, writeFileSync } = await import('fs');
     const badPath = join(workDir, 'unreadable.dump');
 
@@ -222,7 +222,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.user.count()).toBe(usersBefore);
   }, 60_000);
 
-  it('conserva l\'inventario dei backup invece di riportarlo indietro', async () => {
+  it('keeps the backup inventory instead of rolling it back', async () => {
     // The scenario that left a backup stuck at "In corso…" forever and made the safety snapshot
     // vanish: the dump photographs backup_records while the backup itself is RUNNING, and records
     // created after the dump (the pre-restore snapshot among them) are not in it at all.
@@ -258,7 +258,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.backupRecord.count({ where: { trigger: 'PRE_RESTORE_SAFETY' } })).toBe(1);
   }, 90_000);
 
-  it('riporta indietro app_configs, che è perché la manutenzione va riaffermata dopo', async () => {
+  it('rolls app_configs back, which is why maintenance has to be reasserted afterwards', async () => {
     // The fact the router's fix rests on: Maintenance Mode state lives in app_configs, which the
     // restore overwrites with the snapshot's copy. Activating it before pg_restore is not enough —
     // it has to be rewritten afterwards, or the instance reopens to everyone at the exact moment
@@ -282,7 +282,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(probe?.value).toBe('PRIMA');
   }, 90_000);
 
-  it('sopravvive a un backup che contiene già uno schema di staging', async () => {
+  it('survives a backup that already contains a staging schema', async () => {
     // The real regression: an interrupted restore leaves its staging schema in the database, a
     // later backup captures it, and restoring that backup had `pg_restore --clean` overwrite the
     // live staging schema with the archive's copy — erasing the events it existed to protect
@@ -308,7 +308,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.auditLog.count({ where: { id: 'dopo-archivio' } })).toBe(1);
   }, 90_000);
 
-  it('scarta uno staging residuo che non contiene nulla di perduto', async () => {
+  it('discards a leftover staging schema that holds nothing lost', async () => {
     await stashPreservedTables(prisma);
     const before = await prisma.auditLog.count();
 
@@ -321,7 +321,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(await prisma.auditLog.count()).toBe(before);
   }, 60_000);
 
-  it('rifiuta se lo staging è l\'unica copia di eventi che la tabella viva non ha più', async () => {
+  it('refuses when the staging schema is the only copy of events the live table no longer has', async () => {
     const stage = await stashPreservedTables(prisma);
     // Simulates the dangerous case: the previous restore overwrote audit_logs and one of the
     // stashed events no longer exists in the live table.

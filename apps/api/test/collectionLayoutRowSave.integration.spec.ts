@@ -78,7 +78,7 @@ beforeAll(async () => {
 });
 
 describe('rows.update — sync quotazioni', () => {
-  it('crea, aggiorna ed elimina quotazioni in un solo salvataggio, con audit per-quotazione', async () => {
+  it('creates, updates and deletes quotations in a single save, with per-quotation audit', async () => {
     const row = await createBaseRow();
 
     await asAdmin().collectionLayout.rows.update({
@@ -133,7 +133,7 @@ describe('rows.update — sync quotazioni', () => {
     expect(await prisma.collectionRowQuotation.findUnique({ where: { id: q2Id } })).toBeNull();
   });
 
-  it('un id di quotazione di un\'altra riga → BAD_REQUEST, transazione intera annullata', async () => {
+  it('a quotation id from another row → BAD_REQUEST, the whole transaction rolled back', async () => {
     const rowA = await createBaseRow();
     const rowB = await createBaseRow();
 
@@ -163,7 +163,7 @@ describe('rows.update — sync quotazioni', () => {
 });
 
 describe('rows.create — quotazioni al volo', () => {
-  it('crea la riga con le quotazioni nella stessa richiesta, con audit per-quotazione', async () => {
+  it('creates the row with its quotations in the same request, with per-quotation audit', async () => {
     const row = await asAdmin().collectionLayout.rows.create({
       groupId,
       gender: 'UOMO',
@@ -185,7 +185,7 @@ describe('rows.create — quotazioni al volo', () => {
 });
 
 describe('rows.update — diff fase consolidato nell\'audit', () => {
-  it('cambio fase reale produce un solo COLLECTION_ROW_UPDATE con old/new/nota, nessun evento separato', async () => {
+  it('a real phase change produces a single COLLECTION_ROW_UPDATE with old/new/note, no separate event', async () => {
     const row = await createBaseRow();
 
     await asAdmin().collectionLayout.rows.update({
@@ -219,7 +219,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
     ).toBe(0);
   });
 
-  it('rinviare la stessa fase non produce diff né nota in audit — anche se una nota è presente nel payload', async () => {
+  it('resending the same phase produces no diff and no audit note — even with a note in the payload', async () => {
     const row = await createBaseRow();
     await asAdmin().collectionLayout.rows.update({ rowId: row.id, data: { phaseId: phase1Id } });
 
@@ -238,7 +238,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
 });
 
 describe('rows.bulkAssignPlanningGroup — idempotenza', () => {
-  it('riassegnare righe già nel gruppo target non le tocca (count 0, updatedAt invariato)', async () => {
+  it('reassigning rows already in the target group leaves them untouched (count 0, updatedAt unchanged)', async () => {
     const row = await createBaseRow();
     const before = await prisma.collectionLayoutRow.findUniqueOrThrow({
       where: { id: row.id },
@@ -258,7 +258,7 @@ describe('rows.bulkAssignPlanningGroup — idempotenza', () => {
     expect(after.updatedAt).toEqual(before.updatedAt);
   });
 
-  it('riassegnare a un gruppo diverso aggiorna la riga (count 1)', async () => {
+  it('reassigning to a different group updates the row (count 1)', async () => {
     const row = await createBaseRow();
     const before = await prisma.collectionLayoutRow.findUniqueOrThrow({
       where: { id: row.id },

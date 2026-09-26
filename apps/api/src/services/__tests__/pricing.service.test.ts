@@ -37,7 +37,7 @@ const PARAMS: CalcParams = {
 };
 
 describe('calculateForward', () => {
-  it('centra il margine aziendale dichiarato nei parametri', () => {
+  it('hits the company margin declared in the parameters', () => {
     const result = calculateForward(100, PARAMS);
 
     // This is the parameter set's promise: `optimalMargin` isn't an aspiration,
@@ -46,7 +46,7 @@ describe('calculateForward', () => {
     expect(result.companyMargin * 100).toBeCloseTo(PARAMS.optimalMargin, 1);
   });
 
-  it('il margine dipende solo da optimalMargin, non dal prezzo di acquisto', () => {
+  it('the margin depends only on optimalMargin, not on the purchase price', () => {
     const cheap = calculateForward(10, PARAMS);
     const expensive = calculateForward(1000, PARAMS);
 
@@ -55,7 +55,7 @@ describe('calculateForward', () => {
     expect(cheap.companyMargin).toBeCloseTo(expensive.companyMargin, 4);
   });
 
-  it('la catena di costi è monotona: ogni step non riduce il prezzo', () => {
+  it('the cost chain is monotonic: no step lowers the price', () => {
     const r = calculateForward(100, PARAMS);
 
     // With positive costs and percentages, no step can lower the value.
@@ -67,7 +67,7 @@ describe('calculateForward', () => {
     expect(r.retailPrice).toBeGreaterThan(r.wholesalePrice);
   });
 
-  it('un prezzo di acquisto più alto produce un retail più alto', () => {
+  it('a higher purchase price produces a higher retail price', () => {
     // Monotonicity with respect to the input: trivial to verify, and the one thing
     // that distinguishes a pricing engine from a number generator.
     expect(calculateForward(200, PARAMS).retailPriceRaw).toBeGreaterThan(
@@ -77,7 +77,7 @@ describe('calculateForward', () => {
 });
 
 describe('calculateInverse', () => {
-  it('è l’inversa di calculateForward', () => {
+  it('is the inverse of calculateForward', () => {
     const purchasePrice = 137.5;
     const forward = calculateForward(purchasePrice, PARAMS);
 
@@ -90,7 +90,7 @@ describe('calculateInverse', () => {
     expect(back.purchasePriceRaw).toBeCloseTo(purchasePrice, 1);
   });
 
-  it('ricostruisce gli stessi valori intermedi del forward', () => {
+  it('rebuilds the same intermediate values as forward', () => {
     const forward = calculateForward(137.5, PARAMS);
     const back = calculateInverse(forward.retailPriceRaw, PARAMS);
 
@@ -99,7 +99,7 @@ describe('calculateInverse', () => {
     expect(back.companyMargin).toBeCloseTo(forward.companyMargin, 3);
   });
 
-  it('arrotonda il prezzo di acquisto per difetto', () => {
+  it('rounds the purchase price down', () => {
     const back = calculateInverse(1000, PARAMS);
 
     // Rounding the maximum payable price up would erode the margin:
@@ -110,7 +110,7 @@ describe('calculateInverse', () => {
 });
 
 describe('calculateMarginOnly', () => {
-  it('conferma il margine dichiarato quando i prezzi vengono dal forward', () => {
+  it('confirms the declared margin when the prices come from forward', () => {
     const forward = calculateForward(100, PARAMS);
     const margin = calculateMarginOnly(100, forward.retailPriceRaw, PARAMS);
 
@@ -119,14 +119,14 @@ describe('calculateMarginOnly', () => {
     expect(margin.landedCost).toBeCloseTo(forward.landedCost, 1);
   });
 
-  it('un retail più basso a parità di costo comprime il margine', () => {
+  it('a lower retail price at equal cost squeezes the margin', () => {
     const full = calculateMarginOnly(100, 800, PARAMS);
     const discounted = calculateMarginOnly(100, 600, PARAMS);
 
     expect(discounted.companyMargin).toBeLessThan(full.companyMargin);
   });
 
-  it('segnala margine negativo quando il retail non copre il costo', () => {
+  it('flags a negative margin when retail does not cover the cost', () => {
     // Edge case that really matters: selling below cost must produce a
     // negative number, not an error or a silent zero.
     const result = calculateMarginOnly(100, 150, PARAMS);

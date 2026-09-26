@@ -76,7 +76,7 @@ beforeEach(() => {
 });
 
 describe('createRevisionsForReachedEvents', () => {
-  it('crea una revisione MILESTONE_DATA col titolo evento e il gruppo nel commento', async () => {
+  it('creates a MILESTONE_DATA revision with the event title and the group in the comment', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
@@ -98,7 +98,7 @@ describe('createRevisionsForReachedEvents', () => {
     expect(userId).toBe('admin-1');
   });
 
-  it('registra un audit log per ogni revisione automatica creata', async () => {
+  it('records an audit log for every automatic revision created', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
@@ -115,7 +115,7 @@ describe('createRevisionsForReachedEvents', () => {
     });
   });
 
-  it('non ricrea la revisione se quell’evento ne ha già una dello stesso tipo', async () => {
+  it('does not recreate the revision if that event already has one of the same type', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
@@ -126,7 +126,7 @@ describe('createRevisionsForReachedEvents', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('ignora gli eventi il cui brand+stagione non ha un collection layout', async () => {
+  it('ignores events whose brand+season has no collection layout', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [],
@@ -136,7 +136,7 @@ describe('createRevisionsForReachedEvents', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('interroga solo eventi attivi con fase e scadenza già passata, entro la finestra di lookback', async () => {
+  it('queries only active events with a phase and a deadline already past, within the lookback window', async () => {
     const prisma = buildFakePrisma({ events: [] });
 
     await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
@@ -153,7 +153,7 @@ describe('createRevisionsForReachedEvents', () => {
     }
   });
 
-  it('non crea nulla se non esiste un admin attivo a cui attribuire la revisione', async () => {
+  it('creates nothing if there is no active admin to attribute the revision to', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
@@ -165,7 +165,7 @@ describe('createRevisionsForReachedEvents', () => {
     expect(fakeLogger.warn).toHaveBeenCalled();
   });
 
-  it('non conta come creata la revisione persa in corsa contro un trigger concorrente (P2002)', async () => {
+  it('does not count as created a revision lost in a race against a concurrent trigger (P2002)', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
@@ -178,7 +178,7 @@ describe('createRevisionsForReachedEvents', () => {
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it('un evento che fallisce non blocca gli altri', async () => {
+  it('one failing event does not block the others', async () => {
     const prisma = buildFakePrisma({
       events: [
         reachedEvent('ev-1', 'Primo', 'Uomo FW26'),
@@ -196,7 +196,7 @@ describe('createRevisionsForReachedEvents', () => {
 });
 
 describe('createRevisionsForCompletedPhase', () => {
-  it('crea una revisione MILESTONE_FASE quando tutte le righe del gruppo hanno superato la fase', async () => {
+  it('creates a MILESTONE_FASE revision when every row in the group has passed the phase', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }, { phase: { order: 4 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -216,7 +216,7 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(input.notes).toContain('Uomo FW26');
   });
 
-  it('seleziona solo gli eventi la cui fase è al più quella minima raggiunta dal gruppo', async () => {
+  it('selects only events whose phase is at most the minimum one the group has reached', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 5 } }, { phase: { order: 2 } }, { phase: { order: 4 } }],
       events: [],
@@ -231,7 +231,7 @@ describe('createRevisionsForCompletedPhase', () => {
     });
   });
 
-  it('non crea nulla se anche una sola riga del gruppo è senza fase', async () => {
+  it('creates nothing if even one row in the group has no phase', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }, { phase: null }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -242,14 +242,14 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non crea nulla se il gruppo non ha righe', async () => {
+  it('creates nothing if the group has no rows', async () => {
     const prisma = buildFakePrisma({ rows: [] });
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non ricrea la revisione se quell’evento ne ha già una dello stesso tipo', async () => {
+  it('does not recreate the revision if that event already has one of the same type', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -260,7 +260,7 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non propaga mai un errore — il salvataggio della riga non deve fallire per una revisione', async () => {
+  it('never propagates an error — saving the row must not fail because of a revision', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],

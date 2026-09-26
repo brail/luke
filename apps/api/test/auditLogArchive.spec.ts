@@ -52,7 +52,7 @@ describe('auditLogArchiveKey', () => {
     expect(key).toMatch(/^audit-archive\/\d{4}\/tick-abc-normal\.ndjson\.gz$/);
   });
 
-  it('produce key diverse per tier diversi sullo stesso tick (bug plausibile: collisione fra i due file di un tick)', () => {
+  it('produces different keys for different tiers on the same tick (plausible bug: a collision between the two files of one tick)', () => {
     const normalKey = auditLogArchiveKey('tick-xyz', 'normal');
     const criticalKey = auditLogArchiveKey('tick-xyz', 'critical');
 
@@ -67,7 +67,7 @@ describe('archiveAuditLogRows', () => {
     mockStorage = new MockStorageProvider();
   });
 
-  it('scrive un unico file .ndjson.gz nel bucket backups, con le righe attese decomprimibili in ordine', async () => {
+  it('writes a single .ndjson.gz file to the backups bucket, with the expected rows decompressible in order', async () => {
     const rows = [fakeRow('audit-1'), fakeRow('audit-2', { action: 'CONFIG_UPSERT' })];
     const prisma = {
       auditLog: {
@@ -96,7 +96,7 @@ describe('archiveAuditLogRows', () => {
     ]);
   });
 
-  it('passa bucket/contentType/bypassSizeLimit corretti al provider (scrittura privata, non un upload utente)', async () => {
+  it('passes the correct bucket/contentType/bypassSizeLimit to the provider (a private write, not a user upload)', async () => {
     const prisma = {
       auditLog: { findMany: async () => [fakeRow('audit-1')] },
     } as any;
@@ -120,7 +120,7 @@ describe('archiveAuditLogRows', () => {
     });
   });
 
-  it('pagina il recupero delle righe oltre il batch di fetch, senza perdere né duplicare righe (bug plausibile: off-by-one sul chunking degli id)', async () => {
+  it('pages row retrieval beyond the fetch batch, without losing or duplicating rows (plausible bug: off-by-one in id chunking)', async () => {
     // Derives the threshold from the same constant used by the code under test (shared with
     // retentionSweep.ts) instead of a fixed number: if the batch size changes, the test stays valid.
     const ids = Array.from({ length: BATCH_SIZE + 1 }, (_, i) => `audit-${i}`);
@@ -152,7 +152,7 @@ describe('archiveAuditLogRows', () => {
     expect(archived.map((r: any) => r.id)).toEqual(ids);
   });
 
-  it('non va in errore con un array di id vuoto (produce un archivio vuoto ma valido)', async () => {
+  it('does not fail on an empty id array (produces an empty but valid archive)', async () => {
     const prisma = { auditLog: { findMany: async () => [] } } as any;
 
     const { key } = await archiveAuditLogRows(

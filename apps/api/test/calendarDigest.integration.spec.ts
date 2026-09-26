@@ -91,8 +91,8 @@ beforeAll(async () => {
   ]);
 });
 
-describe('buildDigestTasks — evento creato', () => {
-  it('destinatari brand-scoped: solo il team del brand giusto, nessun fan-out admin', async () => {
+describe('buildDigestTasks — event created', () => {
+  it('brand-scoped recipients: only the right brand team, no admin fan-out', async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({
       planningGroupId: planningGroupDX,
@@ -117,7 +117,7 @@ describe('buildDigestTasks — evento creato', () => {
     await prisma.calendarEvent.delete({ where: { id: created.id } });
   });
 
-  it("run manuale (onlyUserId) manda comunque all'admin senza team — bypassa P_relevance, non P_access", async () => {
+  it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({
       planningGroupId: planningGroupDX,
@@ -135,8 +135,8 @@ describe('buildDigestTasks — evento creato', () => {
   });
 });
 
-describe('buildDigestTasks — snapshot di delete troppo largo (audit pre-fix)', () => {
-  it('ri-filtra lo snapshot per brand: il destinatario fuori brand viene scartato', async () => {
+describe('buildDigestTasks — delete snapshot too wide (pre-fix audit)', () => {
+  it('re-filters the snapshot by brand: the out-of-brand recipient is dropped', async () => {
     // Simulates an AuditLog row written by the pre-fix resolver: `visibleUserIds` includes
     // userDY, who has no access to brandDX. The event itself no longer exists — only the audit
     // row does — so this exercises resolveBrandAccess's re-filter, not resolveEventAudience.
@@ -172,8 +172,8 @@ describe('buildDigestTasks — snapshot di delete troppo largo (audit pre-fix)',
   });
 });
 
-describe('buildDigestTasks — preferenze di notifica', () => {
-  it('un mute event-level (chiave non di categoria) NON sopprime il digest — era il bug secondario', async () => {
+describe('buildDigestTasks — notification preferences', () => {
+  it('an event-level mute (a non-category key) does NOT suppress the digest — that was the secondary bug', async () => {
     await prisma.notificationPreference.create({
       data: { userId: userDXId, category: 'CALENDAR', eventKey: 'CALENDAR_CREATE', enabled: false },
     });
@@ -197,7 +197,7 @@ describe('buildDigestTasks — preferenze di notifica', () => {
     }
   });
 
-  it('un mute a livello di categoria sopprime il digest per quell\'utente', async () => {
+  it('a category-level mute suppresses the digest for that user', async () => {
     await prisma.notificationPreference.create({
       data: { userId: userDXId, category: 'CALENDAR', eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false },
     });

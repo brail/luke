@@ -164,14 +164,14 @@ describe('brand scope — pricing', () => {
       createCallerWithSession(s).pricing.parameterSets.list({ brandId, seasonId })],
   ];
 
-  it.each(cases)('%s su un brand fuori scope → FORBIDDEN', async (_label, invoke) => {
+  it.each(cases)('%s on an out-of-scope brand → FORBIDDEN', async (_label, invoke) => {
     await expectUnauthorized(
       () => invoke(scopedSession, outOfScopeBrandId),
       'FORBIDDEN'
     );
   });
 
-  it('il brand in scope non è bloccato dal guard', async () => {
+  it('the in-scope brand is not blocked by the guard', async () => {
     // `list` is the only one of the three that doesn't require already-existing parameters:
     // once past the guard it must reach the result, not a FORBIDDEN.
     await expect(
@@ -182,7 +182,7 @@ describe('brand scope — pricing', () => {
     ).resolves.toBeInstanceOf(Array);
   });
 
-  it('un admin non è vincolato dagli scope di team', async () => {
+  it('an admin is not bound by team scopes', async () => {
     await expect(
       createCallerWithSession(adminSession).pricing.parameterSets.list({
         brandId: outOfScopeBrandId,
@@ -193,7 +193,7 @@ describe('brand scope — pricing', () => {
 });
 
 describe('brand scope — collectionLayout e dashboard', () => {
-  it('collectionLayout.get su un brand fuori scope → FORBIDDEN', async () => {
+  it('collectionLayout.get on an out-of-scope brand → FORBIDDEN', async () => {
     await expectUnauthorized(
       () =>
         createCallerWithSession(scopedSession).collectionLayout.get({
@@ -204,7 +204,7 @@ describe('brand scope — collectionLayout e dashboard', () => {
     );
   });
 
-  it('dashboard.getSeasonProgress su un brand fuori scope → FORBIDDEN', async () => {
+  it('dashboard.getSeasonProgress on an out-of-scope brand → FORBIDDEN', async () => {
     await expectUnauthorized(
       () =>
         createCallerWithSession(scopedSession).dashboard.getSeasonProgress({
@@ -216,7 +216,7 @@ describe('brand scope — collectionLayout e dashboard', () => {
   });
 });
 
-describe('brand scope — admin senza team', () => {
+describe('brand scope — admin with no team', () => {
   /**
    * An admin who doesn't belong to any team must not be constrained.
    *
@@ -228,7 +228,7 @@ describe('brand scope — admin senza team', () => {
    * calendar. The fix was a hand-written `hasPermission({ role }, '*:*')`
    * at the one spot where someone had noticed.
    */
-  it('seasonCalendar.getOrCreate risolve per un admin fuori da ogni team', async () => {
+  it('seasonCalendar.getOrCreate resolves for an admin outside every team', async () => {
     await expect(
       createCallerWithSession(adminSession).seasonCalendar.getOrCreate({
         brandId: outOfScopeBrandId,
@@ -237,7 +237,7 @@ describe('brand scope — admin senza team', () => {
     ).resolves.toBeDefined();
   });
 
-  it('un editor senza scope sul brand resta bloccato', async () => {
+  it('an editor with no scope on the brand stays blocked', async () => {
     await expectUnauthorized(
       () =>
         createCallerWithSession(scopedSession).seasonCalendar.getOrCreate({
@@ -333,11 +333,11 @@ describe('brand scope — risorse indirette', () => {
 
   const as = () => createCallerWithSession(scopedSession);
 
-  it.each(denied)('%s su una risorsa fuori scope → FORBIDDEN', async (_label, invoke) => {
+  it.each(denied)('%s on an out-of-scope resource → FORBIDDEN', async (_label, invoke) => {
     await expectUnauthorized(invoke, 'FORBIDDEN');
   });
 
-  it('un id inesistente è NOT_FOUND, non FORBIDDEN', async () => {
+  it('a nonexistent id is NOT_FOUND, not FORBIDDEN', async () => {
     // Order matters: an id that doesn't exist isn't a permissions problem, and
     // responding FORBIDDEN would tell the attacker that something exists.
     await expect(
@@ -345,13 +345,13 @@ describe('brand scope — risorse indirette', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('la stessa procedura sul brand in scope non è bloccata', async () => {
+  it('the same procedure on the in-scope brand is not blocked', async () => {
     await expect(
       as().phaseHistory.layoutStats({ collectionLayoutId: inRes.layoutId })
     ).resolves.toBeInstanceOf(Array);
   });
 
-  it('anche sulle risorse indirette in scope', async () => {
+  it('on in-scope indirect resources too', async () => {
     await expect(
       as().phaseHistory.listForRow({ rowId: inRes.rowId })
     ).resolves.toBeInstanceOf(Array);
@@ -365,7 +365,7 @@ describe('brand scope — copyFromSeason', () => {
    * own; with only the destination check, you read another brand's collection
    * by cloning it into your own.
    */
-  it('sorgente fuori scope → FORBIDDEN', async () => {
+  it('out-of-scope source → FORBIDDEN', async () => {
     await expectUnauthorized(
       () =>
         createCallerWithSession(scopedSession).collectionLayout.copyFromSeason({
@@ -378,7 +378,7 @@ describe('brand scope — copyFromSeason', () => {
     );
   });
 
-  it('destinazione fuori scope → FORBIDDEN', async () => {
+  it('out-of-scope destination → FORBIDDEN', async () => {
     await expectUnauthorized(
       () =>
         createCallerWithSession(scopedSession).collectionLayout.copyFromSeason({
@@ -392,7 +392,7 @@ describe('brand scope — copyFromSeason', () => {
   });
 });
 
-describe('reorder — gli id devono appartenere al parent', () => {
+describe('reorder — the ids must belong to the parent', () => {
   /**
    * A different class of bug from brand scope, found alongside it. `reorder` took the
    * list of ids and ran `update({ where: { id } })` on each, without filtering
@@ -400,7 +400,7 @@ describe('reorder — gli id devono appartenere al parent', () => {
    * quotations. The brand guard doesn't catch it, because the `rowId` passed
    * really is yours.
    */
-  it('una quotazione di un\'altra riga non viene toccata', async () => {
+  it('a quotation of another row is not touched', async () => {
     const asAdmin = createCallerWithSession(adminSession);
 
     // Two distinct rows, each with its own quotation.

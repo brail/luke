@@ -52,8 +52,8 @@ beforeAll(async () => {
   ]);
 });
 
-describe('brandScope.service.ts — condivisione della query per-richiesta', () => {
-  it('assertBrandAccess seguito da getAllowedFunctionIds sullo stesso ctx: una sola query companyTeamMembership', async () => {
+describe('brandScope.service.ts — per-request query sharing', () => {
+  it('assertBrandAccess followed by getAllowedFunctionIds on the same ctx: a single companyTeamMembership query', async () => {
     const ctx: BrandScopeCtx = { prisma, session: { user: { id: userId, role: 'viewer' } } };
     const spy = vi.spyOn(prisma.companyTeamMembership, 'findMany');
 
@@ -64,7 +64,7 @@ describe('brandScope.service.ts — condivisione della query per-richiesta', () 
     spy.mockRestore();
   });
 
-  it('due ctx distinti non condividono nulla: due query, una per ciascuno', async () => {
+  it('two distinct ctx share nothing: two queries, one each', async () => {
     const ctxA: BrandScopeCtx = { prisma, session: { user: { id: userId, role: 'viewer' } } };
     const ctxB: BrandScopeCtx = { prisma, session: { user: { id: userId, role: 'viewer' } } };
     const spy = vi.spyOn(prisma.companyTeamMembership, 'findMany');

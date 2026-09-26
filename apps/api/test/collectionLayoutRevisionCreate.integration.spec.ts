@@ -49,7 +49,7 @@ beforeAll(async () => {
 });
 
 describe('collectionLayoutRevision.create', () => {
-  it('crea una revisione manuale, senza evento collegato', async () => {
+  it('creates a manual revision, with no linked event', async () => {
     const revision = await asAdmin().collectionLayoutRevision.create({
       collectionLayoutId: layoutId,
       revisionTypeValue: 'REVISIONE_PROGETTUALE',
@@ -61,7 +61,7 @@ describe('collectionLayoutRevision.create', () => {
     expect(revision.milestoneId).toBeNull();
   });
 
-  it('ignora cause e milestoneId anche se il client li manda lo stesso', async () => {
+  it('ignores cause and milestoneId even if the client sends them anyway', async () => {
     // The cast is the point of the test: TypeScript already prevents passing those fields, here
     // we verify that not even an untyped client (direct HTTP) can force them through.
     const forged = {
@@ -77,7 +77,7 @@ describe('collectionLayoutRevision.create', () => {
     expect(revision.milestoneId).toBeNull();
   });
 
-  it('accetta un tipo di revisione che non esiste a catalogo', async () => {
+  it('accepts a revision type that is not in the catalog', async () => {
     // No FK, no validation against the catalog: the pages print the string as-is. This is the
     // property that automatic revisions rely on, since they don't have (and shouldn't have) a
     // seeded entry.

@@ -149,49 +149,49 @@ beforeAll(async () => {
 });
 
 describe('resolveEventAudience — direzione reverse (chi riceve)', () => {
-  it('membro del team scoped sul brand dell\'evento è in audience', async () => {
+  it('a member of the team scoped to the event brand is in the audience', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).toContain(userX);
   });
 
-  it('membro di un team con la stessa funzione ma scoped su un altro brand è escluso (il bug originale)', async () => {
+  it('a member of a team with the same function but scoped to another brand is excluded (the original bug)', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).not.toContain(userY);
   });
 
-  it('membro di un team a zero brand scope è escluso', async () => {
+  it('a member of a team with zero brand scopes is excluded', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).not.toContain(userZero);
   });
 
-  it('admin senza team è escluso — nessun fan-out automatico', async () => {
+  it('an admin with no team is excluded — no automatic fan-out', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).not.toContain(adminNoTeamId);
   });
 
-  it('admin membro del team giusto è incluso', async () => {
+  it('an admin in the right team is included', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).toContain(adminWithTeamId);
   });
 
-  it('utente inattivo è escluso anche se altrimenti rilevante', async () => {
+  it('an inactive user is excluded even if otherwise relevant', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).not.toContain(userInactive);
   });
 
-  it('utente pending approval è escluso anche se altrimenti rilevante', async () => {
+  it('a user pending approval is excluded even if otherwise relevant', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).not.toContain(userPending);
   });
 
-  it('evento senza righe di visibilità è visibile a chi ha accesso al brand, non ad altri (fallback resta brand-scoped)', async () => {
+  it('an event with no visibility rows is visible to whoever has access to the brand, and to no one else (the fallback stays brand-scoped)', async () => {
     const audience = await resolveEventAudienceOne(eventNoVis, prisma);
     expect(audience).toContain(userX); // brandX
-    expect(audience).not.toContain(userY); // brandY, fuori scope
+    expect(audience).not.toContain(userY); // brandY, out of scope
     expect(audience).not.toContain(userZero); // zero scope
   });
 
-  it('grant esplicito su un evento fuori dal brand del destinatario è escluso (confine duro)', async () => {
+  it('an explicit grant on an event outside the recipient brand is excluded (hard boundary)', async () => {
     await prisma.calendarEventUserVisibility.create({ data: { eventId: eventY, userId: userX } });
     try {
       const audience = await resolveEventAudienceOne(eventY, prisma);
@@ -201,7 +201,7 @@ describe('resolveEventAudience — direzione reverse (chi riceve)', () => {
     }
   });
 
-  it('grant esplicito su un evento dentro il brand del destinatario è incluso, anche se non rilevante per funzione', async () => {
+  it('an explicit grant on an event inside the recipient brand is included, even if not relevant by function', async () => {
     await prisma.calendarEventUserVisibility.create({ data: { eventId: eventY, userId: userC } });
     try {
       const audience = await resolveEventAudienceOne(eventY, prisma);
@@ -213,7 +213,7 @@ describe('resolveEventAudience — direzione reverse (chi riceve)', () => {
 });
 
 describe('listMilestones — direzione forward (cosa vedo)', () => {
-  it('utente vede gli eventi della sua funzione nel suo brand, incluso il fallback', async () => {
+  it('a user sees the events of their function in their brand, fallback included', async () => {
     const caller = createCallerWithSession(userXSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandX, brandY] });
     const ids = milestones.map((m: any) => m.id);
@@ -221,13 +221,13 @@ describe('listMilestones — direzione forward (cosa vedo)', () => {
     expect(ids).toContain(eventNoVis);
   });
 
-  it('utente NON vede eventi di un brand a cui non ha accesso, anche con la stessa funzione', async () => {
+  it('a user does NOT see events of a brand they have no access to, even with the same function', async () => {
     const caller = createCallerWithSession(userXSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandY] });
     expect(milestones).toHaveLength(0);
   });
 
-  it('admin senza team vede comunque tutto — la lettura resta non ristretta', async () => {
+  it('an admin with no team still sees everything — reads stay unrestricted', async () => {
     const caller = createCallerWithSession(adminNoTeamSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandX, brandY] });
     const ids = milestones.map((m: any) => m.id);
@@ -238,7 +238,7 @@ describe('listMilestones — direzione forward (cosa vedo)', () => {
 });
 
 describe('invarianti', () => {
-  it('P_access non è mai violato: ogni destinatario in audience ha davvero accesso al brand dell\'evento', async () => {
+  it('P_access is never violated: every recipient in the audience really has access to the event brand', async () => {
     for (const eventId of [eventX, eventY, eventNoVis]) {
       const audience = await resolveEventAudienceOne(eventId, prisma);
       const accessMap = await resolveBrandAccess(audience, prisma);
@@ -250,7 +250,7 @@ describe('invarianti', () => {
     }
   });
 
-  it('simmetria per utenti non-admin: evento in listMilestones(utente) sse utente in resolveEventAudience(evento)', async () => {
+  it('symmetry for non-admin users: event in listMilestones(user) iff user in resolveEventAudience(event)', async () => {
     const cases: [string, UserSession][] = [[userX, userXSession], [userY, userYSession]];
     for (const [uid, session] of cases) {
       const caller = createCallerWithSession(session);
@@ -263,7 +263,7 @@ describe('invarianti', () => {
     }
   });
 
-  it('asimmetria voluta per gli admin: lettura sempre aperta, notifica solo se rilevante per team', async () => {
+  it('intended asymmetry for admins: reads always open, notification only if relevant by team', async () => {
     const caller = createCallerWithSession(adminNoTeamSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandX, brandY] });
     const visibleIds = new Set(milestones.map((m: any) => m.id));
@@ -275,7 +275,7 @@ describe('invarianti', () => {
 });
 
 describe('grantUserVisibility — validazione brand (Piano B)', () => {
-  it('rifiuta il grant verso un utente senza accesso al brand dell\'evento', async () => {
+  it('rejects the grant to a user without access to the event brand', async () => {
     const caller = createCallerWithSession(adminWithTeamSession);
     await expectToThrow(
       caller.seasonCalendar.grantUserVisibility({ eventId: eventY, userIds: [userX] }),
@@ -283,7 +283,7 @@ describe('grantUserVisibility — validazione brand (Piano B)', () => {
     );
   });
 
-  it('accetta il grant verso un utente con accesso al brand dell\'evento', async () => {
+  it('accepts the grant to a user with access to the event brand', async () => {
     const caller = createCallerWithSession(adminWithTeamSession);
     try {
       const result = await caller.seasonCalendar.grantUserVisibility({ eventId: eventY, userIds: [userC] });

@@ -37,7 +37,7 @@ import { createCallerWithSession, createTestUser, setupTestDb } from './helpers'
 
 describe('withAuditLog — FAILURE detection', () => {
   it.fails(
-    'un mutation che throw senza try/catch proprio → dovrebbe loggare FAILURE, non SUCCESS (bug: vedi header file)',
+    'a mutation that throws without its own try/catch → should log FAILURE, not SUCCESS (bug: see the file header)',
     async () => {
       const prisma: PrismaClient = await setupTestDb();
       const { session } = await createTestUser('admin');

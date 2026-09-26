@@ -34,7 +34,7 @@ describe('Bootstrap & Seed', () => {
     await prisma.appConfig.deleteMany();
   });
 
-  it('seedAdminUser crea admin se non esiste', async () => {
+  it('seedAdminUser creates the admin if it does not exist', async () => {
     await seedAdminUser(prisma);
 
     const admin = await prisma.user.findFirst({
@@ -57,7 +57,7 @@ describe('Bootstrap & Seed', () => {
     expect(admin?.identities[0].localCredential).toBeTruthy();
   });
 
-  it('seedAdminUser è idempotente', async () => {
+  it('seedAdminUser is idempotent', async () => {
     // First run
     await seedAdminUser(prisma);
     const count1 = await prisma.user.count();
@@ -96,7 +96,7 @@ describe('Bootstrap & Seed', () => {
     expect(authStrategy?.value).toBe('local-first');
   });
 
-  it('seedAppConfigs è idempotente', async () => {
+  it('seedAppConfigs is idempotent', async () => {
     // First run
     await seedAppConfigs(prisma);
     const count1 = await prisma.appConfig.count();
@@ -108,7 +108,7 @@ describe('Bootstrap & Seed', () => {
     expect(count2).toBe(count1); // No duplication
   });
 
-  it('nessuna configurazione LDAP nel seed', async () => {
+  it('no LDAP configuration in the seed', async () => {
     await seedAppConfigs(prisma);
 
     const ldapConfigs = await prisma.appConfig.findMany({
@@ -118,7 +118,7 @@ describe('Bootstrap & Seed', () => {
     expect(ldapConfigs.length).toBe(0);
   });
 
-  it('configurazioni critiche sono presenti', async () => {
+  it('critical configuration keys are present', async () => {
     await seedAppConfigs(prisma);
 
     const criticalKeys = [
@@ -146,7 +146,7 @@ describe('Bootstrap & Seed', () => {
     expect(locale?.value).toBe('it-IT');
   });
 
-  it('rateLimit è un JSON valido', async () => {
+  it('rateLimit is valid JSON', async () => {
     await seedAppConfigs(prisma);
 
     const rateLimitConfig = await prisma.appConfig.findUnique({
@@ -197,7 +197,7 @@ describe('Bootstrap & Seed', () => {
       });
     });
 
-    it('è idempotente', async () => {
+    it('is idempotent', async () => {
       await seedContextData(prisma);
       await seedContextData(prisma);
 
@@ -206,7 +206,7 @@ describe('Bootstrap & Seed', () => {
       expect(await prisma.pricingParameterSet.count()).toBe(1);
     });
 
-    it('il set parametri produce un calcolo forward coerente', async () => {
+    it('the parameter set produces a consistent forward calculation', async () => {
       await seedContextData(prisma);
       const set = await prisma.pricingParameterSet.findFirstOrThrow();
 

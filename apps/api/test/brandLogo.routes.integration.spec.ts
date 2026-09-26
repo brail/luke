@@ -208,7 +208,7 @@ describe('Brand Logo Upload Integration', () => {
         .expect(404);
     });
 
-    it('con più file allegati usa il primo e ignora gli altri', async () => {
+    it('with several files attached it uses the first and ignores the rest', async () => {
       const pngBuffer = createValidPngBuffer();
 
       // `req.file()` reads the first file part and stops: subsequent ones are
@@ -225,7 +225,7 @@ describe('Brand Logo Upload Integration', () => {
       expect(response.body).toHaveProperty('publicUrl');
     });
 
-    it('rifiuta un file il cui contenuto non corrisponde al tipo dichiarato', async () => {
+    it('rejects a file whose content does not match the declared type', async () => {
       // The previous version attached a stream that emitted `error`: the
       // client aborted the request before receiving a response and supertest
       // failed with ECONNRESET -- it was measuring the harness, not the server.
@@ -271,7 +271,7 @@ describe('Brand Logo Upload Integration', () => {
         .expect(401);
     });
 
-    it('accetta l\'upload senza tempId: il campo non fa più parte del contratto', async () => {
+    it('accepts the upload without tempId: the field is no longer part of the contract', async () => {
       const pngBuffer = createValidPngBuffer();
 
       // The file id is assigned by the server (`fileObjectId`), not the client: a
@@ -331,7 +331,7 @@ describe('Brand Logo Upload Integration', () => {
         remoteAddress: ip,
       });
 
-    it('espone il budget residuo già alla prima richiesta', async () => {
+    it('exposes the remaining budget from the first request', async () => {
       const res = await consumeQuota();
 
       // 30, not the 100 used in development: `test/setup.ts` sets NODE_ENV=test, so
@@ -341,7 +341,7 @@ describe('Brand Logo Upload Integration', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('la richiesta oltre il budget è 429', async () => {
+    it('the request over budget gets 429', async () => {
       const first = await consumeQuota();
       const limit = Number(first.headers['x-ratelimit-limit']);
 
@@ -357,7 +357,7 @@ describe('Brand Logo Upload Integration', () => {
       expect(rejected.headers['x-ratelimit-remaining']).toBe('0');
     });
 
-    it('il budget cade sull’IP quando il bearer non è un JWT valido, e le due rotte lo condividono', async () => {
+    it('the budget falls back to the IP when the bearer is not a valid JWT, and the two routes share it', async () => {
       // `authToken` is the string 'mock-jwt-token', not a JWT: `keyGenerator`
       // fails to verify it and falls back to `req.ip`. With a real bearer the
       // key would be the user id -- this test pins down the fallback, not the

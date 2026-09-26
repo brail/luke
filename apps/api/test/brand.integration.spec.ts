@@ -696,13 +696,13 @@ describe('Brand Router', () => {
     /** Mutations: everything except `list`. */
     const MUTATIONS = OPERATIONS.slice(1);
 
-    it.each(ROLES)('%s può listare i brand', async role => {
+    it.each(ROLES)('%s can list brands', async role => {
       const result = await brandAs(role).list();
       expect(Array.isArray(result.items)).toBe(true);
     });
 
     it.each(['admin', 'editor'] as Role[])(
-      '%s può creare un brand',
+      '%s can create a brand',
       async role => {
         const code = `${role.toUpperCase()}_BRAND`;
         const result = await brandAs(role).create({
@@ -716,7 +716,7 @@ describe('Brand Router', () => {
     );
 
     it.each(['admin', 'editor'] as Role[])(
-      '%s può aggiornare un brand',
+      '%s can update a brand',
       async role => {
         const name = `Updated by ${role}`;
         const result = await brandAs(role).update({
@@ -728,7 +728,7 @@ describe('Brand Router', () => {
     );
 
     it.each(['admin', 'editor'] as Role[])(
-      '%s può cancellare definitivamente un brand',
+      '%s can permanently delete a brand',
       async role => {
         await expect(
           brandAs(role).hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
@@ -741,7 +741,7 @@ describe('Brand Router', () => {
     });
 
     it.each(OPERATIONS)(
-      'non autenticato: %s → UNAUTHORIZED',
+      'unauthenticated: %s → UNAUTHORIZED',
       async (_label, invoke) => {
         await expectUnauthorized(() => invoke(brandAs(null)), 'UNAUTHORIZED');
       }

@@ -28,7 +28,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_CREATE', () => {
-    it('dovrebbe loggare entry coerente per creazione utente', async () => {
+    it('should log a consistent entry for user creation', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -68,7 +68,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_UPDATE', () => {
-    it('dovrebbe loggare entry per aggiornamento utente', async () => {
+    it('should log an entry for a user update', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
@@ -155,7 +155,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_PASSWORD_CHANGE', () => {
-    it('dovrebbe loggare entry per cambio password senza password in chiaro', async () => {
+    it('should log an entry for a password change without the plaintext password', async () => {
       // `createTestUser` already creates a LOCAL identity **and** credential: creating a
       // second one violates the unique constraint on identityId.
       const { user: user, session } = await createTestUser('viewer');
@@ -224,7 +224,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('Attribuzione soggetto (actorId null)', () => {
-    it('dovrebbe attribuire il login a chi lo ha effettuato pur senza actorId', async () => {
+    it('should attribute the login to whoever performed it even without an actorId', async () => {
       const { user } = await createTestUser('viewer');
       const { session: adminSession } = await createTestUser('admin');
 
@@ -250,7 +250,7 @@ describe('AuditLog Integration', () => {
       expect(entry?.subjectEmail).toBe(user.email);
     });
 
-    it('dovrebbe attribuire il login fallito allo username tentato quando l\'utente non esiste', async () => {
+    it('should attribute the failed login to the attempted username when the user does not exist', async () => {
       const { session: adminSession } = await createTestUser('admin');
 
       const anonCaller = await createCallerAs(null);
@@ -271,7 +271,7 @@ describe('AuditLog Integration', () => {
       expect(entry?.subjectEmail).toBeNull();
     });
 
-    it('dovrebbe restituire la login history dell\'utente invece di un elenco vuoto', async () => {
+    it('should return the user login history instead of an empty list', async () => {
       const { user, session } = await createTestUser('viewer');
 
       const anonCaller = await createCallerAs(null);
@@ -286,7 +286,7 @@ describe('AuditLog Integration', () => {
       expect(history[0].ipAddress).toBe('127.0.0.1');
     });
 
-    it('non dovrebbe attribuire un soggetto quando esiste un actor reale', async () => {
+    it('should not attribute a subject when a real actor exists', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -307,7 +307,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('CONFIG_UPSERT', () => {
-    it('dovrebbe loggare entry per configurazione con redazione segreti', async () => {
+    it('should log a configuration entry with secrets redacted', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -380,7 +380,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('Metadata redaction', () => {
-    it('dovrebbe redattare campi sensibili nei metadata', async () => {
+    it('should redact sensitive fields in the metadata', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -415,7 +415,7 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('USER_HARD_DELETE con targetId corretto', () => {
+  describe('USER_HARD_DELETE with the correct targetId', () => {
     it('dovrebbe loggare targetId corretto per hard delete', async () => {
       const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
@@ -440,8 +440,8 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('CONFIG_VIEW_VALUE con targetId', () => {
-    it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
+  describe('CONFIG_VIEW_VALUE with targetId', () => {
+    it('should log targetId when a raw value is viewed', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -514,7 +514,7 @@ describe('AuditLog Integration', () => {
       expect(log.metadata).toHaveProperty('ldapEnabled');
     });
 
-    it('dovrebbe loggare FAILURE per errore LDAP', async () => {
+    it('should log FAILURE on an LDAP error', async () => {
       const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
 
