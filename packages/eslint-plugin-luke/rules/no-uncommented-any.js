@@ -1,8 +1,8 @@
 const MESSAGE =
-  "'any' senza commento esplicativo — CLAUDE.md richiede strict mode (no any, " +
-  "no type assertion senza commento). Aggiungi un commento sulla stessa riga o " +
-  "sulla riga precedente che spiega perche' non e' tipizzabile diversamente, " +
-  "oppure usa 'unknown' + un type guard.";
+  "'any' without an explanatory comment — CLAUDE.md requires strict mode (no any, " +
+  "no type assertion without a comment). Add a comment on the same line or " +
+  "the line above explaining why it cannot be typed otherwise, " +
+  "or use 'unknown' + a type guard.";
 
 export default {
   meta: {

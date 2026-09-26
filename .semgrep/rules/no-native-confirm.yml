@@ -3,9 +3,10 @@ rules:
     languages: [typescript, javascript]
     severity: ERROR
     message: >-
-      Usa <ConfirmDialog> da components/ConfirmDialog.tsx, mai il confirm nativo
-      del browser (pattern non-negoziabile Luke). Il dialog nativo ignora il tema,
-      non è testabile e non rispetta il resto della UI.
+      Use <ConfirmDialog> from components/ConfirmDialog.tsx, never the
+      browser's native confirm (a non-negotiable Luke pattern). The native
+      dialog ignores the theme, cannot be tested and does not match the rest
+      of the UI.
     pattern-either:
       - pattern: globalThis.confirm(...)
       - pattern: window.confirm(...)

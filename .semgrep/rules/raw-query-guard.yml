@@ -3,8 +3,8 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      $queryRawUnsafe/$executeRawUnsafe vietati: usa $queryRaw/$executeRaw con
-      Prisma.sql tagged template, mai stringhe interpolate a mano.
+      $queryRawUnsafe/$executeRawUnsafe are forbidden: use $queryRaw/$executeRaw
+      with the Prisma.sql tagged template, never hand-interpolated strings.
     # Match the member expression, not the call: a call pattern such as
     # `$P.$queryRawUnsafe(...)` does not match a call with type arguments
     # (`$P.$queryRawUnsafe<T>(...)`), and neither does a `<$T>` variant. The
@@ -21,9 +21,9 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      'company' interpolato in una query MSSQL senza passare da
-      sanitizeCompany(): rischio SQL injection sull'identificatore di tabella.
-      Sanitizza sempre con sanitizeCompany() prima di interpolare.
+      'company' interpolated into an MSSQL query without going through
+      sanitizeCompany(): SQL injection risk on the table identifier. Always
+      sanitize with sanitizeCompany() before interpolating.
     paths:
       include:
         - '/packages/nav/**'

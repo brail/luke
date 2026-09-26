@@ -3,21 +3,21 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Procedura tRPC che indirizza una risorsa brand-scoped per id, senza guard.
-      Queste non nominano un brand nell'input: lo raggiungono risolvendo il
-      record, quindi `luke-brand-scope-required` non le vede. Erano tutte
-      scoperte — layout, gruppi, righe, quotazioni, revisioni, storico fasi.
-      Usare i resolver di `services/brandScope.service.ts`
-      (`resolveLayoutBrandAccess`, `resolveRowBrandAccess`, …): prendono il
-      brandId dal record risolto, mai da un campo di input, e lanciano NOT_FOUND
-      prima di FORBIDDEN.
+      tRPC procedure that addresses a brand-scoped resource by id, with no
+      guard. These procedures do not name a brand in their input: they reach
+      it by resolving the record, so `luke-brand-scope-required` cannot see
+      them. They were all unguarded — layouts, groups, rows, quotations,
+      revisions, phase history. Use the resolvers in
+      `services/brandScope.service.ts` (`resolveLayoutBrandAccess`,
+      `resolveRowBrandAccess`, …): they take the brandId from the resolved
+      record, never from an input field, and throw NOT_FOUND before FORBIDDEN.
     patterns:
       - pattern-either:
           - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .query($H)'
           - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .mutation($H)'
-      # Elenco esplicito, non `.*Id$`: una versione larga scatta su
-      # `users.getById`, `season.delete` e mezzo repo, e una regola bloccante che
-      # segnala il codice corretto viene disattivata entro una settimana.
+      # An explicit list, not `.*Id$`: a broad version fires on
+      # `users.getById`, `season.delete` and half the repo, and a blocking rule
+      # that flags correct code gets disabled within a week.
       - metavariable-regex:
           metavariable: $KEY
           regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId)$'

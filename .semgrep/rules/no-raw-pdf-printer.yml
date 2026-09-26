@@ -3,13 +3,13 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Motore pdfmake istanziato direttamente. Solo `lib/export/pdf.ts` può farlo:
-      è l'unico punto in cui `setUrlAccessPolicy` e `setLocalAccessPolicy` sono
-      chiuse, e il default di pdfmake è permissivo (fetch di URL remote e lettura
-      dal filesystem locale a partire da una definizione di documento). Un printer
-      costruito a mano non eredita nessuna policy. In più l'API interna
-      `js/Printer` è cambiata fra pdfmake 0.2 e 0.3 senza che il typecheck se ne
-      accorgesse, lasciando quattro export rotti in produzione. Usare
+      pdfmake engine instantiated directly. Only `lib/export/pdf.ts` may do
+      that: it is the only place where `setUrlAccessPolicy` and
+      `setLocalAccessPolicy` are closed, and pdfmake's default is permissive
+      (it fetches remote URLs and reads the local filesystem from a document
+      definition). A hand-built printer inherits no policy. On top of that, the
+      internal `js/Printer` API changed between pdfmake 0.2 and 0.3 without the
+      typecheck noticing, leaving four exports broken in production. Use
       `createPdfBuffer(def)`.
     # pdfmake 0.3 is reached through its public singleton (`require('pdfmake')`,
     # `createPdf`); the 0.2 `js/Printer` patterns stay as a guard against the old

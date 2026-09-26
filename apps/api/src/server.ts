@@ -619,7 +619,7 @@ function assertEnvPolicy(): void {
 
   if (violations.length === 0) return;
 
-  const msg = `[env-policy] Variabili applicative trovate in process.env — devono stare in AppConfig: ${violations.join(', ')}`;
+  const msg = `[env-policy] Application variables found in process.env — they must live in AppConfig: ${violations.join(', ')}`;
 
   const bootLogger = pino({ level: 'warn' });
   if (isProduction()) {

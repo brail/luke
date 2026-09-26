@@ -3,9 +3,9 @@ rules:
     languages: [typescript, javascript]
     severity: ERROR
     message: >-
-      Usa il logger, non console.* (pattern non-negoziabile Luke). API: ctx.logger
-      (Fastify) o un'istanza pino locale. Web: debugLog/debugWarn/debugError da
-      lib/debug.ts.
+      Use the logger, not console.* (a non-negotiable Luke pattern). API:
+      ctx.logger (Fastify) or a local pino instance. Web:
+      debugLog/debugWarn/debugError from lib/debug.ts.
     pattern: console.$METHOD(...)
     paths:
       exclude:

@@ -1454,17 +1454,17 @@ function main(): void {
 
   if (problems.length > 0) {
     throw new Error(
-      `[platform-integrity] ${problems.length} problemi:\n` +
+      `[platform-integrity] ${problems.length} problems:\n` +
         `${formatProblems(problems)}\n\n` +
         'Authority for each fact: .claude/skills/luke-deps/references/platform-policy.md'
     );
   }
 
   console.log(
-    `[platform-integrity] ok — ${manifests(REPO_ROOT).length} manifest, ` +
-      `${NODE_PIN_SITES.length} pin Node, ${DEPENDENCY_FAMILIES.length} ` +
-      `famiglie di dipendenze e ${PUBLISHED_CONTRACTS.length} contratti di ` +
-      `pacchetto e ${Object.keys(WORKSPACE_POLICY).length} ruoli di workspace verificati.`
+    `[platform-integrity] ok — ${manifests(REPO_ROOT).length} manifests, ` +
+      `${NODE_PIN_SITES.length} Node pins, ${DEPENDENCY_FAMILIES.length} ` +
+      `dependency families, ${PUBLISHED_CONTRACTS.length} package contracts ` +
+      `and ${Object.keys(WORKSPACE_POLICY).length} workspace roles verified.`
   );
 }
 

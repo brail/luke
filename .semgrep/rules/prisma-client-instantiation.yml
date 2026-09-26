@@ -3,17 +3,18 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Non istanziare PrismaClient qui. Il client si costruisce in un solo posto,
-      createPrismaClient() in @luke/db, che monta il driver adapter PrismaPg e
-      rifiuta di partire senza connection string; nei test passa da
-      createTestPrismaClient() in test/helpers/database.ts, che la chiama.
-      Prisma 7 ha rimosso `datasources` e `datasourceUrl` dal costruttore: un
-      `new PrismaClient()` senza adapter non punta al database che credi, e nei
-      test finisce su quello di sviluppo. Regressione reale: gli helper di test
-      sono rimasti su SQLite per mesi senza che nulla lo segnalasse.
+      Do not instantiate PrismaClient here. The client is built in one place,
+      createPrismaClient() in @luke/db, which mounts the PrismaPg driver
+      adapter and refuses to start without a connection string; tests go
+      through createTestPrismaClient() in test/helpers/database.ts, which
+      calls it. Prisma 7 removed `datasources` and `datasourceUrl` from the
+      constructor: a `new PrismaClient()` without an adapter does not point at
+      the database you think it does, and in tests it ends up on the
+      development one. Real regression: the test helpers stayed on SQLite for
+      months without anything flagging it.
     pattern: new PrismaClient(...)
     paths:
-      # L'unica sede legittima di costruzione del client. Ogni altro punto deve
-      # passare da createPrismaClient().
+      # The only legitimate place to construct the client. Every other site
+      # must go through createPrismaClient().
       exclude:
         - '/packages/db/src/client.ts'

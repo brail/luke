@@ -3,9 +3,9 @@ rules:
     languages: [typescript]
     severity: WARNING
     message: >-
-      Mutation tRPC senza .use(requirePermission(...)) nella chain: verifica che
-      l'endpoint sia protetto da un controllo permessi esplicito (best-effort,
-      falsi positivi attesi — vedi CLAUDE.md RBAC).
+      tRPC mutation without .use(requirePermission(...)) in its chain: check
+      that the endpoint is protected by an explicit permission check
+      (best-effort, false positives expected — see CLAUDE.md RBAC).
     patterns:
       - pattern: $PROC. ... .mutation($HANDLER)
       - pattern-not: <... requirePermission(...) ...>

@@ -1,10 +1,10 @@
 name: Setup workspace
 description: >-
-  pnpm, Node con cache e client Prisma generato. Il setup era identico in
-  quattro job: duplicato significa che un bump di Node va fatto in quattro
-  punti, e dimenticarne uno fa girare un job su una versione diversa senza che
-  nulla lo segnali. Il `checkout` resta al chiamante — un'action locale non è
-  raggiungibile prima che il repo sia sul runner.
+  pnpm, Node with cache, and the generated Prisma client. The setup was
+  identical in four jobs: duplicated, a Node bump has to be made in four
+  places, and forgetting one runs a job on a different version with nothing
+  flagging it. The `checkout` stays with the caller — a local action is not
+  reachable before the repo is on the runner.
 
 runs:
   using: composite

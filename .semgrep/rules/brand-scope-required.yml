@@ -3,30 +3,32 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Procedura tRPC con brandId in input senza guard di brand scope.
-      `requirePermission` risponde a "questo ruolo può leggere i prezzi?", non a
-      "questo utente può leggere i prezzi DI QUESTO brand?". Un editor con il
-      permesso ma fuori dallo scope del team leggeva dati di brand altrui
-      passandone l'UUID. Usare `assertBrandAccess(ctx, brandId)` da
-      `services/context.service.ts`; per le risorse identificate da un altro id
-      (layout, riga) passare il brandId risolto dal record, mai un campo di input.
+      tRPC procedure with a brandId in its input and no brand-scope guard.
+      `requirePermission` answers "can this role read prices?", not "can this
+      user read prices FOR THIS brand?". An editor who held the permission but
+      sat outside the team's scope read other brands' data by passing their
+      UUID. Use `assertBrandAccess(ctx, brandId)` from
+      `services/context.service.ts`; for resources identified by another id
+      (layout, row) pass the brandId resolved from the record, never an input
+      field.
     patterns:
       - pattern-either:
           - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .query($H)'
           - pattern: '$P. ... .input(z.object({ ..., $KEY: $Z, ... })). ... .mutation($H)'
-      # Metavariabile e non la chiave letterale `brandId`: `copyFromSeason` prende
-      # `fromBrandId`/`toBrandId` e `cloneFromBrandSeason` `sourceBrandId`/
-      # `targetBrandId`, e con la chiave fissa erano invisibili — proprio le due
-      # procedure che clonano fra brand, cioè quelle dove sbagliare costa di più.
+      # A metavariable, not the literal key `brandId`: `copyFromSeason` takes
+      # `fromBrandId`/`toBrandId` and `cloneFromBrandSeason` takes
+      # `sourceBrandId`/`targetBrandId`, and with a fixed key they were
+      # invisible — exactly the two procedures that clone across brands, where
+      # a mistake costs the most.
       - metavariable-regex:
           metavariable: $KEY
           regex: '^\w*[Bb]randId$'
-      # Testuale sulla regione matchata, non `pattern-not` strutturale: con
-      # `<... f(...) ...>` semgrep continuava a segnalare anche le procedure
-      # correttamente guardate, e una regola bloccante che produce falsi positivi
-      # finisce disattivata — che è peggio di non averla.
-      # `BrandAccess` copre tutta la famiglia: con `assertBrandAccess` letterale una
-      # procedura guardata da `resolveRowBrandAccess` veniva comunque segnalata.
+      # Textual on the matched region, not a structural `pattern-not`: with
+      # `<... f(...) ...>` semgrep kept flagging correctly guarded procedures
+      # too, and a blocking rule that produces false positives ends up
+      # disabled — which is worse than not having it.
+      # `BrandAccess` covers the whole family: with a literal `assertBrandAccess`,
+      # a procedure guarded by `resolveRowBrandAccess` was still flagged.
       - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
     paths:
       include:
