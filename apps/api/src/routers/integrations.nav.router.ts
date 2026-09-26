@@ -4,6 +4,7 @@
  * for Microsoft Dynamics NAV (SQL Server)
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { navConfigSchema } from '@luke/core';
@@ -21,6 +22,7 @@ import {
 import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
+import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
@@ -282,7 +284,16 @@ const navSyncRouter = router({
     .use(withRateLimit('navSyncTrigger'))
     .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
     .mutation(async ({ input, ctx }) => {
-      const report = await runNavSync(ctx.prisma, getConfig, undefined, input.entity);
+      // The same lock as the scheduled sync of this entity, so the two never overlap.
+      const report = await withSchedulerLock(ctx.prisma, `nav-sync:${input.entity}`, () =>
+        runNavSync(ctx.prisma, getConfig, undefined, input.entity),
+      )();
+      if (!report) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Sincronizzazione già in corso per questa entità, riprova tra poco',
+        });
+      }
 
       const durationMs = report.completedAt.getTime() - report.startedAt.getTime();
 
