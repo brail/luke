@@ -32,7 +32,7 @@ const prisma = createPrismaClient();
  * Idempotent function: can be run multiple times without duplication
  */
 export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
-  console.log('👤 Seeding utente admin...');
+  console.log('👤 Seeding admin user...');
 
   // Check whether the admin user already exists
   const existingAdmin = await prisma.user.findFirst({
@@ -42,28 +42,28 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
   });
 
   if (existingAdmin) {
-    console.log('⚠️  Utente admin già esistente, verifica stato...');
+    console.log('⚠️  Admin user already exists, checking status...');
     console.log(
       `🔍 Admin user details: ID=${existingAdmin.id}, Email=${existingAdmin.email}, Username=${existingAdmin.username}, Active=${existingAdmin.isActive}`
     );
 
     // Activate the admin user if it's not active
     if (!existingAdmin.isActive) {
-      console.log('🔧 Attivazione utente admin...');
+      console.log('🔧 Activating admin user...');
       await prisma.user.update({
         where: { id: existingAdmin.id },
         data: { isActive: true },
       });
-      console.log('✅ Utente admin attivato');
+      console.log('✅ Admin user activated');
     } else {
-      console.log('✅ Utente admin già attivo');
+      console.log('✅ Admin user already active');
     }
   } else {
     // Hash the admin password using the centralized function
     const adminPassword = 'changeme';
     const passwordHash = await hashPassword(adminPassword);
 
-    console.log('🔧 Creazione utente admin...');
+    console.log('🔧 Creating admin user...');
 
     // Create admin user with local identity in a transaction
     const adminUser = await prisma.$transaction(async tx => {
@@ -99,7 +99,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
     });
 
     console.log(
-      `✅ Utente admin creato: ${adminUser.email} (ID: ${adminUser.id})`
+      `✅ Admin user created: ${adminUser.email} (ID: ${adminUser.id})`
     );
   }
 }
@@ -111,7 +111,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
 export async function updateExistingUsersVerification(
   prisma: PrismaClient
 ): Promise<void> {
-  console.log('📧 Aggiornamento verifica email utenti esistenti...');
+  console.log('📧 Updating email verification for existing users...');
 
   const usersToUpdate = await prisma.user.findMany({
     where: {
@@ -120,7 +120,7 @@ export async function updateExistingUsersVerification(
   });
 
   if (usersToUpdate.length === 0) {
-    console.log('✅ Nessun utente da aggiornare');
+    console.log('✅ No users to update');
     return;
   }
 
@@ -134,7 +134,7 @@ export async function updateExistingUsersVerification(
   });
 
   console.log(
-    `✅ ${usersToUpdate.length} utenti aggiornati con emailVerifiedAt`
+    `✅ ${usersToUpdate.length} users updated with emailVerifiedAt`
   );
 }
 
@@ -144,7 +144,7 @@ export async function updateExistingUsersVerification(
  * Does NOT include LDAP configurations (managed via UI/API)
  */
 export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
-  console.log('⚙️  Seeding configurazioni base...');
+  console.log('⚙️  Seeding base configuration...');
 
   // Generate NextAuth secret (JWT secret now derived via HKDF)
   const nextAuthSecret = randomBytes(32).toString('hex');
@@ -399,7 +399,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     });
 
     if (existingConfig) {
-      console.log(`⚠️  Config '${config.key}' già esistente, skip`);
+      console.log(`⚠️  Config '${config.key}' already exists, skipping`);
       configsSkipped++;
       continue;
     }
@@ -416,12 +416,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       },
     });
 
-    console.log(`✅ Config '${config.key}' creato`);
+    console.log(`✅ Config '${config.key}' created`);
     configsCreated++;
   }
 
   console.log(
-    `📊 Configurazioni: ${configsCreated} create, ${configsSkipped} esistenti`
+    `📊 Configuration: ${configsCreated} created, ${configsSkipped} existing`
   );
 }
 
@@ -590,7 +590,7 @@ async function seedMilestoneTemplates(
 }
 
 async function main() {
-  console.log('🌱 Avvio seed database...');
+  console.log('🌱 Starting database seed...');
 
   try {
     // Seeding admin user
@@ -618,23 +618,23 @@ async function main() {
     await seedMilestoneTemplates(prisma, functionIds);
 
     // Final log
-    console.log('\n🎉 Seed completato con successo!');
-    console.log('\n🔑 Credenziali admin:');
+    console.log('\n🎉 Seed completed successfully!');
+    console.log('\n🔑 Admin credentials:');
     console.log('   Email: admin@luke.local');
     console.log('   Username: admin');
     console.log('   Password: changeme');
-    console.log('\n🔐 Segreti generati:');
-    console.log('   JWT Secret: Derivato via HKDF dalla master key');
-    console.log('   NextAuth Secret: Generato e cifrato in AppConfig');
-    console.log('\n⚠️  IMPORTANTE: Cambia la password admin al primo login!');
-    console.log('\n🚀 Prossimi passi:');
-    console.log('   1. Avvia il server: pnpm --filter @luke/api dev');
-    console.log('   2. Testa health check: curl http://localhost:3001/healthz');
+    console.log('\n🔐 Generated secrets:');
+    console.log('   JWT Secret: derived via HKDF from the master key');
+    console.log('   NextAuth Secret: generated and encrypted in AppConfig');
+    console.log('\n⚠️  IMPORTANT: change the admin password at first login!');
+    console.log('\n🚀 Next steps:');
+    console.log('   1. Start the server: pnpm --filter @luke/api dev');
+    console.log('   2. Test the health check: curl http://localhost:3001/healthz');
     console.log(
-      '   3. Apri Prisma Studio: pnpm --filter @luke/db prisma:studio'
+      '   3. Open Prisma Studio: pnpm --filter @luke/db prisma:studio'
     );
   } catch (error) {
-    console.error('❌ Errore durante seed:', error);
+    console.error('❌ Error during seed:', error);
     throw error;
   }
 }
@@ -656,11 +656,11 @@ function isEntrypoint(): boolean {
 if (isEntrypoint()) {
   main()
     .catch(e => {
-      console.error('💥 Seed fallito:', e);
+      console.error('💥 Seed failed:', e);
       process.exit(1);
     })
     .finally(async () => {
       await prisma.$disconnect();
-      console.log('🔌 Connessione database chiusa');
+      console.log('🔌 Database connection closed');
     });
 }

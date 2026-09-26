@@ -102,7 +102,7 @@ function parseSide(name: string, fallback: StorageType): StorageType {
   if (!raw) return fallback;
   const result = storageTypeSchema.safeParse(raw);
   if (!result.success) {
-    throw new Error(`--${name} deve essere "local" oppure "s3", ricevuto: ${raw}`);
+    throw new Error(`--${name} must be "local" or "s3", received: ${raw}`);
   }
   return result.data;
 }
@@ -116,7 +116,7 @@ const fromSide = parseSide('from', 'local');
 const toSide = parseSide('to', 's3');
 
 if (fromSide === toSide && fromSide === 'local') {
-  throw new Error('--from=local --to=local non ha senso: nessuna copia da fare.');
+  throw new Error('--from=local --to=local makes no sense: nothing to copy.');
 }
 
 const BUCKETS: StorageBucket[] = bucketArg
@@ -260,7 +260,7 @@ async function migrateBucket(
     listAllKeys(source, bucket),
     listAllKeys(dest, bucket),
   ]);
-  console.log(`   sorgente: ${sourceKeys.size} file — destinazione: ${destKeys.size} file già presenti`);
+  console.log(`   source: ${sourceKeys.size} files — destination: ${destKeys.size} files already present`);
 
   const fileObjects = await prisma.fileObject.findMany({
     where: { bucket },
@@ -335,7 +335,7 @@ async function migrateBucket(
             }
           } catch (err) {
             report.failures.push(key);
-            console.error(`   ❌ errore copiando ${key}:`, err instanceof Error ? err.message : err);
+            console.error(`   ❌ error copying ${key}:`, err instanceof Error ? err.message : err);
           }
         })
       )
@@ -351,7 +351,7 @@ async function migrateBucket(
             if (sniffed) await applyMimeFix(key, sniffed);
           } catch (err) {
             report.failures.push(key);
-            console.error(`   ❌ errore correggendo mime ${key}:`, err instanceof Error ? err.message : err);
+            console.error(`   ❌ error fixing mime of ${key}:`, err instanceof Error ? err.message : err);
           }
         })
       )
@@ -368,9 +368,9 @@ async function migrateBucket(
 }
 
 async function main() {
-  console.log(apply ? `🚀 Migrazione storage ${fromSide} → ${toSide} (APPLY)` : `ℹ️  Dry-run (${fromSide} → ${toSide}) — nessuna scrittura verrà eseguita`);
+  console.log(apply ? `🚀 Storage migration ${fromSide} → ${toSide} (APPLY)` : `ℹ️  Dry-run (${fromSide} → ${toSide}) — nothing will be written`);
   console.log(`   bucket: ${BUCKETS.join(', ')}`);
-  if (fixMime) console.log('   --fix-mime attivo: verrà corretto anche il Content-Type generico/errato');
+  if (fixMime) console.log('   --fix-mime on: a generic or wrong Content-Type will be fixed too');
 
   const prisma = createScriptPrismaClient();
 
@@ -385,16 +385,16 @@ async function main() {
       reports.push(await migrateBucket(prisma, source, dest, bucket));
     }
 
-    console.log('\n📊 Riepilogo');
+    console.log('\n📊 Summary');
     for (const r of reports) {
       console.log(
-        `   ${r.bucket}: candidati=${r.candidates} migrati=${r.migrated} già-presenti=${r.skippedAlreadyPresent} orfani=${r.orphans} ` +
-        `mime-da-correggere=${r.mimeFixCandidates} mime-corretti=${r.mimeFixed} checksum-KO=${r.checksumMismatches.length} ` +
-        `falliti=${r.failures.length} riferimenti-rotti-preesistenti=${r.brokenReferences.length}`
+        `   ${r.bucket}: candidates=${r.candidates} migrated=${r.migrated} already-present=${r.skippedAlreadyPresent} orphans=${r.orphans} ` +
+        `mime-to-fix=${r.mimeFixCandidates} mime-fixed=${r.mimeFixed} checksum-KO=${r.checksumMismatches.length} ` +
+        `failed=${r.failures.length} pre-existing-broken-references=${r.brokenReferences.length}`
       );
       if (r.checksumMismatches.length) console.log(`      checksum mismatch: ${r.checksumMismatches.join(', ')}`);
-      if (r.failures.length) console.log(`      falliti: ${r.failures.join(', ')}`);
-      if (r.brokenReferences.length) console.log(`      riferimenti rotti (preesistenti, non causati da questo script): ${r.brokenReferences.join(', ')}`);
+      if (r.failures.length) console.log(`      failed: ${r.failures.join(', ')}`);
+      if (r.brokenReferences.length) console.log(`      broken references (pre-existing, not caused by this script): ${r.brokenReferences.join(', ')}`);
     }
 
     const totalCandidates = reports.reduce((n, r) => n + r.candidates, 0);
@@ -406,20 +406,20 @@ async function main() {
     const totalBroken = reports.reduce((n, r) => n + r.brokenReferences.length, 0);
 
     if (!includeBackups && !bucketArg) {
-      console.log('\nℹ️  Bucket "backups" escluso di default — rilanciare con --include-backups per includerlo.');
+      console.log('\nℹ️  Bucket "backups" excluded by default — run again with --include-backups to include it.');
     }
 
     if (totalMismatches > 0 || totalFailures > 0) {
-      console.log('\n⚠️  Migrazione completata con errori — vedi sopra prima di cambiare storage.type.');
+      console.log('\n⚠️  Migration completed with errors — see above before changing storage.type.');
       process.exitCode = 1;
     } else if (!apply) {
-      console.log(`\nℹ️  Nessuna scrittura eseguita — rilanciare con --apply per applicare (${totalCandidates} file da copiare${fixMime ? `, ${totalMimeFixCandidates} mime da correggere` : ''}).`);
+      console.log(`\nℹ️  Nothing written — run again with --apply to apply (${totalCandidates} files to copy${fixMime ? `, ${totalMimeFixCandidates} mime to fix` : ''}).`);
     } else {
-      console.log(`\n✅ Migrazione completata: ${totalMigrated} file copiati${fixMime ? `, ${totalMimeFixed} mime corretti` : ''}.`);
+      console.log(`\n✅ Migration completed: ${totalMigrated} files copied${fixMime ? `, ${totalMimeFixed} mime fixed` : ''}.`);
       if (totalBroken > 0) {
-        console.log(`⚠️  ${totalBroken} riferimenti FileObject confermati risultano privi del file sia in sorgente che in destinazione (rottura preesistente, non introdotta da questo script).`);
+        console.log(`⚠️  ${totalBroken} confirmed FileObject references have no file in either source or destination (a pre-existing break, not introduced by this script).`);
       }
-      console.log('Prossimo passo: verifica il riepilogo, poi imposta storage.type in Impostazioni → Storage.');
+      console.log('Next step: check the summary, then set storage.type in Impostazioni → Storage.');
     }
   } finally {
     await prisma.$disconnect();
@@ -427,6 +427,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

@@ -47,7 +47,7 @@ async function main() {
     });
 
     if (backlog.length === 0) {
-      console.log('✅ Nessun master in attesa di derivate: niente da fare.');
+      console.log('✅ No master waiting for derivatives: nothing to do.');
       return;
     }
 
@@ -55,13 +55,13 @@ async function main() {
     const byBucket = new Map<string, number>();
     for (const f of backlog) byBucket.set(f.bucket, (byBucket.get(f.bucket) ?? 0) + 1);
 
-    console.log(`🔍 ${backlog.length} master in attesa di derivate (${formatBytes(totalSize)} totali):`);
+    console.log(`🔍 ${backlog.length} masters waiting for derivatives (${formatBytes(totalSize)} in total):`);
     for (const [bucket, count] of byBucket) {
       console.log(`  ${bucket}: ${count}`);
     }
 
     if (dryRun) {
-      console.log('\n🧪 Dry run: nessuna elaborazione. Rilanciare senza --dry-run per generare le derivate.');
+      console.log('\n🧪 Dry run: nothing processed. Run again without --dry-run to generate the derivatives.');
       return;
     }
 
@@ -81,14 +81,14 @@ async function main() {
       }
     }
 
-    console.log(`\n✅ ${done} master elaborati, ${failed} falliti su ${backlog.length}.`);
-    console.log('Lo stato finale di ciascun master (READY / PENDING / FAILED) è in FileObject.derivativesStatus.');
+    console.log(`\n✅ ${done} masters processed, ${failed} failed out of ${backlog.length}.`);
+    console.log('The final state of each master (READY / PENDING / FAILED) is in FileObject.derivativesStatus.');
   } finally {
     await prisma.$disconnect();
   }
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

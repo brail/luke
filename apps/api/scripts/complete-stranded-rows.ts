@@ -44,19 +44,19 @@ async function main() {
     });
 
     if (rows.length === 0) {
-      console.log('✅ Nessuna riga aperta su fasi disattivate: niente da fare.');
+      console.log('✅ No open rows on deactivated phases: nothing to do.');
       return;
     }
 
-    console.log(`🔍 ${rows.length} righe aperte su fasi disattivate.\n`);
+    console.log(`🔍 ${rows.length} open rows on deactivated phases.\n`);
 
     let updated = 0;
     for (const row of rows) {
       const completedAt = row.phaseHistory[0]?.reachedAt ?? row.updatedAt;
       const scope = `${row.collectionLayout.brand.code}/${row.collectionLayout.season.code}`;
-      const source = row.phaseHistory[0] ? 'storico fase' : 'updatedAt';
+      const source = row.phaseHistory[0] ? 'phase history' : 'updatedAt';
       console.log(
-        `  ${dryRun ? '[dry-run] ' : ''}${scope} · "${row.line}" · ${row.phase?.label ?? '—'} → conclusa il ${completedAt.toISOString().slice(0, 10)} (${source})`
+        `  ${dryRun ? '[dry-run] ' : ''}${scope} · "${row.line}" · ${row.phase?.label ?? '—'} → completed on ${completedAt.toISOString().slice(0, 10)} (${source})`
       );
 
       if (!dryRun) {
@@ -67,8 +67,8 @@ async function main() {
 
     console.log(
       dryRun
-        ? `\n🧪 Dry run: nessuna scrittura. ${rows.length} righe verrebbero concluse.`
-        : `\n✅ ${updated} righe concluse.`
+        ? `\n🧪 Dry run: nothing written. ${rows.length} rows would be completed.`
+        : `\n✅ ${updated} rows completed.`
     );
   } finally {
     await prisma.$disconnect();
@@ -76,6 +76,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

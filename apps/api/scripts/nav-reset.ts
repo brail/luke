@@ -24,14 +24,14 @@ async function main() {
     process.env.NODE_ENV !== 'prod';
 
   if (!isDev) {
-    console.error('❌ nav-reset è abilitato solo in ambienti non-production.');
+    console.error('❌ nav-reset is enabled only in non-production environments.');
     process.exit(1);
   }
 
   const prisma = createScriptPrismaClient();
 
   try {
-    console.log('🔄 NAV Reset — avvio pulizia dati...\n');
+    console.log('🔄 NAV Reset — starting data cleanup...\n');
 
     // ── 1. Brand/season dependencies (no onDelete: Cascade) ──────────
 
@@ -92,18 +92,18 @@ async function main() {
       prisma.vendor.count(),
     ]);
 
-    console.log('\n✅ Pulizia completata. Stato finale:');
-    console.log(`   brands rimasti:  ${remBrands.map(b => b.code).join(', ')}`);
-    console.log(`   seasons rimaste: ${remSeasons.map(s => s.code).join(', ')}`);
-    console.log(`   vendors rimasti: ${remVendors}`);
-    console.log('\n   Tutte le tabelle NAV replica sono vuote.');
-    console.log('   Esegui il sync da Impostazioni › Microsoft NAV per ripopolarle.');
+    console.log('\n✅ Cleanup completed. Final state:');
+    console.log(`   brands left:     ${remBrands.map(b => b.code).join(', ')}`);
+    console.log(`   seasons left:    ${remSeasons.map(s => s.code).join(', ')}`);
+    console.log(`   vendors left:    ${remVendors}`);
+    console.log('\n   All NAV replica tables are empty.');
+    console.log('   Run the sync from Impostazioni › Microsoft NAV to repopulate them.');
   } finally {
     await prisma.$disconnect();
   }
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

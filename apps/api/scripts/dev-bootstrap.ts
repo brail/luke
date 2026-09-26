@@ -23,14 +23,14 @@ import { createScriptPrismaClient } from './lib/prisma.js';
  * Main bootstrap function
  */
 async function bootstrap() {
-  console.log('🚀 Bootstrap sviluppo Luke API...\n');
+  console.log('🚀 Luke API development bootstrap...\n');
 
   // 1. Verify master key
   try {
     getMasterKey();
-    console.log('✅ Master key valida\n');
+    console.log('✅ Master key valid\n');
   } catch (error) {
-    console.error('❌ Master key non accessibile:', error);
+    console.error('❌ Master key not accessible:', error);
     process.exit(1);
   }
 
@@ -43,23 +43,23 @@ async function bootstrap() {
     });
   } catch (error) {
     console.error(
-      '\n❌ Reset database fallito. Questo potrebbe essere dovuto a:'
+      '\n❌ Database reset failed. This may be due to:'
     );
-    console.error('   1. Prisma AI safety check (comando pericoloso rilevato)');
-    console.error('   2. Database in uso da altri processi');
-    console.error('\n🔧 Soluzioni:');
+    console.error('   1. Prisma AI safety check (dangerous command detected)');
+    console.error('   2. Database in use by other processes');
+    console.error('\n🔧 Solutions:');
     console.error(
-      '   - Esegui manualmente: cd packages/db && pnpm prisma migrate reset --force --skip-seed'
+      '   - Run manually: cd packages/db && pnpm prisma migrate reset --force --skip-seed'
     );
-    console.error('   - Oppure ferma tutti i processi e riprova');
+    console.error('   - Or stop all processes and retry');
     console.error(
-      '   - Per bypassare AI check: PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="yes" pnpm prisma migrate reset --force --skip-seed'
+      '   - To bypass the AI check: PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="yes" pnpm prisma migrate reset --force --skip-seed'
     );
     throw error;
   }
 
   // 4. Seed the database
-  console.log('\n🌱 Esecuzione seed...');
+  console.log('\n🌱 Running seed...');
   const prisma = createScriptPrismaClient();
 
   try {
@@ -95,17 +95,17 @@ async function bootstrap() {
     console.log(`   - Critical configs: ${criticalConfigs.length}/3`);
 
     if (!adminUser || criticalConfigs.length < 3) {
-      throw new Error('Sanity checks falliti');
+      throw new Error('Sanity checks failed');
     }
 
-    console.log('\n🎉 Bootstrap completato con successo!\n');
-    console.log('🔑 Credenziali admin:');
+    console.log('\n🎉 Bootstrap completed successfully!\n');
+    console.log('🔑 Admin credentials:');
     console.log('   Email: admin@luke.local');
     console.log('   Username: admin');
     console.log('   Password: changeme');
-    console.log('\n⚠️  IMPORTANTE: Cambia la password admin al primo login!');
+    console.log('\n⚠️  IMPORTANT: change the admin password at first login!');
   } catch (error) {
-    console.error('\n❌ Bootstrap fallito:', error);
+    console.error('\n❌ Bootstrap failed:', error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

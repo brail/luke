@@ -30,7 +30,7 @@ async function main() {
   const noSync = process.argv.includes('--no-sync');
 
   if (process.env.TZ !== 'Europe/Rome') {
-    console.error('❌ Lo script richiede TZ=Europe/Rome (vedi lo script npm "db:fix-allday-dates").');
+    console.error('❌ The script requires TZ=Europe/Rome (see the npm script "db:fix-allday-dates").');
     process.exit(1);
   }
 
@@ -42,7 +42,7 @@ async function main() {
       select: { id: true, calendarId: true, startAt: true, endAt: true },
     });
 
-    console.log(`🔍 ${events.length} eventi allDay trovati.\n`);
+    console.log(`🔍 ${events.length} allDay events found.\n`);
 
     const toFix = events
       .map(e => {
@@ -65,27 +65,27 @@ async function main() {
       })));
     }
 
-    console.log(`\n✅ ${toFix.length} evento/i ${dryRun ? 'da correggere' : 'corretti'} su ${events.length} scansionati.`);
+    console.log(`\n✅ ${toFix.length} event(s) ${dryRun ? 'to fix' : 'fixed'} out of ${events.length} scanned.`);
 
     if (dryRun || noSync) return;
 
     const affectedCalendarIds = new Set(toFix.map(e => e.calendarId));
     if (affectedCalendarIds.size === 0) {
-      console.log('Nessun calendario da risincronizzare.');
+      console.log('No calendar to resync.');
       return;
     }
 
     const creds = await getConfiguredGoogleClient(prisma);
     if (!creds) {
-      console.log('\n⚠️  Integrazione Google Calendar non configurata — correzione DB applicata, nessun resync eseguito.');
+      console.log('\n⚠️  Google Calendar integration not configured — DB fix applied, no resync run.');
       return;
     }
 
-    console.log(`\n🔄 Risincronizzo ${affectedCalendarIds.size} calendario/i verso Google...\n`);
+    console.log(`\n🔄 Resyncing ${affectedCalendarIds.size} calendar(s) to Google...\n`);
     const logger = { info: console.log, error: console.error, warn: console.warn };
     for (const calendarId of affectedCalendarIds) {
       const result = await reconcileCalendar(calendarId, prisma, logger);
-      console.log(`   ${calendarId}: ${result.synced} sincronizzati, ${result.errors} errori`);
+      console.log(`   ${calendarId}: ${result.synced} synced, ${result.errors} errors`);
     }
   } finally {
     await prisma.$disconnect();
@@ -93,6 +93,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });
