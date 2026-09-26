@@ -454,7 +454,7 @@ export async function assertDumpReadable(dumpPath: string, logger: BackupLogger)
     await runCommand('pg_restore', ['--list', dumpPath], { env: { LC_ALL: 'C' } });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    logger.error({ dumpPath, err: detail }, 'Restore: dump illeggibile');
+    logger.error({ dumpPath, err: detail }, 'Restore: dump unreadable');
 
     const clientMajor = await pgBinaryMajorVersion('pg_restore').catch(() => null);
     const reader = `questo pg_restore${clientMajor ? ` (major ${clientMajor})` : ''}`;
@@ -526,7 +526,7 @@ export async function stageBackupArchive(params: StageBackupArchiveParams): Prom
     }
     await assertDumpReadable(dumpPath, logger);
 
-    logger.info({ filename, files: stagedFiles.length }, 'Restore: archivio estratto e verificato');
+    logger.info({ filename, files: stagedFiles.length }, 'Restore: archive extracted and verified');
     return { workDir, dumpPath, stagedFiles };
   } catch (err) {
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });

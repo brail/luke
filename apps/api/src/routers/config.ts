@@ -352,7 +352,7 @@ export const configRouter = router({
                 key: input.key,
                 error: error instanceof Error ? error.message : 'Unknown error',
               },
-              'Errore decifratura config'
+              'Config decryption failed'
             );
             throw new TRPCError({
               code: 'INTERNAL_SERVER_ERROR',

@@ -66,7 +66,7 @@ export const mailRouter = router({
           baseUrl: input.baseUrl,
           passwordUpdated: !!input.pass,
         },
-        'Configurazione SMTP salvata'
+        'SMTP configuration saved'
       );
 
       // Audit log

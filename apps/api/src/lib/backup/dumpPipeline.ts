@@ -241,7 +241,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
       bypassSizeLimit: true,
     });
 
-    logger.info({ backupId, scope }, 'Backup: assemblaggio archivio tar');
+    logger.info({ backupId, scope }, 'Backup: assembling the tar archive');
     let fileCount = 0;
     const packPromise = (async () => {
       await addFileEntry(pack, 'db.dump', dumpPath);
