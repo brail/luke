@@ -15,8 +15,9 @@ const logger = pino({ level: 'info' });
 /**
  * Returns a raw tRPC middleware function that enforces idempotency for mutations.
  * Requests without an `Idempotency-Key` header are passed through unchanged.
- * A second request with the same key and identical body returns the cached response.
- * A second request with the same key but a different body throws `CONFLICT`.
+ * After a successful first request, a second one with the same key and identical body returns
+ * the cached response, and one with a different body throws `CONFLICT`. A failure is not cached,
+ * so any retry with that key runs again.
  *
  * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
@@ -86,8 +87,13 @@ export function withIdempotency() {
     // Execute the original mutation
     const mutationResult = await next();
 
-    // Store the response only if it succeeded
-    // For tRPC, we assume that no exception = success
+    // A procedure error reaches a middleware as a resolved `{ ok: false }`, not as a throw, so
+    // `ok` is the only success signal. Caching a failure would replay it to every retry with the
+    // same key for the whole TTL, even once its cause is gone.
+    if (!mutationResult.ok) {
+      return mutationResult;
+    }
+
     try {
       idempotencyStore.store(
         idempotencyKey,

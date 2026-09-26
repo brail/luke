@@ -149,6 +149,29 @@ describe('Idempotency Integration', () => {
     });
   });
 
+  describe('a failed mutation is not cached', () => {
+    it('a retry with the same key runs again once the cause of the failure is gone', async () => {
+      const idempotencyKey = randomUUID();
+      const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
+      const { user: taken } = await createTestUser('viewer');
+
+      const userData = {
+        username: 'retryuser',
+        email: taken.email,
+        password: TEST_USER_PASSWORD,
+        role: 'viewer' as const,
+      };
+
+      await expectToThrow(adminCaller.users.create(userData), { code: 'CONFLICT' });
+
+      // The email is free now: the same request, same key, must run instead of replaying the error.
+      await testPrisma.user.update({ where: { id: taken.id }, data: { email: 'moved@test.com' } });
+
+      const created = await adminCaller.users.create(userData);
+      expect(created.username).toBe('retryuser');
+    });
+  });
+
   describe('config.set idempotency', () => {
     it('should return the same result for a double submit with the same key', async () => {
       const idempotencyKey = randomUUID();

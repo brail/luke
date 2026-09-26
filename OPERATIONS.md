@@ -123,11 +123,10 @@ Queries are never deduplicated.
   hash of the method, the procedure path and the serialized input.
 - **Same key, different input:** `CONFLICT` (HTTP 409).
 - **A key that is not a UUID v4:** `BAD_REQUEST` (HTTP 400).
-- **Failed mutations are stored too.** The middleware stores whatever the
-  procedure returned, and tRPC hands a failure to the middleware as a result
-  rather than an exception. A retry with the same key and the same input within
-  five minutes therefore returns the same error without running the mutation
-  again. To retry a failed operation, use a new key.
+- **Only successes are stored.** tRPC hands a failure to the middleware as a
+  result (`ok: false`) rather than an exception, and the middleware stores only
+  `ok: true`. A retry with the same key after a failure runs the mutation again,
+  whatever its input: a failed request leaves nothing to conflict with.
 - **Requests still in flight are not deduplicated.** The result is stored only
   after the mutation completes, so two concurrent requests carrying the same key
   both execute. Preventing a second submission while the first is running is the
