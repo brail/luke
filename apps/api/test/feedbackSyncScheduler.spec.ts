@@ -99,7 +99,7 @@ describe('feedbackSyncScheduler', () => {
     await vi.advanceTimersByTimeAsync(INITIAL_DELAY_MS);
   }
 
-  it('senza token configurato non chiama GitHub né legge le submission', async () => {
+  it('with no token configured it neither calls GitHub nor reads the submissions', async () => {
     vi.mocked(getConfig).mockResolvedValue(null);
     const fetchMock = mockGitHubIssue();
     const prisma = buildFakePrisma([buildSubmission()]);
@@ -110,7 +110,7 @@ describe('feedbackSyncScheduler', () => {
     expect(prisma.feedbackSubmission.findMany).not.toHaveBeenCalled();
   });
 
-  it('interroga solo le submission con status=open', async () => {
+  it('queries only submissions with status=open', async () => {
     mockGitHubIssue();
     const prisma = buildFakePrisma([]);
 
@@ -119,7 +119,7 @@ describe('feedbackSyncScheduler', () => {
     expect(prisma.feedbackSubmission.findMany).toHaveBeenCalledWith({ where: { status: 'open' } });
   });
 
-  it('nuovo commento (comments > commentCount) → notifica "nuova risposta" e aggiorna solo commentCount', async () => {
+  it('new comment (comments > commentCount) → "new reply" notification and only commentCount updated', async () => {
     const submission = buildSubmission({ commentCount: 1 });
     const fetchMock = mockGitHubIssue({ state: 'open', comments: 3 });
     const prisma = buildFakePrisma([submission]);
@@ -148,7 +148,7 @@ describe('feedbackSyncScheduler', () => {
     );
   });
 
-  it('issue appena chiusa (open→closed) → notifica di chiusura anche senza nuovi commenti', async () => {
+  it('issue just closed (open→closed) → closing notification even without new comments', async () => {
     const submission = buildSubmission({ status: 'open', commentCount: 2 });
     mockGitHubIssue({ state: 'closed', comments: 2 });
     const prisma = buildFakePrisma([submission]);
@@ -167,7 +167,7 @@ describe('feedbackSyncScheduler', () => {
     );
   });
 
-  it('nessuna novità (stesso stato, stesso commentCount) → nessun update, nessuna notifica', async () => {
+  it('nothing new (same state, same commentCount) → no update, no notification', async () => {
     const submission = buildSubmission({ status: 'open', commentCount: 3 });
     mockGitHubIssue({ state: 'open', comments: 3 });
     const prisma = buildFakePrisma([submission]);
@@ -178,10 +178,10 @@ describe('feedbackSyncScheduler', () => {
     expect(createNotification).not.toHaveBeenCalled();
   });
 
-  it('una submission già chiusa altrove (status=closed) non viene nemmeno interrogata', async () => {
+  it('a submission already closed elsewhere (status=closed) is not even queried', async () => {
     const fetchMock = mockGitHubIssue();
-    // findMany è mockato per restituire solo ciò che il where richiede: qui verifichiamo
-    // che il filtro sia effettivamente applicato, non solo dichiarato.
+    // findMany is mocked to return only what the where asks for: here we check
+    // that the filter is actually applied, not just declared.
     const prisma = buildFakePrisma([]);
     prisma.feedbackSubmission.findMany.mockImplementation(async ({ where }: any) =>
       where.status === 'open' ? [] : [buildSubmission({ status: 'closed' })]
@@ -192,7 +192,7 @@ describe('feedbackSyncScheduler', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('una submission che fallisce (errore di rete) non blocca la sync delle altre nello stesso tick', async () => {
+  it('a failing submission (network error) does not block the sync of the others in the same tick', async () => {
     const failing = buildSubmission({ id: 'sub-fail', issueNumber: 1 });
     const ok = buildSubmission({ id: 'sub-ok', issueNumber: 2, commentCount: 0 });
     const prisma = buildFakePrisma([failing, ok]);
@@ -207,8 +207,8 @@ describe('feedbackSyncScheduler', () => {
 
     await runFirstTick(prisma);
 
-    // Plausible bug: un errore non catturato per-item interrompe il `for` e la
-    // submission successiva non viene mai sincronizzata.
+    // Plausible bug: an error not caught per item breaks the `for`, and the
+    // next submission is never synced.
     expect(prisma.feedbackSubmission.update).toHaveBeenCalledTimes(1);
     expect(prisma.feedbackSubmission.update).toHaveBeenCalledWith({
       where: { id: 'sub-ok' },
@@ -216,7 +216,7 @@ describe('feedbackSyncScheduler', () => {
     });
   });
 
-  it('issue non raggiungibile (GitHub 404/401) → nessun update, nessuna notifica, nessuna eccezione propagata', async () => {
+  it('unreachable issue (GitHub 404/401) → no update, no notification, no exception propagated', async () => {
     mockGitHubIssue({ ok: false });
     const prisma = buildFakePrisma([buildSubmission()]);
 
@@ -226,7 +226,7 @@ describe('feedbackSyncScheduler', () => {
     expect(createNotification).not.toHaveBeenCalled();
   });
 
-  it('se la lettura dell\'intervallo da AppConfig fallisce, il primo tick parte comunque dopo 60s', async () => {
+  it('if reading the interval from AppConfig fails, the first tick still starts after 60s', async () => {
     vi.mocked(getTypedConfig).mockRejectedValue(new Error('config non trovata'));
     mockGitHubIssue();
     const prisma = buildFakePrisma([]);

@@ -37,7 +37,7 @@ beforeEach(async () => {
 });
 
 describe('lastAdminGuard — enforcement reale', () => {
-  it('editor con users:update NON può disattivare l\'unico admin rimasto', async () => {
+  it('an editor with users:update CANNOT deactivate the only remaining admin', async () => {
     const { session: editorSession } = await createTestUser('editor');
     const { user: admin } = await createTestUser('admin');
 
@@ -49,7 +49,7 @@ describe('lastAdminGuard — enforcement reale', () => {
     expect(refreshed.isActive).toBe(true);
   });
 
-  it('editor con users:update PUÒ disattivare un admin se ne resta almeno un altro attivo', async () => {
+  it('an editor with users:update CAN deactivate an admin if at least one other stays active', async () => {
     const { session: editorSession } = await createTestUser('editor');
     const { user: admin1 } = await createTestUser('admin');
     await createTestUser('admin'); // second admin: keeps the system above the threshold
@@ -73,9 +73,9 @@ describe('lastAdminGuard — enforcement reale', () => {
    * `set` refuses to switch it at all, and the way to take it from a user is to take its
    * children — `settings.users` among them.
    */
-  describe('sezioni di recupero', () => {
+  describe('recovery sections', () => {
     it.each(['settings.users'] as const)(
-      "togliere '%s' all'unico admin è rifiutato",
+      "removing '%s' from the only admin is rejected",
       async section => {
         const { user: admin, session } = await createTestUser('admin');
 
@@ -90,7 +90,7 @@ describe('lastAdminGuard — enforcement reale', () => {
     );
 
     it.each(['settings.users'] as const)(
-      "togliere '%s' a un admin è consentito se ne resta un altro",
+      "removing '%s' from an admin is allowed if another one remains",
       async section => {
         const { user: target, session } = await createTestUser('admin');
         await createTestUser('admin'); // the way out

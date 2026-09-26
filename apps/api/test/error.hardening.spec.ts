@@ -19,7 +19,7 @@ describe('API Hardening - error handler e process guards', () => {
     await app.close();
   });
 
-  it('risponde 500 con body safe e non crasha', async () => {
+  it('responds 500 with a safe body and does not crash', async () => {
     const res = await app.inject({ method: 'GET', url: '/__boom' });
     expect(res.statusCode).toBe(500);
     const body = res.json();

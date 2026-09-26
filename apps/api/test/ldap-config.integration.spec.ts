@@ -19,7 +19,7 @@ describe('LDAP Config Management', () => {
     await prisma.appConfig.deleteMany({ where: { key: { startsWith: 'auth.' } } });
   });
 
-  it('restituisce configurazione di default quando non esistono configurazioni LDAP', async () => {
+  it('returns the default configuration when no LDAP configuration exists', async () => {
     const config = await getLdapConfig(prisma);
 
     expect(config).toEqual({
@@ -36,7 +36,7 @@ describe('LDAP Config Management', () => {
     });
   });
 
-  it('restituisce configurazione parziale quando esistono solo alcune configurazioni', async () => {
+  it('returns a partial configuration when only some keys exist', async () => {
     // `createMany`, not `upsert`: the `beforeEach` has already cleared the prefix,
     // so there's nothing to update.
     await prisma.appConfig.createMany({
@@ -61,7 +61,7 @@ describe('LDAP Config Management', () => {
     expect(config.roleMapping).toEqual({}); // Default value
   });
 
-  it('gestisce correttamente configurazioni non cifrate', async () => {
+  it('handles unencrypted configuration correctly', async () => {
     await prisma.appConfig.createMany({
       data: [
         { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },

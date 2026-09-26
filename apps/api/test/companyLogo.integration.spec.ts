@@ -65,7 +65,7 @@ describe('company.profile.update — logo', () => {
     expect(confirmed?.confirmedAt).not.toBeNull();
   });
 
-  it('rifiuta un file di un altro bucket', async () => {
+  it('rejects a file from another bucket', async () => {
     const file = await seedFile({ bucket: 'brand-logos' });
 
     await expect(
@@ -73,7 +73,7 @@ describe('company.profile.update — logo', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('rifiuta un file caricato da un altro utente', async () => {
+  it('rejects a file uploaded by another user', async () => {
     const other = await ctx.prisma.user.create({
       data: { email: `o-${randomUUID()}@t.test`, username: `o-${randomUUID().slice(0, 8)}`, role: 'viewer', isActive: true },
     });
@@ -84,7 +84,7 @@ describe('company.profile.update — logo', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('rifiuta un file già confermato', async () => {
+  it('rejects an already confirmed file', async () => {
     // Pins down the fact that `confirmUpload` creates pending: if someone
     // "fixed" it by going back to immediate confirmation, every upload in
     // S3 mode would stop linking, and this test would say so.
@@ -95,7 +95,7 @@ describe('company.profile.update — logo', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('rifiuta un id inesistente invece di salvare senza logo', async () => {
+  it('rejects a nonexistent id instead of saving without a logo', async () => {
     // The realistic case isn't a malicious id: it's the reaper that swept away
     // the pending row while the user was distracted.
     await expect(
@@ -103,7 +103,7 @@ describe('company.profile.update — logo', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('logoKey: null cancella e ripulisce il blob precedente', async () => {
+  it('logoKey: null deletes and cleans up the previous blob', async () => {
     const file = await seedFile();
     await caller().update({ ...base, fileObjectId: file.id });
 
@@ -118,7 +118,7 @@ describe('company.profile.update — logo', () => {
     expect(await ctx.prisma.fileObject.findUnique({ where: { id: file.id } })).toBeNull();
   });
 
-  it('sostituendo il logo cancella la key vecchia', async () => {
+  it('replacing the logo deletes the old key', async () => {
     const first = await seedFile();
     await caller().update({ ...base, fileObjectId: first.id });
 
@@ -131,7 +131,7 @@ describe('company.profile.update — logo', () => {
     expect(await ctx.prisma.fileObject.findUnique({ where: { id: first.id } })).toBeNull();
   });
 
-  it('gli altri campi fanno ancora round-trip', async () => {
+  it('the other fields still round-trip', async () => {
     // Replacing `...input` with a destructure is the point where a field gets
     // lost without anyone noticing.
     const profile = await caller().update({
@@ -149,7 +149,7 @@ describe('company.profile.update — logo', () => {
     });
   });
 
-  it('una storage key esplicita non è più esprimibile', async () => {
+  it('an explicit storage key can no longer be expressed', async () => {
     // Deliberate cast: the schema no longer accepts a plain string, and the test
     // pins down that the rejection happens at runtime and not just at compile time.
     await expect(

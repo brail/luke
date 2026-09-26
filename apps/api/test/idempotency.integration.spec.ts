@@ -27,7 +27,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('users.create idempotency', () => {
-    it('dovrebbe ritornare stesso risultato per doppio submit con stessa key', async () => {
+    it('should return the same result for a double submit with the same key', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
@@ -58,7 +58,7 @@ describe('Idempotency Integration', () => {
       expect(testUsers).toHaveLength(1);
     });
 
-    it('dovrebbe fallire con 409 Conflict per stessa key con body diverso', async () => {
+    it('should fail with 409 Conflict for the same key with a different body', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
@@ -85,7 +85,7 @@ describe('Idempotency Integration', () => {
       });
     });
 
-    it('dovrebbe permettere richieste con key diverse', async () => {
+    it('should allow requests with different keys', async () => {
       const key1 = randomUUID();
       const key2 = randomUUID();
       const adminCaller1 = await createCallerWithIdempotency(key1, 'admin');
@@ -116,7 +116,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('users.update idempotency', () => {
-    it('dovrebbe ritornare stesso risultato per doppio submit con stessa key', async () => {
+    it('should return the same result for a double submit with the same key', async () => {
       // The setup uses a caller WITHOUT an idempotency-key: reusing the same key
       // for create and update is exactly the case the middleware rejects
       // (same key, different body → CONFLICT), and it would make the test fail during
@@ -150,7 +150,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('config.set idempotency', () => {
-    it('dovrebbe ritornare stesso risultato per doppio submit con stessa key', async () => {
+    it('should return the same result for a double submit with the same key', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
@@ -170,7 +170,7 @@ describe('Idempotency Integration', () => {
       expect(result2.value).toBe(result1.value);
     });
 
-    it('dovrebbe fallire con 409 Conflict per stessa key con body diverso', async () => {
+    it('should fail with 409 Conflict for the same key with a different body', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
@@ -197,7 +197,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('auth.login idempotency', () => {
-    it('dovrebbe ritornare stesso risultato per doppio submit con stessa key', async () => {
+    it('should return the same result for a double submit with the same key', async () => {
       const idempotencyKey = randomUUID();
       const caller = await createCallerWithIdempotency(idempotencyKey, null);
 
@@ -225,7 +225,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('me.changePassword idempotency', () => {
-    it('il secondo submit viene respinto: il cambio password revoca la sessione', async () => {
+    it('the second submit is rejected: the password change revokes the session', async () => {
       const idempotencyKey = randomUUID();
       const userCaller = await createCallerWithIdempotency(idempotencyKey, 'viewer');
 
@@ -252,7 +252,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('idempotency TTL expiration', () => {
-    it('dovrebbe permettere nuove richieste dopo TTL scaduto', async () => {
+    it('should allow new requests after the TTL has expired', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 
@@ -304,7 +304,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('idempotency key validation', () => {
-    it('dovrebbe accettare UUID v4 validi', async () => {
+    it('should accept valid v4 UUIDs', async () => {
       // Only **v4** UUIDs: the version nibble must be `4` and the variant
       // `8|9|a|b`. The examples `6ba7b81x-9dad-11d1-...` were v1 and the middleware
       // correctly rejects them — the test asserted the opposite of its name.
@@ -326,7 +326,7 @@ describe('Idempotency Integration', () => {
       }
     });
 
-    it('dovrebbe rifiutare UUID non validi', async () => {
+    it('should reject invalid UUIDs', async () => {
       const invalidKeys = [
         'not-a-uuid',
         '550e8400-e29b-41d4-a716', // too short

@@ -109,8 +109,8 @@ describe('LDAP Resilience', () => {
     });
   });
 
-  describe('mappatura errori', () => {
-    it('mappa credenziali invalide a UNAUTHORIZED senza ritentare', async () => {
+  describe('error mapping', () => {
+    it('maps invalid credentials to UNAUTHORIZED without retrying', async () => {
       const client = await connectedClient();
       mockClient.bind.mockRejectedValue(new MockInvalidCredentialsError());
 
@@ -126,7 +126,7 @@ describe('LDAP Resilience', () => {
       expect(mockClient.bind).toHaveBeenCalledTimes(1);
     });
 
-    it('mappa gli errori di rete a SERVICE_UNAVAILABLE dopo i retry', async () => {
+    it('maps network errors to SERVICE_UNAVAILABLE after the retries', async () => {
       const client = await connectedClient();
       mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -140,7 +140,7 @@ describe('LDAP Resilience', () => {
       );
     });
 
-    it('mappa gli errori di rete in search a SERVICE_UNAVAILABLE', async () => {
+    it('maps network errors in search to SERVICE_UNAVAILABLE', async () => {
       const client = await connectedClient();
       mockClient.search.mockRejectedValue(new Error('ETIMEDOUT'));
 
@@ -150,7 +150,7 @@ describe('LDAP Resilience', () => {
       expect(error.code).toBe('SERVICE_UNAVAILABLE');
     });
 
-    it('restituisce le entry quando la search riesce', async () => {
+    it('returns the entries when the search succeeds', async () => {
       const client = await connectedClient();
       mockClient.search.mockResolvedValue({
         searchEntries: [{ dn: 'uid=alice,dc=test' }],
@@ -163,7 +163,7 @@ describe('LDAP Resilience', () => {
   });
 
   describe('retry', () => {
-    it('riesce senza errore se un tentativo successivo va a buon fine', async () => {
+    it('succeeds without error if a later attempt goes through', async () => {
       const client = await connectedClient();
       mockClient.bind
         .mockRejectedValueOnce(new Error('connect ECONNREFUSED'))
@@ -175,7 +175,7 @@ describe('LDAP Resilience', () => {
   });
 
   describe('circuit breaker', () => {
-    it('si apre dopo la soglia di fallimenti e rifiuta senza contattare LDAP', async () => {
+    it('opens after the failure threshold and rejects without contacting LDAP', async () => {
       const client = await connectedClient({ maxRetries: 0 });
       mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -193,7 +193,7 @@ describe('LDAP Resilience', () => {
       expect(mockClient.bind).toHaveBeenCalledTimes(callsBeforeOpen);
     });
 
-    it('passa a half-open dopo il cooldown e si richiude se l\'operazione riesce', async () => {
+    it('moves to half-open after the cooldown and closes again if the operation succeeds', async () => {
       const client = await connectedClient({ maxRetries: 0 });
       mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -216,7 +216,7 @@ describe('LDAP Resilience', () => {
       expect(mockClient.bind).toHaveBeenCalledTimes(2);
     });
 
-    it('tornando a fallire in half-open riapre il circuito', async () => {
+    it('failing again in half-open reopens the circuit', async () => {
       const client = await connectedClient({ maxRetries: 0 });
       mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
@@ -240,7 +240,7 @@ describe('LDAP Resilience', () => {
   });
 
   describe('robustezza', () => {
-    it('rifiuta la promise invece di lasciar sfuggire un errore non gestito', async () => {
+    it('rejects the promise instead of letting an unhandled error escape', async () => {
       const client = await connectedClient({ maxRetries: 0 });
       mockClient.bind.mockRejectedValue(new Error('boom inatteso'));
 

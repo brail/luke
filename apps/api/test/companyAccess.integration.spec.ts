@@ -72,19 +72,19 @@ beforeAll(async () => {
  * permissive union, `null` = all brands) and had fallen behind the migration.
  */
 describe('getUserAllowedBrandIds', () => {
-  it('utente senza team → []', async () => {
+  it('user with no team → []', async () => {
     const userId = await createUser();
     const result = await getUserAllowedBrandIds(userId, prisma);
     expect(result).toEqual([]);
   });
 
-  it('admin → null (nessun vincolo, unico caso che restituisce null)', async () => {
+  it('admin → null (no restriction, the only case that returns null)', async () => {
     const userId = await createUser();
     const result = await getUserAllowedBrandIds(userId, prisma, 'admin');
     expect(result).toBeNull();
   });
 
-  it('utente in team senza brandScopes → [] (opt-in: nessuno scope, nessun brand)', async () => {
+  it('user in a team without brandScopes → [] (opt-in: no scope, no brand)', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamMembership.create({ data: { teamId: team.id, userId } });
@@ -93,7 +93,7 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toEqual([]);
   });
 
-  it('utente in team con brandScopes=[brandA] → [brandA.id]', async () => {
+  it('user in a team with brandScopes=[brandA] → [brandA.id]', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId: brandAId } });
@@ -104,7 +104,7 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toHaveLength(1);
   });
 
-  it('utente in più team con scope diversi → union', async () => {
+  it('user in several teams with different scopes → union', async () => {
     const userId = await createUser();
     const teamA = await createTeam();
     const teamB = await createTeam();
@@ -120,7 +120,7 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toHaveLength(2);
   });
 
-  it('un team senza scope non allarga l\'accesso degli altri team', async () => {
+  it('a team with no scope does not widen the access of the other teams', async () => {
     const userId = await createUser();
     const teamScoped = await createTeam();
     const teamUnscoped = await createTeam();
@@ -136,7 +136,7 @@ describe('getUserAllowedBrandIds', () => {
     expect(result).toEqual([brandAId]);
   });
 
-  it('utente in team isActive=false → [] (team inattivo non conta)', async () => {
+  it('user in a team with isActive=false → [] (an inactive team does not count)', async () => {
     const userId = await createUser();
     const inactiveTeam = await createTeam({ isActive: false });
     await prisma.companyTeamBrandScope.create({ data: { teamId: inactiveTeam.id, brandId: brandAId } });

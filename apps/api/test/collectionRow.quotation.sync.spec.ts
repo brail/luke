@@ -58,7 +58,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 }
 
 describe('syncRowQuotations', () => {
-  it('lancia BAD_REQUEST se un draft porta un id non appartenente a questa riga (id stale/estraneo)', async () => {
+  it('throws BAD_REQUEST if a draft carries an id that does not belong to this row (stale/foreign id)', async () => {
     const { prisma } = buildFakePrisma({ existingQuotationIds: ['q-1'] });
     const drafts: CollectionRowQuotationDraft[] = [{ id: 'q-from-another-row' }];
 
@@ -68,7 +68,7 @@ describe('syncRowQuotations', () => {
     });
   });
 
-  it('lancia BAD_REQUEST se il pricingParameterSetId non appartiene al brand/stagione della riga', async () => {
+  it('throws BAD_REQUEST if the pricingParameterSetId does not belong to the row brand/season', async () => {
     const { prisma } = buildFakePrisma({
       paramSets: [{ id: 'ps-1', brandId: 'other-brand', seasonId: SEASON_ID }],
     });
@@ -77,7 +77,7 @@ describe('syncRowQuotations', () => {
     await expectToThrow(syncRowQuotations(ROW_ID, drafts, LAYOUT_SCOPE, prisma), { code: 'BAD_REQUEST' });
   });
 
-  it('crea i draft senza id, aggiorna quelli con id, elimina gli esistenti non più presenti', async () => {
+  it('creates drafts without an id, updates those with one, deletes existing ones no longer present', async () => {
     const { prisma, calls } = buildFakePrisma({ existingQuotationIds: ['q-keep', 'q-remove'] });
     const drafts: CollectionRowQuotationDraft[] = [
       { id: 'q-keep', notes: 'aggiornata' },
@@ -100,11 +100,11 @@ describe('syncRowQuotations', () => {
     expect(result.deletedIds).toEqual(['q-remove']);
   });
 
-  it('ricalcola `order` dalla posizione nell\'array inviato, non da un valore lato client (bug plausibile: order non risincronizzato dopo un riordino/cancellazione)', async () => {
+  it('recomputes `order` from the position in the array sent, not from a client-side value (plausible bug: order not resynced after a reorder/delete)', async () => {
     const { prisma, calls } = buildFakePrisma({ existingQuotationIds: ['q-a'] });
     const drafts: CollectionRowQuotationDraft[] = [
-      { id: 'q-a' }, // index 0 → order atteso 0
-      {}, // index 1 → order atteso 1
+      { id: 'q-a' }, // index 0 → expected order 0
+      {}, // index 1 → expected order 1
     ];
 
     await syncRowQuotations(ROW_ID, drafts, LAYOUT_SCOPE, prisma);
@@ -113,7 +113,7 @@ describe('syncRowQuotations', () => {
     expect(calls.create[0].data.order).toBe(1);
   });
 
-  it('con lista vuota elimina tutte le quotazioni esistenti e non crea/aggiorna nulla', async () => {
+  it('with an empty list it deletes every existing quotation and creates/updates nothing', async () => {
     const { prisma, calls } = buildFakePrisma({ existingQuotationIds: ['q-1', 'q-2'] });
 
     const result = await syncRowQuotations(ROW_ID, [], LAYOUT_SCOPE, prisma);

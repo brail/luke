@@ -68,7 +68,7 @@ function mockGitHubIssueCreate(overrides: MockIssueResponse = {}) {
 }
 
 describe('feedback.submit', () => {
-  it('anonimo → UNAUTHORIZED, nessuna chiamata a GitHub', async () => {
+  it('anonymous → UNAUTHORIZED, no call to GitHub', async () => {
     const fetchMock = mockGitHubIssueCreate();
     const anon = await createCallerAs(null);
 
@@ -79,7 +79,7 @@ describe('feedback.submit', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('utente autenticato (qualsiasi ruolo) crea la issue, persiste la submission e la riga di audit', async () => {
+  it('an authenticated user (any role) creates the issue, persists the submission and the audit row', async () => {
     const repo = await seedFeedbackConfig();
     const fetchMock = mockGitHubIssueCreate({ number: 42, html_url: 'https://github.com/luke-org/luke/issues/42' });
     const { user, session } = await createTestUser('editor');
@@ -128,7 +128,7 @@ describe('feedback.submit', () => {
     });
   });
 
-  it('type "feature" usa la label enhancement, non bug', async () => {
+  it('type "feature" uses the enhancement label, not bug', async () => {
     await seedFeedbackConfig();
     const fetchMock = mockGitHubIssueCreate();
     const { session } = await createTestUser('viewer');
@@ -140,8 +140,8 @@ describe('feedback.submit', () => {
     expect(requestBody.labels).toEqual(['enhancement']);
   });
 
-  it('config feedback non impostata → PRECONDITION_FAILED, nessuna fetch, nessuna submission orfana', async () => {
-    // beforeEach ha già troncato AppConfig: nessuna seedFeedbackConfig() qui.
+  it('feedback config not set → PRECONDITION_FAILED, no fetch, no orphan submission', async () => {
+    // beforeEach has already truncated AppConfig: no seedFeedbackConfig() here.
     const fetchMock = mockGitHubIssueCreate();
     const { session } = await createTestUser('admin');
     const caller = createCallerWithSession(session).feedback;
@@ -154,7 +154,7 @@ describe('feedback.submit', () => {
     expect(await prisma.feedbackSubmission.count()).toBe(0);
   });
 
-  it('GitHub risponde errore → INTERNAL_SERVER_ERROR, nessuna submission né audit orfani', async () => {
+  it('GitHub responds with an error → INTERNAL_SERVER_ERROR, no orphan submission or audit', async () => {
     await seedFeedbackConfig();
     mockGitHubIssueCreate({ ok: false, errorText: 'Bad credentials' });
     const { session } = await createTestUser('admin');
@@ -170,7 +170,7 @@ describe('feedback.submit', () => {
     expect(await prisma.auditLog.count({ where: { action: 'FEEDBACK_SUBMIT' } })).toBe(0);
   });
 
-  it('titolo vuoto è rifiutato dallo schema Zod prima di qualunque fetch', async () => {
+  it('an empty title is rejected by the Zod schema before any fetch', async () => {
     await seedFeedbackConfig();
     const fetchMock = mockGitHubIssueCreate();
     const { session } = await createTestUser('admin');
@@ -182,7 +182,7 @@ describe('feedback.submit', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('descrizione oltre 4000 caratteri è rifiutata dallo schema Zod', async () => {
+  it('a description over 4000 characters is rejected by the Zod schema', async () => {
     await seedFeedbackConfig();
     const fetchMock = mockGitHubIssueCreate();
     const { session } = await createTestUser('admin');
