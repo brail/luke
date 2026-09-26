@@ -4,9 +4,9 @@ export default defineConfig({
   schema: 'prisma',
   datasource: {
     url: process.env.DATABASE_URL,
-    // Serve solo a `prisma migrate diff --from-migrations`, usato in CI per
-    // rilevare il drift fra prisma/migrations e i file .prisma. Non impostata
-    // in runtime applicativo: resta undefined e nessun comando la richiede.
+    // Used only by `prisma migrate diff --from-migrations`, which CI runs to
+    // detect drift between prisma/migrations and the .prisma files. Not set in
+    // the application runtime: it stays undefined and no command needs it.
     shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });

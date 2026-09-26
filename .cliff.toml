@@ -48,8 +48,8 @@ split_commits = false
 protect_breaking_commits = true
 filter_commits = false
 tag_pattern = "v[0-9].*"
-# Skip all pre-1.9 tags (1.0.0–1.6.3 + futuri 1.7/1.8 se mai taggati):
-# commit non-conventional, history sintetizzata nel footer
+# Skip all pre-1.9 tags (1.0.0–1.6.3, plus any 1.7/1.8 if ever tagged):
+# non-conventional commits, history summarized in the footer
 skip_tags = "^v1\\.[0-8]\\..*"
 topo_order = false
 sort_commits = "oldest"

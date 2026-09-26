@@ -1,16 +1,16 @@
 import { defineConfig } from 'vitest/config';
 
 /**
- * Tier unit di `apps/web`, deliberatamente ristretto ai moduli **puri** sotto `src/lib/`:
- * formattazione, calcoli di stile, mapping di errori. Girano in `node`, senza jsdom.
+ * Unit tier of `apps/web`, deliberately restricted to **pure** modules under `src/lib/`:
+ * formatting, style calculations, error mapping. They run in `node`, without jsdom.
  *
- * Componenti e hook restano coperti dagli smoke Playwright (`tests/smoke/`): testarli qui
- * richiederebbe jsdom più `@testing-library/react`, cioè uno stack diverso e una decisione a sé —
- * mentre la logica pura oggi non è verificabile da nessuna parte, ed è quella che si rompe in
- * silenzio.
+ * Components and hooks are tested elsewhere: in a real Chromium by the browser tier
+ * (`vitest.browser.config.mts`, `*.browser.test.tsx`), and end to end by the Playwright smoke
+ * suite (`tests/smoke/`). Keeping this tier Node-only is what lets `pnpm test` and
+ * `.husky/pre-push` run it without provisioning a browser.
  *
- * Il task `test` in `turbo.json` non filtra i package, quindi `pnpm test` e la CI raccolgono
- * questa suite senza altre modifiche.
+ * The `test` task in `turbo.json` does not filter packages, so `pnpm test` and CI pick up this
+ * suite with no other changes.
  */
 export default defineConfig({
   test: {

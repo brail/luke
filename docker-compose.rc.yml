@@ -1,26 +1,26 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Luke — RC Stack (Portainer)
 #
-# Stack parallelo alla produzione per release candidate (vX.Y.Z-rc.N).
-# Usa immagini taggate "rc-latest" costruite da GitHub Actions.
+# Stack running parallel to production, for release candidates (vX.Y.Z-rc.N).
+# Uses images tagged "rc-latest", built by GitHub Actions.
 #
-# Porte host differenziate per coesistere con lo stack prod:
-#   web: 3010 (prod usa 3000)
+# Distinct host ports, so it can coexist with the prod stack:
+#   web: 3010 (prod uses 3000)
 #
 # Required environment variables (set in Portainer Stack → Env):
-#   POSTGRES_PASSWORD_RC  — password DB separata dal prod
-#   NEXTAUTH_SECRET_RC    — secret separato dal prod
-#   RC_PUBLIC_HOSTNAME    — hostname RC, es. rc.luke.febos.local
-#   COOKIE_SECURE         — "true" se HTTPS, "false" se HTTP
+#   POSTGRES_PASSWORD_RC  — DB password, separate from prod
+#   NEXTAUTH_SECRET_RC    — secret, separate from prod
+#   RC_PUBLIC_HOSTNAME    — RC hostname, e.g. rc.luke.febos.local
+#   COOKIE_SECURE         — "true" for HTTPS, "false" for HTTP
 #   S3_ROOT_USER_RC       — S3 storage admin username (RC)
 #   S3_ROOT_PASSWORD_RC   — S3 storage admin password (RC, 32+ chars)
 #
-# Nginx Proxy Manager: crea un nuovo proxy host
+# Nginx Proxy Manager: create a new proxy host
 #   Domain: rc.luke.febos.local  →  Forward: http://localhost:3010
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
-  # ── PostgreSQL (istanza isolata per l'RC) ────────────────────────────────────
+  # ── PostgreSQL (isolated instance for RC) ────────────────────────────────────
   postgres-rc:
     networks:
       - data
@@ -75,7 +75,7 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # ── Next.js web (RC) — esposta su porta 3010 ─────────────────────────────────
+  # ── Next.js web (RC) — exposed on port 3010 ──────────────────────────────────
   web-rc:
     networks:
       - edge

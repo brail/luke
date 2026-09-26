@@ -125,7 +125,7 @@ function makeClient(baseUrl: string, token?: string) {
 }
 
 async function login(label: string, baseUrl: string): Promise<string> {
-  console.log(`\n== Login su ${label} (${baseUrl}) ==`);
+  console.log(`\n== Logging into ${label} (${baseUrl}) ==`);
   const username = await prompt('Username: ');
   const password = await promptHidden('Password: ');
   const anon = makeClient(baseUrl);
@@ -145,14 +145,14 @@ async function waitForBackup(
     const record = await client.maintenance.backup.getById.query({ id });
     const status = record.status as BackupStatus;
     if (status === 'COMPLETED') {
-      console.log(`   ${label}: completato`);
+      console.log(`   ${label}: completed`);
       return;
     }
     if (status === 'FAILED') {
-      throw new Error(`${label} fallito: ${record.errorMessage ?? 'errore sconosciuto'}`);
+      throw new Error(`${label} failed: ${record.errorMessage ?? 'unknown error'}`);
     }
     if (Date.now() > deadline) {
-      throw new Error(`${label}: timeout in attesa di completamento (stato attuale: ${status})`);
+      throw new Error(`${label}: timed out waiting for completion (current status: ${status})`);
     }
     await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
   }
@@ -174,7 +174,7 @@ async function main() {
   const prodUrlInput = values['prod-url'];
   const rcUrlInput = values['rc-url'];
   if (!prodUrlInput || !rcUrlInput) {
-    console.error('Uso: tsx scripts/rc-prod-clone.ts --prod-url <url> --rc-url <url> [--backup-id <id>] [--label <text>] [--restore-files] [--wipe-audit-log] [--yes]');
+    console.error('Usage: tsx scripts/rc-prod-clone.ts --prod-url <url> --rc-url <url> [--backup-id <id>] [--label <text>] [--restore-files] [--wipe-audit-log] [--yes]');
     process.exit(1);
   }
   const prodUrl = stripTrailingSlash(prodUrlInput);
@@ -192,26 +192,26 @@ async function main() {
 
     let backupId = values['backup-id'];
     if (!backupId) {
-      console.log(`\n== Creo backup DB su PROD (label: ${label}) ==`);
+      console.log(`\n== Creating a DB backup on PROD (label: ${label}) ==`);
       const created = await prod.maintenance.backup.create.mutate({ scope: 'DB', label });
       backupId = created.id;
       await waitForBackup(prod, backupId, 'Backup PROD');
     } else {
-      console.log(`\n== Riuso backup PROD esistente: ${backupId} ==`);
+      console.log(`\n== Reusing existing PROD backup: ${backupId} ==`);
     }
 
-    console.log('== Preparo export passphrase-protected (.lukebak) ==');
-    const passphrase = randomBytes(24).toString('base64url'); // mai stampata, mai riusata tra run
+    console.log('== Preparing a passphrase-protected export (.lukebak) ==');
+    const passphrase = randomBytes(24).toString('base64url'); // never printed, never reused across runs
     const exported = await prod.maintenance.backup.prepareExport.mutate({ id: backupId, passphrase });
 
-    console.log('== Scarico il pacchetto export da PROD ==');
+    console.log('== Downloading the export package from PROD ==');
     // Keep in step with `buildBackupExportDownloadUrl` in packages/core/src/net/url.ts. Hand-written
     // because @luke/core is not a dependency of the repo root (only @luke/api is), so this script
     // cannot import it — the paths moved once already, to the `/download/` and `/upload/` prefixes
     // Next.js proxies in production, and this copy is the one that went stale.
     const exportUrl = `${prodUrl}/download/backup/${backupId}/export?token=${encodeURIComponent(exported.token)}`;
     const res = await fetch(exportUrl);
-    if (!res.ok || !res.body) throw new Error(`Download export fallito: HTTP ${res.status}`);
+    if (!res.ok || !res.body) throw new Error(`Export download failed: HTTP ${res.status}`);
     // res.body is typed against lib.dom's ReadableStream; Readable.fromWeb wants node:stream/web's —
     // structurally identical at runtime (undici backs both), just two distinct TS declarations.
     await pipeline(Readable.fromWeb(res.body as unknown as NodeWebReadableStream<Uint8Array>), createWriteStream(packagePath));
@@ -220,7 +220,7 @@ async function main() {
     const rcToken = await login('RC', rcUrl);
     const rc = makeClient(rcUrl, rcToken);
 
-    console.log('\n== Importo il pacchetto su RC ==');
+    console.log('\n== Importing the package into RC ==');
     const fileBuffer = await readFile(packagePath);
     const form = new FormData();
     form.set('passphrase', passphrase);
@@ -235,27 +235,27 @@ async function main() {
     });
     if (!importRes.ok) {
       const body = await importRes.text().catch(() => '');
-      throw new Error(`Import su RC fallito: HTTP ${importRes.status} ${body}`);
+      throw new Error(`Import into RC failed: HTTP ${importRes.status} ${body}`);
     }
-    const importBody = await importRes.json(); // contratto della route: { id: string }, vedi apps/api/src/routes/backupImport.ts
+    const importBody = await importRes.json(); // route contract: { id: string }, see apps/api/src/routes/backupImport.ts
     const importedId = (importBody as { id: string }).id;
-    console.log(`   Importato come backup RC: ${importedId}`);
+    console.log(`   Imported as RC backup: ${importedId}`);
 
-    // ── 5. Schema compatibility → migration bridge se necessario ────────────
-    console.log('\n== Verifico compatibilità schema su RC ==');
+    // ── 5. Schema compatibility → migration bridge if needed ────────────────
+    console.log('\n== Checking schema compatibility on RC ==');
     let compat = await rc.maintenance.backup.checkRestoreCompatibility.query({ id: importedId });
-    console.log(`   Classificazione: ${compat.classification}`);
+    console.log(`   Classification: ${compat.classification}`);
 
     let restoreTargetId = importedId;
     if (compat.classification === 'NEWER_OR_UNKNOWN') {
       throw new Error(
-        `Schema del backup più recente o sconosciuto rispetto a RC (RC: ${compat.currentSchemaMigrationName}). ` +
-        `Aggiorna prima l'immagine RC a una versione ≥ di quella del backup.`
+        `Backup schema is newer than RC's, or unknown (RC: ${compat.currentSchemaMigrationName}). ` +
+        `Upgrade the RC image to a version ≥ the backup's first.`
       );
     }
     if (compat.classification === 'OLDER') {
-      console.log(`   Migration da applicare (${compat.pendingMigrations.length}): ${compat.pendingMigrations.join(', ')}`);
-      console.log('== Eseguo il migration bridge (in un database temporaneo disposable, non tocca RC) ==');
+      console.log(`   Migrations to apply (${compat.pendingMigrations.length}): ${compat.pendingMigrations.join(', ')}`);
+      console.log('== Running the migration bridge (in a disposable temporary database; RC is not touched) ==');
       const bridged = await rc.maintenance.backup.runMigrationBridge.mutate({
         id: importedId,
         acknowledgeMigrationBridge: true,
@@ -265,23 +265,23 @@ async function main() {
 
       compat = await rc.maintenance.backup.checkRestoreCompatibility.query({ id: restoreTargetId });
       if (compat.classification !== 'SAME') {
-        throw new Error(`Migration bridge completato ma lo schema risultante non è "SAME" (è "${compat.classification}") — anomalia, indagare prima di procedere.`);
+        throw new Error(`Migration bridge completed, but the resulting schema is not "SAME" (it is "${compat.classification}") — an anomaly, investigate before proceeding.`);
       }
-      console.log('   Migration bridge completato: le migration si applicano correttamente ai dati reali di PROD.');
+      console.log('   Migration bridge completed: the migrations apply cleanly to real PROD data.');
     }
 
-    // ── 6. Restore nel DB reale di RC ───────────────────────────────────────
+    // ── 6. Restore into RC's real DB ────────────────────────────────────────
     if (!values.yes) {
       const confirm = await prompt(
-        `\nQuesto SOVRASCRIVE il database RC con i dati di PROD (backup ${restoreTargetId}). Continuare? [y/N] `
+        `\nThis OVERWRITES the RC database with PROD data (backup ${restoreTargetId}). Continue? [y/N] `
       );
       if (!/^[Yy]$/.test(confirm)) {
-        console.log('Annullato.');
+        console.log('Cancelled.');
         return;
       }
     }
 
-    console.log('== Ripristino su RC ==');
+    console.log('== Restoring on RC ==');
     await rc.maintenance.backup.restore.mutate({
       id: restoreTargetId,
       preserveAuditLog: !values['wipe-audit-log'],
@@ -289,8 +289,8 @@ async function main() {
       confirmPhrase: 'RIPRISTINA',
     });
 
-    console.log('\nFatto. RC ora riflette i dati di PROD con le migration di questa release applicate.');
-    console.log('Promemoria: i segreti AppConfig cifrati (LDAP/SMTP) restano cifrati con la master key di PROD e non saranno leggibili su RC finché non li reimposti.');
+    console.log('\nDone. RC now reflects PROD data, with the migrations of this release applied.');
+    console.log('Reminder: encrypted AppConfig secrets (LDAP/SMTP) stay encrypted with the PROD master key and will not be readable on RC until you set them again.');
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
   }

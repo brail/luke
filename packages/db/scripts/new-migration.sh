@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 #
-# new-migration.sh — genera una migration versionata e la applica al database di sviluppo.
+# new-migration.sh — generates a versioned migration and applies it to the development database.
 #
-# Perché uno script e non quattro comandi in un .md: la procedura richiede un Postgres usa-e-getta
-# (il DB di sviluppo è stato allineato con `db push`, quindi `migrate dev` lo vedrebbe in drift e
-# proporrebbe di resettarlo), e i comandi giusti sono cambiati con Prisma 7 — `--skip-seed` non
-# esiste più, e il CLI non carica più `.env` da solo. Una procedura scritta a mano marcisce; questa
-# fallisce rumorosamente se qualcosa non torna.
+# Why a script and not four commands in a .md: the procedure needs a disposable Postgres (the
+# development DB was aligned with `db push`, so `migrate dev` would see it as drifted and offer to
+# reset it), and the right commands changed with Prisma 7 — `--skip-seed` no longer exists, and
+# the CLI no longer loads `.env` on its own. A hand-written procedure rots; this one fails loudly
+# if something is off.
 #
-# Uso:
-#   pnpm --filter @luke/db db:migrate:new <nome_descrittivo>
+# Usage:
+#   pnpm --filter @luke/db db:migrate:new <descriptive_name>
 #
-# Al termine il file in prisma/migrations/ va committato insieme alle modifiche ai file .prisma.
+# When it finishes, commit the file in prisma/migrations/ together with the .prisma changes.
 
 set -euo pipefail
 
 NAME="${1:-}"
 if [ -z "$NAME" ]; then
-  echo "❌ Manca il nome della migration. Uso: pnpm --filter @luke/db db:migrate:new <nome_descrittivo>" >&2
+  echo "❌ Missing migration name. Usage: pnpm --filter @luke/db db:migrate:new <descriptive_name>" >&2
   exit 1
 fi
 
@@ -25,35 +25,35 @@ CONTAINER="luke-pg-migrate"
 SHADOW_PORT=5433
 SHADOW_URL="postgresql://luke:luke@localhost:${SHADOW_PORT}/luke"
 
-# `--rm` da solo non basta: se lo script muore fra `docker run` e `docker stop`, il container resta
-# su e la porta occupata fa fallire la run successiva con un errore che non nomina il container.
+# `--rm` alone is not enough: if the script dies between `docker run` and `docker stop`, the
+# container stays up, and the busy port fails the next run with an error that does not name it.
 cleanup() {
   docker stop "$CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-echo "🐘 Postgres temporaneo sulla porta ${SHADOW_PORT}…"
+echo "🐘 Temporary Postgres on port ${SHADOW_PORT}…"
 docker run --rm -d --name "$CONTAINER" -p "${SHADOW_PORT}:5432" \
   -e POSTGRES_DB=luke -e POSTGRES_USER=luke -e POSTGRES_PASSWORD=luke \
   postgres:16-alpine >/dev/null
 
 until docker exec "$CONTAINER" pg_isready -U luke -d luke >/dev/null 2>&1; do sleep 1; done
 
-echo "📝 Genero la migration \"${NAME}\"…"
+echo "📝 Generating migration \"${NAME}\"…"
 npx prisma migrate dev --name "$NAME" --url "$SHADOW_URL"
 
 cleanup
 trap - EXIT
 
-# Il DB di sviluppo si allinea con `db push`, non con `migrate deploy`: il suo storico in
-# `_prisma_migrations` non riflette le migration versionate (vedi la sezione troubleshooting in
-# docs/prisma-migration-workflow.md). `.env` va caricata a mano — Prisma 7 non lo fa più.
+# The development DB is aligned with `db push`, not `migrate deploy`: its history in
+# `_prisma_migrations` does not reflect the versioned migrations (see the troubleshooting section
+# in docs/prisma-migration-workflow.md). `.env` has to be loaded by hand — Prisma 7 no longer does.
 #
-# La `.env` è quella di `apps/api`: `DATABASE_URL` è bootstrap infrastrutturale del
-# deployment (Env Policy in CLAUDE.md), non un file di configurazione di questo
-# package. C'è un solo database, quindi un solo posto dove è dichiarato.
-echo "🚀 Applico lo schema al database di sviluppo…"
+# The `.env` is `apps/api`'s: `DATABASE_URL` is infrastructure bootstrap for the
+# deployment (Env Policy in CLAUDE.md), not a configuration file of this
+# package. There is one database, so one place where it is declared.
+echo "🚀 Applying the schema to the development database…"
 set -a && . ../../apps/api/.env && set +a
 npx prisma db push
 
-echo "✅ Fatto. Committa il file in prisma/migrations/ insieme al/i file .prisma modificato/i."
+echo "✅ Done. Commit the file in prisma/migrations/ together with the modified .prisma file(s)."

@@ -7,9 +7,9 @@ coverage/
 generated/
 pnpm-lock.yaml
 
-# fixture di test per le regole custom (contengono positivi intenzionali)
+# test fixtures for the custom rules (they contain intentional positives)
 .semgrep/tests/
 
-# escluso globalmente per tutte le regole custom (evita di ripeterlo in ogni .yml)
+# excluded globally for every custom rule (avoids repeating it in each .yml)
 **/*.test.ts
 **/*.spec.ts

@@ -8,7 +8,7 @@
 # fresh copy of prod.
 #
 # Requires: both stacks (prod + RC) running on THIS docker host/daemon
-# (same assumption as the "stack parallelo alla produzione" note in
+# (same assumption as the "parallel to production" note in
 # docker-compose.rc.yml). Containers are discovered via compose service
 # labels, not container names, so it works regardless of the Portainer
 # stack name.
