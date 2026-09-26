@@ -133,39 +133,37 @@ counts 4, `VENDOR` (CN) counts 4 and `BOTH` counts 3.
 
 ### Endpoint convention
 
-The two counts do not share an endpoint convention, and the original design did
-not address this:
-
-- `daysBetween` (calendar mode) is the difference between two calendar dates. It
-  ignores the time of day, and two instants on the same date give 0.
-- `workingDaysBetween` (working mode) steps from the earlier instant to the
-  later one, one day at a time, and counts every step that lands on a working
-  day, **both endpoints included**. The result is negated when the deadline is
-  earlier, so the time of day matters.
+Both counts are a difference of calendar dates: the time of day is ignored, the
+start date is excluded, the end date is included, and two instants on the same
+date give 0. `daysBetween` counts every date; `workingDaysBetween` counts only
+the working ones, so with no non-working day in range the two agree.
 
 With now = Monday 10:00 and no holidays:
 
 | Deadline | Calendar mode | Working mode |
 | --- | --- | --- |
-| Monday, all-day (stored at 00:00 UTC) | 0 | −1 |
-| Monday 18:00 | 0 | 1 |
+| Monday, all-day | 0 | 0 |
+| Monday 18:00 | 0 | 0 |
 | Tuesday, all-day | 1 | 1 |
-| Tuesday 18:00 | 1 | 2 |
+| Tuesday 18:00 | 1 | 1 |
 | Next Monday, all-day | 7 | 5 |
-| Monday, all-day, seen from Tuesday 10:00 | −1 | −2 |
+| Monday, all-day, seen from Tuesday 10:00 | −1 | −1 |
 
 Consequences for an opted-in event:
 
-- The count reaches 0 ("Scade oggi") only when no working day lies between the
-  two instants.
-- An all-day milestone shows as one working day overdue on its own due date. The
-  row enters the default "In ritardo" band, and the row-phase-overdue
-  notification fires that same day.
-- A row concluded on the due date of an all-day milestone scores as "Concluso in
-  ritardo". In calendar mode the same row scores as on time.
+- A deadline on the current date scores 0 ("Scade oggi") and a row concluded
+  on the due date scores as on time, in both modes.
+- A Friday deadline seen on Saturday is −1 in both modes.
+- A deadline on a non-working day counts only the working days around it: a
+  Sunday deadline seen on Friday is 0, and seen on Monday it is still 0 (−1 in
+  calendar mode) until Tuesday. The freeze-time warning catches this only when
+  the event's `startAt` is the non-working day; see
+  [Freeze-time warning](#freeze-time-warning).
 
-No test covers the working-days path. `apps/api/test/phaseAlert.spec.ts` builds
-every fixture with `calendarDaysRelevance: null`.
+Until 2026-09-26 `workingDaysBetween` stepped between the two instants and
+counted both endpoints, so an all-day milestone was one working day overdue on
+its own due date. `packages/core/src/utils/__tests__/dateUtils.test.ts` pins the
+convention; the country resolution in `resolveDaysCount` still has no test.
 
 ### Where the count is used
 
@@ -307,8 +305,8 @@ The code differs from the design as first written in these points:
 - **Holiday fetch.** Planned to cover only the relevant date range; it filters
   by country only.
 - **Endpoint convention.** Planned as a drop-in swap of `daysBetween` for
-  `workingDaysBetween`. The swap also changed how endpoints are counted; see
-  [Endpoint convention](#endpoint-convention).
+  `workingDaysBetween`. The swap also changed how endpoints were counted, until
+  the 2026-09-26 fix aligned them; see [Endpoint convention](#endpoint-convention).
 - **Scheduling variance.** Planned to use the same count, and it did in
   `3b4c5176`. The scheduling-variance endpoint and its badge were then removed
   entirely on 2026-07-28 (`e7d5cc6c`).

@@ -55,8 +55,10 @@ export function isWorkingDay(
 }
 
 /**
- * Returns the number of working days between `from` and `to`, inclusive of both endpoints.
- * Negative when `to` is before `from`. Respects holidays for the given `countryCodes`.
+ * `daysBetween` counting only working days: the dates from `from` (excluded) to `to` (included),
+ * in either direction, time of day ignored. So the same date gives 0, and with no non-working day
+ * in range the result equals `daysBetween`. Negative when `to` is before `from`. Respects holidays
+ * for the given `countryCodes`.
  */
 export function workingDaysBetween(
   from: Date,
@@ -64,13 +66,12 @@ export function workingDaysBetween(
   countryCodes: string[],
   holidays: WorkingDayHoliday[],
 ): number {
-  const forward = to >= from;
-  const [start, end] = forward ? [from, to] : [to, from];
+  const days = daysBetween(from, to);
+  const step = Math.sign(days);
   let count = 0;
-  const current = new Date(start);
-  while (current <= end) {
-    if (isWorkingDay(current, countryCodes, holidays)) count++;
-    current.setDate(current.getDate() + 1);
+  for (let i = 1; i <= Math.abs(days); i++) {
+    if (isWorkingDay(addDays(from, step * i), countryCodes, holidays)) count++;
   }
-  return forward ? count : -count;
+  // `0 - count`, not `-count`: no working day backward must be 0, not -0.
+  return days < 0 ? 0 - count : count;
 }
