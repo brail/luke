@@ -5,31 +5,31 @@ import { passwordPrefilterSchema } from './password.js';
 
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
-  /** ID univoco dell'utente (UUID v4) */
+  /** Unique user ID (UUID v4) */
   id: z.string().uuid(),
 
-  /** Email dell'utente (validata come formato email) */
+  /** User email (validated as an email format) */
   email: z.string().email(),
 
-  /** Username dell'utente */
+  /** User username */
   username: z.string(),
 
-  /** Nome dell'utente */
+  /** User first name */
   firstName: z.string().default(''),
 
-  /** Cognome dell'utente */
+  /** User last name */
   lastName: z.string().default(''),
 
-  /** Ruolo dell'utente nel sistema */
+  /** User role in the system */
   role: z.enum(['admin', 'editor', 'viewer']),
 
-  /** Stato di attivazione dell'utente */
+  /** User activation state */
   isActive: z.boolean(),
 
-  /** Data di creazione dell'utente */
+  /** User creation date */
   createdAt: z.date(),
 
-  /** Data dell'ultimo aggiornamento */
+  /** Last update date */
   updatedAt: z.date(),
 });
 

@@ -17,9 +17,9 @@ import { APP_STORAGE_BUCKETS, type StorageBucket } from './types.js';
  */
 export const localStorageConfigSchema = z.object({
   /**
-   * Path base dove salvare i file
-   * Esempio: /var/lib/luke/storage
-   * Default: /tmp/luke-storage (solo per dev)
+   * Base path where files are saved.
+   * Example: /var/lib/luke/storage
+   * Default: /tmp/luke-storage (dev only)
    */
   basePath: z.string().min(1),
 
@@ -33,12 +33,12 @@ export const localStorageConfigSchema = z.object({
 });
 
 /**
- * Tipo inferito per configurazione storage locale
+ * Inferred type for the local storage configuration.
  */
 export type LocalStorageConfig = z.infer<typeof localStorageConfigSchema>;
 
 /**
- * Schema per configurazione storage S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...)
+ * Schema for the S3-compatible storage configuration (MinIO, SeaweedFS, Ceph RGW, ...).
  */
 export const s3StorageConfigSchema = z.object({
   endpoint: z.string().min(1),
@@ -100,12 +100,12 @@ export const storageSaveConfigSchema = z.discriminatedUnion('type', [
 export type StorageSaveConfig = z.infer<typeof storageSaveConfigSchema>;
 
 /**
- * Schema per tipo di storage (estensibile per futuri provider)
+ * Schema for the storage type (extensible for future providers).
  */
 export const storageTypeSchema = z.enum(['local', 's3']);
 
 /**
- * Tipo per identificare il provider di storage
+ * Type that identifies the storage provider.
  */
 export type StorageType = z.infer<typeof storageTypeSchema>;
 

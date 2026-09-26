@@ -126,9 +126,9 @@ export const CollectionLayoutRowInputSchema = z.object({
   toolingNotes: z.string().optional().nullable(),
   // Optional — pricing
   toolingQuotation: z.number().positive().optional().nullable(),
-  // Optional — sotto-flussi bufferizzati nel drawer, committati atomicamente col salvataggio riga
+  // Optional — sub-flows buffered in the drawer, committed atomically with the row save
   quotations: z.array(z.lazy(() => CollectionRowQuotationDraftSchema)).optional(),
-  // Transiente, mai persistito su colonna — solo per arricchire l'audit log quando phaseId cambia davvero
+  // Transient, never persisted to a column — only to enrich the audit log when phaseId really changes
   phaseChangeNote: z.string().max(500).optional().nullable(),
 });
 export type CollectionLayoutRowInput = z.infer<
@@ -181,10 +181,10 @@ export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
 >;
 
-/** Bozza quotazione bufferizzata client-side nel drawer riga: `id` presente = riga esistente da
- *  aggiornare, assente = nuova da creare. `order` omesso: il server lo ricalcola dalla posizione
- *  nell'array inviato al salvataggio (non ha senso lasciarlo al client con inserimenti/cancellazioni
- *  intrecciati). */
+/** Quotation draft buffered client-side in the row drawer: `id` present = existing row to
+ *  update, absent = new one to create. `order` omitted: the server recomputes it from the position
+ *  in the array sent on save (leaving it to the client makes no sense with interleaved
+ *  inserts/deletes). */
 export const CollectionRowQuotationDraftSchema = CollectionRowQuotationInputSchema
   .omit({ rowId: true, order: true })
   .extend({ id: z.string().uuid().optional() });

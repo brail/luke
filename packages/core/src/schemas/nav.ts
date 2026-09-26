@@ -13,9 +13,9 @@ export const navConfigSchema = z.object({
   user: z.string().min(1, 'Utente richiesto'),
   password: z.string().optional(),
   company: z.string().min(1, 'Company richiesto'),
-  /** Connessione SQL Server in sola lettura (ApplicationIntent=ReadOnly). */
+  /** Read-only SQL Server connection (ApplicationIntent=ReadOnly). */
   readOnly: z.boolean(),
-  /** Abilita/disabilita globalmente la sincronizzazione NAV (scheduler + sync manuale). */
+  /** Enables/disables NAV sync globally (scheduler + manual sync). */
   syncEnabled: z.boolean(),
 });
 

@@ -189,7 +189,7 @@ export const AppConfigRegistry = {
   'backup.target.bucket':           z.string().min(1),
   'backup.notifyOnFailure':         booleanConfigSchema,
 
-  // ── Retention sweep (audit log + notifiche) ──────────────────────────────
+  // ── Retention sweep (audit log + notifications) ──────────────────────────
   'auditLog.retentionDays':             z.coerce.number().int().min(1).max(3650),
   'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1).max(36500),
   'notification.retentionDays':         z.coerce.number().int().min(1).max(3650),

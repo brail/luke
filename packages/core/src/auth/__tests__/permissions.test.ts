@@ -465,9 +465,9 @@ describe('Matrix Functions', () => {
     it('should have correct count for each resource', () => {
       const permissions = getAllPermissions();
 
-      // Derivato da VALID_RESOURCE_ACTIONS: ogni risorsa espone le sue azioni + il
-      // wildcard `resource:*`. Conteggi hardcodati driftano al primo `read_all`
-      // aggiunto — l'invariante è la relazione, non il numero.
+      // Derived from VALID_RESOURCE_ACTIONS: every resource exposes its actions + the
+      // `resource:*` wildcard. Hardcoded counts drift at the first `read_all` added —
+      // the invariant is the relation, not the number.
       for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
         const resourcePerms = permissions.filter(p =>
           p.startsWith(`${resource}:`)
@@ -670,8 +670,8 @@ describe('CSV Export', () => {
       const csv = permissionMatrixToCSV();
       const lines = csv.split('\n');
 
-      // Una riga per azione valida, nessuna riga wildcard. Derivato da
-      // VALID_RESOURCE_ACTIONS per non driftare quando una risorsa cresce.
+      // One row per valid action, no wildcard row. Derived from
+      // VALID_RESOURCE_ACTIONS so it does not drift when a resource grows.
       for (const [resource, actions] of Object.entries(VALID_RESOURCE_ACTIONS)) {
         const resourceLines = lines.filter(line =>
           line.startsWith(`"${resource}",`)

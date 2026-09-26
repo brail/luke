@@ -8,7 +8,7 @@ import type { Role } from '../rbac.js';
  */
 export const sectionEnum = z.enum([
   'dashboard',
-  // Settings e relative sotto-sezioni
+  // Settings and its subsections
   'settings',
   'settings.users',
   'settings.storage',
@@ -18,20 +18,20 @@ export const sectionEnum = z.enum([
   'settings.nav_sync',
   'settings.google',
   'settings.collection_control',
-  // Manutenzione e relative sotto-sezioni
+  // Maintenance and its subsections
   'maintenance',
   'maintenance.config',
   'maintenance.import_export',
   'maintenance.backup',
   'maintenance.mode',
   'maintenance.audit_log',
-  // Prodotto e relative sotto-sezioni
+  // Product and its subsections
   'product',
   'product.pricing',
   'product.collection_layout',
   'product.merchandising_plan',
   'product.control',
-  // Amministrazione
+  // Administration
   'admin',
   'admin.brands',
   'admin.seasons',
@@ -39,10 +39,10 @@ export const sectionEnum = z.enum([
   'admin.collection_layout_configuration',
   'admin.calendar_configuration',
   'admin.phase_catalog',
-  // Vendite e relative sotto-sezioni
+  // Sales and its subsections
   'sales',
   'sales.statistics',
-  // Pianificazione stagionale (calendario milestones)
+  // Seasonal planning (milestone calendar)
   'planning',
   // Azienda
   'settings.company',

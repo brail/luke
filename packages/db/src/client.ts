@@ -36,7 +36,7 @@ export function createPrismaClient(options: CreatePrismaClientOptions = {}): Pri
 
   if (!connectionString) {
     throw new Error(
-      'DATABASE_URL non definito: impossibile connettersi al database.'
+      'DATABASE_URL is not defined: cannot connect to the database.'
     );
   }
 

@@ -4,7 +4,7 @@ import { passwordPrefilterSchema } from './password.js';
 
 /** Input schema for updating the authenticated user's profile (all editable fields). */
 export const UserProfileSchema = z.object({
-  /** Email dell'utente */
+  /** User email */
   email: z
     .string()
     .email('Email non valida')
@@ -12,28 +12,28 @@ export const UserProfileSchema = z.object({
     .min(1, 'Email obbligatoria')
     .max(255, 'Email troppo lunga'),
 
-  /** Nome dell'utente */
+  /** User first name */
   firstName: z
     .string()
     .trim()
     .min(1, 'Nome obbligatorio')
     .max(64, 'Nome troppo lungo'),
 
-  /** Cognome dell'utente */
+  /** User last name */
   lastName: z
     .string()
     .trim()
     .min(1, 'Cognome obbligatorio')
     .max(64, 'Cognome troppo lungo'),
 
-  /** Locale dell'utente (es. it-IT, en-US) */
+  /** User locale (e.g. it-IT, en-US) */
   locale: z
     .string()
     .trim()
     .min(2, 'Locale non valido')
     .max(10, 'Locale troppo lungo'),
 
-  /** Timezone dell'utente (es. Europe/Rome, America/New_York) */
+  /** User timezone (e.g. Europe/Rome, America/New_York) */
   timezone: z
     .string()
     .trim()
@@ -43,7 +43,7 @@ export const UserProfileSchema = z.object({
 
 /** Input schema for updating only the user's timezone without requiring other profile fields. */
 export const UpdateTimezoneSchema = z.object({
-  /** Timezone dell'utente (es. Europe/Rome, America/New_York) */
+  /** User timezone (e.g. Europe/Rome, America/New_York) */
   timezone: z
     .string()
     .trim()
@@ -57,7 +57,7 @@ export const UpdateTimezoneSchema = z.object({
  */
 export const ChangePasswordSchema = z
   .object({
-    /** Password corrente (per verifica) */
+    /** Current password (for verification) */
     currentPassword: z
       .string()
       .min(1, 'Password corrente obbligatoria')
@@ -71,7 +71,7 @@ export const ChangePasswordSchema = z
      */
     newPassword: passwordPrefilterSchema,
 
-    /** Conferma nuova password */
+    /** New password confirmation */
     confirmNewPassword: z
       .string()
       .min(1, 'Conferma password obbligatoria')

@@ -17,7 +17,7 @@ export const SeasonInputSchema = z.object({
     .max(10, 'Max 10 caratteri')
     .regex(/^[A-Za-z0-9_-]+$/, 'Solo lettere, numeri, _ e -'),
 
-  /** Anno (opzionale, descrittivo) */
+  /** Year (optional, descriptive) */
   year: z
     .number()
     .int('Anno deve essere intero')
@@ -32,7 +32,7 @@ export const SeasonInputSchema = z.object({
     .max(128, 'Max 128 caratteri')
     .trim(),
 
-  /** Codice NAV collegato (opzionale) */
+  /** Linked NAV code (optional) */
   navSeasonId: z.string().max(10).optional().nullable(),
 
   isActive: z.boolean().default(true),
@@ -60,7 +60,7 @@ export const SeasonUpdateInputSchema = z.object({
   data: partialWithoutDefaults(SeasonInputSchema),
 });
 
-/** Schema di output completo per Season (response dal server) */
+/** Full output schema for Season (server response) */
 export const SeasonSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),

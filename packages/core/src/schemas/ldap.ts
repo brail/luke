@@ -41,7 +41,7 @@ export const ldapConfigSchema = z.object({
     .or(z.literal(''))
     .refine(
       val => {
-        if (!val || val.trim() === '') return true; // Vuoto è valido
+        if (!val || val.trim() === '') return true; // Empty is valid
         try {
           JSON.parse(val);
           return true;
