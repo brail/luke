@@ -143,7 +143,7 @@ export const AppConfigRegistry = {
   // has a stricter `RoleMappingSchema` it applies where it actually needs the guarantee.
   'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
 
-  // ── LDAP resilience (scalari individuali) ────────────────────────────────
+  // ── LDAP resilience (individual scalars) ─────────────────────────────────
   'auth.ldap.resilience.timeoutMs':               z.coerce.number().int().min(100),
   'auth.ldap.resilience.maxRetries':              z.coerce.number().int().min(0),
   'auth.ldap.resilience.baseDelayMs':             z.coerce.number().int().min(10),

@@ -4,7 +4,7 @@ const nextConfig = {
   typedRoutes: true,
   experimental: {
     externalDir: true,
-    proxyTimeout: 360_000, // 6 min — query portafoglio impiegano ~3–4 min, +2 min di margine
+    proxyTimeout: 360_000, // 6 min: portfolio queries take ~3–4 min, plus 2 min of headroom
   },
   turbopack: {
     root: require('path').resolve(__dirname, '../..'),

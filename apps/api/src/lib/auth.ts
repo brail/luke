@@ -77,7 +77,7 @@ export function verifyToken(token: string): JWTPayload | null {
 export function extractTokenFromRequest(
   request: FastifyRequest
 ): string | null {
-  // Solo Authorization header (cookie API rimosso)
+  // Authorization header only (the cookie API was removed)
   const authHeader = request.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);

@@ -1,6 +1,6 @@
 import { PrismaClient } from '@luke/db';
 
-// Mapping fedele a PI 8.3-01 rev5 "Progettazione"
+// Faithful mapping of PI 8.3-01 rev5 "Progettazione"
 const REVISION_TYPE_ITEMS = [
   {
     value: 'REVISIONE_PROGETTUALE',

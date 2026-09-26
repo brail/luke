@@ -67,7 +67,7 @@ export default function ProfilePage() {
     enabled: !!session?.accessToken,
   });
 
-  // Mutation per logout globale (me.revokeAllSessions)
+  // Global logout mutation (me.revokeAllSessions)
   const revokeAllSessionsMutation = trpc.me.revokeAllSessions.useMutation({
     onSuccess: () => {
       toast.success('Tutte le sessioni sono state revocate');

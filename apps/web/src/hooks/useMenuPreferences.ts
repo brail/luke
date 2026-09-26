@@ -26,7 +26,7 @@ export function useMenuPreferences() {
   // Query DB al mount
   const { data: dbStates } = trpc.users.preferences.menu.get.useQuery();
 
-  // Mutation per salvare su DB
+  // Mutation that saves to the database
   const { mutate: saveToDb } = trpc.users.preferences.menu.set.useMutation();
 
   // Initialize from localStorage + DB

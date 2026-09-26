@@ -105,7 +105,7 @@ export const ldapOperationResponseSchema = z.object({
   message: z.string(),
 });
 
-// Tipi inferiti dagli schema
+// Types inferred from the schemas
 export type LdapConfigInput = z.infer<typeof ldapConfigSchema>;
 export type LdapConfigResponse = z.infer<typeof ldapConfigResponseSchema>;
 export type LdapSearchTestInput = z.infer<typeof ldapSearchTestSchema>;

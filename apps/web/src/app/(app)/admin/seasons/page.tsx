@@ -55,7 +55,7 @@ export default function SeasonsPage() {
 
   const invalidate = () => {
     utils.season.list.invalidate();
-    invalidateContext(); // aggiorna context.get, catalog.brands, catalog.seasons (ContextSelector)
+    invalidateContext(); // refreshes context.get, catalog.brands, catalog.seasons (ContextSelector)
   };
 
   const createMutation = trpc.season.create.useMutation({

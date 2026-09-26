@@ -149,7 +149,7 @@ export default function UsersPage() {
     },
     {
       enabled: !!session?.accessToken,
-      refetchInterval: 60_000, // Allineato all'intervallo heartbeat
+      refetchInterval: 60_000, // Aligned with the heartbeat interval
     }
   );
 
@@ -163,7 +163,7 @@ export default function UsersPage() {
   const forceLocalAccessMutation = trpc.users.forceLocalAccess.useMutation();
   const revokeLocalAccessMutation = trpc.users.revokeLocalAccess.useMutation();
 
-  // Mutations standardizzate
+  // Standard mutations
   const { mutate: createUser, isPending: isCreatingUser } = useStandardMutation(
     {
       mutateFn: createUserMutation.mutateAsync,
@@ -294,7 +294,7 @@ export default function UsersPage() {
   };
 
   const handleRevokeUserSessions = (user: UserListItem) => {
-    // Protezione: impedisci auto-revoca
+    // Guard: no self-revocation
     if (user.id === session?.user?.id) {
       toast.error(
         'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.'

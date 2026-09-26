@@ -93,7 +93,7 @@ function safeMessage(err: unknown): string {
   if (!isProd) return err instanceof Error ? err.message : 'Errore interno';
   // In production, do not expose back-end messages
   if (err instanceof TRPCError) {
-    // Mantieni messaggi user-facing per errori noti
+    // Keep the user-facing message of known errors
     if (
       [
         'BAD_REQUEST',

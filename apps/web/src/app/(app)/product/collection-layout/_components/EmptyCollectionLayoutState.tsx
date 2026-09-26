@@ -283,7 +283,7 @@ export function EmptyCollectionLayoutState({
                 </AlertDescription>
               </Alert>
 
-              {/* Shortcut globali */}
+              {/* Global shortcuts */}
               <div className="flex flex-wrap gap-2 text-xs">
                 <Button variant="ghost" size="xs" onClick={() => setAllIncluded(true)}>
                   Seleziona tutte

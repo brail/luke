@@ -24,7 +24,7 @@ export const localStorageConfigSchema = z.object({
   basePath: z.string().min(1),
 
   /**
-   * Dimensione massima file in MB
+   * Maximum file size in MB
    * Default: 50 MB
    * Range: 1-1000 MB
    */

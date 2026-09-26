@@ -61,7 +61,7 @@ export function ChangePasswordCard({
 
   const policy = usePasswordPolicy();
 
-  // Watch per validazione policy in tempo reale
+  // Watched for live policy validation
   const newPassword = watch('newPassword', '');
   const confirmPassword = watch('confirmNewPassword', '');
 
@@ -71,7 +71,7 @@ export function ChangePasswordCard({
       toast.success('Password cambiata con successo');
       reset(); // Reset form
       setShowPasswords({ current: false, new: false, confirm: false });
-      // Chiama callback se fornito
+      // Call the callback, if one was passed
       if (onSuccess) {
         onSuccess();
       }

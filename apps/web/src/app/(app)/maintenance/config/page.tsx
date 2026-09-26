@@ -59,7 +59,7 @@ export default function MaintenanceConfigPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  // Hook centralizzato per query e mutations - riduce boilerplate significativamente
+  // One hook for the queries and mutations, which cuts the boilerplate
   const { data, isLoading, error, saveConfig, deleteConfig, isAnyLoading } =
     useConfigQuery({
       q: searchTerm,
@@ -129,7 +129,7 @@ export default function MaintenanceConfigPage() {
     setImportDialogOpen(true);
   };
 
-  // Skeleton per loading
+  // Loading skeleton
   const SkeletonRow = () => (
     <tr>
       <td>
@@ -311,7 +311,7 @@ export default function MaintenanceConfigPage() {
           />
         )}
 
-        {/* Dialog per import */}
+        {/* Import dialog */}
         {importDialogOpen && (
           <ConfigImportDialog
             onOpenChange={() => setImportDialogOpen(false)}

@@ -114,7 +114,7 @@ export default function LdapSettingsPage() {
     }
   }, [existingConfig, form]);
 
-  // Mutations (solo se admin)
+  // Mutations (admin only)
   const saveConfigMutation = trpc.integrations.auth.saveLdapConfig.useMutation({
     onSuccess: () => {
       toast.success('Configurazione LDAP salvata con successo');

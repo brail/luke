@@ -69,7 +69,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
   const updateProfileMutation = trpc.me.updateProfile.useMutation();
   const changeEmailMutation = trpc.me.changeEmail.useMutation();
 
-  // Mutation standardizzate
+  // Standard mutations
   const { mutate: updateProfile } = useStandardMutation({
     mutateFn: updateProfileMutation.mutateAsync,
     invalidate: refresh.me,
@@ -90,12 +90,12 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       onErrorMessage: 'Errore cambio email',
     });
 
-  // Handler per submit form
+  // Form submit handler
   const onSubmit = (data: UserProfileInput) => {
     updateProfile(data);
   };
 
-  // Determina se i campi sono read-only per provider esterni
+  // Whether the fields are read-only because an external provider owns them
   const isExternalProvider = user.provider !== 'LOCAL';
   const readonlyFields = isExternalProvider ? ['firstName', 'lastName'] : [];
 
@@ -149,7 +149,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Username (sempre read-only) */}
+      {/* Username (always read-only) */}
       <div className="space-y-2">
         <Label htmlFor="username">Username</Label>
         <Input

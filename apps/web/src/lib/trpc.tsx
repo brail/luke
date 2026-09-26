@@ -46,12 +46,12 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // 1 minuto
+            staleTime: 60 * 1000, // 1 minute
             retry: 1,
             refetchOnWindowFocus: false, // Avoid unnecessary automatic refetches
           },
           mutations: {
-            retry: false, // No retry automatico per evitare duplicazioni
+            retry: false, // No automatic retry, to avoid duplicate writes
           },
         },
       })

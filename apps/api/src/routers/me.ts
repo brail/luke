@@ -179,7 +179,7 @@ export const meRouter = router({
         },
       });
 
-      // Log audit per l'aggiornamento
+      // Audit the update
       await logAudit(ctx, {
         action: 'USER_UPDATE_PROFILE',
         targetType: 'User',

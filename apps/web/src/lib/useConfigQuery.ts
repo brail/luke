@@ -26,11 +26,11 @@ export interface ConfigQueryParams {
   isEncrypted?: boolean;
   /** Sort field */
   sortBy?: 'key' | 'updatedAt';
-  /** Direzione ordinamento */
+  /** Sort direction */
   sortDir?: 'asc' | 'desc';
-  /** Numero pagina (1-based) */
+  /** Page number (1-based) */
   page?: number;
-  /** Dimensione pagina (5-100) */
+  /** Page size (5-100) */
   pageSize?: number;
 }
 
@@ -113,7 +113,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     },
   });
 
-  // Mutation per import batch
+  // Batch import mutation
   const importMutation = trpc.config.importJson.useMutation({
     onSuccess: data => {
       const { successCount, errorCount } = data;
@@ -136,7 +136,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     },
   });
 
-  // Mutation per export
+  // Export mutation
   const exportMutation = trpc.config.exportJson.useMutation({
     onSuccess: data => {
       toast.success(`Esportate ${data.count} configurazioni`);

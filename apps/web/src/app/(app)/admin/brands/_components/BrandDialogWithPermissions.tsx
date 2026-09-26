@@ -46,7 +46,7 @@ import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 
-// Schema per form con isActive obbligatorio (per React Hook Form)
+// Form schema with a required isActive (for React Hook Form)
 // logoUrl accepts any string (including relative paths in DEV) or null/undefined
 const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
@@ -93,7 +93,7 @@ export function BrandDialogWithPermissions({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [codePreview, setCodePreview] = useState<string>('');
 
-  // Hook per permissions
+  // Permission hook
   const brandPerms = useBrandPermissions();
   const { data: session } = useSession();
 
@@ -265,7 +265,7 @@ export function BrandDialogWithPermissions({
     form.setValue('logoUrl', null);
   };
 
-  // Handler per submit form
+  // Form submit handler
   const handleSubmit = async (data: BrandFormData) => {
     if (!brandPerms.canEdit()) {
       toast.error('Non hai i permessi per modificare i brand');

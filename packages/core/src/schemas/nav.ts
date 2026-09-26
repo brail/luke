@@ -32,6 +32,6 @@ export const navConfigResponseSchema = z.object({
   readOnly: z.boolean(),
 });
 
-// Tipi inferiti dagli schema
+// Types inferred from the schemas
 export type NavConfigInput = z.infer<typeof navConfigSchema>;
 export type NavConfigResponse = z.infer<typeof navConfigResponseSchema>;

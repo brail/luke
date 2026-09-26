@@ -65,7 +65,7 @@ test.describe('smoke: collection layout — Enter on a quotation field', () => {
     await expect(quotationBody.locator('tr')).toHaveCount(initialQuotations + 1);
     const quotationRow = quotationBody.locator('tr').last();
 
-    // Scegli un set parametri — precondizione ambientale come in pricing.smoke.spec.ts.
+    // Pick a parameter set: an environment precondition, as in pricing.smoke.spec.ts.
     await quotationRow.getByRole('combobox').click();
     const paramOption = page.getByRole('option').filter({ hasNotText: 'Nessuno' }).first();
     if ((await paramOption.count()) === 0) {

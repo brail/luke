@@ -44,7 +44,7 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
     getConfig(prisma, 'smtp.port', false),
     getConfigOrDefault(prisma, 'smtp.secure'),
     getConfig(prisma, 'smtp.user', false),
-    getConfig(prisma, 'smtp.pass', true), // Decifrare password
+    getConfig(prisma, 'smtp.pass', true), // Decrypt the password
     getConfig(prisma, 'smtp.from', false),
   ]);
 

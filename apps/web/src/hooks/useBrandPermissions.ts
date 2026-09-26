@@ -26,7 +26,7 @@ import { hasPermission, type Role } from '@luke/core';
 export function useBrandPermissions() {
   const { data: session } = useSession();
 
-  // Calcola i permessi in un unico useMemo per ottimizzazione
+  // Computes every permission in a single useMemo
   const permissions = useMemo(() => {
     if (!session?.user?.role) {
       return {

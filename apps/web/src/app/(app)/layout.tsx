@@ -73,7 +73,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {/* Blocking modal for context setup */}
         <ContextGate />
 
-        {/* Heartbeat silenzioso per presenza online */}
+        {/* Silent heartbeat for online presence */}
         <HeartbeatTicker />
 
         {/* Daily greeting modal, once a day per browser */}

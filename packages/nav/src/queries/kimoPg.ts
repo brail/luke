@@ -25,7 +25,7 @@ export interface KimoRow {
   trademarkCode: string | null;
   salespersonCodeNav: string | null;
   salespersonName: string | null;
-  entryNo: string;              // BigInt serializzato come string
+  entryNo: string;              // BigInt serialized as a string
   no_: string | null;
   modelItemNo: string | null;
   colorCode: string | null;

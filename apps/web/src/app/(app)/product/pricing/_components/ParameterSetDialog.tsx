@@ -154,7 +154,7 @@ export function ParameterSetDialog({
               />
             </div>
 
-            {/* Imposta come default (solo in edit) */}
+            {/* Set as default (edit only) */}
             {mode === 'edit' && (
               <div className="flex items-center justify-between rounded-md border px-4 py-3">
                 <div className="space-y-0.5">

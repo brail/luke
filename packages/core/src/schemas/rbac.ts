@@ -44,7 +44,7 @@ export const sectionEnum = z.enum([
   'sales.statistics',
   // Seasonal planning (milestone calendar)
   'planning',
-  // Azienda
+  // Company
   'settings.company',
 ]);
 export type Section = z.infer<typeof sectionEnum>;

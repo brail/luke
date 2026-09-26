@@ -184,7 +184,7 @@ export function SeasonDialog({
             )}
           </div>
 
-          {/* Collega a NAV */}
+          {/* Link to NAV */}
           {season?.navSeasonId ? (
             <div className="space-y-2">
               <Label className="flex items-center gap-2">

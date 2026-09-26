@@ -63,7 +63,7 @@ export function useMenuAccess() {
     const showCalendar = s['planning'];
 
     return {
-      // Singole voci
+      // Standalone entries
       dashboard: s.dashboard,
 
       // Settings with sub-items
@@ -78,7 +78,7 @@ export function useMenuAccess() {
       admin: showAdmin,
       adminItems,
 
-      // Prodotto
+      // Product
       product: s.product,
       productItems,
 
@@ -88,10 +88,10 @@ export function useMenuAccess() {
         statistics: s.sales && s['sales.statistics'],
       },
 
-      // Calendario (trasversale — accesso OR su sezioni planning.*)
+      // Calendar (cross-cutting: on when any planning.* section is on)
       calendar: showCalendar,
 
-      // Macrosezioni
+      // Menu groups
       showGeneralSection: s.dashboard,
       showSystemSection: showSettings || showMaintenance || showAdmin,
     };

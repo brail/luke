@@ -7,9 +7,9 @@ interface UserAvatarProps {
   firstName: string;
   /** User last name */
   lastName: string;
-  /** Dimensione dell'avatar */
+  /** Avatar size */
   size?: 'sm' | 'md' | 'lg';
-  /** Classi CSS aggiuntive */
+  /** Extra CSS classes */
   className?: string;
 }
 

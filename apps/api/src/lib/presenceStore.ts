@@ -4,9 +4,9 @@
  * State is volatile — it resets on server restart, which is the intended behaviour.
  */
 
-const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minuti
+const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-const presenceMap = new Map<string, number>(); // userId -> timestamp ultimo heartbeat
+const presenceMap = new Map<string, number>(); // userId -> timestamp of the last heartbeat
 
 /**
  * Records or refreshes a user's last-seen timestamp.

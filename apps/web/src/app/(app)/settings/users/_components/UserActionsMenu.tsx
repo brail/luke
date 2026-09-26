@@ -60,7 +60,7 @@ export function UserActionsMenu({
     trpc.auth.requestEmailVerificationAdmin.useMutation();
   const forceVerifyMutation = trpc.users.forceVerifyEmail.useMutation();
 
-  // Mutations standardizzate
+  // Standard mutations
   const { mutate: sendVerify } = useStandardMutation({
     mutateFn: sendVerifyMutation.mutateAsync,
     onSuccessMessage: 'Email di verifica inviata',
@@ -91,7 +91,7 @@ export function UserActionsMenu({
   };
 
   const handleRevokeSessions = () => {
-    // Protezione: impedisci auto-revoca
+    // Guard: no self-revocation
     if (isSelfAction) {
       toast.error(
         'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.'

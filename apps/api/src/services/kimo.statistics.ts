@@ -80,7 +80,7 @@ export async function buildKimoXlsx(
 
   sheet.columns = KIMO_COLUMNS.map(c => ({ key: c.key, width: 20 }));
 
-  // Riga intestazione
+  // Header row
   const headerRow = sheet.addRow(KIMO_COLUMNS.map(c => c.header));
   applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();

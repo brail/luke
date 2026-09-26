@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
  * Props per BrandAvatar
  */
 interface BrandAvatarProps {
-  /** Oggetto brand completo */
+  /** The full brand object */
   brand: {
     id: string;
     code: string;
@@ -14,9 +14,9 @@ interface BrandAvatarProps {
     logoUrl: string | null;
     isActive: boolean;
   };
-  /** Dimensione dell'avatar */
+  /** Avatar size */
   size?: 'sm' | 'md' | 'lg';
-  /** Classi CSS aggiuntive */
+  /** Extra CSS classes */
   className?: string;
 }
 

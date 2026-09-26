@@ -30,7 +30,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
     try {
       // Use the new exportJson endpoint
       const result = await exportMutation.mutateAsync({
-        includeValues: true, // Include valori ma i cifrati mostrano [ENCRYPTED]
+        includeValues: true, // Includes values, but encrypted ones show [ENCRYPTED]
       });
 
       // Prepare the data for the export

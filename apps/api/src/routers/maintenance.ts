@@ -1,5 +1,5 @@
 /**
- * Router tRPC per sezione Maintenance
+ * tRPC router for the Maintenance section
  */
 
 import { router } from '../lib/trpc';
