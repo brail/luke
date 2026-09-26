@@ -9,7 +9,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { collectIdsOlderThan, deleteIdsInBatches } from '../src/lib/retentionSweep';
 
 describe('collectIdsOlderThan', () => {
-  it('si ferma quando la prima pagina è vuota', async () => {
+  it('stops when the first page is empty', async () => {
     const findPage = vi.fn(async () => []);
 
     const ids = await collectIdsOlderThan(findPage, 100);
@@ -18,7 +18,7 @@ describe('collectIdsOlderThan', () => {
     expect(findPage).toHaveBeenCalledTimes(1);
   });
 
-  it('pagina finché il risultato non è vuoto, senza superare il cap', async () => {
+  it('pages until the result is empty, without exceeding the cap', async () => {
     // 3 pages of 2 elements with pageSize=2, then one empty page.
     const pages = [
       ['a', 'b'],
@@ -37,7 +37,7 @@ describe('collectIdsOlderThan', () => {
     expect(findPage).toHaveBeenCalledTimes(4);
   });
 
-  it('si ferma non appena una pagina torna più corta della take richiesta, senza un giro a vuoto in più', async () => {
+  it('stops as soon as a page comes back shorter than the requested take, without an extra empty round', async () => {
     const findPage = vi.fn(async (skip: number) => {
       if (skip > 0) throw new Error('non dovrebbe pagare un secondo giro');
       // Partial page: 1 element on a take of 10 → end-of-data signal.
@@ -50,7 +50,7 @@ describe('collectIdsOlderThan', () => {
     expect(findPage).toHaveBeenCalledTimes(1);
   });
 
-  it('non richiede mai più id di quanti ne mancano al cap (bug plausibile: take fisso ignora il cap)', async () => {
+  it('never requests more ids than are left to the cap (plausible bug: a fixed take ignores the cap)', async () => {
     const requestedTakes: number[] = [];
     const findPage = vi.fn(async (skip: number, take: number) => {
       requestedTakes.push(take);
@@ -67,7 +67,7 @@ describe('collectIdsOlderThan', () => {
 });
 
 describe('deleteIdsInBatches', () => {
-  it('non chiama deleteMany se non ci sono id', async () => {
+  it('does not call deleteMany if there are no ids', async () => {
     const deleteMany = vi.fn(async () => 0);
 
     const deleted = await deleteIdsInBatches(deleteMany, []);
@@ -76,7 +76,7 @@ describe('deleteIdsInBatches', () => {
     expect(deleteMany).not.toHaveBeenCalled();
   });
 
-  it('spezza gli id in chunk di batchSize, ultimo chunk parziale incluso senza duplicati né perdite', async () => {
+  it('splits the ids into batchSize chunks, the partial last chunk included, with no duplicates or losses', async () => {
     const ids = Array.from({ length: 25 }, (_, i) => `id-${i}`);
     const seenChunks: string[][] = [];
     const deleteMany = vi.fn(async (chunk: string[]) => {
@@ -96,7 +96,7 @@ describe('deleteIdsInBatches', () => {
     expect(deleted).toBe(25);
   });
 
-  it('somma i conteggi restituiti da deleteMany, anche se diversi dalla dimensione del chunk richiesto', async () => {
+  it('sums the counts returned by deleteMany, even when they differ from the requested chunk size', async () => {
     // Simulates rows already deleted by a previous tick: deleteMany counts fewer than the ids requested.
     const deleteMany = vi.fn(async (chunk: string[]) => Math.max(0, chunk.length - 1));
 

@@ -92,7 +92,7 @@ async function createDualIdentityUser() {
 }
 
 describe('users.forceLocalAccess', () => {
-  it('editor con users:update ma senza *:* → FORBIDDEN', async () => {
+  it('editor with users:update but without *:* → FORBIDDEN', async () => {
     const target = await createLdapUser();
     await expectUnauthorized(() => usersAs('editor').forceLocalAccess({ id: target.id }));
   });
@@ -108,7 +108,7 @@ describe('users.forceLocalAccess', () => {
     await expectUnauthorized(() => anon.users.forceLocalAccess({ id: target.id }), 'UNAUTHORIZED');
   });
 
-  it('utente senza identity esterna (solo LOCAL) → BAD_REQUEST, nessuna identity aggiuntiva creata', async () => {
+  it('user with no external identity (LOCAL only) → BAD_REQUEST, no extra identity created', async () => {
     const { user: target } = await createTestUser('viewer');
 
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), {
@@ -119,7 +119,7 @@ describe('users.forceLocalAccess', () => {
     expect(identities).toHaveLength(1);
   });
 
-  it('utente LDAP con email sintetica @ldap.local → BAD_REQUEST, nessuna identity LOCAL creata', async () => {
+  it('LDAP user with a synthetic @ldap.local email → BAD_REQUEST, no LOCAL identity created', async () => {
     const target = await createLdapUser('@ldap.local');
 
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), {
@@ -132,7 +132,7 @@ describe('users.forceLocalAccess', () => {
     expect(localIdentity).toBeNull();
   });
 
-  it('utente LDAP con email reale → crea identity LOCAL + credential, lascia intatta quella LDAP, anche se il successivo invio email fallisce (nessuna SMTP di test)', async () => {
+  it('LDAP user with a real email → creates LOCAL identity + credential, leaves the LDAP one intact, even if the following email send fails (no test SMTP)', async () => {
     const target = await createLdapUser();
 
     // Sending always fails in this environment (see file header) — the identity/credential
@@ -156,7 +156,7 @@ describe('users.forceLocalAccess', () => {
     // that bug a second time under this procedure's name, not this procedure's own behavior.
   });
 
-  it('utente già dual-identity (resend) → non duplica la identity LOCAL', async () => {
+  it('user already dual-identity (resend) → does not duplicate the LOCAL identity', async () => {
     const target = await createDualIdentityUser();
 
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), {
@@ -167,7 +167,7 @@ describe('users.forceLocalAccess', () => {
     expect(identities.filter(i => i.provider === 'LOCAL')).toHaveLength(1);
   });
 
-  it('invio email fallito → INTERNAL_SERVER_ERROR, token RESET orfano cancellato, identity LOCAL resta (operazione idempotente)', async () => {
+  it('email send failed → INTERNAL_SERVER_ERROR, orphan RESET token deleted, LOCAL identity kept (idempotent operation)', async () => {
     const target = await createLdapUser();
 
     await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), {
@@ -187,25 +187,25 @@ describe('users.forceLocalAccess', () => {
 });
 
 describe('users.revokeLocalAccess', () => {
-  it('editor con users:update ma senza *:* → FORBIDDEN', async () => {
+  it('editor with users:update but without *:* → FORBIDDEN', async () => {
     const target = await createDualIdentityUser();
     await expectUnauthorized(() => usersAs('editor').revokeLocalAccess({ id: target.id }));
   });
 
-  it("admin tenta di revocare il proprio accesso locale → FORBIDDEN (guardia self-lockout)", async () => {
+  it("admin tries to revoke their own local access → FORBIDDEN (self-lockout guard)", async () => {
     await expectUnauthorized(() =>
       usersAs('admin').revokeLocalAccess({ id: sessions.admin.user.id })
     );
   });
 
-  it('utente senza identity LOCAL → BAD_REQUEST', async () => {
+  it('user without a LOCAL identity → BAD_REQUEST', async () => {
     const target = await createLdapUser();
     await expectToThrow(usersAs('admin').revokeLocalAccess({ id: target.id }), {
       code: 'BAD_REQUEST',
     });
   });
 
-  it("utente solo LOCAL (nessuna identity esterna di fallback) → BAD_REQUEST, identity non toccata", async () => {
+  it("LOCAL-only user (no fallback external identity) → BAD_REQUEST, identity untouched", async () => {
     const { user: target } = await createTestUser('viewer');
 
     await expectToThrow(usersAs('admin').revokeLocalAccess({ id: target.id }), {
@@ -216,7 +216,7 @@ describe('users.revokeLocalAccess', () => {
     expect(identities).toHaveLength(1);
   });
 
-  it('utente dual-identity → rimuove solo la identity LOCAL, bump tokenVersion, audit SUCCESS', async () => {
+  it('dual-identity user → removes only the LOCAL identity, bumps tokenVersion, audit SUCCESS', async () => {
     const target = await createDualIdentityUser();
     const before = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
 
@@ -236,7 +236,7 @@ describe('users.revokeLocalAccess', () => {
     expect(auditRow?.result).toBe('SUCCESS');
   });
 
-  it('seconda chiamata sullo stesso utente (già revocato) → BAD_REQUEST pulito, non un errore Prisma grezzo', async () => {
+  it('second call on the same user (already revoked) → clean BAD_REQUEST, not a raw Prisma error', async () => {
     const target = await createDualIdentityUser();
 
     await usersAs('admin').revokeLocalAccess({ id: target.id });

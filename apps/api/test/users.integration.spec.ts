@@ -53,7 +53,7 @@ async function createTargetUser() {
 }
 
 describe('users.update — reset password admin', () => {
-  it('editor con users:update ma senza *:* → FORBIDDEN', async () => {
+  it('editor with users:update but without *:* → FORBIDDEN', async () => {
     const { user: target } = await createTargetUser();
 
     await expectUnauthorized(() =>
@@ -61,7 +61,7 @@ describe('users.update — reset password admin', () => {
     );
   });
 
-  it('admin resetta la password di un utente LOCAL → login vecchia fallisce, nuova funziona, tokenVersion incrementato, audit presente', async () => {
+  it('admin resets the password of a LOCAL user → old login fails, new one works, tokenVersion incremented, audit present', async () => {
     const { user: target } = await createTargetUser();
     const tokenVersionBefore = target.tokenVersion;
 
@@ -91,13 +91,13 @@ describe('users.update — reset password admin', () => {
     expect(auditRow?.result).toBe('SUCCESS');
   });
 
-  it('admin tenta di resettare la propria password via users.update → FORBIDDEN (deve passare da me.changePassword)', async () => {
+  it('admin tries to reset their own password via users.update → FORBIDDEN (it must go through me.changePassword)', async () => {
     await expectUnauthorized(() =>
       usersAs('admin').update({ id: sessions.admin.user.id, password: NEW_PASSWORD })
     );
   });
 
-  it('admin tenta di resettare la password di un utente LDAP → rigettato dal locked-field guard', async () => {
+  it('admin tries to reset the password of an LDAP user → rejected by the locked-field guard', async () => {
     const timestamp = Date.now();
     const ldapUser = await prisma.user.create({
       data: {
@@ -123,7 +123,7 @@ describe('users.update — reset password admin', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('utente dual-identity (LDAP + LOCAL, es. dopo forceLocalAccess) → password reset resta bloccato', async () => {
+  it('dual-identity user (LDAP + LOCAL, e.g. after forceLocalAccess) → password reset stays blocked', async () => {
     // Regression test for the `identities[0]` nondeterminism fixed alongside
     // `forceLocalAccess`/`revokeLocalAccess`: a user can now hold more than one identity, and
     // `getLockedFields` must key off the external one deterministically, not an unordered `[0]`.
@@ -156,7 +156,7 @@ describe('users.update — reset password admin', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('password omessa: nessun bump di tokenVersion, nessuna riga USER_PASSWORD_RESET_BY_ADMIN', async () => {
+  it('password omitted: no tokenVersion bump, no USER_PASSWORD_RESET_BY_ADMIN row', async () => {
     const { user: target } = await createTargetUser();
     const tokenVersionBefore = target.tokenVersion;
 
@@ -172,7 +172,7 @@ describe('users.update — reset password admin', () => {
     expect(auditRow).toBeNull();
   });
 
-  it('password sotto il prefiltro statico → rigettata da Zod, non dalla policy', async () => {
+  it('password below the static prefilter → rejected by Zod, not by the policy', async () => {
     // The title used to claim the rejection happened before the router, while asserting only
     // `BAD_REQUEST` — which `assertPasswordMeetsPolicy` produces too, from inside it. Lowering the
     // prefilter left it green. Asserting the message distinguishes the two: Zod's wording is the
@@ -227,7 +227,7 @@ const EDITOR_SAMPLE: Record<UserEditorUpdatableField, unknown> = {
 
 describe('users.update — cross-user field authorization (SEC-A)', () => {
   it.each(privilegedUserUpdateFields())(
-    'editor con users:update ma senza *:* non può cambiare %s di un admin',
+    'editor with users:update but without *:* cannot change %s of an admin',
     async field => {
       const { user: adminTarget } = await createTestUser('admin');
       const before = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
@@ -247,7 +247,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
   );
 
   it.each(USER_EDITOR_UPDATABLE_FIELDS)(
-    'editor conserva la capacità legittima di cambiare %s',
+    'editor keeps the legitimate ability to change %s',
     async field => {
       // The other half of the boundary. A guard that froze the whole procedure
       // for editors would pass every test above and get reverted in a week.
@@ -260,7 +260,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     }
   );
 
-  it('la classificazione copre esattamente lo schema: nessun campo resta non classificato', () => {
+  it('the classification covers exactly the schema: no field stays unclassified', () => {
     // Belt to the type-level braces: proves at runtime that the two sets
     // partition the schema, so a field cannot be silently absent from both.
     const schemaFields = Object.keys(UpdateUserInputSchema.shape)
@@ -271,7 +271,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     expect(classified).toEqual(schemaFields);
   });
 
-  it('la catena di takeover si interrompe al primo passo: il reset password non raggiunge un indirizzo iniettato', async () => {
+  it('the takeover chain breaks at the first step: the password reset does not reach an injected address', async () => {
     const { user: adminTarget } = await createTestUser('admin');
     const attackerEmail = `chain-${Date.now()}@evil.test`;
 
@@ -315,7 +315,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     expect(after.tokenVersion).toBe(before.tokenVersion + 1);
   });
 
-  it('admin che riscrive la stessa email non è bloccato e non invalida le sessioni', async () => {
+  it('an admin rewriting the same email is not blocked and does not invalidate the sessions', async () => {
     // The guard must compare against the stored value, not merely detect the
     // key's presence: an idempotent update carrying the unchanged email is a
     // normal edit-dialog save.

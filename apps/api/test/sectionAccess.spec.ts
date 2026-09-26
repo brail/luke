@@ -163,7 +163,7 @@ describe('Section Access Overrides', () => {
   });
 
   describe('Last-admin safety check', () => {
-    it('conta un admin senza override come via di recupero', async () => {
+    it('counts an admin with no override as a recovery path', async () => {
       const { countRecoveryCapableAdmins } = await import(
         '../src/services/sectionAccess.service'
       );

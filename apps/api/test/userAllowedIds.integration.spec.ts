@@ -71,19 +71,19 @@ beforeAll(async () => {
 });
 
 describe('getUserAllowedIds', () => {
-  it('utente senza team → { brandIds: [], functionIds: [] }', async () => {
+  it('user with no team → { brandIds: [], functionIds: [] }', async () => {
     const userId = await createUser();
     const result = await getUserAllowedIds(userId, prisma);
     expect(result).toEqual({ brandIds: [], functionIds: [] });
   });
 
-  it('admin → { brandIds: null, functionIds: null }, unico caso con null', async () => {
+  it('admin → { brandIds: null, functionIds: null }, the only case with null', async () => {
     const userId = await createUser();
     const result = await getUserAllowedIds(userId, prisma, 'admin');
     expect(result).toEqual({ brandIds: null, functionIds: null });
   });
 
-  it('team senza brandScopes → brandIds vuoto ma functionIds valorizzato (l\'asimmetria)', async () => {
+  it('team without brandScopes → empty brandIds but functionIds set (the asymmetry)', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamMembership.create({ data: { teamId: team.id, userId } });
@@ -93,7 +93,7 @@ describe('getUserAllowedIds', () => {
     expect(result.functionIds).toEqual([functionId]);
   });
 
-  it('team con brandScopes=[brandA] → brandIds=[brandA], functionIds=[fn]', async () => {
+  it('team with brandScopes=[brandA] → brandIds=[brandA], functionIds=[fn]', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId: brandAId } });
@@ -104,7 +104,7 @@ describe('getUserAllowedIds', () => {
     expect(result.functionIds).toEqual([functionId]);
   });
 
-  it('più team con scope diversi → union sia sui brand sia sulle funzioni', async () => {
+  it('several teams with different scopes → union on both brands and functions', async () => {
     const userId = await createUser();
     const fn2 = await prisma.companyFunction.create({
       data: { slug: `allowed_ids_fn2_${randomUUID().substring(0, 6)}`, name: 'Allowed Ids Fn 2', order: 99, isActive: true },
@@ -125,7 +125,7 @@ describe('getUserAllowedIds', () => {
     expect(result.functionIds).toHaveLength(2);
   });
 
-  it('un team senza scope non allarga i brand del sibling, ma la sua funzione conta comunque', async () => {
+  it('a team with no scope does not widen the sibling brands, but its function still counts', async () => {
     const userId = await createUser();
     const fn2 = await prisma.companyFunction.create({
       data: { slug: `allowed_ids_fn3_${randomUUID().substring(0, 6)}`, name: 'Allowed Ids Fn 3', order: 100, isActive: true },
@@ -144,7 +144,7 @@ describe('getUserAllowedIds', () => {
     expect(result.functionIds).toHaveLength(2);
   });
 
-  it('team isActive=false → { brandIds: [], functionIds: [] }, team inattivo non conta', async () => {
+  it('team with isActive=false → { brandIds: [], functionIds: [] }, an inactive team does not count', async () => {
     const userId = await createUser();
     const inactiveTeam = await createTeam({ isActive: false });
     await prisma.companyTeamBrandScope.create({ data: { teamId: inactiveTeam.id, brandId: brandAId } });

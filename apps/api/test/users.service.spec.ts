@@ -16,25 +16,25 @@ import { describe, it, expect } from 'vitest';
 import { getLockedFields, resolveEffectiveProvider } from '../src/services/users.service';
 
 describe('resolveEffectiveProvider', () => {
-  it('utente con una sola identity LOCAL → LOCAL', () => {
+  it('user with a single LOCAL identity → LOCAL', () => {
     expect(resolveEffectiveProvider([{ provider: 'LOCAL' }])).toBe('LOCAL');
   });
 
-  it('utente con una sola identity LDAP → LDAP', () => {
+  it('user with a single LDAP identity → LDAP', () => {
     expect(resolveEffectiveProvider([{ provider: 'LDAP' }])).toBe('LDAP');
   });
 
-  it('nessuna identity → LOCAL (fallback difensivo)', () => {
+  it('no identity → LOCAL (defensive fallback)', () => {
     expect(resolveEffectiveProvider([])).toBe('LOCAL');
   });
 
-  it('LDAP creata prima, LOCAL dopo (ordine [LDAP, LOCAL]) → resta LDAP', () => {
+  it('LDAP created first, LOCAL after (order [LDAP, LOCAL]) → stays LDAP', () => {
     expect(
       resolveEffectiveProvider([{ provider: 'LDAP' }, { provider: 'LOCAL' }])
     ).toBe('LDAP');
   });
 
-  it('LOCAL creata prima, LDAP dopo (ordine [LOCAL, LDAP]) → resta LDAP', () => {
+  it('LOCAL created first, LDAP after (order [LOCAL, LDAP]) → stays LDAP', () => {
     // This is the ordering that would have broken a naive `identities[0]` read:
     // `identities[0]` here is LOCAL, but the user still has an external identity governing sync.
     expect(
@@ -53,12 +53,12 @@ describe('resolveEffectiveProvider', () => {
 });
 
 describe('resolveEffectiveProvider → getLockedFields (integration of the two pure functions)', () => {
-  it('utente dual-identity (LOCAL+LDAP, in ordine [LOCAL, LDAP]) → password resta locked', () => {
+  it('dual-identity user (LOCAL+LDAP, in order [LOCAL, LDAP]) → password stays locked', () => {
     const provider = resolveEffectiveProvider([{ provider: 'LOCAL' }, { provider: 'LDAP' }]);
     expect(getLockedFields(provider)).toContain('password');
   });
 
-  it('utente LOCAL-only → nessun campo locked', () => {
+  it('LOCAL-only user → no locked field', () => {
     const provider = resolveEffectiveProvider([{ provider: 'LOCAL' }]);
     expect(getLockedFields(provider)).toEqual([]);
   });

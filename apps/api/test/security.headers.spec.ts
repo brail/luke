@@ -21,7 +21,7 @@ describe('Security Headers', () => {
     await server.close();
   });
 
-  describe('Header di sicurezza base (tutti gli ambienti)', () => {
+  describe('Base security headers (all environments)', () => {
     it('dovrebbe includere X-Content-Type-Options: nosniff', async () => {
       const response = await request(server.server)
         .get('/api/health')
@@ -67,7 +67,7 @@ describe('Security Headers', () => {
       expect(csp).toContain("base-uri 'none'");
     });
 
-    it('NON dovrebbe includere Strict-Transport-Security in test', async () => {
+    it('should NOT include Strict-Transport-Security in test', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -77,7 +77,7 @@ describe('Security Headers', () => {
   });
 
   describe('Verifica su route root', () => {
-    it('dovrebbe applicare gli stessi header su route root', async () => {
+    it('should apply the same headers on the root route', async () => {
       const response = await request(server.server).get('/').expect(200);
 
       // Verify base headers
@@ -95,8 +95,8 @@ describe('Security Headers', () => {
     });
   });
 
-  describe('Snapshot test per configurazione completa', () => {
-    it('dovrebbe avere configurazione headers invariabile', async () => {
+  describe('Snapshot test for the complete configuration', () => {
+    it('should have an unchanging headers configuration', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);

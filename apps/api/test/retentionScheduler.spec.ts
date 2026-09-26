@@ -94,7 +94,7 @@ describe('retentionScheduler', () => {
     await vi.advanceTimersByTimeAsync(TICK_INTERVAL_MS);
   }
 
-  it('usa retentionDays per le righe normali e criticalRetentionDays per quelle in CRITICAL_AUDIT_ACTIONS, senza scambiarli', async () => {
+  it('uses retentionDays for normal rows and criticalRetentionDays for those in CRITICAL_AUDIT_ACTIONS, without swapping them', async () => {
     const normalIds = ['n1', 'n2'];
     const criticalIds = ['c1'];
     const criticalActions = [...CRITICAL_AUDIT_ACTIONS];
@@ -135,7 +135,7 @@ describe('retentionScheduler', () => {
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledWith({ where: { id: { in: criticalIds } } });
   });
 
-  it('non cancella le righe di un tier se la sua archiviazione fallisce, ma l\'altro tier procede comunque', async () => {
+  it('does not delete the rows of a tier whose archiving fails, but the other tier still proceeds', async () => {
     const normalIds = ['n1'];
     const criticalIds = ['c1'];
 
@@ -159,7 +159,7 @@ describe('retentionScheduler', () => {
     expect(prisma.auditLog.deleteMany).toHaveBeenCalledTimes(1);
   });
 
-  it('filtra le notifiche su isRead=true e sulla finestra notificationRetentionDays, mai le non lette', async () => {
+  it('filters notifications on isRead=true and on the notificationRetentionDays window, never unread ones', async () => {
     const readIds = ['read-1', 'read-2'];
     const prisma = buildFakePrisma();
     prisma.notification.findMany.mockImplementation(async ({ skip }: any) => {
@@ -177,7 +177,7 @@ describe('retentionScheduler', () => {
     expect(prisma.notification.deleteMany).toHaveBeenCalledWith({ where: { id: { in: readIds } } });
   });
 
-  it('cancella le dedup key scadute con un unico deleteMany per data, senza passare da collect/batch per id', async () => {
+  it('deletes expired dedup keys with a single deleteMany by date, without going through a per-id collect/batch', async () => {
     const prisma = buildFakePrisma();
 
     await runOneTick(prisma);
@@ -187,7 +187,7 @@ describe('retentionScheduler', () => {
     expect(call.where.lastSentAt.lt.getTime()).toBe(tickTime - 30 * DAY_MS);
   });
 
-  it('non archivia né cancella nulla quando non ci sono righe scadute (nessun file vuoto, nessuna deleteMany a vuoto)', async () => {
+  it('archives and deletes nothing when there are no expired rows (no empty file, no empty deleteMany)', async () => {
     const prisma = buildFakePrisma(); // all findMany calls resolve to [] by default
 
     await runOneTick(prisma);

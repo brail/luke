@@ -1,16 +1,16 @@
 /**
- * Sincronia fra le definizioni storage duplicate a mano.
+ * Consistency between the hand-duplicated storage definitions.
  *
- * `storage.type` e i 9 campi `storage.s3.*` sono dichiarati due volte:
- * una volta come `storageTypeSchema`/`s3StorageConfigSchema` (packages/core/src/storage/config.ts,
- * usati per validare AppConfig letto/scritto dai provider) e una volta come voci
- * separate di `AppConfigRegistry` (packages/core/src/schemas/config.ts, usate da
- * `validateCriticalConfig()` e dal tRPC config router). Stesso pattern di rischio
- * documentato in lessons.md per RATE_LIMIT_CONFIG/RATE_LIMIT_POLICY_DEFAULTS/
- * RateLimitConfigSchema (hotfix v1.9.1): un campo aggiunto a una sola fonte non è
- * un errore di compilazione, è un drift silenzioso.
+ * `storage.type` and the 9 `storage.s3.*` fields are declared twice:
+ * once as `storageTypeSchema`/`s3StorageConfigSchema` (packages/core/src/storage/config.ts,
+ * used to validate the AppConfig the providers read and write) and once as separate
+ * `AppConfigRegistry` entries (packages/core/src/schemas/config.ts, used by
+ * `validateCriticalConfig()` and the tRPC config router). Same risk pattern as the one
+ * documented in lessons.md for RATE_LIMIT_CONFIG/RATE_LIMIT_POLICY_DEFAULTS/
+ * RateLimitConfigSchema (hotfix v1.9.1): a field added to only one source is not
+ * a compile error, it is silent drift.
  *
- * Unit tier: solo confronto fra Zod schema, nessun DB.
+ * Unit tier: Zod schemas compared only, no DB.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -24,69 +24,69 @@ import {
   storageTypeSchema,
 } from '@luke/core';
 
-describe('Sincronia storage.type fra storageTypeSchema e AppConfigRegistry', () => {
-  it('AppConfigRegistry accetta esattamente gli stessi valori di storageTypeSchema', () => {
+describe('storage.type consistency between storageTypeSchema and AppConfigRegistry', () => {
+  it('AppConfigRegistry accepts exactly the same values as storageTypeSchema', () => {
     const registrySchema = AppConfigRegistry['storage.type'];
-    // Entrambi sono z.enum(['local', 's3']) — confronta i valori accettati, non le istanze.
+    // Both are z.enum(['local', 's3']) — compare the accepted values, not the instances.
     expect(registrySchema.options).toEqual(storageTypeSchema.options);
   });
 });
 
-describe('Sincronia campi storage.s3.* fra S3StorageConfigSchema e AppConfigRegistry', () => {
+describe('storage.s3.* field consistency between S3StorageConfigSchema and AppConfigRegistry', () => {
   const schemaFields = Object.keys(s3StorageConfigSchema.shape);
   const registryS3Keys = Object.keys(AppConfigRegistry)
     .filter(key => key.startsWith('storage.s3.'))
     .map(key => key.replace('storage.s3.', ''));
 
-  it('ogni campo di S3StorageConfigSchema ha una chiave storage.s3.<campo> in AppConfigRegistry', () => {
+  it('every S3StorageConfigSchema field has a storage.s3.<field> key in AppConfigRegistry', () => {
     const missing = schemaFields.filter(field => !registryS3Keys.includes(field));
     expect(missing).toEqual([]);
   });
 
-  it('AppConfigRegistry non ha chiavi storage.s3.* orfane, senza campo corrispondente nello schema', () => {
+  it('AppConfigRegistry has no orphan storage.s3.* keys without a matching schema field', () => {
     const extra = registryS3Keys.filter(key => !schemaFields.includes(key));
     expect(extra).toEqual([]);
   });
 });
 
 /**
- * Terza dichiarazione degli stessi campi: `storage.saveConfig` prende i `*SaveConfigSchema`, che
- * ripetono i `*ConfigSchema` senza i `.default()` (un save deve dichiarare ogni valore che scrive).
- * Il guardiano sopra copriva due sorgenti su tre — un campo aggiunto allo schema base e non a
- * quello di salvataggio resta semplicemente non impostabile dal form, in silenzio.
+ * A third declaration of the same fields: `storage.saveConfig` takes the `*SaveConfigSchema`, which
+ * repeat the `*ConfigSchema` without the `.default()` (a save must declare every value it writes).
+ * The guard above covered two sources out of three — a field added to the base schema and not to
+ * the save one simply stays unsettable from the form, silently.
  */
-describe('Sincronia fra gli schema di salvataggio e quelli base', () => {
+describe('Consistency between the save schemas and the base ones', () => {
   const drop = (shape: object, ...omit: string[]) =>
     Object.keys(shape).filter(k => !omit.includes(k));
 
-  it('s3StorageSaveConfigSchema copre esattamente i campi di s3StorageConfigSchema', () => {
+  it('s3StorageSaveConfigSchema covers exactly the fields of s3StorageConfigSchema', () => {
     expect(drop(s3StorageSaveConfigSchema.shape, 'type').sort()).toEqual(
       drop(s3StorageConfigSchema.shape).sort()
     );
   });
 
-  // `localStorageConfigSchema` non è il termine di paragone giusto: descrive ciò che serve al
-  // provider (basePath, maxFileSizeMB), non ciò che il form scrive. Le chiavi `storage.local.*` del
-  // registry sì — sono esattamente quelle che `saveConfig` tocca.
+  // `localStorageConfigSchema` is not the right yardstick: it describes what the provider needs
+  // (basePath, maxFileSizeMB), not what the form writes. The registry's `storage.local.*` keys
+  // are — they are exactly the ones `saveConfig` touches.
   const registryLocalKeys = Object.keys(AppConfigRegistry)
     .filter(key => key.startsWith('storage.local.'))
     .map(key => key.replace('storage.local.', ''));
 
-  it('ogni campo di localStorageSaveConfigSchema ha la sua chiave storage.local.* nel registry', () => {
+  it('every localStorageSaveConfigSchema field has its storage.local.* key in the registry', () => {
     const extra = drop(localStorageSaveConfigSchema.shape, 'type').filter(k => !registryLocalKeys.includes(k));
     expect(extra).toEqual([]);
   });
 
-  it('solo publicBaseUrl resta una chiave storage.local.* che il form non può impostare', () => {
-    // Non una scelta: nessun controllo lo espone, e `lib/storageUrl.ts` lo legge. Se questo elenco
-    // cresce, qualcuno ha aggiunto una chiave configurabile che nessuno può configurare.
+  it('only publicBaseUrl stays a storage.local.* key the form cannot set', () => {
+    // Not a choice: no control exposes it, and `lib/storageUrl.ts` reads it. If this list
+    // grows, someone added a configurable key nobody can configure.
     const save = drop(localStorageSaveConfigSchema.shape, 'type');
     expect(registryLocalKeys.filter(k => !save.includes(k))).toEqual(['publicBaseUrl']);
   });
 
-  // Il registry non validava il tetto, quindi un valore che il provider rifiuta all'init si
-  // scriveva pulito e si scopriva solo quando ogni operazione di storage smetteva di funzionare.
-  it('registry e schema concordano sul tetto di maxFileSizeMB', () => {
+  // The registry did not validate the cap, so a value the provider rejects at init was written
+  // cleanly and only discovered when every storage operation stopped working.
+  it('registry and schema agree on the maxFileSizeMB cap', () => {
     const registry = AppConfigRegistry['storage.local.maxFileSizeMB'];
     expect(registry.safeParse('1000').success).toBe(true);
     expect(registry.safeParse('5000').success).toBe(false);

@@ -96,7 +96,7 @@ describe('Session Hardening — tokenVersion', () => {
     });
   });
 
-  it('JWT senza tokenVersion → UNAUTHORIZED', async () => {
+  it('JWT without tokenVersion → UNAUTHORIZED', async () => {
     const { session } = await createTestUser('viewer');
 
     // Session WITHOUT tokenVersion (simulates an old JWT)
@@ -110,7 +110,7 @@ describe('Session Hardening — tokenVersion', () => {
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
-  it('Token scaduto (exp manomesso) → UNAUTHORIZED', async () => {
+  it('Expired token (tampered exp) → UNAUTHORIZED', async () => {
     const { user } = await createTestUser('viewer');
 
     // Generate token with a past exp (-1h)
@@ -131,7 +131,7 @@ describe('Session Hardening — tokenVersion', () => {
     expect(payload).toBeNull(); // Expired token not validated
   });
 
-  it('Utente isActive=false → UNAUTHORIZED', async () => {
+  it('User with isActive=false → UNAUTHORIZED', async () => {
     const { user, session } = await createTestUser('viewer');
 
     // The session stays valid: it's the user row that becomes inactive, and it's
@@ -149,7 +149,7 @@ describe('Session Hardening — tokenVersion', () => {
 });
 
 describe('Session Hardening — revoca su tutta la superficie', () => {
-  it('authenticateRequest rifiuta un token revocato (route non-tRPC)', async () => {
+  it('authenticateRequest rejects a revoked token (non-tRPC route)', async () => {
     const { user } = await createTestUser('viewer');
     const token = createToken({
       id: user.id,
@@ -179,7 +179,7 @@ describe('Session Hardening — revoca su tutta la superficie', () => {
     await expect(authenticateRequest(req, reply, prisma)).resolves.toBeNull();
   });
 
-  it('authenticateRequest rifiuta un utente disattivato', async () => {
+  it('authenticateRequest rejects a deactivated user', async () => {
     const { user } = await createTestUser('viewer');
     const token = createToken({
       id: user.id,
@@ -202,8 +202,8 @@ describe('Session Hardening — revoca su tutta la superficie', () => {
   });
 });
 
-describe('Session Hardening — retrocessione di ruolo', () => {
-  it('declassare un admin invalida i suoi token e refreshToken non ricicla il ruolo', async () => {
+describe('Session Hardening — role demotion', () => {
+  it('demoting an admin invalidates their tokens and refreshToken does not recycle the role', async () => {
     // A second admin is needed: the procedure refuses to remove the role
     // from the last remaining administrator.
     const [actingAdmin, victim] = await Promise.all([

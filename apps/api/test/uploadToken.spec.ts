@@ -20,7 +20,7 @@ describe('upload token', () => {
     userId: 'user-1',
   };
 
-  it('round-trip: bucket, key e utente sopravvivono alla firma', () => {
+  it('round-trip: bucket, key and user survive the signature', () => {
     const payload = verifyUploadToken(signUploadToken(slot));
 
     expect(payload.bucket).toBe(slot.bucket);
@@ -28,7 +28,7 @@ describe('upload token', () => {
     expect(payload.userId).toBe(slot.userId);
   });
 
-  it('un payload manomesso non verifica', () => {
+  it('a tampered payload does not verify', () => {
     const token = signUploadToken(slot);
     const [payloadB64, signature] = token.split('.');
 
@@ -46,11 +46,11 @@ describe('upload token', () => {
     expect(() => verifyUploadToken(forged)).toThrow();
   });
 
-  it('un token scaduto non verifica', () => {
+  it('an expired token does not verify', () => {
     expect(() => verifyUploadToken(signUploadToken({ ...slot, ttlMs: -1000 }))).toThrow();
   });
 
-  it('una firma di altro tipo non passa per un token di upload', () => {
+  it('a signature of another kind does not pass for an upload token', () => {
     expect(() => verifyUploadToken('non-un-token')).toThrow();
   });
 });

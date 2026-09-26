@@ -1,12 +1,11 @@
 /**
- * `seasonCalendar.rescheduleMilestone` e `cancelMilestone` — le due uscite motivate dal ciclo di
- * vita di un evento.
+ * `seasonCalendar.rescheduleMilestone` and `cancelMilestone` — the two reasoned exits from an
+ * event's lifecycle.
  *
- * Entrambe erano scoperte: gli schemi di input sono stati condivisi con il dialog senza che nulla
- * potesse dimostrare cosa accettano. Qui si fissano la regola sulla motivazione (obbligatoria,
- * trimmata, max 500) e le due proprietà che giustificano l'esistenza delle procedure: reschedule è
- * l'unica via per muovere un evento congelato, cancel è l'unico modo di ritirarlo senza distruggerne
- * la storia.
+ * Both were uncovered: the input schemas were shared with the dialog without anything able to
+ * prove what they accept. This pins the rule on the reason (mandatory, trimmed, max 500) and the
+ * two properties that justify the procedures existing: reschedule is the only way to move a
+ * frozen event, cancel is the only way to retire it without destroying its history.
  */
 
 import { randomUUID } from 'crypto';
@@ -41,9 +40,9 @@ const asEditor = () => createCallerWithSession(editorSession);
 const asViewer = () => createCallerWithSession(viewerSession);
 
 /**
- * Un gruppo con `frozenAt` valorizzato, nuovo a ogni chiamata: l'indice unico parziale
- * `(planningGroupId, phaseId) WHERE cancelledAt IS NULL` ammette un solo evento attivo con fase per
- * gruppo, quindi condividerne uno farebbe collidere i test fra loro invece che con il codice.
+ * A group with `frozenAt` set, new on every call: the partial unique index
+ * `(planningGroupId, phaseId) WHERE cancelledAt IS NULL` allows only one active event with a phase
+ * per group, so sharing one would make the tests collide with each other instead of with the code.
  */
 async function createFrozenGroup(): Promise<string> {
   const group = await prisma.planningGroup.create({
@@ -52,7 +51,7 @@ async function createFrozenGroup(): Promise<string> {
   return group.id;
 }
 
-/** Un evento nuovo nel gruppo indicato. Ogni test ne crea uno: le mutation sono distruttive. */
+/** A new event in the given group. Every test creates one: the mutations are destructive. */
 async function createEvent(
   opts: { groupId?: string; startAt?: Date; endAt?: Date | null; withPhase?: boolean; allDay?: boolean } = {}
 ) {
@@ -86,8 +85,8 @@ beforeAll(async () => {
   calendarId = fixture.calendarId;
   planningGroupId = fixture.planningGroupId;
 
-  // Senza questo `assertBrandAccess` risponderebbe FORBIDDEN a editor e viewer prima ancora di
-  // guardare i permessi, e i test sui ruoli passerebbero per il motivo sbagliato.
+  // Without this, `assertBrandAccess` would answer FORBIDDEN to editor and viewer before even
+  // looking at the permissions, and the role tests would pass for the wrong reason.
   await grantBrandAccess(prisma, {
     brandIds: [fixture.brandId],
     userIds: [editor.user.id, viewer.user.id],
@@ -101,16 +100,16 @@ beforeAll(async () => {
 });
 
 describe('rescheduleMilestone — la motivazione', () => {
-  it('è obbligatoria', async () => {
+  it('is mandatory', async () => {
     const event = await createEvent();
     await expect(
-      // @ts-expect-error -- obbligatoria nello schema: qui si verifica che lo sia anche a runtime,
-      // per un client che aggira i tipi.
+      // @ts-expect-error -- mandatory in the schema: this checks that it is at runtime too,
+      // for a client that bypasses the types.
       asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, startAt: new Date('2099-07-01').toISOString() })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('non può essere di soli spazi, e arriva senza spazi ai bordi', async () => {
+  it('cannot be whitespace only, and arrives trimmed', async () => {
     const event = await createEvent();
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
@@ -128,7 +127,7 @@ describe('rescheduleMilestone — la motivazione', () => {
     expect((log!.metadata as { reason?: string }).reason).toBe('slitta la consegna');
   });
 
-  it('ha un tetto di 500 caratteri', async () => {
+  it('is capped at 500 characters', async () => {
     const event = await createEvent();
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
@@ -144,10 +143,10 @@ describe('rescheduleMilestone — la motivazione', () => {
   });
 });
 
-describe('rescheduleMilestone — è l’unica uscita da un evento congelato', () => {
-  it('sposta un evento che updateMilestone rifiuterebbe', async () => {
-    // Fase + gruppo congelato + scadenza passata = `isEventDateLocked`. È la situazione per cui la
-    // procedura esiste: la data è un impegno preso, si muove solo dichiarando perché.
+describe('rescheduleMilestone — the only way out of a frozen event', () => {
+  it('moves an event that updateMilestone would reject', async () => {
+    // Phase + frozen group + past deadline = `isEventDateLocked`. It is the situation the
+    // procedure exists for: the date is a commitment, it moves only by stating why.
     const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
 
     await expect(
@@ -163,9 +162,9 @@ describe('rescheduleMilestone — è l’unica uscita da un evento congelato', (
     ).resolves.toMatchObject({ id: locked.id });
   });
 
-  // Nessuna fase su questo evento, quindi non è bloccato: qui si misura solo che lo spostamento
-  // lasci stare il baseline, non l'uscita dal congelamento.
-  it('non riscrive il baseline: la varianza continua a misurare sul piano originale', async () => {
+  // No phase on this event, so it is not locked: this measures only that the move leaves the
+  // baseline alone, not the way out of the freeze.
+  it('does not rewrite the baseline: variance keeps measuring against the original plan', async () => {
     const baselineStart = new Date('2099-06-01');
     const event = await prisma.calendarEvent.create({
       data: {
@@ -183,9 +182,9 @@ describe('rescheduleMilestone — è l’unica uscita da un evento congelato', (
     expect(after.baselineStartAt?.toISOString()).toBe(baselineStart.toISOString());
   });
 
-  it('registra in chiaro il cambio di allDay', async () => {
-    // `oldAllDay`/`newAllDay` arrivavano come `[REDACTED]`: lo spread condizionale che le aggiunge
-    // nasconde le chiavi al controllo di tipo su `AuditMetadata`, quindi nessuno se n'era accorto.
+  it('records the allDay change in the clear', async () => {
+    // `oldAllDay`/`newAllDay` arrived as `[REDACTED]`: the conditional spread that adds them
+    // hides the keys from the type check on `AuditMetadata`, so nobody had noticed.
     const event = await createEvent({ allDay: false });
     await asAdmin().seasonCalendar.rescheduleMilestone({
       id: event.id, startAt: new Date('2099-07-01').toISOString(), allDay: true, reason: 'diventa giornata intera',
@@ -201,8 +200,8 @@ describe('rescheduleMilestone — è l’unica uscita da un evento congelato', (
   });
 });
 
-describe('cancelMilestone — ritirare senza distruggere', () => {
-  it('registra chi, quando e perché', async () => {
+describe('cancelMilestone — retiring without destroying', () => {
+  it('records who, when and why', async () => {
     const event = await createEvent();
     await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: '  campionatura annullata  ' });
 
@@ -212,12 +211,12 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
     expect(after.cancelledByUserId).toBe(adminSession.user.id);
   });
 
-  it('la motivazione è obbligatoria, non di soli spazi e sotto i 500 caratteri', async () => {
-    // Le due procedure condividono `MandatoryReasonSchema`, ma condividerlo non è ciò che il test
-    // deve dimostrare: sostituirlo qui con uno `z.string()` nudo non doveva restare verde.
+  it('the reason is mandatory, not whitespace only and under 500 characters', async () => {
+    // The two procedures share `MandatoryReasonSchema`, but sharing it is not what the test has
+    // to prove: replacing it here with a bare `z.string()` must not have stayed green.
     const event = await createEvent();
     await expect(
-      // @ts-expect-error -- obbligatoria nello schema, qui si verifica che lo sia a runtime.
+      // @ts-expect-error -- mandatory in the schema, this checks that it is at runtime.
       asAdmin().seasonCalendar.cancelMilestone({ id: event.id })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
@@ -238,7 +237,7 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
-  it('un evento annullato non si può più spostare', async () => {
+  it('a cancelled event can no longer be moved', async () => {
     const event = await createEvent();
     await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'annullata' });
     await expect(
@@ -248,7 +247,7 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
-  it('libera lo slot fase+gruppo, che l’indice unico parziale teneva occupato', async () => {
+  it('frees the phase+group slot the partial unique index kept occupied', async () => {
     const group = await prisma.planningGroup.create({
       data: { calendarId, name: `Slot ${randomUUID().slice(0, 8)}` },
     });
@@ -262,8 +261,8 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
     });
   });
 
-  it('è permesso su un evento congelato, dove deleteMilestone non lo è', async () => {
-    // La ragione per cui cancel esiste: un impegno passato si ritira, non si cancella.
+  it('is allowed on a frozen event, where deleteMilestone is not', async () => {
+    // The reason cancel exists: a past commitment is retired, not deleted.
     const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
 
     await expect(
@@ -276,8 +275,8 @@ describe('cancelMilestone — ritirare senza distruggere', () => {
   });
 });
 
-describe('chi può muovere e annullare', () => {
-  it('un editor con accesso al brand può', async () => {
+describe('who can move and cancel', () => {
+  it('an editor with access to the brand can', async () => {
     const event = await createEvent();
     await expect(
       asEditor().seasonCalendar.rescheduleMilestone({
@@ -303,7 +302,7 @@ describe('chi può muovere e annullare', () => {
     );
   });
 
-  it('un evento inesistente è NOT_FOUND, non un errore generico', async () => {
+  it('a nonexistent event is NOT_FOUND, not a generic error', async () => {
     await expect(
       asAdmin().seasonCalendar.cancelMilestone({ id: randomUUID(), reason: 'tentativo' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });

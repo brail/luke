@@ -67,7 +67,7 @@ afterAll(async () => {
 
 describe('GET /download/season-calendar/pdf', () => {
   it.each(['list', 'week', 'month', 'gantt'])(
-    'la vista %s produce un PDF valido',
+    'the %s view produces a valid PDF',
     async view => {
       const res = await app.inject({
         method: 'GET',
@@ -83,7 +83,7 @@ describe('GET /download/season-calendar/pdf', () => {
     }
   );
 
-  it('senza Authorization risponde 401', async () => {
+  it('without Authorization it responds 401', async () => {
     const res = await app.inject({
       method: 'GET',
       url: `/download/season-calendar/pdf?seasonId=${seasonId}&brandIds=${brandId}`,

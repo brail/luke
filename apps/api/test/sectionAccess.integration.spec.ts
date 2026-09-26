@@ -74,8 +74,8 @@ beforeEach(async () => {
   prisma = await setupTestDb();
 });
 
-describe('sectionAccess — permessi delle procedure', () => {
-  it('le procedure di scrittura e getByUser sono admin-only', async () => {
+describe('sectionAccess — procedure permissions', () => {
+  it('the write procedures and getByUser are admin-only', async () => {
     const { user: target } = await createTestUser('admin');
 
     for (const role of ['editor', 'viewer'] as const) {
@@ -96,7 +96,7 @@ describe('sectionAccess — permessi delle procedure', () => {
     }
   });
 
-  it('le letture su di sé sono aperte a ogni ruolo autenticato', async () => {
+  it('self reads are open to every authenticated role', async () => {
     for (const role of ['admin', 'editor', 'viewer'] as const) {
       const { session } = await createTestUser(role);
       const caller = callerFor(session);
@@ -108,8 +108,8 @@ describe('sectionAccess — permessi delle procedure', () => {
   });
 });
 
-describe('sectionAccess — override per utente', () => {
-  it('set scrive un override e getByUser lo rilegge', async () => {
+describe('sectionAccess — per-user override', () => {
+  it('set writes an override and getByUser reads it back', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: target } = await createTestUser('viewer');
     const caller = callerFor(adminSession);
@@ -121,7 +121,7 @@ describe('sectionAccess — override per utente', () => {
     ]);
   });
 
-  it('enabled null rimuove l’override e torna alla modalità auto', async () => {
+  it('enabled null removes the override and returns to auto mode', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: target } = await createTestUser('viewer');
     const caller = callerFor(adminSession);
@@ -140,7 +140,7 @@ describe('sectionAccess — override per utente', () => {
     await expect(caller.getByUser({ userId: target.id })).resolves.toEqual([]);
   });
 
-  it('getForMe vede i propri override, non quelli altrui', async () => {
+  it('getForMe sees its own overrides, not those of others', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: other } = await createTestUser('viewer');
     const admin = callerFor(adminSession);
@@ -152,7 +152,7 @@ describe('sectionAccess — override per utente', () => {
 });
 
 describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => {
-  it('senza config in AppConfig vale SECTION_ACCESS_DEFAULTS, non il fallback RBAC', async () => {
+  it('with no config in AppConfig SECTION_ACCESS_DEFAULTS applies, not the RBAC fallback', async () => {
     // Level 2 used to read only AppConfig, and `rbac.sectionAccessDefaults` is
     // never seeded: with the key absent, every section resolved to `'auto'` and
     // deferred to the permissions fallback, so the static table didn't
@@ -172,7 +172,7 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
     }
   });
 
-  it('una riga malformata in AppConfig non apre le sezioni', async () => {
+  it('a malformed row in AppConfig does not open the sections', async () => {
     await prisma.appConfig.create({
       data: { key: 'rbac.sectionAccessDefaults', value: '{ questo non è JSON' },
     });
@@ -185,7 +185,7 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
     expect(effective['settings.ldap']).toBe(false);
   });
 
-  it('un override personale concede una sezione che i default negano', async () => {
+  it('a personal override grants a section the defaults deny', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: viewer, session: viewerSession } =
       await createTestUser('viewer');
@@ -209,8 +209,8 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
   });
 });
 
-describe('sectionAccess — guard sull’ultimo amministratore', () => {
-  it('setRoleDefaults rifiuta una config che chiude fuori tutti gli admin', async () => {
+describe('sectionAccess — last-admin guard', () => {
+  it('setRoleDefaults rejects a config that locks out every admin', async () => {
     const { session } = await createTestUser('admin');
 
     // `settings.users` set to `disabled` for the admin role: nobody could
@@ -255,7 +255,7 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
     expect((await caller.getEffectiveForMe()).settings).toBe(true);
   });
 
-  it('setRoleDefaults accetta una config che lascia gli admin operativi', async () => {
+  it('setRoleDefaults accepts a config that keeps the admins operational', async () => {
     const { session } = await createTestUser('admin');
 
     await expect(
@@ -265,7 +265,7 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
     ).resolves.toEqual({ success: true });
   });
 
-  it('la scrittura invalida la cache RBAC: l’effetto è visibile subito', async () => {
+  it('the write invalidates the RBAC cache: the effect is visible immediately', async () => {
     const { session } = await createTestUser('admin');
     const { session: viewerSession } = await createTestUser('viewer');
 
@@ -285,8 +285,8 @@ describe('sectionAccess — guard sull’ultimo amministratore', () => {
   });
 });
 
-describe('sectionAccess — è l’unica via di scrittura per rbac.*', () => {
-  it('config.set rifiuta il prefisso rbac', async () => {
+describe('sectionAccess — the only write path for rbac.*', () => {
+  it('config.set rejects the rbac prefix', async () => {
     const { session } = await createTestUser('admin');
 
     // The `setRoleDefaults` docstring declares itself the only reachable write
@@ -308,7 +308,7 @@ describe('sectionAccess — è l’unica via di scrittura per rbac.*', () => {
     ).resolves.toBe(0);
   });
 
-  it('setRoleDefaults persiste davvero la chiave in AppConfig', async () => {
+  it('setRoleDefaults really persists the key in AppConfig', async () => {
     const { session } = await createTestUser('admin');
     const defaults = defaultsFor({ editor: { product: 'disabled' } });
 
@@ -325,7 +325,7 @@ describe('sectionAccess — è l’unica via di scrittura per rbac.*', () => {
     });
   });
 
-  it('l’ultimo salvataggio vince, senza accumulare voci duplicate', async () => {
+  it('the last save wins, without accumulating duplicate entries', async () => {
     const { session } = await createTestUser('admin');
     const caller = callerFor(session);
 
@@ -345,7 +345,7 @@ describe('sectionAccess — è l’unica via di scrittura per rbac.*', () => {
 });
 
 describe('sectionAccess — validazione input', () => {
-  it('rifiuta una sezione che non esiste', async () => {
+  it('rejects a section that does not exist', async () => {
     const { session } = await createTestUser('admin');
     const { user: target } = await createTestUser('viewer');
 
@@ -360,7 +360,7 @@ describe('sectionAccess — validazione input', () => {
     ).rejects.toThrow();
   });
 
-  it('rifiuta uno stato che non è enabled/disabled/auto', async () => {
+  it('rejects a state that is not enabled/disabled/auto', async () => {
     const { session } = await createTestUser('admin');
 
     await expect(
@@ -372,7 +372,7 @@ describe('sectionAccess — validazione input', () => {
     ).rejects.toThrow();
   });
 
-  it('set su un utente inesistente non crea override orfani', async () => {
+  it('set on a nonexistent user creates no orphan override', async () => {
     const { session } = await createTestUser('admin');
     const ghost = randomUUID();
 

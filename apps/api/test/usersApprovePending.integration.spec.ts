@@ -49,7 +49,7 @@ beforeAll(async () => {
 });
 
 describe('users.approvePending', () => {
-  it('senza teamId è rifiutato dallo schema Zod', async () => {
+  it('without teamId it is rejected by the Zod schema', async () => {
     const pending = await createPendingUser();
     const caller = createCallerWithSession(adminSession);
 
@@ -61,7 +61,7 @@ describe('users.approvePending', () => {
     );
   });
 
-  it('con un team non attivo è rifiutato, e l\'utente resta pending', async () => {
+  it('with an inactive team it is rejected, and the user stays pending', async () => {
     const pending = await createPendingUser();
     const caller = createCallerWithSession(adminSession);
 
@@ -78,7 +78,7 @@ describe('users.approvePending', () => {
     expect(membership).toBeNull();
   });
 
-  it('con un team attivo crea la membership e azzera pendingApproval, nella stessa transazione', async () => {
+  it('with an active team it creates the membership and clears pendingApproval, in the same transaction', async () => {
     const pending = await createPendingUser();
     const caller = createCallerWithSession(adminSession);
 
@@ -94,7 +94,7 @@ describe('users.approvePending', () => {
     expect(membership).not.toBeNull();
   });
 
-  it('un utente non pending → NOT_FOUND, senza creare membership', async () => {
+  it('a user not pending → NOT_FOUND, no membership created', async () => {
     const { user } = await createTestUser('viewer'); // pendingApproval: false by default
     const caller = createCallerWithSession(adminSession);
 

@@ -19,7 +19,7 @@ describe('withSchedulerLock', () => {
     testPrisma = await setupTestDb();
   });
 
-  it('esegue il tick quando nessun altro lock è presente', async () => {
+  it('runs the tick when no other lock is present', async () => {
     const tick = vi.fn(async () => 'done');
 
     const result = await withSchedulerLock(testPrisma, 'backup', tick)();
@@ -28,7 +28,7 @@ describe('withSchedulerLock', () => {
     expect(tick).toHaveBeenCalledTimes(1);
   });
 
-  it("salta il tick se un'altra istanza detiene già il lock (non scaduto)", async () => {
+  it("skips the tick if another instance already holds the lock (not expired)", async () => {
     await testPrisma.schedulerLock.create({
       data: { name: 'backup', heldBy: 'other-instance', expiresAt: new Date(Date.now() + 60_000) },
     });
@@ -47,7 +47,7 @@ describe('withSchedulerLock', () => {
     expect(row.heldBy).toBe('other-instance');
   });
 
-  it("riacquisisce il lock se quello esistente è scaduto (crash di un'altra istanza)", async () => {
+  it("reacquires the lock if the existing one has expired (another instance crashed)", async () => {
     await testPrisma.schedulerLock.create({
       data: { name: 'backup', heldBy: 'crashed-instance', expiresAt: new Date(Date.now() - 1000) },
     });
@@ -59,7 +59,7 @@ describe('withSchedulerLock', () => {
     expect(tick).toHaveBeenCalledTimes(1);
   });
 
-  it('rilascia il lock subito dopo un tick riuscito, non aspettando il TTL', async () => {
+  it('releases the lock right after a successful tick, without waiting for the TTL', async () => {
     await withSchedulerLock(testPrisma, 'backup', vi.fn(async () => 'done'))();
 
     // If release weren't explicit, this second call would find
@@ -71,7 +71,7 @@ describe('withSchedulerLock', () => {
     expect(tick2).toHaveBeenCalledTimes(1);
   });
 
-  it('rilascia il lock anche se il tick lancia un errore', async () => {
+  it('releases the lock even if the tick throws', async () => {
     const failingTick = vi.fn(async () => { throw new Error('boom'); });
     await expect(withSchedulerLock(testPrisma, 'backup', failingTick)()).rejects.toThrow('boom');
 
@@ -82,7 +82,7 @@ describe('withSchedulerLock', () => {
     expect(tick2).toHaveBeenCalledTimes(1);
   });
 
-  it('lock su nomi diversi sono indipendenti (nav-sync per-entità non si serializzano a vicenda)', async () => {
+  it('locks on different names are independent (per-entity nav-sync runs do not serialize each other)', async () => {
     await testPrisma.schedulerLock.create({
       data: { name: 'nav-sync:vendor', heldBy: 'other-instance', expiresAt: new Date(Date.now() + 60_000) },
     });
