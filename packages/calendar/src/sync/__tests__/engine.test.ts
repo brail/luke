@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// `vi.mock` viene issato sopra gli import: i mock sono già attivi quando
-// `engine.js` viene caricato, quindi l'import statico è sicuro.
+// `vi.mock` is hoisted above the imports: the mocks are already active when
+// `engine.js` loads, so the static import is safe.
 import { provisionBinding, syncMilestone } from '../engine.js';
 import { computeContentHash } from '../hash.js';
 
@@ -14,9 +14,9 @@ import type {
 } from '../types.js';
 
 /**
- * `syncMilestone` è l'unico punto che decide cosa succede sui calendari Google.
- * Ogni ramo sbagliato è invisibile lato Luke e visibile solo agli utenti finali:
- * un evento che non sparisce quando dovrebbe, o che riappare dove non deve.
+ * `syncMilestone` is the only place that decides what happens on the Google calendars.
+ * Every wrong branch is invisible on the Luke side and visible only to end users: an event
+ * that does not disappear when it should, or that reappears where it must not.
  */
 const google = vi.hoisted(() => ({
   createEvent: vi.fn(),
@@ -47,12 +47,12 @@ vi.mock('../../google/acl.js', () => ({
 }));
 
 /**
- * Milestone visibile a **una sola** function.
+ * Milestone visible to **a single** function.
  *
- * `syncMilestone` fa fan-out per function: con la fixture condivisa, che ne ha
- * due, ogni conteggio di chiamate a Google raddoppierebbe e i test sui singoli
- * rami misurerebbero il fan-out invece del ramo. Chi vuole il fan-out lo chiede
- * esplicitamente, come nel test dedicato.
+ * `syncMilestone` fans out per function: with the shared fixture, which has two, every
+ * count of Google calls would double and the tests on the individual branches would
+ * measure the fan-out instead of the branch. A test that wants the fan-out asks for it
+ * explicitly, as the dedicated test does.
  */
 function makeMilestone(
   overrides: Partial<MilestoneForSync> = {}
@@ -104,7 +104,7 @@ beforeEach(() => {
 });
 
 describe('syncMilestone — creazione', () => {
-  it('crea l\'evento e salva il mapping quando non esiste', async () => {
+  it('creates the event and saves the mapping when none exists', async () => {
     const ctx = makeContext();
     const milestone = makeMilestone();
 
@@ -129,7 +129,7 @@ describe('syncMilestone — creazione', () => {
     });
   });
 
-  it('crea un evento per ogni function visibile', async () => {
+  it('creates an event for every visible function', async () => {
     const ctx = makeContext();
 
     await syncMilestone(
@@ -152,7 +152,7 @@ describe('syncMilestone — creazione', () => {
 });
 
 describe('syncMilestone — aggiornamento e skip', () => {
-  it('salta quando l\'hash coincide', async () => {
+  it('skips when the hash matches', async () => {
     const milestone = makeMilestone();
     const ctx = makeContext([
       makeMapping({ contentHash: computeContentHash(milestone) }),
@@ -160,14 +160,14 @@ describe('syncMilestone — aggiornamento e skip', () => {
 
     await syncMilestone(milestone, ctx);
 
-    // Il senso stesso dell'hash: nessuna chiamata a Google per un evento
-    // immutato. Se questo test cade, ogni sync riscrive tutto.
+    // The very point of the hash: no Google call for an unchanged event. If this test
+    // breaks, every sync rewrites everything.
     expect(google.createEvent).not.toHaveBeenCalled();
     expect(google.updateEvent).not.toHaveBeenCalled();
     expect(ctx.upsertMapping).not.toHaveBeenCalled();
   });
 
-  it('aggiorna in place quando l\'hash è diverso', async () => {
+  it('updates in place when the hash differs', async () => {
     const milestone = makeMilestone();
     const ctx = makeContext([makeMapping({ contentHash: 'obsoleto' })]);
 
@@ -178,8 +178,8 @@ describe('syncMilestone — aggiornamento e skip', () => {
       'gev-1',
       expect.objectContaining({ title: '[LU] Consegna campionario' })
     );
-    // Riusa l'evento esistente invece di crearne un altro: creare un secondo
-    // evento lascerebbe un duplicato orfano sul calendario dell'utente.
+    // Reuses the existing event instead of creating another one: creating a second
+    // event would leave an orphan duplicate on the user's calendar.
     expect(google.createEvent).not.toHaveBeenCalled();
     expect(ctx.upsertMapping).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -191,7 +191,7 @@ describe('syncMilestone — aggiornamento e skip', () => {
 });
 
 describe('syncMilestone — rimozione', () => {
-  it('cancella evento e mapping quando publishExternally diventa false', async () => {
+  it('deletes event and mapping when publishExternally becomes false', async () => {
     const ctx = makeContext([makeMapping()]);
 
     await syncMilestone(makeMilestone({ publishExternally: false }), ctx);
@@ -201,7 +201,7 @@ describe('syncMilestone — rimozione', () => {
     expect(google.createEvent).not.toHaveBeenCalled();
   });
 
-  it('con publishExternally false e nessun mapping non fa nulla', async () => {
+  it('with publishExternally false and no mapping it does nothing', async () => {
     const ctx = makeContext();
 
     await syncMilestone(makeMilestone({ publishExternally: false }), ctx);
@@ -210,9 +210,9 @@ describe('syncMilestone — rimozione', () => {
     expect(ctx.deleteMapping).not.toHaveBeenCalled();
   });
 
-  it('rimuove i mapping delle function non più visibili', async () => {
-    // Togliere una function dalla visibilità deve far sparire l'evento dal suo
-    // calendario: senza questo ramo resterebbe visibile a chi non ha più diritto.
+  it('removes the mappings of functions no longer visible', async () => {
+    // Removing a function from the visibility must make the event disappear from its
+    // calendar: without this branch it would stay visible to people no longer entitled.
     const ctx = makeContext([
       makeMapping({ companyFunctionId: 'fn-a' }),
       makeMapping({
@@ -229,7 +229,7 @@ describe('syncMilestone — rimozione', () => {
     expect(ctx.deleteMapping).not.toHaveBeenCalledWith('m1', 'fn-a');
   });
 
-  it('svuotare la visibilità rimuove tutti gli eventi', async () => {
+  it('emptying the visibility removes every event', async () => {
     const ctx = makeContext([
       makeMapping({ companyFunctionId: 'fn-a' }),
       makeMapping({ companyFunctionId: 'fn-b', googleEventId: 'gev-2' }),
@@ -242,8 +242,8 @@ describe('syncMilestone — rimozione', () => {
   });
 });
 
-describe('syncMilestone — politica di retry', () => {
-  it('ritenta gli errori transitori e va a buon fine', async () => {
+describe('syncMilestone — retry policy', () => {
+  it('retries transient errors and succeeds', async () => {
     google.createEvent
       .mockRejectedValueOnce(Object.assign(new Error('503'), { code: 503 }))
       .mockResolvedValueOnce('gev-nuovo');
@@ -253,9 +253,9 @@ describe('syncMilestone — politica di retry', () => {
     expect(google.createEvent).toHaveBeenCalledTimes(2);
   });
 
-  it('non ritenta i 4xx', async () => {
-    // Una richiesta malformata o non autorizzata non migliora ritentando:
-    // insistere sprecherebbe quota API e ritarderebbe l'errore reale.
+  it('does not retry 4xx', async () => {
+    // A malformed or unauthorized request does not get better by retrying: insisting
+    // would waste API quota and delay the real error.
     google.createEvent.mockRejectedValue(
       Object.assign(new Error('400'), { code: 400 })
     );
@@ -266,7 +266,7 @@ describe('syncMilestone — politica di retry', () => {
     expect(google.createEvent).toHaveBeenCalledTimes(1);
   });
 
-  it('ritenta il 429, che è transitorio nonostante sia 4xx', async () => {
+  it('retries the 429, which is transient despite being a 4xx', async () => {
     google.createEvent
       .mockRejectedValueOnce(Object.assign(new Error('429'), { code: 429 }))
       .mockResolvedValueOnce('gev-nuovo');
@@ -278,7 +278,7 @@ describe('syncMilestone — politica di retry', () => {
 });
 
 describe('provisionBinding', () => {
-  it('crea il calendario, imposta i lettori e blocca il dominio in sola lettura', async () => {
+  it('creates the calendar, sets the readers and locks the domain as read-only', async () => {
     const ctx = makeContext();
 
     const id = await provisionBinding(ctx, 'fn-a', 'Prodotto');
@@ -294,13 +294,13 @@ describe('provisionBinding', () => {
     expect(google.syncCalendarReaders).toHaveBeenCalledWith('gcal-nuovo', [
       'a@example.com',
     ]);
-    // Va chiamato SEMPRE dopo il provisioning: Google crea da sé una regola di
-    // dominio che può scavalcare i permessi per utente.
+    // It must ALWAYS be called after provisioning: Google itself creates a domain rule
+    // that can override the per-user permissions.
     expect(google.enforceDomainReadOnly).toHaveBeenCalledWith('gcal-nuovo');
     expect(id).toBe('gcal-nuovo');
   });
 
-  it('usa l\'id della function come etichetta quando manca il label', async () => {
+  it('uses the function id as the label when the label is missing', async () => {
     await provisionBinding(makeContext(), 'fn-a');
 
     expect(google.buildCalendarSummary).toHaveBeenCalledWith(

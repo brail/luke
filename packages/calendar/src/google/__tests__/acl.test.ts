@@ -8,9 +8,9 @@ import {
 } from '../acl.js';
 
 /**
- * L'ACL è ciò che impedisce a un calendario di stagione di essere leggibile da
- * chi non dovrebbe vederlo. Un errore di riconciliazione non produce eccezioni:
- * lascia semplicemente un lettore di troppo, in silenzio.
+ * The ACL is what keeps a season calendar from being readable by people who should not
+ * see it. A reconciliation error raises no exception: it just leaves one reader too many,
+ * silently.
  */
 const { acl, getWorkspaceDomain } = vi.hoisted(() => ({
   acl: {
@@ -28,7 +28,7 @@ vi.mock('../client.js', () => ({
   getWorkspaceDomain,
 }));
 
-/** Costruisce la risposta di `acl.list` come la restituisce l'API Google. */
+/** Builds the `acl.list` response the way the Google API returns it. */
 function readersResponse(emails: string[]) {
   return {
     data: {
@@ -48,12 +48,12 @@ beforeEach(() => {
 });
 
 describe('listCalendarReaders', () => {
-  it('restituisce solo le regole reader di tipo user', () => {
+  it('returns only the reader rules of type user', () => {
     acl.list.mockResolvedValue({
       data: {
         items: [
           { role: 'reader', scope: { type: 'user', value: 'a@example.com' } },
-          // Rumore che non deve finire nell'elenco dei lettori
+          // Noise that must not end up in the reader list
           { role: 'owner', scope: { type: 'user', value: 'owner@example.com' } },
           { role: 'reader', scope: { type: 'domain', value: 'example.com' } },
           { role: 'reader', scope: { type: 'user' } },
@@ -66,7 +66,7 @@ describe('listCalendarReaders', () => {
     ]);
   });
 
-  it('gestisce una risposta senza items', async () => {
+  it('handles a response without items', async () => {
     acl.list.mockResolvedValue({ data: {} });
 
     await expect(listCalendarReaders('cal-1')).resolves.toEqual([]);
@@ -74,7 +74,7 @@ describe('listCalendarReaders', () => {
 });
 
 describe('syncCalendarReaders', () => {
-  it('aggiunge i mancanti e rimuove quelli di troppo', async () => {
+  it('adds the missing ones and removes the extra ones', async () => {
     acl.list.mockResolvedValue(
       readersResponse(['resta@example.com', 'esce@example.com'])
     );
@@ -100,7 +100,7 @@ describe('syncCalendarReaders', () => {
     });
   });
 
-  it('non tocca nulla quando lo stato coincide già', async () => {
+  it('touches nothing when the state already matches', async () => {
     acl.list.mockResolvedValue(readersResponse(['a@example.com']));
 
     await syncCalendarReaders('cal-1', ['a@example.com']);
@@ -109,9 +109,9 @@ describe('syncCalendarReaders', () => {
     expect(acl.delete).not.toHaveBeenCalled();
   });
 
-  it('svuota i lettori quando la lista attesa è vuota', async () => {
-    // Caso critico: una function senza membri deve restare senza lettori, non
-    // conservare quelli precedenti.
+  it('empties the readers when the expected list is empty', async () => {
+    // Critical case: a function with no members must stay without readers, not keep
+    // the previous ones.
     acl.list.mockResolvedValue(
       readersResponse(['a@example.com', 'b@example.com'])
     );
@@ -124,8 +124,8 @@ describe('syncCalendarReaders', () => {
 });
 
 describe('removeCalendarReader', () => {
-  it('è idempotente: un 404 non è un errore', async () => {
-    // Rimuovere un lettore già assente è lo stato desiderato, non un guasto.
+  it('is idempotent: a 404 is not an error', async () => {
+    // Removing a reader that is already absent is the desired state, not a failure.
     acl.delete.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
 
     await expect(
@@ -133,7 +133,7 @@ describe('removeCalendarReader', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('propaga gli errori diversi dal 404', async () => {
+  it('propagates errors other than 404', async () => {
     acl.delete.mockRejectedValue(Object.assign(new Error('Boom'), { code: 500 }));
 
     await expect(
@@ -143,9 +143,9 @@ describe('removeCalendarReader', () => {
 });
 
 describe('enforceDomainReadOnly', () => {
-  it('declassa a freeBusyReader una regola di dominio troppo permissiva', async () => {
-    // Google applica la regola PIÙ permissiva fra quelle che combaciano: una
-    // regola di dominio con `writer` scavalcherebbe i grant `reader` per utente.
+  it('downgrades an overly permissive domain rule to freeBusyReader', async () => {
+    // Google applies the MOST permissive rule among the matching ones: a domain rule
+    // with `writer` would override the per-user `reader` grants.
     acl.get.mockResolvedValue({ data: { role: 'writer' } });
 
     await enforceDomainReadOnly('cal-1');
@@ -161,7 +161,7 @@ describe('enforceDomainReadOnly', () => {
   });
 
   it.each(['freeBusyReader', 'none'])(
-    'non tocca una regola già a %s',
+    'does not touch a rule already at %s',
     async role => {
       acl.get.mockResolvedValue({ data: { role } });
 
@@ -171,14 +171,14 @@ describe('enforceDomainReadOnly', () => {
     }
   );
 
-  it('non fa nulla se la regola di dominio non esiste', async () => {
+  it('does nothing if the domain rule does not exist', async () => {
     acl.get.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
 
     await expect(enforceDomainReadOnly('cal-1')).resolves.toBeUndefined();
     expect(acl.update).not.toHaveBeenCalled();
   });
 
-  it('propaga gli errori diversi dal 404', async () => {
+  it('propagates errors other than 404', async () => {
     acl.get.mockRejectedValue(Object.assign(new Error('Boom'), { code: 500 }));
 
     await expect(enforceDomainReadOnly('cal-1')).rejects.toThrow('Boom');

@@ -29,7 +29,7 @@ function makeInput(overrides: Partial<EventInput> = {}): EventInput {
   };
 }
 
-/** Estrae il body inviato all'API dalla chiamata registrata sul mock. */
+/** Extracts the body sent to the API from the call recorded on the mock. */
 function insertedBody() {
   return events.insert.mock.calls[0]![0].requestBody;
 }
@@ -42,13 +42,13 @@ beforeEach(() => {
 });
 
 describe('createEvent', () => {
-  it('restituisce l\'id dell\'evento creato', async () => {
+  it('returns the id of the created event', async () => {
     await expect(createEvent('cal-1', makeInput())).resolves.toBe('gev-1');
   });
 
-  it('fallisce esplicitamente se Google non restituisce un id', async () => {
-    // Senza id non è possibile salvare il mapping: proseguire in silenzio
-    // creerebbe un evento orfano, impossibile da aggiornare o cancellare dopo.
+  it('fails explicitly if Google returns no id', async () => {
+    // Without an id the mapping cannot be saved: carrying on silently would create an
+    // orphan event, impossible to update or delete later.
     events.insert.mockResolvedValue({ data: {} });
 
     await expect(createEvent('cal-1', makeInput())).rejects.toThrow(
@@ -56,7 +56,7 @@ describe('createEvent', () => {
     );
   });
 
-  it('usa dateTime con timezone UTC per gli eventi con orario', async () => {
+  it('uses dateTime with a UTC timezone for timed events', async () => {
     await createEvent('cal-1', makeInput({ allDay: false }));
 
     expect(insertedBody().start).toEqual({
@@ -69,16 +69,16 @@ describe('createEvent', () => {
     });
   });
 
-  it('usa date pura per gli eventi all-day', async () => {
-    // Un all-day inviato come dateTime verrebbe mostrato da Google come evento
-    // orario nel fuso del lettore, spostandosi di giorno per chi sta fuori UTC.
+  it('uses a plain date for all-day events', async () => {
+    // An all-day event sent as dateTime would be shown by Google as a timed event in the
+    // reader's timezone, shifting by a day for anyone outside UTC.
     await createEvent('cal-1', makeInput({ allDay: true }));
 
     expect(insertedBody().start).toEqual({ date: '2099-03-01' });
     expect(insertedBody().end).toEqual({ date: '2099-03-01' });
   });
 
-  it('usa startAt come fine quando endAt manca', async () => {
+  it('uses startAt as the end when endAt is missing', async () => {
     await createEvent('cal-1', makeInput({ endAt: undefined }));
 
     expect(insertedBody().end).toEqual({
@@ -111,8 +111,8 @@ describe('updateEvent', () => {
 });
 
 describe('deleteEvent', () => {
-  it('è idempotente: un 410 non è un errore', async () => {
-    // 410 significa "già cancellato", cioè lo stato desiderato.
+  it('is idempotent: a 410 is not an error', async () => {
+    // 410 means "already deleted", i.e. the desired state.
     events.delete.mockRejectedValue(
       Object.assign(new Error('Gone'), { code: 410 })
     );
@@ -120,7 +120,7 @@ describe('deleteEvent', () => {
     await expect(deleteEvent('cal-1', 'gev-1')).resolves.toBeUndefined();
   });
 
-  it('propaga gli errori diversi dal 410', async () => {
+  it('propagates errors other than 410', async () => {
     events.delete.mockRejectedValue(
       Object.assign(new Error('Boom'), { code: 500 })
     );

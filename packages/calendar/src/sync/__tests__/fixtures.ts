@@ -1,16 +1,15 @@
 import type { MilestoneForSync } from '../types.js';
 
 /**
- * Milestone di riferimento condivisa da `hash.test.ts` e `engine.test.ts`.
+ * Reference milestone shared by `hash.test.ts` and `engine.test.ts`.
  *
- * Deve restare una sola: i test di sensibilità dell'hash valgono qualcosa solo
- * se misurano lo stesso oggetto che l'engine passa a Google. Con due copie, un
- * campo aggiunto a `MilestoneForSync` può entrare in una e non nell'altra, e la
- * suite resta verde mentre le due metà divergono.
+ * There must be only one: the hash sensitivity tests are worth something only if they
+ * measure the same object the engine passes to Google. With two copies, a field added to
+ * `MilestoneForSync` can enter one and not the other, and the suite stays green while the
+ * two halves diverge.
  *
- * `visibilityFunctionIds` ha due elementi di proposito: serve a `hash.test.ts`
- * per verificare l'indipendenza dall'ordine. Chi ne vuole una sola la passa in
- * `overrides`.
+ * `visibilityFunctionIds` has two elements on purpose: `hash.test.ts` needs them to check
+ * independence from order. A test that wants a single one passes it in `overrides`.
  */
 export function makeMilestone(
   overrides: Partial<MilestoneForSync> = {}

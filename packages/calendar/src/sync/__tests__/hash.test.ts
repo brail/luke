@@ -7,14 +7,14 @@ import { makeMilestone } from './fixtures.js';
 import type { MilestoneForSync } from '../types.js';
 
 /**
- * `computeContentHash` decide se un evento va aggiornato su Google senza
- * interrogare Google. Un campo che influenza l'evento ma NON entra nell'hash
- * produce aggiornamenti silenziosamente saltati: l'utente modifica la milestone
- * e il calendario esterno resta indietro, senza alcun errore. Per questo ogni
- * campo rilevante ha qui un test di sensibilità dedicato.
+ * `computeContentHash` decides whether an event needs updating on Google without asking
+ * Google. A field that affects the event but does NOT enter the hash produces silently
+ * skipped updates: the user edits the milestone and the external calendar falls behind,
+ * with no error at all. That is why every relevant field has a dedicated sensitivity test
+ * here.
  */
 describe('computeContentHash', () => {
-  it('è deterministico', () => {
+  it('is deterministic', () => {
     expect(computeContentHash(makeMilestone())).toBe(
       computeContentHash(makeMilestone())
     );
@@ -24,10 +24,10 @@ describe('computeContentHash', () => {
     expect(computeContentHash(makeMilestone())).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('non dipende dall\'ordine di visibilityFunctionIds', () => {
-    // Gli id arrivano da una query: l'ordine non è garantito. Se contasse,
-    // ogni sync ricalcolerebbe un hash diverso e riscriverebbe l'evento su
-    // Google inutilmente ad ogni giro.
+  it('does not depend on the order of visibilityFunctionIds', () => {
+    // The ids come from a query: the order is not guaranteed. If it counted, every sync
+    // would compute a different hash and rewrite the event on Google needlessly on every
+    // round.
     const a = computeContentHash(
       makeMilestone({ visibilityFunctionIds: ['fn-a', 'fn-b'] })
     );
@@ -47,7 +47,7 @@ describe('computeContentHash', () => {
     ['visibilityFunctionIds', { visibilityFunctionIds: ['fn-a'] }],
     ['planningGroupName', { planningGroupName: 'Linea Donna' }],
   ] as [string, Partial<MilestoneForSync>][])(
-    'cambia quando cambia %s',
+    'changes when %s changes',
     (_field, override) => {
       expect(computeContentHash(makeMilestone(override))).not.toBe(
         computeContentHash(makeMilestone())
@@ -55,38 +55,38 @@ describe('computeContentHash', () => {
     }
   );
 
-  it('distingue endAt assente da endAt valorizzato', () => {
+  it('tells an absent endAt apart from a set one', () => {
     expect(computeContentHash(makeMilestone({ endAt: null }))).not.toBe(
       computeContentHash(makeMilestone())
     );
   });
 
-  it('distingue description null da stringa vuota', () => {
+  it('tells a null description apart from an empty string', () => {
     expect(computeContentHash(makeMilestone({ description: null }))).not.toBe(
       computeContentHash(makeMilestone({ description: '' }))
     );
   });
 
   it('ignora publishExternally', () => {
-    // Non è un contenuto dell'evento: governa se sincronizzare o cancellare,
-    // e quella decisione è dell'engine. Includerlo produrrebbe un hash diverso
-    // per un evento identico.
+    // It is not event content: it governs whether to sync or delete, and that decision
+    // belongs to the engine. Including it would produce a different hash for an identical
+    // event.
     expect(
       computeContentHash(makeMilestone({ publishExternally: false }))
     ).toBe(computeContentHash(makeMilestone()));
   });
 
-  it('ignora l\'id della milestone', () => {
+  it('ignores the milestone id', () => {
     expect(computeContentHash(makeMilestone({ id: 'm2' }))).toBe(
       computeContentHash(makeMilestone())
     );
   });
 
-  it('rinominare un gruppo senza cambiarne le iniziali non altera l\'hash', () => {
-    // L'hash include `initials(planningGroupName)`, non il nome completo: nel
-    // titolo Google finisce solo il prefisso `[LU]`. Due nomi con le stesse
-    // iniziali producono un evento identico, quindi non serve riscriverlo.
-    // È deliberato — l'hash misura ciò che viene renderizzato, non l'input.
+  it('renaming a group without changing its initials does not alter the hash', () => {
+    // The hash includes `initials(planningGroupName)`, not the full name: only the
+    // `[LU]` prefix ends up in the Google title. Two names with the same initials produce
+    // an identical event, so there is no need to rewrite it. It is deliberate — the hash
+    // measures what is rendered, not the input.
     const a = computeContentHash(
       makeMilestone({ planningGroupName: 'Linea Uomo' })
     );

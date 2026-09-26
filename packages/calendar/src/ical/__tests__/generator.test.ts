@@ -5,9 +5,9 @@ import { generateIcal } from '../generator.js';
 import type { ICalMilestone } from '../generator.js';
 
 /**
- * Il feed .ics è consumato da client esterni (Outlook, Apple Calendar, Google):
- * un output non conforme non dà errore da nessuna parte, semplicemente non viene
- * importato. Qui si verifica la struttura RFC 5545 e le poche regole di dominio.
+ * The .ics feed is consumed by external clients (Outlook, Apple Calendar, Google): a
+ * non-compliant output raises no error anywhere, it simply does not get imported. This
+ * checks the RFC 5545 structure and the few domain rules.
  */
 function makeMilestone(
   overrides: Partial<ICalMilestone> = {}
@@ -26,7 +26,7 @@ function makeMilestone(
 }
 
 describe('generateIcal', () => {
-  it('produce un calendario con nome e PRODID', () => {
+  it('produces a calendar with a name and PRODID', () => {
     const ics = generateIcal([], 'Calendario Test', '-//Custom//Test//EN');
 
     expect(ics).toContain('BEGIN:VCALENDAR');
@@ -35,7 +35,7 @@ describe('generateIcal', () => {
     expect(ics).toContain('Calendario Test');
   });
 
-  it('genera un calendario valido anche senza milestone', () => {
+  it('generates a valid calendar even without milestones', () => {
     const ics = generateIcal([], 'Vuoto');
 
     expect(ics).toContain('BEGIN:VCALENDAR');
@@ -51,15 +51,15 @@ describe('generateIcal', () => {
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(2);
   });
 
-  it('usa un UID stabile derivato dall\'id della milestone', () => {
-    // L'UID è ciò con cui il client distingue "nuovo evento" da "aggiornamento":
-    // se cambiasse ad ogni generazione, ogni refresh duplicherebbe gli eventi.
+  it('uses a stable UID derived from the milestone id', () => {
+    // The UID is how the client tells a "new event" from an "update": if it changed
+    // on every generation, every refresh would duplicate the events.
     const ics = generateIcal([makeMilestone({ id: 'abc-123' })], 'Test');
 
     expect(ics).toContain('luke-milestone-abc-123@luke.app');
   });
 
-  it('prefissa il brand code solo sugli eventi con orario', () => {
+  it('prefixes the brand code only on timed events', () => {
     const timed = generateIcal(
       [makeMilestone({ allDay: false, title: 'Riunione' })],
       'Test'
@@ -83,9 +83,9 @@ describe('generateIcal', () => {
     ).toContain('STATUS:CONFIRMED');
   });
 
-  it('usa startAt come fine quando endAt è assente', () => {
-    // Senza questo default `ical-generator` rifiuterebbe l'evento: un `end`
-    // mancante non è ammesso dalla libreria.
+  it('uses startAt as the end when endAt is absent', () => {
+    // Without this default `ical-generator` would reject the event: a missing `end`
+    // is not allowed by the library.
     const ics = generateIcal(
       [makeMilestone({ endAt: null, allDay: false })],
       'Test'
@@ -96,13 +96,13 @@ describe('generateIcal', () => {
     expect(ics).toContain('DTEND');
   });
 
-  it('omette la descrizione quando è null', () => {
+  it('omits the description when it is null', () => {
     const ics = generateIcal([makeMilestone({ description: null })], 'Test');
 
     expect(ics).not.toContain('DESCRIPTION:');
   });
 
-  it('include la descrizione quando presente', () => {
+  it('includes the description when present', () => {
     const ics = generateIcal(
       [makeMilestone({ description: 'Note interne' })],
       'Test'
@@ -111,10 +111,10 @@ describe('generateIcal', () => {
     expect(ics).toContain('Note interne');
   });
 
-  it('usa il formato data pura per gli eventi all-day', () => {
+  it('uses the plain date format for all-day events', () => {
     const allDay = generateIcal([makeMilestone({ allDay: true })], 'Test');
 
-    // All-day → `DTSTART;VALUE=DATE:20990301`, senza componente oraria.
+    // All-day → `DTSTART;VALUE=DATE:20990301`, with no time component.
     expect(allDay).toMatch(/DTSTART[^:\n]*VALUE=DATE[^:\n]*:\d{8}/);
   });
 });
