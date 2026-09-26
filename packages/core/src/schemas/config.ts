@@ -327,9 +327,9 @@ type KeyPrefix<Key> = Key extends `${infer Prefix}.${string}` ? Prefix : never;
 type AppConfigKeyPrefix = KeyPrefix<AppConfigKey>;
 
 /**
- * Prefixes the generic `config` router's write procedures (`set`, `update`, `setMultiple`,
- * `importJson`) accept. Registered keys outside them (`backup.*`, `rbac.*`, `smtp.*`, …) are
- * written through the routers that own them. The router's reads and `config.delete` are not
+ * Prefixes the generic `config` router writes: `set`, `update`, `setMultiple`, `importJson` and
+ * `config.delete` refuse a key outside them. Registered keys outside them (`backup.*`, `rbac.*`,
+ * `smtp.*`, …) are written through the routers that own them. The router's reads are not
  * prefix-gated. Bound to the registry: a prefix no registered key starts with does not compile.
  */
 export const CONFIG_ROUTER_PREFIXES = [
@@ -341,6 +341,16 @@ export const CONFIG_ROUTER_PREFIXES = [
 ] as const satisfies readonly AppConfigKeyPrefix[];
 
 export type ConfigRouterPrefix = (typeof CONFIG_ROUTER_PREFIXES)[number];
+
+const CONFIG_ROUTER_PREFIX_SET = new Set<string>(CONFIG_ROUTER_PREFIXES);
+
+/**
+ * Whether the generic `config` router writes `key`, by prefix alone. Registry membership is a
+ * separate check, so a row the registry no longer declares stays deletable under these prefixes.
+ */
+export function isConfigRouterKey(key: string): boolean {
+  return CONFIG_ROUTER_PREFIX_SET.has(key.split('.')[0]);
+}
 
 /** Key format the generic `config` router accepts: `<prefix>.<segment>[.<segment>…]`. */
 export const CONFIG_ROUTER_KEY_REGEX = new RegExp(

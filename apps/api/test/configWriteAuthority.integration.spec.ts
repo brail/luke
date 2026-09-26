@@ -209,4 +209,33 @@ describe('AppConfig write authority', () => {
       expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.version' } })).toBeNull();
     });
   });
+
+  // `config.delete` used to skip the prefix gate every other write runs, so the generic settings
+  // page could remove rows only their own routers write — the section-access defaults, the SMTP
+  // password, the maintenance state — and nothing on that page could put them back.
+  describe('config.delete stays inside the router prefixes', () => {
+    it('refuses a key another router owns, and leaves the row in place', async () => {
+      const caller = await createCallerAs('admin');
+      await testPrisma.appConfig.create({
+        data: { key: 'rbac.sectionAccessDefaults', value: '{}', isEncrypted: false },
+      });
+
+      await expectToThrow(caller.config.delete({ key: 'rbac.sectionAccessDefaults' }), {
+        code: 'BAD_REQUEST',
+      });
+      expect(
+        await testPrisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } }),
+      ).not.toBeNull();
+    });
+
+    it('refuses app.baseUrl, whose default would point every email link at localhost', async () => {
+      const caller = await createCallerAs('admin');
+      await testPrisma.appConfig.create({
+        data: { key: 'app.baseUrl', value: 'https://luke.example.com', isEncrypted: false },
+      });
+
+      await expectToThrow(caller.config.delete({ key: 'app.baseUrl' }), { code: 'CONFLICT' });
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.baseUrl' } })).not.toBeNull();
+    });
+  });
 });

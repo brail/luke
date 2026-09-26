@@ -11,7 +11,7 @@ import {
   ArrowDown,
 } from 'lucide-react';
 
-import { isUndeletableConfigKey } from '@luke/core';
+import { isConfigRouterKey, isUndeletableConfigKey } from '@luke/core';
 
 import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
@@ -48,6 +48,18 @@ export interface Config {
   isEncrypted: boolean;
   category: string;
   updatedAt: string;
+}
+
+/**
+ * Why the row menu cannot delete `key`, shown next to the disabled item; `null` when it can.
+ * `config.delete` refuses a key outside the router prefixes, as `set` and `update` do. A registered
+ * one is managed on its own settings page; an unregistered row there has no page at all, and only
+ * a data step removes it (`db:check-config-rows` lists them).
+ */
+function deleteBlockReason(key: string): string | null {
+  if (!isConfigRouterKey(key)) return 'gestita altrove';
+  if (isUndeletableConfigKey(key)) return 'bloccato';
+  return null;
 }
 
 interface ConfigTableProps {
@@ -222,10 +234,10 @@ export function ConfigTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       onClick={() => onEdit(config)}
-                      disabled={!canUpdate}
+                      disabled={!canUpdate || !isConfigRouterKey(config.key)}
                     >
                       <Edit className="w-4 h-4 mr-2" />
-                      Modifica
+                      {isConfigRouterKey(config.key) ? 'Modifica' : 'Modifica (gestita altrove)'}
                     </DropdownMenuItem>
 
                     {!config.isEncrypted && (
@@ -242,16 +254,16 @@ export function ConfigTable({
 
                     <DropdownMenuItem
                       onClick={() => onDelete(config)}
-                      disabled={!canUpdate || isUndeletableConfigKey(config.key)}
+                      disabled={!canUpdate || deleteBlockReason(config.key) !== null}
                       className={
-                        !canUpdate || isUndeletableConfigKey(config.key)
+                        !canUpdate || deleteBlockReason(config.key) !== null
                           ? 'text-muted-foreground'
                           : 'text-destructive'
                       }
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {isUndeletableConfigKey(config.key)
-                        ? 'Elimina (bloccato)'
+                      {deleteBlockReason(config.key)
+                        ? `Elimina (${deleteBlockReason(config.key)})`
                         : 'Elimina'}
                     </DropdownMenuItem>
                   </DropdownMenuContent>

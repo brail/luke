@@ -23,6 +23,7 @@ import {
   CRITICAL_CONFIG_KEYS,
   UNDELETABLE_CONFIG_KEYS,
   isAppConfigKey,
+  isConfigRouterKey,
   isUndeletableConfigKey,
   validateConfigValue,
 } from '../config.js';
@@ -226,6 +227,12 @@ describe('the generic config router has one set of key rules', () => {
     for (const key of CRITICAL_CONFIG_KEYS) {
       expect(isUndeletableConfigKey(key), key).toBe(true);
     }
+  });
+
+  it('gates deletion by prefix alone, so an orphaned row under the prefixes stays removable', () => {
+    expect(isConfigRouterKey('app.version')).toBe(true);
+    expect(isConfigRouterKey('rbac.sectionAccessDefaults')).toBe(false);
+    expect(isConfigRouterKey('maintenance.mode.state')).toBe(false);
   });
 
   it('protects app.baseUrl, whose default would silently point every email link at localhost', () => {

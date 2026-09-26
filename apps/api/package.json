@@ -36,7 +36,8 @@
     "db:fix-allday-dates": "TZ=Europe/Rome tsx --env-file=.env scripts/fix-allday-event-dates.ts",
     "db:migrate-rbac-section-key": "tsx --env-file=.env scripts/migrate-rbac-controllo-to-control.ts",
     "db:migrate-storage": "tsx --env-file=.env scripts/migrate-storage.ts",
-    "db:backfill-asset-derivatives": "tsx --env-file=.env scripts/backfill-asset-derivatives.ts"
+    "db:backfill-asset-derivatives": "tsx --env-file=.env scripts/backfill-asset-derivatives.ts",
+    "db:check-config-rows": "tsx --env-file=.env scripts/check-config-rows.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1118.0",
