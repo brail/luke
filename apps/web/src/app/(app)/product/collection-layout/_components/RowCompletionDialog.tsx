@@ -34,7 +34,7 @@ type CompletionNoteForm = z.infer<typeof CompletionNoteSchema>;
 interface Props {
   open: boolean;
   mode: 'complete' | 'reopen';
-  /** Fasi che la riga non ha attraversato — vuoto quando è già all'ultima milestone pianificata. */
+  /** Phases the row did not go through — empty when it is already at its last planned milestone. */
   missingPhases: { value: string; label: string }[];
   onClose: () => void;
   onConfirm: (note: string) => void;
@@ -42,16 +42,16 @@ interface Props {
 }
 
 /**
- * Conferma motivata per la conclusione e la riapertura di una riga. Presentazionale: restituisce la
- * motivazione al chiamante e non conosce la mutation, come `ChangePhaseDialog`.
+ * Reasoned confirmation for completing and reopening a row. Presentational: it returns the reason
+ * to the caller and knows nothing of the mutation, like `ChangePhaseDialog`.
  *
- * La motivazione è obbligatoria in entrambi i versi — la conclusione è l'unico momento in cui
- * l'esito viene fissato, e riaprire annulla un esito già registrato: senza un perché l'audit log
- * direbbe solo che è successo. Stesso schema del dialog "Annulla evento" del calendario.
+ * The reason is mandatory in both directions — completion is the only moment the outcome is
+ * fixed, and reopening cancels an outcome already recorded: without a why, the audit log would
+ * only say that it happened. Same pattern as the calendar "Annulla evento" dialog.
  *
- * Con `missingPhases` non vuoto la conferma diventa una forzatura dichiarata: concludere non è
- * vietato (sarebbe aggirabile saltando all'ultima fase), ma l'utente vede quali fasi sta saltando e
- * il server le registra nell'audit log.
+ * With a non-empty `missingPhases` the confirmation becomes a declared override: completing is not
+ * forbidden (it could be bypassed by jumping to the last phase), but the user sees which phases
+ * they are skipping and the server records them in the audit log.
  */
 export function RowCompletionDialog({ open, mode, missingPhases, onClose, onConfirm, isPending }: Props) {
   const form = useForm<CompletionNoteForm>({

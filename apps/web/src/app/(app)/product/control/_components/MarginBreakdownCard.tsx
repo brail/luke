@@ -16,10 +16,10 @@ import type { CollectionStatsCardProps } from './CollectionStatistics';
 const MISSING_COLOR = 'hsl(var(--muted-foreground) / 0.35)';
 
 /**
- * Requisito 2: quante righe hanno margine in target (verde), vicino al target
- * (giallo), sotto target (rosso), e quante non hanno ancora dati sufficienti
- * per calcolarlo. Riusa computeRowMargin/computeMarginStatus verbatim — nessuna
- * nuova soglia, restano quelle di PricingParameterSet.optimalMargin per riga.
+ * Requirement 2: how many rows have a margin on target (green), near the target
+ * (yellow), below target (red), and how many do not have enough data yet
+ * to compute it. Reuses computeRowMargin/computeMarginStatus verbatim — no
+ * new threshold, they stay those of PricingParameterSet.optimalMargin per row.
  */
 export function MarginBreakdownCard({ rows, parameterSets }: CollectionStatsCardProps) {
   const { segments, total } = useMemo(() => {

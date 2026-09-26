@@ -64,10 +64,10 @@ function slugify(value: string): string {
 }
 
 /**
- * Requisito 1: distribuzione righe per fascia di prezzo retail, con evidenza del
- * posizionamento (stacked per pricePositioning) e conteggio righe senza prezzo.
- * Bin dinamici calcolati dai dati effettivi — nessuna soglia hardcoded, si adatta
- * a qualunque brand/valuta.
+ * Requirement 1: row distribution per retail price band, highlighting the
+ * positioning (stacked by pricePositioning) and counting rows without a price.
+ * Dynamic bins computed from the actual data — no hardcoded threshold, it adapts
+ * to any brand/currency.
  */
 export function RetailPriceDistributionCard({ rows, parameterSets }: CollectionStatsCardProps) {
   const { data: positioningCatalog = [] } = trpc.collectionCatalog.list.useQuery(

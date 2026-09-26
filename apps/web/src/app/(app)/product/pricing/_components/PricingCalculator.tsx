@@ -73,7 +73,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
     onError: err => toast.error(`Errore calcolo: ${err.message}`),
   });
 
-  // Quando cambia il set parametri attivo, azzera il risultato
+  // When the active parameter set changes, clear the result
   useEffect(() => {
     setResult(null);
   }, [parameterSet?.id]);
@@ -134,7 +134,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
       ? ((result as Record<string, unknown>).companyMargin as number)
       : null;
 
-  // Aggiorna il valore calcolato nel campo corrispondente
+  // Update the computed value in the matching field
   if (result && !calcMutation.isPending) {
     if (
       result.mode === 'forward' &&
@@ -154,9 +154,8 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
 
   return (
     <div className="space-y-4">
-      {/* Griglia input */}
+      {/* Input grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Prezzo acquisto */}
         <div className="space-y-2">
           <Label htmlFor="purchase-price">
             Prezzo acquisto{' '}
@@ -176,7 +175,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
               value={purchasePrice}
               onChange={e => {
                 setPurchasePrice(e.target.value);
-                // Se c'è già un risultato e il retail non è bloccato, pulisce per ripartire puliti
+                // If there is already a result and retail is not locked, clear it to start fresh
                 if (result && !retailLocked) setRetailPrice('');
                 setResult(null);
               }}
@@ -205,7 +204,6 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
           </div>
         </div>
 
-        {/* Prezzo retail */}
         <div className="space-y-2">
           <Label htmlFor="retail-price">
             Prezzo retail{' '}
@@ -225,7 +223,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
               value={retailPrice}
               onChange={e => {
                 setRetailPrice(e.target.value);
-                // Se c'è già un risultato e il purchase non è bloccato, pulisce per ripartire puliti
+                // If there is already a result and purchase is not locked, clear it to start fresh
                 if (result && !purchaseLocked) setPurchasePrice('');
                 setResult(null);
               }}
@@ -255,7 +253,6 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
         </div>
       </div>
 
-      {/* Bottone calcola */}
       <Button
         onClick={handleCalculate}
         disabled={calcMutation.isPending || !parameterSet}
@@ -264,7 +261,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
         {calcMutation.isPending ? 'Calcolo in corso...' : buttonLabel()}
       </Button>
 
-      {/* Indicatore margine */}
+      {/* Margin indicator */}
       {companyMargin !== null && parameterSet && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-sm">
@@ -287,7 +284,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
         </div>
       )}
 
-      {/* Card risultati */}
+      {/* Results card */}
       {result && (
         <div className="border rounded-md">
           <button

@@ -31,12 +31,12 @@ const chartConfig: ChartConfig = {
 };
 
 /**
- * Requisito 3: efficienza teorica (qtyForecast / skuForecast) per riga, aggregata
- * per fornitore. Aggregazione come rapporto di somme (Σqty / Σsku), non media dei
- * rapporti — evita che poche righe a bassissimo SKU distorcano la media (stile
- * Simpson's paradox). Bonus: margine medio per fornitore accanto, per confronto
- * efficienza↔margine. Righe senza qtyForecast o skuForecast sono escluse dal
- * rapporto (contate altrove, vedi DataQualityScoreboard).
+ * Requirement 3: theoretical efficiency (qtyForecast / skuForecast) per row, aggregated
+ * per vendor. Aggregated as a ratio of sums (Σqty / Σsku), not a mean of ratios —
+ * it keeps a few rows with a very low SKU from skewing the mean (Simpson's paradox
+ * style). Bonus: average margin per vendor alongside, to compare
+ * efficiency↔margin. Rows without qtyForecast or skuForecast are left out of the
+ * ratio (counted elsewhere, see DataQualityScoreboard).
  */
 export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCardProps) {
   const referenceOptimalMargin = getReferenceOptimalMargin(parameterSets);

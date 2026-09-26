@@ -221,9 +221,9 @@ export function CollectionRowDrawer({
     onError: e => toast.error(getTrpcErrorMessage(e, { default: "Errore durante l'esportazione PDF" })),
   });
 
-  // ─── Quotation handlers — tutti locali, nessuna mutation di rete: bufferizzano su `quotations`,
-  // il commit reale avviene al Salva (submitRow → onSubmit → collectionLayout.rows.update/create,
-  // che sincronizza le quotazioni nella stessa transazione della riga) ─────────────────
+  // ─── Quotation handlers — all local, no network mutation: they buffer into `quotations`,
+  // the real commit happens on Save (submitRow → onSubmit → collectionLayout.rows.update/create,
+  // which syncs the quotations in the same transaction as the row) ─────────────────
   const handleAddQuotation = () => {
     if (!row?.id) return;
     setQuotations(prev => [...prev, {

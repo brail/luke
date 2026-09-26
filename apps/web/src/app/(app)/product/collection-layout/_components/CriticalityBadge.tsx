@@ -16,10 +16,10 @@ interface Props {
   className?: string;
 }
 
-/** Payload del motore di alert, derivato dal server invece che riscritto a mano: se un campo
- * cambia nome lato API il build cade qui, dove va corretto, invece di silenziosamente al runtime.
- * `criticalityForLayout` ritorna la stessa union arricchita di `productCategory`, quindi entrambe
- * le strategie di fetch (per riga e batch) soddisfano questi tipi. */
+/** Alert engine payload, derived from the server instead of rewritten by hand: if a field is
+ * renamed API-side the build breaks here, where it needs fixing, instead of silently at runtime.
+ * `criticalityForLayout` returns the same union enriched with `productCategory`, so both fetch
+ * strategies (per row and batch) satisfy these types. */
 type RowCriticality = NonNullable<RouterOutputs['phaseAlert']['criticalityForRow']>;
 type CriticalityInfo = Extract<RowCriticality, { state: 'active' }>;
 type CompletionInfo = Extract<RowCriticality, { state: 'completed' }>;

@@ -21,8 +21,8 @@ import {
 import type { CollectionStatsCardProps, CollectionStatsRow } from './CollectionStatistics';
 
 /**
- * Bonus: margine medio per fascia di posizionamento — evidenzia mismatch
- * strategici (es. righe "LUXURY" con margine sotto target, colorato in rosso).
+ * Bonus: average margin per positioning band — highlights strategic
+ * mismatches (e.g. "LUXURY" rows with a margin below target, coloured red).
  */
 export function PositioningMarginCrosstab({ rows, parameterSets }: CollectionStatsCardProps) {
   const { data: positioningCatalog = [] } = trpc.collectionCatalog.list.useQuery(

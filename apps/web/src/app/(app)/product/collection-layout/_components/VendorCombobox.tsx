@@ -74,7 +74,6 @@ export function VendorCombobox({ value, onChange, disabled }: VendorComboboxProp
               {isLoading ? 'Caricamento…' : 'Nessun fornitore trovato.'}
             </CommandEmpty>
             <CommandGroup>
-              {/* Opzione "nessuno" */}
               <CommandItem
                 value="__none__"
                 onSelect={() => {

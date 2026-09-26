@@ -60,14 +60,14 @@ export function EmptyParameterState({
   const previousSets = previousQuery.data?.sets ?? [];
 
   const handleCopyAndCreate = () => {
-    // Crea tutte le varianti copiando dalla stagione precedente
+    // Create every variant by copying from the previous season
     for (const s of previousSets) {
       onCreateSet({
         name: s.name,
         countryCode: s.countryCode,
-        // I set della stagione precedente sono già passati per PricingParameterSetInputSchema
-        // alla creazione — la valuta è garantita valida a runtime, TS non lo sa perché la
-        // colonna DB resta `String` generico.
+        // The previous season sets already went through PricingParameterSetInputSchema
+        // at creation — the currency is guaranteed valid at runtime; TS does not know it because
+        // the DB column stays a generic `String`.
         purchaseCurrency: s.purchaseCurrency as PricingCurrency,
         sellingCurrency: s.sellingCurrency as PricingCurrency,
         qualityControlPercent: s.qualityControlPercent,
@@ -123,7 +123,7 @@ export function EmptyParameterState({
         </PermissionButton>
       </div>
 
-      {/* Dialog conferma copia */}
+      {/* Copy confirmation dialog */}
       <Dialog open={isCopyPreviewOpen} onOpenChange={setIsCopyPreviewOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -165,7 +165,7 @@ export function EmptyParameterState({
         </DialogContent>
       </Dialog>
 
-      {/* Dialog crea da zero */}
+      {/* Create-from-scratch dialog */}
       <ParameterSetDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}

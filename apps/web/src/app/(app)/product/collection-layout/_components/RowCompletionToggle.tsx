@@ -21,23 +21,23 @@ interface Props {
 }
 
 /**
- * "Concludi riga" / "Riapri" nella banda Pianificazione del drawer. La conclusione è uno stato
- * esplicito che il motore di alert non può dedurre: una riga ferma sull'ultima fase l'ha
- * *raggiunta*, non finita. Da conclusa mostra l'esito congelato invece del countdown e smette di
- * generare notifiche di ritardo.
+ * "Concludi riga" / "Riapri" in the drawer Planning band. Completion is an explicit state the
+ * alert engine cannot infer: a row stopped at the last phase has *reached* it, not finished.
+ * Once completed it shows the frozen outcome instead of the countdown and stops generating delay
+ * notifications.
  *
- * Entrambe le direzioni passano da `RowCompletionDialog`, che pretende una motivazione: scrivono
- * subito, fuori dal Salva bufferizzato del drawer, e sono le uniche azioni che fissano o annullano
- * un esito. Prima di concludere si interroga `completionPreview` per sapere quali fasi la riga sta
- * saltando — l'elenco alimenta l'avviso e, se si procede, `force`.
+ * Both directions go through `RowCompletionDialog`, which demands a reason: they write
+ * immediately, outside the drawer's buffered Save, and they are the only actions that fix or
+ * cancel an outcome. Before completing, `completionPreview` is queried to learn which phases the
+ * row is skipping — the list feeds the warning and, if the user proceeds, `force`.
  */
 export function RowCompletionToggle({ rowId, completedAt, canUpdate, onChanged }: Props) {
   const toast = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const isCompleted = completedAt !== null;
 
-  // Solo in conclusione, e solo a dialog aperto: riaprire non salta nulla, e una riga aperta nel
-  // drawer non deve pagare una query che serve solo a chi preme il bottone.
+  // Only when completing, and only with the dialog open: reopening skips nothing, and a row open
+  // in the drawer must not pay for a query that only serves whoever presses the button.
   const { data: preview } = trpc.phaseAlert.completionPreview.useQuery(
     { rowId },
     { enabled: dialogOpen && !isCompleted, staleTime: 60 * 1000 }

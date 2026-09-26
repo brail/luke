@@ -122,7 +122,6 @@ export function ParameterSetPanel({
 
   return (
     <div className="space-y-3">
-      {/* Pulsante nuova variante */}
       <div className="flex justify-end">
         <PermissionButton
           hasPermission={canUpdate}
@@ -137,7 +136,7 @@ export function ParameterSetPanel({
         </PermissionButton>
       </div>
 
-      {/* Lista set */}
+      {/* Set list */}
       <div className="space-y-2">
         {sets.map(set => {
           const isSelected = set.id === selectedSetId;
@@ -240,7 +239,7 @@ export function ParameterSetPanel({
                 </button>
               </div>
 
-              {/* Dettagli espandibili */}
+              {/* Expandable details */}
               {isExpanded && (
                 <div className="border-t px-2 pb-2">
                   <Table>
@@ -267,7 +266,7 @@ export function ParameterSetPanel({
         })}
       </div>
 
-      {/* Dialog creazione */}
+      {/* Create dialog */}
       <ParameterSetDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
@@ -279,7 +278,7 @@ export function ParameterSetPanel({
         isLoading={isLoading}
       />
 
-      {/* Dialog modifica */}
+      {/* Edit dialog */}
       {editingSet && (
         <ParameterSetDialog
           open={!!editingSet}
@@ -302,7 +301,7 @@ export function ParameterSetPanel({
           isLoading={isLoading}
         />
       )}
-      {/* Dialog conferma eliminazione */}
+      {/* Delete confirmation dialog */}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={open => {

@@ -28,10 +28,10 @@ export interface CollectionStatsCardProps {
 }
 
 /**
- * Vista "pivot" del Collection Layout corrente: distribuzione prezzi retail,
- * scomposizione margine, efficienza/margine per fornitore, qualità dato,
- * crosstab positioning↔margine. Scoped al brand+season attivi, stessa fonte
- * dati della tabella principale (`collectionLayout.get`).
+ * "Pivot" view of the current Collection Layout: retail price distribution,
+ * margin breakdown, efficiency/margin per vendor, data quality,
+ * positioning↔margin crosstab. Scoped to the active brand+season, same data
+ * source as the main table (`collectionLayout.get`).
  */
 export function CollectionStatistics() {
   const { brand, season } = useAppContext();

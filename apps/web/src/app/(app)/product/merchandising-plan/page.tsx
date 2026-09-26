@@ -143,7 +143,7 @@ export default function MerchandisingPlanPage() {
         </Card>
       ) : null}
 
-      {/* Form aggiunta / modifica riga */}
+      {/* Add / edit row form */}
       {plan && (
         <MerchandisingRowDialog
           open={!!rowDialog}
@@ -172,7 +172,7 @@ export default function MerchandisingPlanPage() {
         />
       )}
 
-      {/* Specsheet modal — aperto dal click su riga */}
+      {/* Specsheet modal — opened by clicking a row */}
       {specsheetRow && (
         <SpecsheetModal
           open={!!specsheetRow}

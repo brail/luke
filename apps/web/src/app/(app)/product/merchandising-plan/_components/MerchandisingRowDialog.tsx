@@ -48,7 +48,7 @@ import { trpc } from '../../../../../lib/trpc';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
-// Schema per il form (omit planId — viene passato dall'esterno)
+// Form schema (omits planId — it is passed in from outside)
 const FormSchema = MerchandisingPlanRowInputSchema.omit({ planId: true }).extend({
   pricingParameterSetId: z.string().optional().nullable(),
   assignedUserId: z.string().optional().nullable(),
@@ -203,7 +203,6 @@ export function MerchandisingRowDialog({
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-              {/* Identificazione */}
               <div className="grid grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
@@ -498,7 +497,6 @@ export function MerchandisingRowDialog({
                 />
               </div>
 
-              {/* Note generali */}
               <FormField
                 control={form.control}
                 name="generalNotes"

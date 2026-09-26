@@ -73,7 +73,7 @@ export default function CollectionLayoutPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCreateRevision, setShowCreateRevision] = useState(false);
 
-  // Chiudi fullscreen con Escape
+  // Close fullscreen with Escape
   useEffect(() => {
     if (!isFullscreen) return;
     const handler = (e: KeyboardEvent) => {
@@ -268,12 +268,12 @@ export default function CollectionLayoutPage() {
     [openRowDrawer]
   );
 
-  /** Riga in modifica, risolta a ogni render dalla query live invece che da uno snapshot in state:
-   * la conclusione della riga scrive subito e invalida il layout mentre il drawer è aperto.
-   * Deliberatamente non memoizzata — una dependency array dovrebbe includere `layout` intero
-   * (troppo profondo per TS, vedi TS2589 nel deep-link sotto), e una chiave più stretta come
-   * `layout.updatedAt` non cambierebbe alla modifica di una riga, restituendo un dato vecchio.
-   * La scansione è lineare su qualche centinaio di righe, in una pagina che ne renderizza altrettante. */
+  /** Row being edited, resolved on every render from the live query instead of a snapshot in state:
+   * completing the row writes immediately and invalidates the layout while the drawer is open.
+   * Deliberately not memoized — a dependency array would have to include the whole `layout`
+   * (too deep for TS, see TS2589 in the deep link below), and a narrower key such as
+   * `layout.updatedAt` would not change when a row is edited, returning stale data.
+   * The scan is linear over a few hundred rows, on a page that renders as many. */
   const editingRow: CollectionRowData | undefined = rowDrawer?.rowId
     ? (layout?.groups as { rows: CollectionRowData[] }[] | undefined)
         ?.flatMap(g => g.rows)
@@ -429,7 +429,7 @@ export default function CollectionLayoutPage() {
         </>
       )}
 
-      {/* Fullscreen overlay — renderizzato nel body per uscire dallo stacking context del SidebarProvider */}
+      {/* Fullscreen overlay — rendered in the body to escape the SidebarProvider stacking context */}
       {isFullscreen &&
         layout &&
         createPortal(

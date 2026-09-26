@@ -116,7 +116,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
     defaultValues: EMPTY_HEADER,
   });
 
-  // Components state (flat list, gruppati per section nel render)
+  // Components state (flat list, grouped by section at render time)
   const [components, setComponents] = useState<EditableComponent[]>([]);
 
   // Sections collapsed state
@@ -145,7 +145,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
         }))
       );
     } else if (!isLoading) {
-      // Specsheet non ancora esistente
+      // Specsheet does not exist yet
       form.reset(EMPTY_HEADER);
       setComponents([]);
     }
@@ -277,7 +277,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden p-0"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
-        {/* Header fisso */}
+        {/* Fixed header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="text-base">
             <span className="font-mono">{row.articleCode}</span>
@@ -298,9 +298,9 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
           {/* flex, not the usual grid: this DialogContent overrides its own layout with
               `flex flex-col overflow-hidden p-0`, and the form has to stay transparent to it. */}
           <form onSubmit={form.handleSubmit(handleSave)} className="flex min-h-0 flex-1 flex-col">
-        {/* Corpo scrollabile */}
+        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
-          {/* Footer info + note generali */}
+          {/* Footer info + general notes */}
           <div className="px-6 py-4 border-b grid grid-cols-3 gap-3">
             <FormField
               control={form.control}
@@ -345,9 +345,9 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
             />
           </div>
 
-          {/* Colonne: Galleria | BOM */}
+          {/* Columns: Gallery | BOM */}
           <div className="grid grid-cols-[280px_1fr] divide-x">
-            {/* Galleria immagini */}
+            {/* Image gallery */}
             <div className="p-4 space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Immagini
@@ -420,7 +420,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
               )}
             </div>
 
-            {/* BOM per sezione */}
+            {/* BOM by section */}
             <div className="p-4 space-y-2 overflow-y-auto">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 BOM
@@ -565,7 +565,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
           </div>
         </div>
 
-        {/* Footer fisso */}
+        {/* Fixed footer */}
         <DialogFooter className="px-6 py-4 border-t shrink-0">
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Annulla

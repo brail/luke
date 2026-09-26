@@ -89,7 +89,7 @@ export function ParameterSetDialog({
     }
   }, [open, initialData, form]);
 
-  // Calcola companyMultiplier live
+  // Compute companyMultiplier live
   const optimalMargin = form.watch('optimalMargin');
   const companyMultiplier =
     optimalMargin !== undefined && optimalMargin > 0 && optimalMargin < 100
@@ -111,7 +111,7 @@ export function ParameterSetDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
-            {/* Nome variante + Country Code */}
+            {/* Variant name + Country Code */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -173,7 +173,7 @@ export function ParameterSetDialog({
               </div>
             )}
 
-            {/* Valute */}
+            {/* Currencies */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -426,7 +426,7 @@ export function ParameterSetDialog({
                   )}
                 />
 
-                {/* Moltiplicatore aziendale calcolato (sola lettura) */}
+                {/* Computed company multiplier (read-only) */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
                     Moltiplicatore Aziendale{' '}

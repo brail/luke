@@ -32,7 +32,7 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
 
   const totalSku = allRows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
 
-  // ── Per Fase ──────────────────────────────────────────────────
+  // ── By phase ──────────────────────────────────────────────────
   const progressStats = [
     ...phases.map(phase => {
       const rows = allRows.filter(r => r.phaseId === phase.id);
@@ -50,7 +50,7 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
     })(),
   ].filter(s => s.count > 0);
 
-  // ── Per Fornitore ─────────────────────────────────────────────────
+  // ── By vendor ─────────────────────────────────────────────────────
   const vendorStats = groupRowsByVendor(allRows, '—')
     .map(v => ({
       name: v.name,
@@ -62,7 +62,6 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
 
   return (
     <div className="grid grid-cols-2 gap-4">
-      {/* Per Fase */}
       <Card>
         <CardHeader size="compact">
           <CardTitle size="compact">Per Fase</CardTitle>
@@ -85,7 +84,6 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
         </CardContent>
       </Card>
 
-      {/* Per Fornitore */}
       <Card>
         <CardHeader size="compact">
           <CardTitle size="compact">Per Fornitore</CardTitle>

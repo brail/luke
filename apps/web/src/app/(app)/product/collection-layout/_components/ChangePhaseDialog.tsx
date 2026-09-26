@@ -23,10 +23,10 @@ interface Props {
 }
 
 /**
- * Cambio fase informato per una singola riga — picker puramente locale, nessuna mutation di rete:
- * riporta la selezione (e la nota facoltativa) al drawer via `onChanged`, che la bufferizza nel
- * form della riga. Il commit reale avviene solo al Salva del drawer (stessa transazione della
- * riga), la nota finisce nei metadata dell'audit log consolidato solo se la fase è davvero cambiata.
+ * Informed phase change for a single row — a purely local picker, no network mutation: it hands
+ * the selection (and the optional note) back to the drawer via `onChanged`, which buffers it in the
+ * row form. The real commit happens only on the drawer Save (same transaction as the row); the
+ * note ends up in the consolidated audit log metadata only if the phase really changed.
  */
 export function ChangePhaseDialog({ open, onClose, onChanged, currentPhaseId }: Props) {
   const { phases } = usePhaseCatalog();

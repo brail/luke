@@ -15,8 +15,8 @@ import { computeRowMargin, computeRowRetailPrice } from '../../_shared/pricingCa
 import type { CollectionStatsCardProps } from './CollectionStatistics';
 
 /**
- * Bonus: % righe a cui manca ciascun campo chiave, ordinato dal più incompleto —
- * pensato per essere azionabile prima di una milestone ("cosa manca da compilare").
+ * Bonus: % of rows missing each key field, sorted from the most incomplete —
+ * meant to be actionable before a milestone ("what is left to fill in").
  */
 export function DataQualityScoreboard({ rows, parameterSets }: CollectionStatsCardProps) {
   const fields = useMemo(() => {

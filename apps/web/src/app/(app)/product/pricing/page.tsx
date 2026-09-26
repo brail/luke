@@ -31,12 +31,12 @@ export default function PricingPage() {
 
   const utils = trpc.useUtils();
 
-  // Quando brand/season cambia, resetta la selezione
+  // When brand/season changes, reset the selection
   useEffect(() => {
     setSelectedSetId(null);
   }, [brand?.id, season?.id]);
 
-  // Quando arrivano nuovi set, seleziona il default
+  // When new sets arrive, select the default
   useEffect(() => {
     if (parameterSets.length > 0 && !selectedSetId) {
       const defaultSet =
@@ -156,7 +156,7 @@ export default function PricingPage() {
         </SectionCard>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Parametri (colonna principale) */}
+          {/* Parameters (main column) */}
           <div className="lg:col-span-3 space-y-6">
             <SectionCard
               title="Calcolatrice"

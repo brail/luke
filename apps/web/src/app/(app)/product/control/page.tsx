@@ -22,9 +22,9 @@ import { useControlLayout } from './_hooks/useControlLayout';
 import type { ReactNode } from 'react';
 
 /**
- * Controllo: pianificazione fasi (Saturazione/Strozzatura/Stagnazione) e statistiche
- * collezione riunite in un'unica pagina, separate da uno switch di primo livello —
- * sono due letture diverse dei dati (salute del processo vs. contenuto della collezione).
+ * Control: phase planning (Saturazione/Strozzatura/Stagnazione) and collection statistics
+ * brought together on one page, separated by a top-level switch — they are two different
+ * readings of the data (process health vs. collection content).
  */
 export default function ControlloPage() {
   return (
@@ -106,9 +106,9 @@ function QueryBoundary({
 }
 
 /**
- * Dashboard Termografica di Saturazione.
- * Conta le righe per banda di criticità, raggruppate per brand × categoria prodotto,
- * per la stagione corrente. Nessuna libreria di charting: griglia CSS/Tailwind color-coded.
+ * Saturation heatmap dashboard.
+ * Counts rows per criticality band, grouped by brand × product category,
+ * for the current season. No charting library: a colour-coded CSS/Tailwind grid.
  */
 function SaturationTab() {
   const { season, isLoading: contextLoading } = useAppContext();
@@ -225,9 +225,9 @@ function SaturationTab() {
 }
 
 /**
- * Indice di Strozzatura.
- * Conta le righe per banda di criticità, raggruppate per evento/milestone attivo, per il brand
- * e la stagione correnti — identifica quale milestone specifica sta trattenendo più righe.
+ * Bottleneck index.
+ * Counts rows per criticality band, grouped by active event/milestone, for the current brand
+ * and season — it identifies which specific milestone is holding back the most rows.
  */
 function BottleneckTab() {
   const { layout, enabled, contextLoading } = useControlLayout();
@@ -291,10 +291,10 @@ function BottleneckTab() {
 }
 
 /**
- * Monitoraggio Predittivo di Stagnazione.
- * Tempo medio/mediano per fase, dallo storico CollectionRowPhaseHistory — indipendente
- * dal motore alert, identifica righe che stagnano prima ancora di superare la soglia
- * di criticità assoluta.
+ * Predictive stagnation monitoring.
+ * Mean/median time per phase, from the CollectionRowPhaseHistory log — independent of
+ * the alert engine, it identifies rows that stagnate before they even cross the absolute
+ * criticality threshold.
  */
 function StagnationTab() {
   const { layout, enabled, contextLoading } = useControlLayout();

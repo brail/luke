@@ -2,11 +2,11 @@
 
 import type { RouterOutputs } from '@luke/api';
 
-/** Set di parametri pricing come restituito dal router. */
+/** Pricing parameter set as returned by the router. */
 export type PricingParameterSet =
   RouterOutputs['pricing']['parameterSets']['list'][number];
 
-/** Input per computeRowMargin — compatibile con CollectionRow dopo la migrazione quotazioni. */
+/** Input for computeRowMargin — compatible with CollectionRow after the quotations migration. */
 export interface MarginComputeInput {
   quotations?: Array<{
     pricingParameterSetId?: string | null;
@@ -105,14 +105,14 @@ export function computeWeightedMargin(
   return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
 }
 
-/** Classe Tailwind testo per stato margine — stesso mapping usato in CollectionGroupSection. */
+/** Tailwind text class for the margin status — the same mapping used in CollectionGroupSection. */
 export const MARGIN_STATUS_TEXT_CLASS: Record<'green' | 'yellow' | 'red', string> = {
   green: 'text-green-700 dark:text-green-400',
   yellow: 'text-amber-600 dark:text-amber-400',
   red: 'text-destructive',
 };
 
-/** Colore per fill dei grafici (recharts) — stessi hue di MARGIN_STATUS_TEXT_CLASS via CSS var. */
+/** Chart fill colour (recharts) — the same hues as MARGIN_STATUS_TEXT_CLASS via CSS var. */
 export const MARGIN_STATUS_CHART_COLOR: Record<'green' | 'yellow' | 'red', string> = {
   green: 'hsl(var(--status-good))',
   yellow: 'hsl(var(--status-warning))',
@@ -125,7 +125,7 @@ export const MARGIN_STATUS_LABEL: Record<'green' | 'yellow' | 'red', string> = {
   red: 'Sotto target',
 };
 
-/** Input per computeRowRetailPrice — sottoinsieme di MarginComputeInput['quotations']. */
+/** Input for computeRowRetailPrice — a subset of MarginComputeInput['quotations']. */
 export interface RetailPriceComputeInput {
   quotations?: Array<{
     pricingParameterSetId?: string | null;

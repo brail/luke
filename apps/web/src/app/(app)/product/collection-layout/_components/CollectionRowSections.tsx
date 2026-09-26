@@ -195,7 +195,7 @@ function CatalogSelectField({ control, name, label, options, canUpdate, nullable
   );
 }
 
-// ─── Section: Identificazione ─────────────────────────────────────────────────
+// ─── Section: Identification ──────────────────────────────────────────────────
 
 interface IdentificationSectionProps {
   control: Control<CollectionLayoutRowInput>;
@@ -237,10 +237,9 @@ export function IdentificationSection({
     <div className="space-y-4">
       <SectionHeader title="Identificazione" />
 
-      {/* gruppo */}
       <GroupSelectField control={control} canUpdate={canUpdate} groups={groups} />
 
-      {/* gender | categoria */}
+      {/* gender | category */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -287,7 +286,7 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* linea | articolo */}
+      {/* line | article */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -375,7 +374,7 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* posizionamento prezzo */}
+      {/* price positioning */}
       <div className="grid grid-cols-2 gap-4">
         <CatalogSelectField
           control={control}
@@ -402,9 +401,9 @@ interface PlanningSectionProps {
   onRequestChangePhase?: () => void;
   /** Present only in edit mode — enables the criticality badge next to the phase field. */
   rowId?: string;
-  /** Valorizzato = riga conclusa: fase e gruppo si bloccano finché non viene riaperta. */
+  /** Set = completed row: phase and group are locked until it is reopened. */
   completedAt?: Date | string | null;
-  /** Obbligatoria: il toggle compare solo in edit mode, dove il drawer la passa sempre. */
+  /** Mandatory: the toggle appears only in edit mode, where the drawer always passes it. */
   onCompletionChanged: () => void;
 }
 
@@ -453,7 +452,7 @@ export function PlanningSection({
           isCompleted={isCompleted}
         />
 
-        {/* gruppo di pianificazione */}
+        {/* planning group */}
         <PlanningGroupSelectField
           control={control}
           canUpdate={canUpdate}
@@ -468,11 +467,11 @@ export function PlanningSection({
 }
 
 /**
- * Bottone di modifica di un campo che una riga conclusa congela. `PermissionButton` gestisce il
- * gate generico "disabilitato + tooltip che spiega perché": qui la ragione è di stato, non di
- * permesso, e il suo prop `tooltip` è una stringa libera che lo dice ("riaprila per…").
- * `disabled` resta separato per il caso senza permesso di scrittura, dove il blocco per stato non
- * c'entra e non va spiegato.
+ * Edit button for a field that a completed row freezes. `PermissionButton` handles the generic
+ * "disabled + tooltip explaining why" gate: here the reason is state, not permission, and its
+ * `tooltip` prop is a free string that says so ("riaprila per…").
+ * `disabled` stays separate for the case with no write permission, where the state lock does not
+ * apply and needs no explaining.
  */
 function LockableChangeButton({
   label,
@@ -503,7 +502,7 @@ function LockableChangeButton({
   );
 }
 
-// ─── Section: Fase ────────────────────────────────────────────────────────────
+// ─── Section: Phase ───────────────────────────────────────────────────────────
 
 interface PhaseSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
@@ -516,7 +515,7 @@ interface PhaseSelectFieldProps {
   onRequestChange?: () => void;
   /** Present only in edit mode — enables the "Situazione" criticality block under the field. */
   rowId?: string;
-  /** Riga conclusa: il cambio fase è bloccato finché non viene riaperta (stesso guard lato server). */
+  /** Completed row: the phase change is locked until it is reopened (same guard server-side). */
   isCompleted?: boolean;
 }
 
@@ -578,7 +577,7 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, is
   );
 }
 
-// ─── Section: Fornitore ───────────────────────────────────────────────────────
+// ─── Section: Vendor ──────────────────────────────────────────────────────────
 
 interface VendorSectionProps {
   control: Control<CollectionLayoutRowInput>;
@@ -683,7 +682,7 @@ export function PictureSidePanel({
   );
 }
 
-// ─── Section: Gruppo ──────────────────────────────────────────────────────────
+// ─── Section: Group ───────────────────────────────────────────────────────────
 
 interface GroupSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
@@ -719,7 +718,7 @@ export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFiel
   );
 }
 
-// ─── Section: Gruppo di pianificazione ────────────────────────────────────────
+// ─── Section: Planning group ──────────────────────────────────────────────────
 
 interface PlanningGroupOption { id: string; name: string; isDefault: boolean; }
 
@@ -732,7 +731,7 @@ interface PlanningGroupSelectFieldProps {
    * side effect of an unrelated field save. */
   mode: 'create' | 'edit';
   onRequestChange?: () => void;
-  /** Riga conclusa: il cambio gruppo è bloccato finché non viene riaperta (stesso guard lato server). */
+  /** Completed row: the group change is locked until it is reopened (same guard server-side). */
   isCompleted?: boolean;
 }
 
@@ -905,7 +904,7 @@ export function PricingFooterSection({
     <div className="space-y-4">
       <SectionHeader title="Pricing" />
 
-      {/* Impianti € + note impianti */}
+      {/* Tooling cost € + tooling notes */}
       <div className="flex items-start gap-4">
         <FormField
           control={control}
