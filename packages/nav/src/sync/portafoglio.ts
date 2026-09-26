@@ -35,7 +35,7 @@ export interface PortafoglioSyncResult {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Batch di document numbers per la IN clause su SQL Server (pre-aggregated tables). */
+/** Batch of document numbers for the SQL Server IN clause (pre-aggregated tables). */
 const DOC_BATCH = 2_000;
 
 // ─── Per-table sync functions ─────────────────────────────────────────────────
@@ -372,7 +372,7 @@ function syncShipToAddress(
   });
 }
 
-// ─── Lookup tables (full sync ogni ciclo) ─────────────────────────────────────
+// ─── Lookup tables (full sync every cycle) ────────────────────────────────────
 
 async function syncLookup<T extends Record<string, unknown>>(
   pool: mssql.ConnectionPool,
@@ -395,7 +395,7 @@ async function syncLookup<T extends Record<string, unknown>>(
   return { table: pgTable, rowsUpserted: rows.length, durationMs: dur };
 }
 
-// ─── Pre-aggregated tables (full-refresh scoped ai doc_nos attivi) ─────────────
+// ─── Pre-aggregated tables (full refresh scoped to the active doc_nos) ─────────
 
 async function syncDatePrenotazione(
   pool: mssql.ConnectionPool,
@@ -519,7 +519,7 @@ export async function syncPortafoglioNow(
   const co = sanitizeCompany(company);
   const log = logger.child({ service: 'nav-portafoglio-sync' });
 
-  // Stagioni attive dal DB locale
+  // Active seasons from the local DB
   const activeSeasonsRaw = await prisma.season.findMany({
     where: { isActive: true },
     select: { code: true },
@@ -528,7 +528,7 @@ export async function syncPortafoglioNow(
   const seasonCodes = activeSeasonsRaw.map(s => s.code);
 
   if (!seasonCodes.length) {
-    log.warn('Nessuna stagione attiva — sync portafoglio saltata');
+    log.warn('No active season — portfolio sync skipped');
     return { stats: [], totalDurationMs: 0, seasonCodes: [], error: 'Nessuna stagione attiva' };
   }
 
@@ -536,10 +536,10 @@ export async function syncPortafoglioNow(
   const stats: TableSyncStats[] = [];
 
   try {
-    // 1. Sales Header prima (gli altri dipendono dai doc_nos)
+    // 1. Sales Header first (the others depend on the doc_nos)
     stats.push(await syncSalesHeader(pool, co, prisma, seasonCodes, log));
 
-    // 2. Tabelle dipendenti da Sales Header + tabelle indipendenti (in parallelo)
+    // 2. Tables that depend on Sales Header + independent tables (in parallel)
     const parallel = await Promise.allSettled([
       syncSalesLines(pool, co, prisma, seasonCodes, log),
       syncSalesHeaderExt(pool, co, prisma, seasonCodes, log),
@@ -571,8 +571,8 @@ export async function syncPortafoglioNow(
       }
     }
 
-    // 3. Pre-aggregated (dipendono da nav_pf_sales_header popolata).
-    //    Doc numbers letti una sola volta e condivisi tra le due sync.
+    // 3. Pre-aggregated (they depend on a populated nav_pf_sales_header).
+    //    Doc numbers read once and shared between the two syncs.
     const headers = await prisma.navPfSalesHeader.findMany({ select: { no_: true } });
     const docNos = headers.map(h => h.no_);
 

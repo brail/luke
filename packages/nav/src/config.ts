@@ -11,8 +11,8 @@ export interface NavDbConfig {
   password: string;
   company: string;
   /**
-   * Imposta ApplicationIntent=ReadOnly sulla connessione mssql.
-   * Utile con SQL Server Availability Group (legge dalla replica secondaria).
+   * Sets ApplicationIntent=ReadOnly on the mssql connection.
+   * Useful with a SQL Server Availability Group (reads from the secondary replica).
    */
   readOnly: boolean;
 }

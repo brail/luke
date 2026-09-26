@@ -89,9 +89,9 @@ export async function updateSyncState(
   });
 }
 
-/** Spec di una tabella replicata incrementalmente via rowversion watermark. */
+/** Spec of a table replicated incrementally through a rowversion watermark. */
 export interface IncrementalSyncSpec {
-  /** Nome tabella PG di destinazione (usato anche come chiave in nav_pf_sync_state). */
+  /** Target PG table name (also used as the key in nav_pf_sync_state). */
   table: string;
   pk: readonly string[];
   /**
@@ -100,7 +100,7 @@ export interface IncrementalSyncSpec {
    * the loop) and `ORDER BY [timestamp]` ascending.
    */
   buildQuery: (req: mssql.Request) => string;
-  /** Colonne BIGINT per bulkUpsert (default: ['navRowversion']). */
+  /** BIGINT columns for bulkUpsert (default: ['navRowversion']). */
   bigintCols?: readonly string[];
 }
 
@@ -132,7 +132,7 @@ export async function syncIncremental(
     await bulkUpsert(prisma, table, pk, rows, bigintCols);
     totalRows += rows.length;
 
-    // Le righe sono ordinate per [timestamp] ASC: l'ultima contiene il max rowversion.
+    // Rows are ordered by [timestamp] ASC: the last one holds the max rowversion.
     lastRv = BigInt(rows[rows.length - 1]!['navRowversion'] as string | number);
 
     if (rows.length < SS_CHUNK) break;

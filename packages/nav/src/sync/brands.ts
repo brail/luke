@@ -97,10 +97,10 @@ export async function syncBrands(
       });
     } catch (err) {
       errors++;
-      logger.error({ entity, navCode, err }, 'NAV sync: errore upsert brand');
+      logger.error({ entity, navCode, err }, 'NAV sync: brand upsert error');
     }
   });
 
-  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completed');
   return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }

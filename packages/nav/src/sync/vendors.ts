@@ -119,7 +119,7 @@ export async function syncVendors(
   const rows = result.recordset;
 
   if (rows.length === 0) {
-    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: nessun record da aggiornare');
+    logger.info({ entity, filterMode, upserted: 0 }, 'NAV sync: no records to update');
     return { entity, upserted: 0, skipped: false, filterMode };
   }
 
@@ -155,7 +155,7 @@ export async function syncVendors(
 
       const countryCode = row['Country_Region Code'] ?? null;
 
-      // Atomico: replica NAV + anagrafica locale in un'unica transaction.
+      // Atomic: NAV replica + local master data in a single transaction.
       await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.navVendor.upsert({
           where: { navNo },
@@ -174,10 +174,10 @@ export async function syncVendors(
       });
     } catch (err) {
       errors++;
-      logger.error({ entity, navNo, err }, 'NAV sync: errore upsert vendor');
+      logger.error({ entity, navNo, err }, 'NAV sync: vendor upsert error');
     }
   });
 
-  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completed');
   return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }

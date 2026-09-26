@@ -101,10 +101,10 @@ export async function syncSeasons(
       });
     } catch (err) {
       errors++;
-      logger.error({ entity, navCode, err }, 'NAV sync: errore upsert season');
+      logger.error({ entity, navCode, err }, 'NAV sync: season upsert error');
     }
   });
 
-  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completed');
   return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }

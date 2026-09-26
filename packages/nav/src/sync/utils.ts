@@ -43,12 +43,12 @@ export function buildNavSyncFilter(
   codeField: string = 'No_',
 ): NavFilterResult {
   if (!filter) {
-    logger.info({ entity }, 'NAV sync: nessun criterio configurato, skip');
+    logger.info({ entity }, 'NAV sync: no criterion configured, skipping');
     return { shouldSkip: true, filterMode: 'not_configured' };
   }
 
   if (!filter.active) {
-    logger.info({ entity, filter: 'disabled' }, 'NAV sync: entità disabilitata, skip');
+    logger.info({ entity, filter: 'disabled' }, 'NAV sync: entity disabled, skipping');
     return { shouldSkip: true, filterMode: 'disabled' };
   }
 
@@ -56,7 +56,7 @@ export function buildNavSyncFilter(
   const navNos = filter.navNos;
 
   if (filterMode === 'whitelist' && navNos.length === 0) {
-    logger.warn({ entity, filterMode }, 'NAV sync: whitelist con navNos vuoti — skip completo');
+    logger.warn({ entity, filterMode }, 'NAV sync: whitelist with empty navNos — skipping entirely');
     return { shouldSkip: true, filterMode };
   }
 

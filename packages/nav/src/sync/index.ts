@@ -41,7 +41,7 @@ export async function runNavSync(
   entity?: 'vendor' | 'brand' | 'season',
 ): Promise<NavSyncReport> {
   const startedAt = new Date();
-  logger.info({ entity: entity ?? 'all' }, 'NAV sync: avvio');
+  logger.info({ entity: entity ?? 'all' }, 'NAV sync: starting');
 
   const config = await getNavDbConfig(prisma, getConfig);
   const pool = await getPool(config);
@@ -54,7 +54,7 @@ export async function runNavSync(
     try {
       return await fn();
     } catch (err) {
-      logger.error({ entity: name, err }, 'NAV sync: errore critico sync entità');
+      logger.error({ entity: name, err }, 'NAV sync: critical entity sync error');
       return { entity: name, upserted: 0, skipped: false, filterMode: 'error' };
     }
   };
@@ -75,7 +75,7 @@ export async function runNavSync(
 
   logger.info(
     { entity: entity ?? 'all', totalUpserted, totalSkipped, durationMs: completedAt.getTime() - startedAt.getTime() },
-    'NAV sync: completato',
+    'NAV sync: completed',
   );
 
   return { startedAt, completedAt, results };
