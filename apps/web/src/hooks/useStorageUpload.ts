@@ -3,7 +3,7 @@
 import { useSession } from 'next-auth/react';
 import { useCallback, useState } from 'react';
 
-import { type APP_STORAGE_BUCKETS } from '@luke/core';
+import { type PRESIGNED_UPLOAD_BUCKETS } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
@@ -21,8 +21,8 @@ export interface StorageUploadResult {
   key?: string;
 }
 
-/** Upload-facing buckets only — excludes internal/private buckets like "backups". */
-export type UploadableBucket = (typeof APP_STORAGE_BUCKETS)[number];
+/** The buckets the presigned upload pair accepts (`PRESIGNED_UPLOAD_BUCKETS`). */
+export type UploadableBucket = (typeof PRESIGNED_UPLOAD_BUCKETS)[number];
 
 /** Options accepted by `useStorageUpload`. */
 export interface UseStorageUploadOptions {

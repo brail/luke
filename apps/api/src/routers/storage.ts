@@ -12,7 +12,7 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
+import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
 
 import { deleteConfig, getConfig, getConfigOrDefault, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -23,7 +23,7 @@ import { resetStorageProvider, getStorageProvider, loadS3Provider } from '../sto
 import { signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 const RequestUploadSchema = z.object({
-  bucket: z.enum(APP_STORAGE_BUCKETS),
+  bucket: z.enum(PRESIGNED_UPLOAD_BUCKETS),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
@@ -46,8 +46,8 @@ export const storageRouter = router({
    * Requests an upload slot; returns a presigned PUT URL for S3-compatible storage or proxy fallback info for local storage.
    *
    * @auth {authenticated}
-   * @input {RequestUploadSchema} — bucket, contentType, size, originalName, optional key.
-   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt }}
+   * @input {RequestUploadSchema} — bucket (one of `PRESIGNED_UPLOAD_BUCKETS`), contentType, size, originalName.
+   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt, uploadToken }}
    */
   requestUpload: protectedProcedure
     .input(RequestUploadSchema)
@@ -104,8 +104,8 @@ export const storageRouter = router({
    * Confirms a completed presigned upload and creates the FileObject DB record; only needed for the S3 path.
    *
    * @auth {authenticated}
-   * @input {ConfirmUploadSchema} — bucket, key, contentType, size, originalName, optional checksumSha256.
-   * @output {{ fileId: string, publicUrl: string, key: string }}
+   * @input {ConfirmUploadSchema} — uploadToken (carries bucket, key and user), contentType, size, originalName, optional checksumSha256.
+   * @output {{ fileObjectId: string, publicUrl: string, key: string }}
    */
   confirmUpload: protectedProcedure
     .input(ConfirmUploadSchema)
@@ -118,6 +118,14 @@ export const storageRouter = router({
       try {
         slot = verifyUploadToken(input.uploadToken);
       } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Slot di upload non valida o scaduta, ricarica il file',
+        });
+      }
+
+      // A slot signed before the bucket list was narrowed stays valid until it expires.
+      if (!z.enum(PRESIGNED_UPLOAD_BUCKETS).safeParse(slot.bucket).success) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Slot di upload non valida o scaduta, ricarica il file',

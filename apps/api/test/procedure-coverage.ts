@@ -114,8 +114,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   storage: {
     reason:
-      'saveConfig and getConfig covered by the write-authority and AppConfig-defaults specs; the rest are operations on real files through IStorageProvider, and MockStorageProvider is wired only into the brandLogo specs',
-    uncovered: 3,
+      'saveConfig and getConfig covered by the write-authority and AppConfig-defaults specs, requestUpload and confirmUpload by the immutable-bucket spec; testS3Connection needs a real S3 endpoint',
+    uncovered: 1,
   },
   maintenance: {
     reason:

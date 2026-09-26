@@ -125,8 +125,9 @@ bucket to the immutable `collection-row-pictures-revisions` bucket by
 revisions do the same since 2026-09-26 (see Automatic Revisions below).
 
 **CAS dedup via sha256**: before copying, the function looks for an existing
-`FileObject` row in the immutable bucket with the same `checksumSha256`. If one
-is found, its key is reused instead of uploading a copy. It is a lookup, not a
+`FileObject` row in the immutable bucket with the same `checksumSha256`, among
+the copies it made itself (`createdBy: 'system'`, confirmed). If one is found,
+its key is reused instead of uploading a copy. It is a lookup, not a
 guarantee: concurrent copies of identical content can each miss it (see
 [docs/storage-immutable-bucket.md](./storage-immutable-bucket.md)).
 

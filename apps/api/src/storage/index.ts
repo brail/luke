@@ -440,8 +440,9 @@ export async function readFileBuffer(
  * Copies a photo from `collection-row-pictures` into the immutable
  * `collection-row-pictures-revisions` bucket for the ISO 9001 quality register.
  *
- * Deduplicates via SHA-256: if an identical file already exists in the immutable
- * bucket, returns the existing key without re-uploading (CAS semantics via DB lookup).
+ * Deduplicates via SHA-256 against its own earlier copies only (`createdBy: 'system'`,
+ * confirmed): if one matches, returns its key without re-uploading (CAS semantics via DB
+ * lookup). Rows from any other writer are ignored, since their checksum may be client-declared.
  *
  * If the enclosing revision transaction rolls back after this call, the copied file
  * becomes an orphan in storage. This is acceptable because the content is identical
@@ -475,9 +476,16 @@ export async function copyToImmutableBucket(
   // Compute sha256 for dedup
   const sha256 = createHash('sha256').update(buffer).digest('hex');
 
-  // Dedup: check if already in immutable bucket
+  // Dedup against this function's own copies only (`createdBy: 'system'`, confirmed): any other
+  // row in the bucket may carry a checksum a client declared, and reusing it would put someone
+  // else's bytes in the register.
   const existing = await prisma.fileObject.findFirst({
-    where: { bucket: 'collection-row-pictures-revisions', checksumSha256: sha256 },
+    where: {
+      bucket: 'collection-row-pictures-revisions',
+      checksumSha256: sha256,
+      createdBy: 'system',
+      confirmedAt: { not: null },
+    },
     select: { key: true },
   });
   if (existing) {

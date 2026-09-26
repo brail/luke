@@ -19,10 +19,12 @@ automatic revisions created by v2.0.0–v2.1.x still name an object in
 `collection-row-pictures`; see the known gap in
 [collection-layout-versioning.md](collection-layout-versioning.md#automatic-revisions-causemilestone).
 
-The generic paths that accept any bucket in `APP_STORAGE_BUCKETS` can also
-write here: backup restore, and the presigned `storage.requestUpload` /
-`storage.confirmUpload` pair, which requires nothing beyond authentication (see
-[ADR-017](decisions/017-key-based-storage-and-two-phase-upload.md)).
+Backup restore, which accepts any bucket in `APP_STORAGE_BUCKETS`, can also
+write here. The presigned `storage.requestUpload` / `storage.confirmUpload`
+pair could too until 2026-09-27: it accepted every application bucket for any
+authenticated user and recorded a checksum the client declared. It now serves
+`PRESIGNED_UPLOAD_BUCKETS` only (`company-assets`, its one caller), and
+`confirmUpload` refuses a slot signed for any other bucket.
 
 ### Who reads
 
@@ -37,8 +39,10 @@ write here: backup restore, and the presigned `storage.requestUpload` /
 ### CAS semantics (Content-Addressable Storage)
 
 Before a file is copied, an existing `FileObject` with the same `bucket` and
-`checksumSha256` is looked up. If one is found, the existing key is returned
-without copying.
+`checksumSha256`, written by the copier itself (`createdBy: 'system'`,
+confirmed), is looked up. If one is found, the existing key is returned without
+copying. Rows from any other writer are ignored: their checksum may be one a
+client declared rather than one computed from the bytes.
 
 This keeps rows with byte-identical photos from creating duplicates in the
 bucket; the common case is a photo that has not changed between revisions,
@@ -111,9 +115,9 @@ bucket. The SeaweedFS S3 gateway of the Docker stack knows a single identity,
 with `Admin`, `Read`, `Write`, `List` and `Tagging` on every bucket
 (`docker/seaweedfs/entrypoint.sh`), and the application reaches every bucket
 with the one credential pair in `storage.s3.accessKey` /
-`storage.s3.secretKey`. The revision service implements no delete, but the
-generic `storage.delete` procedure (`config:update`, admin only) deletes any
-`FileObject` by id with no bucket check, files in this bucket included.
+`storage.s3.secretKey`. No application procedure deletes from this bucket (the
+generic `storage.delete` was removed on 2026-09-25), but that single S3 identity
+still can.
 
 ---
 

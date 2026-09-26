@@ -258,9 +258,16 @@ describe('repairAutoRevisionPhotos', () => {
     const key = await livePhoto();
     const revisionId = await legacyAutoRevision(key);
     const live = await prisma.fileObject.findFirstOrThrow({ where: { bucket: 'collection-row-pictures', key } });
-    // A revisions-bucket record with the same checksum and no object: the copier's dedup returns it.
+    // One of the copier's own records (the only kind its dedup trusts) with the same checksum and
+    // no object behind it: the dedup returns it.
     await prisma.fileObject.create({
-      data: { ...live, id: randomUUID(), bucket: 'collection-row-pictures-revisions', key: 'ghost/copy.png' },
+      data: {
+        ...live,
+        id: randomUUID(),
+        bucket: 'collection-row-pictures-revisions',
+        key: 'ghost/copy.png',
+        createdBy: 'system',
+      },
     });
 
     const report = await repairAutoRevisionPhotos(prisma, { apply: true, runId: 'run' });
