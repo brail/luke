@@ -101,14 +101,15 @@ const IMAGE_WIDTH  = 44;
 const IMAGE_HEIGHT = 20;
 
 // ─── Margin computation ───────────────────────────────────────────────────────
-// Same landed-cost formula as the web's `computeRowMargin`
-// (apps/web/src/app/(app)/product/_shared/pricingCalc.ts), but the averaging has drifted:
-// this is an unweighted mean over the quotations, the web weights them by SKU.
+// Same landed-cost formula and averaging as the web's `computeRowMargin`
+// (apps/web/src/app/(app)/product/_shared/pricingCalc.ts), so a row shows the same margin and
+// status on screen and in the PDF.
 
-function computeMarginResult(
+/** SKU-weighted mean margin when any quotation has SKU > 0, arithmetic mean otherwise. */
+export function computeMarginResult(
   quotations: QuotationWithParamSet[],
 ): { pct: number; isAboveTarget: boolean; isWarning: boolean } | null {
-  const margins: number[] = [];
+  const margins: Array<{ value: number; sku: number }> = [];
   let refOptimal = 52;
   for (const q of quotations) {
     const ps = q.pricingParameterSet;
@@ -120,11 +121,14 @@ function computeMarginResult(
     const withDuty   = withTransp * (1 + ps.duty / 100);
     const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
     const wholesale  = q.retailPrice / ps.retailMultiplier;
-    margins.push((wholesale - landed) / wholesale);
+    margins.push({ value: (wholesale - landed) / wholesale, sku: q.sku ?? 0 });
     refOptimal = ps.optimalMargin;
   }
   if (margins.length === 0) return null;
-  const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
+  const withSku = margins.filter(m => m.sku > 0);
+  const avg = withSku.length > 0
+    ? withSku.reduce((s, m) => s + m.value * m.sku, 0) / withSku.reduce((s, m) => s + m.sku, 0)
+    : margins.reduce((s, m) => s + m.value, 0) / margins.length;
   const avgPct = avg * 100;
   return {
     pct: Math.round(avg * 10000) / 100,
