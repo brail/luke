@@ -202,7 +202,7 @@ export async function resolveContext(
       const parsed = JSON.parse(appConfig.value);
       contextDefaults = AppContextDefaultsSchema.parse(parsed);
     } catch (error) {
-      logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
+      logger.warn({ err: error }, 'Failed to parse app.context.defaults, using empty defaults');
     }
   }
 
@@ -302,7 +302,7 @@ export async function getMenuCollapsibleStates(
     const menuStates = (prefs.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
   } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates');
+    logger.warn({ err: error }, 'Failed to parse menuCollapsibleStates');
     return {};
   }
 }
@@ -400,7 +400,7 @@ export async function setMenuCollapsibleStates(
     const saved = (updated.data as UserPreferenceData)?.menuStates ?? {};
     return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
   } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates after set');
+    logger.warn({ err: error }, 'Failed to parse menuCollapsibleStates after set');
     return menuStates;
   }
 }

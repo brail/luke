@@ -618,7 +618,7 @@ export async function applyTemplate(
         .filter(event => (itemById.get(event.templateItemId!)?.visibilities.length ?? 0) === 0)
         .map(event => event.id),
       { templateId, planningGroupId },
-      'applyTemplate: eventi creati senza righe di visibilità (template item senza funzioni assegnate)'
+      'applyTemplate: events created without visibility rows (template item with no functions assigned)'
     );
 
     // Record the anchor date used, so a later re-apply/admin view can default to it.
@@ -904,7 +904,7 @@ export async function cloneFromBrandSeason(
       warnIfOrphaned(
         created.filter((_, i) => sourceGroup.events[i]!.visibilities.length === 0).map(e => e.id),
         { sourceGroupId: sourceGroup.id, targetGroupId: targetGroup.id },
-        'cloneFromBrandSeason: eventi clonati senza righe di visibilità (sorgente senza funzioni assegnate)'
+        'cloneFromBrandSeason: events cloned without visibility rows (source with no functions assigned)'
       );
 
       totalCreated += created.length;

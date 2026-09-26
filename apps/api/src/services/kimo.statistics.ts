@@ -85,7 +85,7 @@ export async function buildKimoXlsx(
   applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();
 
-  // Righe dati — commit immediato per liberare memoria
+  // Data rows — committed immediately to free memory
   for (const row of rows) {
     const values = KIMO_COLUMNS.map(col => {
       const val = row[col.key];

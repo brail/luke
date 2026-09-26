@@ -236,7 +236,7 @@ export async function cleanupMilestoneEvents(
   if (failed > 0) {
     logger.warn(
       { milestoneId, failed, total: mappings.length },
-      'Alcuni eventi Google Calendar non sono stati eliminati — la mappatura locale viene comunque rimossa'
+      'Some Google Calendar events were not deleted — the local mapping is removed anyway'
     );
   }
 

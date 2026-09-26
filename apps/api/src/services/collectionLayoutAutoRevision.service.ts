@@ -287,7 +287,7 @@ export async function createRevisionsForCompletedPhase(
     }
     return created;
   } catch (err) {
-    logger?.warn({ err, collectionLayoutId, planningGroupId }, 'Auto-revision (fase completata) failed');
+    logger?.warn({ err, collectionLayoutId, planningGroupId }, 'Auto-revision (phase completed) failed');
     return 0;
   }
 }
