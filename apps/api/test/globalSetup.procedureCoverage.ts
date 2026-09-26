@@ -67,9 +67,9 @@ export default async function setup(): Promise<() => Promise<void>> {
       const allSpecs = discoverSpecFiles();
       if (allSpecs.length === 0) {
         throw new Error(
-          `[procedure-coverage] nessun file "*${SPEC_SUFFIX}" sotto ${TEST_DIR}. ` +
-            'La convenzione di naming è cambiata: il gate non ha nulla su cui ' +
-            'pronunciarsi, e tacere qui lo renderebbe inerte.'
+          `[procedure-coverage] no "*${SPEC_SUFFIX}" files under ${TEST_DIR}. ` +
+            'The naming convention has changed: the gate has nothing to make a ' +
+            'call on, and staying silent here would make it inert.'
         );
       }
 
@@ -84,14 +84,14 @@ export default async function setup(): Promise<() => Promise<void>> {
         // locally is normal and gets a warning; in CI the pipeline always
         // runs the whole suite, so a partial run is a defect — and silently
         // skipping would again be the declared-and-never-run check.
-        const summary = `run parziale: ${ran.size}/${allSpecs.length} spec hanno registrato`;
+        const summary = `partial run: ${ran.size}/${allSpecs.length} specs recorded`;
         if (process.env.CI) {
           throw new Error(
-            `[procedure-coverage] ${summary}. Prime mancanti: ` +
+            `[procedure-coverage] ${summary}. First missing: ` +
               notRun.slice(0, 5).join(', ')
           );
         }
-        console.warn(`[procedure-coverage] ${summary} — gate non applicato.`);
+        console.warn(`[procedure-coverage] ${summary} — gate not applied.`);
         return;
       }
 

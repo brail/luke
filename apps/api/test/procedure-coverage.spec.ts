@@ -23,10 +23,10 @@ function artifacts(discovered: string[], invoked: string[]): UsageArtifact[] {
   return [{ specFile: '/test/example.integration.spec.ts', discovered, invoked }];
 }
 
-const REASON = 'motivo scritto a mano, abbastanza lungo da non essere un segnaposto';
+const REASON = 'hand-written reason, long enough not to be a placeholder';
 
-describe('assertProcedureCoverage — esattezza delle dichiarazioni', () => {
-  it('accetta una procedura dichiarata e davvero mai invocata', () => {
+describe('assertProcedureCoverage — exactness of the declarations', () => {
+  it('accepts a declared procedure that is really never invoked', () => {
     expect(() =>
       assertProcedureCoverage(artifacts(['system.triggerCalendarDigest'], []), {
         system: { reason: REASON, uncovered: ['system.triggerCalendarDigest'] },
@@ -34,13 +34,13 @@ describe('assertProcedureCoverage — esattezza delle dichiarazioni', () => {
     ).not.toThrow();
   });
 
-  it('rifiuta una procedura ora invocata rimasta nella dichiarazione', () => {
+  it('rejects a procedure that is now invoked but still declared', () => {
     // Explicit list: the invoked path is named, so the message can name it too.
     expect(() =>
       assertProcedureCoverage(artifacts(['system.a', 'system.b'], ['system.a']), {
         system: { reason: REASON, uncovered: ['system.a', 'system.b'] },
       })
-    ).toThrow(/Dichiarate ma ora invocate \(o inesistenti\): system\.a/);
+    ).toThrow(/Declared but now invoked \(or nonexistent\): system\.a/);
 
     // Counted form: the same staleness, seen as an arithmetic mismatch. This
     // is the shape the `system` entry had, with `about` gone from the router.
@@ -53,20 +53,20 @@ describe('assertProcedureCoverage — esattezza delle dichiarazioni', () => {
         system: { reason: REASON, uncovered: 2 },
       })
     ).toThrow(
-      /dichiarate 2 procedure non invocate, ne risultano 1 — la suite ne invoca di più, oppure alcune sono state rimosse dal router/
+      /2 uninvoked procedures declared, 1 measured — the suite invokes more of them, or some were removed from the router/
     );
   });
 
-  it('rifiuta una procedura mai invocata e non dichiarata', () => {
+  it('rejects a procedure that is never invoked and not declared', () => {
     expect(() =>
       assertProcedureCoverage(artifacts(['system.a', 'system.b'], ['system.a']), {
         system: { reason: REASON, uncovered: ['system.a'] },
       })
-    ).toThrow(/Non invocate e non dichiarate: system\.b/);
+    ).toThrow(/Uninvoked and undeclared: system\.b/);
 
     // Same defect one level up: the whole namespace has no declaration.
     expect(() =>
       assertProcedureCoverage(artifacts(['system.a'], []), {})
-    ).toThrow(/nessuna\s+dichiarazione/);
+    ).toThrow(/and no\s+declaration/);
   });
 });

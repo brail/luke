@@ -97,8 +97,8 @@ export function installProcedureRecorder(): void {
     // without anyone noticing.
     if (!specFile) {
       throw new Error(
-        '[procedure-coverage] `expect.getState().testPath` non disponibile: ' +
-          'impossibile attribuire le invocazioni a un file di spec.'
+        '[procedure-coverage] `expect.getState().testPath` unavailable: ' +
+          'cannot attribute the invocations to a spec file.'
       );
     }
 

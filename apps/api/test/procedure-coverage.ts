@@ -62,147 +62,147 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Partially invoked: the suite touches them, but glancingly ─────────────
   auth: {
     reason:
-      'login, refreshToken, confirmPasswordReset e requestPasswordReset coperte (rate limit, idempotenza, retrocessione di ruolo, policy password sul token di reset, catena di takeover SEC-A); il resto è flussi email, che richiedono SMTP reale',
+      'login, refreshToken, confirmPasswordReset and requestPasswordReset covered (rate limit, idempotency, role demotion, password policy on the reset token, the SEC-A takeover chain); the rest is email flows, which need a real SMTP server',
     uncovered: 5,
   },
   brand: {
     reason:
-      'create/list/update/hardDelete coperte; restano il ciclo soft delete (remove, restore) e unlink da NAV',
+      'create/list/update/hardDelete covered; the soft-delete cycle (remove, restore) and unlink from NAV remain',
     uncovered: 3,
   },
   company: {
     reason:
-      'struttura e team coperti sul percorso principale; restano getById, reorder, restore e updateMemberRole',
+      'structure and teams covered on the main path; getById, reorder, restore and updateMemberRole remain',
     uncovered: 5,
   },
   config: {
     reason:
-      'set, viewValue e importJson coperte dalle spec audit/idempotenza/autorità in scrittura; list, exportJson e delete dalla spec sulla riga la cui chiave è uscita dal registry; restano le letture multiple, setMultiple e update',
+      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; the multi-key reads, setMultiple and update remain',
     uncovered: 3,
   },
   me: {
     reason:
-      'changePassword, get e revokeAllSessions coperte dalle spec sessione; changeEmail, profilo, timezone e saluto giornaliero no',
+      'changePassword, get and revokeAllSessions covered by the session specs; changeEmail, profile, timezone and the daily greeting are not',
     uncovered: 5,
   },
   users: {
     reason:
-      'CRUD coperto dalle spec audit/idempotenza; approvePending dalla spec sull\'assegnazione team obbligatoria (Piano C); forceLocalAccess e revokeLocalAccess dalla spec sul bypass LDAP/OIDC (usersLocalAccess.integration.spec.ts); heartbeat e le preferenze menu no',
+      'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); heartbeat and the menu preferences are not',
     uncovered: 7,
   },
   seasonCalendar: {
     reason:
-      'listMilestones e grantUserVisibility dalla spec sulla visibilità (brand scope + hardening del grant), getOrCreate da quella sul brand scope, createMilestone dal digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone dalla spec sul ciclo di vita; è il dominio più grande dell’app e la copertura va costruita per milestone, non in un colpo',
+      'listMilestones and grantUserVisibility by the visibility spec (brand scope + grant hardening), getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone by the lifecycle spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
     uncovered: 24,
   },
   integrations: {
     reason:
-      'solo saveLdapConfig; tutto il resto parla con sistemi esterni reali (NAV via mssql, Google OAuth, SMTP, storage S3) e serve un layer di fake prima di poter testare',
+      'only saveLdapConfig; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
     uncovered: 24,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
   sales: {
     reason:
-      'legge la replica PostgreSQL di NAV: senza dati sincronizzati le query non hanno nulla su cui girare',
+      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against',
     uncovered: 8,
   },
   holidays: {
     reason:
-      'importa dall’API pubblica Nager.Date; testarlo richiede prima di stubbare il client HTTP',
+      'imports from the public Nager.Date API; testing it first needs the HTTP client stubbed',
     uncovered: 11,
   },
   storage: {
     reason:
-      'saveConfig e getConfig coperte dalle spec su autorità in scrittura e default di AppConfig; il resto sono operazioni su file reali via IStorageProvider e il MockStorageProvider è cablato solo nelle spec brandLogo',
+      'saveConfig and getConfig covered by the write-authority and AppConfig-defaults specs; the rest are operations on real files through IStorageProvider, and MockStorageProvider is wired only into the brandLogo specs',
     uncovered: 3,
   },
   maintenance: {
     reason:
-      'backup/restore e modalità manutenzione sono distruttivi per costruzione: attivarli dentro la suite bloccherebbe le spec successive',
+      'backup/restore and maintenance mode are destructive by construction: turning them on inside the suite would block the specs that follow',
     uncovered: 15,
   },
   system: {
     reason:
-      'triggerCalendarDigest invia notifiche reali: invocarla dalla suite manderebbe email vere',
+      'triggerCalendarDigest sends real notifications: invoking it from the suite would send real emails',
     uncovered: ['system.triggerCalendarDigest'],
   },
 
   // ── Application domains with no tests at all: to be written ───────────────
   collectionLayout: {
     reason:
-      'la spec sul brand scope invoca quasi tutto il dominio per verificare i guard, quindi la copertura di *accesso* è alta; restano scoperti gli export e `copyFromSeason`, che vanno testati per quello che producono, non per chi li può chiamare',
+      'the brand-scope spec invokes almost the whole domain to check the guards, so *access* coverage is high; the exports and `copyFromSeason` remain uncovered, and they need testing for what they produce, not for who can call them',
     uncovered: 4,
   },
   merchandisingPlan: {
     reason:
-      'nessun test scritto: piano, righe, specsheet, componenti e immagini sono tutti scoperti',
+      'no tests written: plan, rows, specsheets, components and images are all uncovered',
     uncovered: 13,
   },
   notifications: {
-    reason: 'nessun test scritto, incluse le preferenze e il ticket SSE',
+    reason: 'no tests written, including the preferences and the SSE ticket',
     uncovered: 10,
   },
   dashboard: {
     reason:
-      'solo `getSeasonProgress`, dalla spec sul brand scope; restano config, task, KPI, cambi e vendite settimanali',
+      'only `getSeasonProgress`, from the brand-scope spec; config, tasks, KPIs, exchange rates and weekly sales remain',
     uncovered: 8,
   },
   vendors: {
     reason:
-      'nessun test scritto. Stesso pattern CRUD + soft delete di brand, che invece è coperto',
+      'no tests written. Same CRUD + soft-delete pattern as brand, which is covered',
     uncovered: 7,
   },
   season: {
     reason:
-      'nessun test scritto. Stesso pattern CRUD + soft delete di brand, che invece è coperto',
+      'no tests written. Same CRUD + soft-delete pattern as brand, which is covered',
     uncovered: 7,
   },
   phase: {
     reason:
-      'list, listAll, create, update, reorder e remove coperte da phase.integration.spec.ts (derivazione di code da order, RBAC admin-only, guard sulle fasi ancora in uso); resta restore, invariata rispetto al pattern soft-delete già in uso altrove',
+      'list, listAll, create, update, reorder and remove covered by phase.integration.spec.ts (deriving code from order, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
     uncovered: 1,
   },
   collectionCatalog: {
-    reason: 'nessun test scritto sulle liste di opzioni configurabili',
+    reason: 'no tests written on the configurable option lists',
     uncovered: 7,
   },
   collectionLayoutRevision: {
     reason:
-      'list, getDetail, getLayoutAsOf ed export.xlsx invocate dalla spec sul brand scope, `create` da quella sul guard dei tipi automatici; resta export.pdf',
+      'list, getDetail, getLayoutAsOf and export.xlsx invoked by the brand-scope spec, `create` by the one on the automatic-types guard; export.pdf remains',
     uncovered: 1,
   },
   phaseAlert: {
     reason:
-      'criticalityForRow e bottleneckByEvent sono invocate da collectionRowCompletion.integration.spec.ts (esito di una riga conclusa, ed esclusione delle concluse dall\'indice di strozzatura); restano scoperte le due letture aggregate e la coppia get/update delle soglie',
+      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index); the two aggregate reads and the thresholds get/update pair remain uncovered',
     uncovered: 4,
   },
   planningGroup: {
-    reason: 'nessun test scritto, benché sia lo scope di eventi e righe layout',
+    reason: 'no tests written, even though it is the scope of events and layout rows',
     uncovered: 4,
   },
   auditLog: {
     reason:
-      '`auditlog.integration.spec.ts` verifica le righe scritte perlopiù interrogando Prisma direttamente, oltre a invocare `list`; getLastChange/getExportLink restano scoperte',
+      '`auditlog.integration.spec.ts` checks the written rows mostly by querying Prisma directly, besides invoking `list`; getLastChange/getExportLink remain uncovered',
     uncovered: 2,
   },
   editLock: {
-    reason: 'nessun test scritto sul lock di sessione del wizard di pianificazione',
+    reason: 'no tests written on the session lock of the planning wizard',
     uncovered: 3,
   },
   catalog: {
     reason:
-      'nessun test scritto sulle liste brand/stagione filtrate per whitelist utente',
+      'no tests written on the brand/season lists filtered by the user whitelist',
     uncovered: 2,
   },
   context: {
     reason:
-      'nessun test sul router. `context.service` è coperto da companyAccess, le due procedure get/set no',
+      'no tests on the router. `context.service` is covered by companyAccess, the two get/set procedures are not',
     uncovered: 2,
   },
   public: {
     reason:
-      'passwordPolicy è coperta da passwordPolicy.integration.spec.ts; resta appInfo, che legge una sola chiave e ha fallback hardcoded',
+      'passwordPolicy is covered by passwordPolicy.integration.spec.ts; appInfo remains, which reads a single key and has a hardcoded fallback',
     uncovered: 1,
   },
 };
@@ -222,8 +222,8 @@ interface CoverageResult {
 export function mergeArtifacts(artifacts: UsageArtifact[]): CoverageResult {
   if (artifacts.length === 0) {
     throw new Error(
-      '[procedure-coverage] nessun artefatto: il recorder non ha girato in ' +
-        'nessuna spec. Verifica `setupFiles` in vitest.integration.config.mts.'
+      '[procedure-coverage] no artifacts: the recorder did not run in any ' +
+        'spec. Check `setupFiles` in vitest.integration.config.mts.'
     );
   }
 
@@ -234,9 +234,9 @@ export function mergeArtifacts(artifacts: UsageArtifact[]): CoverageResult {
       artifact.discovered.some((p, i) => p !== reference.discovered[i])
     ) {
       throw new Error(
-        '[procedure-coverage] due spec hanno osservato router diversi ' +
-          `("${reference.specFile}" vs "${artifact.specFile}"). L'inventario ` +
-          'delle procedure non è deterministico: il gate non può pronunciarsi.'
+        '[procedure-coverage] two specs observed different routers ' +
+          `("${reference.specFile}" vs "${artifact.specFile}"). The procedure ` +
+          'inventory is not deterministic: the gate cannot make a call.'
       );
     }
   }
@@ -254,7 +254,7 @@ function pasteBlock(entries: [string, string[]][]): string {
   return entries
     .map(
       ([ns, paths]) =>
-        `  ${ns}: { reason: '<motivo>', uncovered: ${paths.length} },`
+        `  ${ns}: { reason: '<reason>', uncovered: ${paths.length} },`
     )
     .join('\n');
 }
@@ -289,11 +289,11 @@ export function assertProcedureCoverage(
     .sort(([a], [b]) => a.localeCompare(b));
   if (undeclared.length > 0) {
     problems.push(
-      `${undeclared.length} namespace hanno procedure mai invocate e nessuna ` +
-        'dichiarazione. Aggiungili a UNCOVERED_NAMESPACES in ' +
-        'test/procedure-coverage.ts, sostituendo <motivo> con una frase vera:\n\n' +
+      `${undeclared.length} namespaces have procedures that are never invoked and no ` +
+        'declaration. Add them to UNCOVERED_NAMESPACES in ' +
+        'test/procedure-coverage.ts, replacing <reason> with a real sentence:\n\n' +
         pasteBlock(undeclared) +
-        '\n\nProcedure interessate:\n' +
+        '\n\nAffected procedures:\n' +
         undeclared
           .map(([ns, paths]) => `  ${ns}: ${paths.join(', ')}`)
           .join('\n')
@@ -306,8 +306,8 @@ export function assertProcedureCoverage(
     // 2. Declaration for a namespace that no longer exists.
     if (!allNamespaces.has(ns)) {
       problems.push(
-        `"${ns}" non è più un namespace del router: la voce è stale e finge ` +
-          'una decisione su qualcosa che non esiste. Rimuovila.'
+        `"${ns}" is no longer a router namespace: the entry is stale and ` +
+          'pretends to decide something that does not exist. Remove it.'
       );
       continue;
     }
@@ -316,7 +316,7 @@ export function assertProcedureCoverage(
     //    declaration in place.
     if (uncovered.length === 0) {
       problems.push(
-        `"${ns}" è ora interamente invocato dalla suite. Rimuovi la voce da ` +
+        `"${ns}" is now fully invoked by the suite. Remove its entry from ` +
           'UNCOVERED_NAMESPACES.'
       );
       continue;
@@ -329,9 +329,9 @@ export function assertProcedureCoverage(
       PLACEHOLDER_REASONS.some(re => re.test(reason))
     ) {
       problems.push(
-        `"${ns}" ha un motivo assente o segnaposto ("${reason}"). Una ` +
-          'dichiarazione senza motivo scritto è una dichiarazione a cui nessuno ' +
-          'ha pensato.'
+        `"${ns}" has a missing or placeholder reason ("${reason}"). A ` +
+          'declaration without a written reason is a declaration nobody has ' +
+          'thought about.'
       );
     }
 
@@ -343,34 +343,34 @@ export function assertProcedureCoverage(
       const stale = declared.filter(p => !actual.includes(p));
       if (missing.length > 0 || stale.length > 0) {
         problems.push(
-          `"${ns}": l'elenco dichiarato non combacia con la misura.` +
+          `"${ns}": the declared list does not match the measurement.` +
             (missing.length > 0
-              ? `\n  Non invocate e non dichiarate: ${missing.join(', ')}`
+              ? `\n  Uninvoked and undeclared: ${missing.join(', ')}`
               : '') +
             (stale.length > 0
-              ? `\n  Dichiarate ma ora invocate (o inesistenti): ${stale.join(', ')}`
+              ? `\n  Declared but now invoked (or nonexistent): ${stale.join(', ')}`
               : '')
         );
       }
     } else if (declaration.uncovered !== uncovered.length) {
       const direction =
         uncovered.length > declaration.uncovered
-          ? 'sono comparse procedure nuove senza test'
-          : 'la suite ne invoca di più, oppure alcune sono state rimosse dal ' +
-            'router: verifica quale dei due e decrementa il numero';
+          ? 'new procedures appeared without tests'
+          : 'the suite invokes more of them, or some were removed from the ' +
+            'router: check which of the two and decrement the number';
       problems.push(
-        `"${ns}": dichiarate ${declaration.uncovered} procedure non invocate, ` +
-          `ne risultano ${uncovered.length} — ${direction}.\n` +
-          `  Non invocate: ${uncovered.join(', ')}`
+        `"${ns}": ${declaration.uncovered} uninvoked procedures declared, ` +
+          `${uncovered.length} measured — ${direction}.\n` +
+          `  Uninvoked: ${uncovered.join(', ')}`
       );
     }
   }
 
   if (problems.length > 0) {
     throw new Error(
-      `[procedure-coverage] il gate ha ${problems.length} rilievi.\n` +
-        'Nota: una suite già rossa può far cascare rilievi qui — sistema prima ' +
-        'i test falliti.\n\n' +
+      `[procedure-coverage] the gate has ${problems.length} findings.\n` +
+        'Note: a suite that is already red can cascade findings here — fix the ' +
+        'failed tests first.\n\n' +
         problems.join('\n\n')
     );
   }
