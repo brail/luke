@@ -185,8 +185,8 @@ describe('Rate-Limit Store', () => {
   });
 });
 
-describe('Sincronia delle mappe di rate limit', () => {
-  it('ogni rotta in RATE_LIMIT_CONFIG ha un default in RATE_LIMIT_POLICY_DEFAULTS', () => {
+describe('Rate limit map consistency', () => {
+  it('every route in RATE_LIMIT_CONFIG has a default in RATE_LIMIT_POLICY_DEFAULTS', () => {
     // `resolveRateLimitPolicy` throws on a route missing from the defaults: a
     // key added to only one map isn't a compile error, it's a crash on the
     // first request that uses it. This has already happened (v1.9.1).
@@ -197,7 +197,7 @@ describe('Sincronia delle mappe di rate limit', () => {
     expect(missing).toEqual([]);
   });
 
-  it('ogni rotta in RATE_LIMIT_CONFIG ha un campo in RateLimitConfigSchema', () => {
+  it('every route in RATE_LIMIT_CONFIG has a field in RateLimitConfigSchema', () => {
     // If missing here, an AppConfig override for that route gets silently
     // discarded by safeParse (non-strict) — no error, no log.
     const schemaKeys = Object.keys(RateLimitConfigSchema.shape);

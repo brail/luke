@@ -28,7 +28,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('auth.login rate limiting', () => {
-    it('dovrebbe bloccare dopo 5 tentativi dallo stesso IP', async () => {
+    it('should block after 5 attempts from the same IP', async () => {
       const caller = await createCallerWithIP('192.168.1.100', null);
 
       // First 5 requests should fail for wrong credentials but not for rate-limit
@@ -46,7 +46,7 @@ describe('Rate-Limit Integration', () => {
       );
     });
 
-    it('dovrebbe permettere richieste da IP diversi', async () => {
+    it('should allow requests from different IPs', async () => {
       const caller1 = await createCallerWithIP('192.168.1.100', null);
       const caller2 = await createCallerWithIP('192.168.1.200', null);
 
@@ -73,7 +73,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('auth.login rate limiting blocks valid credentials too (proof of enforcement)', () => {
-    it('dovrebbe bloccare anche un tentativo con credenziali valide dopo aver esaurito il bucket IP', async () => {
+    it('should block even an attempt with valid credentials once the IP bucket is exhausted', async () => {
       // End-to-end proof that the IP-based block isn't just a "generic response indistinguishable
       // from a wrong password" (the validation gap flagged by the Strix pentest, which from the
       // outside couldn't verify whether the limiter actually tripped): an attempt with REAL credentials
@@ -96,7 +96,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('auth.login rate limiting per username (anti password-spray)', () => {
-    it('dovrebbe bloccare dopo 10 tentativi sullo stesso username da IP diversi', async () => {
+    it('should block after 10 attempts on the same username from different IPs', async () => {
       // The 'login' bucket (keyBy: 'ip') doesn't stop a spray distributed across many IPs
       // against a single account: each IP below is under the IP threshold (5/60s), yet the
       // 'loginByUsername' bucket must still trip on the 11th attempt against the same username.
@@ -117,7 +117,7 @@ describe('Rate-Limit Integration', () => {
       );
     });
 
-    it('non deve essere aggirabile cambiando maiuscole/minuscole dello username', async () => {
+    it('must not be bypassable by changing the username case', async () => {
       const targetUsername = 'CaseSprayTarget';
 
       for (let i = 0; i < 10; i++) {
@@ -137,7 +137,7 @@ describe('Rate-Limit Integration', () => {
       );
     });
 
-    it('non deve bloccare username diversi tra loro', async () => {
+    it('must not block different usernames from each other', async () => {
       // Distinct IP per attempt: isolates the username dimension, otherwise the
       // 'login' bucket (keyBy: 'ip', max 5/60s) would trip first and confuse the test.
       for (let i = 0; i < 10; i++) {
@@ -151,7 +151,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('me.changePassword rate limiting', () => {
-    it('dovrebbe bloccare dopo 3 tentativi in 15min per stesso utente', async () => {
+    it('should block after 3 attempts in 15min for the same user', async () => {
       const adminCaller = await createCallerAs('admin');
 
       // Create a user to test password change
@@ -190,7 +190,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('users mutations rate limiting', () => {
-    it('dovrebbe bloccare dopo 10 richieste create/update/delete per stesso utente', async () => {
+    it('should block after 10 create/update/delete requests for the same user', async () => {
       const adminCaller = await createCallerAs('admin');
 
       // First 10 create requests should succeed
@@ -217,7 +217,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('config mutations rate limiting', () => {
-    it('dovrebbe bloccare dopo 20 richieste set/update per stesso utente', async () => {
+    it('should block after 20 set/update requests for the same user', async () => {
       const adminCaller = await createCallerAs('admin');
 
       // First 20 set requests should succeed
@@ -242,7 +242,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('rate limit window reset', () => {
-    it('dovrebbe permettere nuove richieste dopo scadenza window', async () => {
+    it('should allow new requests after the window expires', async () => {
       const caller = await createCallerWithIP('192.168.1.100', null);
 
       // Reach the limit

@@ -65,30 +65,30 @@ function fakeEvent(opts: {
 }
 
 describe('getActivePhaseFromEvents', () => {
-  it('nessun evento applicabile → no-calendar', () => {
+  it('no applicable event → no-calendar', () => {
     expect(getActivePhaseFromEvents([], null)).toEqual({ status: 'no-calendar' });
   });
 
-  it('currentOrder null → il primo evento diventa attivo (riga non ancora a nessuna fase)', () => {
+  it('currentOrder null → the first event becomes active (row not at any phase yet)', () => {
     const first = fakeEvent({ id: 'e1', phaseOrder: 0 });
     const second = fakeEvent({ id: 'e2', phaseOrder: 1 });
     const result = getActivePhaseFromEvents([first, second], null);
     expect(result).toEqual({ status: 'active', event: first });
   });
 
-  it('currentOrder oltre l\'ultima fase applicabile → completed', () => {
+  it('currentOrder beyond the last applicable phase → completed', () => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 })];
     expect(getActivePhaseFromEvents(events, 5)).toEqual({ status: 'completed' });
   });
 
-  it('currentOrder uguale alla fase di un evento → quell\'evento è attivo (>=, non >)', () => {
+  it('currentOrder equal to an event phase → that event is active (>=, not >)', () => {
     // The row is "at" that phase, it hasn't passed it yet — its deadline still applies.
     const atOrder1 = fakeEvent({ id: 'e2', phaseOrder: 1 });
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), atOrder1, fakeEvent({ id: 'e3', phaseOrder: 2 })];
     expect(getActivePhaseFromEvents(events, 1)).toEqual({ status: 'active', event: atOrder1 });
   });
 
-  it('salta gli eventi su fase disattivata e misura contro la prima fase attiva successiva', () => {
+  it('skips events on a deactivated phase and measures against the next active phase', () => {
     // `isActive: false` is a soft delete: a retired phase leaves the process and must no
     // longer produce deadlines, as was already the case for `getNextPhaseFromEvents`.
     const retired = fakeEvent({ id: 'e1', phaseOrder: 1, phaseIsActive: false });
@@ -96,7 +96,7 @@ describe('getActivePhaseFromEvents', () => {
     expect(getActivePhaseFromEvents([retired, live], 1)).toEqual({ status: 'active', event: live });
   });
 
-  it('solo eventi su fasi disattivate → completed, quindi nessun alert', () => {
+  it('only events on deactivated phases → completed, so no alert', () => {
     const events = [
       fakeEvent({ id: 'e1', phaseOrder: 1, phaseIsActive: false }),
       fakeEvent({ id: 'e2', phaseOrder: 2, phaseIsActive: false }),
@@ -106,17 +106,17 @@ describe('getActivePhaseFromEvents', () => {
 });
 
 describe('getMissingPhasesForCompletion', () => {
-  it('riga all\'ultima milestone → nessuna fase mancante', () => {
+  it('row at its last milestone → no missing phase', () => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
     expect(getMissingPhasesForCompletion(events, 1)).toEqual([]);
   });
 
-  it('riga indietro di una fase → elenca solo quella', () => {
+  it('row one phase behind → lists only that one', () => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
     expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_1', label: 'Fase 1' }]);
   });
 
-  it('le fasi disattivate nell\'intervallo non contano come mancanti', () => {
+  it('deactivated phases in the interval do not count as missing', () => {
     // They're no longer part of the process: asking for them before concluding would be noise.
     const events = [
       fakeEvent({ id: 'e1', phaseOrder: 0 }),
@@ -126,16 +126,16 @@ describe('getMissingPhasesForCompletion', () => {
     expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_2', label: 'Fase 2' }]);
   });
 
-  it('più eventi sulla stessa fase contano una volta sola', () => {
+  it('several events on the same phase count once', () => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 1 }), fakeEvent({ id: 'e1b', phaseOrder: 1 })];
     expect(getMissingPhasesForCompletion(events, 0)).toEqual([{ value: 'PHASE_1', label: 'Fase 1' }]);
   });
 
-  it('gruppo senza eventi di fase → nessun termine di paragone, nessun avviso', () => {
+  it('group with no phase events → no benchmark, no warning', () => {
     expect(getMissingPhasesForCompletion([fakeEvent({ id: 'po', phaseOrder: null })], 0)).toEqual([]);
   });
 
-  it('riga senza fase → mancano tutte', () => {
+  it('row with no phase → all are missing', () => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 }), fakeEvent({ id: 'e2', phaseOrder: 1 })];
     expect(getMissingPhasesForCompletion(events, null).map(p => p.value)).toEqual(['PHASE_0', 'PHASE_1']);
   });
@@ -144,25 +144,25 @@ describe('getMissingPhasesForCompletion', () => {
 describe('getNextPhaseFromEvents', () => {
   const notActive: ActivePhaseResult[] = [{ status: 'no-calendar' }, { status: 'completed' }];
 
-  it.each(notActive)('nessuna fase attiva ($status) → null', active => {
+  it.each(notActive)('no active phase ($status) → null', active => {
     const events = [fakeEvent({ id: 'e1', phaseOrder: 0 })];
     expect(getNextPhaseFromEvents(events, active)).toBeNull();
   });
 
-  it('fase attiva con un evento successivo a order maggiore → lo ritorna', () => {
+  it('active phase with a later event at a higher order → returns it', () => {
     const active = fakeEvent({ id: 'e1', phaseOrder: 0 });
     const next = fakeEvent({ id: 'e2', phaseOrder: 1 });
     const events = [active, next];
     expect(getNextPhaseFromEvents(events, { status: 'active', event: active })).toEqual(next);
   });
 
-  it('la fase attiva è l\'ultima applicabile → null (nessuna prossima fase da mostrare)', () => {
+  it('the active phase is the last applicable one → null (no next phase to show)', () => {
     const active = fakeEvent({ id: 'e1', phaseOrder: 2 });
     const events = [fakeEvent({ id: 'e0', phaseOrder: 0 }), active];
     expect(getNextPhaseFromEvents(events, { status: 'active', event: active })).toBeNull();
   });
 
-  it('l\'unico candidato successivo è su una fase disattivata → null, non il candidato disattivato', () => {
+  it('the only later candidate is on a deactivated phase → null, not the deactivated candidate', () => {
     // Regression: a deactivated phase (isActive:false) remains referenced by an
     // existing CalendarEvent but disappears from the catalog (`phase.list` filters
     // isActive:true) — showing it as "next phase" produced an unresolvable label
@@ -173,7 +173,7 @@ describe('getNextPhaseFromEvents', () => {
     expect(getNextPhaseFromEvents(events, { status: 'active', event: active })).toBeNull();
   });
 
-  it('salta un candidato disattivato e trova il successivo attivo oltre', () => {
+  it('skips a deactivated candidate and finds the next active one beyond it', () => {
     const active = fakeEvent({ id: 'e1', phaseOrder: 0 });
     const inactiveNext = fakeEvent({ id: 'e2', phaseOrder: 1, phaseIsActive: false });
     const activeNext = fakeEvent({ id: 'e3', phaseOrder: 2, phaseIsActive: true });
@@ -181,7 +181,7 @@ describe('getNextPhaseFromEvents', () => {
     expect(getNextPhaseFromEvents(events, { status: 'active', event: active })).toEqual(activeNext);
   });
 
-  it('più eventi sulla stessa fase attiva non contano come "prossima" — serve un order maggiore', () => {
+  it('several events on the same active phase do not count as "next" — it takes a higher order', () => {
     const active = fakeEvent({ id: 'e1', phaseOrder: 0 });
     const sameOrderDuplicate = fakeEvent({ id: 'e1b', phaseOrder: 0 });
     const nextPhase = fakeEvent({ id: 'e2', phaseOrder: 1 });
@@ -189,7 +189,7 @@ describe('getNextPhaseFromEvents', () => {
     expect(getNextPhaseFromEvents(events, { status: 'active', event: active })).toEqual(nextPhase);
   });
 
-  it('l\'evento attivo non fa parte dell\'array passato → null (activeIndex non trovato)', () => {
+  it('the active event is not in the array passed → null (activeIndex not found)', () => {
     const events = [fakeEvent({ id: 'e2', phaseOrder: 2 }), fakeEvent({ id: 'e3', phaseOrder: 3 })];
     // "Active" built separately, with an id that doesn't appear in `events`.
     const foreignActive = { status: 'active' as const, event: fakeEvent({ id: 'not-in-array', phaseOrder: 1 }) };
@@ -198,21 +198,21 @@ describe('getNextPhaseFromEvents', () => {
 });
 
 describe('getCompletionDeadlineEvent', () => {
-  it('nessun evento → null', () => {
+  it('no event → null', () => {
     expect(getCompletionDeadlineEvent([])).toBeNull();
   });
 
-  it('solo eventi senza fase → null (fuori dal meccanismo delle fasi)', () => {
+  it('only events with no phase → null (outside the phase mechanism)', () => {
     const phaseless = fakeEvent({ id: 'po-cutoff', phaseOrder: null });
     expect(getCompletionDeadlineEvent([phaseless])).toBeNull();
   });
 
-  it('solo eventi su fasi disattivate → null (non c\'è più nulla di pianificato da misurare)', () => {
+  it('only events on deactivated phases → null (nothing planned is left to measure)', () => {
     const retired = fakeEvent({ id: 'e1', phaseOrder: 3, phaseIsActive: false });
     expect(getCompletionDeadlineEvent([retired])).toBeNull();
   });
 
-  it('salta le fasi disattivate che seguono l\'ultima attiva', () => {
+  it('skips the deactivated phases that follow the last active one', () => {
     // The real case: a calendar with milestones on retired phases after the last phase still in use.
     // The completion deadline must remain the last *active* one, not the furthest overall.
     const events = [
@@ -234,7 +234,7 @@ describe('completionOutcome', () => {
   const ctx = { companyCountryCode: null, holidays: [] };
   const deadline = new Date('2026-08-31T00:00:00Z');
 
-  it('senza milestone di riferimento → banda "in tempo" e nessun delta inventato', () => {
+  it('without a reference milestone → "on time" band and no invented delta', () => {
     const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), null, thresholds, null, ctx);
     expect(result).toMatchObject({
       state: 'completed',
@@ -245,21 +245,21 @@ describe('completionOutcome', () => {
     });
   });
 
-  it('conclusa prima della scadenza → delta positivo (anticipo) e banda "in tempo"', () => {
+  it('completed before the deadline → positive delta (early) and "on time" band', () => {
     const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
     const result = completionOutcome('row-1', new Date('2026-08-12T00:00:00Z'), event, thresholds, null, ctx);
     expect(result.daysVsDeadline).toBe(19);
     expect(result.band).toEqual(thresholds.completedBand);
   });
 
-  it('conclusa dopo la scadenza → delta negativo (ritardo) e banda "in ritardo"', () => {
+  it('completed after the deadline → negative delta (late) and "late" band', () => {
     const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
     const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), event, thresholds, null, ctx);
     expect(result.daysVsDeadline).toBe(-10);
     expect(result.band).toEqual(thresholds.completedLateBand);
   });
 
-  it('conclusa nel giorno stesso della scadenza conta come in tempo', () => {
+  it('completed on the deadline day itself counts as on time', () => {
     const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
     const result = completionOutcome('row-1', deadline, event, thresholds, null, ctx);
     expect(result.daysVsDeadline).toBe(0);
@@ -268,7 +268,7 @@ describe('completionOutcome', () => {
 });
 
 describe('filterApplicableEvents', () => {
-  it('esclude eventi di un altro planning group', () => {
+  it('excludes events of another planning group', () => {
     const mine = fakeEvent({ id: 'e1', planningGroupId: 'pg-1', phaseOrder: 0 });
     const other = fakeEvent({ id: 'e2', planningGroupId: 'pg-2', phaseOrder: 1 });
     expect(filterApplicableEvents([mine, other], 'pg-1')).toEqual([mine]);

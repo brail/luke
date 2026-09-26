@@ -33,7 +33,7 @@ describe.skipIf(!TEST_DATABASE_URL)('preflight versioni pg', () => {
     await prisma.$disconnect();
   });
 
-  it('riflette la situazione reale della macchina', async () => {
+  it('reflects the real state of the machine', async () => {
     const check = assertPgToolchainCompatible(prisma);
     if (clientMajor === serverMajor) {
       await expect(check).resolves.toBeUndefined();
@@ -44,19 +44,19 @@ describe.skipIf(!TEST_DATABASE_URL)('preflight versioni pg', () => {
     }
   });
 
-  it('rifiuta quando il client è più recente del server', async () => {
+  it('refuses when the client is newer than the server', async () => {
     vi.spyOn(prisma, '$queryRaw').mockResolvedValueOnce([{ server_version: `${clientMajor - 1}.4` }]);
     await expect(assertPgToolchainCompatible(prisma)).rejects.toThrow(/pg_restore è alla major/);
     vi.restoreAllMocks();
   });
 
-  it('accetta quando le major coincidono', async () => {
+  it('accepts when the majors match', async () => {
     vi.spyOn(prisma, '$queryRaw').mockResolvedValueOnce([{ server_version: `${clientMajor}.4` }]);
     await expect(assertPgToolchainCompatible(prisma)).resolves.toBeUndefined();
     vi.restoreAllMocks();
   });
 
-  it('non prova a indovinare se la versione del server è illeggibile', async () => {
+  it('does not try to guess when the server version is unreadable', async () => {
     vi.spyOn(prisma, '$queryRaw').mockResolvedValueOnce([{ server_version: 'boh' }]);
     await expect(assertPgToolchainCompatible(prisma)).rejects.toThrow(/Impossibile determinare/);
     vi.restoreAllMocks();

@@ -23,7 +23,7 @@ function req(authorization?: string): FastifyRequest {
 }
 
 describe('rateLimitKeyFromRequest', () => {
-  it('un bearer valido dà l’id utente', () => {
+  it('a valid bearer yields the user id', () => {
     const token = createToken({
       id: 'user-42',
       email: 'a@b.test',
@@ -35,7 +35,7 @@ describe('rateLimitKeyFromRequest', () => {
     expect(rateLimitKeyFromRequest(req(`Bearer ${token}`))).toBe('user-42');
   });
 
-  it('un bearer scaduto ricade sull’IP', () => {
+  it('an expired bearer falls back to the IP', () => {
     // This is not an authentication check: it's the handler that rejects
     // the request, the limiter only needs to pick a bucket.
     const expired = signJWT(
@@ -52,7 +52,7 @@ describe('rateLimitKeyFromRequest', () => {
     expect(rateLimitKeyFromRequest(req(`Bearer ${expired}`))).toBe('203.0.113.7');
   });
 
-  it('senza Authorization ricade sull’IP', () => {
+  it('without Authorization it falls back to the IP', () => {
     expect(rateLimitKeyFromRequest(req())).toBe('203.0.113.7');
   });
 

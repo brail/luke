@@ -36,8 +36,8 @@ describe('Phase Router', () => {
 
   const caller = (ctx: Context) => appRouter.createCaller(ctx).phase;
 
-  describe('create — code derivato da order', () => {
-    it('assegna code "01" al primo elemento e "02" al successivo, senza order esplicito', async () => {
+  describe('create — code derived from order', () => {
+    it('assigns code "01" to the first item and "02" to the next, without an explicit order', async () => {
       const first = await caller(adminContext).create({
         value: 'DESIGN',
         label: 'Design',
@@ -53,7 +53,7 @@ describe('Phase Router', () => {
       expect(second.code).toBe('02');
     });
 
-    it('deriva code da un order esplicito passato in create', async () => {
+    it('derives code from an explicit order passed to create', async () => {
       const result = await caller(adminContext).create({
         value: 'LAUNCH',
         label: 'Lancio',
@@ -64,7 +64,7 @@ describe('Phase Router', () => {
       expect(result.code).toBe('06');
     });
 
-    it('rifiuta un value duplicato con CONFLICT', async () => {
+    it('rejects a duplicate value with CONFLICT', async () => {
       await caller(adminContext).create({ value: 'DUP', label: 'Duplicato' });
 
       await expect(
@@ -73,8 +73,8 @@ describe('Phase Router', () => {
     });
   });
 
-  describe('update — code ricalcolato da order', () => {
-    it('un update senza order lascia order e code invariati', async () => {
+  describe('update — code recomputed from order', () => {
+    it('an update without order leaves order and code unchanged', async () => {
       const created = await caller(adminContext).create({
         value: 'PROTO',
         label: 'Prototipo',
@@ -91,7 +91,7 @@ describe('Phase Router', () => {
       expect(updated.code).toBe('01');
     });
 
-    it('un update che cambia order ricalcola code di conseguenza', async () => {
+    it('an update that changes order recomputes code accordingly', async () => {
       const created = await caller(adminContext).create({
         value: 'MOVE',
         label: 'Da spostare',
@@ -117,8 +117,8 @@ describe('Phase Router', () => {
     });
   });
 
-  describe('reorder — code segue sempre la nuova posizione', () => {
-    it('dopo un reorder, ogni fase ha code = posizione+1, indipendentemente da come è stata creata', async () => {
+  describe('reorder — code always follows the new position', () => {
+    it('after a reorder every phase has code = position+1, however it was created', async () => {
       const a = await caller(adminContext).create({ value: 'A', label: 'A' });
       const b = await caller(adminContext).create({ value: 'B', label: 'B' });
       const c = await caller(adminContext).create({ value: 'C', label: 'C' });
@@ -146,14 +146,14 @@ describe('Phase Router', () => {
       return { active, retired };
     }
 
-    it('senza input ritorna solo le fasi attive', async () => {
+    it('with no input it returns only active phases', async () => {
       const { active, retired } = await seedActiveAndRetired();
       const ids = (await caller(adminContext).list()).map(p => p.id);
       expect(ids).toContain(active.id);
       expect(ids).not.toContain(retired.id);
     });
 
-    it('con includeInactive ritorna anche le ritirate: serve a risolvere le etichette dello storico', async () => {
+    it('with includeInactive it also returns retired ones: needed to resolve the history labels', async () => {
       // A row that passed through a phase later retired keeps referencing it: without this
       // read the drawer would show a dash in place of data that actually exists.
       const { retired } = await seedActiveAndRetired();
@@ -161,13 +161,13 @@ describe('Phase Router', () => {
       expect(ids).toContain(retired.id);
     });
 
-    it('includeInactive: false è esplicitamente il default, non un caso speciale', async () => {
+    it('includeInactive: false is explicitly the default, not a special case', async () => {
       const { retired } = await seedActiveAndRetired();
       const ids = (await caller(adminContext).list({ includeInactive: false })).map(p => p.id);
       expect(ids).not.toContain(retired.id);
     });
 
-    it('resta dietro il permesso di lettura, non quello di scrittura come listAll', async () => {
+    it('stays behind the read permission, not the write one like listAll', async () => {
       // The point of the change: historical labels are needed by anyone reading the layout, while
       // `listAll` (catalog management) stays admin-only.
       const viewer = await adminContext.prisma.user.create({
@@ -183,7 +183,7 @@ describe('Phase Router', () => {
     });
   });
 
-  describe('remove — guard sulle fasi ancora in uso', () => {
+  describe('remove — guard on phases still in use', () => {
     /** Minimal layout with a row on the given phase. `completedAt` decides whether the row is still
      * "in progress" in the eyes of the alert engine, i.e. whether the phase can be retired. */
     async function seedRowOnPhase(phaseId: string, completedAt: Date | null) {
@@ -219,7 +219,7 @@ describe('Phase Router', () => {
       };
     }
 
-    it('rifiuta con CONFLICT se una riga aperta è ferma su quella fase', async () => {
+    it('rejects with CONFLICT if an open row sits on that phase', async () => {
       // Retiring it would silently drop it from badges, dashboard, and delay notifications.
       const phase = await caller(adminContext).create({ value: 'IN_USO', label: 'In uso' });
       await seedRowOnPhase(phase.id, null);
@@ -231,7 +231,7 @@ describe('Phase Router', () => {
       expect(after.isActive).toBe(true);
     });
 
-    it("il messaggio dice quante righe e in quale brand/stagione, non solo che la fase è in uso", async () => {
+    it("the message says how many rows and in which brand/season, not just that the phase is in use", async () => {
       const phase = await caller(adminContext).create({ value: 'CON_SCOPE', label: 'Con scope' });
       const { brandCode, seasonCode } = await seedRowOnPhase(phase.id, null);
 
@@ -242,7 +242,7 @@ describe('Phase Router', () => {
       );
     });
 
-    it('rifiuta se restano milestone non cancellate su quella fase, anche senza righe aperte', async () => {
+    it('rejects if uncancelled milestones remain on that phase, even with no open rows', async () => {
       // Events survive the retirement of the phase and keep shifting which
       // deadline is active for the rows of their planning group.
       const phase = await caller(adminContext).create({ value: 'CON_EVENTI', label: 'Con eventi' });
@@ -254,7 +254,7 @@ describe('Phase Router', () => {
       await expect(caller(adminContext).remove({ id: phase.id })).rejects.toThrow(/1 milestone di calendario/);
     });
 
-    it('una milestone cancellata non blocca più il ritiro', async () => {
+    it('a cancelled milestone no longer blocks retirement', async () => {
       const phase = await caller(adminContext).create({ value: 'EVENTO_CANC', label: 'Evento cancellato' });
       const { calendarId, planningGroupId } = await seedRowOnPhase(phase.id, new Date());
       await adminContext.prisma.calendarEvent.create({
@@ -267,7 +267,7 @@ describe('Phase Router', () => {
       await expect(caller(adminContext).remove({ id: phase.id })).resolves.toEqual({ success: true });
     });
 
-    it('una fase con sole righe concluse si ritira: è il caso della fase buona per le stagioni passate', async () => {
+    it('a phase with only completed rows can be retired: the case of a phase good for past seasons', async () => {
       // Completed rows have already stopped being measured, so deactivating does not turn off
       // any alert -- and that is what makes a phase retirable without archiving the seasons.
       const phase = await caller(adminContext).create({ value: 'STORICA', label: 'Storica' });
@@ -278,7 +278,7 @@ describe('Phase Router', () => {
       expect(after.isActive).toBe(false);
     });
 
-    it('una fase mai usata resta ritirabile', async () => {
+    it('a phase never used stays retirable', async () => {
       const phase = await caller(adminContext).create({ value: 'MAI_USATA', label: 'Mai usata' });
       await expect(caller(adminContext).remove({ id: phase.id })).resolves.toEqual({ success: true });
     });
@@ -329,7 +329,7 @@ describe('Phase Router', () => {
     const phaseAs = (role: Role | null) =>
       caller(role ? contexts[role] : { ...adminContext, session: null });
 
-    it.each(ROLES)('%s può leggere il catalogo (list e listAll)', async role => {
+    it.each(ROLES)('%s can read the catalog (list and listAll)', async role => {
       await expect(phaseAs(role).list()).resolves.toBeInstanceOf(Array);
       // listAll is reserved to phase_catalog:update -- only admin reaches it here.
       if (role === 'admin') {
@@ -337,7 +337,7 @@ describe('Phase Router', () => {
       }
     });
 
-    it('solo admin può creare una fase — editor è negato nonostante il resto dei suoi domini sia :*', async () => {
+    it('only admin can create a phase — editor is denied although the rest of its domains are :*', async () => {
       await expect(
         phaseAs('admin').create({ value: 'ADMIN_ONLY', label: 'Admin only' })
       ).resolves.toMatchObject({ value: 'ADMIN_ONLY' });
@@ -352,7 +352,7 @@ describe('Phase Router', () => {
       );
     });
 
-    it('editor e viewer negati su update e reorder; non autenticato → UNAUTHORIZED', async () => {
+    it('editor and viewer denied on update and reorder; unauthenticated → UNAUTHORIZED', async () => {
       const created = await phaseAs('admin').create({
         value: 'RBAC_TARGET',
         label: 'Target',

@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest';
 
 import { hashPassword, validatePassword, verifyPassword, type PasswordPolicy } from '../src/lib/password';
 
-/** Tutti i requisiti accesi: il default di `getPasswordPolicy` quando nulla è configurato. */
+/** Every requirement on: the `getPasswordPolicy` default when nothing is configured. */
 const STRICT: PasswordPolicy = {
   minLength: 12,
   requireUppercase: true,
@@ -32,18 +32,18 @@ const RELAXED: PasswordPolicy = {
   requireSpecialChar: false,
 };
 
-describe('validatePassword — ogni requisito, acceso e spento', () => {
-  it('accetta una password che soddisfa tutto', () => {
+describe('validatePassword — every requirement, on and off', () => {
+  it('accepts a password that meets everything', () => {
     expect(validatePassword('TestPassw0rd!23', STRICT)).toEqual({ isValid: true, errors: [] });
   });
 
-  it('rifiuta sotto la lunghezza minima, citandola nel messaggio', () => {
+  it('rejects below the minimum length, quoting it in the message', () => {
     const result = validatePassword('Ab1!efg', STRICT);
     expect(result.isValid).toBe(false);
     expect(result.errors).toContain('Lunghezza minima: 12 caratteri');
   });
 
-  it('la lunghezza minima è quella della policy, non una costante', () => {
+  it('the minimum length is the policy one, not a constant', () => {
     // The defect this phase closes is precisely that raising `minLength` changed nothing
     // elsewhere; this pins that the function really reads it from its argument.
     expect(validatePassword('abcdefgh', { ...RELAXED, minLength: 8 }).isValid).toBe(true);
@@ -58,19 +58,19 @@ describe('validatePassword — ogni requisito, acceso e spento', () => {
   ];
 
   for (const { key, missing, message } of requirements) {
-    it(`con ${key} acceso rifiuta chi non lo soddisfa`, () => {
+    it(`with ${key} on it rejects input that does not meet it`, () => {
       const result = validatePassword(missing, STRICT);
       expect(result.isValid).toBe(false);
       expect(result.errors).toContain(message);
     });
 
-    it(`con ${key} spento lo stesso input passa`, () => {
+    it(`with ${key} off the same input passes`, () => {
       // The point of a configurable policy: switching a requirement off must actually switch it off.
       expect(validatePassword(missing, { ...STRICT, [key]: false }).isValid).toBe(true);
     });
   }
 
-  it('elenca tutti i requisiti mancanti, non solo il primo', () => {
+  it('lists every missing requirement, not just the first', () => {
     const result = validatePassword('abc', STRICT);
     expect(result.errors).toHaveLength(4); // lunghezza, maiuscola, cifra, speciale
     expect(result.isValid).toBe(false);
@@ -96,7 +96,7 @@ describe('validatePassword — quali caratteri contano come speciali', () => {
   }
 
   for (const ch of rejected) {
-    it(`non conta ${JSON.stringify(ch)} come carattere speciale`, () => {
+    it(`does not count ${JSON.stringify(ch)} as a special character`, () => {
       const result = validatePassword(`TestPassw0rd${ch}xy`, STRICT);
       expect(result.isValid).toBe(false);
       expect(result.errors).toContain('Richiesto almeno un carattere speciale');

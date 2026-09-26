@@ -35,9 +35,9 @@ import type { UserSession } from '../src/lib/auth';
 let prisma: PrismaClient;
 let adminSession: UserSession;
 
-/** Dodici caratteri, minuscole e cifre: passa il prefiltro statico, non la complessità di default. */
+/** Twelve characters, lowercase and digits: passes the static prefilter, not the default complexity. */
 const NO_UPPERCASE = 'passw0rd!123';
-/** Dodici caratteri che soddisfano ogni requisito acceso. */
+/** Twelve characters that meet every requirement that is on. */
 const STRONG = 'TestPassw1rd!x';
 
 beforeEach(async () => {
@@ -61,13 +61,13 @@ const newUser = () => {
 };
 
 describe('users.core.create', () => {
-  it('rifiuta una password che non soddisfa la complessità configurata', async () => {
+  it('rejects a password that does not meet the configured complexity', async () => {
     await expect(
       asAdmin().users.create({ ...newUser(), password: NO_UPPERCASE })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('la accetta se quel requisito viene spento', async () => {
+  it('accepts it if that requirement is switched off', async () => {
     // The point of configuring it: switching it off must switch it off here too, not only on reset.
     await setPolicy({ 'security.password.requireUppercase': 'false' });
     await expect(
@@ -75,7 +75,7 @@ describe('users.core.create', () => {
     ).resolves.toMatchObject({ username: expect.any(String) });
   });
 
-  it('alzare minLength rifiuta una password che prima bastava', async () => {
+  it('raising minLength rejects a password that used to be enough', async () => {
     // The defect exactly: this used to stay accepted, because Zod said 12 and the configuration
     // never reached this far.
     await expect(asAdmin().users.create({ ...newUser(), password: STRONG })).resolves.toBeTruthy();
@@ -88,14 +88,14 @@ describe('users.core.create', () => {
 });
 
 describe('users.core.update', () => {
-  it('rifiuta una password che non soddisfa la complessità configurata', async () => {
+  it('rejects a password that does not meet the configured complexity', async () => {
     const { user: target } = await createTestUser('viewer');
     await expect(
       asAdmin().users.update({ id: target.id, password: NO_UPPERCASE })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('la accetta se quel requisito viene spento', async () => {
+  it('accepts it if that requirement is switched off', async () => {
     const { user: target } = await createTestUser('viewer');
     await setPolicy({ 'security.password.requireUppercase': 'false' });
     await expect(
@@ -103,7 +103,7 @@ describe('users.core.update', () => {
     ).resolves.toMatchObject({ id: target.id });
   });
 
-  it('una update senza password non consulta la policy', async () => {
+  it('an update without a password does not consult the policy', async () => {
     // The policy must not become an obstacle to editing some other field.
     const { user: target } = await createTestUser('viewer');
     await setPolicy({ 'security.password.minLength': '128' });
@@ -125,16 +125,16 @@ describe('auth.confirmPasswordReset', () => {
     return anon.auth.confirmPasswordReset({ token, newPassword });
   };
 
-  it('rifiuta una password che non soddisfa la complessità configurata', async () => {
+  it('rejects a password that does not meet the configured complexity', async () => {
     await expect(resetWith(NO_UPPERCASE)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('la accetta se quel requisito viene spento', async () => {
+  it('accepts it if that requirement is switched off', async () => {
     await setPolicy({ 'security.password.requireUppercase': 'false' });
     await expect(resetWith(NO_UPPERCASE)).resolves.toBeTruthy();
   });
 
-  it('registra il tentativo debole nell’audit, che è il motivo per cui questo percorso non usa assert', async () => {
+  it('records the weak attempt in the audit, which is why this path does not use assert', async () => {
     await expect(resetWith(NO_UPPERCASE)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     const log = await prisma.auditLog.findFirst({
       where: { action: 'PASSWORD_CHANGED', result: 'FAILURE' },
@@ -145,7 +145,7 @@ describe('auth.confirmPasswordReset', () => {
 });
 
 describe('me.changePassword', () => {
-  it('rifiuta una password che non soddisfa la complessità configurata', async () => {
+  it('rejects a password that does not meet the configured complexity', async () => {
     const { session } = await createTestUser('editor');
     await expect(
       createCallerWithSession(session).me.changePassword({
@@ -156,7 +156,7 @@ describe('me.changePassword', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('la accetta se quel requisito viene spento', async () => {
+  it('accepts it if that requirement is switched off', async () => {
     // The direction that used to fail closed: the hardcoded chain in the schema refused anyway,
     // whatever the configuration said.
     const { session } = await createTestUser('editor');
@@ -180,7 +180,7 @@ describe('me.changePassword', () => {
  * of anything. This is the test that stops the permission coming back.
  */
 describe('la policy la cambia solo un admin', () => {
-  it('un editor non può scriverla', async () => {
+  it('an editor cannot write it', async () => {
     const { session } = await createTestUser('editor');
     await expectUnauthorized(
       () =>
@@ -206,7 +206,7 @@ describe('la policy la cambia solo un admin', () => {
     );
   });
 
-  it('un admin sì', async () => {
+  it('an admin can', async () => {
     await expect(
       asAdmin().config.set({ key: 'security.password.minLength', value: '16', encrypt: false })
     ).resolves.toBeTruthy();

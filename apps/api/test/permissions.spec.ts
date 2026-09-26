@@ -279,9 +279,9 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(editorPermissions).toContain('seasons:*');
     expect(editorPermissions).toContain('users:read');
     expect(editorPermissions).toContain('users:update');
-    // Nessun accesso a config: gli endpoint che gatea (SMTP, LDAP, strategia di auth,
-    // credenziali storage, policy password) non controllano l'accesso di sezione, quindi il
-    // permesso arrivava molto oltre le pagine che l'interfaccia nascondeva.
+    // No access to config: the endpoints it gates (SMTP, LDAP, auth strategy, storage
+    // credentials, password policy) do not check section access, so the permission
+    // reached far beyond the pages the interface hid.
     expect(editorPermissions).not.toContain('config:read');
     expect(editorPermissions).not.toContain('config:update');
     expect(editorPermissions).toContain('audit:read');

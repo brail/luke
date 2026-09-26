@@ -118,8 +118,8 @@ beforeAll(async () => {
   );
 });
 
-describe('pricing — matrice dei permessi', () => {
-  it('editor e viewer non possono scrivere set di parametri', async () => {
+describe('pricing — permission matrix', () => {
+  it('editor and viewer cannot write parameter sets', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     // `pricing:update` is not in the editor role: this is a product decision, not
@@ -145,7 +145,7 @@ describe('pricing — matrice dei permessi', () => {
     }
   });
 
-  it('editor e viewer possono leggere e calcolare', async () => {
+  it('editor and viewer can read and calculate', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const set = await callerAs('admin').parameterSets.create({
       brandId,
@@ -176,7 +176,7 @@ describe('pricing — matrice dei permessi', () => {
     }
   });
 
-  it('un anonimo non raggiunge nulla', async () => {
+  it('an anonymous caller reaches nothing', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const anon = (await createAnonymousCaller()).pricing;
 
@@ -187,7 +187,7 @@ describe('pricing — matrice dei permessi', () => {
 });
 
 describe('pricing — scoping brand+stagione', () => {
-  it('calculate rifiuta un set che appartiene a un altro brand', async () => {
+  it('calculate rejects a set that belongs to another brand', async () => {
     const a = await createBrandAndSeason();
     const b = await createBrandAndSeason();
     const admin = callerAs('admin');
@@ -225,7 +225,7 @@ describe('pricing — scoping brand+stagione', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('update rifiuta un set che non appartiene al brand+stagione indicati', async () => {
+  it('update rejects a set that does not belong to the given brand+season', async () => {
     const a = await createBrandAndSeason();
     const b = await createBrandAndSeason();
     const admin = callerAs('admin');
@@ -245,7 +245,7 @@ describe('pricing — scoping brand+stagione', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('list restituisce solo i set del proprio brand+stagione', async () => {
+  it('list returns only the sets of its own brand+season', async () => {
     const a = await createBrandAndSeason();
     const b = await createBrandAndSeason();
     const admin = callerAs('admin');
@@ -262,8 +262,8 @@ describe('pricing — scoping brand+stagione', () => {
   });
 });
 
-describe('pricing — invariante del set di default', () => {
-  it('il primo set creato diventa default', async () => {
+describe('pricing — default set invariant', () => {
+  it('the first set created becomes the default', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     const first = await callerAs('admin').parameterSets.create({
@@ -277,7 +277,7 @@ describe('pricing — invariante del set di default', () => {
     expect(first.isDefault).toBe(true);
   });
 
-  it('esiste sempre esattamente un default per brand+stagione', async () => {
+  it('there is always exactly one default per brand+season', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -301,7 +301,7 @@ describe('pricing — invariante del set di default', () => {
     expect(sets.find(s => s.id === first.id)?.isDefault).toBe(false);
   });
 
-  it('eliminare il default ne promuove un altro', async () => {
+  it('deleting the default promotes another one', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -325,7 +325,7 @@ describe('pricing — invariante del set di default', () => {
     expect(sets[0].isDefault).toBe(true);
   });
 
-  it('eliminare l’ultimo set lascia la stagione vuota senza errori', async () => {
+  it('deleting the last set leaves the season empty without errors', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -342,8 +342,8 @@ describe('pricing — invariante del set di default', () => {
   });
 });
 
-describe('pricing — unicità del nome', () => {
-  it('due set con lo stesso nome nello stesso brand+stagione sono in conflitto', async () => {
+describe('pricing — name uniqueness', () => {
+  it('two sets with the same name in the same brand+season conflict', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -362,7 +362,7 @@ describe('pricing — unicità del nome', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
-  it('lo stesso nome è ammesso in stagioni diverse', async () => {
+  it('the same name is allowed in different seasons', async () => {
     const a = await createBrandAndSeason();
     const b = await createBrandAndSeason();
     const admin = callerAs('admin');
@@ -384,7 +384,7 @@ describe('pricing — unicità del nome', () => {
     ).resolves.toMatchObject({ name: 'Standard' });
   });
 
-  it('rinominare un set su un nome già preso è un conflitto', async () => {
+  it('renaming a set to a name already taken is a conflict', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -408,7 +408,7 @@ describe('pricing — unicità del nome', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
-  it('salvare un set col proprio nome invariato non è un conflitto', async () => {
+  it('saving a set with its own unchanged name is not a conflict', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -430,8 +430,8 @@ describe('pricing — unicità del nome', () => {
   });
 });
 
-describe('pricing — brand e stagione devono esistere', () => {
-  it('create su un brand inesistente è NOT_FOUND', async () => {
+describe('pricing — brand and season must exist', () => {
+  it('create on a nonexistent brand is NOT_FOUND', async () => {
     const { seasonId } = await createBrandAndSeason();
 
     await expect(
@@ -443,7 +443,7 @@ describe('pricing — brand e stagione devono esistere', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
-  it('create su una stagione inesistente è NOT_FOUND', async () => {
+  it('create on a nonexistent season is NOT_FOUND', async () => {
     const { brandId } = await createBrandAndSeason();
 
     await expect(
@@ -457,7 +457,7 @@ describe('pricing — brand e stagione devono esistere', () => {
 });
 
 describe('pricing — copyFromPreviousSeason', () => {
-  it('non salva nulla: è una lettura, malgrado il nome', async () => {
+  it('saves nothing: it is a read, despite the name', async () => {
     const uid = randomUUID().substring(0, 6).toUpperCase();
     const brand = await prisma.brand.create({
       data: { code: `CP${uid}`, name: `Copy ${uid}`, isActive: true },
@@ -492,7 +492,7 @@ describe('pricing — copyFromPreviousSeason', () => {
     ).resolves.toEqual([]);
   });
 
-  it('restituisce null quando non c’è una stagione precedente con parametri', async () => {
+  it('returns null when there is no previous season with parameters', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     await expect(
@@ -505,7 +505,7 @@ describe('pricing — copyFromPreviousSeason', () => {
 });
 
 describe('pricing — validazione input', () => {
-  it('rifiuta un margine ottimale del 100%', async () => {
+  it('rejects an optimal margin of 100%', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     // At 100% the company multiplier diverges: the limit is enforced in the Zod schema.
@@ -518,7 +518,7 @@ describe('pricing — validazione input', () => {
     ).rejects.toThrow();
   });
 
-  it('rifiuta un tasso di cambio non positivo', async () => {
+  it('rejects a non-positive exchange rate', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     await expect(
@@ -530,7 +530,7 @@ describe('pricing — validazione input', () => {
     ).rejects.toThrow();
   });
 
-  it('rifiuta un codice paese non ISO alpha-2', async () => {
+  it('rejects a country code that is not ISO alpha-2', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     await expect(
@@ -542,7 +542,7 @@ describe('pricing — validazione input', () => {
     ).rejects.toThrow();
   });
 
-  it('calculate rifiuta una modalità senza i prezzi che le servono', async () => {
+  it('calculate rejects a mode without the prices it needs', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const set = await callerAs('admin').parameterSets.create({
       brandId,
@@ -565,7 +565,7 @@ describe('pricing — validazione input', () => {
 });
 
 describe('pricing — export', () => {
-  it('xlsx e pdf producono un file per il brand+stagione richiesti', async () => {
+  it('xlsx and pdf produce a file for the requested brand+season', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 
@@ -585,7 +585,7 @@ describe('pricing — export', () => {
     }
   });
 
-  it('il pdf è un vero PDF, non una stringa qualunque', async () => {
+  it('the pdf is a real PDF, not just any string', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
     const admin = callerAs('admin');
 

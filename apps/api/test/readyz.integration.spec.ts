@@ -68,7 +68,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
   });
 
   describe('checkBootstrapDependencies', () => {
-    it('dovrebbe completare con successo quando tutte le dipendenze sono OK', async () => {
+    it('should complete successfully when every dependency is OK', async () => {
       // Mock all dependencies as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -91,7 +91,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       );
     });
 
-    it('dovrebbe fallire quando validateMasterKey restituisce false', async () => {
+    it('should fail when validateMasterKey returns false', async () => {
       // Mock master key not available
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -106,7 +106,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       );
     });
 
-    it('dovrebbe fallire quando deriveSecret lancia errore', async () => {
+    it('should fail when deriveSecret throws', async () => {
       // Mock master key OK but secret derivation fails
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -128,7 +128,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       );
     });
 
-    it('dovrebbe fallire quando la connessione DB fallisce', async () => {
+    it('should fail when the DB connection fails', async () => {
       // Mock DB disconnected
       const mockPrisma = {
         $connect: vi
@@ -159,7 +159,7 @@ describe('/readyz Endpoint Behavior', () => {
   });
 
   describe('runReadinessChecks', () => {
-    it('dovrebbe restituire allOk=true quando tutti i check passano', async () => {
+    it('should return allOk=true when every check passes', async () => {
       // Mock all checks as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -177,7 +177,7 @@ describe('/readyz Endpoint Behavior', () => {
       expect(result.timestamp).toBeDefined();
     });
 
-    it('dovrebbe restituire allOk=false quando il database fallisce', async () => {
+    it('should return allOk=false when the database fails', async () => {
       // Mock DB disconnected
       const mockPrisma = {
         $queryRaw: vi
@@ -193,7 +193,7 @@ describe('/readyz Endpoint Behavior', () => {
       );
     });
 
-    it('dovrebbe restituire allOk=false quando secrets fallisce', async () => {
+    it('should return allOk=false when secrets fail', async () => {
       // Mock secrets fails
       (deriveSecret as MockedFunction<typeof deriveSecret>).mockImplementation(
         () => {
@@ -209,7 +209,7 @@ describe('/readyz Endpoint Behavior', () => {
       );
     });
 
-    it('dovrebbe gestire errori in check paralleli', async () => {
+    it('should handle errors in parallel checks', async () => {
       // Mock a check that throws an unhandled exception
       const mockPrisma = {
         $queryRaw: vi.fn().mockImplementation(() => {
