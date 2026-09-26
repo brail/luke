@@ -267,7 +267,7 @@ function DownloadSection({
   );
 }
 
-// ─── Component principale ─────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function StatisticsPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -323,7 +323,7 @@ export default function StatisticsPage() {
     });
   };
 
-  // Stato sync portafoglio
+  // Portafoglio sync state
   const pfSyncStatusInfo = (() => {
     const headerState = pfSyncState?.tables.find(t => t.tableName === 'nav_pf_sales_header');
     if (!headerState?.lastSyncedAt) return null;
@@ -383,7 +383,7 @@ export default function StatisticsPage() {
     });
   };
 
-  // Stato sync kimo
+  // Kimo sync state
   const kimoSyncStatusInfo = (() => {
     const headerState = kimoSyncState?.tables.find(t => t.tableName === 'nav_kimo_sales_header');
     if (!headerState?.lastSyncedAt) return null;

@@ -40,13 +40,13 @@ export function AppContextProvider({ children }: AppContextProviderProps) {
   const { data: session } = useSession();
   const [needsSetup, setNeedsSetup] = useState(false);
 
-  // Query per ottenere il context corrente - solo se autenticato
+  // Query that fetches the current context - only when authenticated
   const contextQuery = trpc.context.get.useQuery(undefined, {
     retry: false,
-    enabled: !!session?.user, // Abilita solo se l'utente è autenticato
+    enabled: !!session?.user, // Enabled only when the user is authenticated
   });
 
-  // Gestione errori e reset setup
+  // Error handling and setup reset
   React.useEffect(() => {
     if (contextQuery.error?.data?.code === 'PRECONDITION_FAILED') {
       setNeedsSetup(true);

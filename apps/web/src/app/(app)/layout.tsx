@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // Redirect a login se non autenticato (evita setState durante render)
+  // Redirect to login when not authenticated (avoids setState during render)
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login');
@@ -45,7 +45,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) {
-    return null; // Mostra nulla mentre useEffect fa il redirect
+    return null; // Render nothing while useEffect redirects
   }
 
   return (
@@ -54,7 +54,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="flex h-screen w-full bg-background">
           <AppSidebar />
           <div className="flex-1 flex flex-col overflow-y-auto">
-            {/* Header comune */}
+            {/* Shared header */}
             <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
               <div className="flex items-center px-4 py-2">
                 <CollapsedSidebarTrigger />
@@ -65,18 +65,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
 
-            {/* Contenuto principale */}
+            {/* Main content */}
             <main className="flex-1 overflow-y-auto p-6">{children}</main>
           </div>
         </div>
 
-        {/* Modale bloccante per setup context */}
+        {/* Blocking modal for context setup */}
         <ContextGate />
 
         {/* Heartbeat silenzioso per presenza online */}
         <HeartbeatTicker />
 
-        {/* Modal saluto giornaliero, una volta al giorno per browser */}
+        {/* Daily greeting modal, once a day per browser */}
         <DailyGreetingModal />
       </SidebarProvider>
     </AppContextProvider>

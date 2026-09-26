@@ -97,13 +97,13 @@ export function BrandDialogWithPermissions({
   const brandPerms = useBrandPermissions();
   const { data: session } = useSession();
 
-  // Lista brand NAV sincronizzati (per collegamento)
+  // Synced NAV brands (for linking)
   const { data: navBrands = [] } = trpc.integrations.nav.brands.list.useQuery(
     { excludeLinkedTo: brand?.navBrandId ?? undefined },
     { staleTime: 5 * 60 * 1000 }
   );
 
-  // Determina il label del dialog in base ai permessi
+  // Determine the dialog label from the permissions
   const dialogTitle = useMemo(() => {
     if (brand) {
       return brandPerms.isReadOnly() ? 'Visualizza Brand' : 'Modifica Brand';
@@ -121,7 +121,7 @@ export function BrandDialogWithPermissions({
     return 'Crea un nuovo brand nel sistema.';
   }, [brand, brandPerms]);
 
-  // Messaggio per campi disabilitati
+  // Message for disabled fields
   const disabledFieldTooltip = useMemo(() => {
     if (brandPerms.isReadOnly()) {
       return 'Accesso sola lettura - non puoi modificare i brand';
@@ -273,7 +273,7 @@ export function BrandDialogWithPermissions({
     }
 
     try {
-      // Converti BrandFormData a BrandInput per il backend
+      // Convert BrandFormData to BrandInput for the backend
       const brandInput: BrandInput = {
         code: data.code,
         name: data.name,
@@ -287,7 +287,7 @@ export function BrandDialogWithPermissions({
 
       await onSubmit(brandInput);
     } catch (error) {
-      debugError('Errore submit form:', error);
+      debugError('Form submit error:', error);
       throw error;
     }
   };

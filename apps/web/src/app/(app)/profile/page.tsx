@@ -49,8 +49,8 @@ import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
 
 /**
- * Pagina Profilo Utente Semplificata
- * Layout responsive unico senza tab, con statistiche reali e quick actions
+ * Simplified user profile page.
+ * A single responsive layout without tabs, with real statistics and quick actions.
  */
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -58,7 +58,7 @@ export default function ProfilePage() {
   const { copy } = useCopyToClipboard();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
-  // Query per ottenere i dati del profilo utente
+  // Query that fetches the user profile data
   const {
     data: user,
     isLoading,
@@ -79,7 +79,7 @@ export default function ProfilePage() {
     },
   });
 
-  // Mutation per richiesta email verifica
+  // Mutation to request a verification email
   const requestVerifyMutation =
     trpc.auth.requestEmailVerification.useMutation();
 
@@ -143,7 +143,7 @@ export default function ProfilePage() {
     );
   }
 
-  // Calcola statistiche da dati reali
+  // Compute statistics from real data
   const userStats = {
     lastLogin: user.lastLoginAt || new Date(),
   };
@@ -186,9 +186,9 @@ export default function ProfilePage() {
 
       {/* Layout Grid Responsive */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Colonna Sinistra - Avatar e Info Base */}
+        {/* Left column - avatar and basic info */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Avatar e Info Principali */}
+          {/* Avatar and main info */}
           <Card>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
@@ -324,7 +324,7 @@ export default function ProfilePage() {
           </Card>
         </div>
 
-        {/* Colonna Destra - Contenuto Principale */}
+        {/* Right column - main content */}
         <div className="lg:col-span-3 space-y-6">
           <Tabs defaultValue="profile">
             <TabsList>
@@ -373,7 +373,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Modal Cambio Password */}
+      {/* Password change modal */}
       <Dialog
         open={showChangePasswordModal}
         onOpenChange={setShowChangePasswordModal}

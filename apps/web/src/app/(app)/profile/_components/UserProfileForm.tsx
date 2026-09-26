@@ -46,10 +46,10 @@ interface UserProfileFormProps {
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 
-  // Stato per cambio email
+  // State for the email change
   const [newEmail, setNewEmail] = useState('');
 
-  // Form setup con validazione Zod
+  // Form setup with Zod validation
   const {
     register,
     handleSubmit,
@@ -84,7 +84,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       onSuccess: data => {
         toast.success(data.message);
         setNewEmail('');
-        // Ricarica pagina per aggiornare sessione
+        // Reload the page to refresh the session
         window.location.reload();
       },
       onErrorMessage: 'Errore cambio email',
@@ -113,7 +113,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         />
       </div>
 
-      {/* Cambia Email */}
       <div className="space-y-2">
         <Label htmlFor="newEmail">Cambia Email</Label>
         <div className="flex gap-2">
@@ -164,7 +163,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         </p>
       </div>
 
-      {/* Nome */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Label htmlFor="firstName">Nome</Label>
@@ -196,7 +194,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Cognome */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Label htmlFor="lastName">Cognome</Label>
@@ -278,7 +275,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Pulsante Salva */}
       <div className="flex justify-end">
         <Button
           type="submit"

@@ -124,7 +124,6 @@ export function SeasonDialog({
 
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            {/* Codice */}
             <div className="space-y-2">
               <Label htmlFor="code" className="flex items-center gap-2">
                 Codice *
@@ -145,7 +144,7 @@ export function SeasonDialog({
               )}
             </div>
 
-            {/* Anno (opzionale, descrittivo) */}
+            {/* Year (optional, descriptive) */}
             <div className="space-y-2">
               <Label htmlFor="year">Anno</Label>
               <Input
@@ -165,7 +164,6 @@ export function SeasonDialog({
             </div>
           </div>
 
-          {/* Nome */}
           <div className="space-y-2">
             <Label htmlFor="name" className="flex items-center gap-2">
               Nome *
@@ -223,7 +221,6 @@ export function SeasonDialog({
             </div>
           )}
 
-          {/* Stato attivo */}
           <div className="flex items-center gap-3">
             <Switch
               id="isActive"

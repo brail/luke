@@ -21,8 +21,8 @@ import { Label } from '../../../components/ui/label';
 import { trpc } from '../../../lib/trpc';
 
 /**
- * Pagina di login con form e integrazione Auth.js
- * Usa componenti shadcn/ui per UI consistente
+ * Login page with the form and Auth.js integration.
+ * Uses shadcn/ui components for a consistent UI.
  */
 export default function LoginPage() {
   const [username, setUsername] = useState('');

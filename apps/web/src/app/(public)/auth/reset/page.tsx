@@ -23,7 +23,7 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
- * Componente interno con useSearchParams
+ * Inner component using useSearchParams.
  */
 function ResetPasswordContent() {
   const router = useRouter();
@@ -48,7 +48,7 @@ function ResetPasswordContent() {
   }, []);
 
   /**
-   * Handler per richiesta reset password
+   * Handler for the password reset request.
    */
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +74,7 @@ function ResetPasswordContent() {
   };
 
   /**
-   * Handler per conferma reset password con token
+   * Handler for the password reset confirmation with a token.
    */
   const handleConfirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,7 +138,7 @@ function ResetPasswordContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Form richiesta reset (senza token) */}
+          {/* Reset request form (no token) */}
           {!token && (
             <form onSubmit={handleRequestReset} className="space-y-4">
               <div className="space-y-2">
@@ -181,7 +181,7 @@ function ResetPasswordContent() {
             </form>
           )}
 
-          {/* Form conferma reset (con token) */}
+          {/* Reset confirmation form (with token) */}
           {token && (
             <form onSubmit={handleConfirmReset} className="space-y-4">
               <div className="space-y-2">
@@ -251,9 +251,9 @@ function ResetPasswordContent() {
 }
 
 /**
- * Pagina Reset Password con Suspense boundary
- * - Senza token: form per richiedere reset via email
- * - Con token: form per impostare nuova password
+ * Password Reset page with a Suspense boundary.
+ * - Without a token: form to request a reset by email
+ * - With a token: form to set a new password
  */
 export default function ResetPasswordPage() {
   return (

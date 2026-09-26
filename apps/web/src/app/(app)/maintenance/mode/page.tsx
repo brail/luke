@@ -27,7 +27,7 @@ const STATUS_LABEL: Record<MaintenanceModeStatus, string> = {
 
 /** `datetime-local` needs a value with no timezone suffix and minute precision. */
 function minDateTimeLocal(): string {
-  const d = new Date(Date.now() + 5 * 60 * 1000); // almeno 5 minuti nel futuro
+  const d = new Date(Date.now() + 5 * 60 * 1000); // at least 5 minutes in the future
   d.setSeconds(0, 0);
   return new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
 }

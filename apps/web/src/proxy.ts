@@ -23,7 +23,7 @@ export default function middleware() {
   return NextResponse.next();
 }
 
-// Configurazione matcher per proteggere solo le rotte del dashboard
+// Matcher configuration that protects only the dashboard routes
 export const config = {
   matcher: ['/(app)(.*)'],
 };

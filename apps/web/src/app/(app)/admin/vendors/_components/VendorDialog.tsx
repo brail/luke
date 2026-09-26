@@ -353,7 +353,7 @@ export function VendorDialog({
                 )}
               />
 
-              {/* Param set abilitati — visibile solo se brand+season selezionati */}
+              {/* Enabled param sets — visible only when brand+season are selected */}
               <FormField
                 control={form.control}
                 name="enabledParameterSetIds"

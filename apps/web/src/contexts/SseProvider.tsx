@@ -78,7 +78,7 @@ export function SseProvider({ children }: { children: React.ReactNode }) {
           scheduleReconnect();
         };
       } catch {
-        // Ticket fetch fallito — retry con backoff.
+        // Ticket fetch failed — retrying with backoff.
         scheduleReconnect();
       }
     };

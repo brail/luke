@@ -3,8 +3,8 @@ import React from 'react';
 import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
 
 /**
- * Layout per sezione Admin
- * Protegge tutte le route sotto /admin — accessibili solo agli admin
+ * Layout for the Admin section.
+ * Protects every route under /admin — admins only.
  */
 export default async function AdminLayout({
   children,

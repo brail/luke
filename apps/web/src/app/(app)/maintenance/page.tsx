@@ -4,8 +4,8 @@ import { PageHeader } from '../../../components/PageHeader';
 import { SectionCard } from '../../../components/SectionCard';
 
 /**
- * Pagina principale per sezione Maintenance
- * Placeholder per funzionalità di manutenzione e diagnostica
+ * Main page of the Maintenance section.
+ * Placeholder for maintenance and diagnostics features.
  */
 export default function MaintenancePage() {
   return (

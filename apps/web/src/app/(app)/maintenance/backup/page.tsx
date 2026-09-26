@@ -158,9 +158,9 @@ export default function MaintenanceBackupPage() {
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
-  // Invariante per la durata del processo (il file di migration è nell'immagine, lo schema
-  // corrente cambia solo al boot) — nessun evento di sessione lo invalida davvero, niente
-  // refetch oltre al primo per ogni backup.
+  // Invariant for the lifetime of the process (the migration file is in the image, the current
+  // schema changes only at boot) — no session event really invalidates it, so no refetch beyond
+  // the first one per backup.
   const { data: restoreCompat } = trpc.maintenance.backup.checkRestoreCompatibility.useQuery(
     { id: restoreTarget?.id ?? '' },
     { enabled: restoreTarget !== null, staleTime: Infinity }
@@ -171,8 +171,8 @@ export default function MaintenanceBackupPage() {
       toast.success('Migrazione avviata — segui il progresso nella tabella backup');
       setRestoreTarget(null);
       void utils.maintenance.backup.list.invalidate();
-      // Il recap-toast già esistente (showBackupRecap sopra) copre da solo la transizione
-      // PENDING/RUNNING→COMPLETED del nuovo backup "Migrato" — nessun codice aggiuntivo qui.
+      // The existing recap toast (showBackupRecap above) alone covers the PENDING/RUNNING→COMPLETED
+      // transition of the new "Migrato" backup — no extra code here.
     },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });

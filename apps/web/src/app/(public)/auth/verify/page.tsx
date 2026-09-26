@@ -18,7 +18,7 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
- * Componente interno con useSearchParams
+ * Inner component using useSearchParams.
  */
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -155,9 +155,9 @@ function VerifyEmailContent() {
 }
 
 /**
- * Pagina Verifica Email con Suspense boundary
- * Richiede token come query parameter
- * Auto-trigger della verifica in useEffect
+ * Email Verification page with a Suspense boundary.
+ * Requires the token as a query parameter.
+ * Triggers the verification automatically in useEffect.
  */
 export default function VerifyEmailPage() {
   return (

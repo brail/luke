@@ -18,9 +18,9 @@ import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 /**
- * Pagina mostrata agli utenti LDAP dopo il primo login.
- * L'account è stato creato ma deve essere approvato da un admin.
- * Se l'email non è disponibile da LDAP, l'utente può fornirla qui.
+ * Page shown to LDAP users after their first login.
+ * The account was created but must be approved by an admin.
+ * If LDAP provides no email, the user can supply it here.
  */
 function PendingApprovalContent() {
   const router = useRouter();

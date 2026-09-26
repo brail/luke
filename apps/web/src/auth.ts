@@ -98,7 +98,7 @@ async function callTRPCAuth(username: string, password: string, clientIp?: strin
     const data = await response.json();
     return data.result?.data;
   } catch (error) {
-    debugError('Errore chiamata API auth:', error);
+    debugError('Auth API call error:', error);
     return null;
   }
 }

@@ -46,7 +46,7 @@ export function ChangePasswordCard({
     confirm: false,
   });
 
-  // Form setup con validazione Zod
+  // Form setup with Zod validation
   const {
     register,
     handleSubmit,
@@ -64,7 +64,7 @@ export function ChangePasswordCard({
   const newPassword = watch('newPassword', '');
   const confirmPassword = watch('confirmNewPassword', '');
 
-  // Mutation per cambio password
+  // Password change mutation
   const changePasswordMutation = trpc.me.changePassword.useMutation({
     onSuccess: () => {
       toast.success('Password cambiata con successo');
@@ -80,15 +80,15 @@ export function ChangePasswordCard({
       }, 1000);
     },
     onError: error => {
-      // Gestisce errori UNAUTHORIZED per invalidazione sessioni
+      // Handle UNAUTHORIZED errors from session invalidation
       if (error?.data?.code === 'UNAUTHORIZED') {
-        // Se il messaggio è "Password corrente non valida", non forzare logout
+        // If the message is "Password corrente non valida", do not force logout
         if (error.message === 'Password corrente non valida') {
           toast.error('Password corrente non valida');
           return;
         }
-        // Altrimenti è un errore di sessione scaduta
-        debugLog('Sessione invalidata, forzando logout...');
+        // Otherwise it is an expired-session error
+        debugLog('Session invalidated, forcing logout...');
         signOut({ callbackUrl: '/login' });
         return;
       }
@@ -111,7 +111,7 @@ export function ChangePasswordCard({
     changePasswordMutation.mutate(data);
   };
 
-  // Toggle visibilità password
+  // Toggle password visibility
   const togglePasswordVisibility = (field: 'current' | 'new' | 'confirm') => {
     setShowPasswords(prev => ({
       ...prev,
@@ -129,7 +129,6 @@ export function ChangePasswordCard({
       description="Cambia la tua password per mantenere l'account sicuro"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Password Corrente */}
         <div className="space-y-2">
           <Label htmlFor="currentPassword">Password Corrente</Label>
           <div className="relative">
@@ -164,7 +163,6 @@ export function ChangePasswordCard({
           )}
         </div>
 
-        {/* Nuova Password */}
         <div className="space-y-2">
           <Label htmlFor="newPassword">Nuova Password</Label>
           <div className="relative">
@@ -199,7 +197,6 @@ export function ChangePasswordCard({
           )}
         </div>
 
-        {/* Conferma Nuova Password */}
         <div className="space-y-2">
           <Label htmlFor="confirmNewPassword">Conferma Nuova Password</Label>
           <div className="relative">
@@ -246,7 +243,6 @@ export function ChangePasswordCard({
           showConfirmPassword={true}
         />
 
-        {/* Pulsante Cambia Password */}
         <div className="flex justify-end">
           <Button
             type="submit"

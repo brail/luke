@@ -3,17 +3,17 @@ import { redirect } from 'next/navigation';
 import { auth } from '../auth';
 
 /**
- * Root page con redirect automatico basato sullo stato di autenticazione
- * Server Component per evitare flickering e migliorare la UX
+ * Root page with an automatic redirect based on the authentication state.
+ * A Server Component, to avoid flickering and improve the UX.
  */
 export default async function Home() {
   const session = await auth();
 
   if (session) {
-    // Utente autenticato: redirect alla dashboard
+    // Authenticated user: redirect to the dashboard
     redirect('/dashboard');
   } else {
-    // Utente non autenticato: redirect al login
+    // Unauthenticated user: redirect to login
     redirect('/login');
   }
 }
