@@ -147,10 +147,19 @@ Implementation: [`idempotencyTrpc.ts`](apps/api/src/lib/idempotencyTrpc.ts) and
 
 ## Error responses
 
-In production the tRPC error formatter replaces **every** error message with
-`Internal server error` ([`error.ts`](apps/api/src/lib/error.ts)). Clients and
-operators must rely on `error.data.code` and `error.data.httpStatus`, not on the
-message:
+The tRPC error formatter ([`error.ts`](apps/api/src/lib/error.ts)) decides which
+message reaches the client:
+
+- A 4xx (`error.data.httpStatus` below 500) keeps its message in every
+  environment: it is written for the caller.
+- A failed input validation is a `BAD_REQUEST` whose message is the first Zod
+  issue's text, not the list of every issue.
+- A 5xx, including any error a procedure did not expect, reads
+  `Internal server error` in production. The original message and its cause
+  still reach the `tRPC error` log line.
+
+Clients and operators branch on `error.data.code` and `error.data.httpStatus`,
+never on the message text:
 
 | Condition | `error.data.code` | HTTP |
 |---|---|---|
@@ -158,9 +167,9 @@ message:
 | Idempotency key reused with a different input | `CONFLICT` | 409 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 
-Rate-limit errors also carry `error.data.retryAfterSeconds`. Outside production
-the messages are readable, for example
-`Rate limit exceeded for login. Max 5 requests per 1 minute(s).`
+Rate-limit errors also carry `error.data.retryAfterSeconds`. Their message, for
+example `Rate limit exceeded for login. Max 5 requests per 1 minute(s).`, names
+the rate-limit bucket: it is meant for the logs, not for display.
 
 ---
 

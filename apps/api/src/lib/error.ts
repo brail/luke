@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { ZodError } from 'zod';
 
 import { isProduction } from '@luke/core';
 import { Prisma } from '@luke/db';
@@ -166,8 +167,23 @@ export interface LukeErrorShape extends TRPCDefaultErrorShape {
 }
 
 /**
+ * A 4xx is the caller's to fix, and its message is written for them, so it passes in every
+ * environment. A 5xx can carry internals (driver errors, hosts, paths), so production replaces
+ * it; the original still reaches the `tRPC error` log line in `server.ts`.
+ * A failed input parse carries `ZodError`'s JSON dump of every issue as its message; the first
+ * issue's own message replaces it, which is what a form bound to the same schema would show.
+ */
+function clientMessage(shape: TRPCDefaultErrorShape, error: TRPCError): string {
+  if (shape.data.httpStatus >= 500) return isProd ? 'Internal server error' : shape.message;
+  if (error.cause instanceof ZodError && error.message === error.cause.message) {
+    return error.cause.issues[0]?.message ?? shape.message;
+  }
+  return shape.message;
+}
+
+/**
  * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
- * Replaces internal error messages with a generic string in production, and surfaces
+ * Decides which message reaches the client (see `clientMessage`) and surfaces
  * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`).
  */
 export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
@@ -177,7 +193,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
 
   return {
     ...shape,
-    message: isProd ? 'Internal server error' : shape.message,
+    message: clientMessage(shape, error),
     data: {
       ...shape.data,
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
