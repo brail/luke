@@ -763,3 +763,23 @@ plausibly why the writer was missed.
   `docs/decisions/README.md` matched readme's stated criteria in every word,
   while being adr's only output. Each mode now names the paths it writes, and
   anything else it notices is reported as `owned by <mode>, not touched`.
+
+## A wrapper that forwards `err.message` forwards everything its `try` can throw (2026-09-26)
+
+**What happened.** Planning X15 (let 4xx tRPC messages reach clients in
+production), I cleared the three backup-restore preflight sites that turn a
+caught error into `PRECONDITION_FAILED` with the caught message. Two arguments:
+the audience is an admin, and "the same texts already reach the admin through
+the `Backup.errorMessage` tooltip". Both were wrong. The review traced the `try`
+blocks: they also catch a Prisma driver error, filesystem errors carrying local
+paths, and `pg_restore` stderr. And the tooltip path belongs to the backup job;
+the restore has no record of its own, so this response was the only exit.
+
+**Rule.** Before accepting a site that puts a caught error's message into a
+client-visible response, list what the `try` block can actually throw — every
+awaited call, down to the driver, the filesystem and child processes — not what
+its authors wrote it to throw. A refusal written for the reader gets its own
+error type and keeps its code; anything else is a server fault. "Only an admin
+sees it" limits the exposure, it does not make the text safe. And a claim that a
+text "already reaches" some surface is a path claim: trace that path for this
+caller, not for a neighbouring one.

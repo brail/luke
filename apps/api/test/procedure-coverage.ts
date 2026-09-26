@@ -120,7 +120,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   maintenance: {
     reason:
       'backup/restore and maintenance mode are destructive by construction: turning them on inside the suite would block the specs that follow',
-    uncovered: 15,
+    uncovered: 14,
   },
   system: {
     reason:

@@ -29,9 +29,11 @@ import {
   applyStagedRestore,
   assertPgToolchainCompatible,
   discardStagedRestore,
+  RestorePreconditionError,
   stageBackupArchive,
 } from '../lib/backup/restorePipeline';
 import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
+import { toErrorCode, toErrorMessage } from '../lib/error';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -65,6 +67,16 @@ function serializeRecord<T extends { sizeBytesEncrypted: bigint | null }>(
   record: T
 ): Omit<T, 'sizeBytesEncrypted'> & { sizeBytesEncrypted: string | null } {
   return { ...record, sizeBytesEncrypted: record.sizeBytesEncrypted?.toString() ?? null };
+}
+
+/**
+ * A preflight refusal written for the admin stays a 412; any other failure is a server fault whose
+ * text can carry paths, driver errors or pg_restore output, so it goes out as a 500 — masked in
+ * production by `trpcErrorFormatter`, logged in full by the tRPC `onError`.
+ */
+function preflightError(err: unknown, message: string): TRPCError {
+  const code = err instanceof RestorePreconditionError ? 'PRECONDITION_FAILED' : 'INTERNAL_SERVER_ERROR';
+  return new TRPCError({ code, message, cause: err });
 }
 
 export const backupRouter = router({
@@ -270,11 +282,7 @@ export const backupRouter = router({
       try {
         await assertPgToolchainCompatible(ctx.prisma);
       } catch (err) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: err instanceof Error ? err.message : String(err),
-          cause: err,
-        });
+        throw preflightError(err, toErrorMessage(err));
       }
 
       const migrated = await createPendingBackupRecord(ctx.prisma, {
@@ -384,11 +392,7 @@ export const backupRouter = router({
       try {
         await assertPgToolchainCompatible(ctx.prisma);
       } catch (err) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: err instanceof Error ? err.message : String(err),
-          cause: err,
-        });
+        throw preflightError(err, toErrorMessage(err));
       }
 
       // Download, decrypt, unpack and verify the archive before anything else. All of it is
@@ -407,15 +411,17 @@ export const backupRouter = router({
           logger: ctx.logger,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const error = preflightError(err, `Backup non ripristinabile: ${toErrorMessage(err)}`);
+        // The code the client gets: a refusal or a server fault. The message stays out of the
+        // audit trail — it can carry paths or pg_restore output — and reaches the server log.
         await logAudit(ctx, {
           action: 'BACKUP_RESTORE',
           targetType: 'BackupRecord',
           targetId: target.id,
           result: 'FAILURE',
-          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode: message.slice(0, 200) },
+          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode: toErrorCode(error) },
         });
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: `Backup non ripristinabile: ${message}`, cause: err });
+        throw error;
       }
 
       // Everything from here on owns the staged working directory: a full decrypted copy of the
@@ -482,7 +488,7 @@ export const backupRouter = router({
             metadata: {
               preserveAuditLog: input.preserveAuditLog,
               restoreFiles: input.restoreFiles,
-              errorCode: message.slice(0, 200),
+              errorCode: toErrorCode(err),
             },
           });
           throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });

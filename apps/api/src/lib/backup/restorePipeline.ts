@@ -38,12 +38,21 @@ import { getStorageProvider } from '../../storage';
 import { createArchiveExtractor, forEachArchiveEntry } from './archiveFormat';
 import { AUDIT_STAGE_PREFIX, auditStageIdent, newAuditStageSchema } from './auditStage';
 import { createBackupDecipher, unwrapDek } from './crypto';
-import { parseDatabaseUrl, pgBinaryMajorVersion, runPgBinary } from './pgConnection';
+import { parseDatabaseUrl, pgBinaryMajorVersion, runCommand, runPgBinary } from './pgConnection';
 
 import type { BackupLogger } from './dumpPipeline';
 import type { PgConnectionParts } from './pgConnection';
 
 const TEMP_DIR = join(homedir(), '.luke', 'restore-tmp');
+
+/**
+ * A restore refused for a reason the admin can act on: a pg_restore/pg_dump major that differs
+ * from the server's, an archive written by a newer pg_dump, or an archive that lacks the dump. Its
+ * message is written for the admin. Any other error out of the preflight is a server fault.
+ */
+export class RestorePreconditionError extends Error {
+  override name = 'RestorePreconditionError';
+}
 
 interface StagedFileEntry {
   bucket: StorageBucket;
@@ -128,7 +137,7 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
     throw new Error(`Impossibile determinare la versione del server PostgreSQL ("${rows[0]?.server_version}")`);
   }
   if (clientMajor !== serverMajor) {
-    throw new Error(
+    throw new RestorePreconditionError(
       `pg_restore è alla major ${clientMajor}, il server PostgreSQL alla ${serverMajor}: un restore ` +
       'con versioni disallineate fallisce a metà. Usa i binari client della stessa major del server ' +
       `(in produzione l'immagine API installa postgresql${serverMajor}-client). In sviluppo locale ` +
@@ -142,7 +151,7 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
   // restorable would be silently unusable, and nothing would say so until it was needed.
   const dumpMajor = await pgBinaryMajorVersion('pg_dump');
   if (dumpMajor !== serverMajor) {
-    throw new Error(
+    throw new RestorePreconditionError(
       `pg_dump è alla major ${dumpMajor}, il server PostgreSQL alla ${serverMajor}: lo snapshot di ` +
       'sicurezza pre-restore verrebbe scritto in un formato che pg_restore non sa rileggere. ' +
       `Allinea anche pg_dump alla major ${serverMajor} prima di procedere.`
@@ -425,30 +434,42 @@ export interface StagedRestore {
  *
  * A custom-format archive carries a format version tied to the `pg_dump` that wrote it (16 writes
  * 1.15, 18 writes 1.16), and `pg_restore` reads its own version and older, never newer. The raw
- * refusal is "unsupported version (1.16) in the file header", which names neither the tool that
+ * refusal is "unsupported version (1.16) in file header", which names neither the tool that
  * wrote the archive nor the one that cannot read it.
  *
  * Deployed instances never see this: the same pinned client writes and reads every backup. It
  * shows up when the toolchain changes underneath existing backups — a developer's PATH, or an
  * image whose client major moved — and on `.lukebak` packages imported from an instance that ran
  * a different one.
+ *
+ * Only that refusal is a `RestorePreconditionError`. The same `catch` receives a `pg_restore` that
+ * could not start, was killed, or could not open the file: server faults, rethrown as plain errors.
+ * Telling them apart reads stderr, so the probe pins `LC_ALL=C`: a `pg_restore` built with NLS
+ * prints in the system language (a Homebrew one does even with an empty `LANG`), and `LC_ALL`
+ * overrides an inherited `LC_MESSAGES` or `LANGUAGE` where `LC_MESSAGES=C` alone would not.
  */
-async function assertDumpReadable(dumpPath: string, logger: BackupLogger): Promise<void> {
+export async function assertDumpReadable(dumpPath: string, logger: BackupLogger): Promise<void> {
   try {
-    await runPgBinary('pg_restore', ['--list', dumpPath], '');
+    // Listing an archive opens no connection, so there is no password to pass.
+    await runCommand('pg_restore', ['--list', dumpPath], { env: { LC_ALL: 'C' } });
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     logger.error({ dumpPath, err: detail }, 'Restore: dump illeggibile');
 
     const clientMajor = await pgBinaryMajorVersion('pg_restore').catch(() => null);
-    throw new Error(
-      'Il dump contenuto nel backup non è leggibile da questo pg_restore' +
-      (clientMajor ? ` (major ${clientMajor})` : '') +
-      '. Se il messaggio parla di versione non supportata nell\'intestazione, il backup è stato ' +
-      'creato da un pg_dump più recente: serve un pg_restore almeno di pari major, che a sua volta ' +
-      `deve coincidere con quella del server. Dettaglio: ${detail}`,
-      { cause: err }
-    );
+    const reader = `questo pg_restore${clientMajor ? ` (major ${clientMajor})` : ''}`;
+    const archiveVersion = /unsupported version \((\d+\.\d+)\) in file header/.exec(detail)?.[1];
+    if (archiveVersion) {
+      throw new RestorePreconditionError(
+        `Il dump del backup usa il formato archivio ${archiveVersion}, che ${reader} non sa leggere: ` +
+        'è stato scritto da un pg_dump più recente. Serve un pg_restore almeno di pari major, che a ' +
+        'sua volta deve coincidere con quella del server.',
+        { cause: err }
+      );
+    }
+    throw new Error(`Il dump contenuto nel backup non è leggibile da ${reader}. Dettaglio: ${detail}`, {
+      cause: err,
+    });
   }
 }
 
@@ -501,7 +522,7 @@ export async function stageBackupArchive(params: StageBackupArchiveParams): Prom
     });
 
     if (!dumpFound) {
-      throw new Error("L'archivio del backup non contiene il dump del database (voce \"db.dump\" assente)");
+      throw new RestorePreconditionError("L'archivio del backup non contiene il dump del database (voce \"db.dump\" assente)");
     }
     await assertDumpReadable(dumpPath, logger);
 
