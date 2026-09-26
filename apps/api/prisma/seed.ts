@@ -105,40 +105,6 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
 }
 
 /**
- * Updates existing users with emailVerifiedAt
- * Marks all existing users (without emailVerifiedAt) as verified
- */
-export async function updateExistingUsersVerification(
-  prisma: PrismaClient
-): Promise<void> {
-  console.log('📧 Updating email verification for existing users...');
-
-  const usersToUpdate = await prisma.user.findMany({
-    where: {
-      emailVerifiedAt: null,
-    },
-  });
-
-  if (usersToUpdate.length === 0) {
-    console.log('✅ No users to update');
-    return;
-  }
-
-  await prisma.user.updateMany({
-    where: {
-      emailVerifiedAt: null,
-    },
-    data: {
-      emailVerifiedAt: new Date(),
-    },
-  });
-
-  console.log(
-    `✅ ${usersToUpdate.length} users updated with emailVerifiedAt`
-  );
-}
-
-/**
  * Creates the application's base configurations
  * Idempotent function: can be run multiple times without duplication
  * Does NOT include LDAP configurations (managed via UI/API)
@@ -595,9 +561,6 @@ async function main() {
   try {
     // Seeding admin user
     await seedAdminUser(prisma);
-
-    // Update existing users with emailVerifiedAt
-    await updateExistingUsersVerification(prisma);
 
     // Seeding configurations
     await seedAppConfigs(prisma);
