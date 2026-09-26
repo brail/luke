@@ -210,7 +210,7 @@ values in the environment table below, and no configuration file is read. Ration
 ### Hardening & Shutdown semantics
 
 - Error handling globale: Fastify `setErrorHandler` e hook `onError` loggano in modo strutturato con `traceId` da header `x-luke-trace-id`. In produzione i messaggi sono generici (niente stack in response).
-- tRPC `errorFormatter`: uniforma il body errore evitando leak di dettagli. `onError` tRPC logga `code` e `message` redatti.
+- tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs the path, the code, the original message and the cause's message, unredacted.
 - Process guards: `SIGTERM`/`SIGINT` eseguono graceful shutdown con timeout; `uncaughtException`/`unhandledRejection` loggano a livello `fatal`, tentano `app.close()` best-effort, poi `process.exit(1)`.
 - Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi. Le integrazioni esterne (es. LDAP) rispettano `AbortController` per abort controllato.
 
