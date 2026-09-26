@@ -149,7 +149,7 @@ async function dropTempDatabase(mainDb: PgConnectionParts, tempDbName: string, l
     ['--if-exists', '--host', mainDb.host, '--port', mainDb.port, '--username', mainDb.user, tempDbName],
     mainDb.password
   ).catch(err => {
-    logger.error({ err, tempDatabase: tempDbName }, 'Migration bridge: drop del DB temporaneo fallito — richiede pulizia manuale');
+    logger.error({ err, tempDatabase: tempDbName }, 'Migration bridge: dropping the temporary DB failed — manual cleanup required');
   });
 }
 
@@ -182,7 +182,7 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
     // Defensive: shouldn't happen (migration names = unique timestamps, OLDER always implies
     // at least one element in the slice) — a safety net against a future refactor silently
     // breaking this invariant.
-    logger.error({ migratedBackupId }, 'Migration bridge: pendingMigrations vuoto, abort');
+    logger.error({ migratedBackupId }, 'Migration bridge: pendingMigrations empty, aborting');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
       data: { status: 'FAILED', errorMessage: 'Nessuna migrazione da applicare (stato inatteso)' },
@@ -240,10 +240,10 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
       throw new Error(`Snapshot pre-migrazione fallito: ${preMigSafetyResult?.errorMessage ?? 'errore sconosciuto'}`);
     }
 
-    logger.info({ migratedBackupId, migrations: pendingMigrations.length }, 'Migration bridge: applico le migrazioni mancanti');
+    logger.info({ migratedBackupId, migrations: pendingMigrations.length }, 'Migration bridge: applying the missing migrations');
     await runMigrateDeploy(tempDb);
 
-    logger.info({ migratedBackupId }, 'Migration bridge: salvo il risultato migrato');
+    logger.info({ migratedBackupId }, 'Migration bridge: saving the migrated result');
     await runBackupJob({
       prisma, backupId: migratedBackupId, scope: 'DB', logger,
       sourceConnection: tempDb, schemaMigrationNameOverride: currentSchemaMigrationName,
@@ -251,7 +251,7 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
     // runBackupJob handles COMPLETED/FAILED on this record by itself.
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ migratedBackupId, err: message }, 'Migration bridge: fallito');
+    logger.error({ migratedBackupId, err: message }, 'Migration bridge: failed');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },

@@ -218,7 +218,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     await mkdir(workDir, { recursive: true, mode: 0o700 });
 
     const dumpPath = join(workDir, 'db.dump');
-    logger.info({ backupId }, 'Backup: avvio pg_dump');
+    logger.info({ backupId }, 'Backup: starting pg_dump');
     await dumpDatabaseToFile(dumpPath, sourceConnection);
 
     const provider = await getStorageProvider(prisma);
@@ -304,10 +304,10 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
       },
     });
 
-    logger.info({ backupId, fileCount, sizeBytes: uploadResult.size }, 'Backup: completato');
+    logger.info({ backupId, fileCount, sizeBytes: uploadResult.size }, 'Backup: completed');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.error({ backupId, err: message }, 'Backup: fallito');
+    logger.error({ backupId, err: message }, 'Backup: failed');
     await prisma.backupRecord.update({
       where: { id: backupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },

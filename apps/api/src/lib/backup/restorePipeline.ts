@@ -473,7 +473,7 @@ export async function stageBackupArchive(params: StageBackupArchiveParams): Prom
   try {
     await mkdir(filesDir, { recursive: true, mode: 0o700 });
 
-    logger.info({ filename }, 'Restore: download e decifratura archivio');
+    logger.info({ filename }, 'Restore: downloading and decrypting the archive');
     const extract = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
 
     const stagedFiles: StagedFileEntry[] = [];
@@ -539,29 +539,29 @@ export async function applyStagedRestore(params: ApplyStagedRestoreParams): Prom
   const [{ rows }] = await prisma.$queryRaw<{ rows: bigint }[]>(
     Prisma.sql`SELECT count(*) AS rows FROM ${auditStageIdent(stashSchema)}.audit_logs`
   );
-  logger.info({ stashSchema, auditRows: Number(rows) }, 'Restore: stato corrente messo da parte');
+  logger.info({ stashSchema, auditRows: Number(rows) }, 'Restore: current state set aside');
 
-  logger.info('Restore: avvio pg_restore');
+  logger.info('Restore: starting pg_restore');
   await restoreDatabaseFromFile(staged.dumpPath);
 
   if (preserveAuditLog) {
     const mergedRows = await mergeStashedAuditLog(prisma, stashSchema);
-    logger.info({ mergedRows }, 'Restore: registro attività reinnestato');
+    logger.info({ mergedRows }, 'Restore: activity log reattached');
   }
 
   // Always, independently of `preserveAuditLog`: the backup inventory has to match the storage
   // bucket, which this restore did not touch. See `restoreStashedBackupRecords`.
   const backupRecords = await restoreStashedBackupRecords(prisma, stashSchema);
-  logger.info({ backupRecords }, 'Restore: inventario dei backup ripristinato');
+  logger.info({ backupRecords }, 'Restore: backup inventory restored');
 
   await dropAllAuditStages(prisma);
 
   if (restoreFiles) {
-    logger.info('Restore: database ripristinato, replay file storage');
+    logger.info('Restore: database restored, replaying file storage');
     await replayStagedFiles(await getStorageProvider(prisma), staged.stagedFiles);
   }
 
-  logger.info({ restoredFiles: staged.stagedFiles.length }, 'Restore: completato');
+  logger.info({ restoredFiles: staged.stagedFiles.length }, 'Restore: completed');
 }
 
 /** Removes a staged restore's working directory. Safe to call more than once. */
