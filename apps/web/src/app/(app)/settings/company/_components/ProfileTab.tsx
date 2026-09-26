@@ -79,18 +79,18 @@ export function ProfileTab() {
   const [accentColorHex, setAccentColorHex] = useState('#000000');
   const [locale, setLocale] = useState<'it-IT' | 'en-US'>('it-IT');
   const [dateFormat, setDateFormat] = useState<'DD/MM/YYYY' | 'YYYY-MM-DD'>('DD/MM/YYYY');
-  /** Logo attualmente salvato sul server. Sola lettura: non lo si manda indietro. */
+  /** Logo currently saved on the server. Read-only: it is never sent back. */
   const [savedLogoKey, setSavedLogoKey] = useState<string | null>(null);
-  /** File caricato ma non ancora collegato: è questo che si manda al salvataggio. */
+  /** File uploaded but not linked yet: this is what gets sent on save. */
   const [pendingFileObjectId, setPendingFileObjectId] = useState<string | null>(null);
-  /** Anteprima del pending, prima che una key esista. */
+  /** Preview of the pending file, before a key exists. */
   const [pendingLogoUrl, setPendingLogoUrl] = useState<string | null>(null);
-  /** L'utente ha premuto "rimuovi": va mandato `logoKey: null`. */
+  /** The user pressed "remove": `logoKey: null` must be sent. */
   const [logoCleared, setLogoCleared] = useState(false);
   const [dirty, setDirty] = useState(false);
 
   const colorInputRef = useRef<HTMLInputElement>(null);
-  // Il pending vince: finché non si salva non esiste ancora una storage key.
+  // The pending file wins: until it is saved, no storage key exists yet.
   const logoPreviewUrl = logoCleared
     ? null
     : (pendingLogoUrl ?? (savedLogoKey ? buildCompanyLogoUrl(savedLogoKey) : null));
@@ -141,7 +141,7 @@ export function ProfileTab() {
 
   const handleLogoUpload = async (file: File) => {
     try {
-      // Si tiene l'id, non la key: la key la deriva il server dal FileObject.
+      // Keep the id, not the key: the server derives the key from the FileObject.
       const result = await upload(file, 'company-assets');
       setPendingFileObjectId(result.fileObjectId);
       setPendingLogoUrl(result.publicUrl);
@@ -181,7 +181,7 @@ export function ProfileTab() {
           province: addrProvince.trim() || undefined,
           countryCode: addrCountryCode || undefined,
         },
-        // `logoKey` solo per cancellare; per impostarlo si manda l'id del file.
+        // `logoKey` only to clear it; to set it, the file id is sent.
         ...(logoCleared ? { logoKey: null } : {}),
         ...(pendingFileObjectId ? { fileObjectId: pendingFileObjectId } : {}),
         exportSettings: {
@@ -285,7 +285,7 @@ export function ProfileTab() {
         </div>
       </SectionCard>
 
-      {/* ── Sede legale ── */}
+      {/* ── Registered office ── */}
       <SectionCard title="Sede legale">
         <div className="space-y-4">
           <div className="space-y-1.5">

@@ -91,15 +91,15 @@ const CONFIRM_ACTION_CONFIG: Record<
 };
 
 /**
- * Pagina gestione utenti con CRUD completo
- * Include lista paginata, filtri, creazione, modifica e eliminazione utenti
- * Layout e header gestiti dal layout padre
+ * User management page with full CRUD.
+ * Includes the paginated list, filters, creation, editing and deletion of users.
+ * Layout and header are handled by the parent layout.
  */
 export default function UsersPage() {
   const { data: session } = useSession();
   const { can } = usePermission();
 
-  // Stato per dialog e paginazione
+  // State for the dialog and pagination
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
@@ -108,7 +108,7 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [syncedFields, setSyncedFields] = useState<SyncedField[]>([]);
 
-  // Stato per modal di conferma
+  // State for the confirmation modal
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     type: ConfirmActionType;
@@ -117,23 +117,23 @@ export default function UsersPage() {
     handler: (confirmPhrase?: string) => void;
   } | null>(null);
 
-  // Stato per ordinamento
+  // State for sorting
   const [sortBy, setSortBy] = useState<SortColumn>('createdAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  // Stato per dialog invio email verifica post-creazione
+  // State for the post-creation verification email dialog
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
 
   const [pendingAccessUser, setPendingAccessUser] =
     useState<UserForApproval | null>(null);
 
-  // Stato per dialog gestione accesso
+  // State for the access management dialog
   const [accessDialogUser, setAccessDialogUser] = useState<UserListItem | null>(null);
 
   const refresh = useRefresh();
 
-  // Query tRPC per lista utenti con paginazione e filtri
+  // tRPC query for the user list with pagination and filters
   const {
     data: usersData,
     isLoading,
@@ -239,12 +239,12 @@ export default function UsersPage() {
       entityMessages: { FORBIDDEN: true },
     });
 
-  // Handlers per le azioni
+  // Action handlers
 
   const handleCreateUser = () => {
     setDialogMode('create');
     setSelectedUser(null);
-    setSyncedFields([]); // Nuovo utente = nessun campo sincronizzato
+    setSyncedFields([]); // New user = no synced field
     setDialogOpen(true);
   };
 
@@ -263,7 +263,7 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = (user: UserListItem) => {
-    // Debug: verifica i valori
+    // Debug: check the values
     debugLog('handleDeleteUser - user.id:', user.id);
     debugLog('handleDeleteUser - session.user.id:', session?.user?.id);
     debugLog('handleDeleteUser - isSelf:', user.id === session?.user?.id);
@@ -364,11 +364,11 @@ export default function UsersPage() {
       createUser(parsed.data);
     } else {
       if (!selectedUser) return;
-      // Filtra i campi per self-edit
+      // Filter the fields for self-edit
       const isSelfEdit = selectedUser.id === session?.user?.id;
       const updateData: Parameters<typeof updateUserMutation.mutateAsync>[0] = { id: selectedUser.id };
 
-      // Aggiungi solo i campi modificati
+      // Add only the modified fields
       if (data.email !== selectedUser.email) updateData.email = data.email;
       if (data.username !== selectedUser.username)
         updateData.username = data.username;
@@ -422,7 +422,7 @@ export default function UsersPage() {
           </TabsList>
 
           <TabsContent value="active" className="space-y-6 mt-4">
-            {/* Azioni e Filtri */}
+            {/* Actions and filters */}
             <SectionCard
               title="Ricerca e Filtri"
               description="Cerca e filtra gli utenti del sistema"
@@ -441,7 +441,7 @@ export default function UsersPage() {
               />
             </SectionCard>
 
-            {/* Tabella Utenti */}
+            {/* Users table */}
             <SectionCard
               title="Utenti Sistema"
               description="Lista completa degli utenti registrati"
@@ -520,7 +520,7 @@ export default function UsersPage() {
           />
         )}
 
-        {/* Dialog gestione accesso sezioni + brand/season */}
+        {/* Section + brand/season access dialog */}
         {accessDialogUser && (
           <UserAccessDialog
             user={accessDialogUser}
@@ -545,7 +545,7 @@ export default function UsersPage() {
           />
         )}
 
-        {/* Dialog invio email verifica post-creazione */}
+        {/* Post-creation verification email dialog */}
         <SendVerificationDialog
           userId={createdUserId}
           open={showVerifyDialog}

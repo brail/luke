@@ -67,7 +67,7 @@ const COL = {
   actions: 'w-[116px]', // see grid comment above
 };
 
-/** Swatch + hex della stessa banda: due input sullo stesso valore, sempre affiancati. */
+/** Swatch + hex of the same band: two inputs on the same value, always side by side. */
 function ColorField({
   value,
   onChange,
@@ -126,9 +126,9 @@ function EmphasisSelect({
   );
 }
 
-/** Anteprima del badge come lo vedrà l'utente finale: colore ed emphasis sono valori runtime
- * (hex da AppConfig), non design token, quindi la leggibilità della combinazione si verifica
- * solo guardandola. */
+/** Preview of the badge as the end user will see it: colour and emphasis are runtime values
+ * (hex from AppConfig), not design tokens, so the legibility of the combination can only be checked
+ * by looking at it. */
 function BandPreview({ color, emphasis, label }: { color: string; emphasis: AlertBandEmphasis; label: string }) {
   return (
     <Badge variant="outline" className="max-w-full truncate" style={bandBadgeStyle({ color, emphasis })}>
@@ -138,10 +138,9 @@ function BandPreview({ color, emphasis, label }: { color: string; emphasis: Aler
 }
 
 /**
- * Le tre celle che definiscono l'aspetto di una banda più la sua anteprima. Identiche fra la
- * tabella delle bande a range e quella degli esiti — le larghezze in `COL` promettono già che le
- * due si leggano come un'unica griglia, e una promessa mantenuta a copia-incolla si rompe al primo
- * ritocco su una sola delle due.
+ * The three cells that define how a band looks, plus its preview. Identical between the range band
+ * table and the outcome one — the widths in `COL` already promise that the two read as a single
+ * grid, and a promise kept by copy-paste breaks at the first touch-up to only one of them.
  */
 function BandAppearanceCells({
   band,
@@ -336,10 +335,9 @@ function BandSetEditor({
 }
 
 /**
- * I due badge di esito (conclusa in tempo / in ritardo) in un'unica tabella, con le stesse
- * colonne delle bande a range. Non hanno un intervallo di giorni — la conclusione è uno stato,
- * non una distanza da una scadenza — quindi la prima colonna dice *quando* si applicano invece
- * di chiedere un numero.
+ * The two outcome badges (completed on time / late) in one table, with the same columns as the
+ * range bands. They have no day interval — completion is a state, not a distance from a
+ * deadline — so the first column says *when* they apply instead of asking for a number.
  */
 function OutcomeBandsTable({
   completedBand,

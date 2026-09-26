@@ -53,7 +53,7 @@ export default function LdapSettingsPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  // Form con react-hook-form e validazione Zod
+  // Form with react-hook-form and Zod validation
   const form = useForm<LdapConfigInput>({
     resolver: zodResolver(ldapConfigSchema),
     defaultValues: {
@@ -79,14 +79,14 @@ export default function LdapSettingsPage() {
   const [testConnectionMessage, setTestConnectionMessage] =
     React.useState<string>('');
 
-  // Dialog per test ricerca
+  // Search test dialog
   const [showSearchDialog, setShowSearchDialog] = useState(false);
   const searchForm = useForm<z.infer<typeof ldapSearchTestSchema>>({
     resolver: zodResolver(ldapSearchTestSchema),
     defaultValues: { username: '' },
   });
 
-  // Carica configurazione esistente (solo se admin)
+  // Load the existing configuration (admin only)
   const {
     data: existingConfig,
     isLoading: isLoadingConfig,
@@ -164,7 +164,7 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // Controllo accesso admin
+  // Admin access check
   if (status === 'loading') {
     return (
       <SettingsFormShell
@@ -178,7 +178,7 @@ export default function LdapSettingsPage() {
   }
 
   const onSubmit = (data: LdapConfigInput) => {
-    // Prepara payload escludendo bindPassword se vuoto
+    // Prepare the payload, leaving out bindPassword if empty
     const { bindPassword, ...payloadWithoutPassword } = data;
     const payload =
       !bindPassword || bindPassword.trim() === ''
@@ -226,7 +226,6 @@ export default function LdapSettingsPage() {
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Abilita LDAP */}
             <FormField
               control={form.control}
               name="enabled"
@@ -251,7 +250,6 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* Strategia Autenticazione */}
             <FormField
               control={form.control}
               name="strategy"
@@ -473,7 +471,7 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* Bottoni Test */}
+            {/* Test buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               <Button
                 type="button"
@@ -513,7 +511,7 @@ export default function LdapSettingsPage() {
               message={testConnectionMessage}
             />
 
-            {/* Pulsanti Azione */}
+            {/* Action buttons */}
             <div className="flex justify-end space-x-4">
               <Button
                 type="button"
@@ -546,7 +544,7 @@ export default function LdapSettingsPage() {
         </Form>
       </SectionCard>
 
-      {/* Dialog Test Ricerca */}
+      {/* Search test dialog */}
       <Dialog
         open={showSearchDialog}
         onOpenChange={open => { if (!open && !testSearchMutation.isPending) setShowSearchDialog(false); }}

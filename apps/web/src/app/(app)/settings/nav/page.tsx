@@ -161,7 +161,6 @@ export default function NavSettingsPage() {
                 )}
               />
 
-              {/* Porta */}
               <FormField
                 control={form.control}
                 name="port"
@@ -202,7 +201,6 @@ export default function NavSettingsPage() {
                 )}
               />
 
-              {/* Utente */}
               <FormField
                 control={form.control}
                 name="user"
@@ -258,7 +256,6 @@ export default function NavSettingsPage() {
               )}
             />
 
-            {/* Sola lettura */}
             <FormField
               control={form.control}
               name="readOnly"
@@ -281,7 +278,6 @@ export default function NavSettingsPage() {
               )}
             />
 
-            {/* Sync abilitato */}
             <FormField
               control={form.control}
               name="syncEnabled"
@@ -324,7 +320,6 @@ export default function NavSettingsPage() {
         </Form>
       </SectionCard>
 
-      {/* Test connessione */}
       <SectionCard
         title="Test Connessione"
         description="Verifica autenticazione SQL Server, accesso al database e nome Company"

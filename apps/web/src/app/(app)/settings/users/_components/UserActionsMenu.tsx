@@ -74,7 +74,7 @@ export function UserActionsMenu({
     onErrorMessage: 'Errore',
   });
 
-  // Se non ha nessun permesso di modifica, non mostrare il menu
+  // Without any edit permission, do not show the menu
   if (!canUpdate && !canDelete) return null;
 
   const handleEdit = () => {

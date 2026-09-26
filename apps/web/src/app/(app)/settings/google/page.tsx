@@ -206,7 +206,6 @@ export default function GoogleWorkspacePage() {
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(values => saveMutation.mutate(values))} className="space-y-6">
-          {/* Modalità autenticazione */}
           <SectionCard
             title="Modalità autenticazione"
             description="Scegli come Luke si autentica con Google."
@@ -419,7 +418,6 @@ export default function GoogleWorkspacePage() {
                   )}
                 />
 
-                {/* Connessione account */}
                 <div className="rounded-lg border p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -471,7 +469,6 @@ export default function GoogleWorkspacePage() {
             </SectionCard>
           )}
 
-          {/* Prodotti */}
           <SectionCard title="Prodotti" description="Abilita le integrazioni specifiche per prodotto Google.">
             <FormField
               control={form.control}

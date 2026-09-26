@@ -288,7 +288,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
               </TabsList>
             </div>
 
-            {/* ── Informazioni ── */}
+            {/* ── Information ── */}
             <TabsContent value="info" className="px-6 py-4">
               <div className="space-y-4">
                 <FormField
@@ -320,7 +320,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
               </div>
             </TabsContent>
 
-            {/* ── Membri ── */}
+            {/* ── Members ── */}
             <TabsContent value="members" className="px-6 py-4">
               <div className="space-y-4">
                 {canUpdate && availableUsers.length > 0 && (

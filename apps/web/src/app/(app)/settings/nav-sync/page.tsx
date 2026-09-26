@@ -486,7 +486,7 @@ function NavSyncTab({
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(30);
 
-  // Inizializza selezione, mode e pianificazione dal filtro salvato
+  // Initialize selection, mode and schedule from the saved filter
   useEffect(() => {
     if (filterQuery.isSuccess) {
       if (filterQuery.data) {
@@ -533,7 +533,7 @@ function NavSyncTab({
   const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
   const paginatedRecords = filteredRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  // Il checkbox header opera su tutti i filtrati (non solo la pagina corrente)
+  // The header checkbox acts on every filtered row (not just the current page)
   const allVisibleSelected =
     filteredRecords.length > 0 && filteredRecords.every(r => selectedNavNos.has(r.navNo));
   const someVisibleSelected = filteredRecords.some(r => selectedNavNos.has(r.navNo));
@@ -590,20 +590,20 @@ function NavSyncTab({
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* ── Pannello filtro ──────────────────────────────────────────────── */}
+      {/* ── Filter panel ─────────────────────────────────────────────────── */}
       <SectionCard
         title="Criterio di sincronizzazione"
         description="Definisci quali record NAV vengono inclusi nel sync"
       >
         <div className="space-y-4">
-          {/* Warning: nessun criterio configurato */}
+          {/* Warning: no criterion configured */}
           {isNotConfigured && (
             <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
               ⚠️ Nessun criterio configurato — il sync è bloccato finché non selezioni e salvi un&apos;opzione.
             </p>
           )}
 
-          {/* Badge contatore — solo quando c'è una selezione attiva */}
+          {/* Counter badge — only when a selection is active */}
           {showPreview && selectedNavNos.size > 0 && (
             <Badge variant="secondary" className="text-sm">
               {selectedNavNos.size} {entityLabel.toLowerCase()} selezionati
@@ -617,7 +617,7 @@ function NavSyncTab({
 
           {/* Radio mode + pianificazione — layout a due colonne */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {/* Colonna sinistra: filtro */}
+            {/* Left column: filter */}
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Filtro record</p>
               {(
@@ -642,7 +642,7 @@ function NavSyncTab({
               {mode && <ModeNote mode={mode} entityLabel={entityLabel} />}
             </div>
 
-            {/* Colonna destra: modalità sync */}
+            {/* Right column: sync mode */}
             <div className="space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modalità sync</p>
               <div className="flex items-center justify-between rounded-lg border p-3">
@@ -685,14 +685,14 @@ function NavSyncTab({
         </div>
       </SectionCard>
 
-      {/* ── Anteprima selezione (solo whitelist / exclude) ────────────────── */}
+      {/* ── Selection preview (whitelist / exclude only) ──────────────────── */}
       {showPreview && (
         <SectionCard
           title={`Selezione ${entityLabel}`}
           description={`Seleziona i record da ${mode === 'whitelist' ? 'includere' : 'escludere'} dal sync. Carica l'anteprima da NAV per modificare la selezione.`}
         >
           <div className="space-y-4">
-            {/* Bottone carica + filtro testuale */}
+            {/* Load button + text filter */}
             <div className="flex items-center gap-3">
               <Button
                 variant="outline"
@@ -749,7 +749,7 @@ function NavSyncTab({
               )}
             </div>
 
-            {/* Tabella — visibile solo dopo aver caricato */}
+            {/* Table — visible only after loading */}
             {(previewQuery.data || previewQuery.isFetching) && (
               <div className="rounded-md border">
                 <Table>
@@ -876,13 +876,13 @@ function NavSyncTab({
         </SectionCard>
       )}
 
-      {/* ── Esecuzione sync manuale ────────────────────────────────────────── */}
+      {/* ── Manual sync run ────────────────────────────────────────────────── */}
       <SectionCard
         title={`Esegui sync ${entityLabel}`}
         description={`Avvia manualmente la sincronizzazione NAV → DB locale per i soli ${entityLabel.toLowerCase()}`}
       >
         <div className="space-y-3">
-          {/* Banner avviso criterio non configurato */}
+          {/* Unconfigured criterion warning banner */}
           {isNotConfigured && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
               ⚠️ Configura e salva un criterio di sincronizzazione prima di eseguire il sync.
