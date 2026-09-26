@@ -320,5 +320,56 @@ export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',
 ] satisfies AppConfigKey[];
 
+/** First segment of a dotted key: `app` for `app.baseUrl`. Generic so it distributes over a union. */
+type KeyPrefix<Key> = Key extends `${infer Prefix}.${string}` ? Prefix : never;
+
+/** Every first segment a registered key starts with. */
+type AppConfigKeyPrefix = KeyPrefix<AppConfigKey>;
+
+/**
+ * Prefixes the generic `config` router's write procedures (`set`, `update`, `setMultiple`,
+ * `importJson`) accept. Registered keys outside them (`backup.*`, `rbac.*`, `smtp.*`, …) are
+ * written through the routers that own them. The router's reads and `config.delete` are not
+ * prefix-gated. Bound to the registry: a prefix no registered key starts with does not compile.
+ */
+export const CONFIG_ROUTER_PREFIXES = [
+  'app',
+  'auth',
+  'storage',
+  'security',
+  'integrations',
+] as const satisfies readonly AppConfigKeyPrefix[];
+
+export type ConfigRouterPrefix = (typeof CONFIG_ROUTER_PREFIXES)[number];
+
+/** Key format the generic `config` router accepts: `<prefix>.<segment>[.<segment>…]`. */
+export const CONFIG_ROUTER_KEY_REGEX = new RegExp(
+  `^(${CONFIG_ROUTER_PREFIXES.join('|')})(\\.[a-zA-Z0-9_-]+)+$`
+);
+
+/**
+ * Keys `config.delete` refuses, because deleting one succeeds but breaks something: boot
+ * (`CRITICAL_CONFIG_KEYS`), every LDAP login while LDAP is enabled (the three fields `ldapAuth.ts`
+ * requires), or, silently, every link in outgoing email (`app.baseUrl` falls back to
+ * `http://localhost:3000`). `auth.nextAuthSecret` is a legacy key the seed still writes. Deleting
+ * any other key under `CONFIG_ROUTER_PREFIXES` resets it to its default or leaves it
+ * unconfigured, which an update can do as well.
+ */
+export const UNDELETABLE_CONFIG_KEYS = [
+  ...CRITICAL_CONFIG_KEYS,
+  'auth.nextAuthSecret',
+  'auth.ldap.url',
+  'auth.ldap.searchBase',
+  'auth.ldap.searchFilter',
+  'app.baseUrl',
+] as const satisfies readonly AppConfigKey[];
+
+const UNDELETABLE_CONFIG_KEY_SET = new Set<string>(UNDELETABLE_CONFIG_KEYS);
+
+/** Whether the generic `config` router refuses to delete `key`. */
+export function isUndeletableConfigKey(key: string): boolean {
+  return UNDELETABLE_CONFIG_KEY_SET.has(key);
+}
+
 // Re-export LdapResilienceSchema for use in configManager (avoids double-import)
 export { LdapResilienceSchema };

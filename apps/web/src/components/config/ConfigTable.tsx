@@ -11,11 +11,12 @@ import {
   ArrowDown,
 } from 'lucide-react';
 
+import { isUndeletableConfigKey } from '@luke/core';
+
 import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   formatValue,
   formatDate,
-  isCriticalKey,
 } from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -241,15 +242,15 @@ export function ConfigTable({
 
                     <DropdownMenuItem
                       onClick={() => onDelete(config)}
-                      disabled={!canUpdate || isCriticalKey(config.key)}
+                      disabled={!canUpdate || isUndeletableConfigKey(config.key)}
                       className={
-                        !canUpdate || isCriticalKey(config.key)
+                        !canUpdate || isUndeletableConfigKey(config.key)
                           ? 'text-muted-foreground'
                           : 'text-destructive'
                       }
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {isCriticalKey(config.key)
+                      {isUndeletableConfigKey(config.key)
                         ? 'Elimina (bloccato)'
                         : 'Elimina'}
                     </DropdownMenuItem>

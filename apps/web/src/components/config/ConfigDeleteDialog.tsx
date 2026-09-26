@@ -2,7 +2,8 @@
 
 import { Lock } from 'lucide-react';
 
-import { isCriticalKey } from '../../lib/configHelpers';
+import { isUndeletableConfigKey } from '@luke/core';
+
 import { ConfirmDialog } from '../ConfirmDialog';
 import {
   AlertDialog,
@@ -28,10 +29,10 @@ interface ConfigDeleteDialogProps {
  * confirmation — the same gate the permanent deletions use, with the entity's own identifier in
  * place of their fixed phrase.
  *
- * A critical key (from `isCriticalKey`) cannot be deleted at all, so it gets its own dialog: there
+ * A key `isUndeletableConfigKey` names cannot be deleted at all, so it gets its own dialog: there
  * is no action to confirm, only a reason to read.
  *
- * @param configKey - The config key to be deleted; used both as the confirmation phrase and for the critical-key check.
+ * @param configKey - The config key to be deleted; used both as the confirmation phrase and for the undeletable-key check.
  */
 export function ConfigDeleteDialog({
   onOpenChange,
@@ -39,7 +40,7 @@ export function ConfigDeleteDialog({
   onConfirm,
   isLoading = false,
 }: ConfigDeleteDialogProps) {
-  if (isCriticalKey(configKey)) {
+  if (isUndeletableConfigKey(configKey)) {
     return (
       <AlertDialog open={true} onOpenChange={onOpenChange}>
         <AlertDialogContent>

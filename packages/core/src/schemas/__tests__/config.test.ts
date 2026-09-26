@@ -15,7 +15,17 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { APP_CONFIG_DEFAULTS, AppConfigRegistry, isAppConfigKey, validateConfigValue } from '../config.js';
+import {
+  APP_CONFIG_DEFAULTS,
+  AppConfigRegistry,
+  CONFIG_ROUTER_KEY_REGEX,
+  CONFIG_ROUTER_PREFIXES,
+  CRITICAL_CONFIG_KEYS,
+  UNDELETABLE_CONFIG_KEYS,
+  isAppConfigKey,
+  isUndeletableConfigKey,
+  validateConfigValue,
+} from '../config.js';
 import { passwordPrefilterSchema } from '../password.js';
 
 /** Every boolean key in the registry — the property must hold for all of them, not a sample. */
@@ -194,5 +204,32 @@ describe('numeric bounds are declared once, on the schema', () => {
   ] as const)('%s rejects %s and accepts %s', (key, outOfRange, inRange) => {
     expect(validateConfigValue(key, outOfRange).success).toBe(false);
     expect(validateConfigValue(key, inRange).success).toBe(true);
+  });
+});
+
+// The generic config router and the settings UI both read these rules from here. They used to
+// keep three copies: the UI offered categories no key belonged to, blocked deletes the API allowed
+// and offered two deletes the API refused (`auth.strategy`, `auth.nextAuthSecret`).
+describe('the generic config router has one set of key rules', () => {
+  it('accepts, by format, every registered key under its prefixes and no other', () => {
+    const prefixes = new Set<string>(CONFIG_ROUTER_PREFIXES);
+    for (const key of Object.keys(AppConfigRegistry)) {
+      const routable = prefixes.has(key.split('.')[0]);
+      expect(CONFIG_ROUTER_KEY_REGEX.test(key), key).toBe(routable);
+    }
+  });
+
+  it('protects only keys the write procedures accept, boot-critical ones included', () => {
+    for (const key of UNDELETABLE_CONFIG_KEYS) {
+      expect(CONFIG_ROUTER_KEY_REGEX.test(key), key).toBe(true);
+    }
+    for (const key of CRITICAL_CONFIG_KEYS) {
+      expect(isUndeletableConfigKey(key), key).toBe(true);
+    }
+  });
+
+  it('protects app.baseUrl, whose default would silently point every email link at localhost', () => {
+    expect(isUndeletableConfigKey('app.baseUrl')).toBe(true);
+    expect(isUndeletableConfigKey('security.password.minLength')).toBe(false);
   });
 });

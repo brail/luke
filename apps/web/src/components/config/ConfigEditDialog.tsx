@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 
+import { CONFIG_ROUTER_PREFIXES } from '@luke/core';
+
 import {
-  CATEGORIES,
   validateConfigKey,
   validateConfigValue,
   getCategoryFromKey,
@@ -214,7 +215,7 @@ export function ConfigEditDialog({
                 <SelectValue placeholder="Seleziona categoria" />
               </SelectTrigger>
               <SelectContent>
-                {CATEGORIES.map(category => (
+                {CONFIG_ROUTER_PREFIXES.map(category => (
                   <SelectItem key={category} value={category}>
                     {category}
                   </SelectItem>
