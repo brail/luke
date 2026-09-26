@@ -1,31 +1,12 @@
 /**
- * `withAuditLog` (apps/api/src/lib/auditMiddleware.ts) — systemic bug discovered while writing
- * tests for `users.forceLocalAccess`/`revokeLocalAccess` (unrelated feature). Not fixed here per
- * the test-writer skill's own rule: flag it and write the failing test, the decision to change
- * application code belongs to the user.
+ * `withAuditLog` (apps/api/src/lib/auditMiddleware.ts) records a failed mutation as FAILURE.
  *
- * `withAuditLog` wraps `next()` in `try { ... SUCCESS ... } catch { ... FAILURE ... }`, assuming
- * `next()` rejects when the wrapped mutation resolver throws. Reproduced here with the simplest
- * possible case — `users.revokeUserSessions`, a resolver with a single unconditional
- * `throw new TRPCError({ code: 'NOT_FOUND' })` and *no* try/catch of its own — and confirmed by
- * temporarily instrumenting `withAuditLog` itself: `next()` resolves normally even though the
- * mutation demonstrably threw (the caller *does* receive the NOT_FOUND rejection — the error
- * propagates correctly to the end caller through the rest of the middleware chain). Only
- * `withAuditLog`'s own `try/catch` fails to observe it, so every failed mutation that uses this
- * middleware is being logged as `result: 'SUCCESS'` in `AuditLog` instead of `'FAILURE'`.
- *
- * Impact: `withAuditLog` wraps the mutations of the two users routers (`users.admin.router.ts`,
- * `users.core.router.ts`); the other routers audit by calling `logAudit()` directly. If this reproduces over real HTTP too (not just the `createCaller`
- * path every integration test in this suite uses — that distinction is NOT yet verified, see the
- * open question below), the audit trail for every failed mutation using it is silently wrong:
- * `AuditLog.result` says `SUCCESS` for actions that failed. This is a compliance/forensic
- * integrity issue, not a cosmetic one — `maintenance.audit_log` is a section admins rely on.
- *
- * Open question this test does not answer: whether the same happens over the real Fastify HTTP
- * adapter, or is specific to the `createCaller` direct-invocation path used by every test in this
- * suite (in which case the bug would instead be "the whole withAuditLog test surface is blind",
- * a smaller but still real problem). Worth checking with a real HTTP request before deciding how
- * to fix it.
+ * It used to wrap `next()` in `try { ... SUCCESS ... } catch { ... FAILURE ... }`. In tRPC 11 a
+ * resolver error reaches a middleware as a resolved `{ ok: false }` result, whatever the adapter
+ * (the caller still receives the rejection further up the chain), so the `catch` never ran and
+ * every failed mutation of the users routers was logged as SUCCESS — found while testing
+ * `users.forceLocalAccess`, kept here as an `it.fails` until the fix. The idempotency middleware
+ * had the same blind spot (`idempotencyTrpc.ts`).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -36,8 +17,8 @@ import { createCallerWithSession, createTestUser, setupTestDb } from './helpers'
 
 
 describe('withAuditLog — FAILURE detection', () => {
-  it.fails(
-    'a mutation that throws without its own try/catch → should log FAILURE, not SUCCESS (bug: see the file header)',
+  it(
+    'a mutation that throws without its own try/catch is logged as FAILURE',
     async () => {
       const prisma: PrismaClient = await setupTestDb();
       const { session } = await createTestUser('admin');

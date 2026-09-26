@@ -83,6 +83,8 @@ export const loggingMiddleware = t.middleware(
       type,
       path,
       duration,
+      // A failed procedure also resolves here (`ok: false`), so "completed" alone hid it.
+      ok: result.ok,
       message: `tRPC ${type}: ${path} completed (${duration}ms)`,
     });
 

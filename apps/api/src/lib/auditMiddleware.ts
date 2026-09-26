@@ -33,59 +33,56 @@ export function withAuditLog(action: string, targetType: string) {
       return next();
     }
 
-    try {
-      const result = await next();
+    // A procedure error reaches a middleware as a resolved `{ ok: false }`, not as a throw (tRPC
+    // 11, whatever the adapter): a `try/catch` around `next()` never saw one, and every failed
+    // mutation was logged as SUCCESS.
+    const result = await next();
 
-      // SUCCESS: extract targetId if present in result or input
-      const resultData =
-        result && typeof result === 'object' && 'data' in result
-          ? (result as { data: unknown }).data
-          : undefined;
-      const targetId = extractId(resultData) || extractId(result) || extractId(input);
-
+    if (!result.ok) {
+      // FAILURE: error code and a truncated message, no PII
       await logAudit(ctx, {
         action,
         targetType,
-        targetId,
-        result: 'SUCCESS',
-        // The mutation's input and output under two container keys, written out so
-        // `AuditMetadata` checks them; their children are dynamic by design and are checked at
-        // runtime by `sanitizeMetadata`. That split is the contract.
-        //
-        // There is deliberately no field list here. This used to keep a second, hand-maintained
-        // allowlist of 9 input and 7 result fields, which failed twice over: most mutations have
-        // none of those fields, so the row was stored as `{}`, and the `input_`/`result_` prefixes
-        // it added were not on `SAFE_KEY_LIST`, so whatever it did capture was redacted anyway
-        // (`USER_UPDATE` rows read `{"input_role": "[REDACTED]"}`). `sanitizeMetadata` is the one
-        // allowlist; nesting keeps `input.role` and `result.role` distinguishable without prefixes.
-        //
-        // `resultData`, not `result`: the latter is tRPC's middleware envelope, which carries
-        // `ctx` (Prisma client, Fastify request) and is circular — persisting it fails the
-        // Prisma insert, and `logAudit` swallows that for non-critical actions, so the audit
-        // row silently disappears instead of being merely incomplete.
-        metadata: {
-          input: input && typeof input === 'object' ? input : undefined,
-          result: resultData && typeof resultData === 'object' ? resultData : undefined,
-        },
-      });
-
-      return result;
-    } catch (error: unknown) {
-      // FAILURE: logs error without PII
-      const targetId = extractId(input);
-
-      await logAudit(ctx, {
-        action,
-        targetType,
-        targetId,
+        targetId: extractId(input),
         result: 'FAILURE',
         metadata: {
-          errorCode: toErrorCode(error),
-          errorMessage: toErrorMessage(error).substring(0, 100), // Truncate
+          errorCode: toErrorCode(result.error),
+          errorMessage: toErrorMessage(result.error).substring(0, 100),
         },
       });
-
-      throw error; // Re-throw to not block flow
+      return result;
     }
+
+    // SUCCESS: extract targetId if present in result or input
+    const resultData = result.data;
+    const targetId = extractId(resultData) || extractId(input);
+
+    await logAudit(ctx, {
+      action,
+      targetType,
+      targetId,
+      result: 'SUCCESS',
+      // The mutation's input and output under two container keys, written out so
+      // `AuditMetadata` checks them; their children are dynamic by design and are checked at
+      // runtime by `sanitizeMetadata`. That split is the contract.
+      //
+      // There is deliberately no field list here. This used to keep a second, hand-maintained
+      // allowlist of 9 input and 7 result fields, which failed twice over: most mutations have
+      // none of those fields, so the row was stored as `{}`, and the `input_`/`result_` prefixes
+      // it added were not on `SAFE_KEY_LIST`, so whatever it did capture was redacted anyway
+      // (`USER_UPDATE` rows read `{"input_role": "[REDACTED]"}`). `sanitizeMetadata` is the one
+      // allowlist; nesting keeps `input.role` and `result.role` distinguishable without prefixes.
+      //
+      // `resultData`, not `result`: the latter is tRPC's middleware envelope, which carries
+      // `ctx` (Prisma client, Fastify request) and is circular — persisting it fails the
+      // Prisma insert, and `logAudit` swallows that for non-critical actions, so the audit
+      // row silently disappears instead of being merely incomplete.
+      metadata: {
+        input: input && typeof input === 'object' ? input : undefined,
+        result: resultData && typeof resultData === 'object' ? resultData : undefined,
+      },
+    });
+
+    return result;
   });
 }
