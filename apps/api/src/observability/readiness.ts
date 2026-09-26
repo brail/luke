@@ -163,11 +163,11 @@ export async function checkBootstrapDependencies(
   try {
     // Test database connection
     await prisma.$connect();
-    logger.info('Connessione database stabilita');
+    logger.info('Database connection established');
 
     // Test master key availability
     if (!validateMasterKey()) {
-      const error = new Error('Master key non disponibile o invalida');
+      const error = new Error('Master key unavailable or invalid');
       logger.error(error.message);
       throw error;
     }
@@ -175,10 +175,10 @@ export async function checkBootstrapDependencies(
     // Test secret derivation
     try {
       deriveSecret('api.jwt');
-      logger.info('Segreti JWT derivati con successo');
+      logger.info('JWT secrets derived successfully');
     } catch (error: unknown) {
       const secretError = new Error(
-        `Impossibile derivare segreti JWT: ${toErrorMessage(error)}`
+        `Failed to derive JWT secrets: ${toErrorMessage(error)}`
       );
       logger.error(secretError.message);
       throw secretError;
@@ -190,7 +190,7 @@ export async function checkBootstrapDependencies(
     );
     logger.error(
       { error: bootstrapError },
-      'Errore verifica dipendenze bootstrap'
+      'Bootstrap dependency check error'
     );
     throw bootstrapError;
   }

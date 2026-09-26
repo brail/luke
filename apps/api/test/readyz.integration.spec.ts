@@ -84,10 +84,10 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       // Verifies that logs were called
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Connessione database stabilita'
+        'Database connection established'
       );
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Segreti JWT derivati con successo'
+        'JWT secrets derived successfully'
       );
     });
 
@@ -99,10 +99,10 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
-      ).rejects.toThrow('Master key non disponibile o invalida');
+      ).rejects.toThrow('Master key unavailable or invalid');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Master key non disponibile o invalida'
+        'Master key unavailable or invalid'
       );
     });
 
@@ -120,11 +120,11 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
       ).rejects.toThrow(
-        'Impossibile derivare segreti JWT: Secret derivation failed'
+        'Failed to derive JWT secrets: Secret derivation failed'
       );
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Impossibile derivare segreti JWT: Secret derivation failed'
+        'Failed to derive JWT secrets: Secret derivation failed'
       );
     });
 
@@ -144,7 +144,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         { error: expect.any(Error) },
-        'Errore verifica dipendenze bootstrap'
+        'Bootstrap dependency check error'
       );
     });
   });

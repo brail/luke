@@ -525,7 +525,7 @@ function setupGracefulShutdown() {
   };
 
   const gracefulShutdown = async (signal: string) => {
-    fastify.log.info(`Ricevuto segnale ${signal}, avvio shutdown graceful...`);
+    fastify.log.info(`Received signal ${signal}, starting graceful shutdown...`);
 
     try {
       // Stop in-memory cleanup intervals before closing HTTP server
@@ -536,10 +536,10 @@ function setupGracefulShutdown() {
       await closeWithTimeout(5_000);
       fastify.log.info('Server HTTP chiuso');
 
-      fastify.log.info('Shutdown completato');
+      fastify.log.info('Shutdown completed');
       process.exit(0);
     } catch (error: unknown) {
-      fastify.log.error({ err: error }, 'Errore durante shutdown');
+      fastify.log.error({ err: error }, 'Error during shutdown');
       process.exit(1);
     }
   };
@@ -554,7 +554,7 @@ function setupGracefulShutdown() {
       fastify.log.fatal({ reason }, `${type}: shutting down`);
       await closeWithTimeout(5_000);
     } catch (e) {
-      fastify.log.error({ e }, 'Errore durante close su fatal');
+      fastify.log.error({ e }, 'Error during close on fatal');
     } finally {
       process.exit(1);
     }
@@ -644,23 +644,23 @@ const start = async () => {
 
     // Test database connection
     await prisma.$connect();
-    fastify.log.info('Connessione database stabilita');
+    fastify.log.info('Database connection established');
 
     // Validate critical keys in AppConfig
     await validateCriticalConfig(prisma);
 
     // Test master key availability
     if (!validateMasterKey()) {
-      fastify.log.error('Master key non disponibile o invalida');
+      fastify.log.error('Master key unavailable or invalid');
       process.exit(1);
     }
 
     // Test secret derivation
     try {
       deriveSecret('api.jwt');
-      fastify.log.info('Segreti JWT derivati con successo');
+      fastify.log.info('JWT secrets derived successfully');
     } catch {
-      fastify.log.error('Impossibile derivare segreti JWT');
+      fastify.log.error('Failed to derive JWT secrets');
       process.exit(1);
     }
 
@@ -734,7 +734,7 @@ const start = async () => {
       fastify.log.info(`Prisma Studio: pnpm --filter @luke/db prisma:studio`);
     }
   } catch (err: unknown) {
-    fastify.log.error({ err }, 'Errore avvio server');
+    fastify.log.error({ err }, 'Server startup error');
     process.exit(1);
   }
 };
