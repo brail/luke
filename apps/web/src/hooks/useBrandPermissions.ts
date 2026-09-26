@@ -42,13 +42,13 @@ export function useBrandPermissions() {
 
     const userRole = session.user.role as Role;
 
-    // Verifica ogni permission
+    // Check each permission
     const canList = hasPermission({ role: userRole }, 'brands:read');
     const canCreate = hasPermission({ role: userRole }, 'brands:create');
     const canUpdate = hasPermission({ role: userRole }, 'brands:update');
     const canDelete = hasPermission({ role: userRole }, 'brands:delete');
 
-    // Hard delete è solo per admin
+    // Hard delete is admin-only
     const canHardDelete = userRole === 'admin';
 
     return {

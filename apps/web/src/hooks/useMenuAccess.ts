@@ -19,7 +19,7 @@ export function useMenuAccess() {
   const s = useSectionAccess();
 
   return useMemo(() => {
-    // Settings: ogni sub-item richiede parent + sottosezione
+    // Settings: every sub-item requires parent + subsection
     const settingsItems = {
       users: s.settings && s['settings.users'],
       company: s.settings && s['settings.company'],
@@ -33,7 +33,7 @@ export function useMenuAccess() {
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 
-    // Maintenance: ogni sub-item richiede parent + sottosezione
+    // Maintenance: every sub-item requires parent + subsection
     const maintenanceItems = {
       config: s.maintenance && s['maintenance.config'],
       import_export: s.maintenance && s['maintenance.import_export'],
@@ -43,7 +43,7 @@ export function useMenuAccess() {
     };
     const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
-    // Admin: ogni sub-item richiede parent + sottosezione
+    // Admin: every sub-item requires parent + subsection
     const adminItems = {
       brands: s.admin && s['admin.brands'],
       seasons: s.admin && s['admin.seasons'],
@@ -66,15 +66,15 @@ export function useMenuAccess() {
       // Singole voci
       dashboard: s.dashboard,
 
-      // Settings con sub-items
+      // Settings with sub-items
       settings: showSettings,
       settingsItems,
 
-      // Maintenance con sub-items
+      // Maintenance with sub-items
       maintenance: showMaintenance,
       maintenanceItems,
 
-      // Admin con sub-items
+      // Admin with sub-items
       admin: showAdmin,
       adminItems,
 
@@ -82,7 +82,7 @@ export function useMenuAccess() {
       product: s.product,
       productItems,
 
-      // Vendite con sub-items
+      // Sales with sub-items
       sales: s.sales,
       salesItems: {
         statistics: s.sales && s['sales.statistics'],

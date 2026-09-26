@@ -109,7 +109,7 @@ export function formatJsonCompact(jsonString: string): string {
 export function formatJsonExpanded(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
-    return JSON.stringify(parsed, null, 2); // Con indentazione
+    return JSON.stringify(parsed, null, 2); // With indentation
   } catch {
     return jsonString; // If not valid JSON, return original
   }

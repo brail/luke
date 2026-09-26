@@ -70,17 +70,17 @@ function findViolations(): string[] {
 }
 
 describe('ConfirmDialog / hardDelete', () => {
-  it('trova i call site da controllare (guardia sullo scanner stesso)', () => {
+  it('finds the call sites to check (guard on the scanner itself)', () => {
     expect(callSites().length).toBeGreaterThan(0);
   });
 
-  it('riconosce sia gli actionType letterali sia quelli calcolati', () => {
+  it('recognizes both literal and computed actionTypes', () => {
     const blocks = callSites().map(c => c.block);
     expect(blocks.some(b => LITERAL_ACTION_TYPE_RE.test(b))).toBe(true);
     expect(blocks.some(b => EXPRESSION_ACTION_TYPE_RE.test(b))).toBe(true);
   });
 
-  it('ogni eliminazione definitiva passa confirmPhrase', () => {
+  it('every permanent deletion passes confirmPhrase', () => {
     expect(
       findViolations(),
       "Un'eliminazione definitiva senza confirmPhrase mostra un bottone che il server rifiuta " +

@@ -17,13 +17,13 @@ import { trpc } from './trpc';
 
 /** Parameters for the paginated config list query. */
 export interface ConfigQueryParams {
-  /** Ricerca per chiave (case-insensitive) */
+  /** Search by key (case-insensitive) */
   q?: string;
-  /** Filtra per categoria dedotta dal prefisso della chiave */
+  /** Filter by the category derived from the key prefix */
   category?: string;
-  /** Filtra per tipo di cifratura (true=cifrato, false=plaintext) */
+  /** Filter by encryption type (true=encrypted, false=plaintext) */
   isEncrypted?: boolean;
-  /** Campo per ordinamento */
+  /** Sort field */
   sortBy?: 'key' | 'updatedAt';
   /** Direzione ordinamento */
   sortDir?: 'asc' | 'desc';
@@ -51,7 +51,7 @@ export interface ConfigFormData {
 export function useConfigQuery(params: ConfigQueryParams = {}) {
   const utils = trpc.useUtils();
 
-  // Query principale per lista paginata con filtri e ordinamento
+  // Main query for the paginated list with filters and sorting
   const query = trpc.config.list.useQuery({
     q: params.q?.trim() || undefined,
     category: params.category,
@@ -62,44 +62,44 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     pageSize: params.pageSize || 20,
   });
 
-  // Mutation per creare una nuova configurazione
+  // Mutation to create a new configuration
   const setMutation = trpc.config.set.useMutation({
     onSuccess: data => {
       toast.success(data.message || 'Configurazione salvata con successo');
       invalidateQueries();
     },
     onError: error => {
-      debugError('Errore salvataggio configurazione:', error);
+      debugError('Error saving configuration:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile salvare la configurazione'}`
       );
     },
   });
 
-  // Mutation per aggiornare una configurazione esistente
+  // Mutation to update an existing configuration
   const updateMutation = trpc.config.update.useMutation({
     onSuccess: data => {
       toast.success(data.message || 'Configurazione aggiornata con successo');
       invalidateQueries();
     },
     onError: error => {
-      debugError('Errore aggiornamento configurazione:', error);
+      debugError('Error updating configuration:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile aggiornare la configurazione'}`
       );
     },
   });
 
-  // Mutation per eliminare una configurazione
+  // Mutation to delete a configuration
   const deleteMutation = trpc.config['delete'].useMutation({
     onSuccess: data => {
       toast.success(data.message || 'Configurazione eliminata con successo');
       invalidateQueries();
     },
     onError: error => {
-      debugError('Errore eliminazione configurazione:', error);
+      debugError('Error deleting configuration:', error);
 
-      // Gestione specifica per chiavi critiche
+      // Specific handling for critical keys
       if (error.data?.code === 'CONFLICT') {
         toast.error(
           'Impossibile eliminare: questa chiave è critica per il sistema'
@@ -128,7 +128,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       invalidateQueries();
     },
     onError: error => {
-      debugError('Errore import configurazioni:', error);
+      debugError('Error importing configurations:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile importare le configurazioni'}`
       );
@@ -141,7 +141,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       toast.success(`Esportate ${data.count} configurazioni`);
     },
     onError: error => {
-      debugError('Errore export configurazioni:', error);
+      debugError('Error exporting configurations:', error);
       toast.error(
         `Errore: ${error.message || 'Impossibile esportare le configurazioni'}`
       );
@@ -239,7 +239,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     exportConfigs,
     invalidateQueries,
 
-    // Stati di loading aggregati
+    // Aggregated loading states
     isAnyLoading:
       query.isLoading ||
       setMutation.isPending ||

@@ -51,14 +51,14 @@ function findViolations(): string[] {
 }
 
 describe('DialogDescription', () => {
-  it('trova le descrizioni da controllare (guardia sullo scanner stesso)', () => {
+  it('finds the descriptions to check (guard on the scanner itself)', () => {
     const total = walk(WEB_SRC)
       .map(f => (readFileSync(f, 'utf8').match(OPEN_RE) ?? []).length)
       .reduce((a, b) => a + b, 0);
     expect(total).toBeGreaterThan(0);
   });
 
-  it('non annida elementi di blocco senza asChild', () => {
+  it('does not nest block elements without asChild', () => {
     expect(
       findViolations(),
       'DialogDescription rende un <p>: un <p>/<div>/<ol>/<ul> dentro è HTML non valido e rompe ' +

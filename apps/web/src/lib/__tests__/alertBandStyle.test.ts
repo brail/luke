@@ -1,8 +1,8 @@
 /**
- * Contratto di `alertBandStyle`: il colore di una banda è un hex scritto da un admin in AppConfig,
- * non un design token. Le due cose che possono rompersi in silenzio sono la leggibilità del testo
- * sul riempimento pieno — un `text-white` fisso sparirebbe su una banda gialla — e il
- * comportamento su un valore che non è un hex valido, che arriva mentre l'utente digita.
+ * Contract of `alertBandStyle`: a band colour is a hex written by an admin in AppConfig, not a
+ * design token. The two things that can break silently are the legibility of the text on the solid
+ * fill — a fixed `text-white` would vanish on a yellow band — and the behaviour on a value that is
+ * not a valid hex, which arrives while the user is typing.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -13,8 +13,8 @@ describe('isHexColor', () => {
   it('accetta solo #RRGGBB', () => {
     expect(isHexColor('#B91C1C')).toBe(true);
     expect(isHexColor('#b91c1c')).toBe(true);
-    // Forme che il campo colore nativo non sa rendere: la scorciatoia a 3 cifre, il valore a metà
-    // digitazione, i nomi CSS.
+    // Forms the native colour field cannot render: the 3-digit shorthand, a half-typed value,
+    // CSS names.
     expect(isHexColor('#FFF')).toBe(false);
     expect(isHexColor('#B91C1')).toBe(false);
     expect(isHexColor('red')).toBe(false);
@@ -28,22 +28,22 @@ describe('bandForeground', () => {
     expect(bandForeground('#000000')).toBe('#ffffff');
   });
 
-  it('il giallo conta come fondo chiaro: è il caso che un `text-white` fisso renderebbe illeggibile', () => {
+  it('yellow counts as a light background: the case a fixed `text-white` would make unreadable', () => {
     expect(bandForeground('#FFFF00')).toBe('#111827');
   });
 
-  it('il rosso e il verde scuri dei default restano su testo chiaro', () => {
+  it('the dark red and green of the defaults stay on light text', () => {
     expect(bandForeground('#B91C1C')).toBe('#ffffff');
     expect(bandForeground('#15803D')).toBe('#ffffff');
   });
 
-  it('colore non interpretabile → bianco, non un crash', () => {
+  it('an unparseable colour → white, not a crash', () => {
     expect(bandForeground('rosso')).toBe('#ffffff');
   });
 });
 
 describe('bandBadgeStyle', () => {
-  it('outline: nessun riempimento, bordo e testo del colore della banda', () => {
+  it('outline: no fill, border and text in the band colour', () => {
     expect(bandBadgeStyle({ color: '#B91C1C', emphasis: 'outline' })).toEqual({
       backgroundColor: 'transparent',
       borderColor: '#B91C1C',
@@ -51,7 +51,7 @@ describe('bandBadgeStyle', () => {
     });
   });
 
-  it('outline è il default quando la banda non dichiara emphasis', () => {
+  it('outline is the default when the band declares no emphasis', () => {
     // Configs saved before the field existed arrive without it: they must render as
     // they did then, not disappear or fill.
     expect(bandBadgeStyle({ color: '#B91C1C' })).toMatchObject({ backgroundColor: 'transparent' });
@@ -63,7 +63,7 @@ describe('bandBadgeStyle', () => {
     expect(style.color).toBe('#B91C1C');
   });
 
-  it('solid: riempimento pieno e testo scelto per contrasto, non fisso', () => {
+  it('solid: full fill and text chosen for contrast, not fixed', () => {
     expect(bandBadgeStyle({ color: '#15803D', emphasis: 'solid' })).toEqual({
       backgroundColor: '#15803D',
       borderColor: '#15803D',
@@ -72,7 +72,7 @@ describe('bandBadgeStyle', () => {
     expect(bandBadgeStyle({ color: '#FFFF00', emphasis: 'solid' }).color).toBe('#111827');
   });
 
-  it('soft su un colore non-hex degrada a outline invece di produrre un badge invisibile', () => {
+  it('soft on a non-hex colour degrades to outline instead of producing an invisible badge', () => {
     // `soft` needs channels to build alpha: without them, better no emphasis than
     // wrong fill.
     expect(bandBadgeStyle({ color: 'rosso', emphasis: 'soft' })).toEqual({

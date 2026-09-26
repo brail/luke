@@ -93,7 +93,7 @@ export function useStandardMutation<TInput, TResult>(
         // Custom error callback
         if (opts.onError) opts.onError(e);
 
-        // Re-throw per permettere gestione upstream
+        // Re-throw so upstream can handle it
         throw e;
       } finally {
         setIsPending(false);

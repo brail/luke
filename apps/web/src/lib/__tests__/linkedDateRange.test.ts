@@ -141,29 +141,29 @@ describe('toDateInput / toTimeInput', () => {
  * unparseable instant, and the linked-shift arithmetic wrote the literal 'NaN-NaN-NaN' into the
  * other date field — a value `startDate: z.string().min(1)` accepts.
  */
-describe('coppie data/ora che non descrivono un istante', () => {
-  it('resolveIso restituisce null invece di lanciare, con l\'ora vuota', () => {
+describe('date/time pairs that do not describe an instant', () => {
+  it('resolveIso returns null instead of throwing, with an empty time', () => {
     expect(resolveIso('2026-03-10', '', false)).toBeNull();
   });
 
-  it('resolveIso restituisce null per un anno che Date rende in forma estesa', () => {
-    // <input type="date"> arriva fino al 275760: toISOString emette '+275760-…', che il
-    // z.string().datetime() dell'endpoint rifiuta. Meglio fermarlo nel campo che in un toast.
+  it('resolveIso returns null for a year that Date renders in extended form', () => {
+    // <input type="date"> goes up to 275760: toISOString emits '+275760-…', which the endpoint's
+    // z.string().datetime() rejects. Better to stop it in the field than in a toast.
     expect(resolveIso('275760-09-12', '10:00', false)).toBeNull();
   });
 
-  it('resolveIso risolve normalmente una coppia valida', () => {
+  it('resolveIso resolves a valid pair normally', () => {
     expect(resolveIso('2026-03-10', '09:00', false)).toMatch(/^2026-03-10T/);
   });
 
-  it('applyLinkedEdit non scrive NaN nella data accoppiata quando si svuota un orario', () => {
+  it('applyLinkedEdit does not write NaN into the paired date when a time is cleared', () => {
     const { next } = applyLinkedEdit(RANGE, 'start', { startTime: '' }, false, UNTOUCHED_SIDES);
     expect(next.endDate).toBe(RANGE.endDate);
     expect(next.startTime).toBe('');
     expect(JSON.stringify(next)).not.toContain('NaN');
   });
 
-  it('applyLinkedEdit non scrive NaN nemmeno in resize indipendente', () => {
+  it('applyLinkedEdit does not write NaN in an independent resize either', () => {
     const { next } = applyLinkedEdit(RANGE, 'end', { endTime: '' }, false, { start: true, end: true });
     expect(JSON.stringify(next)).not.toContain('NaN');
   });

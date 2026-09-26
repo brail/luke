@@ -19,7 +19,7 @@ export function useMenuPreferences() {
   const [menuStates, setMenuStates] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Ref per tracciare lo stato più recente (per debounce)
+  // Ref tracking the latest state (for the debounce)
   const latestStatesRef = useRef<Record<string, boolean>>({});
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -29,11 +29,11 @@ export function useMenuPreferences() {
   // Mutation per salvare su DB
   const { mutate: saveToDb } = trpc.users.preferences.menu.set.useMutation();
 
-  // Inizializza da localStorage + DB
+  // Initialize from localStorage + DB
   useEffect(() => {
     const stored: Record<string, boolean> = {};
 
-    // Carica da localStorage (predefinito è true per menu aperti)
+    // Load from localStorage (menus default to open)
     const menuKeys = [
       'vendite',
       'prodotto',
@@ -48,21 +48,21 @@ export function useMenuPreferences() {
         if (value !== null) {
           stored[key] = JSON.parse(value);
         } else {
-          // Default: menu aperto
+          // Default: menu open
           stored[key] = true;
         }
       });
     } else {
-      // In SSR, default tutti aperti
+      // In SSR, everything defaults to open
       menuKeys.forEach((key) => {
         stored[key] = true;
       });
     }
 
-    // Sincronizza con DB se disponibile
+    // Sync with the DB if available
     if (dbStates) {
       Object.assign(stored, dbStates);
-      // Aggiorna localStorage con i valori del DB
+      // Update localStorage with the DB values
       if (typeof window !== 'undefined' && window.localStorage) {
         Object.entries(dbStates).forEach(([key, value]) => {
           window.localStorage.setItem(`luke-menu-${key}`, JSON.stringify(value));
@@ -75,7 +75,7 @@ export function useMenuPreferences() {
     setIsLoading(false);
   }, [dbStates]);
 
-  // Flush a DB (per logout/unload o se localStorage non disponibile)
+  // Flush to the DB (on logout/unload, or if localStorage is unavailable)
   const flushToDb = useCallback(() => {
     if (Object.keys(latestStatesRef.current).length > 0) {
       saveToDb(latestStatesRef.current);
@@ -119,7 +119,7 @@ export function useMenuPreferences() {
   // Flush su unmount (logout/navigazione)
   useEffect(() => {
     return () => {
-      // Cancella il debounce timer e flush immediatamente
+      // Clear the debounce timer and flush immediately
       if (debounceTimer.current) {
         clearTimeout(debounceTimer.current);
       }

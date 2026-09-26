@@ -30,16 +30,16 @@ import { trpc } from '../lib/trpc';
 export function useFormatDate() {
   const { data: session } = useSession();
 
-  // Usa i dati aggiornati dall'API invece della sessione NextAuth
+  // Use the fresh data from the API instead of the NextAuth session
   const { data: userData } = trpc.me.get.useQuery(undefined, {
     enabled: !!session?.accessToken,
-    staleTime: 5 * 60 * 1000, // 5 minuti - riduce richieste API
+    staleTime: 5 * 60 * 1000, // 5 minutes - reduces API requests
   });
 
   const timezone = userData?.timezone || 'Europe/Rome';
   const locale = userData?.locale || 'it-IT';
 
-  // Hook per formattazione date con timezone utente
+  // Hook for date formatting in the user timezone
 
   return {
     /**

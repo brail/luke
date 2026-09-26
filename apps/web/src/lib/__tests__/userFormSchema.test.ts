@@ -22,7 +22,7 @@ const EDIT_FORM = { ...CREATE_FORM, password: '', confirmPassword: '' };
  * edit ever stop agreeing on them, an admin can save through one screen what the other refuses —
  * silently, because each screen is self-consistent.
  */
-describe('create ed edit giudicano le identità allo stesso modo', () => {
+describe('create and edit judge identities the same way', () => {
   const cases: { field: 'email' | 'username' | 'role'; value: unknown }[] = [
     { field: 'email', value: 'non-una-email' },
     { field: 'username', value: 'ab' },
@@ -30,7 +30,7 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
   ];
 
   for (const { field, value } of cases) {
-    it(`rifiuta ${field} non valido in entrambe le modalità`, () => {
+    it(`rejects an invalid ${field} in both modes`, () => {
       const create = buildUserPayload('create', { ...CREATE_FORM, [field]: value }, []);
       const edit = buildUserPayload('edit', { ...EDIT_FORM, [field]: value }, []);
       expect(create.ok).toBe(false);
@@ -43,7 +43,7 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
   }
 
   for (const field of ['email', 'username', 'role'] as const) {
-    it(`rifiuta ${field} mancante in entrambe le modalità`, () => {
+    it(`rejects a missing ${field} in both modes`, () => {
       // Edit derives from `UpdateUserInputSchema`, where these are optional because a partial
       // update is legitimate on the wire. This form is not a partial update: it sends every field of
       // one row. Without this test the rebase would have made all three optional in silence.
@@ -54,20 +54,20 @@ describe('create ed edit giudicano le identità allo stesso modo', () => {
     });
   }
 
-  it('accetta la stessa identità valida in entrambe le modalità', () => {
+  it('accepts the same valid identity in both modes', () => {
     expect(buildUserPayload('create', CREATE_FORM, []).ok).toBe(true);
     expect(buildUserPayload('edit', EDIT_FORM, []).ok).toBe(true);
   });
 });
 
-describe('confirmPassword non lascia mai il browser', () => {
-  it('non compare nel payload di create', () => {
+describe('confirmPassword never leaves the browser', () => {
+  it('does not appear in the create payload', () => {
     const result = buildUserPayload('create', CREATE_FORM, []);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.payload).not.toHaveProperty('confirmPassword');
   });
 
-  it('non compare nel payload di edit, nemmeno quando la password viene cambiata', () => {
+  it('does not appear in the edit payload, not even when the password is changed', () => {
     const result = buildUserPayload('edit', {
       ...EDIT_FORM,
       password: VALID_PASSWORD,
@@ -78,15 +78,15 @@ describe('confirmPassword non lascia mai il browser', () => {
   });
 });
 
-describe('in edit una password vuota significa «lascia quella che c’è»', () => {
-  it('omette la chiave password invece di mandarla vuota', () => {
+describe('in edit an empty password means «keep the current one»', () => {
+  it('omits the password key instead of sending it empty', () => {
     const result = buildUserPayload('edit', EDIT_FORM, []);
     expect(result.ok).toBe(true);
     // Not `password: ''`: a present key would be treated by the router as a password to hash.
     if (result.ok) expect('password' in result.payload).toBe(false);
   });
 
-  it('manda la password quando è stata davvero digitata', () => {
+  it('sends the password when it was really typed', () => {
     const result = buildUserPayload('edit', {
       ...EDIT_FORM,
       password: VALID_PASSWORD,
@@ -96,7 +96,7 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
     if (result.ok) expect(result.payload.password).toBe(VALID_PASSWORD);
   });
 
-  it('rifiuta una conferma compilata quando la password è vuota', () => {
+  it('rejects a filled-in confirmation when the password is empty', () => {
     const result = buildUserPayload('edit', { ...EDIT_FORM, confirmPassword: 'qualcosa' }, []);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors.confirmPassword).toBe('Le password non coincidono');
@@ -110,7 +110,7 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
     if (!result.ok) expect(result.errors.password).toBeDefined();
   });
 
-  it('in create una password sotto il prefiltro viene rifiutata sul suo campo', () => {
+  it('in create a password below the prefilter is rejected on its own field', () => {
     // The client-side boundary is the static prefilter, 8 characters: the floor no configuration
     // can go below. The *effective* minimum comes from the policy in AppConfig and is applied by the
     // server; the schema is compiled into the bundle and cannot know it, so this is all the form
@@ -121,7 +121,7 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
     if (!result.ok) expect(result.errors.password).toBeDefined();
   });
 
-  it('il prefiltro non replica la complessità: quella la decide la policy', () => {
+  it('the prefilter does not replicate complexity: the policy decides that', () => {
     // Eight characters with no uppercase or symbol pass the form and are refused by the server.
     // Not an oversight: replicating the regexes here would mean rewriting a configurable rule
     // into a bundle that cannot know how it is configured — the defect this batch closes.
@@ -131,8 +131,8 @@ describe('in edit una password vuota significa «lascia quella che c’è»', ()
   });
 });
 
-describe('campi gestiti da un provider esterno', () => {
-  it('vengono tolti dal payload', () => {
+describe('fields managed by an external provider', () => {
+  it('are removed from the payload', () => {
     const synced: SyncedField[] = ['email', 'username'];
     const result = buildUserPayload('create', CREATE_FORM, synced);
     expect(result.ok).toBe(true);
@@ -144,7 +144,7 @@ describe('campi gestiti da un provider esterno', () => {
     }
   });
 
-  it('la validazione avviene comunque prima della rimozione', () => {
+  it('validation still happens before the removal', () => {
     // Removing a field from the payload does not exempt it from the rules: otherwise a
     // misconfigured external provider would open a gap in what the form accepts.
     const result = buildUserPayload('create', { ...CREATE_FORM, email: 'rotta' }, ['email']);

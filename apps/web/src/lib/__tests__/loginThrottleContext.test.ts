@@ -1,10 +1,10 @@
 /**
- * Contratto di `markLoginThrottled`: deve restare un no-op silenzioso fuori da un contesto
- * `AsyncLocalStorage` attivo (altrimenti ogni chiamata a `callTRPCAuth` fuori dal wrapper della
- * route — es. in un test futuro — lancerebbe), e deve scrivere nello store corretto quando
- * chiamata dentro `loginThrottleContext.run()`, incluso da un punto annidato più in profondità
- * nella call stack — esattamente il caso reale (`authorize()` chiamato da NextAuth dentro
- * `handlers.POST`, a sua volta dentro `route.ts`'s `loginThrottleContext.run()`).
+ * Contract of `markLoginThrottled`: it must stay a silent no-op outside an active
+ * `AsyncLocalStorage` context (otherwise every `callTRPCAuth` call outside the route wrapper —
+ * e.g. in a future test — would throw), and it must write to the right store when called inside
+ * `loginThrottleContext.run()`, including from a point nested deeper in the call stack — exactly
+ * the real case (`authorize()` called by NextAuth inside `handlers.POST`, itself inside
+ * `route.ts`'s `loginThrottleContext.run()`).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -12,11 +12,11 @@ import { describe, it, expect } from 'vitest';
 import { isLimited, loginThrottleContext, markLoginThrottled } from '../loginThrottleContext';
 
 describe('markLoginThrottled', () => {
-  it('non fa nulla fuori da un contesto AsyncLocalStorage attivo', () => {
+  it('does nothing outside an active AsyncLocalStorage context', () => {
     expect(() => markLoginThrottled(60)).not.toThrow();
   });
 
-  it('scrive nello store corrente quando chiamata dentro run()', async () => {
+  it('writes to the current store when called inside run()', async () => {
     const result = await loginThrottleContext.run({}, async () => {
       markLoginThrottled(42);
       return loginThrottleContext.getStore();
@@ -25,10 +25,10 @@ describe('markLoginThrottled', () => {
     expect(result).toEqual({ retryAfterSeconds: 42 });
   });
 
-  it('scrive nello store anche se chiamata da una funzione annidata (async call stack)', async () => {
+  it('writes to the store even when called from a nested function (async call stack)', async () => {
     async function nestedAuthorizeLike() {
-      // Simula authorize() invocato da NextAuth dentro handlers.POST, più in profondità
-      // nella call stack rispetto a dove run() è stato aperto.
+      // Simulates authorize() invoked by NextAuth inside handlers.POST, deeper in the call
+      // stack than where run() was opened.
       markLoginThrottled(15);
     }
 
@@ -40,14 +40,14 @@ describe('markLoginThrottled', () => {
     expect(store).toEqual({ retryAfterSeconds: 15 });
   });
 
-  it('contesti concorrenti non si influenzano a vicenda', async () => {
+  it('concurrent contexts do not affect each other', async () => {
     const [resultA, resultB] = await Promise.all([
       loginThrottleContext.run({}, async () => {
         markLoginThrottled(10);
         return loginThrottleContext.getStore();
       }),
       loginThrottleContext.run({}, async () => {
-        // Nessuna chiamata a markLoginThrottled: deve restare non limitato.
+        // No call to markLoginThrottled: it must stay unthrottled.
         return loginThrottleContext.getStore();
       }),
     ]);
@@ -58,11 +58,11 @@ describe('markLoginThrottled', () => {
 });
 
 describe('isLimited', () => {
-  it('false quando retryAfterSeconds non è stato impostato', () => {
+  it('false when retryAfterSeconds has not been set', () => {
     expect(isLimited({})).toBe(false);
   });
 
-  it('true quando retryAfterSeconds è impostato (anche a 0)', () => {
+  it('true when retryAfterSeconds is set (even to 0)', () => {
     expect(isLimited({ retryAfterSeconds: 30 })).toBe(true);
     expect(isLimited({ retryAfterSeconds: 0 })).toBe(true);
   });
