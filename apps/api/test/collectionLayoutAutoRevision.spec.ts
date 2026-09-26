@@ -21,9 +21,13 @@ import {
   createRevisionsForReachedEvents,
 } from '../src/services/collectionLayoutAutoRevision.service';
 import { createRevision } from '../src/services/collectionLayoutRevision.service';
+import { copyToImmutableBucket } from '../src/storage';
 
 vi.mock('../src/services/collectionLayoutRevision.service', () => ({
   createRevision: vi.fn(),
+}));
+vi.mock('../src/storage', () => ({
+  copyToImmutableBucket: vi.fn(async () => 'immutable-key'),
 }));
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
@@ -96,6 +100,21 @@ describe('createRevisionsForReachedEvents', () => {
     expect(input.notes).toContain('Consegna prototipi');
     expect(input.notes).toContain('Uomo FW26');
     expect(userId).toBe('admin-1');
+  });
+
+  it('copies the row photos into the immutable revisions bucket, as a manual revision does', async () => {
+    const prisma = buildFakePrisma({
+      events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
+      layouts: [LAYOUT],
+    });
+
+    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+
+    // The copier handed to the snapshot used to return the live key unchanged, so the revision
+    // pointed at a `collection-row-pictures` object that no revision reader looks in.
+    const copyPhoto = vi.mocked(createRevision).mock.calls[0]![2];
+    await expect(copyPhoto('live-key')).resolves.toBe('immutable-key');
+    expect(copyToImmutableBucket).toHaveBeenCalledWith(prisma, 'live-key');
   });
 
   it('records an audit log for every automatic revision created', async () => {

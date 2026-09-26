@@ -39,7 +39,7 @@ CollectionLayout
 | `CollectionLayoutRevision` | `revisionTypeValue` | Free string: no FK and no server-side check against the catalog. Manual revisions take it from the `revisionType` catalog (`CollectionCatalogItem.value`); automatic ones use `MILESTONE_DATA` / `MILESTONE_FASE`, which are not catalog items |
 | `CollectionLayoutRevision` | `cause` | `MANUAL` \| `MILESTONE` |
 | `CollectionLayoutRowRevision` | `sourceRowId` | Soft FK — the live row can be deleted |
-| `CollectionLayoutRowRevision` | `pictureKey` | Manual revisions: key in the immutable `collection-row-pictures-revisions` bucket. Automatic revisions: the live row's key in `collection-row-pictures` (the photo is not copied) |
+| `CollectionLayoutRowRevision` | `pictureKey` | Key in the immutable `collection-row-pictures-revisions` bucket. Automatic revisions created before 2026-09-26 hold the live row's key in `collection-row-pictures` instead (see Automatic Revisions) |
 | `CollectionCatalogItem` | `iso9001Categories` | Only for `type=revisionType` |
 
 ---
@@ -122,7 +122,7 @@ The `@@index([sourceRowId, revisionId])` index on
 For manual revisions, photos are copied from the `collection-row-pictures`
 bucket to the immutable `collection-row-pictures-revisions` bucket by
 `copyToImmutableBucket()` in `apps/api/src/storage/index.ts`. Automatic
-revisions skip the copy (see Automatic Revisions below).
+revisions do the same since 2026-09-26 (see Automatic Revisions below).
 
 **CAS dedup via sha256**: before copying, the function looks for an existing
 `FileObject` row in the immutable bucket with the same `checksumSha256`. If one
@@ -174,13 +174,18 @@ type per trigger:
 Both snapshot the whole layout with `milestoneId` set to the event, and
 `@@unique([milestoneId, revisionTypeValue])` allows one revision per event and
 type. They are credited to the oldest active admin (skipped when there is
-none), and row photos are not copied to the immutable bucket.
+none), and row photos are copied to the immutable bucket, as for a manual
+revision. A photo that cannot be copied fails the whole snapshot: the date
+trigger logs it and retries on its next hourly tick within the lookback window;
+the phase trigger logs it and does not retry, and a later trigger snapshots the
+layout as it is then.
 
-**Known gap:** the revision page and the revision exports resolve every
-`pictureKey` in the immutable `collection-row-pictures-revisions` bucket, while
-automatic revisions store keys of the live `collection-row-pictures` bucket, so
-their photos are not found there. Replacing a row's photo also deletes the live
-object those revisions point to.
+**Known gap:** until 2026-09-26 automatic revisions stored keys of the live
+`collection-row-pictures` bucket, while the revision page and the revision
+exports resolve every `pictureKey` in the immutable
+`collection-row-pictures-revisions` bucket. The automatic revisions created by
+v2.0.0–v2.1.x therefore show no photo, and replacing a row's photo deletes the
+live object they point to. They need a data repair.
 
 ---
 

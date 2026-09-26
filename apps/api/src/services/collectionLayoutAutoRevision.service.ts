@@ -21,6 +21,8 @@
 import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
+import { copyToImmutableBucket } from '../storage/index.js';
+
 import { createRevision } from './collectionLayoutRevision.service.js';
 
 
@@ -44,9 +46,6 @@ type ServiceLogger = {
   warn: (obj: object, msg: string) => void;
   info: (obj: object, msg: string) => void;
 };
-
-/** Photos stay in their original bucket rather than being copied to the immutable one (V2 simplification). */
-const identityCopyPhoto = async (sourceKey: string): Promise<string> => sourceKey;
 
 type TriggerEvent = {
   id: string;
@@ -117,7 +116,9 @@ async function createAutoRevision(
         notes,
       },
       actorUserId,
-      identityCopyPhoto,
+      // Into the immutable revisions bucket, as a manual revision does: every reader resolves a
+      // revision's `pictureKey` there, and the live object goes when the row photo is replaced.
+      sourceKey => copyToImmutableBucket(prisma, sourceKey),
       prisma,
     );
   } catch (err) {

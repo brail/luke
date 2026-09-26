@@ -12,10 +12,12 @@ formal revisions (ISO 9001:2015 quality register).
 service, which calls it for every row with a photo BEFORE the Prisma
 transaction.
 
-Only manual revisions copy photos here. Automatic MILESTONE revisions pass a
-callback that returns the source key unchanged, so their `pictureKey` still
-names an object in `collection-row-pictures` (`identityCopyPhoto` in
-`apps/api/src/services/collectionLayoutAutoRevision.service.ts`).
+Automatic MILESTONE revisions copy photos here too
+(`apps/api/src/services/collectionLayoutAutoRevision.service.ts`). Until
+2026-09-26 they passed a callback that returned the source key unchanged, so the
+automatic revisions created by v2.0.0–v2.1.x still name an object in
+`collection-row-pictures`; see the known gap in
+[collection-layout-versioning.md](collection-layout-versioning.md#automatic-revisions-causemilestone).
 
 The generic paths that accept any bucket in `APP_STORAGE_BUCKETS` can also
 write here: backup restore, and the presigned `storage.requestUpload` /
