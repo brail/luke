@@ -18,6 +18,7 @@ import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
 import { debugLog } from '../../../../lib/debug';
 import { evaluatePassword } from '../../../../lib/passwordChecks';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 
 
@@ -92,7 +93,8 @@ export function ChangePasswordCard({
         signOut({ callbackUrl: '/login' });
         return;
       }
-      toast.error(`Errore nel cambio password: ${error.message}`);
+      // FORBIDDEN here is "not allowed for external providers", not a missing permission.
+      toast.error(`Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true })}`);
     },
   });
 

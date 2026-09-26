@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 
 import { debugError } from './debug';
 import { trpc } from './trpc';
+import { getTrpcErrorMessage } from './trpcErrorMessages';
 
 /** Parameters for the paginated config list query. */
 export interface ConfigQueryParams {
@@ -71,7 +72,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     onError: error => {
       debugError('Error saving configuration:', error);
       toast.error(
-        `Errore: ${error.message || 'Impossibile salvare la configurazione'}`
+        `Errore: ${getTrpcErrorMessage(error)}`
       );
     },
   });
@@ -85,7 +86,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     onError: error => {
       debugError('Error updating configuration:', error);
       toast.error(
-        `Errore: ${error.message || 'Impossibile aggiornare la configurazione'}`
+        `Errore: ${getTrpcErrorMessage(error)}`
       );
     },
   });
@@ -106,7 +107,7 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
         );
       } else {
         toast.error(
-          `Errore: ${error.message || 'Impossibile eliminare la configurazione'}`
+          `Errore: ${getTrpcErrorMessage(error)}`
         );
       }
     },

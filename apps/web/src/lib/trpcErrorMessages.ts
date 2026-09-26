@@ -15,6 +15,8 @@ const HTTP_STATUS_TO_CODE: Record<number, string> = {
 const DEFAULT_MESSAGES: Record<string, string> = {
   FORBIDDEN: 'Non hai i permessi per eseguire questa operazione',
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
+  // The server's text names the rate-limit bucket: it is written for the logs.
+  TOO_MANY_REQUESTS: 'Troppe richieste. Riprova tra qualche istante.',
 };
 
 interface TrpcErrorLike {

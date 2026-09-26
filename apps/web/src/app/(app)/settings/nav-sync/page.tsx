@@ -920,7 +920,7 @@ function NavSyncTab({
           })()}
 
           {runSyncMutation.isError && (
-            <p className="text-sm text-destructive">{runSyncMutation.error.message}</p>
+            <p className="text-sm text-destructive">{getTrpcErrorMessage(runSyncMutation.error)}</p>
           )}
         </div>
       </SectionCard>
