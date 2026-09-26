@@ -4,9 +4,8 @@
  */
 
 import * as nodemailer from 'nodemailer';
-import { z } from 'zod';
 
-import { mailTestSchema } from '@luke/core';
+import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { saveConfig } from '../lib/configManager';
@@ -15,28 +14,17 @@ import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
-// Schema for SMTP configuration
-const smtpConfigSchema = z.object({
-  host: z.string().min(1, 'Host SMTP è obbligatorio'),
-  port: z.number().min(1).max(65535, 'Porta deve essere tra 1 e 65535'),
-  secure: z.boolean().default(false),
-  user: z.string().min(1, 'User SMTP è obbligatorio'),
-  pass: z.string().optional(), // Optional for update without changing password
-  from: z.string().min(1, 'Email mittente è obbligatoria'),
-  baseUrl: z.string().url('Base URL deve essere un URL valido'),
-});
-
 export const mailRouter = router({
   /**
    * Saves the SMTP configuration to AppConfig; password is stored encrypted.
    *
    * @auth {config:update}
-   * @input {smtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
+   * @input {mailSmtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
    * @output {{ success: true, message: string }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(smtpConfigSchema)
+    .input(mailSmtpConfigSchema)
     .mutation(async ({ input, ctx }) => {
       // Saves each field separately in AppConfig
       await saveConfig(ctx.prisma, 'smtp.host', input.host, false);

@@ -142,6 +142,15 @@ describe('the registry is consulted on the write path, not only on the read path
     expect(validateConfigValue('storage.s3.publicBaseUrl', '').success).toBe(false);
   });
 
+  it('accepts both sender formats the mail settings form offers', () => {
+    // `.email()` refused the named form, so saving the mail page failed at `smtp.from`, after
+    // host, port, secure and user had already been written.
+    expect(validateConfigValue('smtp.from', 'noreply@example.com').success).toBe(true);
+    expect(validateConfigValue('smtp.from', 'Luke <noreply@example.com>').success).toBe(true);
+    expect(validateConfigValue('smtp.from', 'not-an-email').success).toBe(false);
+    expect(validateConfigValue('smtp.from', 'Luke <noreply@example>').success).toBe(false);
+  });
+
   it('covers the two keys assembled from a variable', () => {
     // `storage.${provider}` is the only interpolated key in the codebase. Registered, so the JSON
     // blob it writes is validated like every other value instead of being exempt by construction.

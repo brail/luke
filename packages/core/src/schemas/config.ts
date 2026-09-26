@@ -4,6 +4,7 @@ import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
 import { LDAP_STRATEGIES } from './ldap.js';
+import { smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 
 /**
@@ -74,7 +75,9 @@ export const AppConfigRegistry = {
   'smtp.secure': booleanConfigSchema,
   'smtp.user':   z.string(),
   'smtp.pass':   z.string(),
-  'smtp.from':   z.string().email(),
+  // The settings form's own rule: `.email()` refused the `Name <addr>` sender the form offers,
+  // failing the mail save after the keys before this one had been written.
+  'smtp.from':   smtpFromSchema,
 
   // ── Security ─────────────────────────────────────────────────────────────
   // 8 is the floor, and this is where it is declared. It used to say 6 while `getPasswordPolicy`
