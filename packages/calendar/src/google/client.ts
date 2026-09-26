@@ -111,14 +111,15 @@ export function generateOAuthUrl(clientId: string, clientSecret: string, redirec
  * retrieves the authenticated user's email address.
  *
  * @throws {Error} When Google does not return a refresh token (prompt=consent must be enabled)
- * @returns The permanent refresh token and the user's Google account email
+ * @returns The permanent refresh token and the user's Google account email, or `null` when
+ *   Google's answer carries none (only the calendar scope is requested)
  */
 export async function exchangeOAuthCode(
   clientId: string,
   clientSecret: string,
   redirectUri: string,
   code: string
-): Promise<{ refreshToken: string; userEmail: string }> {
+): Promise<{ refreshToken: string; userEmail: string | null }> {
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   const { tokens } = await oauth2Client.getToken(code);
   if (!tokens.refresh_token) {
@@ -127,7 +128,7 @@ export async function exchangeOAuthCode(
   oauth2Client.setCredentials(tokens);
   const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
   const { data } = await oauth2.userinfo.get();
-  return { refreshToken: tokens.refresh_token, userEmail: data.email ?? '' };
+  return { refreshToken: tokens.refresh_token, userEmail: data.email || null };
 }
 
 /**

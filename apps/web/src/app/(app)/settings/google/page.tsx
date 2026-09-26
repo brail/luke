@@ -110,9 +110,9 @@ export default function GoogleWorkspacePage() {
   // Handle OAuth callback: exchange code if present in URL
   const exchangeMutation = trpc.integrations.google.exchangeOAuthCode.useMutation({
     onSuccess: (data) => {
-      toast.success(`Account Google connesso: ${data.userEmail}`);
+      toast.success(data.userEmail ? `Account Google connesso: ${data.userEmail}` : 'Account Google connesso');
       setHasOauthToken(true);
-      setOauthUserEmail(data.userEmail);
+      setOauthUserEmail(data.userEmail ?? '');
       void utils.integrations.google.getConfig.invalidate();
     },
     onError: (error) => {

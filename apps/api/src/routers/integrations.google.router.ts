@@ -134,7 +134,7 @@ export const googleRouter = router({
    *
    * @auth {config:update}
    * @input {{ code: string, redirectUri: string }}
-   * @output {{ userEmail: string }}
+   * @output {{ userEmail: string | null }}
    */
   exchangeOAuthCode: protectedProcedure
     .use(requirePermission('config:update'))
@@ -149,7 +149,14 @@ export const googleRouter = router({
       }
       const { refreshToken, userEmail } = await exchangeOAuthCode(clientId, clientSecret, input.redirectUri, input.code);
       await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', refreshToken, true);
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', userEmail, false);
+      // No address in Google's answer is no stored address, not an empty one: the registry refuses
+      // `''`, and that refusal used to come after the new token was stored, skipping the audit and
+      // leaving the previous account's address on show.
+      if (userEmail) {
+        await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', userEmail, false);
+      } else {
+        await deleteConfig(ctx.prisma, 'integrations.google.oauth.userEmail');
+      }
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_CONNECT',
         targetType: 'Config',
