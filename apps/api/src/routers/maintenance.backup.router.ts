@@ -499,7 +499,7 @@ export const backupRouter = router({
             await writeMaintenanceState(ctx.prisma, maintenanceState);
             await forceLogoutNonAdmins(ctx.prisma);
           } catch (lockdownErr) {
-            ctx.logger.error({ err: lockdownErr }, 'Restore: impossibile riaffermare il lockdown post-restore');
+            ctx.logger.error({ err: lockdownErr }, 'Restore: could not reassert the post-restore lockdown');
           }
         }
 

@@ -50,9 +50,9 @@ async function getBaseUrl(ctx: Context): Promise<string> {
 function emailUsers(ctx: Context, emails: string[], send: (email: string) => Promise<void>): void {
   void sendBulkEmail(emails, send)
     .then(({ failed }) => {
-      if (failed > 0) ctx.logger.error({ failed, total: emails.length }, 'Maintenance mode: invio email fallito per alcuni utenti');
+      if (failed > 0) ctx.logger.error({ failed, total: emails.length }, 'Maintenance mode: email send failed for some users');
     })
-    .catch(err => ctx.logger.error({ err }, 'Maintenance mode: invio email fallito'));
+    .catch(err => ctx.logger.error({ err }, 'Maintenance mode: email send failed'));
 }
 
 export const maintenanceModeRouter = router({
@@ -115,7 +115,7 @@ export const maintenanceModeRouter = router({
           ? `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}. ${input.message}`
           : `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}.`,
         data: { type: 'maintenance_mode_scheduled' },
-      }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: notifica pianificazione fallita'));
+      }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: schedule notification failed'));
 
       if (input.notifyByEmail) {
         const baseUrl = await getBaseUrl(ctx);

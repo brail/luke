@@ -26,7 +26,7 @@ export const importExportRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { filename } = input;
 
-      ctx.logger.info({ filename }, 'Import avviato');
+      ctx.logger.info({ filename }, 'Import started');
 
       // Placeholder for the import logic
       // The real import will be implemented here in the future
@@ -54,7 +54,7 @@ export const importExportRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { type } = input;
 
-      ctx.logger.info({ type }, 'Export avviato');
+      ctx.logger.info({ type }, 'Export started');
 
       // Placeholder for the export logic
       // The real export will be implemented here in the future

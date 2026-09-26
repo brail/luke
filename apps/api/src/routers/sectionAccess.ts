@@ -149,7 +149,7 @@ export const sectionAccessRouter = router({
           metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
         });
       } catch (err) {
-        ctx.logger.error({ err }, 'Audit log fallito dopo commit RBAC riuscito');
+        ctx.logger.error({ err }, 'Audit log failed after a successful RBAC commit');
       }
 
       return { success: true };
@@ -237,7 +237,7 @@ export const sectionAccessRouter = router({
           },
         });
       } catch (err) {
-        ctx.logger.error({ err }, 'Audit log fallito dopo commit sectionAccess.set riuscito');
+        ctx.logger.error({ err }, 'Audit log failed after a successful sectionAccess.set commit');
       }
 
       return result;

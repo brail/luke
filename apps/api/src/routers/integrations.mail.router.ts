@@ -132,7 +132,7 @@ export const mailRouter = router({
 
         await transporter.sendMail(testEmail);
 
-        logger.info('Email di test inviata con successo', {
+        logger.info('Test email sent successfully', {
           to: recipient,
           subject: testEmail.subject,
         });

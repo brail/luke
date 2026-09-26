@@ -560,7 +560,7 @@ export const usersCoreRouter = router({
             data: { oldRole: current?.role, newRole: updateData.role },
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio ruolo fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Role change notification failed after a successful update');
         }
       }
 
@@ -574,7 +574,7 @@ export const usersCoreRouter = router({
             data: { newEmail: updateData.email },
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio email fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Email change notification failed after a successful update');
         }
       }
 
@@ -588,7 +588,7 @@ export const usersCoreRouter = router({
             data: { isActive: updateData.isActive },
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio stato attivo fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Active status change notification failed after a successful update');
         }
       }
 
@@ -613,7 +613,7 @@ export const usersCoreRouter = router({
             message: 'La tua password è stata reimpostata da un amministratore',
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica reset password fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Password reset notification failed after a successful update');
         }
       }
 

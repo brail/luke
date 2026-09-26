@@ -142,7 +142,7 @@ const portafoglioRouter = router({
           salespersons: result.recordset.map(r => ({ code: r.Code, name: r.Name })),
         };
       } catch (err) {
-        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV non raggiungibile');
+        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV unreachable');
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -168,7 +168,7 @@ const portafoglioRouter = router({
         });
       }
 
-      ctx.logger.info('sales.statistics.portafoglio.triggerSync: avvio manuale');
+      ctx.logger.info('sales.statistics.portafoglio.triggerSync: manual start');
       const result = await triggerPortafoglioSyncNow();
 
       if (!result) {
@@ -266,7 +266,7 @@ const portafoglioRouter = router({
         // Fallback: direct NAV query (slow, no replica available)
         ctx.logger.warn(
           { brandCode: brand.code, seasonCode: season.code },
-          'Portafoglio PG replica vuota — fallback NAV diretto',
+          'Portafoglio PG replica empty — falling back to NAV directly',
         );
         dataSource = 'nav';
         const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
@@ -427,7 +427,7 @@ const kimoRouter = router({
         });
       }
 
-      ctx.logger.info('sales.statistics.kimo.triggerSync: avvio manuale');
+      ctx.logger.info('sales.statistics.kimo.triggerSync: manual start');
       const result = await triggerKimoSyncNow();
 
       if (!result) {

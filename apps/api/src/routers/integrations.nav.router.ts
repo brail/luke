@@ -208,7 +208,7 @@ const navSyncRouter = router({
 
       ctx.logger.info(
         { entity: input.entity, autoSyncEnabled: input.autoSyncEnabled, intervalMinutes: input.intervalMinutes },
-        'NavSyncFilter pianificazione aggiornata'
+        'NavSyncFilter schedule updated'
       );
 
       return filter;
@@ -264,7 +264,7 @@ const navSyncRouter = router({
 
       ctx.logger.info(
         { entity: input.entity, mode: input.mode, navNosCount: navNos.length },
-        'NavSyncFilter aggiornato'
+        'NavSyncFilter updated'
       );
 
       return filter;
@@ -456,7 +456,7 @@ export const navRouter = router({
 
       ctx.logger.info(
         { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
-        'Configurazione NAV salvata'
+        'NAV configuration saved'
       );
 
       await logAudit(ctx, {

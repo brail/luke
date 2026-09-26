@@ -591,7 +591,7 @@ async function resolveLayoutUrls<T extends {
           : null,
       })),
     })),
-  } as T & { brand: { logoUrl: string | null } }; // spread di un T generico con override annidato: TS non verifica la forma esatta
+  } as T & { brand: { logoUrl: string | null } }; // spread of a generic T with a nested override: TS does not check the exact shape
 }
 
 /**
