@@ -185,7 +185,13 @@ layout as it is then.
 exports resolve every `pictureKey` in the immutable
 `collection-row-pictures-revisions` bucket. The automatic revisions created by
 v2.0.0–v2.1.x therefore show no photo, and replacing a row's photo deletes the
-live object they point to. They need a data repair.
+live object they point to. `db:repair-auto-revision-photos`
+(`apps/api/scripts/repair-auto-revision-photos.ts`, dry run unless `--apply`) copies each photo
+still in live storage into the immutable bucket, repoints the revision rows in the same
+transaction as one `COLLECTION_LAYOUT_REVISION_PHOTO_REPAIR` audit row per revision and key, and lists
+the keys it cannot recover from current storage. It is the one traced exception to snapshot
+immutability, and it has to run right after the deploy: every photo replaced before it runs is
+lost for that revision.
 
 ---
 

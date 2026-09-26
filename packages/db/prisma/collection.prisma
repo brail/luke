@@ -308,8 +308,10 @@ model CollectionLayoutRowRevision {
   progress         String?
   pricePositioning String?
   designer         String?
-  /// Storage key in the immutable "collection-row-pictures-revisions" bucket.
-  pictureKey       String? // key in the immutable collection-row-pictures-revisions bucket
+  /// Storage key in the immutable "collection-row-pictures-revisions" bucket. The one traced exception
+  /// to snapshot immutability: automatic revisions made before 2026-09-26 held a live key, which
+  /// `repairAutoRevisionPhotos` (apps/api/src/services/autoRevisionPhotoRepair.service.ts) repoints.
+  pictureKey       String?
   styleNotes       String?
   materialNotes    String?
   colorNotes       String?
