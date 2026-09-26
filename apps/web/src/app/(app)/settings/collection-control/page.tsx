@@ -54,8 +54,8 @@ const EMPHASIS_OPTIONS: { value: AlertBandEmphasis; label: string }[] = [
   { value: 'solid', label: 'Pieno' },
 ];
 
-/** Larghezze delle colonne condivise dalle due tabelle (bande a range ed esiti), così le due
- * sezioni della pagina si leggono come un'unica griglia invece che come due form scollegati. */
+/** Column widths shared by the two tables (range bands and outcomes), so the two sections of the
+ * page read as a single grid instead of two unrelated forms. */
 // Column widths are hand-tuned to align two separate tables (Bande/Fasi) into one visual grid —
 // none map to the Tailwind spacing scale by design; `preview` happens to coincide with `w-40`.
 const COL = {

@@ -4,11 +4,11 @@
  *   canSee(u, e) = u.isActive ∧ ¬u.pendingApproval ∧ P_access(u, e) ∧ P_relevance(u, e)
  *
  *   P_access    : u.role = 'admin'                                    (brand-unrestricted)
- *               ∨ e.calendar.brandId ∈ ⋃ { T.brandScopes : T team attivo di u }
+ *               ∨ e.calendar.brandId ∈ ⋃ { T.brandScopes : T active team of u }
  *
- *   P_relevance : e non ha righe di visibilità                        (fallback permissivo)
- *               ∨ ∃ team attivo T : u ∈ T ∧ T.functionId ∈ e.visibilities
- *               ∨ ∃ CalendarEventUserVisibility(e, u)                 (eccezione per persona)
+ *   P_relevance : e has no visibility rows                            (permissive fallback)
+ *               ∨ ∃ active team T : u ∈ T ∧ T.functionId ∈ e.visibilities
+ *               ∨ ∃ CalendarEventUserVisibility(e, u)                 (per-person exception)
  *
  * `resolveEventAudience` answers "who receives a notification about event X" (reverse).
  * `eventVisibilityWhere` answers "which events can user X see" (forward, a Prisma `where`

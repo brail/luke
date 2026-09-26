@@ -8,10 +8,6 @@ import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
 
-// Usa crypto.randomUUID() del browser invece di Node.js crypto
-// Import type-only dall'API per type-safety end-to-end tRPC
-// Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
-
 /**
  * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
  *

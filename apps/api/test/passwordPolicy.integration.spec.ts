@@ -25,15 +25,15 @@ beforeEach(async () => {
   await resetTestData();
 });
 
-/** Scrive solo le chiavi passate, così ogni test dichiara da cosa dipende. */
+/** Writes only the keys passed in, so each test declares what it depends on. */
 async function seedPolicy(values: Record<string, string>): Promise<void> {
   await prisma.appConfig.createMany({
     data: Object.entries(values).map(([key, value]) => ({ key, value, isEncrypted: false })),
   });
 }
 
-describe('getPasswordPolicy — cosa legge', () => {
-  it('senza alcuna chiave torna il default sicuro: tutto acceso, 12 caratteri', () => {
+describe('getPasswordPolicy — what it reads', () => {
+  it('with no key at all it returns the safe default: everything on, 12 characters', () => {
     // The fallback lives in a per-key `.catch()`: `getTypedConfig` throws when the key is absent.
     // The default has to be the strictest option, not the most permissive.
     return expect(getPasswordPolicy(prisma)).resolves.toEqual({
@@ -45,18 +45,18 @@ describe('getPasswordPolicy — cosa legge', () => {
     });
   });
 
-  it('legge minLength dalla configurazione', async () => {
+  it('reads minLength from the configuration', async () => {
     await seedPolicy({ 'security.password.minLength': '16' });
     await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 16 });
   });
 
-  it('accetta il pavimento esatto', async () => {
+  it('accepts the exact floor', async () => {
     await seedPolicy({ 'security.password.minLength': '8' });
     await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 8 });
   });
 
   for (const below of ['7', '4']) {
-    it(`sotto il pavimento (${below}) ricade sul default, che è più severo`, async () => {
+    it(`below the floor (${below}) it falls back to the default, which is stricter`, async () => {
       // One floor, declared in the registry: a value that does not meet it fails to parse and the
       // `.catch()` returns the default. There used to be three numbers for one rule, so the answer
       // depended on how far below you went — 7 became 8, 4 became 12.
@@ -65,21 +65,20 @@ describe('getPasswordPolicy — cosa legge', () => {
     });
   }
 
-  it('una chiave illeggibile non rompe la policy, ricade sul default', async () => {
+  it('an unreadable key does not break the policy, it falls back to the default', async () => {
     await seedPolicy({ 'security.password.minLength': 'non-un-numero' });
     await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ minLength: 12 });
   });
 });
 
 /**
- * I quattro interruttori devono potersi spegnere.
+ * The four toggles must be able to switch off.
  *
  * A policy that can only ever become stricter is not configurable: it is a constant with a control
  * panel. While `validatePassword` had a single call site the defect stayed small — extended to four
- * paths, a requirement that cannot be switched off becomes
- * un lockout.
+ * paths, a requirement that cannot be switched off becomes a lockout.
  */
-describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => {
+describe('getPasswordPolicy — switching a requirement off really switches it off', () => {
   const toggles = [
     'requireUppercase',
     'requireLowercase',
@@ -88,12 +87,12 @@ describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => 
   ] as const;
 
   for (const toggle of toggles) {
-    it(`${toggle} = "false" disattiva il requisito`, async () => {
+    it(`${toggle} = "false" disables the requirement`, async () => {
       await seedPolicy({ [`security.password.${toggle}`]: 'false' });
       await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ [toggle]: false });
     });
 
-    it(`${toggle} = "true" lo lascia acceso`, async () => {
+    it(`${toggle} = "true" leaves it on`, async () => {
       await seedPolicy({ [`security.password.${toggle}`]: 'true' });
       await expect(getPasswordPolicy(prisma)).resolves.toMatchObject({ [toggle]: true });
     });
@@ -101,7 +100,7 @@ describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => 
 });
 
 /**
- * La policy deve essere leggibile senza sessione.
+ * The policy must be readable without a session.
  *
  * The reset page lives outside the authenticated layout — someone setting a new password has no
  * session, by definition — and it is the page that needed this most: it announced a hardcoded
@@ -109,7 +108,7 @@ describe('getPasswordPolicy — spegnere un requisito lo spegne davvero', () => 
  * rules it had never mentioned.
  */
 describe('public.passwordPolicy', () => {
-  it('risponde a un client anonimo', async () => {
+  it('answers an anonymous client', async () => {
     const anon = await createAnonymousCaller();
     await expect(anon.public.passwordPolicy()).resolves.toMatchObject({
       minLength: 12,
@@ -117,7 +116,7 @@ describe('public.passwordPolicy', () => {
     });
   });
 
-  it('riflette la configurazione, non un default compilato', async () => {
+  it('reflects the configuration, not a compiled-in default', async () => {
     await seedPolicy({
       'security.password.minLength': '16',
       'security.password.requireSpecialChar': 'false',
@@ -129,7 +128,7 @@ describe('public.passwordPolicy', () => {
     });
   });
 
-  it('nomina i caratteri che contano come speciali', async () => {
+  it('names the characters that count as special', async () => {
     // The client cannot say "a symbol": the server's class is an allowlist, and `~` or a space look
     // acceptable under a vague label right up to the rejection.
     const anon = await createAnonymousCaller();

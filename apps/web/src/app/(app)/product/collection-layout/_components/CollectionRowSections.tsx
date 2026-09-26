@@ -413,9 +413,9 @@ interface PlanningSectionProps {
  * and phase, with the criticality badge those two fields drive. Kept apart from
  * the identity fields so process/status reads at a glance.
  *
- * Ospita anche il controllo di conclusione: è lo stato che blocca proprio i due campi qui sotto,
- * quindi sta accanto a loro invece che nell'header del drawer (dove collideva con la X di chiusura,
- * ed era l'unico `DialogHeader` dell'app con un'azione allineata a destra).
+ * It also hosts the completion control: that is the state that locks exactly the two fields below,
+ * so it sits next to them instead of in the drawer header (where it collided with the close X, and
+ * was the only `DialogHeader` in the app with a right-aligned action).
  */
 export function PlanningSection({
   control,

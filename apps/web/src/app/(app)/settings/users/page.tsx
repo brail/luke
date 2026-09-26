@@ -251,8 +251,8 @@ export default function UsersPage() {
   const handleEditUser = (user: UserListItem) => {
     setDialogMode('edit');
     setSelectedUser(user);
-    // Determina campi sincronizzati in base al provider
-    // Per provider esterni (LDAP, OIDC): blocca username, firstName, lastName e password
+    // Determine the synced fields from the identity provider.
+    // External providers (LDAP, OIDC) lock username, firstName, lastName and password
     // email and role are editable even for external users
     const synced: SyncedField[] =
       user?.identities?.[0]?.provider !== 'LOCAL'

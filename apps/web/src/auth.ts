@@ -31,8 +31,8 @@ interface LukeAuthUser {
 // Forza runtime Node.js: necessari moduli Node in @luke/core/server
 export const runtime = 'nodejs';
 
-// Cache tokenVersion validation: evita fetch ripetuti a me.get per lo stesso utente.
-// TTL 30s — finestra accettabile tra revoca sessione e logout forzato.
+// Cache tokenVersion validation: avoids repeated me.get fetches for the same user.
+// TTL 30s — an acceptable window between session revocation and forced logout.
 const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (ms)
 const TOKEN_VERSION_CACHE_TTL = 30_000;
 
@@ -76,13 +76,13 @@ async function callTRPCAuth(username: string, password: string, clientIp?: strin
     });
 
     if (!response.ok) {
-      // Propaga errori specifici per gestione frontend
+      // Propagate specific errors so the frontend can handle them
       const errorData = await response.json().catch(() => null);
       const message: string = errorData?.error?.message || '';
       if (message.startsWith('ACCOUNT_PENDING_APPROVAL')) {
         return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
       }
-      // Segnala il rate-limit al wrapper della route ([...nextauth]/route.ts) tramite
+      // Signals the rate limit to the route wrapper ([...nextauth]/route.ts) through
       // AsyncLocalStorage: NextAuth responds with 200 anyway below (return null →
       // generic CredentialsSignin), the real 429 is constructed outside this call stack.
       if (errorData?.error?.data?.code === 'TOO_MANY_REQUESTS') {
@@ -173,7 +173,7 @@ export const config = {
           process.env.COOKIE_SECURE !== 'false',
         sameSite: 'lax', // 'strict' for same domain without cross-origin
         path: '/',
-        // domain: '.example.com' se Web e API su sottodomini diversi
+        // domain: '.example.com' if Web and API are on different subdomains
       },
     },
   },
@@ -262,7 +262,7 @@ export const config = {
   // Auth.js v5 validates the Host header; trustHost bypasses that check
   // and relies on NEXTAUTH_URL being set correctly instead.
   trustHost: true,
-  // NEXTAUTH_SECRET (env) ha precedenza su getNextAuthSecret() (file system).
+  // NEXTAUTH_SECRET (env) takes precedence over getNextAuthSecret() (file system).
   // In prod: env var is injected by Docker Compose; fallback to file system is forbidden
   // because the web container does not mount the ~/.luke/secret.key volume (API-only).
   // In dev: fallback to file system via getNextAuthSecret() for initial setup.
