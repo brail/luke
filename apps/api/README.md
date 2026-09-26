@@ -30,12 +30,21 @@ Error handling in the LDAP client is distinct from the authentication strategy:
 `src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
 or `ldap-first` using `auth.strategy`. In `ldap-first`, local authentication is
 attempted after LDAP returns no user, including when `src/lib/ldapAuth.ts`
-converts rejected user credentials to `null`. It also follows infrastructure
-errors (`SERVICE_UNAVAILABLE` or `BAD_GATEWAY`); other tRPC errors are rethrown.
-This is not a guarantee that local fallback happens only during an LDAP outage.
-Local fallback still requires an active Luke account, a LOCAL identity with a
-stored credential and a valid local password. Disabling only the directory
-account does not necessarily disable that local access path.
+converts rejected user credentials to `null`. It also follows any error thrown
+by `authenticateViaLdap` (incomplete configuration, a failed service-account
+bind, an invalid filter, the network, a failed user sync): the error is logged
+at `warn` as `LDAP authentication could not complete` and counted as no LDAP
+login. The same holds for the LDAP step of `local-first` and for `ldap-only`,
+where the attempt ends as `UNAUTHORIZED` with audit reason
+`invalid_credentials`. This is not a guarantee that local fallback happens only
+during an LDAP outage. Local fallback still requires an active Luke account, a
+LOCAL identity with a stored credential and a valid local password. Disabling
+only the directory account does not necessarily disable that local access path.
+
+`ldap-only` has no local path, so a broken LDAP configuration locks every user
+out. Recovery is in the database: set the `auth.strategy` row to a strategy
+with a local path (for example `local-first`), then log in as a user with a
+LOCAL credential; the strategy is read on every login.
 
 ## Password reset and email verification audit events
 

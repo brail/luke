@@ -13,6 +13,7 @@ import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
+import { toErrorMessage } from '../lib/error';
 import { authenticateViaLdap } from '../lib/ldapAuth';
 import {
   sendPasswordResetEmail,
@@ -117,28 +118,21 @@ export async function authenticateUser(
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
 
-  let authenticatedUser = null;
-  let authMethod = '';
+  let authenticatedUser: User | null;
+  let authMethod: 'local' | 'ldap';
 
-  const handleLdapError = (ldapError: unknown) => {
-    if (ldapError instanceof TRPCError) {
-      if (
-        ldapError.code === 'SERVICE_UNAVAILABLE' ||
-        ldapError.code === 'BAD_GATEWAY'
-      ) {
-        ctx.logger.warn({ username, code: ldapError.code }, `LDAP unavailable`);
-        // LDAP down - return null (auth fail) unless fallback logic catches it
-        return null;
-      } else {
-        // Do NOT fall back for authorization errors
-        throw ldapError;
-      }
-    } else {
-      const errorMessage =
-        ldapError instanceof Error ? ldapError.message : 'Unknown LDAP error';
+  // `authenticateViaLdap` already answers `null` for a wrong user password; what it throws means
+  // LDAP authentication could not complete (incomplete configuration, a wrong service-account
+  // bind, an invalid filter, the network, a failed user sync). None of those is a decision about
+  // the user, so it counts as no LDAP login and each strategy's local fallback applies.
+  // Rethrowing it used to lock every user out under ldap-first, local admin included.
+  const tryLdap = async () => {
+    try {
+      return await authenticateViaLdap(ctx.prisma, username, password);
+    } catch (e) {
       ctx.logger.warn(
-        { username, error: errorMessage },
-        `LDAP connection error`
+        { username, code: e instanceof TRPCError ? e.code : undefined, error: toErrorMessage(e) },
+        'LDAP authentication could not complete'
       );
       return null;
     }
@@ -155,19 +149,8 @@ export async function authenticateUser(
       break;
 
     case 'ldap-only':
-      try {
-        authenticatedUser = await authenticateViaLdap(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'ldap';
-      } catch (e) {
-        // Pass the error along for correct tRPC exception handling
-        handleLdapError(e);
-        // If handleLdapError doesn't throw, it means it's a connection/tech error
-        // and authenticatedUser stays null
-      }
+      authenticatedUser = await tryLdap();
+      authMethod = 'ldap';
       break;
 
     case 'local-first':
@@ -183,49 +166,16 @@ export async function authenticateUser(
           { username },
           `Local auth failed, trying LDAP fallback...`
         );
-        try {
-          authenticatedUser = await authenticateViaLdap(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'ldap';
-        } catch (e) {
-          handleLdapError(e);
-        }
+        authenticatedUser = await tryLdap();
+        authMethod = 'ldap';
       }
       break;
 
     case 'ldap-first':
-      try {
-        authenticatedUser = await authenticateViaLdap(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'ldap';
-      } catch (e) {
-        if (e instanceof TRPCError) {
-          if (e.code === 'SERVICE_UNAVAILABLE' || e.code === 'BAD_GATEWAY') {
-            ctx.logger.warn(
-              { code: e.code },
-              'LDAP unavailable, fallback to local'
-            );
-          } else {
-            throw e;
-          }
-        } else {
-          ctx.logger.warn({ error: e }, 'LDAP error, fallback to local');
-        }
-        authenticatedUser = await authenticateLocal(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'local';
-      }
+      authenticatedUser = await tryLdap();
+      authMethod = 'ldap';
 
-      if (!authenticatedUser && authMethod === 'ldap') {
+      if (!authenticatedUser) {
         ctx.logger.info(
           { username },
           'LDAP auth failed, trying local fallback...'
