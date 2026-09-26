@@ -109,7 +109,7 @@ export async function sendEmail(
     try {
       await transporter.sendMail(mailOptions);
 
-      logger.info({ to, subject, attempt: attempt + 1 }, 'Email inviata');
+      logger.info({ to, subject, attempt: attempt + 1 }, 'Email sent');
       return;
     } catch (error) {
       const isLastAttempt = attempt === retries - 1;
@@ -121,7 +121,7 @@ export async function sendEmail(
             attempts: retries,
             error: error instanceof Error ? error.message : 'Unknown',
           },
-          'Email fallita dopo tutti i retry'
+          'Email failed after all retries'
         );
         throw new Error(
           `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -151,9 +151,9 @@ function loadTextTemplate(
   return template;
 }
 
-// Logo per email: "L" su sfondo slate come fallback (Gmail e client che strippano SVG),
-// SVG con cerchi bianchi posizionato absolute sopra (copre la "L" nei client che lo supportano).
-// Tecnica: <td position:relative> + <span>L</span> in flow + <svg position:absolute top:0 left:0>
+// Email logo: an "L" on a slate background as the fallback (Gmail and clients that strip SVG),
+// with an SVG of white circles positioned absolutely on top (it covers the "L" in clients that support it).
+// Technique: <td position:relative> + <span>L</span> in flow + <svg position:absolute top:0 left:0>
 const LOGO_TD =
   '<td style="width:72px;height:72px;background-color:#1e293b;border-radius:8px;text-align:center;vertical-align:middle;position:relative;">' +
   '<span style="color:#fff;font-size:28px;font-weight:700;line-height:72px;display:block;">L</span>' +

@@ -78,9 +78,9 @@ async function sweepAuditLog(
         chunk => prisma.auditLog.deleteMany({ where: { id: { in: chunk } } }).then(r => r.count),
         ids,
       );
-      log.info({ tier, deleted, archiveKey: key }, 'Retention sweep: audit log archiviato e rimosso');
+      log.info({ tier, deleted, archiveKey: key }, 'Retention sweep: audit log archived and removed');
     } catch (err) {
-      log.error({ err, tier, candidateRows: ids.length }, 'Retention sweep: archiviazione audit log fallita, righe conservate per il prossimo tick');
+      log.error({ err, tier, candidateRows: ids.length }, 'Retention sweep: audit log archiving failed, rows kept for the next tick');
     }
   }));
 }
@@ -105,7 +105,7 @@ async function sweepNotifications(prisma: PrismaClient, log: FastifyInstance['lo
     chunk => prisma.notification.deleteMany({ where: { id: { in: chunk } } }).then(r => r.count),
     ids,
   );
-  log.info({ deleted }, 'Retention sweep: notifiche lette rimosse');
+  log.info({ deleted }, 'Retention sweep: read notifications removed');
 }
 
 /** Deletes expired dedup markers. Table is small/bounded by stable keys — no batching needed. */
@@ -113,7 +113,7 @@ async function sweepDedupKeys(prisma: PrismaClient, log: FastifyInstance['log'],
   const { count } = await prisma.notificationDedupKey.deleteMany({
     where: { lastSentAt: { lt: cutoffDaysAgo(dedupRetentionDays) } },
   });
-  if (count > 0) log.info({ deleted: count }, 'Retention sweep: dedup key notifiche rimosse');
+  if (count > 0) log.info({ deleted: count }, 'Retention sweep: notification dedup keys removed');
 }
 
 async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
@@ -138,7 +138,7 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
   ]);
   for (const result of results) {
     if (result.status === 'rejected') {
-      log.error({ err: result.reason }, 'Retention sweep: uno sweep è fallito, gli altri sono comunque andati avanti');
+      log.error({ err: result.reason }, 'Retention sweep: one sweep failed, the others went ahead anyway');
     }
   }
 }
@@ -153,11 +153,11 @@ export function registerRetentionScheduler(fastify: FastifyInstance, prisma: Pri
   const lockedTick = withSchedulerLock(prisma, 'retention-sweep', () => runTick(prisma, fastify.log));
   const run = () =>
     lockedTick().catch(err =>
-      fastify.log.error({ err }, 'Retention sweep: errore non gestito')
+      fastify.log.error({ err }, 'Retention sweep: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Retention sweep: avviato (tick ogni 24h, audit log + notifiche + dedup key)');
+    fastify.log.info('Retention sweep: started (tick every 24h, audit log + notifications + dedup keys)');
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
 
@@ -166,6 +166,6 @@ export function registerRetentionScheduler(fastify: FastifyInstance, prisma: Pri
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Retention sweep: fermato');
+    fastify.log.info('Retention sweep: stopped');
   });
 }

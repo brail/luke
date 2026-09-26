@@ -1,5 +1,5 @@
 /**
- * Frasi statiche per il daily greeting: intro motivazionali, fallback quotes e saluto per fascia oraria.
+ * Static phrases for the daily greeting: motivational intros, fallback quotes and the time-of-day greeting.
  */
 
 import { getRandomFact } from './dailyFacts';

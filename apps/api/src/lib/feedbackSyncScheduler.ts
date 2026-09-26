@@ -33,7 +33,7 @@ async function syncSubmission(
   if (!res.ok) {
     logger.warn(
       { status: res.status, issueNumber: submission.issueNumber, repo: submission.repo },
-      'Feedback sync: impossibile leggere issue GitHub',
+      'Feedback sync: cannot read GitHub issue',
     );
     return;
   }
@@ -70,7 +70,7 @@ async function checkFeedback(prisma: PrismaClient, logger: FastifyInstance['log'
     try {
       await syncSubmission(prisma, token, submission, logger);
     } catch (err) {
-      logger.error({ err, issueNumber: submission.issueNumber }, 'Feedback sync: tick fallito per una submission');
+      logger.error({ err, issueNumber: submission.issueNumber }, 'Feedback sync: tick failed for one submission');
     }
   }
 }
@@ -97,7 +97,7 @@ export function registerFeedbackSyncScheduler(
 
   fastify.addHook('onReady', async () => {
     const intervalMs = await getTypedConfig(prisma, 'integrations.github.feedbackSyncIntervalMs').catch(() => 24 * 60 * 60 * 1000);
-    fastify.log.info({ intervalMs }, 'Feedback sync scheduler: avviato');
+    fastify.log.info({ intervalMs }, 'Feedback sync scheduler: started');
     setTimeout(() => void run(), 60_000);
     timer = setInterval(() => void run(), intervalMs);
   });
@@ -107,6 +107,6 @@ export function registerFeedbackSyncScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Feedback sync scheduler: fermato');
+    fastify.log.info('Feedback sync scheduler: stopped');
   });
 }

@@ -174,7 +174,7 @@ export async function buildDigestTasks(
   range?: DigestDateRange,
   onlyUserId?: string,
 ): Promise<{ tasks: EmailTask[]; calendarCount: number }> {
-  log.info('Calendar digest scheduler: avvio digest giornaliero');
+  log.info('Calendar digest scheduler: starting daily digest');
 
   let rangeStart: Date;
   let rangeEnd: Date;
@@ -207,7 +207,7 @@ export async function buildDigestTasks(
   });
 
   if (logs.length === 0) {
-    log.info('Calendar digest: nessuna modifica ieri, skip');
+    log.info('Calendar digest: no changes yesterday, skipping');
     return { tasks: [], calendarCount: 0 };
   }
 
@@ -459,12 +459,12 @@ async function runDigestCore(
 
   const { sent, failed } = await sendBulkEmail(tasks, task =>
     sendEmail(prisma, task.email, task.subject, task.html, task.text).catch(err => {
-      log.error({ err }, 'Calendar digest: invio email fallito');
+      log.error({ err }, 'Calendar digest: email send failed');
       throw err;
     })
   );
 
-  log.info({ sent, failed, calendars: calendarCount }, 'Calendar digest: completato');
+  log.info({ sent, failed, calendars: calendarCount }, 'Calendar digest: completed');
 }
 
 async function runDigest(
@@ -520,11 +520,11 @@ export function registerCalendarDigestScheduler(
   const guardedDigest = guardMaintenance(prisma, () => runDigest(prisma, fastify.log, state));
   const run = () =>
     guardedDigest().catch(err =>
-      fastify.log.error({ err }, 'Calendar digest scheduler: errore non gestito')
+      fastify.log.error({ err }, 'Calendar digest scheduler: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Calendar digest scheduler: avviato (tick ogni ora, esecuzione alle 07:00)');
+    fastify.log.info('Calendar digest scheduler: started (hourly tick, runs at 07:00)');
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
 
@@ -533,6 +533,6 @@ export function registerCalendarDigestScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Calendar digest scheduler: fermato');
+    fastify.log.info('Calendar digest scheduler: stopped');
   });
 }

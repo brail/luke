@@ -146,7 +146,7 @@ export function registerMilestoneDeadlineScheduler(
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Milestone deadline scheduler: avviato (tick ogni ora)');
+    fastify.log.info('Milestone deadline scheduler: started (hourly tick)');
     setTimeout(() => void run(), 60_000);
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
@@ -156,6 +156,6 @@ export function registerMilestoneDeadlineScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Milestone deadline scheduler: fermato');
+    fastify.log.info('Milestone deadline scheduler: stopped');
   });
 }

@@ -385,7 +385,7 @@ describe('registerDerivativeScheduler', () => {
     });
     expect(fastify.log.error).toHaveBeenCalledWith(
       expect.objectContaining({ masterId: 'bad-master' }),
-      expect.stringContaining('fallito'),
+      expect.stringContaining('failed'),
     );
   });
 

@@ -54,7 +54,7 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
     const result = await syncPortafoglioNow(pool, navConfig.company, prisma, log);
     return result;
   } catch (err) {
-    log.error({ err }, 'Portafoglio sync scheduler: sync fallito');
+    log.error({ err }, 'Portafoglio sync scheduler: sync failed');
     await notifyDeduped(prisma, 'portafoglio-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'Portafoglio sync fallito',
@@ -125,7 +125,7 @@ export function registerPortafoglioSyncScheduler(
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
-    fastify.log.info('Portafoglio sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
+    fastify.log.info('Portafoglio sync scheduler: started (tick every minute, configurable interval)');
 
     // First execution immediately after ready (respecting DB config)
     void guardedTick();
@@ -138,6 +138,6 @@ export function registerPortafoglioSyncScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Portafoglio sync scheduler: fermato');
+    fastify.log.info('Portafoglio sync scheduler: stopped');
   });
 }

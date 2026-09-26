@@ -93,7 +93,7 @@ export function registerNavSyncScheduler(
     if (isRunning[entity] || _isPaused) return;
 
     isRunning[entity] = true;
-    fastify.log.info({ entity }, 'NAV sync scheduler: avvio sync entità');
+    fastify.log.info({ entity }, 'NAV sync scheduler: starting entity sync');
 
     try {
       const report = await runNavSync(prisma, getConfig, undefined, entity);
@@ -101,9 +101,9 @@ export function registerNavSyncScheduler(
 
       for (const r of report.results) {
         if (r.skipped) {
-          fastify.log.info({ entity: r.entity }, 'NAV sync scheduler: entità saltata (filtro disabilitato)');
+          fastify.log.info({ entity: r.entity }, 'NAV sync scheduler: entity skipped (filter disabled)');
         } else {
-          fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entità completata');
+          fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entity completed');
         }
       }
 
@@ -114,7 +114,7 @@ export function registerNavSyncScheduler(
         })
         .catch(e => fastify.log.error({ err: e, entity }, 'Failed to persist NAV sync status'));
     } catch (err) {
-      fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
+      fastify.log.error({ err, entity }, 'NAV sync scheduler: sync failed');
       await prisma.navSyncFilter
         .update({
           where: { entity },
@@ -143,13 +143,13 @@ export function registerNavSyncScheduler(
     // Pre-check: if NAV isn't configured yet, avoid noisy errors on every boot
     const host = await getConfig(prisma, 'integrations.nav.host', false);
     if (!host) {
-      fastify.log.debug('NAV sync scheduler: host non configurato, tick saltato');
+      fastify.log.debug('NAV sync scheduler: host not configured, tick skipped');
       return;
     }
 
     const syncEnabled = await getConfig(prisma, 'integrations.nav.syncEnabled', false);
     if (syncEnabled === 'false') {
-      fastify.log.debug('NAV sync scheduler: sync globalmente disabilitato, tick saltato');
+      fastify.log.debug('NAV sync scheduler: sync disabled globally, tick skipped');
       return;
     }
 
@@ -177,7 +177,7 @@ export function registerNavSyncScheduler(
   const guardedTick = guardMaintenance(prisma, tick);
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('NAV sync scheduler: avviato (tick ogni 60s, intervalli per-entità)');
+    fastify.log.info('NAV sync scheduler: started (tick every 60s, per-entity intervals)');
 
     // First run right after ready
     void guardedTick();
@@ -191,6 +191,6 @@ export function registerNavSyncScheduler(
       timer = null;
     }
     await closePool();
-    fastify.log.info('NAV sync scheduler: fermato, pool mssql chiuso');
+    fastify.log.info('NAV sync scheduler: stopped, mssql pool closed');
   });
 }

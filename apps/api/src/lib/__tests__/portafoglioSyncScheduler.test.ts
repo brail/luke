@@ -90,7 +90,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       expect(mockFastify.log.info).toHaveBeenCalledWith(
-        expect.stringContaining('Portafoglio sync scheduler: avviato')
+        expect.stringContaining('Portafoglio sync scheduler: started')
       );
     });
   });
@@ -270,7 +270,7 @@ describe('portafoglioSyncScheduler', () => {
       await onCloseHandler();
 
       expect(mockFastify.log.info).toHaveBeenCalledWith(
-        expect.stringContaining('Portafoglio sync scheduler: fermato')
+        expect.stringContaining('Portafoglio sync scheduler: stopped')
       );
     });
 

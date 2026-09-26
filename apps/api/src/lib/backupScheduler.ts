@@ -47,7 +47,7 @@ async function runScheduledBackup(
   notifyOnFailure: boolean,
 ): Promise<void> {
   const record = await createPendingBackupRecord(prisma, { scope, trigger: 'SCHEDULED' });
-  log.info({ backupId: record.id, scope }, 'Backup scheduler: avvio backup pianificato');
+  log.info({ backupId: record.id, scope }, 'Backup scheduler: starting scheduled backup');
 
   await runBackupJob({ prisma, backupId: record.id, scope, logger: log });
 
@@ -75,7 +75,7 @@ async function reapStuckBackups(prisma: PrismaClient, log: FastifyInstance['log'
       errorMessage: 'Job abbandonato: nessun aggiornamento di stato da oltre 2 ore (processo probabilmente terminato in modo anomalo)',
     },
   });
-  if (count > 0) log.warn({ count }, 'Backup retention: job bloccati contrassegnati come falliti');
+  if (count > 0) log.warn({ count }, 'Backup retention: stuck jobs marked as failed');
 }
 
 /**
@@ -132,11 +132,11 @@ async function pruneExpiredBackups(
 
   results.forEach((result, i) => {
     if (result.status === 'rejected') {
-      log.error({ err: result.reason, backupId: toDelete[i].id }, 'Backup retention: pruning fallito per questo backup');
+      log.error({ err: result.reason, backupId: toDelete[i].id }, 'Backup retention: pruning failed for this backup');
     }
   });
   const deleted = results.filter(r => r.status === 'fulfilled').length;
-  log.info({ deleted, retentionMinCount }, 'Backup retention: pruning completato');
+  log.info({ deleted, retentionMinCount }, 'Backup retention: pruning completed');
 }
 
 async function runTick(
@@ -167,11 +167,11 @@ export function registerBackupScheduler(fastify: FastifyInstance, prisma: Prisma
   const lockedTick = withSchedulerLock(prisma, 'backup', () => runTick(prisma, fastify.log, state));
   const run = () =>
     lockedTick().catch(err =>
-      fastify.log.error({ err }, 'Backup scheduler: errore non gestito')
+      fastify.log.error({ err }, 'Backup scheduler: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Backup scheduler: avviato (tick ogni ora, backup pianificato + retention pruning)');
+    fastify.log.info('Backup scheduler: started (hourly tick, scheduled backup + retention pruning)');
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
 
@@ -180,6 +180,6 @@ export function registerBackupScheduler(fastify: FastifyInstance, prisma: Prisma
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Backup scheduler: fermato');
+    fastify.log.info('Backup scheduler: stopped');
   });
 }

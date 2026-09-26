@@ -34,7 +34,7 @@ export async function hashPassword(password: string): Promise<string> {
     return await argon2.hash(password, ARGON2_OPTIONS);
   } catch (error) {
     throw new Error(
-      `Errore durante l'hash della password: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`,
+      `Password hashing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error }
     );
   }

@@ -359,7 +359,7 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
         // did (e.g. a malformed AppConfig override on another route), fail
         // loudly instead of silently deriving the wrong key.
         throw new Error(
-          `withRateLimit('${routeName}'): keyBy 'username' non è supportato da questo middleware — la chiave va passata esplicitamente dal chiamante`
+          `withRateLimit('${routeName}'): keyBy 'username' is not supported by this middleware — the caller must pass the key explicitly`
         );
       }
 

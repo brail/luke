@@ -49,7 +49,7 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
     const minutesRemaining = (new Date(state.scheduledAt!).getTime() - Date.now()) / 60_000;
 
     if (minutesRemaining <= 0) {
-      log.info('Maintenance mode scheduler: countdown esaurito, attivazione automatica');
+      log.info('Maintenance mode scheduler: countdown expired, activating automatically');
       await markActivated(prisma, state);
       if (state.forceLogout) await forceLogoutNonAdmins(prisma);
       return IDLE_DELAY_MS;
@@ -70,7 +70,7 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
           ? `${state.message} (tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'})`
           : `Il sistema entrerà in manutenzione tra circa ${mostUrgent} minut${mostUrgent === 1 ? 'o' : 'i'}. Salva il lavoro in corso.`,
         data: { type: 'maintenance_mode_warning', minutesRemaining: mostUrgent },
-      }).catch(err => log.error({ err, crossed }, 'Maintenance mode scheduler: notifica soglia fallita'));
+      }).catch(err => log.error({ err, crossed }, 'Maintenance mode scheduler: threshold notification failed'));
 
       await recordWarningsSent(prisma, state, crossed);
     }
@@ -97,13 +97,13 @@ export function registerMaintenanceModeScheduler(fastify: FastifyInstance, prism
     try {
       delay = await runTick(prisma, fastify.log);
     } catch (err) {
-      fastify.log.error({ err }, 'Maintenance mode scheduler: errore non gestito');
+      fastify.log.error({ err }, 'Maintenance mode scheduler: unhandled error');
     }
     if (!stopped) timer = setTimeout(() => void tick(), delay);
   };
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Maintenance mode scheduler: avviato (tick dinamico, 10s-10min in base al countdown)');
+    fastify.log.info('Maintenance mode scheduler: started (dynamic tick, 10s-10min depending on the countdown)');
     void tick();
   });
 
@@ -113,6 +113,6 @@ export function registerMaintenanceModeScheduler(fastify: FastifyInstance, prism
       clearTimeout(timer);
       timer = null;
     }
-    fastify.log.info('Maintenance mode scheduler: fermato');
+    fastify.log.info('Maintenance mode scheduler: stopped');
   });
 }

@@ -49,7 +49,7 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     const result = await syncKimoNow(pool, navConfig.company, prisma, log);
     return result;
   } catch (err) {
-    log.error({ err }, 'Kimo sync scheduler: sync fallito');
+    log.error({ err }, 'Kimo sync scheduler: sync failed');
     await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'KIMO sync fallito',
@@ -118,7 +118,7 @@ export function registerKimoSyncScheduler(
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
-    fastify.log.info('Kimo sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
+    fastify.log.info('Kimo sync scheduler: started (tick every minute, configurable interval)');
 
     void guardedTick();
 
@@ -130,6 +130,6 @@ export function registerKimoSyncScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Kimo sync scheduler: fermato');
+    fastify.log.info('Kimo sync scheduler: stopped');
   });
 }

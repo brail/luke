@@ -255,7 +255,7 @@ async function reconcileTick(prisma: PrismaClient, logger: FastifyInstance['log'
     try {
       await processMaster(prisma, id, logger);
     } catch (err) {
-      logger.error({ err, masterId: id }, 'Asset derivative reconcile: tick fallito per un master');
+      logger.error({ err, masterId: id }, 'Asset derivative reconcile: tick failed for one master');
     }
   }
 }
@@ -270,11 +270,11 @@ export function registerDerivativeScheduler(fastify: FastifyInstance, prisma: Pr
   const lockedTick = withSchedulerLock(prisma, 'asset-derivatives', () => reconcileTick(prisma, fastify.log));
   const run = () =>
     lockedTick().catch(err =>
-      fastify.log.error({ err }, 'Asset derivative reconcile: errore non gestito')
+      fastify.log.error({ err }, 'Asset derivative reconcile: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Asset derivative reconcile: avviato (tick ogni 5 min)');
+    fastify.log.info('Asset derivative reconcile: started (tick every 5 min)');
     timer = setInterval(() => void run(), RECONCILE_INTERVAL_MS);
   });
 
@@ -283,6 +283,6 @@ export function registerDerivativeScheduler(fastify: FastifyInstance, prisma: Pr
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Asset derivative reconcile: fermato');
+    fastify.log.info('Asset derivative reconcile: stopped');
   });
 }

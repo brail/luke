@@ -280,7 +280,7 @@ export async function getConfig(
           key,
           error: error instanceof Error ? error.message : 'Unknown error',
         },
-        'Errore decifratura config'
+        'Config decryption error'
       );
       throw new Error(`Impossibile decifrare configurazione: ${key}`, { cause: error });
     }
@@ -488,7 +488,7 @@ export async function listConfigsPaged(
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
     isEncrypted: item.isEncrypted,
-    valuePreview: item.isEncrypted ? null : item.value, // Passa sempre il valore completo
+    valuePreview: item.isEncrypted ? null : item.value, // Always pass the full value
     updatedAt: item.updatedAt.toISOString(),
   }));
 
@@ -638,7 +638,7 @@ function parseConfigOrDefault<K extends AppConfigKey>(
   } catch (error) {
     logger.warn(
       { key, error: error instanceof Error ? error.message : 'Unknown error' },
-      'Valore AppConfig non valido, uso fallback'
+      'Invalid AppConfig value, using fallback'
     );
     return fallback;
   }
@@ -782,7 +782,7 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   } catch (error) {
     logger.warn(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Errore parsing/validazione roleMapping, usando mapping vuoto'
+      'roleMapping parse/validation error, using an empty mapping'
     );
     roleMapping = {};
   }
