@@ -20,7 +20,7 @@ rules:
       # that flags correct code gets disabled within a week.
       - metavariable-regex:
           metavariable: $KEY
-          regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId)$'
+          regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId|planId|specsheetId)$'
       - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
     paths:
       include:

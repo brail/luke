@@ -337,6 +337,56 @@ export async function resolveMerchPlanRowBrandAccess(
   return row;
 }
 
+/** Merchandising plan, by `planId`. */
+export async function resolveMerchPlanBrandAccess(ctx: BrandScopeCtx, planId: string) {
+  const plan = await ctx.prisma.merchandisingPlan.findUnique({
+    where: { id: planId },
+    select: { id: true, brandId: true },
+  });
+  if (!plan) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Piano non trovato' });
+  }
+
+  await assertBrandAccess(ctx, plan.brandId);
+  return plan;
+}
+
+/** Merchandising specsheet, by `specsheetId`: specsheet → row → plan. */
+export async function resolveMerchSpecsheetBrandAccess(
+  ctx: BrandScopeCtx,
+  specsheetId: string
+) {
+  const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
+    where: { id: specsheetId },
+    select: { id: true, row: { select: { plan: { select: { brandId: true } } } } },
+  });
+  if (!specsheet) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
+  }
+
+  await assertBrandAccess(ctx, specsheet.row.plan.brandId);
+  return specsheet;
+}
+
+/** Merchandising specsheet image, by `imageId`: image → specsheet → row → plan. */
+export async function resolveMerchImageBrandAccess(ctx: BrandScopeCtx, imageId: string) {
+  const image = await ctx.prisma.merchandisingImage.findUnique({
+    where: { id: imageId },
+    select: {
+      id: true,
+      specsheetId: true,
+      isDefault: true,
+      specsheet: { select: { row: { select: { plan: { select: { brandId: true } } } } } },
+    },
+  });
+  if (!image) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Immagine non trovata' });
+  }
+
+  await assertBrandAccess(ctx, image.specsheet.row.plan.brandId);
+  return image;
+}
+
 /** Planning group, by `planningGroupId`. */
 export async function resolvePlanningGroupBrandAccess(
   ctx: BrandScopeCtx,

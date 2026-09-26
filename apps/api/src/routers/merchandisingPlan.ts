@@ -8,7 +8,7 @@
  *  - merchandisingPlan.createRow / updateRow / deleteRow / reorderRows
  *  - merchandisingPlan.getSpecsheet / upsertSpecsheet
  *  - merchandisingPlan.upsertComponents
- *  - merchandisingPlan.addImage / deleteImage / setDefaultImage
+ *  - merchandisingPlan.deleteImage / setDefaultImage
  *  - merchandisingPlan.assignUser
  */
 
@@ -30,7 +30,10 @@ import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   assertBrandAccess,
+  resolveMerchImageBrandAccess,
+  resolveMerchPlanBrandAccess,
   resolveMerchPlanRowBrandAccess,
+  resolveMerchSpecsheetBrandAccess,
 } from '../services/brandScope.service';
 
 export const merchandisingPlanRouter = router({
@@ -77,6 +80,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       const result = await ctx.prisma.merchandisingPlan.update({
         where: { id: input.planId },
         data: { status: input.status },
@@ -102,6 +107,8 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ planId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       const rows = await ctx.prisma.merchandisingPlanRow.findMany({
         where: { planId: input.planId },
         orderBy: { order: 'asc' },
@@ -152,6 +159,8 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MerchandisingPlanRowInputSchema)
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       const result = await ctx.prisma.merchandisingPlanRow.create({
         data: {
           planId: input.planId,
@@ -211,6 +220,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.id);
+
       const result = await ctx.prisma.merchandisingPlanRow.update({
         where: { id: input.id },
         data: input.data,
@@ -237,6 +248,8 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanRowBrandAccess(ctx, input.id);
+
       // `delete` returns the removed row, so the audit entry can describe what is gone
       // without a second read — after this the id points at nothing.
       const deleted = await ctx.prisma.merchandisingPlanRow.delete({ where: { id: input.id } });
@@ -267,6 +280,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       await ctx.prisma.$transaction(
         input.rows.map(r =>
           ctx.prisma.merchandisingPlanRow.update({
@@ -324,6 +339,8 @@ export const merchandisingPlanRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const { rowId, ...data } = input;
+      await resolveMerchPlanRowBrandAccess(ctx, rowId);
+
       const result = await ctx.prisma.merchandisingSpecsheet.upsert({
         where: { rowId },
         create: { rowId, ...data },
@@ -356,6 +373,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchSpecsheetBrandAccess(ctx, input.specsheetId);
+
       await ctx.prisma.$transaction([
         ctx.prisma.merchandisingComponent.deleteMany({
           where: { specsheetId: input.specsheetId },
@@ -395,10 +414,7 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await ctx.prisma.merchandisingImage.findUnique({
-        where: { id: input.id },
-      });
-      if (!image) return { success: true };
+      const image = await resolveMerchImageBrandAccess(ctx, input.id);
 
       await ctx.prisma.$transaction(async tx => {
         await tx.merchandisingImage.delete({ where: { id: input.id } });
@@ -439,10 +455,7 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await ctx.prisma.merchandisingImage.findUnique({
-        where: { id: input.id },
-      });
-      if (!image) return { success: true };
+      const image = await resolveMerchImageBrandAccess(ctx, input.id);
 
       await ctx.prisma.$transaction([
         ctx.prisma.merchandisingImage.updateMany({

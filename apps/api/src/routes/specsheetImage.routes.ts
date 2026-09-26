@@ -3,7 +3,8 @@
  *
  * Endpoint: POST /upload/specsheet-image/:specsheetId
  *
- * Requires authentication and the `merchandising_plan:update` permission.
+ * Requires authentication, the `merchandising_plan:update` permission and brand scope on the
+ * specsheet's plan.
  * Rate-limited to 30 req/min per user (100 in development). Max file size: 10 MB.
  * Accepted MIME types: image/png, image/jpeg, image/webp.
  * An optional `caption` field may be included in the multipart form data.
@@ -86,8 +87,12 @@ export default async function specsheetImageRoutes(
       } catch (error: unknown) {
         req.log.error({ error: toErrorMessage(error), specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
 
-        if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
-          return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
+        if (
+          error instanceof TRPCError &&
+          (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND' || error.code === 'FORBIDDEN')
+        ) {
+          const status = { BAD_REQUEST: 400, NOT_FOUND: 404, FORBIDDEN: 403 }[error.code];
+          return reply.code(status).send({
             error: error.code,
             message: error.message,
           });

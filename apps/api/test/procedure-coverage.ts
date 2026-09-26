@@ -134,11 +134,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'the brand-scope spec invokes almost the whole domain to check the guards, so *access* coverage is high; the exports and `copyFromSeason` remain uncovered, and they need testing for what they produce, not for who can call them',
     uncovered: 4,
   },
-  merchandisingPlan: {
-    reason:
-      'no tests written: plan, rows, specsheets, components and images are all uncovered',
-    uncovered: 13,
-  },
   notifications: {
     reason: 'no tests written, including the preferences and the SSE ticket',
     uncovered: 10,
