@@ -5,18 +5,17 @@ import type { FullConfig } from '@playwright/test';
 const API_URL = process.env.E2E_API_URL ?? getApiBaseUrl();
 
 /**
- * Pre-flight: verifica che API e frontend rispondano prima di far partire la suite.
+ * Pre-flight: checks that the API and the frontend respond before the suite starts.
  *
- * Senza questo controllo un backend irraggiungibile o rate-limitato si manifesta
- * come "login fallito" e manda a caccia dell'errore sbagliato — è successo
- * davvero mentre la suite veniva scritta. Il 429 ha un messaggio dedicato perché
- * ha una causa precisa: il rate limit dell'API non esclude localhost quando
- * `NODE_ENV` non vale `development`.
+ * Without this check an unreachable or rate-limited backend shows up as "login failed" and
+ * sends you hunting for the wrong error — it really happened while the suite was being
+ * written. The 429 gets a dedicated message because it has a precise cause: the API rate
+ * limit does not exempt localhost when `NODE_ENV` is not `development`.
  *
- * Sono due `fetch` e non una sessione browser: il `webServer` di Playwright ha
- * già atteso il frontend prima di arrivare qui, e `auth.setup.ts` ci naviga
- * subito dopo. Avviare un chromium per leggere un `<title>` e buttarlo era lavoro
- * pagato a ogni run senza aggiungere copertura.
+ * It is two `fetch` calls and not a browser session: Playwright's `webServer` has already
+ * waited for the frontend before getting here, and `auth.setup.ts` navigates to it right
+ * after. Launching a chromium to read a `<title>` and throw it away was work paid on every
+ * run without adding coverage.
  */
 async function probe(label: string, url: string): Promise<void> {
   const response = await fetch(url).catch((error: unknown) => {

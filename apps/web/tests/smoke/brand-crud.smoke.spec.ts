@@ -10,21 +10,20 @@ import {
 
 const BRANDS_PATH = '/admin/brands';
 
-/** Prefisso di `uniqueBrandCode()`: identifica tutto ciò che è da ripulire. */
+/** Prefix of `uniqueBrandCode()`: it identifies everything that needs cleaning up. */
 const SMOKE_PREFIX = 'SMOKE-';
 
-/** Riga della tabella brand che contiene il codice dato. */
+/** Brand table row that contains the given code. */
 function brandRow(page: Page, code: string) {
   return page.getByRole('row').filter({ hasText: code });
 }
 
 /**
- * Attende che la tabella abbia finito di caricare.
+ * Waits for the table to finish loading.
  *
- * Serve prima di ogni `count()`: a differenza di `expect`, `count()` non
- * ritenta, e mentre React Query rifà la query la tabella mostra skeleton — zero
- * righe. Senza questa attesa la pulizia leggeva 0 e usciva convinta di aver
- * finito, lasciando i brand nel database.
+ * Needed before every `count()`: unlike `expect`, `count()` does not retry, and while
+ * React Query refetches, the table shows skeletons — zero rows. Without this wait the
+ * cleanup read 0 and exited convinced it was done, leaving the brands in the database.
  */
 async function waitForBrandList(page: Page): Promise<void> {
   const anySmokeRow = page
@@ -37,15 +36,14 @@ async function waitForBrandList(page: Page): Promise<void> {
 }
 
 /**
- * Elimina il primo brand `SMOKE-` rimasto. Torna `false` quando non ce n'è più.
+ * Deletes the first remaining `SMOKE-` brand. Returns `false` when there are none left.
  *
- * Riparte da una navigazione a ogni chiamata invece di ciclare sulla stessa
- * pagina: incatenare più eliminazioni sul DOM vivo si è rivelato instabile —
- * fra un AlertDialog che si chiude, i toast e l'invalidazione della lista, il
- * click successivo trovava l'elemento "not stable" o già staccato dal DOM. Il
- * reload costa qualche centinaio di millisecondi e rende la pulizia
- * deterministica; a riposo la tabella è stabile e non rifà query, quindi non
- * c'è nulla da correggere lato applicazione.
+ * It starts from a fresh navigation on every call instead of looping on the same page:
+ * chaining several deletions on the live DOM proved unstable — between an AlertDialog
+ * closing, the toasts and the list invalidation, the next click found the element
+ * "not stable" or already detached. The reload costs a few hundred milliseconds and
+ * makes the cleanup deterministic; at rest the table is stable and does not refetch, so
+ * there is nothing to fix on the application side.
  */
 async function deleteFirstSmokeBrand(page: Page): Promise<boolean> {
   await page.goto(BRANDS_PATH);
@@ -74,12 +72,12 @@ async function deleteFirstSmokeBrand(page: Page): Promise<boolean> {
 }
 
 /**
- * Cancella in modo definitivo ogni brand lasciato indietro dalla run.
+ * Permanently deletes every brand the run left behind.
  *
- * Filtra per prefisso `SMOKE-` e non fa mai fallire il test: il fallimento che
- * conta è quello del flusso, non quello della coda. Un errore però lo stampa —
- * la prima versione taceva e ha nascosto per due run il fatto che non cancellava
- * niente. Ripulisce anche i residui di run precedenti andate male.
+ * It filters on the `SMOKE-` prefix and never fails the test: the failure that matters is
+ * the flow, not the tail. It does print an error, though — the first version stayed
+ * silent and hid for two runs the fact that it deleted nothing. It also cleans up leftovers
+ * from earlier runs that went wrong.
  */
 async function cleanupSmokeBrands(page: Page): Promise<void> {
   try {
@@ -92,15 +90,15 @@ async function cleanupSmokeBrands(page: Page): Promise<void> {
 }
 
 test.describe('smoke: CRUD brand', () => {
-  // La pulizia gira dentro il budget del test e può dover smaltire i residui di
-  // una run precedente andata male: 30s di default non bastano.
+  // The cleanup runs inside the test budget and may have to clear the leftovers of an
+  // earlier run that went wrong: the 30s default is not enough.
   test.describe.configure({ timeout: 90_000 });
 
   test.afterEach(async ({ page }) => {
     await cleanupSmokeBrands(page);
   });
 
-  test('crea, modifica e disattiva un brand', async ({ page }) => {
+  test('creates, edits and deactivates a brand', async ({ page }) => {
     const code = uniqueBrandCode();
 
     await page.goto(BRANDS_PATH);
@@ -121,13 +119,13 @@ test.describe('smoke: CRUD brand', () => {
       await dialog.getByRole('button', { name: 'Crea', exact: true }).click();
 
       await expect(page.getByText('Brand creato con successo')).toBeVisible();
-      // Il toast dice che la mutation è tornata; la riga dice che la lista è
-      // stata invalidata davvero. Servono entrambe: il bug classico è la
-      // scrittura che riesce e la UI che resta ferma.
+      // The toast says the mutation returned; the row says the list was really
+      // invalidated. Both are needed: the classic bug is the write that succeeds
+      // and the UI that stays still.
       await expect(brandRow(page, code)).toBeVisible();
     });
 
-    await test.step('modifica', async () => {
+    await test.step('edit', async () => {
       await brandRow(page, code)
         .getByRole('button', { name: 'Modifica', exact: true })
         .click();
@@ -160,9 +158,9 @@ test.describe('smoke: CRUD brand', () => {
         .getByRole('button', { name: 'Disattiva', exact: true })
         .click();
 
-      // Soft delete: sparisce dalla lista di default ma non dal database.
-      // Se questa distinzione si rompe, un "elimina" diventa irreversibile
-      // senza che nessuno se ne accorga.
+      // Soft delete: it disappears from the default list but not from the database.
+      // If this distinction breaks, a "delete" becomes irreversible without anyone
+      // noticing.
       await expect(brandRow(page, code)).toHaveCount(0);
 
       await page.getByLabel('Mostra disattivati').check();
@@ -173,7 +171,7 @@ test.describe('smoke: CRUD brand', () => {
     await expectNoErrorBoundary(page);
   });
 
-  test('il codice duplicato viene rifiutato', async ({ page }) => {
+  test('a duplicate code is rejected', async ({ page }) => {
     const code = uniqueBrandCode();
 
     await page.goto(BRANDS_PATH);
@@ -192,9 +190,9 @@ test.describe('smoke: CRUD brand', () => {
     await dialog.getByLabel('Nome').fill('Smoke Secondo');
     await dialog.getByRole('button', { name: 'Crea', exact: true }).click();
 
-    // Il vincolo di unicità è a livello di DB: questo verifica che il P2002
-    // arrivi all'utente come messaggio, non come 500 generico. È esattamente
-    // il ramo aggiunto in `brand.ts` dopo la `$transaction`.
+    // The uniqueness constraint lives in the DB: this checks that the P2002 reaches
+    // the user as a message, not as a generic 500. It is exactly the branch added in
+    // `brand.ts` after the `$transaction`.
     await expect(page.getByText('Nome o codice brand già in uso')).toBeVisible();
     await expectNoErrorBoundary(page);
   });

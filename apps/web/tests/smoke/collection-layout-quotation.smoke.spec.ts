@@ -6,29 +6,26 @@ import {
 } from '../support/smoke';
 
 /**
- * Regressione storica: Invio su un campo quotazione (retail/FOB/note/SKU) sottomette
- * il `<form>` esterno della riga — il campo quotazione salvava solo su blur, e
- * l'Invio non generava un blur prima del submit. Risultato pre-fix: il modal si
- * chiudeva, il prezzo digitato spariva, riaprendo la riga non c'era.
+ * Historic regression: pressing Enter in a quotation field (retail/FOB/note/SKU) submitted
+ * the row's outer `<form>` — the quotation field saved only on blur, and Enter produced no
+ * blur before the submit. Pre-fix result: the modal closed, the typed price vanished, and
+ * reopening the row it was not there.
  *
- * Il meccanismo è cambiato da allora: le quotazioni non hanno più una mutation
- * propria per add/blur/delete — sono bufferizzate in stato locale nel drawer e
- * committate in un'unica richiesta solo al Salva (`collectionLayout.rows.update`,
- * che sincronizza fase/gruppo/quotazioni nella stessa transazione della riga —
- * vedi `CollectionRowDrawer.tsx`/`syncRowQuotations`). L'Invio ora chiama
- * `submitRow()` direttamente: non c'è più una mutation separata da far correre
- * prima del submit, quindi la classe di bug originale (blur mai scattato prima
- * del submit) non può più ripresentarsi per costruzione. Il test resta valido
- * come regressione sul buffer: verifica che un prezzo digitato ed Enter-sottomesso
- * sopravviva al giro form-locale → payload → mutation → refetch, non solo che
- * il modal si chiuda.
+ * The mechanism has changed since: quotations no longer have their own mutation for
+ * add/blur/delete — they are buffered in local drawer state and committed in a single
+ * request only on Save (`collectionLayout.rows.update`, which syncs phase/group/quotations
+ * in the same transaction as the row — see `CollectionRowDrawer.tsx`/`syncRowQuotations`).
+ * Enter now calls `submitRow()` directly: there is no separate mutation left to run before
+ * the submit, so the original bug class (blur never fired before the submit) cannot come
+ * back by construction. The test stays valid as a regression on the buffer: it checks that
+ * a price typed and submitted with Enter survives the local form → payload → mutation →
+ * refetch round, not just that the modal closes.
  *
- * Nessun tier unit esiste per i componenti web (solo Playwright smoke): è
- * un'interazione DOM/tastiera su un form annidato, non verificabile senza un
- * browser reale.
+ * It is a DOM/keyboard interaction on a nested form, verifiable only in a real browser —
+ * here, or in the browser tier (`vitest.browser.config.mts`).
  */
-test.describe('smoke: collection layout — Invio su campo quotazione', () => {
-  test('salva la quotazione e chiude la riga, senza perdere il prezzo retail', async ({ page }) => {
+test.describe('smoke: collection layout — Enter on a quotation field', () => {
+  test('saves the quotation and closes the row, without losing the retail price', async ({ page }) => {
     await page.goto('/product/collection-layout');
     await expectContextConfigured(page);
 
@@ -73,7 +70,7 @@ test.describe('smoke: collection layout — Invio su campo quotazione', () => {
     const paramOption = page.getByRole('option').filter({ hasNotText: 'Nessuno' }).first();
     if ((await paramOption.count()) === 0) {
       await page.keyboard.press('Escape');
-      // La riga aggiunta è vuota (nessun paramSetId): eliminala per non sporcare il layout.
+      // The added row is empty (no paramSetId): delete it so the layout stays clean.
       await quotationRow.getByRole('button').last().click();
       await expect(quotationBody.locator('tr')).toHaveCount(initialQuotations);
       await expectNoErrorBoundary(page);
@@ -89,23 +86,23 @@ test.describe('smoke: collection layout — Invio su campo quotazione', () => {
       await retailInput.fill(RETAIL_VALUE);
       await retailInput.press('Enter');
 
-      // Comportamento atteso: la riga si sottomette e il modal si chiude — il
-      // prezzo è nel payload della stessa mutation di update, non serve più un
-      // giro separato prima del submit.
+      // Expected behaviour: the row submits and the modal closes — the price is in the
+      // payload of the same update mutation, no separate round before the submit is
+      // needed any more.
       await expect(dialog).toHaveCount(0);
       await expect(page.getByText('Riga aggiornata')).toBeVisible();
       await expectNoErrorBoundary(page);
 
-      // Riapri la riga: se il buffer locale non finisse nel payload di submit,
-      // il campo retail sarebbe vuoto qui perché la quotazione non sarebbe mai
-      // stata inviata al server.
+      // Reopen the row: if the local buffer did not end up in the submit payload, the
+      // retail field would be empty here because the quotation would never have been
+      // sent to the server.
       await row.click();
       const reopened = page.getByRole('dialog');
       await expect(reopened).toBeVisible();
       const persistedRow = reopened.locator('table tbody tr').last();
       await expect(persistedRow.locator('input').first()).toHaveValue(RETAIL_VALUE);
 
-      // Pulizia: elimina la quotazione di test prima di chiudere.
+      // Cleanup: delete the test quotation before closing.
       await persistedRow.getByRole('button').last().click();
       await expect(reopened.locator('table tbody tr')).toHaveCount(initialQuotations);
       cleanedUp = true;
@@ -115,8 +112,8 @@ test.describe('smoke: collection layout — Invio su campo quotazione', () => {
       await expectNoErrorBoundary(page);
     } finally {
       if (!cleanedUp) {
-        // Prova comunque a ripulire, qualunque cosa sia fallita sopra: uno smoke
-        // non deve lasciare dati di test permanenti su una riga non sua.
+        // Try to clean up anyway, whatever failed above: a smoke test must not leave
+        // permanent test data on a row that is not its own.
         const openDialog = page.getByRole('dialog');
         if (await openDialog.isVisible().catch(() => false)) {
           const rows = openDialog.locator('table tbody tr');

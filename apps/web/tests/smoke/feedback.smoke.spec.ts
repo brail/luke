@@ -1,12 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Regression per il bug per cui il dialog di segnalazione non si apriva mai:
- * era montato dentro `DropdownMenuContent`, che Radix smonta alla chiusura del
- * menu — prima che il dialog potesse comparire. Vedi AppSidebar.tsx.
+ * Regression for the bug where the feedback dialog never opened: it was mounted inside
+ * `DropdownMenuContent`, which Radix unmounts when the menu closes — before the dialog
+ * could appear. See AppSidebar.tsx.
  */
 test.describe('smoke: feedback dialog', () => {
-  test('aprire "Segnala / Suggerisci" dal menu utente mostra il dialog', async ({ page }) => {
+  test('opening "Segnala / Suggerisci" from the user menu shows the dialog', async ({ page }) => {
     await page.goto('/dashboard');
 
     await page.locator('div[aria-haspopup="menu"]').click();
@@ -16,9 +16,9 @@ test.describe('smoke: feedback dialog', () => {
       page.getByRole('dialog', { name: 'Segnalazione / Suggerimento' })
     ).toBeVisible();
 
-    // Il dialog resta visibile: il menu che lo conteneva è ormai chiuso/smontato,
-    // e prima del fix questo era esattamente il momento in cui il dialog spariva
-    // con lui invece di restare aperto.
+    // The dialog stays visible: the menu that contained it is now closed/unmounted, and
+    // before the fix this was exactly the moment the dialog disappeared with it instead
+    // of staying open.
     await page.waitForTimeout(300);
     await expect(
       page.getByRole('dialog', { name: 'Segnalazione / Suggerimento' })

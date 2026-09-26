@@ -8,13 +8,12 @@ import {
 } from '../support/smoke';
 
 /**
- * Autentica una volta per run e salva lo stato su disco: gli altri spec
- * ripartono già loggati.
+ * Authenticates once per run and saves the state to disk: the other specs start
+ * already logged in.
  *
- * Ripetere il login in ogni `beforeEach` costerebbe un round-trip Auth.js per
- * test e renderebbe ogni fallimento ambiguo — "è rotto il flusso o è rotto il
- * login?". Il login vero resta comunque coperto, per intero, da
- * `auth.smoke.spec.ts`.
+ * Repeating the login in every `beforeEach` would cost an Auth.js round-trip per
+ * test and make every failure ambiguous — "is the flow broken or is the login
+ * broken?". The real login is still covered, in full, by `auth.smoke.spec.ts`.
  */
 setup('autentica come admin', async ({ page }) => {
   await login(page);

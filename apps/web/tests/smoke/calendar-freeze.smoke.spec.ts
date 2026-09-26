@@ -6,22 +6,20 @@ import {
 } from '../support/smoke';
 
 /**
- * Il freeze della pianificazione è deliberatamente NON eseguito fino in fondo.
+ * The planning freeze is deliberately NOT run to the end.
  *
- * Congelare un gruppo cambia lo stato della stagione e si annulla solo con
- * un'azione admin: farlo a ogni smoke su un ambiente condiviso sarebbe un
- * effetto collaterale peggiore del bug che cerca. Qui verifichiamo tutto ciò
- * che sta a monte della scrittura — permessi, apertura del picker, query dei
- * gruppi, guardia sul "Continua" — e ci fermiamo prima della mutation.
- * Il freeze vero resta coperto dai test di integrazione su `seasonCalendar`.
+ * Freezing a group changes the season state and can only be undone by an admin action:
+ * doing it on every smoke run against a shared environment would be a worse side effect
+ * than the bug it looks for. Here we check everything upstream of the write — permissions,
+ * opening the picker, the groups query, the guard on "Continua" — and stop before the
+ * mutation. The real freeze stays covered by the `seasonCalendar` integration tests.
  */
-// Il caricamento della pagina non è testato qui: `shell.smoke.spec.ts` copre
-// `/calendar` con un superset di queste asserzioni (heading, error boundary, più
-// eccezioni non gestite e 5xx). In una suite seriale un secondo page load per lo
-// stesso controllo è tempo speso due volte, e due asserzioni sullo stesso
-// heading in file diversi divergono al primo rename.
+// Page loading is not tested here: `shell.smoke.spec.ts` covers `/calendar` with a
+// superset of these assertions (heading, error boundary, plus unhandled exceptions and
+// 5xx). In a serial suite a second page load for the same check is time spent twice,
+// and two assertions on the same heading in different files diverge at the first rename.
 test.describe('smoke: calendario e freeze', () => {
-  test('il picker di congelamento si apre ed elenca i gruppi', async ({
+  test('the freeze picker opens and lists the groups', async ({
     page,
   }) => {
     await page.goto('/calendar');
@@ -30,9 +28,9 @@ test.describe('smoke: calendario e freeze', () => {
       page.getByRole('heading', { name: 'Calendario Stagionale', level: 1 })
     ).toBeVisible();
 
-    // In stato "planning" l'azione sta nella barra; a stagione avviata si
-    // sposta nel menu. Entrambe le posizioni sono legittime, quindi lo smoke
-    // le accetta tutte e due invece di codificare uno solo dei due stati.
+    // In the "planning" state the action sits in the bar; once the season has started it
+    // moves into the menu. Both positions are legitimate, so the smoke test accepts either
+    // instead of hard-coding one of the two states.
     const barButton = page.getByRole('button', {
       name: 'Congela pianificazione',
     });
@@ -53,12 +51,12 @@ test.describe('smoke: calendario e freeze', () => {
       })
     ).toBeVisible();
 
-    // Il picker è pieno o vuoto a seconda dei dati: entrambi sono stati validi,
-    // quello che non deve mai succedere è restare su "Caricamento…".
+    // The picker is full or empty depending on the data: both are valid states; what
+    // must never happen is staying on "Caricamento…".
     await expect(picker.getByText('Caricamento…')).toHaveCount(0);
 
-    // Guardia che conta: senza un gruppo selezionato non si prosegue verso una
-    // scrittura irreversibile.
+    // The guard that matters: without a selected group you cannot move on towards an
+    // irreversible write.
     await expect(
       picker.getByRole('button', { name: 'Continua' })
     ).toBeDisabled();
