@@ -12,6 +12,7 @@ import { getRbacConfig, invalidateRbacCache, setRbacSectionDefaultsTx } from '@l
 
 import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
 import {
@@ -43,13 +44,15 @@ export const sectionAccessRouter = router({
   /**
    * Returns sectionAccessDefaults and disabledSections config used for client-side access evaluation.
    *
-   * @auth {authenticated}
+   * @auth {users:read}
    * @input {none}
    * @output {{ sectionAccessDefaults, disabledSections }}
    */
-  getDefaults: protectedProcedure.query(async ({ ctx }) => {
-    return getSectionDefaults(ctx.prisma);
-  }),
+  getDefaults: protectedProcedure
+    .use(requirePermission('users:read'))
+    .query(async ({ ctx }) => {
+      return getSectionDefaults(ctx.prisma);
+    }),
 
   /**
    * Returns section access overrides for a specific user (admin only).

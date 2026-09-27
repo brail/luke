@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import type { Role } from '@luke/core';
 
+import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   resolveContext,
@@ -14,22 +15,27 @@ export const contextRouter = router({
   /**
    * Resolves the current brand/season context for the authenticated user.
    *
-   * @auth {authenticated}
+   * @auth {brands:read and seasons:read}
    * @input {none}
    * @output {{ brand, season, ... }} — resolved context object from resolveContext().
    */
-  get: protectedProcedure.query(async ({ ctx }) => {
-    return resolveContext(ctx.session.user.id, ctx.prisma, ctx.session.user.role as Role);
-  }),
+  get: protectedProcedure
+    .use(requirePermission('brands:read'))
+    .use(requirePermission('seasons:read'))
+    .query(async ({ ctx }) => {
+      return resolveContext(ctx.session.user.id, ctx.prisma, ctx.session.user.role as Role);
+    }),
 
   /**
    * Sets the user's active brand/season context after validating brand access.
    *
-   * @auth {authenticated}
+   * @auth {brands:read and seasons:read}
    * @input {{ brandId: string, seasonId: string }} — UUIDs of the target brand and season.
    * @output {Updated context from setContext().}
    */
   set: protectedProcedure
+    .use(requirePermission('brands:read'))
+    .use(requirePermission('seasons:read'))
     .input(
       z.object({
         brandId: z.string().uuid('Brand ID deve essere un UUID valido'),

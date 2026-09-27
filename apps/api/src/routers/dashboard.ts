@@ -12,6 +12,7 @@ import {
 import { type Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router } from '../lib/trpc';
 import { assertBrandAccess } from '../services/context.service';
 
@@ -156,28 +157,31 @@ export const dashboardRouter = router({
   /**
    * Returns aggregate KPI counts: active brands, seasons, users, and collection rows.
    *
-   * @auth {authenticated}
+   * @auth {dashboard:read}
    * @input {none}
    * @output {{ brands, seasons, users, collectionRows: number }}
    */
-  getKpiStats: protectedProcedure.query(async ({ ctx }) => {
-    const [brands, seasons, users, collectionRows] = await Promise.all([
-      ctx.prisma.brand.count({ where: { isActive: true } }),
-      ctx.prisma.season.count({ where: { isActive: true } }),
-      ctx.prisma.user.count({ where: { isActive: true } }),
-      ctx.prisma.collectionLayoutRow.count(),
-    ]);
-    return { brands, seasons, users, collectionRows };
-  }),
+  getKpiStats: protectedProcedure
+    .use(requirePermission('dashboard:read'))
+    .query(async ({ ctx }) => {
+      const [brands, seasons, users, collectionRows] = await Promise.all([
+        ctx.prisma.brand.count({ where: { isActive: true } }),
+        ctx.prisma.season.count({ where: { isActive: true } }),
+        ctx.prisma.user.count({ where: { isActive: true } }),
+        ctx.prisma.collectionLayoutRow.count(),
+      ]);
+      return { brands, seasons, users, collectionRows };
+    }),
 
   /**
    * Fetches live FX rates from Frankfurter API for the requested currency pairs.
    *
-   * @auth {authenticated}
+   * @auth {dashboard:read}
    * @input {{ pairs: string[] }} — 1–8 currency pairs in "BASE/QUOTE" format (e.g. "EUR/USD").
    * @output {{ rates, previousRates: Record<string, number>, timestamp: string }}
    */
   getForexRates: protectedProcedure
+    .use(requirePermission('dashboard:read'))
     .input(z.object({ pairs: z.array(z.string().regex(/^[A-Z]{3}\/[A-Z]{3}$/)).min(1).max(8) }))
     .query(async ({ ctx, input }) => {
       const byBase = new Map<string, string[]>();
@@ -225,11 +229,12 @@ export const dashboardRouter = router({
   /**
    * Returns daily sales order counts for the past 7 days for a brand/season.
    *
-   * @auth {authenticated}
+   * @auth {sales:read}
    * @input {{ brandId: string, seasonId: string }}
    * @output {Array<{ date: string, count: number }>} — 7 entries, one per day.
    */
   getWeeklySales: protectedProcedure
+    .use(requirePermission('sales:read'))
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
     await assertBrandAccess(ctx, input.brandId);
@@ -273,11 +278,12 @@ export const dashboardRouter = router({
   /**
    * Returns collection layout progress summary (skuBudget, skuForecast, row and group counts).
    *
-   * @auth {authenticated}
+   * @auth {collection_layout:read}
    * @input {{ brandId: string, seasonId: string }}
    * @output {{ brandName, seasonName, skuBudget, skuForecast, rowCount, groupCount } | null}
    */
   getSeasonProgress: protectedProcedure
+    .use(requirePermission('collection_layout:read'))
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
     await assertBrandAccess(ctx, input.brandId);
