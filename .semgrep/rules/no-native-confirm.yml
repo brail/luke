@@ -10,6 +10,7 @@ rules:
     pattern-either:
       - pattern: globalThis.confirm(...)
       - pattern: window.confirm(...)
+      - pattern: confirm(...)
     paths:
       include:
         - '/apps/web/src/**'

@@ -11,6 +11,16 @@ export function removeWithWindow() {
   return window.confirm('Delete?');
 }
 
+export function removeWithBareCall() {
+  // ruleid: luke-no-native-confirm
+  return confirm('Delete?');
+}
+
+export function removeWithOwnMethod(dialog: { confirm(): void }) {
+  // ok: luke-no-native-confirm
+  dialog.confirm();
+}
+
 export function removeWithDialog() {
   // ok: luke-no-native-confirm
   setConfirmOpen(true);

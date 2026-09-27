@@ -28,6 +28,16 @@ async function goodPrisma(prisma: PrismaClient, id: string) {
   await prisma.$queryRaw(Prisma.sql`SELECT * FROM users WHERE id = ${id}`);
 }
 
+function badRawFragment(schema: string) {
+  // ruleid: luke-prisma-raw-fragment
+  return Prisma.raw(`"${schema}"`);
+}
+
+function goodSqlFragment(id: string) {
+  // ok: luke-prisma-raw-fragment
+  return Prisma.sql`SELECT * FROM users WHERE id = ${id}`;
+}
+
 async function badNavQuery(company: string) {
   const req = mssqlPool.request();
   // ruleid: luke-nav-query-interpolation

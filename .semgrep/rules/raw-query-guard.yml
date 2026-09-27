@@ -16,6 +16,20 @@ rules:
       exclude:
         - '/apps/api/test/**'
 
+  - id: luke-prisma-raw-fragment
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Prisma.raw() puts its argument into the SQL verbatim, with no escaping
+      and no parameter binding. Use the Prisma.sql tagged template for values.
+      For an identifier, which cannot be a parameter, keep the name internally
+      generated and mark the site with
+      `// nosemgrep: luke-prisma-raw-fragment -- <why the input is trusted>`.
+    pattern: Prisma.raw(...)
+    paths:
+      exclude:
+        - '/apps/api/test/**'
+
   - id: luke-nav-query-interpolation
     mode: taint
     languages: [typescript]

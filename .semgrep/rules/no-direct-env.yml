@@ -7,12 +7,21 @@ rules:
       tRPC config router), not from process.env directly. Exceptions:
       infrastructure bootstrap (see CLAUDE.md Env Policy), and
       NEXT_PUBLIC_*/NODE_ENV/APP_VERSION (build-time metadata, not a secret)
-      anywhere in the code.
-    patterns:
-      - pattern: process.env.$VAR
-      - metavariable-regex:
-          metavariable: $VAR
-          regex: ^(?!NEXT_PUBLIC_)(?!NODE_ENV$)(?!APP_VERSION$).*
+      anywhere in the code. `process.env.NAME` is the only accepted form, so
+      the exemptions can be read off the code: no bracket access, even with a
+      literal key, no destructuring, aliasing, spreading or passing the object.
+    pattern-either:
+      - patterns:
+          - pattern: process.env.$VAR
+          - metavariable-regex:
+              metavariable: $VAR
+              regex: ^(?!NEXT_PUBLIC_)(?!NODE_ENV$)(?!APP_VERSION$).*
+      # Every other use of the object. Known gap: an alias of `process` itself.
+      - patterns:
+          - pattern: process.env
+          - pattern-not-inside: process.env.$VAR
+      - pattern: import { ..., env, ... } from 'process'
+      - pattern: import { ..., env, ... } from 'node:process'
     paths:
       exclude:
         - '/apps/api/test/**'

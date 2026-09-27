@@ -122,8 +122,7 @@ does not cover, run the script yourself.
   `packages/core/src/net/url.ts` and re-exported by the barrel; the package
   publishes only `.`, `./server` and `./utils/date`, so `@luke/core/net/url`
   is not an importable specifier
-  (manual check: `pnpm codemod:check-urls` — not yet an ESLint rule in
-  `packages/eslint-plugin-luke/`, nor wired into CI/husky)
+  (enforced by `.semgrep/rules/no-hardcoded-api-url.yml`)
 
 ---
 

@@ -66,6 +66,7 @@ export function runPgBinary(
   password: string,
   stderrLimit = 4000
 ): Promise<void> {
+  // nosemgrep: luke-no-direct-env -- the child inherits the environment (PATH, locale); no application value is read
   return spawnAndCapture(binary, args, { env: { ...process.env, PGPASSWORD: password } }, stderrLimit);
 }
 
@@ -106,5 +107,6 @@ export function runCommand(
   options: { env?: Partial<NodeJS.ProcessEnv>; cwd?: string } = {},
   stderrLimit = 4000
 ): Promise<void> {
+  // nosemgrep: luke-no-direct-env -- the child inherits the environment (PATH, locale); no application value is read
   return spawnAndCapture(command, args, { env: { ...process.env, ...options.env }, cwd: options.cwd }, stderrLimit);
 }
