@@ -796,7 +796,7 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 - [Engineering rules](CLAUDE.md) - Operational and architectural rules for repository changes
 - [Agent instructions](AGENTS.md) - Codex instructions; Claude Code is governed by `CLAUDE.md`
 - [Changelog](CHANGELOG.md) - Release notes derived from Conventional Commits
-- [Repository tooling](tools/README.md) - Deterministic checks, release gates and one codemod
+- [Repository tooling](tools/README.md) - Deterministic checks and release gates
 - [API documentation](apps/api/README.md) - API reference, LDAP resilience and local tracing
 - [OPERATIONS.md](OPERATIONS.md) - Documentazione operativa per SRE/DevOps
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance

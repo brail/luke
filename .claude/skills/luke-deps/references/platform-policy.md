@@ -93,7 +93,7 @@ and reviewed when their unblock condition changes.
 
 | Decision            | State | Unblocks when                                                                                                                  |
 | ------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------ |
-| TypeScript 7        | HOLD  | 7.1 stable, and `typescript-eslint`, `ts-morph`, Next tooling, Prisma-generated types, Vite/Vitest and declaration builds all pass a compatibility gate. No TS6/TS7 bridge in the meantime |
+| TypeScript 7        | HOLD  | 7.1 stable, and `typescript-eslint`, Next tooling, Prisma-generated types, Vite/Vitest and declaration builds all pass a compatibility gate. No TS6/TS7 bridge in the meantime |
 | Prisma next major   | HOLD  | the generator migration on the current major is complete and production-stable; never bundled with it                          |
 | pnpm Catalogs (P1/P2-08) | HOLD | see reconsideration triggers below — decided 2026-09-06, `docs/LUKE_MONOREPO_AUDIT_2026-08-30.md` Appendix S |
 

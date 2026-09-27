@@ -1,7 +1,7 @@
 # Repository Tooling
 
-`tools/` contains repository-wide deterministic checks, their tests and one
-codemod. Application runtime code does not depend on this directory.
+`tools/` contains repository-wide deterministic checks and their tests.
+Application runtime code does not depend on this directory.
 
 ## Drift checks
 
@@ -59,15 +59,4 @@ and `check-release-stable-line.test.ts` covers `scripts/release-prepare.sh`.
 pnpm lint:tools
 pnpm typecheck:tools
 pnpm test:tools
-```
-
-## Codemod
-
-[`codemods/eliminate-hardcoded-urls.ts`](codemods/eliminate-hardcoded-urls.ts)
-finds frontend API URLs that bypass the shared URL builders. Preview changes
-before applying them:
-
-```bash
-pnpm codemod:check-urls
-pnpm codemod:eliminate-urls
 ```

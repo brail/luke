@@ -654,8 +654,8 @@ export default [
     },
   },
   {
-    // Deterministic control plane. The drift checkers, the boundary validator
-    // and the codemods under `tools/` are release gates — `pnpm check:drift`
+    // Deterministic control plane. The drift checkers and the boundary
+    // validator under `tools/` are release gates — `pnpm check:drift`
     // runs them in CI and in `.husky/pre-push` — yet no lint and no typecheck
     // reached them: `tools/` is not a workspace, so `turbo run lint` never saw
     // it, and ESLint reported every file here as ignored.

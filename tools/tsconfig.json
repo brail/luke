@@ -1,6 +1,6 @@
 {
-  // TypeScript for the deterministic control plane: the drift checkers, the
-  // boundary validator and the codemods under `tools/`.
+  // TypeScript for the deterministic control plane: the drift checkers and the
+  // boundary validator under `tools/`.
   //
   // These are release gates — `pnpm check:drift` runs them in CI and in
   // `.husky/pre-push` — and until they got a config of their own they were
