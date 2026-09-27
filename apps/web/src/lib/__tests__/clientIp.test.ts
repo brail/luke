@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { clientIpFrom } from '../clientIp';
+import { clientIpFrom, forwardedFor } from '../clientIp';
 
 describe('clientIpFrom', () => {
   it('trusts the entry the proxy appended, not the ones the client sent', () => {
@@ -14,5 +14,17 @@ describe('clientIpFrom', () => {
 
   it('is undefined without the header', () => {
     expect(clientIpFrom(new Headers())).toBeUndefined();
+  });
+});
+
+describe('forwardedFor', () => {
+  it('forwards the client IP as X-Forwarded-For', () => {
+    expect(forwardedFor(new Headers({ 'x-forwarded-for': '6.6.6.6, 203.0.113.7' }))).toEqual({
+      'X-Forwarded-For': '203.0.113.7',
+    });
+  });
+
+  it('adds no header when there is no client IP', () => {
+    expect(forwardedFor(new Headers())).toEqual({});
   });
 });

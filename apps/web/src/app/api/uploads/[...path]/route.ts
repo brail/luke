@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { buildApiUrl } from '@luke/core';
 
 import { auth } from '../../../../auth';
+import { forwardedFor } from '../../../../lib/clientIp';
 import { debugError } from '../../../../lib/debug';
 
 // Allow only safe path segments: alphanumeric, dots, dashes, underscores
@@ -36,8 +37,9 @@ export const GET = auth(async function GET(req) {
     const filePath = pathSegments.join('/');
     const backendUrl = buildApiUrl(`/uploads/${filePath}`);
 
-    // Do NOT forward client cookies to the internal backend service
-    const response = await fetch(backendUrl, { method: 'GET' });
+    // Do NOT forward client cookies to the internal backend service — only the client IP, which
+    // the API's rate limit keys on (CLAUDE.md rule 13).
+    const response = await fetch(backendUrl, { method: 'GET', headers: forwardedFor(req.headers) });
 
     if (!response.ok) {
       return new NextResponse('File not found', { status: 404 });

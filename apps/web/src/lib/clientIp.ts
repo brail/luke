@@ -14,3 +14,13 @@
 export function clientIpFrom(headers: { get(name: string): string | null }): string | undefined {
   return headers.get('x-forwarded-for')?.split(',').pop()?.trim() || undefined;
 }
+
+/**
+ * The `X-Forwarded-For` header for a server-to-server fetch to apps/api, or nothing when the
+ * incoming request carried no client IP. Without it every such call is keyed on the web
+ * container's address, so one IP rate-limit bucket is shared by every user.
+ */
+export function forwardedFor(headers: { get(name: string): string | null }): Record<string, string> {
+  const ip = clientIpFrom(headers);
+  return ip ? { 'X-Forwarded-For': ip } : {};
+}

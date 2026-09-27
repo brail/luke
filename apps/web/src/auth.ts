@@ -1,3 +1,4 @@
+import { headers as requestHeaders } from 'next/headers';
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 
@@ -5,7 +6,7 @@ import { buildTrpcUrl, isProduction } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
-import { clientIpFrom } from './lib/clientIp';
+import { clientIpFrom, forwardedFor } from './lib/clientIp';
 import { debugError, debugLog } from './lib/debug';
 import { markLoginThrottled } from './lib/loginThrottleContext';
 
@@ -205,6 +206,8 @@ export const config = {
               headers: {
                 Authorization: `Bearer ${token.accessToken}`,
                 'Content-Type': 'application/json',
+                // The callback gets no request, but it always runs inside one (rule 13).
+                ...forwardedFor(await requestHeaders()),
               },
               body: JSON.stringify({}),
             });
