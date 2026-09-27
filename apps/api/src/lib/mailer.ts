@@ -6,6 +6,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
@@ -36,7 +37,8 @@ export interface SmtpConfig {
  * Reads and assembles the SMTP configuration from AppConfig.
  * The `smtp.pass` key is decrypted automatically.
  *
- * @throws {Error} If any required SMTP key (host, port, user, pass, from) is missing.
+ * @throws {TRPCError} PRECONDITION_FAILED if any required SMTP key (host, port, user, pass, from) is
+ *   missing: an admin fixes it in the mail settings, so the text must not be masked as a 5xx.
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
@@ -49,9 +51,11 @@ export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   ]);
 
   if (!host || !port || !user || !pass || !from) {
-    throw new Error(
-      'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.port, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.'
-    );
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message:
+        'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.port, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.',
+    });
   }
 
   return {

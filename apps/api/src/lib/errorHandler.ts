@@ -87,6 +87,7 @@ function getTRPCCodeFromErrorCode(
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'PRECONDITION_FAILED'
   | 'INTERNAL_SERVER_ERROR' {
   switch (code) {
     case ErrorCode.VALIDATION_ERROR:
@@ -100,6 +101,10 @@ function getTRPCCodeFromErrorCode(
       return 'NOT_FOUND';
     case ErrorCode.CONFLICT:
       return 'CONFLICT';
+    // Incomplete configuration is the caller's to fix, so its text must reach them: a 5xx is
+    // masked in production.
+    case ErrorCode.CONFIG_ERROR:
+      return 'PRECONDITION_FAILED';
     default:
       return 'INTERNAL_SERVER_ERROR';
   }

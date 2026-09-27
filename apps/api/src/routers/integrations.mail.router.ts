@@ -3,6 +3,7 @@
  * Handles SMTP configuration and testing
  */
 
+import { TRPCError } from '@trpc/server';
 import * as nodemailer from 'nodemailer';
 
 import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
@@ -131,6 +132,11 @@ export const mailRouter = router({
           sentTo: recipient,
         };
       } catch (error: unknown) {
+        // An incomplete configuration arrives as PRECONDITION_FAILED, which the admin can act on.
+        if (error instanceof TRPCError) throw error;
+        // The reason goes nowhere else: the client sees a fixed text and the error's cause is
+        // a plain object the request log renders empty.
+        ctx.logger.warn({ err: error }, 'SMTP test failed');
         const standardError = IntegrationErrorHandler.handleSMTPError(error);
         throw toTRPCError(standardError);
       }

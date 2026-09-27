@@ -17,6 +17,8 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
   // The server's text names the rate-limit bucket: it is written for the logs.
   TOO_MANY_REQUESTS: 'Troppe richieste. Riprova tra qualche istante.',
+  // A 5xx, so production masks the server's text; in the browser only maintenance mode sends it.
+  SERVICE_UNAVAILABLE: 'Sistema in manutenzione. Riprova più tardi.',
 };
 
 interface TrpcErrorLike {

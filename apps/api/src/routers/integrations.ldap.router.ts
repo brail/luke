@@ -343,6 +343,15 @@ export const ldapRouter = router({
           });
         }
 
+        // Everything the bind and the search below use; without it the attempt fails as a 5xx,
+        // whose text production masks.
+        if (!config.url || !config.bindDN || !config.bindPassword || !config.searchBase || !config.searchFilter) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Configurazione LDAP incompleta per il test',
+          });
+        }
+
         // Create LDAP client (ldapts: lazy connection on first bind)
         client = new Client({
           url: config.url,
