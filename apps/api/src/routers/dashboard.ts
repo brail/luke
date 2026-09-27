@@ -13,7 +13,7 @@ import { type Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
-import { protectedProcedure, router } from '../lib/trpc';
+import { protectedProcedure, router, selfProcedure } from '../lib/trpc';
 import { assertBrandAccess } from '../services/context.service';
 
 
@@ -34,7 +34,7 @@ export const dashboardRouter = router({
    * @input {none}
    * @output {{ widgets: WidgetConfigItem[] }}
    */
-  getConfig: protectedProcedure.query(async ({ ctx }) => {
+  getConfig: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const record = await ctx.prisma.dashboardConfig.findUnique({ where: { userId } });
     if (!record) {
@@ -59,7 +59,7 @@ export const dashboardRouter = router({
    * @input {{ widgets: DashboardWidgetsSchema }} — ordered widget config array.
    * @output {{ ok: true }}
    */
-  saveConfig: protectedProcedure
+  saveConfig: selfProcedure
     .input(z.object({ widgets: DashboardWidgetsSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
@@ -79,7 +79,7 @@ export const dashboardRouter = router({
    * @input {none}
    * @output {DashboardTask[]}
    */
-  getTasks: protectedProcedure.query(async ({ ctx }) => {
+  getTasks: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     return ctx.prisma.dashboardTask.findMany({
       where: { userId },
@@ -95,7 +95,7 @@ export const dashboardRouter = router({
    * @input {DashboardTaskInputSchema} — optional id (update if present), label, done, optional dueDate.
    * @output {DashboardTask}
    */
-  upsertTask: protectedProcedure
+  upsertTask: selfProcedure
     .input(DashboardTaskInputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
@@ -134,7 +134,7 @@ export const dashboardRouter = router({
    * @input {{ id: string }} — task UUID.
    * @output {{ ok: true }}
    */
-  deleteTask: protectedProcedure
+  deleteTask: selfProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;

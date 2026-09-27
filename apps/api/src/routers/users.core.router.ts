@@ -22,7 +22,7 @@ import { requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
-import { router, protectedProcedure } from '../lib/trpc';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
 
@@ -653,7 +653,7 @@ export const usersCoreRouter = router({
    * @input {none}
    * @output {{ ok: true }}
    */
-  heartbeat: protectedProcedure.mutation(({ ctx }) => {
+  heartbeat: selfProcedure.mutation(({ ctx }) => {
     updatePresence(ctx.session.user.id);
     return { ok: true };
   }),

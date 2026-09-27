@@ -11,7 +11,7 @@ import type { LockEntityType } from '@luke/db';
 
 import { can } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure } from '../lib/trpc';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.service';
 
 import type { Context } from '../lib/trpc';
@@ -96,7 +96,7 @@ export const editLockRouter = router({
    * @input {ReleaseManyInputSchema} — non-empty array of { entityType, entityId } to release.
    * @output {{ success: true }}
    */
-  release: protectedProcedure
+  release: selfProcedure
     .use(withRateLimit('configMutations'))
     .input(ReleaseManyInputSchema)
     .mutation(async ({ input, ctx }) => {

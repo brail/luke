@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { CALENDAR_EVENT_KEYS, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
 
 import { sseStore } from '../lib/sseStore';
-import { protectedProcedure, router } from '../lib/trpc';
+import { selfProcedure, router } from '../lib/trpc';
 
 const CATEGORIES = notificationCategoryEnum.options;
 
@@ -17,7 +17,7 @@ export const notificationsRouter = router({
    * @input {{ limit?: number, cursor?: string, unreadOnly?: boolean, includeArchived?: boolean, category?: notificationCategoryEnum }}
    * @output {{ items: Notification[], nextCursor: string | null }}
    */
-  list: protectedProcedure
+  list: selfProcedure
     .input(
       z.object({
         limit: z.number().min(1).max(50).default(20),
@@ -68,7 +68,7 @@ export const notificationsRouter = router({
    * @input {none}
    * @output {{ unread: number, read: number, total: number }}
    */
-  counts: protectedProcedure.query(async ({ ctx }) => {
+  counts: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const [unread, read] = await Promise.all([
       ctx.prisma.notification.count({ where: { userId, isRead: false, isArchived: false } }),
@@ -84,7 +84,7 @@ export const notificationsRouter = router({
    * @input {{ id: string }}
    * @output {{ ok: true }}
    */
-  markAsRead: protectedProcedure
+  markAsRead: selfProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.notification.updateMany({
@@ -101,7 +101,7 @@ export const notificationsRouter = router({
    * @input {none}
    * @output {{ ok: true }}
    */
-  markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
+  markAllAsRead: selfProcedure.mutation(async ({ ctx }) => {
     await ctx.prisma.notification.updateMany({
       where: { userId: ctx.session.user.id, isRead: false },
       data: { isRead: true, readAt: new Date() },
@@ -117,7 +117,7 @@ export const notificationsRouter = router({
    * @input {none}
    * @output {{ ok: true }}
    */
-  archiveRead: protectedProcedure.mutation(async ({ ctx }) => {
+  archiveRead: selfProcedure.mutation(async ({ ctx }) => {
     await ctx.prisma.notification.updateMany({
       where: { userId: ctx.session.user.id, isRead: true, isArchived: false },
       data: { isArchived: true },
@@ -133,7 +133,7 @@ export const notificationsRouter = router({
      * @input {none}
      * @output {Array<{ category: string, enabled: boolean }>}
      */
-    list: protectedProcedure.query(async ({ ctx }) => {
+    list: selfProcedure.query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
       const stored = await ctx.prisma.notificationPreference.findMany({
@@ -157,7 +157,7 @@ export const notificationsRouter = router({
      * @input {{ category: notificationCategoryEnum, enabled: boolean }}
      * @output {{ ok: true }}
      */
-    update: protectedProcedure
+    update: selfProcedure
       .input(z.object({ category: notificationCategoryEnum, enabled: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         await ctx.prisma.notificationPreference.upsert({
@@ -176,7 +176,7 @@ export const notificationsRouter = router({
      * @input {none}
      * @output {Array<{ eventKey: CalendarEventKey, enabled: boolean }>}
      */
-    listCalendarEventOverrides: protectedProcedure.query(async ({ ctx }) => {
+    listCalendarEventOverrides: selfProcedure.query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
 
       const stored = await ctx.prisma.notificationPreference.findMany({
@@ -200,7 +200,7 @@ export const notificationsRouter = router({
      * @input {{ eventKey: CalendarEventKey, enabled: boolean }}
      * @output {{ ok: true }}
      */
-    updateCalendarEventOverride: protectedProcedure
+    updateCalendarEventOverride: selfProcedure
       .input(z.object({ eventKey: z.enum(CALENDAR_EVENT_KEYS), enabled: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         const userId = ctx.session.user.id;
@@ -220,7 +220,7 @@ export const notificationsRouter = router({
    * @input {none}
    * @output {{ ticket: string }}
    */
-  getSseTicket: protectedProcedure.mutation(async ({ ctx }) => {
+  getSseTicket: selfProcedure.mutation(async ({ ctx }) => {
     const ticket = randomUUID();
     sseStore.createTicket(ticket, ctx.session.user.id);
     return { ticket };

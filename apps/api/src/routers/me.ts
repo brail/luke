@@ -20,7 +20,7 @@ import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
-import { protectedProcedure, router } from '../lib/trpc';
+import { selfProcedure, router } from '../lib/trpc';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -34,7 +34,7 @@ export const meRouter = router({
    * @input {none}
    * @output {User with provider, profileCompletion, loginCount, lastLoginAt.}
    */
-  get: protectedProcedure.query(async ({ ctx }) => {
+  get: selfProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
       where: { id: ctx.session.user.id },
       select: {
@@ -102,7 +102,7 @@ export const meRouter = router({
    * @input {UserProfileSchema} — email, firstName, lastName, locale, timezone.
    * @output {Partial User with updated fields.}
    */
-  updateProfile: protectedProcedure
+  updateProfile: selfProcedure
     .input(UserProfileSchema)
     .mutation(async ({ ctx, input }) => {
       // Check the user's provider
@@ -200,7 +200,7 @@ export const meRouter = router({
    * @input {{ newEmail: string }} — the new email address (must be unique).
    * @output {{ success: true, message: string }}
    */
-  changeEmail: protectedProcedure
+  changeEmail: selfProcedure
     .use(withRateLimit('userMutations'))
     .input(
       z.object({
@@ -257,7 +257,7 @@ export const meRouter = router({
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
    */
-  changePassword: protectedProcedure
+  changePassword: selfProcedure
     .use(withRateLimit('passwordChange'))
     .input(ChangePasswordSchema)
     .use(withIdempotency())
@@ -370,7 +370,7 @@ export const meRouter = router({
    * @input {{ limit?: number }} — max entries to return (default 10).
    * @output {Array<{ id, timestamp, success, ipAddress, location }>}
    */
-  loginHistory: protectedProcedure
+  loginHistory: selfProcedure
     .input(z.object({ limit: z.number().min(1).max(100).default(10) }).optional())
     .query(async ({ ctx, input }) => {
       // Filtered by `targetId`, not `actorId`: login events are recorded before a session
@@ -414,7 +414,7 @@ export const meRouter = router({
    * @input {none}
    * @output {{ success: true }}
    */
-  revokeAllSessions: protectedProcedure.mutation(async ({ ctx }) => {
+  revokeAllSessions: selfProcedure.mutation(async ({ ctx }) => {
     // Bump tokenVersion to invalidate all sessions
     await ctx.prisma.user.update({
       where: { id: ctx.session.user.id },
@@ -445,7 +445,7 @@ export const meRouter = router({
    * @input {UpdateTimezoneSchema} — timezone (IANA timezone identifier).
    * @output {{ id, timezone, updatedAt }}
    */
-  updateTimezone: protectedProcedure
+  updateTimezone: selfProcedure
     .input(UpdateTimezoneSchema)
     .mutation(async ({ ctx, input }) => {
       const updated = await ctx.prisma.user.update({
@@ -482,7 +482,7 @@ export const meRouter = router({
    * @input {none}
    * @output {{ enabled: false } | { enabled: true, greeting, userName, intro, type, content, author }}
    */
-  getDailyGreeting: protectedProcedure.query(async ({ ctx }) => {
+  getDailyGreeting: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
     const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, false, ctx.prisma);
@@ -515,7 +515,7 @@ export const meRouter = router({
    * @input {{ enabled: boolean }}
    * @output {{ enabled: boolean }}
    */
-  updateGreetingPreference: protectedProcedure
+  updateGreetingPreference: selfProcedure
     .input(z.object({ enabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const enabled = await setUserPreferenceValue(

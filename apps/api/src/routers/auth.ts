@@ -26,7 +26,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
   publicProcedure,
-  protectedProcedure,
+  selfProcedure,
   adminProcedure,
 } from '../lib/trpc';
 import {
@@ -76,8 +76,9 @@ export const authRouter = router({
 
   /**
    * Re-mints a fresh API access token for the current session.
-   * `protectedProcedure` already validates the Bearer (expired → UNAUTHORIZED) and the
-   * `tokenVersion` (revoked → UNAUTHORIZED): the web callback uses it to
+   * `selfProcedure` — a `protectedProcedure` — already validates the Bearer
+   * (expired → UNAUTHORIZED) and the `tokenVersion` (revoked → UNAUTHORIZED):
+   * the web callback uses it to
    * renew the embedded accessToken before it expires, preventing a still-valid
    * NextAuth session from sending an expired API JWT (`jwt expired`).
    *
@@ -85,7 +86,7 @@ export const authRouter = router({
    * @input {none}
    * @output {{ token: string, tokenVersion: number }}
    */
-  refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
+  refreshToken: selfProcedure.mutation(async ({ ctx }) => {
     // Role and tokenVersion are re-read from the database, not from the session claim.
     // Re-signing from the claim turned refresh into an authority recycle: a
     // demoted user would endlessly renew a token that still said

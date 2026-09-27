@@ -14,7 +14,7 @@ import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
+import { router, protectedProcedure, adminProcedure, selfProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
@@ -78,7 +78,7 @@ export const sectionAccessRouter = router({
    * @input {none}
    * @output {{ section: Section, enabled: boolean }[]}
    */
-  getForMe: protectedProcedure.query(async ({ ctx }) => {
+  getForMe: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const rows = await listOverridesForUser(ctx.prisma, userId);
     return rows.map(r => ({
@@ -96,7 +96,7 @@ export const sectionAccessRouter = router({
    * @input {none}
    * @output {Record<Section, boolean>}
    */
-  getEffectiveForMe: protectedProcedure.query(async ({ ctx }) => {
+  getEffectiveForMe: selfProcedure.query(async ({ ctx }) => {
     return computeEffectiveForUser(ctx.prisma, ctx.session.user.id, ctx.session.user.role);
   }),
 
