@@ -189,6 +189,8 @@ does not cover, run the script yourself.
     must always come with a test that demonstrates per-attacker behavior,
     not just per-config-format (see `apps/api/test/ratelimit.integration.spec.ts`,
     describe `blocks valid credentials too`).
+    Enforced in `apps/web/src` by `.semgrep/rules/server-api-call-forwarded-for.yml`:
+    `forwardedFor()` from `lib/clientIp.ts`, inline in the call's headers.
 14. **Code comments always in English** — `//`, `/** */`, Prisma `///`:
     always English, everywhere, **including domain terms** (stagione → season,
     campionario → collection/catalog, reso → return, etc.) — no exception for

@@ -1,0 +1,37 @@
+rules:
+  - id: luke-server-api-call-forwarded-for
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Server-side call without the client IP (CLAUDE.md rule 13). apps/api keys
+      its IP rate-limit buckets on X-Forwarded-For; a server-to-server call from
+      apps/web that omits it arrives from the web container's address, and every
+      user shares one bucket — the CRITICAL bypass of 2026-08-07. Put
+      `forwardedFor(<incoming headers>)` from `lib/clientIp.ts` inline in the
+      call's headers: `headers: forwardedFor(h)`, `headers: { ...,
+      ...forwardedFor(h) }`, or for a tRPC link `headers: () => ({ ...,
+      ...forwardedFor(h) })`. Options built outside the call are flagged too.
+      A fetch to a host other than apps/api takes
+      `// nosemgrep: luke-server-api-call-forwarded-for -- external host` and
+      must never forward X-Forwarded-For.
+    patterns:
+      # Keyed on the transport, not on the URL builder: the URL reaches fetch
+      # from buildApiUrl, buildTrpcUrl, getApiBaseUrl, INTERNAL_API_URL, ten
+      # specialised builders, helpers and parameters.
+      - pattern-either:
+          - pattern: fetch($URL, ...)
+          - pattern: httpBatchLink(...)
+          - pattern: httpBatchStreamLink(...)
+          - pattern: httpLink(...)
+      # Browser code sends the user's own IP.
+      - pattern-not-inside: |
+          'use client';
+          ...
+      # Structural, not a text regex on the region: a regex accepted
+      # `body: 'forwardedFor('` and an unused `forwardedFor(h)` next to the call.
+      - pattern-not: 'fetch($URL, { ..., headers: forwardedFor($R), ... })'
+      - pattern-not: 'fetch($URL, { ..., headers: { ..., ...forwardedFor($R), ... }, ... })'
+      - pattern-not: '$LINK({ ..., headers: () => ({ ..., ...forwardedFor($R), ... }), ... })'
+    paths:
+      include:
+        - '/apps/web/src/**'
