@@ -65,6 +65,7 @@ export function UserActionsMenu({
     mutateFn: sendVerifyMutation.mutateAsync,
     onSuccessMessage: 'Email di verifica inviata',
     onErrorMessage: 'Errore invio email',
+    entityMessages: { INTERNAL_SERVER_ERROR: 'Impossibile inviare email. Verifica SMTP.' },
   });
 
   const { mutate: forceVerify } = useStandardMutation({

@@ -8,6 +8,8 @@
  * a 500).
  */
 
+import { randomUUID } from 'crypto';
+
 import { describe, it, expect, beforeEach } from 'vitest';
 
 import { saveConfig } from '../src/lib/configManager';
@@ -47,6 +49,16 @@ describe('incomplete configuration reaches the admin as a 4xx', () => {
     await expect(caller.integrations.auth.testLdapSearch({ username: 'someone' })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
       message: 'Configurazione LDAP incompleta per il test',
+    });
+  });
+
+  it('admin-initiated email verification for a user that does not exist', async () => {
+    const caller = await createCallerAs('admin');
+
+    // Used to be wrapped into a 500 carrying 'Utente non trovato', which production masks.
+    await expect(caller.auth.requestEmailVerificationAdmin({ userId: randomUUID() })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: 'Utente non trovato',
     });
   });
 });

@@ -227,7 +227,12 @@ export default function UsersPage() {
       invalidate: refresh.users,
       onSuccess: data => toast.success(data.message),
       onErrorMessage: "Errore nel forzare l'accesso locale",
-      entityMessages: { FORBIDDEN: true },
+      entityMessages: {
+        FORBIDDEN: true,
+        // The credential is in place and only the email failed; production masks the 500's text.
+        INTERNAL_SERVER_ERROR:
+          "Credenziale locale pronta ma invio email fallito: verifica la configurazione SMTP e riprova (l'operazione è idempotente).",
+      },
     });
 
   const { mutate: revokeLocalAccess, isPending: isRevokingLocalAccess } =

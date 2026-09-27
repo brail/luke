@@ -155,7 +155,20 @@ export default function MaintenanceBackupPage() {
       setRestoreTarget(null);
       void utils.maintenance.backup.list.invalidate();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      // Production masks a failed restore's text, and two different outcomes both arrive as
+      // 500: refused before anything was touched, or failed half-way. Only the second leaves the
+      // maintenance mode the restore itself activated, with its own message, so refresh it and
+      // point at that message.
+      void utils.maintenance.backup.list.invalidate();
+      void utils.maintenance.mode.getStatus.invalidate();
+      toast.error(
+        getTrpcErrorMessage(err, {
+          INTERNAL_SERVER_ERROR:
+            'Ripristino non riuscito. Se la manutenzione è attiva con il messaggio «Ripristino database in corso», il database può essere ripristinato solo in parte: controlla i log del server prima di disattivarla.',
+        }),
+      );
+    },
   });
 
   // Invariant for the lifetime of the process (the migration file is in the image, the current

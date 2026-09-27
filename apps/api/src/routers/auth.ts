@@ -309,6 +309,8 @@ export const authRouter = router({
 
         return result;
       } catch (error) {
+        // An unknown or inactive user is a NOT_FOUND the admin should read, not a masked 500.
+        if (error instanceof TRPCError) throw error;
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message:

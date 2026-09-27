@@ -259,7 +259,11 @@ export default function ProfilePage() {
                         });
                         toast.success('Email di verifica inviata');
                       } catch (err: unknown) {
-                        toast.error(getTrpcErrorMessage(err));
+                        toast.error(
+                          getTrpcErrorMessage(err, {
+                            INTERNAL_SERVER_ERROR: "Impossibile inviare l'email di verifica. Riprova più tardi.",
+                          }),
+                        );
                       }
                     }}
                     disabled={requestVerifyMutation.isPending}

@@ -73,7 +73,8 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
       onOpenChange(false);
     },
     onError: (err) => {
-      toast.error(getTrpcErrorMessage(err));
+      // A 5xx here is GitHub refusing the issue; production masks the server's text.
+      toast.error(getTrpcErrorMessage(err, { INTERNAL_SERVER_ERROR: 'Errore nella creazione della segnalazione. Riprova.' }));
     },
   });
 

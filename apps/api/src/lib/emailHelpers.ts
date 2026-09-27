@@ -5,6 +5,8 @@
 
 import { randomBytes, createHash } from 'crypto';
 
+import { TRPCError } from '@trpc/server';
+
 import { PrismaClient } from '@luke/db';
 
 import { logAudit } from './auditLog';
@@ -54,7 +56,7 @@ export async function sendVerificationEmail(
   });
 
   if (!user) {
-    throw new Error('Utente non trovato');
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
   }
 
   // Skip if already verified (except on email change)
