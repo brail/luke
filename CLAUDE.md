@@ -499,7 +499,8 @@ mid-train it cannot even deliver one — see the frozen-target note below.
 2. `git diff` — review the CHANGELOG section
 3. `git commit -am "chore(release): notes for X.Y.Z"`
 4. `git tag vX.Y.Z && git push origin vX.Y.Z` — one named tag, never
-   `--tags`. `.husky/pre-push` runs the same tree checker on the object being
+   `--tags` (`.husky/pre-push` refuses more than one release tag per push).
+   The hook runs the same tree checker on the object being
    pushed; it is **early feedback, not enforcement** (`--no-verify` skips it,
    another clone may not have it). `release.yml` is authoritative
 

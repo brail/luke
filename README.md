@@ -385,7 +385,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 - **TypeScript**: Strict mode abilitato
 - **Validation**: Zod per runtime type checking
-- **Linting**: ESLint + Prettier con Husky pre-commit hooks
+- **Linting**: ESLint (blocking in `.husky/pre-push` and CI); Prettier via `pnpm format`
 - **Security**: helmet, cors, rate limiting
 - **Logging**: Pino per structured logging
 - **Monitoring**: Audit log per compliance
@@ -831,7 +831,7 @@ pnpm changelog
 
 This check is deliberately narrow: it proves that the tagged tree ships notes for its own tag, not that a release was prepared. `check-release-train.ts --validate` proves the **number** during preparation; the provenance gate proves the **line**.
 
-`.husky/pre-push` runs the same checker against the object being pushed: it is **early feedback, not enforcement** — `--no-verify` skips it, and another clone may not have it.
+Push the one tag by name — `git push origin vX.Y.Z`, never `--tags`: `.husky/pre-push` refuses more than one release tag per push, and runs the same checker against the object being pushed. It is **early feedback, not enforcement** — `--no-verify` skips it, and another clone may not have it.
 
 Notes are generated only from Conventional Commits: merge commits (`Merge pull request …`, `Merge branch …`) are excluded. A candidate whose only new commits are merges is therefore rejected by the validator during preparation — the range contains nothing releasable — before any write starts. The empty-section rejection in `check-release-tree.ts` is not what stops it; that remains a backstop for an empty section reaching the release tree by another route. This is the intended behaviour.
 <!-- luke-docs:end:release -->
