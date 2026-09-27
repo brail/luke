@@ -8,11 +8,10 @@ overrides:
   uuid@<11.1.1: '>=11.1.1'
   postcss@<8.5.18: '>=8.5.18'
   nanoid: '>=3.3.17 <4'
-  '@opentelemetry/propagator-jaeger': 2.9.0
+  '@opentelemetry/propagator-jaeger': '>=2.9.0 <2.10.0'
   brace-expansion: '>=5.0.9'
   find-my-way: '>=9.7.0'
   deepmerge-ts: '>=8.0.2'
-  fast-uri: '>=3.1.6 <4'
   js-yaml: '>=4.3.2 <5'
   protobufjs: 7.6.5
   sharp: 0.35.4
@@ -4306,6 +4305,9 @@ packages:
 
   fast-uri@3.1.6:
     resolution: {integrity: sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q==}
+
+  fast-uri@4.2.1:
+    resolution: {integrity: sha512-TmHQgewjHtMq1E5QKA0tOE0yeYGQs25KZC/ziJpubRtWI15W92e6vPFydWOeZBVROSHBYw/QhD9d5OefdD6LDg==}
 
   fastify-plugin@5.1.0:
     resolution: {integrity: sha512-FAIDA8eovSt5qcDgcBvDuX/v0Cjz0ohGhENZ/wpc3y+oZCY2afZ9Baqql3g/lC+OHRnciQol4ww7tuthOb9idw==}
@@ -10796,7 +10798,7 @@ snapshots:
       '@fastify/merge-json-schemas': 0.2.1
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
-      fast-uri: 3.1.6
+      fast-uri: 4.2.1
       json-schema-ref-resolver: 3.0.0
       rfdc: 1.4.1
 
@@ -10809,6 +10811,8 @@ snapshots:
   fast-safe-stringify@2.1.1: {}
 
   fast-uri@3.1.6: {}
+
+  fast-uri@4.2.1: {}
 
   fastify-plugin@5.1.0: {}
 

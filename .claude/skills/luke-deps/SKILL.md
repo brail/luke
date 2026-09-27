@@ -255,8 +255,11 @@ an exact version: an exact pin keeps forcing the vulnerable version even after
 the patch ships, and `pnpm update` cannot outrank it — that is how
 GHSA-mh99-v99m-4gvg stayed live behind a `brace-expansion` pin. Cap the range
 when an uncapped one would drag transitive consumers onto a new major
-(`fast-uri: '>=3.1.5 <4'` exists for exactly that). Every override carries a
-comment with its GHSA id and its reason.
+(`js-yaml: '>=4.3.2 <5'`) — but first check with `pnpm why -r <pkg>` that no
+consumer already declares that major: a cap below a declared range forces the
+consumer off it, which is how `fast-json-stringify@7` (`fast-uri ^4`) ran on
+fast-uri 3.x for a month behind a `<4` cap written before it existed. Every
+override carries a comment with its GHSA id and its reason.
 
 On every run, review the whole `overrides` block: an override whose upstream has
 since published a clean version in the natural range is dead weight — propose
