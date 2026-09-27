@@ -40,6 +40,7 @@
     "prepare": "husky",
     "postinstall": "pnpm --filter @luke/db exec prisma generate",
     "security:sast": "semgrep scan --config .semgrep/rules/mutation-requires-permission.yml && semgrep scan --config p/typescript --config p/nextjs --config p/nodejs --config p/react --config p/sql-injection --error && semgrep scan --config .semgrep/rules/ --severity ERROR --error",
+    "security:sast:test": "sh scripts/semgrep-test.sh",
     "security:secrets": "gitleaks detect --source .",
     "security:deps": "osv-scanner scan -r .",
     "security": "pnpm security:sast && pnpm security:secrets && pnpm security:deps"

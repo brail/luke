@@ -156,6 +156,9 @@ On every run, before the final report:
    - purely syntactic pattern → `.semgrep/rules/<name>.yml`
    - requires the type checker or the TypeScript AST → `packages/eslint-plugin-luke/rules/<name>.js`
 4. Include the written rule, ready to paste, and the command to verify it.
+   A semgrep rule also needs `.semgrep/tests/<name>.ts` with at least one
+   `// ruleid: <id>` and one `// ok: <id>` case: `pnpm security:sast:test`
+   verifies both, and CI blocks a rule without them.
 
 Report footer, always present:
 

@@ -384,6 +384,12 @@ mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
 cd /tmp/probe && semgrep --config <rule> .    # expected: 1 finding, on the broken case
 ```
 
+**Enforced for semgrep since 2026-09-27**: `scripts/semgrep-test.sh`, a
+blocking step in `security.yml`, runs `semgrep --test` (which does fail on
+a broken rule file) and requires a `ruleid:` and an `ok:` fixture for every
+rule id in `.semgrep/tests/`. The lesson stays for ESLint rules and plugin
+bumps, which that script does not cover.
+
 Corollary that paid off immediately: as soon as the rule started actually
 working it found five procedures in `merchandisingPlan.ts` and
 `phaseAlert.ts` that neither the audit nor the plan had enumerated.
