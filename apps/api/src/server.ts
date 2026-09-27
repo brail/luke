@@ -160,7 +160,7 @@ async function registerSecurityPlugins(): Promise<string[]> {
   // nonexistent header.
   await fastify.register(helmet, buildHelmetConfig(envName));
 
-  // Hybrid CORS with priority AppConfig → ENV → default
+  // CORS: LUKE_CORS_ALLOWED_ORIGINS → default
   const corsConfig = buildCorsAllowedOrigins(envName);
 
   // Informational CORS log (don't print the full list in prod)
