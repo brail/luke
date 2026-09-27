@@ -5,7 +5,8 @@
  *  - POST /upload/collection-row-picture/temp     — temporary upload for row creation (no row ID yet)
  *  - POST /upload/collection-row-picture/:rowId   — upload for an existing row (validates row exists)
  *
- * Both endpoints require authentication and the `collection_layout:update` permission.
+ * Both endpoints require authentication and the `collection_layout:update` permission; the
+ * row endpoint also requires brand scope on the row's layout.
  * The file is stored and its key returned immediately; the key is persisted to the DB
  * only when the containing form is saved via `tRPC collectionLayout.rows.create/update`.
  */
@@ -125,8 +126,12 @@ export default async function collectionRowPictureRoutes(
         'Collection row picture upload error'
       );
 
-      if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
-        return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
+      if (
+        error instanceof TRPCError &&
+        (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND' || error.code === 'FORBIDDEN')
+      ) {
+        const status = { BAD_REQUEST: 400, NOT_FOUND: 404, FORBIDDEN: 403 }[error.code];
+        return reply.code(status).send({
           error: error.code,
           message: error.message,
         });

@@ -1,8 +1,7 @@
-import { TRPCError } from '@trpc/server';
-
 import { logAudit } from '../lib/auditLog';
 
 import { ingestImageAsset } from './asset.service';
+import { resolveRowBrandAccess } from './brandScope.service';
 
 import type { Context } from '../lib/trpc';
 
@@ -20,6 +19,7 @@ type FileParams = {
  * is persisted only when the row is saved via the tRPC update mutation.
  *
  * @throws {TRPCError} NOT_FOUND if the row does not exist.
+ * @throws {TRPCError} FORBIDDEN if the row's brand is outside the user's scope.
  * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
  */
 export async function uploadCollectionRowPicture(
@@ -29,11 +29,8 @@ export async function uploadCollectionRowPicture(
     file: FileParams;
   }
 ): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
-  const row = await ctx.prisma.collectionLayoutRow.findUnique({ where: { id: params.rowId } });
-
-  if (!row) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-  }
+  // Existence and brand scope before storing anything: the row's layout decides the brand.
+  await resolveRowBrandAccess(ctx, params.rowId);
 
   const result = await ingestImageAsset(ctx, {
     kind: 'collection-row-picture',
