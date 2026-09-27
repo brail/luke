@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
-import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
+import { AppContextDefaultsSchema, hasPermission, type AppContextDefaults, type Role } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import { makeUrlResolver } from '../lib/storageUrl';
@@ -69,6 +69,14 @@ export function unionBrandScopes(memberships: { team: { brandScopes: { brandId: 
 }
 
 /**
+ * Brand and function scope is unrestricted for whoever holds every permission (`*:*`), which only
+ * `admin` does today; everyone else is scoped by team membership. A missing role is scoped.
+ */
+function hasUnrestrictedScope(role: Role | undefined): boolean {
+  return role !== undefined && hasPermission({ role }, '*:*');
+}
+
+/**
  * Returns the set of brand IDs the user may access via team membership.
  * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
  * A team with no brand scopes contributes nothing — it does not grant unrestricted access.
@@ -80,7 +88,7 @@ export async function getUserAllowedBrandIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<string[] | null> {
-  if (userRole === 'admin') return null;
+  if (hasUnrestrictedScope(userRole)) return null;
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
@@ -102,7 +110,7 @@ export async function getUserAllowedFunctionIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<string[] | null> {
-  if (userRole === 'admin') return null;
+  if (hasUnrestrictedScope(userRole)) return null;
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
@@ -125,7 +133,7 @@ export async function getUserAllowedIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<UserAllowedIds> {
-  if (userRole === 'admin') return { brandIds: null, functionIds: null };
+  if (hasUnrestrictedScope(userRole)) return { brandIds: null, functionIds: null };
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },

@@ -6,6 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
+import { Roles, type Role } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
 import {
@@ -275,6 +276,11 @@ async function searchUserGroups(
   }
 }
 
+/** A mapped value is used only if it names a known role; `Roles` is the one list. */
+function isRole(value: string): value is Role {
+  return (Roles as readonly string[]).includes(value);
+}
+
 /**
  * Determine the user's role based on LDAP groups
  */
@@ -282,16 +288,16 @@ function determineUserRole(
   userGroups: string[],
   roleMapping: Record<string, string>,
   log?: pino.Logger
-): 'admin' | 'editor' | 'viewer' {
+): Role {
   // Look for the most specific mapping
   for (const groupDN of userGroups) {
     if (roleMapping[groupDN]) {
       const role = roleMapping[groupDN];
-      if (['admin', 'editor', 'viewer'].includes(role)) {
+      if (isRole(role)) {
         if (log) {
           log.info({ groupDN, role }, `Role mapping found`);
         }
-        return role as 'admin' | 'editor' | 'viewer';
+        return role;
       }
     }
   }

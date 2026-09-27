@@ -13,7 +13,7 @@
 
 import { TRPCError } from '@trpc/server';
 
-import { MaintenanceModeStateSchema, type MaintenanceModeState } from '@luke/core';
+import { hasPermission, MaintenanceModeStateSchema, Roles, type MaintenanceModeState, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, saveConfig } from './configManager';
@@ -66,13 +66,23 @@ export async function isMaintenanceActive(prisma: PrismaClient): Promise<boolean
 }
 
 /**
- * Throws `SERVICE_UNAVAILABLE` if maintenance mode is `ACTIVE` and `role` isn't admin. The one
+ * Whoever can end maintenance keeps working through it: the permission `adminProcedure` checks to
+ * manage the mode. A role string that is not a known role holds no permission, so it is blocked.
+ */
+export function bypassesMaintenance(role: string): boolean {
+  // `role` comes from the session or the user row as a plain string; hasPermission answers false
+  // for anything outside `Roles`, which is the fail-closed answer wanted here.
+  return hasPermission({ role: role as Role }, 'maintenance:update');
+}
+
+/**
+ * Throws `SERVICE_UNAVAILABLE` if maintenance mode is `ACTIVE` and `role` cannot bypass it. The one
  * enforcement predicate shared by the tRPC guard (`maintenanceGuard` in trpc.ts) and the login
  * flow (`auth.service.ts`) — two independent copies of this same check would silently drift the
  * next time either changes (e.g. an admin-adjacent role gets added).
  */
 export async function assertNotBlockedByMaintenance(prisma: PrismaClient, role: string): Promise<void> {
-  if (role !== 'admin' && await isMaintenanceActive(prisma)) {
+  if (!bypassesMaintenance(role) && await isMaintenanceActive(prisma)) {
     throw new TRPCError({
       code: 'SERVICE_UNAVAILABLE',
       message: 'Sistema in manutenzione. Riprova più tardi.',
@@ -118,14 +128,15 @@ export async function recordWarningsSent(prisma: PrismaClient, current: Maintena
 }
 
 /**
- * Revokes every non-admin session in one bulk update (same mechanism as the existing
- * single-user force-logout in `users.admin.router.ts`, just role-scoped instead of id-scoped),
+ * Revokes the session of every role that cannot bypass maintenance (`bypassesMaintenance`) in one
+ * bulk update (same mechanism as the existing single-user force-logout in `users.admin.router.ts`,
+ * just role-scoped instead of id-scoped),
  * then clears the whole tokenVersion cache so it takes effect immediately rather than waiting
  * out each entry's TTL.
  */
 export async function forceLogoutNonAdmins(prisma: PrismaClient): Promise<void> {
   await prisma.user.updateMany({
-    where: { role: { not: 'admin' } },
+    where: { role: { in: Roles.filter(role => !bypassesMaintenance(role)) } },
     data: { tokenVersion: { increment: 1 } },
   });
   clearTokenVersionCache();

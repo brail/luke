@@ -130,9 +130,10 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware that blocks non-admin traffic while Maintenance Mode is `ACTIVE`.
+ * Middleware that blocks traffic while Maintenance Mode is `ACTIVE`, except from whoever can manage
+ * maintenance (`bypassesMaintenance`, `maintenance:update`).
  * Must be chained after `authMiddleware` (already done in `protectedProcedure`) so
- * `ctx.session` is guaranteed. Admins are never blocked — they need `adminProcedure`
+ * `ctx.session` is guaranteed. Those are never blocked — they need `adminProcedure`
  * (e.g. `maintenance.mode.end`) to keep working during the very maintenance they're managing.
  */
 export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
@@ -154,7 +155,7 @@ export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware that restricts access to users with the `admin` role.
+ * Middleware that restricts access to users holding `maintenance:update` (today only `admin`).
  * Must be chained after `authMiddleware` (already done in `adminProcedure`).
  */
 export const adminMiddleware = t.middleware(async ({ ctx, next }) => {

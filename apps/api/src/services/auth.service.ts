@@ -19,7 +19,7 @@ import {
   sendPasswordResetEmail,
   sendEmailVerificationEmail,
 } from '../lib/mailer';
-import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
+import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
@@ -265,8 +265,8 @@ export async function authenticateUser(
     });
   }
 
-  // Block non-admin logins while maintenance mode is active
-  if (authenticatedUser.role !== 'admin' && await isMaintenanceActive(ctx.prisma)) {
+  // Block logins that cannot bypass maintenance while it is active
+  if (!bypassesMaintenance(authenticatedUser.role) && await isMaintenanceActive(ctx.prisma)) {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',

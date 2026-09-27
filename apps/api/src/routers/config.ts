@@ -23,7 +23,7 @@ import {
   deleteConfig,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { requirePermission } from '../lib/permissions';
+import { can, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
@@ -136,7 +136,7 @@ const ListConfigsSchema = z.object({
  * { key: "auth.ldap.password", mode: "masked" }
  *
  * @example
- * // Raw mode (admin only, generates an audit log)
+ * // Raw mode (requires config:update, generates an audit log)
  * { key: "auth.ldap.password", mode: "raw" }
  */
 const ViewValueSchema = z.object({
@@ -145,7 +145,7 @@ const ViewValueSchema = z.object({
   /**
    * Display mode:
    * - 'masked': encrypted values show [ENCRYPTED]; requires config:read (admin only today)
-   * - 'raw': decrypts encrypted values, requires admin role and generates a mandatory audit log
+   * - 'raw': decrypts encrypted values, requires config:update and generates a mandatory audit log
    */
   mode: z.enum(['masked', 'raw']).default('masked'),
 });
@@ -276,9 +276,9 @@ export const configRouter = router({
     }),
 
   /**
-   * Views a config value in masked or raw mode; raw mode requires admin and generates an audit log.
+   * Views a config value in masked or raw mode; raw mode requires config:update and generates an audit log.
    *
-   * @auth {config:read; admin required for mode=raw}
+   * @auth {config:read; config:update for mode=raw}
    * @input {ViewValueSchema} — key, mode ("masked" | "raw").
    * @output {{ key, value, isEncrypted, mode }} — value is [ENCRYPTED] in masked mode for secrets.
    */
@@ -286,12 +286,12 @@ export const configRouter = router({
     .use(requirePermission('config:read'))
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
-      // If mode=raw, verifies that the user is admin
-      if (input.mode === 'raw' && ctx.session?.user?.role !== 'admin') {
+      // A raw value is shown in the clear: it takes at least what writing it takes.
+      if (input.mode === 'raw' && !can(ctx, 'config:update')) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message:
-            'Accesso negato: richiesto ruolo admin per visualizzare valori raw',
+            'Accesso negato: serve il permesso di modificare la configurazione per visualizzare valori raw',
         });
       }
 
@@ -441,7 +441,7 @@ export const configRouter = router({
   /**
    * Fetches multiple AppConfig values in a single request; returns partial results on missing keys.
    *
-   * @auth {config:read; admin required for decrypt=true}
+   * @auth {config:read; config:update for decrypt=true}
    * @input {{ keys: string[], decrypt?: boolean }} — list of config keys, optional decrypt flag.
    * @output {Array<{ key, value, found, error? }>}
    */
@@ -456,10 +456,11 @@ export const configRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
-      if (input.decrypt && ctx.session.user.role !== 'admin') {
+      // Decrypting takes at least what writing the value takes.
+      if (input.decrypt && !can(ctx, 'config:update')) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Accesso negato: richiesto ruolo admin per decrittare valori',
+          message: 'Accesso negato: serve il permesso di modificare la configurazione per decrittare valori',
         });
       }
 
