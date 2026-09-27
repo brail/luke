@@ -5,6 +5,7 @@ import { buildTrpcUrl, isProduction } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
+import { clientIpFrom } from './lib/clientIp';
 import { debugError, debugLog } from './lib/debug';
 import { markLoginThrottled } from './lib/loginThrottleContext';
 
@@ -35,21 +36,6 @@ export const runtime = 'nodejs';
 // TTL 30s — an acceptable window between session revocation and forced logout.
 const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (ms)
 const TOKEN_VERSION_CACHE_TTL = 30_000;
-
-/**
- * Extracts the real client IP from the incoming request's `X-Forwarded-For` header. NPM
- * (Nginx Proxy Manager) sits in front of apps/web in every deployed environment (see
- * `trustHost` comment below) and uses `$proxy_add_x_forwarded_for`, which APPENDS its own
- * resolved peer address rather than replacing an existing header — so the real client IP is
- * the LAST entry, not the first. Taking the first entry (`[0]`) would return whatever value
- * an attacker chooses to send in their own `X-Forwarded-For` header, defeating IP-based
- * rate limiting (CRITICAL, audit 2026-08-07). `undefined` if absent (e.g. local `pnpm dev`
- * without a reverse proxy).
- */
-function extractClientIp(request: Request): string | undefined {
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  return forwardedFor?.split(',').pop()?.trim() || undefined;
-}
 
 /**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data,
@@ -128,7 +114,7 @@ export const config = {
           const authResult = await callTRPCAuth(
             credentials.username as string,
             credentials.password as string,
-            extractClientIp(request)
+            clientIpFrom(request.headers)
           );
 
           // LDAP user awaiting approval: Auth.js does not allow propagating
