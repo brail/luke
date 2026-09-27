@@ -27,6 +27,7 @@ model CollectionLayout {
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
+  @@index([seasonId])
   @@map("collection_layouts")
 }
 
@@ -186,6 +187,7 @@ model CollectionRowPhaseHistory {
 
   @@index([rowId, reachedAt])
   @@index([phaseId, reachedAt])
+  @@index([recordedByUserId])
   @@map("collection_row_phase_history")
 }
 
@@ -251,6 +253,7 @@ model CollectionLayoutRevision {
   @@unique([milestoneId, revisionTypeValue])
   @@index([collectionLayoutId, createdAt])
   @@index([milestoneId])
+  @@index([createdByUserId])
   @@map("collection_layout_revisions")
 }
 
@@ -324,6 +327,7 @@ model CollectionLayoutRowRevision {
 
   @@unique([revisionId, sourceRowId])
   @@index([sourceRowId, revisionId])
+  @@index([sourceGroupRevisionId])
   @@map("collection_layout_row_revisions")
 }
 

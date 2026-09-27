@@ -18,6 +18,7 @@ model CalendarEventUserVisibility {
 
   @@id([eventId, userId])
   @@index([userId])
+  @@index([grantedBy])
   @@map("calendar_event_user_visibilities")
 }
 
@@ -185,6 +186,8 @@ model CalendarEvent {
   @@index([calendarId, startAt])
   @@index([planningGroupId])
   @@index([phaseId])
+  @@index([templateItemId])
+  @@index([cancelledByUserId])
   @@map("calendar_events")
 }
 
@@ -322,6 +325,7 @@ model GoogleEventMapping {
 
   @@id([eventId, companyFunctionId])
   @@index([googleCalendarId])
+  @@index([companyFunctionId])
   @@map("google_event_mappings")
 }
 
@@ -445,5 +449,8 @@ model VendorClosurePeriod {
   @@unique([vendorId, seasonId, sourceHolidayId])
   @@index([vendorId, seasonId])
   @@index([seasonId, startDate, endDate])
+  @@index([countryCode])
+  @@index([sourceHolidayId])
+  @@index([confirmedByUserId])
   @@map("vendor_closure_periods")
 }

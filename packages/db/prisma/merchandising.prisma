@@ -59,6 +59,7 @@ model MerchandisingPlan {
 
   @@unique([brandId, seasonId])
   @@index([brandId, seasonId])
+  @@index([seasonId])
   @@map("merchandising_plans")
 }
 

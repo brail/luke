@@ -109,6 +109,7 @@ model Identity {
   /// Local password credential, present only for LOCAL provider identities.
   localCredential LocalCredential?
 
+  @@index([userId])
   @@unique([provider, providerId])
   @@map("identities")
 }

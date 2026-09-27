@@ -247,6 +247,7 @@ model EditLock {
   /// Hard cutoff — no renewal. Past this instant the lock is considered stale and ignorable.
   expiresAt      DateTime
 
+  @@index([lockedByUserId])
   @@unique([entityType, entityId])
   @@map("edit_locks")
 }
@@ -358,5 +359,6 @@ model BackupRecord {
   @@index([createdAt])
   @@index([status])
   @@index([sourceBackupId])
+  @@index([createdById])
   @@map("backup_records")
 }

@@ -107,6 +107,7 @@ model PricingParameterSet {
 
   @@unique([brandId, seasonId, name])
   @@index([brandId, seasonId])
+  @@index([seasonId])
   @@map("pricing_parameter_sets")
 }
 
