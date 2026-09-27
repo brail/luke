@@ -1,6 +1,6 @@
 /**
  * In-memory idempotency store for Luke API.
- * Uses an LRU-like Map with a configurable capacity (default: 1 000 keys)
+ * Uses a Map with a configurable capacity (default: 1 000 keys), evicting in insertion order,
  * and a 5-minute TTL. Request identity is hashed as SHA-256(method + path + body).
  * Clients signal intent via the `Idempotency-Key: <uuid-v4>` header.
  */
@@ -41,7 +41,7 @@ interface IdempotencyResult {
 }
 
 /**
- * In-memory idempotency store with LRU eviction and TTL-based expiry.
+ * In-memory idempotency store with insertion-order (FIFO) eviction and TTL-based expiry.
  */
 class IdempotencyStore {
   private cache = new Map<string, IdempotencyEntry>();
@@ -139,7 +139,8 @@ class IdempotencyStore {
     const now = Date.now();
     const ttl = ttlMs || this.defaultTtlMs;
 
-    // If the cache is full, remove the oldest entry (LRU)
+    // If the cache is full, remove the oldest inserted entry: a Map keeps insertion order, and
+    // nothing moves a key on reuse, so this is FIFO, not LRU.
     if (this.cache.size >= this.maxSize) {
       const oldestKey = this.cache.keys().next().value;
       if (oldestKey) {

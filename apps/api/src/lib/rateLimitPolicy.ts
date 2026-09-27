@@ -1,6 +1,6 @@
 /**
  * Rate-limit policy resolver.
- * Implements a three-tier resolution cascade: AppConfig → environment variable → built-in default.
+ * Resolves a route's policy: AppConfig → built-in default.
  */
 
 import pino from 'pino';

@@ -1,6 +1,7 @@
 /**
  * In-memory rate-limit store for Luke API.
- * Uses a per-route LRU Map (max 1 000 keys per route) with configurable TTL windows.
+ * Uses a per-route Map (max 1 000 keys per route, evicted in insertion order) with configurable
+ * TTL windows.
  * Key extraction is IP-based for public endpoints and user-ID-based for authenticated ones.
  * Expired entries are evicted on a 60-second cleanup interval.
  */
@@ -110,7 +111,7 @@ interface RateLimitEntry {
 }
 
 /**
- * In-memory rate-limit store with per-route LRU maps and TTL-based window expiry.
+ * In-memory rate-limit store with per-route insertion-order (FIFO) maps and TTL-based window expiry.
  */
 class RateLimitStore {
   private stores = new Map<string, Map<string, RateLimitEntry>>();
@@ -190,7 +191,8 @@ class RateLimitStore {
       }
     }
 
-    // If the cache is full, remove the oldest entry (LRU)
+    // If the cache is full, remove the oldest inserted entry: incrementing a counter updates it in
+    // place, so a Map's insertion order is the order windows opened — FIFO, not LRU.
     if (store.size >= this.maxSize) {
       const oldestKey = store.keys().next().value;
       if (oldestKey) {
@@ -339,7 +341,7 @@ export function enforceRateLimit(
 
 /**
  * Creates a tRPC middleware that enforces rate limiting for the specified route.
- * Policy is resolved dynamically on every request: AppConfig → ENV → static default.
+ * Policy is resolved dynamically on every request: AppConfig → built-in default.
  * Requests beyond the limit receive a `TOO_MANY_REQUESTS` tRPC error.
  *
  * @param routeName - Route name (must be a key of `RATE_LIMIT_CONFIG`).

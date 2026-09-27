@@ -96,8 +96,7 @@ many addresses is still limited per account.
 - A **fixed** window starts at a key's first request and restarts once it has
   elapsed. It does not slide.
 - When a map is full, the key inserted earliest is evicted, whether or not it is
-  still active. The source comment calls this LRU, but eviction follows insertion
-  order. With more than 1,000 distinct keys on one bucket, a counter can be
+  still active: eviction follows insertion order, not recent use. With more than 1,000 distinct keys on one bucket, a counter can be
   dropped before its window ends.
 - Expired entries are removed every 60 seconds.
 - Counters are not shared between processes, which is one of the reasons
@@ -131,8 +130,7 @@ Queries are never deduplicated.
 
 The store is in memory and per process: at most 1,000 entries, a five-minute
 TTL, expired entries removed every minute. When full it evicts the entry
-inserted earliest; as with the rate-limit store, the source comment says LRU but
-eviction follows insertion order. Entries are not shared between processes
+inserted earliest, as the rate-limit store does. Entries are not shared between processes
 (ADR-011).
 
 Implementation: [`idempotencyTrpc.ts`](apps/api/src/lib/idempotencyTrpc.ts) and
