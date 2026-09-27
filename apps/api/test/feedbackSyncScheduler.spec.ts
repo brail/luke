@@ -227,7 +227,7 @@ describe('feedbackSyncScheduler', () => {
   });
 
   it('if reading the interval from AppConfig fails, the first tick still starts after 60s', async () => {
-    vi.mocked(getTypedConfig).mockRejectedValue(new Error('config non trovata'));
+    vi.mocked(getTypedConfig).mockRejectedValue(new Error('config not found'));
     mockGitHubIssue();
     const prisma = buildFakePrisma([]);
 

@@ -232,7 +232,7 @@ describe('Brand Logo Upload Integration', () => {
       //
       // The verifiable contract is magic-byte validation: bytes that are not
       // a PNG, declared as PNG, must be rejected with 400.
-      const notAnImage = Buffer.from('questo non è un PNG');
+      const notAnImage = Buffer.from('this is not a PNG');
 
       await request(app.server)
         .post(`/upload/brand-logo/${testBrand.id}`)

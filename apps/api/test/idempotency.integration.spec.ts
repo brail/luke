@@ -304,7 +304,7 @@ describe('Idempotency Integration', () => {
   });
 
   describe('idempotency statistics', () => {
-    it('dovrebbe tracciare statistiche correttamente', async () => {
+    it('should track statistics correctly', async () => {
       const idempotencyKey = randomUUID();
       const adminCaller = await createCallerWithIdempotency(idempotencyKey, 'admin');
 

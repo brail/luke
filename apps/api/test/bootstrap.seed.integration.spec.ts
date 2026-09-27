@@ -177,7 +177,7 @@ describe('Bootstrap & Seed', () => {
       await prisma.season.deleteMany();
     });
 
-    it('crea brand, stagione e set parametri pricing', async () => {
+    it('creates brand, season and pricing parameter set', async () => {
       await seedContextData(prisma);
 
       const brand = await prisma.brand.findUnique({ where: { code: 'ACME' } });

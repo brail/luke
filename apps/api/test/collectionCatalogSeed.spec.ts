@@ -36,7 +36,7 @@ beforeAll(async () => {
   seeded = upsert.mock.calls.map(([args]) => args.create);
 });
 
-describe('seedCollectionCatalog — catalogo revisionType', () => {
+describe('seedCollectionCatalog — revisionType catalog', () => {
   it('seeds at least one entry, otherwise the revisions dropdown starts empty', () => {
     expect(seeded.length).toBeGreaterThan(0);
   });
@@ -46,7 +46,7 @@ describe('seedCollectionCatalog — catalogo revisionType', () => {
     // fails here instead of at runtime, when the router serves the catalog.
     for (const item of seeded) {
       const parsed = CollectionCatalogItemInputSchema.safeParse(item);
-      expect(parsed.success, `voce non valida: ${item.value} — ${parsed.error?.message}`).toBe(true);
+      expect(parsed.success, `invalid entry: ${item.value} — ${parsed.error?.message}`).toBe(true);
     }
   });
 

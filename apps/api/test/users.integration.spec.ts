@@ -294,7 +294,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     expect(tokens).toHaveLength(0);
   });
 
-  it('admin cambia legittimamente la email: riesce, azzera emailVerifiedAt e invalida le sessioni', async () => {
+  it('an admin legitimately changes the email: it succeeds, clears emailVerifiedAt and invalidates the sessions', async () => {
     const { user: target } = await createTargetUser();
     await prisma.user.update({
       where: { id: target.id },

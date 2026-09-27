@@ -42,7 +42,7 @@ describe('resolveEffectiveProvider', () => {
     ).toBe('LDAP');
   });
 
-  it('OIDC + LOCAL, in qualunque ordine → resta OIDC', () => {
+  it('OIDC + LOCAL, in either order → stays OIDC', () => {
     expect(
       resolveEffectiveProvider([{ provider: 'LOCAL' }, { provider: 'OIDC' }])
     ).toBe('OIDC');

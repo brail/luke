@@ -179,7 +179,7 @@ describe('me.changePassword', () => {
  * a user who previously could not make it: an editor could have taken it down to eight characters
  * of anything. This is the test that stops the permission coming back.
  */
-describe('la policy la cambia solo un admin', () => {
+describe('only an admin changes the policy', () => {
   it('an editor cannot write it', async () => {
     const { session } = await createTestUser('editor');
     await expectUnauthorized(
@@ -193,7 +193,7 @@ describe('la policy la cambia solo un admin', () => {
     );
   });
 
-  it('e nemmeno spegnere un requisito', async () => {
+  it('nor switch a requirement off', async () => {
     const { session } = await createTestUser('editor');
     await expectUnauthorized(
       () =>

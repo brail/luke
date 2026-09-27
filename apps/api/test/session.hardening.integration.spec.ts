@@ -75,7 +75,7 @@ describe('Session Hardening — tokenVersion', () => {
     });
   });
 
-  it('RevokeAllSessions → Vecchio token rifiutato', async () => {
+  it('RevokeAllSessions → old token rejected', async () => {
     const { user, session } = await createTestUser('viewer');
 
     // Revoke all sessions
@@ -148,7 +148,7 @@ describe('Session Hardening — tokenVersion', () => {
   });
 });
 
-describe('Session Hardening — revoca su tutta la superficie', () => {
+describe('Session Hardening — revocation across the whole surface', () => {
   it('authenticateRequest rejects a revoked token (non-tRPC route)', async () => {
     const { user } = await createTestUser('viewer');
     const token = createToken({

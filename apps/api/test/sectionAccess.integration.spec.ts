@@ -151,7 +151,7 @@ describe('sectionAccess — per-user override', () => {
   });
 });
 
-describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => {
+describe('sectionAccess — getEffectiveForMe applies the four levels', () => {
   it('with no config in AppConfig SECTION_ACCESS_DEFAULTS applies, not the RBAC fallback', async () => {
     // Level 2 used to read only AppConfig, and `rbac.sectionAccessDefaults` is
     // never seeded: with the key absent, every section resolved to `'auto'` and
@@ -174,7 +174,7 @@ describe('sectionAccess — getEffectiveForMe applica i quattro livelli', () => 
 
   it('a malformed row in AppConfig does not open the sections', async () => {
     await prisma.appConfig.create({
-      data: { key: 'rbac.sectionAccessDefaults', value: '{ questo non è JSON' },
+      data: { key: 'rbac.sectionAccessDefaults', value: '{ this is not JSON' },
     });
     const { session } = await createTestUser('viewer');
 
@@ -344,7 +344,7 @@ describe('sectionAccess — the only write path for rbac.*', () => {
   });
 });
 
-describe('sectionAccess — validazione input', () => {
+describe('sectionAccess — input validation', () => {
   it('rejects a section that does not exist', async () => {
     const { session } = await createTestUser('admin');
     const { user: target } = await createTestUser('viewer');

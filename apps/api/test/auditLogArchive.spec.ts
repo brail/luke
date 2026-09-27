@@ -37,7 +37,7 @@ function fakeRow(id: string, overrides: Partial<Record<string, unknown>> = {}) {
 /** Reads and decompresses the file written by the mock, returning the parsed NDJSON rows. */
 function readArchivedRows(mockStorage: MockStorageProvider, key: string): unknown[] {
   const file = mockStorage.getFilesByBucket('backups').find(f => f.key === key);
-  if (!file) throw new Error(`Nessun file archiviato con key ${key}`);
+  if (!file) throw new Error(`No archived file with key ${key}`);
   const text = gunzipSync(file.data).toString('utf8');
   return text
     .split('\n')
@@ -46,7 +46,7 @@ function readArchivedRows(mockStorage: MockStorageProvider, key: string): unknow
 }
 
 describe('auditLogArchiveKey', () => {
-  it('include anno, tickId e tier, termina in .ndjson.gz', () => {
+  it('includes year, tickId and tier, and ends in .ndjson.gz', () => {
     const key = auditLogArchiveKey('tick-abc', 'normal');
 
     expect(key).toMatch(/^audit-archive\/\d{4}\/tick-abc-normal\.ndjson\.gz$/);

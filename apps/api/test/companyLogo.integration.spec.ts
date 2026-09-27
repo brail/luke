@@ -55,7 +55,7 @@ describe('company.profile.update — logo', () => {
     ctx = await createContextForRole('admin');
   });
 
-  it('collega un file pending e ne scrive la key', async () => {
+  it('links a pending file and writes its key', async () => {
     const file = await seedFile();
 
     const profile = await caller().update({ ...base, fileObjectId: file.id });

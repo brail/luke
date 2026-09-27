@@ -87,7 +87,7 @@ describe('feedback.submit', () => {
 
     const result = await caller.submit({
       type: 'bug',
-      title: 'Il prezzo non si salva',
+      title: 'The price does not save',
       description: 'Passi: apri pricing, modifica un parametro, salva.',
     });
 
@@ -105,7 +105,7 @@ describe('feedback.submit', () => {
     const requestBody = JSON.parse(init.body as string);
     // Plausible bug: sending the wrong label, or none — silently miscategorizes every report.
     expect(requestBody.labels).toEqual(['bug']);
-    expect(requestBody.title).toBe('Il prezzo non si salva');
+    expect(requestBody.title).toBe('The price does not save');
     // Plausible bug: the fallback-to-email display name path masking the real submitter.
     expect(requestBody.body).toContain(`Inviato da: ${user.firstName} ${user.lastName} (${user.email})`);
 

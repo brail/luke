@@ -56,7 +56,7 @@ describe('rateLimitKeyFromRequest', () => {
     expect(rateLimitKeyFromRequest(req())).toBe('203.0.113.7');
   });
 
-  it('un header malformato ricade sull’IP', () => {
+  it('a malformed header falls back to the IP', () => {
     expect(rateLimitKeyFromRequest(req('Bearer non-un-jwt'))).toBe('203.0.113.7');
   });
 });

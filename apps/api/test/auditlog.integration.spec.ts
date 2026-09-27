@@ -99,7 +99,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_DELETE (soft delete)', () => {
-    it('dovrebbe loggare entry per soft delete', async () => {
+    it('should log an entry for a soft delete', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
@@ -125,7 +125,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_HARD_DELETE', () => {
-    it('dovrebbe loggare entry per hard delete', async () => {
+    it('should log an entry for a hard delete', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
@@ -191,7 +191,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('AUTH_LOGIN', () => {
-    it('dovrebbe loggare entry per login riuscito', async () => {
+    it('should log an entry for a successful login', async () => {
       // Credential already created by `createTestUser`
       const { user } = await createTestUser('viewer');
 
@@ -223,7 +223,7 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('Attribuzione soggetto (actorId null)', () => {
+  describe('Subject attribution (null actorId)', () => {
     it('should attribute the login to whoever performed it even without an actorId', async () => {
       const { user } = await createTestUser('viewer');
       const { session: adminSession } = await createTestUser('admin');
@@ -255,7 +255,7 @@ describe('AuditLog Integration', () => {
 
       const anonCaller = await createCallerAs(null);
       await expect(
-        anonCaller.auth.login({ username: 'utente-inesistente', password: 'QualsiasiCosa123!' })
+        anonCaller.auth.login({ username: 'no-such-user', password: 'AnyThing123!' })
       ).rejects.toThrow();
 
       const page = await createCallerWithSession(adminSession).auditLog.list({
@@ -264,7 +264,7 @@ describe('AuditLog Integration', () => {
         limit: 50,
       });
 
-      const entry = page.items.find(i => i.subjectName === 'utente-inesistente');
+      const entry = page.items.find(i => i.subjectName === 'no-such-user');
       expect(entry).toBeDefined();
       // No user row to point at, so the subject falls back to the attempted username in metadata.
       expect(entry?.targetId).toBeNull();
@@ -340,8 +340,8 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('Ordering e timestamp', () => {
-    it('dovrebbe ordinare per createdAt DESC', async () => {
+  describe('Ordering and timestamps', () => {
+    it('should order by createdAt DESC', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -416,7 +416,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_HARD_DELETE with the correct targetId', () => {
-    it('dovrebbe loggare targetId corretto per hard delete', async () => {
+    it('should log the correct targetId for a hard delete', async () => {
       const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
       const caller = createCallerWithSession(session);
@@ -470,8 +470,8 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('CONFIG_UPSERT per LDAP', () => {
-    it('dovrebbe loggare evento aggregato per salvataggio LDAP', async () => {
+  describe('CONFIG_UPSERT for LDAP', () => {
+    it('should log one aggregated event for an LDAP save', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 

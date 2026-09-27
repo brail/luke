@@ -38,7 +38,7 @@ async function createBaseRow() {
   return asAdmin().collectionLayout.rows.create({
     groupId,
     gender: 'UOMO',
-    line: `Riga ${randomUUID().slice(0, 8)}`,
+    line: `Row ${randomUUID().slice(0, 8)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',
     skuForecast: null,
@@ -77,7 +77,7 @@ beforeAll(async () => {
   phase2Id = phase2.id;
 });
 
-describe('rows.update — sync quotazioni', () => {
+describe('rows.update — quotation sync', () => {
   it('creates, updates and deletes quotations in a single save, with per-quotation audit', async () => {
     const row = await createBaseRow();
 
@@ -148,7 +148,7 @@ describe('rows.update — sync quotazioni', () => {
         rowId: rowA.id,
         // The change to `line` in the same request must not survive: the
         // quotation sync fails inside the same transaction as the row update.
-        data: { line: 'NON DEVE SALVARSI', quotations: [{ id: foreign.id, retailPrice: 999 }] },
+        data: { line: 'MUST NOT BE SAVED', quotations: [{ id: foreign.id, retailPrice: 999 }] },
       })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
@@ -158,16 +158,16 @@ describe('rows.update — sync quotazioni', () => {
     expect(await prisma.collectionRowQuotation.count({ where: { rowId: rowA.id } })).toBe(0);
 
     const rowAAfter = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: rowA.id } });
-    expect(rowAAfter.line).not.toBe('NON DEVE SALVARSI');
+    expect(rowAAfter.line).not.toBe('MUST NOT BE SAVED');
   });
 });
 
-describe('rows.create — quotazioni al volo', () => {
+describe('rows.create — quotations on the fly', () => {
   it('creates the row with its quotations in the same request, with per-quotation audit', async () => {
     const row = await asAdmin().collectionLayout.rows.create({
       groupId,
       gender: 'UOMO',
-      line: `Riga con preventivo ${randomUUID().slice(0, 8)}`,
+      line: `Row with a quotation ${randomUUID().slice(0, 8)}`,
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
       skuForecast: null,
@@ -184,7 +184,7 @@ describe('rows.create — quotazioni al volo', () => {
   });
 });
 
-describe('rows.update — diff fase consolidato nell\'audit', () => {
+describe('rows.update — phase diff folded into the audit', () => {
   it('a real phase change produces a single COLLECTION_ROW_UPDATE with old/new/note, no separate event', async () => {
     const row = await createBaseRow();
 
@@ -200,7 +200,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
 
     await asAdmin().collectionLayout.rows.update({
       rowId: row.id,
-      data: { phaseId: phase2Id, phaseChangeNote: 'motivazione del cambio' },
+      data: { phaseId: phase2Id, phaseChangeNote: 'reason for the change' },
     });
     const secondAudit = await prisma.auditLog.findFirst({
       where: { action: 'COLLECTION_ROW_UPDATE', targetId: row.id },
@@ -209,7 +209,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
     expect(secondAudit?.metadata).toMatchObject({
       oldPhaseId: phase1Id,
       newPhaseId: phase2Id,
-      phaseChangeNote: 'motivazione del cambio',
+      phaseChangeNote: 'reason for the change',
     });
 
     // The dedicated `rows.changePhase` procedure has been removed (absorbed by `rows.update`):
@@ -225,7 +225,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
 
     await asAdmin().collectionLayout.rows.update({
       rowId: row.id,
-      data: { phaseId: phase1Id, phaseChangeNote: 'nota orfana: non deve finire in audit' },
+      data: { phaseId: phase1Id, phaseChangeNote: 'orphan note: must not reach the audit' },
     });
 
     const latest = await prisma.auditLog.findFirst({
@@ -237,7 +237,7 @@ describe('rows.update — diff fase consolidato nell\'audit', () => {
   });
 });
 
-describe('rows.bulkAssignPlanningGroup — idempotenza', () => {
+describe('rows.bulkAssignPlanningGroup — idempotency', () => {
   it('reassigning rows already in the target group leaves them untouched (count 0, updatedAt unchanged)', async () => {
     const row = await createBaseRow();
     const before = await prisma.collectionLayoutRow.findUniqueOrThrow({

@@ -107,7 +107,7 @@ describe('Phase Router', () => {
       expect(updated.code).toBe('10');
     });
 
-    it('NOT_FOUND per id inesistente', async () => {
+    it('NOT_FOUND for a nonexistent id', async () => {
       await expect(
         caller(adminContext).update({
           id: '00000000-0000-0000-0000-000000000000',
@@ -140,7 +140,7 @@ describe('Phase Router', () => {
   describe('list — includeInactive', () => {
     /** One active phase and one retired one, to distinguish the two sets. */
     async function seedActiveAndRetired() {
-      const active = await caller(adminContext).create({ value: 'LIST_ATTIVA', label: 'Attiva' });
+      const active = await caller(adminContext).create({ value: 'LIST_ACTIVE', label: 'Active' });
       const retired = await caller(adminContext).create({ value: 'LIST_RITIRATA', label: 'Ritirata' });
       await caller(adminContext).remove({ id: retired.id });
       return { active, retired };
@@ -255,7 +255,7 @@ describe('Phase Router', () => {
     });
 
     it('a cancelled milestone no longer blocks retirement', async () => {
-      const phase = await caller(adminContext).create({ value: 'EVENTO_CANC', label: 'Evento cancellato' });
+      const phase = await caller(adminContext).create({ value: 'EVENT_CANC', label: 'Cancelled event' });
       const { calendarId, planningGroupId } = await seedRowOnPhase(phase.id, new Date());
       await adminContext.prisma.calendarEvent.create({
         data: {
@@ -279,12 +279,12 @@ describe('Phase Router', () => {
     });
 
     it('a phase never used stays retirable', async () => {
-      const phase = await caller(adminContext).create({ value: 'MAI_USATA', label: 'Mai usata' });
+      const phase = await caller(adminContext).create({ value: 'NEVER_USED', label: 'Never used' });
       await expect(caller(adminContext).remove({ id: phase.id })).resolves.toEqual({ success: true });
     });
   });
 
-  describe('accesso basato su permessi', () => {
+  describe('permission-based access', () => {
     type Role = 'admin' | 'editor' | 'viewer';
     const ROLES: Role[] = ['admin', 'editor', 'viewer'];
     const contexts = {} as Record<Role, Context>;
@@ -374,7 +374,7 @@ describe('Phase Router', () => {
       );
     });
 
-    it('listAll (admin-only) nega editor e viewer', async () => {
+    it('listAll (admin-only) denies editor and viewer', async () => {
       await expect(phaseAs('editor').listAll()).rejects.toBeInstanceOf(TRPCError);
       await expect(phaseAs('viewer').listAll()).rejects.toBeInstanceOf(TRPCError);
     });

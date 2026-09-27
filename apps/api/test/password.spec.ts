@@ -85,12 +85,12 @@ describe('validatePassword — every requirement, on and off', () => {
  * the server. The suite could not notice, because every test password contains `!`, which satisfies
  * both classes.
  */
-describe('validatePassword — quali caratteri contano come speciali', () => {
+describe('validatePassword — which characters count as special', () => {
   const accepted = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '-', '=', '[', ']', '{', '}', ';', "'", ':', '"', '\\', '|', ',', '.', '<', '>', '/', '?'];
   const rejected = ['~', '`', '€', ' ', 'à'];
 
   for (const ch of accepted) {
-    it(`accetta ${JSON.stringify(ch)} come carattere speciale`, () => {
+    it(`accepts ${JSON.stringify(ch)} as a special character`, () => {
       expect(validatePassword(`TestPassw0rd${ch}xy`, STRICT).isValid).toBe(true);
     });
   }

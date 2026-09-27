@@ -77,9 +77,9 @@ function toolchainSkew(): string | null {
     const serverMajor = majorOf(serverVersion.replace(/^\D*/, ''));
     return clientMajor === serverMajor
       ? null
-      : `client pg_dump ${clientMajor} vs server PostgreSQL ${serverMajor} — in produzione sono entrambi 16`;
+      : `client pg_dump ${clientMajor} vs server PostgreSQL ${serverMajor} — production runs 16 on both`;
   } catch (err) {
-    return `impossibile determinare le versioni PostgreSQL: ${err instanceof Error ? err.message : String(err)}`;
+    return `cannot determine the PostgreSQL versions: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -91,8 +91,8 @@ const skew = toolchainSkew();
 // (production pairs postgresql16-client with postgres:16-alpine) rather than widening the skip.
 if (skew && process.env.CI) {
   throw new Error(
-    `[backupRestoreAudit] la suite non può saltare in CI: ${skew}. ` +
-    'Allinea il client PostgreSQL del runner alla major del service container.'
+    `[backupRestoreAudit] the suite must not be skipped in CI: ${skew}. ` +
+    'Pin the runner\'s PostgreSQL client to the service container\'s major.'
   );
 }
 if (skew) console.warn(`[backupRestoreAudit] suite saltata: ${skew}`);
@@ -297,7 +297,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     expect(leftover).toMatch(/^_luke_restore_stage_/);
 
     await prisma.auditLog.create({
-      data: { id: 'dopo-archivio', action: 'DOPO_ARCHIVIO', targetType: 'Test', result: 'SUCCESS' },
+      data: { id: 'after-archive', action: 'AFTER_ARCHIVE', targetType: 'Test', result: 'SUCCESS' },
     });
 
     const stage = await stashPreservedTables(prisma);
@@ -305,7 +305,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     await restoreDatabaseFromFile(archiveWithStage, { db: scratchDb });
     expect(await mergeStashedAuditLog(prisma, stage)).toBe(1);
 
-    expect(await prisma.auditLog.count({ where: { id: 'dopo-archivio' } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { id: 'after-archive' } })).toBe(1);
   }, 90_000);
 
   it('discards a leftover staging schema that holds nothing lost', async () => {

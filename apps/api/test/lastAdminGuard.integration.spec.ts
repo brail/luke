@@ -36,7 +36,7 @@ beforeEach(async () => {
   prisma = await setupTestDb();
 });
 
-describe('lastAdminGuard — enforcement reale', () => {
+describe('lastAdminGuard — real enforcement', () => {
   it('an editor with users:update CANNOT deactivate the only remaining admin', async () => {
     const { session: editorSession } = await createTestUser('editor');
     const { user: admin } = await createTestUser('admin');
@@ -107,8 +107,8 @@ describe('lastAdminGuard — enforcement reale', () => {
   });
 
   it(
-    'acquireLastAdminLock serializza due transazioni concorrenti sulla stessa chiave ' +
-      '(pg_advisory_xact_lock, non un mutex applicativo — sopravvive a più repliche API)',
+    'acquireLastAdminLock serialises two concurrent transactions on the same key ' +
+      '(pg_advisory_xact_lock, not an in-process mutex — it holds across several API replicas)',
     async () => {
       // Direct test of mutual exclusion on the real primitive used by all three
       // endpoints (`users.update`/`softDelete`/`hardDelete`, see grep in

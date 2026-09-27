@@ -186,7 +186,7 @@ describe('pricing — permission matrix', () => {
   });
 });
 
-describe('pricing — scoping brand+stagione', () => {
+describe('pricing — brand+season scoping', () => {
   it('calculate rejects a set that belongs to another brand', async () => {
     const a = await createBrandAndSeason();
     const b = await createBrandAndSeason();
@@ -211,7 +211,7 @@ describe('pricing — scoping brand+stagione', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('calculate segnala un set inesistente come NOT_FOUND', async () => {
+  it('calculate reports a nonexistent set as NOT_FOUND', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
     await expect(
@@ -504,7 +504,7 @@ describe('pricing — copyFromPreviousSeason', () => {
   });
 });
 
-describe('pricing — validazione input', () => {
+describe('pricing — input validation', () => {
   it('rejects an optimal margin of 100%', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 
@@ -513,7 +513,7 @@ describe('pricing — validazione input', () => {
       callerAs('admin').parameterSets.create({
         brandId,
         seasonId,
-        data: { ...validInput('Impossibile'), optimalMargin: 100 },
+        data: { ...validInput('Impossible'), optimalMargin: 100 },
       })
     ).rejects.toThrow();
   });

@@ -81,7 +81,7 @@ beforeAll(async () => {
   editorSession = editor.session;
   viewerSession = viewer.session;
 
-  const fixture = await createCalendarFixture(prisma, { prefix: 'MIL', groupName: 'Gruppo principale' });
+  const fixture = await createCalendarFixture(prisma, { prefix: 'MIL', groupName: 'Main group' });
   calendarId = fixture.calendarId;
   planningGroupId = fixture.planningGroupId;
 
@@ -99,7 +99,7 @@ beforeAll(async () => {
   phaseId = phase.id;
 });
 
-describe('rescheduleMilestone — la motivazione', () => {
+describe('rescheduleMilestone — the reason', () => {
   it('is mandatory', async () => {
     const event = await createEvent();
     await expect(
@@ -229,7 +229,7 @@ describe('cancelMilestone — retiring without destroying', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('ri-annullare va in conflitto', async () => {
+  it('cancelling again is a conflict', async () => {
     const event = await createEvent();
     await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'annullata' });
     await expect(
@@ -285,7 +285,7 @@ describe('who can move and cancel', () => {
     ).resolves.toMatchObject({ id: event.id });
   });
 
-  it('un viewer no', async () => {
+  it('a viewer cannot', async () => {
     const event = await createEvent();
     await expectUnauthorized(
       () => asViewer().seasonCalendar.cancelMilestone({ id: event.id, reason: 'tentativo' }),
@@ -293,7 +293,7 @@ describe('who can move and cancel', () => {
     );
   });
 
-  it('un anonimo nemmeno', async () => {
+  it('nor can an anonymous caller', async () => {
     const event = await createEvent();
     const anon = await createAnonymousCaller();
     await expectUnauthorized(

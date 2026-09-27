@@ -148,7 +148,7 @@ beforeAll(async () => {
   ]);
 });
 
-describe('resolveEventAudience — direzione reverse (chi riceve)', () => {
+describe('resolveEventAudience — reverse direction (who receives)', () => {
   it('a member of the team scoped to the event brand is in the audience', async () => {
     const audience = await resolveEventAudienceOne(eventX, prisma);
     expect(audience).toContain(userX);
@@ -212,7 +212,7 @@ describe('resolveEventAudience — direzione reverse (chi riceve)', () => {
   });
 });
 
-describe('listMilestones — direzione forward (cosa vedo)', () => {
+describe('listMilestones — forward direction (what I see)', () => {
   it('a user sees the events of their function in their brand, fallback included', async () => {
     const caller = createCallerWithSession(userXSession);
     const milestones = await caller.seasonCalendar.listMilestones({ seasonId, brandIds: [brandX, brandY] });
@@ -237,7 +237,7 @@ describe('listMilestones — direzione forward (cosa vedo)', () => {
   });
 });
 
-describe('invarianti', () => {
+describe('invariants', () => {
   it('P_access is never violated: every recipient in the audience really has access to the event brand', async () => {
     for (const eventId of [eventX, eventY, eventNoVis]) {
       const audience = await resolveEventAudienceOne(eventId, prisma);
@@ -274,7 +274,7 @@ describe('invarianti', () => {
   });
 });
 
-describe('grantUserVisibility — validazione brand (Piano B)', () => {
+describe('grantUserVisibility — brand validation (plan B)', () => {
   it('rejects the grant to a user without access to the event brand', async () => {
     const caller = createCallerWithSession(adminWithTeamSession);
     await expectToThrow(

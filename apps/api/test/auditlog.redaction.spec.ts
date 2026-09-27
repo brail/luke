@@ -26,7 +26,7 @@ import { collectUnlistedAuditKeys, sanitizeMetadata } from '../src/lib/auditLog'
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(
-      `Atteso un oggetto da sanitizeMetadata, ricevuto ${
+      `Expected an object from sanitizeMetadata, got ${
         Array.isArray(value) ? 'array' : typeof value
       }`
     );
@@ -47,7 +47,7 @@ function at(value: unknown, path: string): unknown {
     if (Array.isArray(acc)) {
       const index = Number(key);
       if (!Number.isInteger(index)) {
-        throw new Error(`Segmento "${key}" non è un indice valido per un array`);
+        throw new Error(`Segment "${key}" is not a valid array index`);
       }
       return acc[index];
     }
@@ -56,8 +56,8 @@ function at(value: unknown, path: string): unknown {
 }
 
 describe('sanitizeMetadata', () => {
-  describe('Campi sensibili (blacklist)', () => {
-    it('dovrebbe redattare password e varianti', () => {
+  describe('Sensitive fields (blacklist)', () => {
+    it('should redact password and its variants', () => {
       const input = {
         username: 'test',
         password: 'secret123',
@@ -77,7 +77,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.newPassword).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare token e varianti', () => {
+    it('should redact token and its variants', () => {
       const input = {
         username: 'test',
         token: 'abc123',
@@ -97,7 +97,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.bearerToken).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare secret e varianti', () => {
+    it('should redact secret and its variants', () => {
       const input = {
         username: 'test',
         secret: 'secret123',
@@ -115,7 +115,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.jwtSecret).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare credential e varianti', () => {
+    it('should redact credential and its variants', () => {
       const input = {
         username: 'test',
         credentials: 'cred123',
@@ -136,8 +136,8 @@ describe('sanitizeMetadata', () => {
     });
   });
 
-  describe('Campi sicuri (whitelist)', () => {
-    it('dovrebbe preservare campi whitelisted', () => {
+  describe('Safe fields (whitelist)', () => {
+    it('should preserve whitelisted fields', () => {
       const input = {
         username: 'testuser',
         email: 'test@test.com',
@@ -163,7 +163,7 @@ describe('sanitizeMetadata', () => {
       const input = {
         oldPhaseId: 'phase-1',
         newPhaseId: 'phase-2',
-        phaseChangeNote: 'Motivazione del cambio',
+        phaseChangeNote: 'Reason for the change',
         oldPlanningGroupId: 'group-1',
         newPlanningGroupId: 'group-2',
       };
@@ -174,8 +174,8 @@ describe('sanitizeMetadata', () => {
     });
   });
 
-  describe('Oggetti nested', () => {
-    it('dovrebbe redattare ricorsivamente oggetti nested', () => {
+  describe('Nested objects', () => {
+    it('should redact nested objects recursively', () => {
       const input = {
         username: 'test',
         user: {
@@ -254,7 +254,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.createdAt).toBe('2026-08-27T10:00:00.000Z');
     });
 
-    it('dovrebbe gestire stringhe vuote', () => {
+    it('should handle empty strings', () => {
       const input = {
         username: '',
         password: '',
@@ -268,7 +268,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.email).toBe('test@test.com');
     });
 
-    it('dovrebbe gestire numeri e booleani', () => {
+    it('should handle numbers and booleans', () => {
       const input = {
         id: 123,
         isActive: true,
@@ -301,7 +301,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitizedStr).toContain('[REDACTED:MAX_DEPTH]');
     });
 
-    it('dovrebbe gestire array molto profondi', () => {
+    it('should handle very deep arrays', () => {
       const input = {
         deepArray: [
           {
@@ -461,7 +461,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.error).toBe('login rejected (password=***');
     });
 
-    it('dovrebbe troncare i messaggi lunghi', () => {
+    it('should truncate long messages', () => {
       const sanitized = asRecord(sanitizeMetadata({ error: 'x'.repeat(500) }));
 
       expect(sanitized.error).toHaveLength(200);

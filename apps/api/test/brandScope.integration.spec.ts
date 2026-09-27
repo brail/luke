@@ -192,7 +192,7 @@ describe('brand scope — pricing', () => {
   });
 });
 
-describe('brand scope — collectionLayout e dashboard', () => {
+describe('brand scope — collectionLayout and dashboard', () => {
   it('collectionLayout.get on an out-of-scope brand → FORBIDDEN', async () => {
     await expectUnauthorized(
       () =>
@@ -249,7 +249,7 @@ describe('brand scope — admin with no team', () => {
   });
 });
 
-describe('brand scope — risorse indirette', () => {
+describe('brand scope — indirect resources', () => {
   /**
    * The procedures that don't name a brand in their input, but reach it by
    * resolving the record: layout → group → row → quotation, plus revisions

@@ -102,7 +102,7 @@ describe('users.forceLocalAccess', () => {
     await expectUnauthorized(() => usersAs('viewer').forceLocalAccess({ id: target.id }));
   });
 
-  it('anonimo → UNAUTHORIZED', async () => {
+  it('anonymous → UNAUTHORIZED', async () => {
     const target = await createLdapUser();
     const anon = createCallerWithSession(null as unknown as UserSession);
     await expectUnauthorized(() => anon.users.forceLocalAccess({ id: target.id }), 'UNAUTHORIZED');

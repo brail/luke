@@ -58,7 +58,7 @@ describe('CollectionRowQuotationDraftSchema', () => {
   });
 });
 
-describe('CollectionLayoutRowInputSchema — quotations e phaseChangeNote', () => {
+describe('CollectionLayoutRowInputSchema — quotations and phaseChangeNote', () => {
   it('accepts the row without quotations/phaseChangeNote (backward compatible with the unbuffered flow)', () => {
     expect(CollectionLayoutRowInputSchema.safeParse(BASE_ROW).success).toBe(true);
   });
@@ -79,15 +79,15 @@ describe('CollectionLayoutRowInputSchema — quotations e phaseChangeNote', () =
     expect(result.success).toBe(false);
   });
 
-  it('accetta phaseChangeNote fino a 500 caratteri', () => {
+  it('accepts a phaseChangeNote of up to 500 characters', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: 'x'.repeat(500) }).success).toBe(true);
   });
 
-  it('rifiuta phaseChangeNote oltre 500 caratteri', () => {
+  it('rejects a phaseChangeNote over 500 characters', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: 'x'.repeat(501) }).success).toBe(false);
   });
 
-  it('accetta phaseChangeNote null/assente (nota facoltativa)', () => {
+  it('accepts a null or missing phaseChangeNote (the note is optional)', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: null }).success).toBe(true);
     expect(CollectionLayoutRowInputSchema.safeParse(BASE_ROW).success).toBe(true);
   });

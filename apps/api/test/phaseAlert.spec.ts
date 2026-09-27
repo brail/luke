@@ -274,7 +274,7 @@ describe('filterApplicableEvents', () => {
     expect(filterApplicableEvents([mine, other], 'pg-1')).toEqual([mine]);
   });
 
-  it('ordina per phase.order crescente', () => {
+  it('orders by ascending phase.order', () => {
     const late = fakeEvent({ id: 'e1', phaseOrder: 2 });
     const early = fakeEvent({ id: 'e2', phaseOrder: 0 });
     const mid = fakeEvent({ id: 'e3', phaseOrder: 1 });

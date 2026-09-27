@@ -60,7 +60,7 @@ export async function createCalendarFixture(
 ): Promise<CalendarFixture> {
   const { prefix = 'CAL', year = 2099, groupName } = options;
   if (prefix.length === 0 || prefix.length > MAX_PREFIX_LENGTH) {
-    throw new Error(`createCalendarFixture: prefix deve essere di 1-${MAX_PREFIX_LENGTH} caratteri, ricevuto "${prefix}"`);
+    throw new Error(`createCalendarFixture: prefix must be 1-${MAX_PREFIX_LENGTH} characters, got "${prefix}"`);
   }
   const uid = randomUUID().substring(0, 6).toUpperCase();
 
@@ -137,7 +137,7 @@ export async function grantBrandAccess(
 ): Promise<BrandAccessGrant> {
   const { brandIds, userIds, label = 'Scope', functionId } = params;
   if (userIds.length === 0) {
-    throw new Error('grantBrandAccess: userIds vuoto — non concederebbe niente a nessuno');
+    throw new Error('grantBrandAccess: empty userIds — it would grant nothing to anyone');
   }
   const uid = randomUUID().substring(0, 6);
 

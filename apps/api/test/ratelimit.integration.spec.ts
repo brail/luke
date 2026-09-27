@@ -271,7 +271,7 @@ describe('Rate-Limit Integration', () => {
   });
 
   describe('rate limit statistics', () => {
-    it('dovrebbe tracciare statistiche correttamente', async () => {
+    it('should track statistics correctly', async () => {
       const caller = await createCallerWithIP('192.168.1.100', null);
 
       const initialStats = rateLimitStore.getStats();

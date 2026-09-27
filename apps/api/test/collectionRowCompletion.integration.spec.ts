@@ -59,7 +59,7 @@ async function createRow(planningGroupId?: string) {
     groupId,
     planningGroupId,
     gender: 'UOMO',
-    line: `Riga ${randomUUID().slice(0, 8)}`,
+    line: `Row ${randomUUID().slice(0, 8)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',
     skuForecast: null,
@@ -105,7 +105,7 @@ beforeAll(async () => {
   groupId = group.id;
 
   const [phase, retiredPhase, finalPhase] = await Promise.all([
-    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Fase attiva', order: 200, isActive: true } }),
+    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Active phase', order: 200, isActive: true } }),
     prisma.phase.create({ data: { value: `CPHR_${uid}`, label: 'Fase ritirata', order: 201, isActive: false } }),
     prisma.phase.create({ data: { value: `CPHF_${uid}`, label: 'Fase finale', order: 202, isActive: true } }),
   ]);
@@ -161,7 +161,7 @@ function createRowAtEarlierPhase() {
   return createRow(skipGroupId);
 }
 
-describe('rows.setCompleted — permessi', () => {
+describe('rows.setCompleted — permissions', () => {
   it('a viewer cannot complete a row', async () => {
     const row = await createRow();
     await expectUnauthorized(
@@ -264,7 +264,7 @@ describe('rows.setCompleted — state and audit', () => {
     ).resolves.toMatchObject({ id: row.id });
   });
 
-  it('la motivazione finisce in chiaro nell\'audit, su conclusione e riapertura', async () => {
+  it('the reason reaches the audit in the clear, on completion and on reopening', async () => {
     // `completionNote` must be among the SAFE_KEYS of `sanitizeMetadata`, otherwise the only data
     // that explains the reason would arrive as `[REDACTED]`.
     const row = await createRow();
@@ -297,7 +297,7 @@ describe('retired phases — stop measuring', () => {
   });
 });
 
-describe('phaseAlert.completionPreview — permessi', () => {
+describe('phaseAlert.completionPreview — permissions', () => {
   it('an anonymous caller cannot read it', async () => {
     const row = await createRow();
     const anon = await createAnonymousCaller();
@@ -322,7 +322,7 @@ describe('phaseAlert.completionPreview — permessi', () => {
   });
 });
 
-describe('rows.setCompleted — fasi saltate', () => {
+describe('rows.setCompleted — skipped phases', () => {
   it('a row already at its last milestone: no forcing needed, no forcing recorded', async () => {
     const row = await createRow(futureDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'ok' });

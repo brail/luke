@@ -105,7 +105,7 @@ describe('LDAP Resilience', () => {
   });
 
   describe('connect', () => {
-    it('propaga i timeout configurati al client ldapts', async () => {
+    it('passes the configured timeouts to the ldapts client', async () => {
       await connectedClient();
 
       // The timeout isn't implemented in the wrapper: it's delegated to the library via
@@ -353,10 +353,10 @@ describe('LDAP Resilience', () => {
     });
   });
 
-  describe('robustezza', () => {
+  describe('robustness', () => {
     it('rejects the promise instead of letting an unhandled error escape', async () => {
       const client = await connectedClient({ maxRetries: 0 });
-      mockClient.bind.mockRejectedValue(new Error('boom inatteso'));
+      mockClient.bind.mockRejectedValue(new Error('unexpected boom'));
 
       // A synchronous throw or an uncaught rejection would crash the
       // Fastify process: every error path must remain a rejection.

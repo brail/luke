@@ -57,8 +57,8 @@ export function getTestDatabaseUrl(): string | null {
   const dbName = new URL(url).pathname.replace(/^\//, '');
   if (!dbName.includes(REQUIRED_DB_NAME_MARKER)) {
     throw new Error(
-      `TEST_DATABASE_URL punta al database "${dbName}", che non contiene "${REQUIRED_DB_NAME_MARKER}". ` +
-        'Rifiuto di eseguire operazioni distruttive su un database che potrebbe non essere di test.'
+      `TEST_DATABASE_URL points at database "${dbName}", whose name lacks "${REQUIRED_DB_NAME_MARKER}". ` +
+        'Refusing to run destructive operations on a database that may not be a test one.'
     );
   }
 
@@ -70,7 +70,7 @@ function requireTestDatabaseUrl(): string {
   const url = getTestDatabaseUrl();
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL non configurato. Avvia il database di test con `pnpm test:db:up`.'
+      'TEST_DATABASE_URL is not set. Start the test database with `pnpm test:db:up`.'
     );
   }
   return url;
@@ -155,9 +155,8 @@ export async function resetTestData(
 
   if (truncatableTables.length === 0) {
     throw new Error(
-      'Nessuna tabella da troncare dopo `ensureTestSchema`: le migration non ' +
-        'hanno prodotto alcuna tabella. Proseguire significherebbe eseguire i ' +
-        'test senza isolamento.'
+      'No table to truncate after `ensureTestSchema`: the migrations produced ' +
+        'none. Going on would run the tests without isolation.'
     );
   }
 

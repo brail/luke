@@ -115,7 +115,7 @@ describe('pg binary flags', () => {
     it(`passes ${binary} only flags it accepts`, () => {
       const supported = supportedFlags(binary);
       if (!supported) {
-        console.warn(`[pgBinaryFlags] ${binary} non installato — controllo saltato`);
+        console.warn(`[pgBinaryFlags] ${binary} not installed — check skipped`);
         return;
       }
 

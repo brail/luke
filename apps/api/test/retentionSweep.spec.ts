@@ -39,7 +39,7 @@ describe('collectIdsOlderThan', () => {
 
   it('stops as soon as a page comes back shorter than the requested take, without an extra empty round', async () => {
     const findPage = vi.fn(async (skip: number) => {
-      if (skip > 0) throw new Error('non dovrebbe pagare un secondo giro');
+      if (skip > 0) throw new Error('should not pay for a second pass');
       // Partial page: 1 element on a take of 10 → end-of-data signal.
       return [{ id: 'only-one' }];
     });

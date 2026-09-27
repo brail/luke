@@ -22,7 +22,7 @@ describe('Security Headers', () => {
   });
 
   describe('Base security headers (all environments)', () => {
-    it('dovrebbe includere X-Content-Type-Options: nosniff', async () => {
+    it('should include X-Content-Type-Options: nosniff', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -30,7 +30,7 @@ describe('Security Headers', () => {
       expect(response.headers['x-content-type-options']).toBe('nosniff');
     });
 
-    it('dovrebbe includere Referrer-Policy: no-referrer', async () => {
+    it('should include Referrer-Policy: no-referrer', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -38,7 +38,7 @@ describe('Security Headers', () => {
       expect(response.headers['referrer-policy']).toBe('no-referrer');
     });
 
-    it('dovrebbe includere X-DNS-Prefetch-Control: off', async () => {
+    it('should include X-DNS-Prefetch-Control: off', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -46,7 +46,7 @@ describe('Security Headers', () => {
       expect(response.headers['x-dns-prefetch-control']).toBe('off');
     });
 
-    it('dovrebbe includere X-Frame-Options: DENY', async () => {
+    it('should include X-Frame-Options: DENY', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -55,8 +55,8 @@ describe('Security Headers', () => {
     });
   });
 
-  describe('Header specifici per ambiente test', () => {
-    it('dovrebbe includere Content-Security-Policy in test', async () => {
+  describe('Test-environment headers', () => {
+    it('should include Content-Security-Policy in test', async () => {
       const response = await request(server.server)
         .get('/api/health')
         .expect(200);
@@ -76,7 +76,7 @@ describe('Security Headers', () => {
     });
   });
 
-  describe('Verifica su route root', () => {
+  describe('Root route check', () => {
     it('should apply the same headers on the root route', async () => {
       const response = await request(server.server).get('/').expect(200);
 
