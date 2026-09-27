@@ -496,9 +496,8 @@ mid-train it cannot even deliver one — see the frozen-target note below.
 
 **Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
-1. `pnpm release:prepare <tag>` — the supported entry point, and the only one:
-   `changelog:bump` writes notes with no version and no check. **You name the
-   release.** The script refreshes the tags and `origin/main` itself and fails
+1. `pnpm release:prepare <tag>` — the supported entry point, and the only one.
+   **You name the release.** The script refreshes the tags and `origin/main` itself and fails
    closed if it cannot, then `check-release-train.ts --validate` proves the name
    (below) before anything is written. It then updates `CHANGELOG.md` over the
    validated range (`--prepend`, never `--bump -o`: overwrites hand-curated

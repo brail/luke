@@ -111,7 +111,6 @@ pnpm dev
 | `pnpm security` | SAST (semgrep) + secrets (gitleaks) + dependencies (osv-scanner) |
 | `pnpm release:prepare <tag>` | The only release entry point: validates the tag and writes the `CHANGELOG.md` section |
 | `pnpm changelog` | Prints the git-cliff output to **stdout** with no range and no version: a generic preview, **not** the notes `release:prepare` will produce |
-| `pnpm changelog:bump` / `changelog:tag` | Rewrite `CHANGELOG.md` with an `## [Unreleased]` section, **with no version and no checks** — never for a release: use `pnpm release:prepare <tag>` |
 
 While `pnpm dev` runs in a worktree, the scripts that rebuild a workspace `dist` (`build`, `typecheck`, `test` and their variants) refuse to start there (`scripts/assert-no-dev.sh`): stop dev, or run them from a second worktree (`git worktree add`).
 
@@ -819,7 +818,7 @@ Tag naming: `vX.Y.Z` (stable) or `vX.Y.Z-rc.N` (release candidate) — SemVer cr
 
 The validator starts from the highest stable tag **reachable from HEAD** and uses the range `base..HEAD` — a set difference on the commit graph, not a walk in date order. It refuses a tag that already exists, a base that is not reachable, a stable hotfix on another line that outranks that base (merge it first), a target other than the open train's frozen one, an rc counter that skips, a range with nothing releasable in it, and **any version below the minimum bump** git-cliff computes for the commits since the base: equal or higher passes, and there is no flag to bypass it.
 
-`changelog:bump` and `changelog:tag` remain installed but **must not be used**: they write an `## [Unreleased]` heading, which the checker refuses anywhere in a release tree. If you ran one by mistake: read `git diff CHANGELOG.md`, remove by hand only the `## [Unreleased]` section the command prepended, keep every change that was already there, and do not run `release:prepare` on top of that output. Never restore the whole file (`checkout`/`restore`/`reset`): that would throw away the pre-existing work too.
+The checker refuses an `## [Unreleased]` heading anywhere in a release tree — what `git-cliff --unreleased` writes when run by hand. If one lands in `CHANGELOG.md`, remove only that section and keep every change already there; never restore the whole file (`checkout`/`restore`/`reset`), which would throw away the pre-existing work too.
 
 ```bash
 pnpm release:prepare v3.0.0-rc.1  # First candidate (does not commit or tag)

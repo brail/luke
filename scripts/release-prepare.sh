@@ -7,7 +7,7 @@
 #
 # Does not commit and does not tag — those stay explicit decisions. It does the
 # mechanical part, which is where mistakes happen, and it is the only supported
-# entry point: `changelog:bump` writes notes with no version and no check.
+# entry point.
 #
 #   pnpm release:prepare v3.0.0-rc.1     the next candidate of a release train
 #   pnpm release:prepare v3.0.0          graduate that train to its stable tag

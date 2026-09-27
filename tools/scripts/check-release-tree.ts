@@ -205,7 +205,7 @@ const CHANGELOG = 'CHANGELOG.md';
 
 /**
  * git-cliff emits `## [Unreleased]` whenever it runs without `--tag`, which is
- * exactly what the `changelog:bump` / `changelog:tag` scripts do. A later
+ * exactly what a bare `git-cliff --unreleased` writes. A later
  * `release:prepare` then prepends `## [X.Y.Z]` **above** it, the section
  * contract is satisfied by the new heading, and the release ships the same
  * entries twice under two headings. A release tree has no unreleased section.

@@ -443,7 +443,7 @@ test('a heading with a malformed suffix is named, not ignored', () => {
 });
 
 test('any [Unreleased] heading refuses the whole tree', () => {
-  // git-cliff writes it whenever `changelog:bump` runs without `--tag`; a later
+  // git-cliff writes it whenever it runs with `--unreleased` and no `--tag`; a later
   // release:prepare prepends a versioned heading above it and the same entries
   // ship twice.
   const repo = repoWith({
@@ -769,7 +769,7 @@ test('this repository at HEAD claims the newest version its CHANGELOG declares',
       `HEAD does not claim ${version}, the newest version its CHANGELOG.md ` +
         `declares.\n  ${err instanceof Error ? err.message : String(err)}\n` +
         '  A hand-edited CHANGELOG.md, a duplicated heading, or a stray ' +
-        '`## [Unreleased]` from `changelog:bump`? Restore it.\n' +
+        '`## [Unreleased]` from `git-cliff --unreleased`? Restore it.\n' +
         '  This is the same check release.yml runs on a tagged tree, so a red ' +
         'here is a release that would be refused.',
       { cause: err }
