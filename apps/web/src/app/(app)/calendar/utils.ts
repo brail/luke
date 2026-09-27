@@ -1,4 +1,5 @@
 import {
+  daysBetween,
   initials,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
@@ -69,10 +70,10 @@ export function parseLocalIsoDate(s: string): Date | null {
   return isValid ? parsed : null;
 }
 
-/** Days from a to b (positive = forward). */
-export function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86_400_000);
-}
+// Core's calendar-date difference. The copy here rounded raw milliseconds, which is a
+// different answer as soon as the two times of day differ (Monday 22:00 to Tuesday 08:00 is 0 in
+// milliseconds, 1 in dates).
+export { daysBetween };
 
 /** Expands a start/end range (inclusive) into its UTC ISO ('YYYY-MM-DD') dates, one per day. */
 export function expandDateRangeToIsoDates(start: Date, end: Date): string[] {
