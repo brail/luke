@@ -806,7 +806,7 @@ Nessuna variabile aggiuntiva richiesta. Il widget Forex usa `api.frankfurter.app
 ## Release
 
 <!-- luke-docs:start:release -->
-The project uses [Conventional Commits](https://www.conventionalcommits.org/) to generate the CHANGELOG automatically through `git-cliff`. Commit messages are validated by the `.husky/commit-msg` hook (commitlint).
+The project uses [Conventional Commits](https://www.conventionalcommits.org/) to generate the CHANGELOG automatically through `git-cliff`. Commit messages are validated by the `.husky/commit-msg` hook (commitlint); it also rejects a `Co-Authored-By:` trailer.
 
 Tag naming: `vX.Y.Z` (stable) or `vX.Y.Z-rc.N` (release candidate) — SemVer criteria: `patch` for a fix or refactor, `minor` for new functionality, `major` for a breaking change to a supported compatibility contract.
 
