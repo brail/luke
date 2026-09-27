@@ -9,7 +9,7 @@ import { hasPermission, type Permission, type Role } from '@luke/core';
  * Returns permission-check helpers derived from the current session's role,
  * following the Resource:Action pattern defined in `@luke/core`.
  *
- * @returns `{ can, canAll, canAny, getUserRole, isAuthenticated, session }`
+ * @returns `{ can, canAll, canAny, isAuthenticated, session }`
  *
  * @example
  * ```typescript
@@ -76,14 +76,6 @@ export function usePermission() {
   );
 
   /**
-   * Returns the current user's role (`admin`, `editor`, or `viewer`),
-   * or `undefined` when not authenticated.
-   */
-  const getUserRole = useCallback((): Role | undefined => {
-    return (session?.user?.role as Role) || undefined;
-  }, [session?.user?.role]);
-
-  /**
    * Returns `true` if the user is currently authenticated (session user is present).
    */
   const isAuthenticated = useCallback((): boolean => {
@@ -97,7 +89,6 @@ export function usePermission() {
     canAny,
 
     // User info
-    getUserRole,
     isAuthenticated,
 
     // Session data

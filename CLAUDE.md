@@ -397,11 +397,12 @@ NAV table details and sync decisions: `docs/nav-integration.md`
 **Delete confirmation**: ALWAYS `<ConfirmDialog>` from `components/ConfirmDialog.tsx` —
 never `globalThis.confirm()`.
 
-**Permission hooks** (`usePermission`):
+**Permission hooks**:
 
-- Boolean props: `canCreate`, `canUpdate`, `canDelete`, `canList` — NO parentheses
-- Function methods: `canEdit()`, `isReadOnly()`, `isAdmin()`, `isAdminOrEditor()`,
-  `can()`, `canAll()`, `canAny()` — YES parentheses
+- `usePermission`: `can()`, `canAll()`, `canAny()`, `isAuthenticated()` — YES parentheses.
+  There is no role helper on purpose: check a permission, never a role name
+- `useBrandPermissions`: boolean props `canList`, `canCreate`, `canUpdate`, `canDelete`,
+  `isAuthenticated` — NO parentheses; methods `canEdit()`, `isReadOnly()`
 
 **Error handling**: `getTrpcErrorMessage(error, entityOverrides?)` from
 `lib/trpcErrorMessages.ts`

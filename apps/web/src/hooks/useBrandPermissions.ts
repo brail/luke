@@ -10,17 +10,16 @@ import { hasPermission, type Role } from '@luke/core';
  * derived from the current session's role. All permission checks are memoized.
  *
  * Boolean flags (use as props — do NOT call as functions):
- * `canList`, `canCreate`, `canUpdate`, `canDelete`, `canHardDelete`, `isAuthenticated`
+ * `canList`, `canCreate`, `canUpdate`, `canDelete`, `isAuthenticated`
  *
  * Method helpers (call with parentheses):
- * `canEdit()`, `isReadOnly()`, `isAdmin()`, `isAdminOrEditor()`
+ * `canEdit()`, `isReadOnly()`
  *
  * @example
  * ```typescript
  * const perms = useBrandPermissions();
  * <button disabled={!perms.canCreate}>New brand</button>
  * <button disabled={!perms.canDelete}>Delete</button>
- * {perms.canHardDelete && <button>Hard delete</button>}
  * ```
  */
 export function useBrandPermissions() {
@@ -34,9 +33,7 @@ export function useBrandPermissions() {
         canCreate: false,
         canUpdate: false,
         canDelete: false,
-        canHardDelete: false,
         isAuthenticated: false,
-        userRole: undefined as Role | undefined,
       };
     }
 
@@ -48,17 +45,12 @@ export function useBrandPermissions() {
     const canUpdate = hasPermission({ role: userRole }, 'brands:update');
     const canDelete = hasPermission({ role: userRole }, 'brands:delete');
 
-    // Hard delete is admin-only
-    const canHardDelete = userRole === 'admin';
-
     return {
       canList,
       canCreate,
       canUpdate,
       canDelete,
-      canHardDelete,
       isAuthenticated: true,
-      userRole,
     };
   }, [session?.user?.role]);
 
@@ -76,21 +68,6 @@ export function useBrandPermissions() {
     return permissions.canList && !permissions.canCreate;
   }, [permissions.canList, permissions.canCreate]);
 
-  /**
-   * Returns `true` if the user has the `admin` role.
-   */
-  const isAdmin = useCallback((): boolean => {
-    return permissions.userRole === 'admin';
-  }, [permissions.userRole]);
-
-  /**
-   * Returns `true` if the user has the `admin` or `editor` role.
-   */
-  const isAdminOrEditor = useCallback((): boolean => {
-    return (
-      permissions.userRole === 'admin' || permissions.userRole === 'editor'
-    );
-  }, [permissions.userRole]);
 
   return {
     // Permission flags
@@ -98,16 +75,12 @@ export function useBrandPermissions() {
     canCreate: permissions.canCreate,
     canUpdate: permissions.canUpdate,
     canDelete: permissions.canDelete,
-    canHardDelete: permissions.canHardDelete,
 
     // Helper methods
     canEdit,
     isReadOnly,
-    isAdmin,
-    isAdminOrEditor,
 
     // User info
     isAuthenticated: permissions.isAuthenticated,
-    userRole: permissions.userRole,
   };
 }
