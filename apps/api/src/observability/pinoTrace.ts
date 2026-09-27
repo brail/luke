@@ -109,8 +109,11 @@ export function pinoTraceMiddleware(
   const span = trace.getActiveSpan();
   const spanContext = span?.spanContext();
 
-  // Extracts or generates x-luke-trace-id (business identifier)
+  // Extracts or generates x-luke-trace-id (business identifier). A generated one is written back
+  // onto the request, so every later reader — the tRPC context (and through it the audit rows) and
+  // the error handler — gets this id instead of minting its own.
   const xTraceId = (req.headers['x-luke-trace-id'] as string) || randomUUID();
+  req.headers['x-luke-trace-id'] = xTraceId;
 
   // Adds fields to the request-scoped logger
   req.log = req.log.child({
