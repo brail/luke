@@ -238,6 +238,7 @@ export function EmptyCollectionLayoutState({
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {seasons.map(s => (
                   <button
+                    type="button"
                     key={s.id}
                     onClick={() => setSelectedFromSeasonId(s.id)}
                     className={cn(

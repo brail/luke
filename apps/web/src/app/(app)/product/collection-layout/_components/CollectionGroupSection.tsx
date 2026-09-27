@@ -127,6 +127,7 @@ function FilterableHeader({
     <TableHead className={className}>
       <div className="flex items-center gap-0.5">
         <button
+          type="button"
           className={cn(
             'flex items-center gap-1 text-xs font-medium transition-colors hover:text-foreground',
             sortActive ? 'text-foreground' : 'text-muted-foreground'
@@ -601,6 +602,7 @@ export function CollectionGroupSection({
       {/* Group header */}
       <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b">
         <button
+          type="button"
           className="flex items-center gap-2 text-left flex-1 min-w-0"
           onClick={() => setIsExpanded(v => !v)}
         >
@@ -689,6 +691,7 @@ export function CollectionGroupSection({
               Nessuna riga in questo gruppo.{' '}
               {canUpdate && (
                 <button
+                  type="button"
                   className="underline underline-offset-2 hover:text-foreground"
                   onClick={() => onAddRow(group.id)}
                 >

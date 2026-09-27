@@ -824,6 +824,12 @@ export default [
     rules: { '@luke/no-bare-client-random-uuid': 'error' },
   },
   {
+    // Native-button backstop: a `<button>` with no `type` is a submit button, so inside a form a
+    // click meant to toggle or open something submits the form instead.
+    files: WEB_SOURCE_FILES,
+    rules: { 'react/button-has-type': 'error' },
+  },
+  {
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
