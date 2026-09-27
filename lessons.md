@@ -800,3 +800,16 @@ until it is explained. A failure that moves between unrelated spec files is a
 shared-state race, not the last commit's bug: reproduce it under the conditions
 CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
 blaming or retrying.
+
+## A rule written only in prose gets broken — `pnpm dev` during a push (2026-09-27)
+
+**What happened.** CLAUDE.md said not to run the pre-push hook while `pnpm dev`
+is up; I pushed three units with dev running anyway. The hook's `typecheck`
+rebuilt every dependency (`rm -rf dist && tsc`) under the dev watchers. Every
+build completed, so `dist` stayed whole — luck, not design.
+
+**Rule.** `scripts/assert-no-dev.sh` now refuses, from the pre-push hook and
+the root emitting scripts, while a dev watcher runs in the same worktree. Before
+what it does not cover (`pnpm --filter <pkg> build`, a bare `turbo run`),
+run `sh scripts/assert-no-dev.sh` yourself. A mechanical rule that exists only in
+prose will be broken; when one is, enforce it rather than restate it.

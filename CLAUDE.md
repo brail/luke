@@ -76,6 +76,10 @@ Do not run emitting builds or tests (`pnpm build`, `pnpm test`, `pnpm typecheck`
 the pre-push hook) in a worktree where `pnpm dev` is running: a build that is
 interrupted between its clean and its emit leaves a partial `dist` that the
 running watch will not restore. Use a second worktree, or stop dev first.
+`scripts/assert-no-dev.sh` enforces it: the pre-push hook and every root script
+that rebuilds a workspace `dist` refuse while a dev watcher runs in the same
+worktree. Before `pnpm --filter <pkg> build` or a bare `turbo run`, which it
+does not cover, run the script yourself.
 
 ## Stack Constraints
 

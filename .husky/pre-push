@@ -39,6 +39,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
+# Everything below reads or rebuilds the workspace `dist`, which must not race
+# the `pnpm dev` watchers (the script says why). Hooks run at the worktree root.
+sh scripts/assert-no-dev.sh || exit 1
+
 # Typecheck before the unit tests. `test` types nothing and `typecheck` alone
 # only covers the build graph: `apps/api/tsconfig.json` includes `src/**` and
 # nothing else, so `test/`, `scripts/` and `prisma/` are reached only by

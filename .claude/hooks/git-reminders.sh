@@ -9,7 +9,7 @@ case "$cmd" in
     echo "" >&2
     echo "⚠️  Pre-commit check:" >&2
     echo "   • /simplify already run? (semantic review)" >&2
-    echo "   • Gates: .husky/pre-commit (gitleaks+semgrep — runs now) · .husky/pre-push (typecheck, tools/, test, pnpm check:drift — runs before push)" >&2
+    echo "   • Gates: .husky/pre-commit (gitleaks+semgrep — runs now) · .husky/pre-push (runs before push)" >&2
     echo "" >&2
     ;;
   *"git tag"*)

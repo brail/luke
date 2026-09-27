@@ -346,6 +346,9 @@ across processes.
   else's run, wait or skip the step — and say so in the output.
 - Never `pnpm test:db:down`: it deletes the volume out from under another
   session's run.
+- A root script that refuses because `pnpm dev` runs in the worktree
+  (`scripts/assert-no-dev.sh`) is SKIPPED with that reason, not FAIL. Never
+  route around it with a bare `turbo run` or `--no-verify`.
 
 ### 7.4 Revert — never with git
 

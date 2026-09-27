@@ -113,6 +113,8 @@ pnpm dev
 | `pnpm changelog` | Prints the git-cliff output to **stdout** with no range and no version: a generic preview, **not** the notes `release:prepare` will produce |
 | `pnpm changelog:bump` / `changelog:tag` | Rewrite `CHANGELOG.md` with an `## [Unreleased]` section, **with no version and no checks** — never for a release: use `pnpm release:prepare <tag>` |
 
+While `pnpm dev` runs in a worktree, the scripts that rebuild a workspace `dist` (`build`, `typecheck`, `test` and their variants) refuse to start there (`scripts/assert-no-dev.sh`): stop dev, or run them from a second worktree (`git worktree add`).
+
 Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
 <!-- luke-docs:end:scripts -->
 
