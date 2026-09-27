@@ -106,11 +106,14 @@ export function generateOAuthUrl(clientId: string, clientSecret: string, redirec
   });
 }
 
+/** Google answered the code exchange without a refresh token: the account has to be authorized again. */
+export class MissingRefreshTokenError extends Error {}
+
 /**
  * Exchanges a Google OAuth 2.0 authorization code for a refresh token and
  * retrieves the authenticated user's email address.
  *
- * @throws {Error} When Google does not return a refresh token (prompt=consent must be enabled)
+ * @throws {MissingRefreshTokenError} When Google does not return a refresh token (prompt=consent must be enabled)
  * @returns The permanent refresh token and the user's Google account email, or `null` when
  *   Google's answer carries none (only the calendar scope is requested)
  */
@@ -123,7 +126,7 @@ export async function exchangeOAuthCode(
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   const { tokens } = await oauth2Client.getToken(code);
   if (!tokens.refresh_token) {
-    throw new Error('Nessun refresh_token ricevuto — assicurati che il prompt=consent sia abilitato');
+    throw new MissingRefreshTokenError('No refresh_token received — prompt=consent must be enabled');
   }
   oauth2Client.setCredentials(tokens);
   const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });

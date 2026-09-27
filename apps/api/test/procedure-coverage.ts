@@ -97,8 +97,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, mail.saveConfig, which only writes AppConfig, auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, nav.sync.run, with runNavSync spied, and nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 18,
+      'saveLdapConfig, mail.saveConfig, which only writes AppConfig, auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, and nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 17,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────

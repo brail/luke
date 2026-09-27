@@ -24,7 +24,8 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 | `createGoogleCalendarClient(config)` | function | Initialises the per-process singleton client from a `CalendarConfig` — Workspace service account, with optional impersonation, or a user OAuth refresh token. Every other Google call in the package resolves the client through it |
 | `testGoogleConnection(config)` | function | Validates a configuration by listing one calendar on a throwaway client, leaving the singleton untouched; returns `{ ok: true }` or `{ ok: false, error }` instead of throwing |
 | `generateOAuthUrl(clientId, clientSecret, redirectUri)` | function | Builds the Google consent URL with `access_type=offline` and `prompt=consent`, so a refresh token is returned every time |
-| `exchangeOAuthCode(clientId, clientSecret, redirectUri, code)` | function | Exchanges the authorization code for a refresh token and the authenticated account's email (`null` when Google's answer has none); throws when Google returns no refresh token |
+| `exchangeOAuthCode(clientId, clientSecret, redirectUri, code)` | function | Exchanges the authorization code for a refresh token and the authenticated account's email (`null` when Google's answer has none); throws `MissingRefreshTokenError` when Google returns no refresh token |
+| `MissingRefreshTokenError` | class | Thrown by `exchangeOAuthCode` when Google's answer carries no refresh token; the account has to be authorized again with consent |
 
 ### Calendars and ACL
 

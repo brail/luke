@@ -1,6 +1,7 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke/calendar';
+import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefreshTokenError } from '@luke/calendar';
 import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
@@ -123,7 +124,10 @@ export const googleRouter = router({
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', true),
       ]);
       if (!clientId || !clientSecret) {
-        throw new Error('Client ID e Client Secret obbligatori prima di avviare OAuth');
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Client ID e Client Secret obbligatori prima di avviare OAuth',
+        });
       }
       const url = generateOAuthUrl(clientId, clientSecret, input.redirectUri);
       return { url };
@@ -145,9 +149,22 @@ export const googleRouter = router({
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', true),
       ]);
       if (!clientId || !clientSecret) {
-        throw new Error('Client ID e Client Secret non configurati');
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Client ID e Client Secret non configurati' });
       }
-      const { refreshToken, userEmail } = await exchangeOAuthCode(clientId, clientSecret, input.redirectUri, input.code);
+      let exchanged: Awaited<ReturnType<typeof exchangeOAuthCode>>;
+      try {
+        exchanged = await exchangeOAuthCode(clientId, clientSecret, input.redirectUri, input.code);
+      } catch (err) {
+        if (err instanceof MissingRefreshTokenError) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Google non ha restituito un refresh token: ricollega l\'account concedendo di nuovo il consenso',
+            cause: err,
+          });
+        }
+        throw err;
+      }
+      const { refreshToken, userEmail } = exchanged;
       await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', refreshToken, true);
       // No address in Google's answer is no stored address, not an empty one: the registry refuses
       // `''`, and that refusal used to come after the new token was stored, skipping the audit and
