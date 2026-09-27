@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { Client } from 'ldapts';
 
-import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema, validateConfigValue, type AppConfigKey } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
@@ -32,20 +32,8 @@ export const ldapRouter = router({
       try {
         const logger = new SecureLogger(ctx.logger);
 
-        // Validate that roleMapping is valid JSON (only if present)
-        if (input.roleMapping && input.roleMapping.trim() !== '') {
-          try {
-            JSON.parse(input.roleMapping);
-          } catch {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Role Mapping deve essere un JSON valido',
-            });
-          }
-        }
-
         // Save each field in AppConfig
-        const configMappings = [
+        const configMappings: { key: AppConfigKey; value: string | undefined; encrypt: boolean }[] = [
           {
             key: 'auth.ldap.enabled',
             value: input.enabled.toString(),
@@ -81,16 +69,30 @@ export const ldapRouter = router({
           { key: 'auth.strategy', value: input.strategy, encrypt: false },
         ];
 
+        // Every value answers to the registry, as through `saveConfig`: checked on the plaintext,
+        // all of them before the transaction writes any. An empty optional field is "not
+        // configured", which is an absent key, never `''` (the reader already defaults absent ones).
+        for (const { key, value } of configMappings) {
+          if (!value) continue;
+          const check = validateConfigValue(key, value);
+          if (!check.success) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `Valore non valido per '${key}': ${check.message}` });
+          }
+        }
+
         await ctx.prisma.$transaction(async (tx) => {
           for (const mapping of configMappings) {
-            if (mapping.value !== undefined) {
-              const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
-              await tx.appConfig.upsert({
-                where: { key: mapping.key },
-                update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
-                create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
-              });
+            if (mapping.value === undefined) continue;
+            if (mapping.value === '') {
+              await tx.appConfig.deleteMany({ where: { key: mapping.key } });
+              continue;
             }
+            const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
+            await tx.appConfig.upsert({
+              where: { key: mapping.key },
+              update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
+              create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
+            });
           }
           if (input.bindPassword != null && input.bindPassword !== '') {
             const encryptedPassword = encryptValue(input.bindPassword);
