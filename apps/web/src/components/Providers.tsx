@@ -33,8 +33,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           {/* One provider for the whole app. Radix groups the open delay per provider:
               `skipDelayDuration` is the window in which moving to another tooltip *of the same
               provider* opens it instantly. With one provider per control that grouping never
-              applied, so every neighbouring button re-waited the full `delayDuration`. */}
-          <TooltipProvider delayDuration={700} skipDelayDuration={300}>
+              applied, so every neighbouring button re-waited the full `delayDuration`.
+              Delay 0 is what the app has always shown: shadcn's sidebar used to mount its own
+              provider with delay 0 around the whole (app) layout, so 700ms applied to public
+              pages only. Tune the delay here, the one place it lives. */}
+          <TooltipProvider delayDuration={0} skipDelayDuration={300}>
             <MaintenanceGate />
             {children}
             <TimezoneUpdateDialog />
