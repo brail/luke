@@ -81,5 +81,16 @@ describe('procedures validate with the core schema', () => {
       });
       expect(updated).toMatchObject({ name: 'SS', description: 'Spring/Summer' });
     });
+
+    it('clears the description with null, keeps it with undefined', async () => {
+      const caller = await createCallerAs('admin');
+      const template = await caller.seasonCalendar.createTemplate({ name: 'FW', description: 'Fall/Winter' });
+
+      const kept = await caller.seasonCalendar.updateTemplate({ id: template.id, name: 'FW26' });
+      expect(kept.description).toBe('Fall/Winter');
+
+      const cleared = await caller.seasonCalendar.updateTemplate({ id: template.id, description: null });
+      expect(cleared.description).toBeNull();
+    });
   });
 });

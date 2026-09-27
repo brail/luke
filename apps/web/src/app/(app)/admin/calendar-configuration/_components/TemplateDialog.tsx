@@ -68,7 +68,8 @@ export function TemplateDialog({ open, onClose, onSaved, template }: Props) {
   const onSubmit = (values: FormValues) => {
     const payload = {
       name: values.name.trim(),
-      description: values.description.trim() || undefined,
+      // `null`, not `undefined`: an emptied field must clear the stored description.
+      description: values.description.trim() || null,
     };
     if (isEdit) {
       updateMutation.mutate({ id: template.id, ...payload });

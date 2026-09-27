@@ -138,7 +138,8 @@ export type MilestoneTemplateItemInput = z.infer<typeof MilestoneTemplateItemBas
 /** Input schema for the header of a milestone template (name and optional description). */
 export const MilestoneTemplateInputSchema = z.object({
   name: z.string().min(1).max(100),
-  description: z.string().max(500, 'Descrizione troppo lunga (max 500 caratteri)').optional(),
+  // `null` clears it on update; `undefined` leaves it as it is.
+  description: z.string().max(500, 'Descrizione troppo lunga (max 500 caratteri)').nullable().optional(),
 });
 export type MilestoneTemplateInput = z.infer<typeof MilestoneTemplateInputSchema>;
 

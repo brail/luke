@@ -723,7 +723,7 @@ export async function deletePlanningGroup(id: string, prisma: PrismaClient) {
  * Creates a new milestone template with no items.
  */
 export async function createTemplate(
-  data: { name: string; description?: string },
+  data: { name: string; description?: string | null },
   prisma: PrismaClient
 ) {
   return prisma.milestoneTemplate.create({ data, include: { items: true } });
@@ -734,7 +734,7 @@ export async function createTemplate(
  */
 export async function updateTemplate(
   id: string,
-  data: { name?: string; description?: string },
+  data: { name?: string; description?: string | null },
   prisma: PrismaClient
 ) {
   return prisma.milestoneTemplate.update({ where: { id }, data, include: { items: true } });
