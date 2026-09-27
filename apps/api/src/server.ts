@@ -20,7 +20,6 @@ import pino from 'pino';
 
 import { IMAGE_BUCKETS, isDevelopment, isProduction } from '@luke/core';
 import {
-  validateMasterKey,
   deriveSecret,
   HKDF_INFO_COOKIE,
 } from '@luke/core/server';
@@ -50,7 +49,7 @@ import {
   pinoTraceMiddleware,
   // pinoSerializers,
 } from './observability/pinoTrace';
-import { runReadinessChecks } from './observability/readiness';
+import { checkBootstrapDependencies, runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storageUpload';
 import { appRouter } from './routers';
 import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
@@ -642,27 +641,12 @@ const start = async () => {
     // Verify env var policy BEFORE everything else
     assertEnvPolicy();
 
-    // Test database connection
-    await prisma.$connect();
-    fastify.log.info('Database connection established');
+    // Database, master key, JWT secret derivation — the tested function, not an inline copy of it.
+    // A failure throws to the catch below, which exits.
+    await checkBootstrapDependencies(prisma, fastify.log);
 
     // Validate critical keys in AppConfig
     await validateCriticalConfig(prisma);
-
-    // Test master key availability
-    if (!validateMasterKey()) {
-      fastify.log.error('Master key unavailable or invalid');
-      process.exit(1);
-    }
-
-    // Test secret derivation
-    try {
-      deriveSecret('api.jwt');
-      fastify.log.info('JWT secrets derived successfully');
-    } catch {
-      fastify.log.error('Failed to derive JWT secrets');
-      process.exit(1);
-    }
 
     // Register plugins and routes in the correct order
     const corsAllowedOrigins = await registerSecurityPlugins(); // CORS must be registered before tRPC
