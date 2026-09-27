@@ -783,3 +783,20 @@ error type and keeps its code; anything else is a server fault. "Only an admin
 sees it" limits the exposure, it does not make the text safe. And a claim that a
 text "already reaches" some surface is a path claim: trace that path for this
 caller, not for a neighbouring one.
+
+## A push is not done until its CI run is green (2026-09-27)
+
+**What happened.** During the backlog-by-severity run on develop-2.2 I checked
+CI after the first few pushes, then stopped. Two pushes (`7a6b875a`,
+`54951a1f`) went red in the unit-test step and the owner found them, not me.
+The failure was a latent race in `getMasterKey`: parallel test workers on a
+fresh home created `~/.luke/secret.key` concurrently, one read it empty, and
+"Unable to derive secret" failed whichever spec happened to import
+`downloadToken` at that moment — so the red looked unrelated to the commits.
+
+**Rule.** After every push, wait for the CI and security runs of that SHA and
+report their result before moving to the next unit; a red run stops the queue
+until it is explained. A failure that moves between unrelated spec files is a
+shared-state race, not the last commit's bug: reproduce it under the conditions
+CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
+blaming or retrying.
