@@ -162,8 +162,35 @@ runs:
         node-version: '24'
 `;
 
+/**
+ * A datamodel whose relations all satisfy P13: `Child.parentId` is led by an `@@index`, and the
+ * one-to-one `Single.parentId` by its own `@unique`.
+ */
+export const PRISMA_SCHEMA = `model Parent {
+  id       String  @id
+  children Child[]
+  single   Single?
+}
+
+model Child {
+  id       String @id
+  name     String
+  parentId String
+  parent   Parent @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@index([parentId])
+}
+
+model Single {
+  id       String @id
+  parentId String @unique
+  parent   Parent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+}
+`;
+
 /** The healthy baseline. Every negative case is a mutation of exactly one file. */
 export const VALID_REPO: RepoFiles = {
+  'packages/db/prisma/fixture.prisma': PRISMA_SCHEMA,
   'package.json': JSON.stringify(ROOT_PACKAGE_JSON, null, 2),
   'apps/api/package.json': JSON.stringify(API_PACKAGE_JSON, null, 2),
   'packages/core/package.json': JSON.stringify(CORE_PACKAGE_JSON, null, 2),

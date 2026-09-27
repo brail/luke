@@ -1,6 +1,7 @@
 /**
  * Deterministic gate for the Luke platform: the invariants that hold the
- * approved technology stack together.
+ * approved technology stack together, plus the Prisma relation invariants of
+ * CLAUDE.md rules 6 and 8 (P13).
  *
  * ## Why it exists
  *
@@ -265,6 +266,9 @@ const PRISMA_GENERATE_SITE = {
   script: 'postinstall',
   must: 'prisma generate',
 } as const;
+
+/** The datamodel: `schema.prisma` for generator and datasource, one file per domain for the models. */
+const PRISMA_SCHEMA_FILES = 'packages/db/prisma/*.prisma';
 
 // ---------------------------------------------------------------------------
 // Reading the repository
@@ -771,6 +775,112 @@ function checkPrismaGeneratedTreeIsCleaned(all: Manifest[], problems: Problem[])
       `must run \`${PRISMA_GENERATED_TREE.clean}\` *before* \`${PRISMA_GENERATED_TREE.generate}\`, ` +
         'not after — after, it deletes the client the build just wrote'
     );
+  }
+}
+
+interface PrismaRelation {
+  file: string;
+  line: number;
+  model: string;
+  columns: string[];
+  hasOnDelete: boolean;
+  indexed: boolean;
+}
+
+/** Column names of a Prisma list (`[a, b(sort: Desc)]` → `['a', 'b']`). */
+function prismaColumns(list: string): string[] {
+  return list
+    .split(',')
+    .map(column => column.trim().replace(/\(.*$/, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Every relation that owns a foreign key (`@relation(fields: [...])`), read textually from the tracked
+ * schema files. `indexed` is true when an `@@index`, `@@unique`, `@@id`, field `@id` or field `@unique`
+ * of the model leads with exactly the foreign-key columns — the only index Postgres can use for it.
+ */
+function prismaRelations(root: string): PrismaRelation[] {
+  const relations: PrismaRelation[] = [];
+  for (const file of tracked(root, PRISMA_SCHEMA_FILES)) {
+    const text = read(root, file);
+    if (text === null) continue;
+    for (const model of text.matchAll(/^model\s+(\w+)\s*\{([\s\S]*?)^\}/gm)) {
+      const [, name, rawBody] = model;
+      // Line comments go first: a `// @@index([x])` or a trailing `// ... @unique` would otherwise
+      // count as an index the database does not have. No string in the schema contains `//`.
+      const body = rawBody.replace(/(^|\s)\/\/.*$/gm, '$1');
+      // The body starts on the `model` line, so line i of the body is that line plus i.
+      const firstLine = text.slice(0, model.index).split('\n').length;
+      const lines = body.split('\n');
+      // Both spellings Prisma accepts: `@@index([a])` and `@@index(fields: [a])`.
+      const keys = [...body.matchAll(/@@(?:index|unique|id)\(\s*(?:fields:\s*)?\[([^\]]*)\]/g)].map(k =>
+        prismaColumns(k[1])
+      );
+      for (const line of lines) {
+        const field = /^\s*(\w+)\s+\S+(.*)$/.exec(line);
+        if (field && /@(?:id|unique)\b/.test(field[2])) keys.push([field[1]]);
+      }
+      lines.forEach((line, i) => {
+        const relation = /@relation\(([^)]*\bfields:\s*\[([^\]]*)\][^)]*)\)/.exec(line);
+        if (!relation) return;
+        const columns = prismaColumns(relation[2]);
+        relations.push({
+          file,
+          line: firstLine + i,
+          model: name,
+          columns,
+          hasOnDelete: /\bonDelete:/.test(relation[1]),
+          indexed: keys.some(key => columns.every((column, j) => key[j] === column)),
+        });
+      });
+    }
+  }
+  return relations;
+}
+
+/**
+ * P13 — every relation declares `onDelete` and has an index its foreign key leads (CLAUDE.md rules 6
+ * and 8).
+ *
+ * Postgres does not index a foreign key on its own. Without one, deleting the parent row scans the
+ * child table to apply Restrict, SetNull or Cascade, and every filter on the column does the same:
+ * sixteen relations had none until the rule was checked. A schema in which no relation is found is
+ * reported, because the loop below would otherwise pass without having read anything.
+ *
+ * Known limits: the column order of a composite foreign key must match the index (every foreign key
+ * is single-column today), and the no-relation guard covers the schema as a whole, not each file —
+ * the relation count in the summary is how a file that stopped parsing shows up.
+ */
+function checkPrismaRelations(root: string, problems: Problem[]): void {
+  const relations = prismaRelations(root);
+  if (relations.length === 0) {
+    problems.push({
+      file: PRISMA_SCHEMA_FILES,
+      line: 1,
+      message:
+        'No Prisma relation found: either the schema moved or the parser stopped matching it, ' +
+        'and the relation rules below would pass without having read anything.',
+    });
+  }
+  for (const { file, line, model, columns, hasOnDelete, indexed } of relations) {
+    const fk = columns.join(', ');
+    if (!hasOnDelete) {
+      problems.push({
+        file,
+        line,
+        message: `${model}: the relation on [${fk}] has no explicit \`onDelete\` (CLAUDE.md rule 6).`,
+      });
+    }
+    if (!indexed) {
+      problems.push({
+        file,
+        line,
+        message:
+          `${model}: no index leads with [${fk}]. Add \`@@index([${fk}])\` (CLAUDE.md rule 8): ` +
+          'without it a delete of the parent row scans this table.',
+      });
+    }
   }
 }
 
@@ -1443,6 +1553,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkWebRuntimeHasNoApiSource(root, problems);
   checkPrismaBootstrap(all, problems);
   checkPrismaGeneratedTreeIsCleaned(all, problems);
+  checkPrismaRelations(root, problems);
   checkDeclarationGraphDependencies(all, problems);
   checkWorkspaceDependencyDirection(all, problems);
 
@@ -1463,8 +1574,9 @@ function main(): void {
   console.log(
     `[platform-integrity] ok — ${manifests(REPO_ROOT).length} manifests, ` +
       `${NODE_PIN_SITES.length} Node pins, ${DEPENDENCY_FAMILIES.length} ` +
-      `dependency families, ${PUBLISHED_CONTRACTS.length} package contracts ` +
-      `and ${Object.keys(WORKSPACE_POLICY).length} workspace roles verified.`
+      `dependency families, ${PUBLISHED_CONTRACTS.length} package contracts, ` +
+      `${Object.keys(WORKSPACE_POLICY).length} workspace roles and ` +
+      `${prismaRelations(REPO_ROOT).length} Prisma relations verified.`
   );
 }
 

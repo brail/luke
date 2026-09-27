@@ -35,6 +35,7 @@ import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import {
+  PRISMA_SCHEMA,
   VALID_REPO,
   withApiManifest,
   withCoreManifest,
@@ -1136,4 +1137,50 @@ test('P10 resolves no edge through a duplicated name, so a dependant of it is re
     })
   );
   assert.ok(problems.some(p => p.file === 'apps/api/package.json' && /no single tracked manifest has that name/.test(p.message)), problems.map(p => `${p.file}: ${p.message}`).join('\n'));
+});
+
+const SCHEMA_FILE = 'packages/db/prisma/fixture.prisma';
+/** The baseline schema with the `@@index` of `Child.parentId` replaced. */
+const withChildIndex = (replacement: string): RepoFiles =>
+  withFile(SCHEMA_FILE, PRISMA_SCHEMA.replace('  @@index([parentId])\n', replacement));
+
+test('P13 fails when a foreign key has no index it leads', () => {
+  expectFailure(withChildIndex(''), /Child: no index leads with \[parentId\]/);
+});
+
+test('P13 fails when the foreign key is only the second column of an index', () => {
+  expectFailure(withChildIndex('  @@index([name, parentId])\n'), /Child: no index leads with \[parentId\]/);
+});
+
+test('P13 accepts a composite unique the foreign key leads', () => {
+  expectClean(withChildIndex('  @@unique([parentId, name])\n'));
+});
+
+test('P13 fails when a relation leaves onDelete implicit', () => {
+  expectFailure(
+    withFile(SCHEMA_FILE, PRISMA_SCHEMA.replace(', onDelete: Cascade)', ')')),
+    /Child: the relation on \[parentId\] has no explicit `onDelete`/
+  );
+});
+
+test('P13 zero-discovery: a tree with no relation reports it rather than passing', () => {
+  expectFailure(withoutFile(SCHEMA_FILE), /No Prisma relation found/);
+});
+
+test('P13 does not read a commented-out index or a trailing comment as an index', () => {
+  expectFailure(withChildIndex('  // @@index([parentId])\n'), /Child: no index leads with \[parentId\]/);
+  expectFailure(
+    withFile(
+      SCHEMA_FILE,
+      PRISMA_SCHEMA.replace('  @@index([parentId])\n', '').replace(
+        '  parentId String\n',
+        '  parentId String // add @unique once deduplicated\n'
+      )
+    ),
+    /Child: no index leads with \[parentId\]/
+  );
+});
+
+test('P13 accepts the named-argument spelling of an index', () => {
+  expectClean(withChildIndex('  @@index(fields: [parentId])\n'));
 });

@@ -158,10 +158,12 @@ does not cover, run the script yourself.
    that is open to every signed-in user by design carries a reasoned
    `// nosemgrep`. Enforced by `.semgrep/rules/procedure-requires-permission.yml`
 6. **Explicit `onDelete` on every Prisma `@relation`** — safe default
-   `onDelete: Restrict`; `Cascade` only if intentional and commented
+   `onDelete: Restrict`; `Cascade` only if intentional and commented.
+   Presence enforced by P13 in `tools/scripts/check-platform-integrity.ts`
 7. **Never duplicate schema/types** — if it exists in `@luke/core`, import it from there
 8. **Indexes on FKs and filtered columns** — every FK and every column used in a
-   WHERE (`isActive`, `vendorId`, ...) → `@@index([field])`
+   WHERE (`isActive`, `vendorId`, ...) → `@@index([field])`. For FKs, an index
+   the FK columns lead is enforced by P13 (same checker); filtered columns are not
 9. **Dependency version alignment** — after every upgrade, same version across
    all `package.json` files in the workspace
 10. **Never `console.*`** — API: `logger.*` (Pino); Web: `debugLog/debugWarn/debugError`
