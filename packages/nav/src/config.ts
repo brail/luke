@@ -36,7 +36,7 @@ export type GetConfigFn = (
 export function sanitizeCompany(company: string): string {
   if (!/^[A-Za-z0-9 _\-.]+$/.test(company)) {
     throw new Error(
-      `NAV company name non valido: "${company}". Solo lettere, numeri, spazi e i caratteri _ - . sono ammessi.`,
+      `Invalid NAV company name: "${company}". Only letters, digits, spaces and the characters _ - . are allowed.`,
     );
   }
   // Bracket-escaping: ] → ]] per evitare injection via SQL Server quoted identifiers

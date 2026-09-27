@@ -86,7 +86,7 @@ describe('AppConfig defaults', () => {
         where: { key: { in: ['storage.s3.accessKey', 'storage.s3.secretKey'] } },
       });
 
-      await expect(loadS3Provider(testPrisma)).rejects.toThrow(/Credenziali S3 non configurate/);
+      await expect(loadS3Provider(testPrisma)).rejects.toThrow(/S3 credentials not configured/);
     });
   });
 });

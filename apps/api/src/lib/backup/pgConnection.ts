@@ -21,7 +21,7 @@ export function parseDatabaseUrl(): PgConnectionParts {
   // the same database — not an application secret that needs to be routed through AppConfig.
   // nosemgrep: luke-no-direct-env
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error('DATABASE_URL non impostata');
+  if (!raw) throw new Error('DATABASE_URL is not set');
   const url = new URL(raw);
   return {
     host: url.hostname,
@@ -88,7 +88,7 @@ export function pgBinaryMajorVersion(binary: 'pg_dump' | 'pg_restore'): Promise<
       // text, and a digit inside it would otherwise be read as a version number.
       const major = code === 0 ? /(\d+)/.exec(stdout.replace(/^\D*\(.*?\)/, '')) : null;
       if (!major) {
-        reject(new Error(`Impossibile determinare la versione di ${binary} (exit ${code}): "${stdout.trim()}"`));
+        reject(new Error(`Cannot determine the version of ${binary} (exit ${code}): "${stdout.trim()}"`));
         return;
       }
       resolve(Number.parseInt(major[1], 10));

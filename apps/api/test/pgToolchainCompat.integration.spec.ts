@@ -58,7 +58,7 @@ describe.skipIf(!TEST_DATABASE_URL)('preflight versioni pg', () => {
 
   it('does not try to guess when the server version is unreadable', async () => {
     vi.spyOn(prisma, '$queryRaw').mockResolvedValueOnce([{ server_version: 'boh' }]);
-    await expect(assertPgToolchainCompatible(prisma)).rejects.toThrow(/Impossibile determinare/);
+    await expect(assertPgToolchainCompatible(prisma)).rejects.toThrow(/Cannot determine/);
     vi.restoreAllMocks();
   });
 });

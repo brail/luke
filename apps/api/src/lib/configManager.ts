@@ -94,7 +94,7 @@ export function decryptValue(encrypted: string): string {
 
   if (parts.length !== 3) {
     throw new Error(
-      'Formato encrypted non valido. Atteso: iv:authTag:ciphertext'
+      'Invalid encrypted format. Expected: iv:authTag:ciphertext'
     );
   }
 
@@ -305,7 +305,7 @@ export async function getTypedConfig<K extends AppConfigKey>(
 ): Promise<AppConfigValue<K>> {
   const raw = await getConfig(prisma, key);
   if (raw === null) {
-    throw new Error(`Configurazione '${key}' non trovata`);
+    throw new Error(`Configuration '${key}' not found`);
   }
   return parseConfigValue(key, raw);
 }

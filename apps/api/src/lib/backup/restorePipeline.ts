@@ -134,7 +134,7 @@ export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise
 
   const serverMajor = Number.parseInt(rows[0]?.server_version ?? '', 10);
   if (!Number.isFinite(serverMajor)) {
-    throw new Error(`Impossibile determinare la versione del server PostgreSQL ("${rows[0]?.server_version}")`);
+    throw new Error(`Cannot determine the PostgreSQL server version ("${rows[0]?.server_version}")`);
   }
   if (clientMajor !== serverMajor) {
     throw new RestorePreconditionError(
@@ -209,10 +209,10 @@ export async function stashPreservedTables(prisma: PrismaClient): Promise<string
 
     if (orphaned > 0n) {
       throw new Error(
-        `Lo schema "${schema_name}" contiene ${orphaned} eventi che il registro attività corrente ` +
-        'non ha: un restore precedente si è interrotto dopo averlo sovrascritto, e quella copia è ' +
-        'l\'unica rimasta. Reinnestala o mettila al sicuro (in alternativa ripristina lo snapshot ' +
-        'di sicurezza pre-restore), poi elimina lo schema a mano prima di riprovare.'
+        `Schema "${schema_name}" holds ${orphaned} events the current audit log lacks: an earlier ` +
+        'restore stopped after overwriting it, and that copy is the only one left. Graft it back ' +
+        'or save it (or restore the pre-restore safety snapshot instead), then drop the schema ' +
+        'by hand before trying again.'
       );
     }
 
@@ -467,7 +467,7 @@ export async function assertDumpReadable(dumpPath: string, logger: BackupLogger)
         { cause: err }
       );
     }
-    throw new Error(`Il dump contenuto nel backup non è leggibile da ${reader}. Dettaglio: ${detail}`, {
+    throw new Error(`The dump in the backup cannot be read by ${reader}. Detail: ${detail}`, {
       cause: err,
     });
   }

@@ -101,7 +101,7 @@ export class LocalFsProvider implements IStorageProvider {
 
     // Pre-check with isPathSafe (blocks ../ and absolute paths)
     if (!isPathSafe(candidateSubpath)) {
-      throw new Error('Path non sicuro: caratteri invalidi o traversal');
+      throw new Error('Unsafe path: invalid characters or traversal');
     }
 
     // Canonicalize base (already done in init, but for safety)
@@ -281,7 +281,7 @@ export class LocalFsProvider implements IStorageProvider {
       }
 
       throw new Error(
-        `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `File upload failed: ${error instanceof Error ? error.message : 'Unknown'}`,
         { cause: error }
       );
     }
@@ -300,7 +300,7 @@ export class LocalFsProvider implements IStorageProvider {
     try {
       const stats = await stat(absPath);
       if (!stats.isFile()) {
-        throw new Error('Path non è un file');
+        throw new Error('Path is not a file');
       }
 
       const stream = createReadStream(absPath);
@@ -316,7 +316,7 @@ export class LocalFsProvider implements IStorageProvider {
       };
     } catch (error) {
       throw new Error(
-        `File non trovato: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `File not found: ${error instanceof Error ? error.message : 'Unknown'}`,
         { cause: error }
       );
     }
@@ -335,7 +335,7 @@ export class LocalFsProvider implements IStorageProvider {
       // If the file doesn't exist, we consider the operation successful (idempotent)
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
-          `Errore cancellazione file: ${error instanceof Error ? error.message : 'Unknown'}`,
+          `File deletion failed: ${error instanceof Error ? error.message : 'Unknown'}`,
           { cause: error }
         );
       }

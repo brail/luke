@@ -26,13 +26,13 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
   it('should block path traversal with ../', () => {
     expect(() => {
       provider['validatePathSafety']('../etc/passwd');
-    }).toThrow('Path non sicuro');
+    }).toThrow('Unsafe path');
   });
 
   it('should block absolute paths', () => {
     expect(() => {
       provider['validatePathSafety']('/etc/passwd');
-    }).toThrow('Path non sicuro');
+    }).toThrow('Unsafe path');
   });
 
   it('should allow valid relative paths', () => {
@@ -80,12 +80,12 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
   it('should block Windows drive letters', () => {
     expect(() => {
       provider['validatePathSafety']('C:\\Windows\\System32');
-    }).toThrow('Path non sicuro');
+    }).toThrow('Unsafe path');
   });
 
   it('should block null bytes', () => {
     expect(() => {
       provider['validatePathSafety']('uploads/test\x00.txt');
-    }).toThrow('Path non sicuro');
+    }).toThrow('Unsafe path');
   });
 });

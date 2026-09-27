@@ -51,7 +51,7 @@ export function newAuditStageSchema(): string {
  */
 export function auditStageIdent(schema: string): Prisma.Sql {
   if (!schema.startsWith(AUDIT_STAGE_PREFIX)) {
-    throw new Error(`Nome di schema di staging non valido: "${schema}"`);
+    throw new Error(`Invalid staging schema name: "${schema}"`);
   }
   // nosemgrep: luke-prisma-raw-fragment -- the name is generated here or read from information_schema on the prefix above, never taken from a caller
   return Prisma.raw(`"${schema}"`);

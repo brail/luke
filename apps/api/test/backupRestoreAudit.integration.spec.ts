@@ -328,7 +328,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     const [survivor] = await prisma.auditLog.findMany({ take: 1, orderBy: { id: 'asc' } });
     await prisma.auditLog.delete({ where: { id: survivor.id } });
 
-    await expect(stashPreservedTables(prisma)).rejects.toThrow(/contiene 1 eventi/);
+    await expect(stashPreservedTables(prisma)).rejects.toThrow(/holds 1 events/);
 
     // The staging schema is still there, intact: refusing must not destroy what it protects.
     await expect(mergeStashedAuditLog(prisma, stage)).resolves.toBe(1);

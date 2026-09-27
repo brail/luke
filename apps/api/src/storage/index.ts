@@ -96,8 +96,8 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
   // same reason; there is no argument for the two credential-bearing integrations to differ.
   if (!accessKey || !secretKey) {
     throw new Error(
-      "Credenziali S3 non configurate: 'storage.s3.accessKey' e 'storage.s3.secretKey' sono " +
-        "obbligatorie quando 'storage.type' è 's3'.",
+      "S3 credentials not configured: 'storage.s3.accessKey' and 'storage.s3.secretKey' are " +
+        "required when 'storage.type' is 's3'.",
     );
   }
 
