@@ -654,6 +654,7 @@ pnpm lint
 - **Ordinamento**: `builtin` → `external` → `internal` → `parent` → `sibling` → `index` → `type`
 - **Rimozione automatica**: `eslint --fix` (`@typescript-eslint/no-unused-vars`)
 - **Boundary client/server**: `@luke/core/server` è importabile in `apps/web` solo da `WEB_SERVER_ENTRYPOINT_IMPORTERS` (`eslint.config.mjs`), in ogni forma di riferimento statico (`@luke/no-restricted-module-references`)
+- **Prisma client boundary**: `@prisma/client` is referenced only inside `packages/db`; everything else imports Prisma from `@luke/db` (same rule)
 - **Formattazione**: Prettier per consistenza
 
 ## Troubleshooting

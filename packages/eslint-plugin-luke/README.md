@@ -31,7 +31,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 
 | Rule | Description |
 |------|-------------|
-| `@luke/no-restricted-module-references` | ESLint's `no-restricted-imports` extended to every static reference form — `import()`, an expression-free template literal, `require()`, `import x = require()`, `import('x').T` — subpaths included. Takes the same `paths: [{ name, message }]` shape. Configured for `@luke/core/server` across `apps/web` outside `WEB_SERVER_ENTRYPOINT_IMPORTERS`; on the real config, five of the seven forms were silent under the core rule |
+| `@luke/no-restricted-module-references` | ESLint's `no-restricted-imports` extended to every static reference form — `import()`, an expression-free template literal, `require()`, `import x = require()`, `import('x').T` — subpaths included. Takes the same `paths: [{ name, message }]` shape. Configured for `@luke/core/server` across `apps/web` outside `WEB_SERVER_ENTRYPOINT_IMPORTERS`, and for `@prisma/client` in every workspace TypeScript file outside `packages/db`; on the real config, five of the seven forms were silent under the core rule |
 
 ### apps/api
 

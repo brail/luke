@@ -91,7 +91,8 @@ does not cover, run the script yourself.
   header `schema.prisma` holding only `generator`/`datasource`; `prisma.config.ts`
   declares `schema: 'prisma'` so the CLI reads the whole directory),
   the migrations, `prisma.config.ts` and the generated client all live there, and
-  every Prisma type is imported from `@luke/db`, never from `@prisma/client`.
+  every Prisma type is imported from `@luke/db`, never from `@prisma/client`
+  (enforced by `@luke/no-restricted-module-references` in `eslint.config.mjs`).
   A client is constructed in exactly one place, `createPrismaClient` — enforced by
   `.semgrep/rules/prisma-client-instantiation.yml`. Run any `prisma` CLI command
   from `packages/db/`; it is the only directory that resolves config, schema and

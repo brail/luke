@@ -390,6 +390,17 @@ const WEB_SERVER_ENTRYPOINT_IMPORTERS = ['apps/web/src/auth.ts'];
  */
 const WEB_BROWSER_ONLY_FILES = ['apps/web/src/**/*.browser.test.tsx'];
 
+/**
+ * Prisma is imported from `@luke/db`, which owns the schema, the generated client and
+ * `createPrismaClient` (CLAUDE.md, "ORM"). A second path to the client is how the test helpers
+ * once ended up on another database without anything flagging it.
+ */
+const PRISMA_CLIENT_RESTRICTION = {
+  name: '@prisma/client',
+  message:
+    'Import Prisma types and the client from `@luke/db`, never from `@prisma/client`: `@luke/db` owns the schema, the generated client and createPrismaClient.',
+};
+
 export default [
   js.configs.recommended,
   ...webFrameworkBlocks,
@@ -452,6 +463,13 @@ export default [
     rules: { '@luke/no-undeclared-workspace-import': ['error', { workspacePackages: WORKSPACE_PACKAGE_NAMES, allowDevDependencies: true }] },
   },
   {
+    // `@prisma/client` outside `@luke/db`. Before the web block below on purpose: a later block
+    // that sets the same rule replaces these options, so that block repeats the entry.
+    files: WORKSPACE_TS_FILES,
+    ignores: ['packages/db/**'],
+    rules: { '@luke/no-restricted-module-references': ['error', { paths: [PRISMA_CLIENT_RESTRICTION] }] },
+  },
+  {
     // `@luke/core/server` may be imported only from the audited paths in
     // `WEB_SERVER_ENTRYPOINT_IMPORTERS` (see that constant for the evidence).
     // A helper elsewhere that genuinely needs it must be enrolled there — that
@@ -475,6 +493,7 @@ export default [
               message:
                 'Server-only: reads the master key and throws when `window` exists. Reference it only from a file listed in WEB_SERVER_ENTRYPOINT_IMPORTERS (eslint.config.mjs) — enrol the file there if it genuinely runs only on the server and needs the master key.',
             },
+            PRISMA_CLIENT_RESTRICTION,
           ],
         },
       ],
