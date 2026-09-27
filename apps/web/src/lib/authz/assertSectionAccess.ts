@@ -12,7 +12,6 @@ import { cache } from 'react';
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
-import { clientIpFrom } from '../../lib/clientIp';
 import { debugWarn } from '../../lib/debug';
 import { createAuthedTrpcClient } from '../../lib/trpcAuth';
 
@@ -28,8 +27,7 @@ const FORCE_LOGOUT_URL = '/api/auth/force-logout' as Route;
 // cache() deduplicates the tRPC call across nested layouts in the same server render.
 const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<string, boolean> | undefined> => {
   try {
-    const clientIp = clientIpFrom(await headers());
-    return await createAuthedTrpcClient(accessToken, clientIp).sectionAccess.getEffectiveForMe.query();
+    return await createAuthedTrpcClient(accessToken, await headers()).sectionAccess.getEffectiveForMe.query();
   } catch (err) {
     if (err instanceof TRPCClientError && err.data?.code === 'UNAUTHORIZED') {
       redirect(FORCE_LOGOUT_URL);

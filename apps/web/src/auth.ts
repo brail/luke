@@ -6,7 +6,7 @@ import { buildTrpcUrl, isProduction } from '@luke/core';
 import { getNextAuthSecret } from '@luke/core/server';
 
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
-import { clientIpFrom, forwardedFor } from './lib/clientIp';
+import { forwardedFor } from './lib/clientIp';
 import { debugError, debugLog } from './lib/debug';
 import { markLoginThrottled } from './lib/loginThrottleContext';
 
@@ -43,18 +43,22 @@ const TOKEN_VERSION_CACHE_TTL = 30_000;
  * or a `{ pendingApproval, needsEmail }` object for accounts awaiting approval.
  * Returns `null` on any error or non-OK response.
  *
- * `clientIp`, when present, is forwarded as `X-Forwarded-For` on this server-to-server call.
+ * The client IP in `incomingHeaders` is forwarded as `X-Forwarded-For` on this server-to-server call.
  * Without it, apps/api sees every login attempt (from every real user) as coming from this
  * same internal call — collapsing the per-IP rate-limit bucket into one shared by the whole
  * app instead of one per attacker (root cause of the Strix RC brute-force finding).
  */
-async function callTRPCAuth(username: string, password: string, clientIp?: string) {
+async function callTRPCAuth(
+  username: string,
+  password: string,
+  incomingHeaders: { get(name: string): string | null }
+) {
   try {
     const response = await fetch(buildTrpcUrl('auth.login'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}),
+        ...forwardedFor(incomingHeaders),
       },
       body: JSON.stringify({
         username,
@@ -115,7 +119,7 @@ export const config = {
           const authResult = await callTRPCAuth(
             credentials.username as string,
             credentials.password as string,
-            clientIpFrom(request.headers)
+            request.headers
           );
 
           // LDAP user awaiting approval: Auth.js does not allow propagating
