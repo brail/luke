@@ -71,6 +71,8 @@ export function VendorTable({
   const { can } = usePermission();
   const canUpdate = can('vendors:update');
   const canDelete = can('vendors:delete');
+  // A permanent delete is admin-only (`*:*`); the resource's `:delete` only archives.
+  const canHardDelete = can('*:*');
   const canRead = can('vendors:read');
 
   if (error) {
@@ -131,16 +133,16 @@ export function VendorTable({
           >
             Disattiva
           </PermissionButton>
-          {canDelete && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onHardDelete(vendor)}
-              className="text-destructive hover:text-destructive"
-            >
-              Elimina
-            </Button>
-          )}
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i fornitori"
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(vendor)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </PermissionButton>
         </>
       );
     }
@@ -156,15 +158,17 @@ export function VendorTable({
         >
           Riattiva
         </PermissionButton>
-        {!vendor.navVendorId && canDelete && (
-          <Button
+        {!vendor.navVendorId && (
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i fornitori"
             variant="outline"
             size="sm"
             onClick={() => onHardDelete(vendor)}
             className="text-destructive hover:text-destructive"
           >
             Elimina
-          </Button>
+          </PermissionButton>
         )}
       </>
     );

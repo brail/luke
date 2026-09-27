@@ -256,12 +256,13 @@ export const vendorsRouter = router({
    * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
    * body and never reaches the audit log — the same as any other malformed field.
    *
-   * @auth {vendors:delete}
+   * @auth {*:*} — admin only. `vendors:delete` is not enough: editor holds `vendors:*`, and a
+   *   permanent delete is not the archive that permission is for.
    * @input {VendorHardDeleteInputSchema} — vendor UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
-    .use(requirePermission('vendors:delete'))
+    .use(requirePermission('*:*'))
     .use(withRateLimit('configMutations'))
     .input(VendorHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {

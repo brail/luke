@@ -56,6 +56,8 @@ export function SeasonTable({
   const { can } = usePermission();
   const canUpdate = can('seasons:update');
   const canDelete = can('seasons:delete');
+  // A permanent delete is admin-only (`*:*`); the resource's `:delete` only archives.
+  const canHardDelete = can('*:*');
   const canRead = can('seasons:read');
 
   if (error) {
@@ -124,16 +126,16 @@ export function SeasonTable({
           >
             Disattiva
           </PermissionButton>
-          {canDelete && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onHardDelete(season)}
-              className="text-destructive hover:text-destructive"
-            >
-              Elimina
-            </Button>
-          )}
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente le stagioni"
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(season)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </PermissionButton>
         </>
       );
     }
@@ -149,15 +151,17 @@ export function SeasonTable({
         >
           Riattiva
         </PermissionButton>
-        {!season.navSeasonId && canDelete && (
-          <Button
+        {!season.navSeasonId && (
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente le stagioni"
             variant="outline"
             size="sm"
             onClick={() => onHardDelete(season)}
             className="text-destructive hover:text-destructive"
           >
             Elimina
-          </Button>
+          </PermissionButton>
         )}
       </>
     );

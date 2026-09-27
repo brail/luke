@@ -727,14 +727,19 @@ describe('Brand Router', () => {
       }
     );
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s can permanently delete a brand',
-      async role => {
-        await expect(
-          brandAs(role).hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
-        ).resolves.toEqual({ success: true });
-      }
-    );
+    it('admin can permanently delete a brand', async () => {
+      await expect(
+        brandAs('admin').hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
+      ).resolves.toEqual({ success: true });
+    });
+
+    // brands:delete archives; a permanent delete takes `*:*`, which editor's `brands:*` is not.
+    it('editor cannot permanently delete a brand', async () => {
+      await expectUnauthorized(
+        () => brandAs('editor').hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE }),
+        'FORBIDDEN'
+      );
+    });
 
     it.each(MUTATIONS)('viewer: %s → FORBIDDEN', async (_label, invoke) => {
       await expectUnauthorized(() => invoke(brandAs('viewer')), 'FORBIDDEN');
