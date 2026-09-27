@@ -12,7 +12,7 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type StorageBucket } from '@luke/core';
+import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
 import { deleteConfig, getConfig, getConfigOrDefault, saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
@@ -39,18 +39,28 @@ const ConfirmUploadSchema = z.object({
 });
 
 /**
+ * The permission each presigned bucket needs: that of the procedure which links its files. Keyed on
+ * the bucket list, so a new presigned bucket does not compile until it has one — and `confirmUpload`
+ * must then check the verified slot's bucket, since its OR gate is exact only while there is one.
+ */
+const PRESIGNED_UPLOAD_PERMISSION = {
+  'company-assets': 'company_profile:update', // company.update links the logo
+} as const satisfies Record<(typeof PRESIGNED_UPLOAD_BUCKETS)[number], Permission>;
+
+/**
  * Storage Router
  */
 export const storageRouter = router({
   /**
    * Requests an upload slot; returns a presigned PUT URL for S3-compatible storage or proxy fallback info for local storage.
    *
-   * @auth {authenticated}
+   * @auth {the bucket's permission in `PRESIGNED_UPLOAD_PERMISSION`}
    * @input {RequestUploadSchema} — bucket (one of `PRESIGNED_UPLOAD_BUCKETS`), contentType, size, originalName.
    * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt, uploadToken }}
    */
   requestUpload: protectedProcedure
     .input(RequestUploadSchema)
+    .use(requirePermission<z.infer<typeof RequestUploadSchema>>(input => PRESIGNED_UPLOAD_PERMISSION[input.bucket]))
     .mutation(async ({ input, ctx }) => {
       const provider = await getStorageProvider(ctx.prisma);
 
@@ -103,11 +113,13 @@ export const storageRouter = router({
   /**
    * Confirms a completed presigned upload and creates the FileObject DB record; only needed for the S3 path.
    *
-   * @auth {authenticated}
+   * @auth {any permission in `PRESIGNED_UPLOAD_PERMISSION`; the slot token binds bucket and user, and
+   *   `requestUpload` signs it only after that bucket's own check}
    * @input {ConfirmUploadSchema} — uploadToken (carries bucket, key and user), contentType, size, originalName, optional checksumSha256.
    * @output {{ fileObjectId: string, publicUrl: string, key: string }}
    */
   confirmUpload: protectedProcedure
+    .use(requirePermission(Object.values(PRESIGNED_UPLOAD_PERMISSION)))
     .input(ConfirmUploadSchema)
     .mutation(async ({ input, ctx }) => {
       // Bucket and key come from the signed token, not from the input. They used to be
