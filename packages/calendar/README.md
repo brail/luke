@@ -56,7 +56,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `generateIcal(milestones, calendarName, prodId?)` | function | Renders an RFC 5545 `.ics` feed from `ICalMilestone[]` — all-day events as plain dates, timed events in UTC, a cancelled milestone as `STATUS:CANCELLED` |
+| `generateIcal(milestones, calendarName, prodId?)` | function | Renders an RFC 5545 `.ics` feed from `ICalMilestone[]` — all-day events as plain dates with the exclusive `DTEND` (the day after the last day), timed events in UTC, a cancelled milestone as `STATUS:CANCELLED` |
 
 ### Types
 

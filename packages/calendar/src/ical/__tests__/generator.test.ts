@@ -83,6 +83,16 @@ describe('generateIcal', () => {
     ).toContain('STATUS:CONFIRMED');
   });
 
+  it('ends an all-day event the day after its last day (DTEND is exclusive)', () => {
+    const ics = generateIcal(
+      [makeMilestone({ allDay: true, startAt: new Date('2099-03-01T00:00:00.000Z'), endAt: new Date('2099-03-03T00:00:00.000Z') })],
+      'Test'
+    );
+
+    expect(ics).toContain('DTSTART;VALUE=DATE:20990301');
+    expect(ics).toContain('DTEND;VALUE=DATE:20990304');
+  });
+
   it('uses startAt as the end when endAt is absent', () => {
     // Without this default `ical-generator` would reject the event: a missing `end`
     // is not allowed by the library.

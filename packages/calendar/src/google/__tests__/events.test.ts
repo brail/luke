@@ -75,7 +75,18 @@ describe('createEvent', () => {
     await createEvent('cal-1', makeInput({ allDay: true }));
 
     expect(insertedBody().start).toEqual({ date: '2099-03-01' });
-    expect(insertedBody().end).toEqual({ date: '2099-03-01' });
+    // Google's end date is exclusive: a one-day event ends the next day.
+    expect(insertedBody().end).toEqual({ date: '2099-03-02' });
+  });
+
+  it('ends a multi-day all-day event the day after its last day', async () => {
+    await createEvent(
+      'cal-1',
+      makeInput({ allDay: true, startAt: new Date('2099-03-01T00:00:00.000Z'), endAt: new Date('2099-03-03T00:00:00.000Z') }),
+    );
+
+    expect(insertedBody().start).toEqual({ date: '2099-03-01' });
+    expect(insertedBody().end).toEqual({ date: '2099-03-04' });
   });
 
   it('uses startAt as the end when endAt is missing', async () => {

@@ -15,13 +15,24 @@ export interface EventInput {
   status: 'confirmed' | 'cancelled';
 }
 
+/**
+ * The day after an all-day value, as a date string. Google's `end.date` (like iCalendar's DTEND)
+ * is exclusive, while Luke's `endAt` is the last day of the event: sending it as is showed every
+ * multi-day event one day short.
+ */
+export function exclusiveEndDate(lastDay: Date): string {
+  return new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate() + 1))
+    .toISOString()
+    .slice(0, 10);
+}
+
 function buildEventBody(input: EventInput): calendar_v3.Schema$Event {
   const start: calendar_v3.Schema$EventDateTime = input.allDay
     ? { date: input.startAt.toISOString().slice(0, 10) }
     : { dateTime: input.startAt.toISOString(), timeZone: 'UTC' };
 
   const end: calendar_v3.Schema$EventDateTime = input.allDay
-    ? { date: (input.endAt ?? input.startAt).toISOString().slice(0, 10) }
+    ? { date: exclusiveEndDate(input.endAt ?? input.startAt) }
     : { dateTime: (input.endAt ?? input.startAt).toISOString(), timeZone: 'UTC' };
 
   return {

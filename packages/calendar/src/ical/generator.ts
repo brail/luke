@@ -38,7 +38,11 @@ export function generateIcal(
   const cal = ical({ name: calendarName, prodId });
 
   for (const m of milestones) {
-    const end = m.endAt ?? m.startAt;
+    const lastDay = m.endAt ?? m.startAt;
+    // DTEND;VALUE=DATE is exclusive: an all-day event ends the day after its last day.
+    const end = m.allDay
+      ? new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate() + 1))
+      : lastDay;
     cal.createEvent({
       id: `luke-milestone-${m.id}@luke.app`,
       summary: m.allDay ? m.title : `[${m.brandCode}] ${m.title}`,
