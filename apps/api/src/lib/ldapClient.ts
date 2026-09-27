@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { Client, InvalidCredentialsError } from 'ldapts';
+import { Client, InvalidCredentialsError, ResultCodeError } from 'ldapts';
 import pino from 'pino';
 
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
@@ -33,7 +33,8 @@ class CircuitBreaker {
   private halfOpenAttempts = 0;
 
   constructor(
-    private config: LdapResilienceConfig,
+    /** Refreshed by `breakerFor` on every login: AppConfig can change between two of them. */
+    public config: LdapResilienceConfig,
     private logger: pino.Logger
   ) {}
 
@@ -60,7 +61,13 @@ class CircuitBreaker {
       this.onSuccess();
       return result;
     } catch (error) {
-      this.onFailure();
+      // The breaker measures availability. A directory result (wrong password, missing entry)
+      // proves it is up: counting it as a failure would let anyone open the circuit, and cut LDAP
+      // for everybody, by typing a few wrong passwords. An error raised locally (a filter the
+      // parser rejects) says nothing either way.
+      const outcome = breakerOutcome(error);
+      if (outcome === 'answered') this.onSuccess();
+      else if (outcome === 'unavailable') this.onFailure();
       throw error;
     }
   }
@@ -106,6 +113,61 @@ class CircuitBreaker {
   }
 }
 
+/** LDAP result codes busy (51) and unavailable (52): the directory answered that it cannot serve. */
+const UNAVAILABLE_RESULT_CODES = new Set([51, 52]);
+
+/** Whether an error message is a network failure or a timeout. */
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return (
+      message.includes('timeout') ||
+      message.includes('econnrefused') ||
+      message.includes('enotfound') ||
+      message.includes('enetunreach') ||
+      message.includes('etimedout') ||
+      message.includes('connection') ||
+      message.includes('network')
+    );
+  }
+  return false;
+}
+
+/**
+ * What an operation's error says about the directory's availability, read from the original
+ * ldapts error (the `cause` of the tRPC error it was converted to): a result code other than
+ * busy/unavailable is an answer, a network failure or busy/unavailable is unavailability, and
+ * anything else was raised locally.
+ */
+function breakerOutcome(error: unknown): 'answered' | 'unavailable' | 'local' {
+  const original = error instanceof TRPCError && error.cause ? error.cause : error;
+  if (original instanceof ResultCodeError) {
+    return UNAVAILABLE_RESULT_CODES.has(original.code) ? 'unavailable' : 'answered';
+  }
+  return isNetworkError(original) ? 'unavailable' : 'local';
+}
+
+/**
+ * One breaker per directory URL for the whole process. `authenticateViaLdap` builds a new client
+ * for every login, so a breaker owned by the client started closed every time and never opened.
+ */
+const breakers = new Map<string, CircuitBreaker>();
+
+function breakerFor(url: string, config: LdapResilienceConfig, logger: pino.Logger): CircuitBreaker {
+  let breaker = breakers.get(url);
+  if (!breaker) {
+    breaker = new CircuitBreaker(config, logger);
+    breakers.set(url, breaker);
+  }
+  breaker.config = config;
+  return breaker;
+}
+
+/** Forgets every breaker's state. Test-only. */
+export function resetLdapBreakers(): void {
+  breakers.clear();
+}
+
 /**
  * LDAP client with transparent retry, timeout, and circuit-breaker protection.
  * All public operations route through the circuit breaker and the retry loop.
@@ -119,7 +181,7 @@ export class ResilientLdapClient {
     private resilienceConfig: LdapResilienceConfig,
     private logger: pino.Logger
   ) {
-    this.breaker = new CircuitBreaker(resilienceConfig, logger);
+    this.breaker = breakerFor(ldapConfig.url, resilienceConfig, logger);
   }
 
   /**
@@ -127,22 +189,21 @@ export class ResilientLdapClient {
    * The TCP connection is established lazily on the first `bind()` call.
    */
   async connect(): Promise<void> {
-    return this.breaker.execute(async () => {
-      return this.retryWithBackoff(async () => {
-        if (this._client) {
-          try {
-            await this._client.unbind();
-          } catch {
-            // ignore
-          }
-        }
+    // No network here — the TCP connection opens on the first bind, which the breaker and the
+    // retry guard. Routing this through the breaker counted a success on every login, resetting
+    // the failure count of the shared breaker before the bind could add to it.
+    if (this._client) {
+      try {
+        await this._client.unbind();
+      } catch {
+        // ignore
+      }
+    }
 
-        this._client = new Client({
-          url: this.ldapConfig.url,
-          timeout: this.resilienceConfig.timeoutMs,
-          connectTimeout: Math.min(this.resilienceConfig.timeoutMs, 5000),
-        });
-      });
+    this._client = new Client({
+      url: this.ldapConfig.url,
+      timeout: this.resilienceConfig.timeoutMs,
+      connectTimeout: Math.min(this.resilienceConfig.timeoutMs, 5000),
     });
   }
 
@@ -167,6 +228,7 @@ export class ResilientLdapClient {
             throw new TRPCError({
               code: 'UNAUTHORIZED',
               message: 'Invalid credentials',
+              cause: error,
             });
           }
           throw error;
@@ -196,16 +258,18 @@ export class ResilientLdapClient {
           return searchEntries;
         } catch (error) {
           // Map search errors
-          if (this.isNetworkError(error)) {
+          if (isNetworkError(error)) {
             throw new TRPCError({
               code: 'BAD_GATEWAY',
               message: 'LDAP search failed due to network error',
+              cause: error,
             });
           }
           if (this.isInvalidFilterError(error)) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: 'Invalid LDAP search filter',
+              cause: error,
             });
           }
           throw error;
@@ -286,10 +350,11 @@ export class ResilientLdapClient {
 
     // Map final error to appropriate TRPCError
     if (lastError) {
-      if (this.isNetworkError(lastError)) {
+      if (isNetworkError(lastError)) {
         throw new TRPCError({
           code: 'SERVICE_UNAVAILABLE',
           message: 'LDAP service unavailable',
+          cause: lastError,
         });
       }
       throw lastError;
@@ -319,25 +384,6 @@ export class ResilientLdapClient {
    */
   private isInvalidCredentialsError(error: unknown): boolean {
     return error instanceof InvalidCredentialsError;
-  }
-
-  /**
-   * Checks whether the error is a network error (retryable)
-   */
-  private isNetworkError(error: unknown): boolean {
-    if (error instanceof Error) {
-      const message = error.message.toLowerCase();
-      return (
-        message.includes('timeout') ||
-        message.includes('econnrefused') ||
-        message.includes('enotfound') ||
-        message.includes('enetunreach') ||
-        message.includes('etimedout') ||
-        message.includes('connection') ||
-        message.includes('network')
-      );
-    }
-    return false;
   }
 
   /**

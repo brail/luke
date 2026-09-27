@@ -9,13 +9,19 @@ Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC proc
 `src/lib/ldapClient.ts` owns the resilient LDAP client; its settings come from
 `auth.ldap.resilience.*` in AppConfig. With the defaults in
 `packages/core/src/schemas/appConfig.ts`, its circuit breaker opens after five
-consecutive failed operations. After a ten-second cooldown, the next operation
+consecutive unavailability failures: network errors, timeouts, and the
+directory's `busy` (51) or `unavailable` (52) results. Any other LDAP result — a
+rejected password, a missing entry — is an answer: it proves the directory is up
+and resets the count, so wrong passwords cannot open the breaker. An error raised
+locally, such as a filter the parser rejects, counts neither way. After a
+ten-second cooldown, the next operation
 enters half-open state. One successful operation closes it by default; a failure
 reopens it. `halfOpenMaxAttempts` counts successful half-open operations toward
 closure, not concurrent requests: it does not limit admission to one request.
 
-The breaker belongs to each `ResilientLdapClient` instance. Authentication creates
-a new client per attempt, so this is not a shared breaker across login requests.
+There is one breaker per directory URL for the whole process, shared by the
+client every login creates. While it is open, a login fails fast and each
+strategy's local fallback applies.
 
 Error handling in the LDAP client is distinct from the authentication strategy:
 

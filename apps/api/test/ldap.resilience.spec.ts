@@ -12,15 +12,22 @@
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-import { ResilientLdapClient } from '../src/lib/ldapClient';
+import { ResilientLdapClient, resetLdapBreakers } from '../src/lib/ldapClient';
 
 import { createSilentLogger } from './helpers/logger';
 
-const { mockClient, MockInvalidCredentialsError, ClientConstructor } =
+const { mockClient, MockResultCodeError, MockInvalidCredentialsError, ClientConstructor } =
   vi.hoisted(() => {
-    class MockInvalidCredentialsError extends Error {
+    /** ldapts's base class for errors carrying an LDAP result code. */
+    class MockResultCodeError extends Error {
+      constructor(public code: number, message: string) {
+        super(message);
+      }
+    }
+
+    class MockInvalidCredentialsError extends MockResultCodeError {
       constructor() {
-        super('Invalid credentials');
+        super(49, 'Invalid credentials');
         this.name = 'InvalidCredentialsError';
       }
     }
@@ -38,12 +45,13 @@ const { mockClient, MockInvalidCredentialsError, ClientConstructor } =
       return mockClient;
     });
 
-    return { mockClient, MockInvalidCredentialsError, ClientConstructor };
+    return { mockClient, MockResultCodeError, MockInvalidCredentialsError, ClientConstructor };
   });
 
 vi.mock('ldapts', () => ({
   Client: ClientConstructor,
   InvalidCredentialsError: MockInvalidCredentialsError,
+  ResultCodeError: MockResultCodeError,
 }));
 
 const ldapConfig = {
@@ -88,6 +96,8 @@ async function connectedClient(
 
 describe('LDAP Resilience', () => {
   beforeEach(() => {
+    // The breaker is per directory URL for the whole process, and every test here uses one URL.
+    resetLdapBreakers();
     vi.clearAllMocks();
     mockClient.bind.mockReset();
     mockClient.search.mockReset();
@@ -214,6 +224,110 @@ describe('LDAP Resilience', () => {
       // Closed again: subsequent calls go through without being rejected
       await expect(client.bind('cn=user', 'secret')).resolves.toBeUndefined();
       expect(mockClient.bind).toHaveBeenCalledTimes(2);
+    });
+
+    it('is shared by every client of the same directory, as one login after another', async () => {
+      // `authenticateViaLdap` builds a new client per login: a per-client breaker never opened.
+      mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold; i++) {
+        const login = await connectedClient({ maxRetries: 0 });
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+
+      const callsBeforeOpen = mockClient.bind.mock.calls.length;
+      const next = await connectedClient({ maxRetries: 0 });
+      const error = await next.bind('cn=user', 'secret').catch(e => e);
+
+      expect(error.code).toBe('SERVICE_UNAVAILABLE');
+      expect(mockClient.bind).toHaveBeenCalledTimes(callsBeforeOpen);
+    });
+
+    it('wrong passwords never open it: the directory answered', async () => {
+      mockClient.bind.mockRejectedValue(new MockInvalidCredentialsError());
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold * 3; i++) {
+        const login = await connectedClient({ maxRetries: 0 });
+        await expect(login.bind('cn=user', 'wrong')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      }
+
+      expect(mockClient.bind).toHaveBeenCalledTimes(resilienceConfig.breakerFailureThreshold * 3);
+    });
+
+    it('other directory results keep it closed too (no such object)', async () => {
+      mockClient.bind.mockRejectedValue(new MockResultCodeError(32, 'No such object'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold * 2; i++) {
+        const login = await connectedClient({ maxRetries: 0 });
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+
+      expect(mockClient.bind).toHaveBeenCalledTimes(resilienceConfig.breakerFailureThreshold * 2);
+    });
+
+    it('a busy directory counts as unavailable and opens it', async () => {
+      mockClient.bind.mockRejectedValue(new MockResultCodeError(51, 'Busy'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold; i++) {
+        const login = await connectedClient({ maxRetries: 0 });
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+
+      const next = await connectedClient({ maxRetries: 0 });
+      await expect(next.bind('cn=user', 'secret')).rejects.toMatchObject({ code: 'SERVICE_UNAVAILABLE' });
+    });
+
+    it('an error raised locally neither opens it nor resets the count', async () => {
+      const login = await connectedClient({ maxRetries: 0 });
+      mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold - 1; i++) {
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+      // ldapts's filter parser throws a plain Error before anything is sent.
+      mockClient.search.mockRejectedValue(new Error('Unbalanced parens in filter string: (uid='));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold; i++) {
+        await login.search('dc=test', { filter: '(uid=' }).catch(() => {});
+      }
+      await login.bind('cn=user', 'secret').catch(() => {});
+
+      await expect(login.bind('cn=user', 'secret')).rejects.toMatchObject({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'LDAP service temporarily unavailable',
+      });
+    });
+
+    it('a directory answer in half-open closes it: a wrong password proves the directory is back', async () => {
+      const login = await connectedClient({ maxRetries: 0 });
+      mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold; i++) {
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+      await new Promise(r => setTimeout(r, resilienceConfig.breakerCooldownMs + 20));
+
+      mockClient.bind.mockRejectedValueOnce(new MockInvalidCredentialsError());
+      await expect(login.bind('cn=user', 'wrong')).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+
+      // Closed now, so one more network failure only starts a new count: the next call still
+      // reaches the directory. Had the answer left it half-open, that failure would reopen it.
+      await login.bind('cn=user', 'secret').catch(() => {});
+      const calls = mockClient.bind.mock.calls.length;
+      await login.bind('cn=user', 'secret').catch(() => {});
+      expect(mockClient.bind).toHaveBeenCalledTimes(calls + 1);
+    });
+
+    it('is kept per directory URL', async () => {
+      mockClient.bind.mockRejectedValue(new Error('connect ECONNREFUSED'));
+      for (let i = 0; i < resilienceConfig.breakerFailureThreshold; i++) {
+        const login = await connectedClient({ maxRetries: 0 });
+        await login.bind('cn=user', 'secret').catch(() => {});
+      }
+
+      mockClient.bind.mockReset();
+      mockClient.bind.mockResolvedValue(undefined);
+      const other = new ResilientLdapClient(
+        { ...ldapConfig, url: 'ldap://other.test.com' },
+        { ...resilienceConfig, maxRetries: 0 },
+        silentLogger,
+      );
+      await other.connect();
+
+      await expect(other.bind('cn=user', 'secret')).resolves.toBeUndefined();
     });
 
     it('failing again in half-open reopens the circuit', async () => {
