@@ -233,7 +233,7 @@ needs.
 | New RBAC rule / section         | The three sources (`sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS`) stay in sync |
 | Mutation                        | `withAuditLog`/`logAudit` produces the expected audit row                                          |
 | Multi-table write                | Transaction rollback leaves state consistent                                                        |
-| New rate-limited route          | Present in `RATE_LIMIT_CONFIG`, `DEFAULTS` and `RateLimitConfigSchema` (see `lessons.md`)           |
+| New rate-limited route          | Present in `RATE_LIMIT_CONFIG`, `RATE_LIMIT_POLICY_DEFAULTS` and `RateLimitConfigSchema` (enforced by `apps/api/test/ratelimit.spec.ts`) |
 | Interactive component           | The behavior, not the markup: what the user can reach, focus and trigger                            |
 | Bug fix                         | The test fails on the pre-fix code — actually verify this, don't assume it                          |
 

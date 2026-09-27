@@ -108,27 +108,7 @@ never add another one that does the same thing (e.g. `pdfkit`). Always check
 
 ## Rate Limiting
 
-### New rate-limited route: update BOTH maps (drift = runtime crash)
-
-Rate limiting lives in two separate maps that must stay in sync:
-
-- `RATE_LIMIT_CONFIG` in `apps/api/src/lib/ratelimit.ts` — consumed by `withRateLimit(routeName)`.
-- `DEFAULTS` in `apps/api/src/lib/rateLimitPolicy.ts` — consumed by `resolveRateLimitPolicy()` (cascade AppConfig → ENV → default).
-
-`withRateLimit('foo')` calls `resolveRateLimitPolicy('foo')`: if `foo` exists
-only in `RATE_LIMIT_CONFIG` but NOT in `DEFAULTS`, `DEFAULTS[routeName]` is
-`undefined` → `def.max` throws
-`Cannot read properties of undefined (reading 'max')` at runtime (not at
-compile time: the cast at the call site hides the drift from TypeScript).
-
-**Rule**: every new rate-limited route must be added in THREE places, kept
-in sync:
-1. `RATE_LIMIT_CONFIG` (`ratelimit.ts`)
-2. `DEFAULTS` (`rateLimitPolicy.ts`) — **mandatory, otherwise a crash**
-3. `RateLimitConfigSchema` (`packages/core/src/schemas/appConfig.ts`) — `.optional()` field, otherwise an AppConfig/ENV override is silently ignored by the resolver.
-
-Real regression: `navSyncTrigger` missing from `DEFAULTS` → NAV vendor sync
-crashing in production (hotfix v1.9.1).
+### New rate-limited route: keep `RATE_LIMIT_CONFIG`, the policy defaults and `RateLimitConfigSchema` in step — enforced by `apps/api/test/ratelimit.spec.ts` ("Rate limit map consistency", unit suite, blocking in CI and pre-push). See `lessons-archive.md`.
 
 ### A `keyBy: 'ip'` bucket on a server-to-server call is silently useless
 

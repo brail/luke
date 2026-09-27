@@ -185,10 +185,9 @@ If no class is promotable: `No promotable class in this run.`
 
 ## 4. lessons.md as a check input
 
-`lessons.md` at the root logs regressions already paid for — including the
-one that caused the v1.9.1 hotfix (drift between `RATE_LIMIT_CONFIG`,
-`DEFAULTS` and `RateLimitConfigSchema`). It must be **read on every run** and
-used as a checklist:
+`lessons.md` at the root logs regressions already paid for — for example a
+`keyBy: 'ip'` bucket on a server-to-server call, silently shared by every
+user. It must be **read on every run** and used as a checklist:
 
 1. Read `lessons.md`.
 2. For every lesson with a mechanically verifiable shape, check that the code
