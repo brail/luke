@@ -13,6 +13,9 @@
  * Unit tier: Zod schemas compared only, no DB.
  */
 
+import { homedir } from 'os';
+import { join } from 'path';
+
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -23,6 +26,8 @@ import {
   s3StorageSaveConfigSchema,
   storageTypeSchema,
 } from '@luke/core';
+
+import { resolveLocalBasePath } from '../src/storage';
 
 describe('storage.type consistency between storageTypeSchema and AppConfigRegistry', () => {
   it('AppConfigRegistry accepts exactly the same values as storageTypeSchema', () => {
@@ -94,5 +99,14 @@ describe('Consistency between the save schemas and the base ones', () => {
     expect(localStorageSaveConfigSchema.safeParse({
       type: 'local', basePath: '/x', maxFileSizeMB: 5000, enableProxy: true,
     }).success).toBe(false);
+  });
+});
+
+describe('resolveLocalBasePath', () => {
+  // The temp-file reaper read the setting raw: with `~/…` it swept a directory named `~`.
+  it('expands a leading ~/ and falls back to ~/.luke/storage', () => {
+    expect(resolveLocalBasePath('~/data/luke')).toBe(join(homedir(), 'data', 'luke'));
+    expect(resolveLocalBasePath('/srv/luke')).toBe('/srv/luke');
+    expect(resolveLocalBasePath(null)).toBe(join(homedir(), '.luke', 'storage'));
   });
 });

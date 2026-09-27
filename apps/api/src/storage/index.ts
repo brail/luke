@@ -37,6 +37,17 @@ let providerInstance: IStorageProvider | null = null;
 let providerInitPromise: Promise<IStorageProvider> | null = null;
 
 /**
+ * The local storage root: the configured `storage.local.basePath` with a leading `~/` expanded,
+ * or `~/.luke/storage` when unset. The fallback is not in `APP_CONFIG_DEFAULTS` because
+ * `homedir()` is not a constant. Every reader of the setting goes through here — the temp-file
+ * reaper used to read it raw, and with a `~/…` value it swept a directory that does not exist.
+ */
+export function resolveLocalBasePath(configured: string | null): string {
+  const raw = configured || join(homedir(), '.luke', 'storage');
+  return raw.startsWith('~/') ? join(homedir(), raw.slice(2)) : raw;
+}
+
+/**
  * Instantiates a LocalFsProvider configured from AppConfig values.
  *
  * @returns Initialized LocalFsProvider ready for use.
@@ -49,12 +60,7 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
     getConfigOrDefault(prisma, 'storage.local.maxFileSizeMB'),
   ]);
 
-  // `basePath` keeps its own fallback: `join(homedir(), …)` is not a constant, so it cannot live
-  // in `APP_CONFIG_DEFAULTS` with the rest.
-  const rawBasePath = rawBasePathConfig || join(homedir(), '.luke', 'storage');
-  const basePath = rawBasePath.startsWith('~/')
-    ? join(homedir(), rawBasePath.slice(2))
-    : rawBasePath;
+  const basePath = resolveLocalBasePath(rawBasePathConfig);
 
   const config = localStorageConfigSchema.parse({ basePath, maxFileSizeMB });
 

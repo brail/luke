@@ -61,7 +61,7 @@ import companyLogoRoutes from './routes/companyLogo.routes';
 import seasonCalendarExportRoutes from './routes/seasonCalendarExport.routes';
 import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { registerSseRoute } from './routes/sse';
-import { getStorageProvider } from './storage';
+import { getStorageProvider, resolveLocalBasePath } from './storage';
 
 /** Pino logger configuration: `warn` in production, `info` + pino-pretty in development. */
 const loggerConfig = {
@@ -461,9 +461,7 @@ function setupTempFileCleanup() {
       // Cleanup of orphan files in .tmp directories (failed/interrupted uploads)
       // Removes files older than 2 hours that weren't promoted to their final path
       try {
-        const basePath =
-          (await getConfig(prisma, 'storage.local.basePath', false)) ||
-          join(require('os').homedir(), '.luke', 'storage');
+        const basePath = resolveLocalBasePath(await getConfig(prisma, 'storage.local.basePath', false));
         const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
         const buckets = await readdir(basePath).catch(() => []);
 
