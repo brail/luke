@@ -1,7 +1,8 @@
 /**
  * Deterministic gate for the Luke platform: the invariants that hold the
  * approved technology stack together, plus the Prisma relation invariants of
- * CLAUDE.md rules 6 and 8 (P13).
+ * CLAUDE.md rules 6 and 8 (P13) and the Turbo own-build rule for emitting
+ * watch tasks (P14).
  *
  * ## Why it exists
  *
@@ -269,6 +270,9 @@ const PRISMA_GENERATE_SITE = {
 
 /** The datamodel: `schema.prisma` for generator and datasource, one file per domain for the models. */
 const PRISMA_SCHEMA_FILES = 'packages/db/prisma/*.prisma';
+
+/** Turbo's task graph. */
+const TURBO_CONFIG = 'turbo.json';
 
 // ---------------------------------------------------------------------------
 // Reading the repository
@@ -881,6 +885,66 @@ function checkPrismaRelations(root: string, problems: Problem[]): void {
           'without it a delete of the parent row scans this table.',
       });
     }
+  }
+}
+
+/** A script that writes build output while it watches: `tsc --watch` without `--noEmit`. */
+function emitsWhileWatching(command: string): boolean {
+  return /\btsc\b/.test(command) && /--watch\b/.test(command) && !/--noEmit\b/.test(command);
+}
+
+/**
+ * P14 — a Turbo task that watches and emits depends on its own `build` (lessons.md, "A Turbo `dev`
+ * task that emits must depend on its own `build`").
+ *
+ * `tsc --watch` writes into the same `dist` that a dependant's build deletes and rewrites: unless the
+ * task waits for its own package's build, two writers race on that tree at cold start, and identical
+ * output hides it. A package entry (`@pkg#task`) replaces the global one instead of merging with it,
+ * so the entry checked is the one Turbo applies. A tree with no such script is reported, because the
+ * loop would otherwise pass without having read anything.
+ */
+function checkEmittingWatchTasks(root: string, all: Manifest[], problems: Problem[]): void {
+  const text = read(root, TURBO_CONFIG);
+  let tasks: Record<string, { dependsOn?: unknown }>;
+  try {
+    tasks = (JSON.parse(text ?? '') as { tasks?: typeof tasks }).tasks ?? {};
+  } catch {
+    problems.push({ file: TURBO_CONFIG, line: 1, message: '`turbo.json` is missing or is not JSON, so the task graph cannot be checked.' });
+    return;
+  }
+  const lineOf = (key: string): number => (text ?? '').split('\n').findIndex(l => l.includes(`"${key}"`)) + 1 || 1;
+
+  let emitting = 0;
+  for (const { file, json } of all) {
+    const scripts = (json.scripts ?? {}) as Record<string, unknown>;
+    for (const [script, command] of Object.entries(scripts)) {
+      if (typeof command !== 'string' || !emitsWhileWatching(command)) continue;
+      const own = `${String(json.name)}#${script}`;
+      const key = own in tasks ? own : script;
+      const task = tasks[key];
+      if (task === undefined) continue; // Turbo never runs it, so it races with nothing.
+      emitting++;
+      const dependsOn = Array.isArray(task.dependsOn) ? task.dependsOn : [];
+      if (!dependsOn.includes('build')) {
+        problems.push({
+          file: TURBO_CONFIG,
+          line: lineOf(key),
+          message:
+            `\`${key}\` runs \`${script}\` of ${file} (\`${command}\`), which emits while it watches, ` +
+            'but does not depend on its own `build`: at cold start it writes into the `dist` a ' +
+            "dependant's build is deleting and rewriting. Add \"build\" to its dependsOn.",
+        });
+      }
+    }
+  }
+  if (emitting === 0) {
+    problems.push({
+      file: TURBO_CONFIG,
+      line: 1,
+      message:
+        'No Turbo task runs a `tsc --watch` that emits: either the dev scripts changed shape or the ' +
+        'match stopped finding them, and this check would pass without having read anything.',
+    });
   }
 }
 
@@ -1554,6 +1618,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkPrismaBootstrap(all, problems);
   checkPrismaGeneratedTreeIsCleaned(all, problems);
   checkPrismaRelations(root, problems);
+  checkEmittingWatchTasks(root, all, problems);
   checkDeclarationGraphDependencies(all, problems);
   checkWorkspaceDependencyDirection(all, problems);
 

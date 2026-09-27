@@ -715,6 +715,12 @@ producing identical files leave no visible damage.
   package's build; one that emits (`tsc --watch`, `dev:types`) may not. Keep
   the two apart when reasoning about the graph.
 
+**Enforced since 2026-09-27** for the own-build dependency: P14 in
+`tools/scripts/check-platform-integrity.ts` fails a Turbo task that runs an
+emitting `tsc --watch` without `build` in the `dependsOn` Turbo applies. The
+dry-run and timestamp advice above stays: ordering beyond that one edge is not
+checked.
+
 ## An inline `$ARGUMENTS` renders into its sentence — bind it alone, and a writing skill fails closed on a missing mode (2026-09-07)
 
 `/luke-docs readme` was observed also running ADR work and rewriting

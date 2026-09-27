@@ -86,7 +86,18 @@ const CORE_PACKAGE_JSON = {
     './package.json': './package.json',
   },
   files: ['dist'],
+  // P14: `dev` emits while it watches, `dev:check` does not.
+  scripts: { dev: 'tsc --watch --preserveWatchOutput', 'dev:check': 'tsc --watch --noEmit' },
   devDependencies: { typescript: '^6.0.3' },
+};
+
+/** The task graph P14 reads: the emitting `dev` waits for its own build, `dev:check` need not. */
+export const TURBO_JSON = {
+  tasks: {
+    build: { dependsOn: ['^build'], outputs: ['dist/**'] },
+    dev: { dependsOn: ['^build', 'build'], cache: false, persistent: true },
+    'dev:check': { dependsOn: ['^build'], cache: false, persistent: true },
+  },
 };
 
 const WEB_PACKAGE_JSON = {
@@ -191,6 +202,7 @@ model Single {
 /** The healthy baseline. Every negative case is a mutation of exactly one file. */
 export const VALID_REPO: RepoFiles = {
   'packages/db/prisma/fixture.prisma': PRISMA_SCHEMA,
+  'turbo.json': JSON.stringify(TURBO_JSON, null, 2),
   'package.json': JSON.stringify(ROOT_PACKAGE_JSON, null, 2),
   'apps/api/package.json': JSON.stringify(API_PACKAGE_JSON, null, 2),
   'packages/core/package.json': JSON.stringify(CORE_PACKAGE_JSON, null, 2),

@@ -36,6 +36,7 @@ import { after, test } from 'node:test';
 
 import {
   PRISMA_SCHEMA,
+  TURBO_JSON,
   VALID_REPO,
   withApiManifest,
   withCoreManifest,
@@ -1183,4 +1184,37 @@ test('P13 does not read a commented-out index or a trailing comment as an index'
 
 test('P13 accepts the named-argument spelling of an index', () => {
   expectClean(withChildIndex('  @@index(fields: [parentId])\n'));
+});
+
+/** The baseline task graph with `edit` applied to a deep copy. */
+const withTurbo = (edit: (tasks: Record<string, { dependsOn?: string[] }>) => void): RepoFiles => {
+  const json = JSON.parse(JSON.stringify(TURBO_JSON)) as typeof TURBO_JSON;
+  edit(json.tasks as Record<string, { dependsOn?: string[] }>);
+  return withFile('turbo.json', JSON.stringify(json, null, 2));
+};
+
+test('P14 fails when an emitting watch task does not wait for its own build', () => {
+  expectFailure(
+    withTurbo(tasks => { tasks.dev.dependsOn = ['^build']; }),
+    /`dev` runs `dev` of packages\/core\/package\.json .* does not depend on its own `build`/
+  );
+});
+
+test('P14 checks the package entry, which replaces the global one', () => {
+  expectFailure(
+    withTurbo(tasks => { tasks['@fixture/core#dev'] = { dependsOn: ['^build'] }; }),
+    /`@fixture\/core#dev` runs `dev`/
+  );
+});
+
+test('P14 leaves a watch that emits nothing alone', () => {
+  // `dev:check` runs `tsc --watch --noEmit` and the baseline gives it no own-build dependency.
+  expectClean(VALID_REPO);
+});
+
+test('P14 zero-discovery: no emitting watch script reports it rather than passing', () => {
+  expectFailure(
+    withCoreManifest(json => { json.scripts = { 'dev:check': 'tsc --watch --noEmit' }; }),
+    /No Turbo task runs a `tsc --watch` that emits/
+  );
 });
