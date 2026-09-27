@@ -327,7 +327,7 @@ export async function resolveMerchPlanRowBrandAccess(
 ) {
   const row = await ctx.prisma.merchandisingPlanRow.findUnique({
     where: { id: rowId },
-    select: { id: true, planId: true, plan: { select: { brandId: true } } },
+    select: { id: true, planId: true, plan: { select: { brandId: true, seasonId: true } } },
   });
   if (!row) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
@@ -341,7 +341,7 @@ export async function resolveMerchPlanRowBrandAccess(
 export async function resolveMerchPlanBrandAccess(ctx: BrandScopeCtx, planId: string) {
   const plan = await ctx.prisma.merchandisingPlan.findUnique({
     where: { id: planId },
-    select: { id: true, brandId: true },
+    select: { id: true, brandId: true, seasonId: true },
   });
   if (!plan) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Piano non trovato' });

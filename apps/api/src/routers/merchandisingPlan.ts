@@ -12,6 +12,7 @@
  *  - merchandisingPlan.assignUser
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
@@ -21,6 +22,7 @@ import {
   MERCHANDISING_PLAN_STATUS,
   partialWithoutDefaults,
 } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createNotification } from '../lib/notifications';
@@ -35,6 +37,23 @@ import {
   resolveMerchPlanRowBrandAccess,
   resolveMerchSpecsheetBrandAccess,
 } from '../services/brandScope.service';
+import { getUserAllowedIds } from '../services/context.service';
+
+/** A row's parameter set must be one of its plan's brand and season, or none. */
+async function assertParameterSetOfPlan(
+  prisma: PrismaClient,
+  parameterSetId: string | null | undefined,
+  plan: { brandId: string; seasonId: string },
+): Promise<void> {
+  if (!parameterSetId) return;
+  const set = await prisma.pricingParameterSet.findFirst({
+    where: { id: parameterSetId, brandId: plan.brandId, seasonId: plan.seasonId },
+    select: { id: true },
+  });
+  if (!set) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Set di parametri non valido per questo piano' });
+  }
+}
 
 export const merchandisingPlanRouter = router({
   /**
@@ -159,7 +178,8 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MerchandisingPlanRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      await resolveMerchPlanBrandAccess(ctx, input.planId);
+      const plan = await resolveMerchPlanBrandAccess(ctx, input.planId);
+      await assertParameterSetOfPlan(ctx.prisma, input.pricingParameterSetId, plan);
 
       const result = await ctx.prisma.merchandisingPlanRow.create({
         data: {
@@ -190,7 +210,6 @@ export const merchandisingPlanRouter = router({
           wholesaleEu: input.wholesaleEu ?? null,
           pricingNotes: input.pricingNotes ?? null,
           generalNotes: input.generalNotes ?? null,
-          assignedUserId: input.assignedUserId ?? null,
         },
       });
       await logAudit(ctx, {
@@ -220,7 +239,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await resolveMerchPlanRowBrandAccess(ctx, input.id);
+      const row = await resolveMerchPlanRowBrandAccess(ctx, input.id);
+      await assertParameterSetOfPlan(ctx.prisma, input.data.pricingParameterSetId, row.plan);
 
       const result = await ctx.prisma.merchandisingPlanRow.update({
         where: { id: input.id },
@@ -497,7 +517,22 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+      const row = await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
+      // The assignee must be able to open the row they are notified about.
+      if (input.userId) {
+        const assignee = await ctx.prisma.user.findFirst({
+          where: { id: input.userId, isActive: true },
+          select: { id: true, role: true },
+        });
+        if (!assignee) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+        }
+        const { brandIds } = await getUserAllowedIds(assignee.id, ctx.prisma, assignee.role);
+        if (brandIds !== null && !brandIds.includes(row.plan.brandId)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: "L'utente non ha accesso a questo brand" });
+        }
+      }
 
       const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
         where: { id: input.rowId },

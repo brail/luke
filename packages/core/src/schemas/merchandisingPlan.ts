@@ -66,7 +66,8 @@ export const MerchandisingPlanRowInputSchema = z.object({
   // Optional — notes & assignment
   pricingNotes: z.string().optional().nullable(),
   generalNotes: z.string().optional().nullable(),
-  assignedUserId: z.string().uuid().optional().nullable(),
+  // No `assignedUserId`: a row is assigned only through `merchandisingPlan.assignUser`, which
+  // checks the assignee and notifies them.
 });
 export type MerchandisingPlanRowInput = z.infer<
   typeof MerchandisingPlanRowInputSchema

@@ -51,7 +51,6 @@ type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 // Form schema (omits planId — it is passed in from outside)
 const FormSchema = MerchandisingPlanRowInputSchema.omit({ planId: true }).extend({
   pricingParameterSetId: z.string().optional().nullable(),
-  assignedUserId: z.string().optional().nullable(),
 });
 type FormValues = z.infer<typeof FormSchema>;
 
@@ -145,7 +144,6 @@ export function MerchandisingRowDialog({
       wholesaleEu: null,
       pricingNotes: '',
       generalNotes: '',
-      assignedUserId: null,
     },
   });
 
@@ -179,7 +177,6 @@ export function MerchandisingRowDialog({
         wholesaleEu: row.wholesaleEu ? Number(row.wholesaleEu) : null,
         pricingNotes: row.pricingNotes ?? '',
         generalNotes: row.generalNotes ?? '',
-        assignedUserId: row.assignedUserId ?? null,
       });
     } else if (mode === 'create') {
       form.reset();
