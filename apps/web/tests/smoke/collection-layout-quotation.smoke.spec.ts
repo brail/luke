@@ -34,7 +34,7 @@ test.describe('smoke: collection layout — Enter on a quotation field', () => {
       await expectNoErrorBoundary(page);
       test.skip(
         true,
-        'Nessun collection layout per il contesto corrente: nessuna riga su cui aprire il drawer.'
+        'No collection layout for the current context: no row to open the drawer on.'
       );
     }
 
@@ -44,7 +44,7 @@ test.describe('smoke: collection layout — Enter on a quotation field', () => {
       .first();
     if ((await row.count()) === 0) {
       await expectNoErrorBoundary(page);
-      test.skip(true, 'Nessuna riga disponibile nel layout corrente.');
+      test.skip(true, 'No row available in the current layout.');
     }
     await expect(row).toBeVisible();
 
@@ -55,7 +55,7 @@ test.describe('smoke: collection layout — Enter on a quotation field', () => {
     const addQuotation = dialog.getByRole('button', { name: 'Aggiungi quotazione' });
     if ((await addQuotation.count()) === 0) {
       await expectNoErrorBoundary(page);
-      test.skip(true, 'Utente senza permesso di scrittura sul collection layout: impossibile riprodurre.');
+      test.skip(true, 'The user cannot write the collection layout: nothing to reproduce.');
     }
 
     const quotationBody = dialog.locator('table tbody');
@@ -74,7 +74,7 @@ test.describe('smoke: collection layout — Enter on a quotation field', () => {
       await quotationRow.getByRole('button').last().click();
       await expect(quotationBody.locator('tr')).toHaveCount(initialQuotations);
       await expectNoErrorBoundary(page);
-      test.skip(true, 'Nessun set parametri pricing configurato: impossibile selezionare la quotazione.');
+      test.skip(true, 'No pricing parameter set configured: the quotation cannot be selected.');
     }
     await paramOption.click();
 

@@ -20,9 +20,9 @@ setup('autentica come admin', async ({ page }) => {
 
   await expect(
     page,
-    `Login fallito per l'utente "${SMOKE_USERNAME}". ` +
-      'Verifica che il seed sia stato eseguito e che E2E_USERNAME/E2E_PASSWORD ' +
-      'corrispondano a un utente attivo.'
+    `Login failed for user "${SMOKE_USERNAME}". ` +
+      'Check that the seed ran and that E2E_USERNAME/E2E_PASSWORD ' +
+      'match an active user.'
   ).toHaveURL(/\/dashboard$/);
 
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();

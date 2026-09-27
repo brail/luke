@@ -75,12 +75,12 @@ describe('the verdict follows the policy', () => {
   });
 });
 
-describe('quali caratteri contano come speciali', () => {
+describe('which characters count as special', () => {
   const withChar = (ch: string) =>
     evaluatePassword(`TestPassw0rd${ch}x`, undefined, FALLBACK_PASSWORD_POLICY).isValid;
 
   for (const ch of ['!', '@', '#', '\\', '|', '?']) {
-    it(`accetta ${JSON.stringify(ch)}`, () => expect(withChar(ch)).toBe(true));
+    it(`accepts ${JSON.stringify(ch)}`, () => expect(withChar(ch)).toBe(true));
   }
 
   for (const ch of ['~', '`', '€', ' ']) {

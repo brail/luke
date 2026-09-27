@@ -9,7 +9,7 @@ import { login, expectNoErrorBoundary } from '../support/smoke';
  */
 test.use({ storageState: { cookies: [], origins: [] } });
 
-test.describe('smoke: autenticazione', () => {
+test.describe('smoke: authentication', () => {
   test('valid credentials lead to the dashboard', async ({ page }) => {
     await login(page);
 
@@ -21,7 +21,7 @@ test.describe('smoke: autenticazione', () => {
   test('wrong credentials show an error and do not authenticate', async ({
     page,
   }) => {
-    await login(page, 'utente-inesistente-smoke', 'password-sbagliata');
+    await login(page, 'no-such-user-smoke', 'wrong-password');
 
     await expect(page.getByText('Credenziali non valide')).toBeVisible();
     // The check that matters: the error is visible *and* the session did not start.

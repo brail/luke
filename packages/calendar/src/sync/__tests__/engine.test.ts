@@ -103,7 +103,7 @@ beforeEach(() => {
   google.enforceDomainReadOnly.mockResolvedValue(undefined);
 });
 
-describe('syncMilestone — creazione', () => {
+describe('syncMilestone — creation', () => {
   it('creates the event and saves the mapping when none exists', async () => {
     const ctx = makeContext();
     const milestone = makeMilestone();
@@ -141,7 +141,7 @@ describe('syncMilestone — creazione', () => {
     expect(ctx.upsertMapping).toHaveBeenCalledTimes(2);
   });
 
-  it('mappa cancelled sullo status Google', async () => {
+  it('maps cancelled onto the Google status', async () => {
     await syncMilestone(makeMilestone({ cancelled: true }), makeContext());
 
     expect(google.createEvent).toHaveBeenCalledWith(
@@ -151,7 +151,7 @@ describe('syncMilestone — creazione', () => {
   });
 });
 
-describe('syncMilestone — aggiornamento e skip', () => {
+describe('syncMilestone — update and skip', () => {
   it('skips when the hash matches', async () => {
     const milestone = makeMilestone();
     const ctx = makeContext([
@@ -190,7 +190,7 @@ describe('syncMilestone — aggiornamento e skip', () => {
   });
 });
 
-describe('syncMilestone — rimozione', () => {
+describe('syncMilestone — removal', () => {
   it('deletes event and mapping when publishExternally becomes false', async () => {
     const ctx = makeContext([makeMapping()]);
 

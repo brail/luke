@@ -30,7 +30,7 @@ describe('MandatoryReasonSchema', () => {
     if (result.success) expect(result.data).toBe('motivo');
   });
 
-  it('accetta esattamente 500 caratteri e rifiuta 501', () => {
+  it('accepts exactly 500 characters and rejects 501', () => {
     expect(MandatoryReasonSchema.safeParse('x'.repeat(500)).success).toBe(true);
     const tooLong = MandatoryReasonSchema.safeParse('x'.repeat(501));
     expect(tooLong.success).toBe(false);

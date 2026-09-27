@@ -61,8 +61,8 @@ function findViolations(): string[] {
     // how the gate would go missing.
     if (EXPRESSION_ACTION_TYPE_RE.test(block)) {
       violations.push(
-        `${file}:${line} — actionType è un'espressione: instrada anche confirmPhrase, oppure ` +
-          'verifica a mano che quel ramo non possa mai valere hardDelete'
+        `${file}:${line} — actionType is an expression: route confirmPhrase too, or ` +
+          'check by hand that the branch can never be hardDelete'
       );
     }
   }
@@ -83,8 +83,8 @@ describe('ConfirmDialog / hardDelete', () => {
   it('every permanent deletion passes confirmPhrase', () => {
     expect(
       findViolations(),
-      "Un'eliminazione definitiva senza confirmPhrase mostra un bottone che il server rifiuta " +
-        'sempre: HardDeleteConfirmSchema pretende la frase digitata, non solo un id.'
+      'A hard delete without confirmPhrase shows a button the server always refuses: ' +
+        'HardDeleteConfirmSchema requires the typed phrase, not just an id.'
     ).toEqual([]);
   });
 });

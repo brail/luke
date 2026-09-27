@@ -61,8 +61,8 @@ describe('DialogDescription', () => {
   it('does not nest block elements without asChild', () => {
     expect(
       findViolations(),
-      'DialogDescription rende un <p>: un <p>/<div>/<ol>/<ul> dentro è HTML non valido e rompe ' +
-        "l'hydration. Usa <DialogDescription asChild> con un <div> come figlio."
+      'DialogDescription renders a <p>: a <p>/<div>/<ol>/<ul> inside it is invalid HTML and breaks ' +
+        'hydration. Use <DialogDescription asChild> with a <div> child.'
     ).toEqual([]);
   });
 });

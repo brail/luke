@@ -98,7 +98,7 @@ describe('createEvent', () => {
     });
   });
 
-  it('propaga titolo, descrizione e status', async () => {
+  it('passes on title, description and status', async () => {
     await createEvent('cal-1', makeInput({ status: 'cancelled' }));
 
     expect(insertedBody()).toMatchObject({
@@ -110,13 +110,13 @@ describe('createEvent', () => {
 });
 
 describe('updateEvent', () => {
-  it('sostituisce l\'evento indirizzando calendario ed evento corretti', async () => {
-    await updateEvent('cal-1', 'gev-1', makeInput({ title: 'Nuovo titolo' }));
+  it('replaces the event, addressing the right calendar and event', async () => {
+    await updateEvent('cal-1', 'gev-1', makeInput({ title: 'New title' }));
 
     expect(events.update).toHaveBeenCalledWith({
       calendarId: 'cal-1',
       eventId: 'gev-1',
-      requestBody: expect.objectContaining({ summary: 'Nuovo titolo' }),
+      requestBody: expect.objectContaining({ summary: 'New title' }),
     });
   });
 });

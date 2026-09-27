@@ -42,7 +42,7 @@ describe('generateIcal', () => {
     expect(ics).not.toContain('BEGIN:VEVENT');
   });
 
-  it('emette un VEVENT per milestone', () => {
+  it('emits one VEVENT per milestone', () => {
     const ics = generateIcal(
       [makeMilestone({ id: 'a' }), makeMilestone({ id: 'b' })],
       'Test'
@@ -74,7 +74,7 @@ describe('generateIcal', () => {
     expect(allDay).toContain('Riunione');
   });
 
-  it('marca CANCELLED le milestone annullate e CONFIRMED le altre', () => {
+  it('marks cancelled milestones CANCELLED and the others CONFIRMED', () => {
     expect(generateIcal([makeMilestone({ cancelled: true })], 'Test')).toContain(
       'STATUS:CANCELLED'
     );

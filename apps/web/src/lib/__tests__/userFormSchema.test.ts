@@ -102,7 +102,7 @@ describe('in edit an empty password means «keep the current one»', () => {
     if (!result.ok) expect(result.errors.confirmPassword).toBe('Le password non coincidono');
   });
 
-  it('in create la password resta obbligatoria', () => {
+  it('in create the password stays mandatory', () => {
     const result = buildUserPayload('create', { ...CREATE_FORM, password: '', confirmPassword: '' }, []);
     expect(result.ok).toBe(false);
     // On the field, not on the result: with both empty `confirmPassword` fails too, so `ok === false`

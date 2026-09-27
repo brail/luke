@@ -85,7 +85,7 @@ async function cleanupSmokeBrands(page: Page): Promise<void> {
       if (!(await deleteFirstSmokeBrand(page))) return;
     }
   } catch (error) {
-    console.warn('[smoke] pulizia brand non completata:', error);
+    console.warn('[smoke] brand cleanup not completed:', error);
   }
 }
 

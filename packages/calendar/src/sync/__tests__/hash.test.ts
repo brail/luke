@@ -20,7 +20,7 @@ describe('computeContentHash', () => {
     );
   });
 
-  it('produce 32 caratteri esadecimali', () => {
+  it('produces 32 hexadecimal characters', () => {
     expect(computeContentHash(makeMilestone())).toMatch(/^[0-9a-f]{32}$/);
   });
 
@@ -67,7 +67,7 @@ describe('computeContentHash', () => {
     );
   });
 
-  it('ignora publishExternally', () => {
+  it('ignores publishExternally', () => {
     // It is not event content: it governs whether to sync or delete, and that decision
     // belongs to the engine. Including it would produce a different hash for an identical
     // event.

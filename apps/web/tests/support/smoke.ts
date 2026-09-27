@@ -82,8 +82,8 @@ export async function expectContextConfigured(page: Page): Promise<void> {
   const gate = page.getByRole('dialog').filter({ hasText: CONTEXT_GATE_TITLE });
   await expect(
     gate,
-    'ContextGate aperto: l\'ambiente non ha brand/stagione attivi. ' +
-      'Lo smoke presuppone un DB seedato — non è un bug del codice in test.'
+    'ContextGate open: the environment has no active brand/season. ' +
+      'The smoke suite assumes a seeded DB — this is not a bug in the code under test.'
   ).toHaveCount(0);
 }
 

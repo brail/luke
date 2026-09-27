@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { bandBadgeStyle, bandForeground, isHexColor } from '../alertBandStyle';
 
 describe('isHexColor', () => {
-  it('accetta solo #RRGGBB', () => {
+  it('accepts only #RRGGBB', () => {
     expect(isHexColor('#B91C1C')).toBe(true);
     expect(isHexColor('#b91c1c')).toBe(true);
     // Forms the native colour field cannot render: the 3-digit shorthand, a half-typed value,
@@ -23,7 +23,7 @@ describe('isHexColor', () => {
 });
 
 describe('bandForeground', () => {
-  it('testo scuro su fondo chiaro, chiaro su fondo scuro', () => {
+  it('dark text on a light background, light text on a dark one', () => {
     expect(bandForeground('#FFFFFF')).toBe('#111827');
     expect(bandForeground('#000000')).toBe('#ffffff');
   });
@@ -57,7 +57,7 @@ describe('bandBadgeStyle', () => {
     expect(bandBadgeStyle({ color: '#B91C1C' })).toMatchObject({ backgroundColor: 'transparent' });
   });
 
-  it('soft: riempimento tinto trasparente, testo pieno', () => {
+  it('soft: translucent tinted fill, solid text', () => {
     const style = bandBadgeStyle({ color: '#B91C1C', emphasis: 'soft' });
     expect(style.backgroundColor).toBe('rgba(185, 28, 28, 0.15)');
     expect(style.color).toBe('#B91C1C');

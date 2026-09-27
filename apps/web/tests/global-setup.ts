@@ -27,9 +27,9 @@ async function probe(label: string, url: string): Promise<void> {
 
   if (response.status === 429) {
     throw new Error(
-      `${label} sta rispondendo 429 (rate limit) su ${url}. Attendi un minuto ` +
-        'prima di rilanciare: con NODE_ENV diverso da "development" il limite ' +
-        'di 100 req/min vale anche per localhost.'
+      `${label} is answering 429 (rate limit) on ${url}. Wait a minute ` +
+        'before running again: with NODE_ENV other than "development" the ' +
+        '100 req/min limit applies to localhost too.'
     );
   }
 

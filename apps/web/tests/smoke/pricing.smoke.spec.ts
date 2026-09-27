@@ -12,7 +12,7 @@ import {
  * screen — that no unit test goes through.
  */
 test.describe('smoke: pricing', () => {
-  test('la calcolatrice produce un prezzo retail', async ({ page }) => {
+  test('the calculator produces a retail price', async ({ page }) => {
     await page.goto('/product/pricing');
     await expectContextConfigured(page);
 
@@ -28,7 +28,7 @@ test.describe('smoke: pricing', () => {
       await expectNoErrorBoundary(page);
       test.skip(
         true,
-        'Nessun set parametri per il contesto corrente: calcolo non verificabile.'
+        'No parameter set for the current context: the calculation cannot be checked.'
       );
     }
 
@@ -58,7 +58,7 @@ test.describe('smoke: pricing', () => {
     const computed = Number(await retail.inputValue());
     expect(
       computed,
-      'Il retail calcolato deve superare il costo di acquisto'
+      'The computed retail price must exceed the purchase cost'
     ).toBeGreaterThan(100);
 
     await expectNoErrorBoundary(page);
