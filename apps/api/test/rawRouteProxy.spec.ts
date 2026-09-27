@@ -38,8 +38,7 @@ const PROXIED_PREFIXES = ['/download/', '/upload/'] as const;
  */
 const NOT_BROWSER_FACING = [
   '/',            // API root banner
-  '/health',      // probes below: hit by Docker/Portainer healthchecks and the reverse proxy
-  '/api/health',
+  '/api/health',  // probes below: hit by Docker/Portainer healthchecks and the reverse proxy
   '/healthz',
   '/livez',
   '/readyz',

@@ -1,13 +1,12 @@
 'use client';
 
-import Link from 'next/link';
 import React, { useEffect } from 'react';
 
 import { PageHeader } from '../components/PageHeader';
 import { SectionCard } from '../components/SectionCard';
 import { ErrorState } from '../components/system/ErrorState';
+import { ReportIssueButton } from '../components/system/ReportIssueButton';
 import { RetryButton } from '../components/system/RetryButton';
-import { Button } from '../components/ui/button';
 import { debugError } from '../lib/debug';
 
 export default function Error({
@@ -38,10 +37,7 @@ export default function Error({
           actionSlot={
             <div className="flex gap-3">
               <RetryButton onRetry={reset} autoFocus />
-              {/* `as any`: `/support` isn't an implemented route yet — placeholder link, not a typedRoutes lag */}
-              <Link href={'/support' as any} aria-label="Apri supporto">
-                <Button variant="outline">Report issue</Button>
-              </Link>
+              <ReportIssueButton />
             </div>
           }
         />

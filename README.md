@@ -427,10 +427,11 @@ Il frontend implementa un sistema di gestione errori professionale e coerente:
 
 - **404 (Not Found)**: `apps/web/src/app/not-found.tsx`
   - Layout coerente con `PageHeader`, `SectionCard`, `Logo` con aspect-ratio corretto
-  - CTA verso `/dashboard` e `/support`
+  - CTA to `/dashboard`; signed-in users also get `ReportIssueButton`, which opens `FeedbackDialog`
 - **Error Runtime**: `apps/web/src/app/error.tsx`
   - Gestisce errori a livello di segment con `ErrorState` e `RetryButton`
   - Integrato con Next.js App Router (`error`, `reset`)
+  - Signed-in users can report the error through `ReportIssueButton`
 - **Global Error**: `apps/web/src/app/global-error.tsx`
   - Fallback root-level per errori applicativi critici
 
@@ -438,6 +439,7 @@ Il frontend implementa un sistema di gestione errori professionale e coerente:
 
 - **`ErrorState`**: Display strutturato di errori con slot personalizzabili
 - **`RetryButton`**: Bottone "Riprova" con gestione auto-refresh o callback
+- **`ReportIssueButton`**: opens `FeedbackDialog`; renders nothing without a session, because `feedback.submit` is a protected procedure
 - **`ErrorBoundary`**: Class component per wrapping di sezioni critiche
 
 ### Best Practices

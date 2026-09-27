@@ -61,8 +61,6 @@ const nextConfig = {
       { source: '/download/:path*', destination: `${apiUrl}/download/:path*` },
       // SSE notifications push
       { source: '/api/sse',        destination: `${apiUrl}/api/sse` },
-      // Health check passthrough
-      { source: '/health',         destination: `${apiUrl}/health` },
     ];
   },
 };
