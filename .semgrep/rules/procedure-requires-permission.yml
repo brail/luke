@@ -1,0 +1,38 @@
+rules:
+  - id: luke-procedure-requires-permission
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      tRPC procedure on `protectedProcedure` without `.use(requirePermission(...))`
+      in its chain (CLAUDE.md rule 5). An endpoint that works only on the
+      caller's own data uses `selfProcedure` instead (see its contract in
+      `lib/trpc.ts`); one whose check `requirePermission` cannot express, or
+      that is open to every signed-in user by design, takes
+      `// nosemgrep: luke-procedure-requires-permission -- <why>`.
+      Chain the builder inline: a named builder is flagged, because this rule
+      cannot see through it. The rule proves the middleware is present, not
+      that it asks for the right permission.
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: '$P. ... .query($H)'
+              - pattern: '$P. ... .mutation($H)'
+              - pattern: '$P. ... .subscription($H)'
+          # Only chains rooted at protectedProcedure: publicProcedure is
+          # pre-session, adminProcedure checks maintenance:update in its
+          # middleware, selfProcedure is the declared own-data exemption.
+          - metavariable-regex:
+              metavariable: $P
+              regex: '^protectedProcedure$'
+          # Text, because a structural `$P. ... .use(requirePermission(...)). ...`
+          # excluded nothing. No `/` earlier on the line, so a commented-out
+          # middleware does not count; `\K` starts the match at `.use`, inside
+          # the finding when the chain begins on the key's line; `\b` accepts
+          # the generic `requirePermission<T>(...)`. Known gaps: the text inside
+          # a multi-line block comment or a string.
+          - pattern-not-regex: '(?m)^[^/\n]*\K\.use\(\s*requirePermission\b'
+      - pattern: 'const $X = protectedProcedure'
+      - pattern: 'const $X = protectedProcedure. ... .$M(...)'
+    paths:
+      include:
+        - '/apps/api/src/routers/**'

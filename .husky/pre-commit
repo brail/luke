@@ -9,8 +9,8 @@ fi
 
 gitleaks protect --staged || exit 1
 
-# ERROR-tier rules only, for speed (<5s): the community ruleset and the
-# WARNING rule (luke-mutation-requires-permission) run in CI, not here.
+# ERROR-tier rules only, for speed (<5s): the community ruleset runs in CI,
+# not here.
 #
 # The whole directory, filtered by severity, instead of a file-by-file list:
 # a new rule enters all three gates automatically (this hook,

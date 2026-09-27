@@ -59,9 +59,6 @@ jobs:
       - name: Semgrep - custom ERROR-tier rules (blocking)
         run: semgrep scan --config .semgrep/rules/ --severity ERROR --error
 
-      - name: Semgrep - luke-mutation-requires-permission (WARNING, non-blocking)
-        run: semgrep scan --config .semgrep/rules/mutation-requires-permission.yml
-
   gitleaks:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest

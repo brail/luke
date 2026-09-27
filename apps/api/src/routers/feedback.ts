@@ -17,6 +17,7 @@ export const feedbackRouter = router({
    * @input {FeedbackSubmitInputSchema} — feedback type, title and description.
    * @output {{ issueUrl: string, issueNumber: number }}
    */
+  // nosemgrep: luke-procedure-requires-permission -- any signed-in user may report a problem; rate-limited, and the GitHub token is the server's
   submit: protectedProcedure
     .use(withRateLimit('configMutations'))
     .input(FeedbackSubmitInputSchema)

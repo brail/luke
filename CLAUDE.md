@@ -151,7 +151,12 @@ does not cover, run the script yourself.
    `User.id`, which is what lets the read path attribute the event to a person
    instead of rendering an anonymous "Sistema"
 5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`,
-   CREATE → `entity:create`, etc. Never `update` for a read-only query
+   CREATE → `entity:create`, etc. Never `update` for a read-only query.
+   An endpoint that works only on the caller's own data uses `selfProcedure`
+   instead (contract in `apps/api/src/lib/trpc.ts`); one whose check
+   `requirePermission` cannot express (an AND of permissions, via `can()`) or
+   that is open to every signed-in user by design carries a reasoned
+   `// nosemgrep`. Enforced by `.semgrep/rules/procedure-requires-permission.yml`
 6. **Explicit `onDelete` on every Prisma `@relation`** — safe default
    `onDelete: Restrict`; `Cascade` only if intentional and commented
 7. **Never duplicate schema/types** — if it exists in `@luke/core`, import it from there
@@ -273,7 +278,8 @@ Two distinct layers that must stay in sync.
 
 - Roles: `admin` (`*:*`), `editor`, `viewer`
 - Always `hasPermission(user, 'resource:action')` — never inline `user.role === 'admin'`
-- Every protected tRPC endpoint: `requirePermission('entity:action')` mandatory
+- Every protected tRPC endpoint: `requirePermission('entity:action')` mandatory,
+  except own-data endpoints on `selfProcedure` (rule 5)
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 

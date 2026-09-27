@@ -117,7 +117,10 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 **RBAC:**
 
 - Any AppConfig write to RBAC keys NOT followed by `invalidateRbacCache()`
-- tRPC mutations without `requirePermission()` call
+- `requirePermission` presence is enforced by `.semgrep/rules/procedure-requires-permission.yml`;
+  review what it cannot see: a `selfProcedure` handler that breaks its contract in
+  `apps/api/src/lib/trpc.ts`, a `nosemgrep: luke-procedure-requires-permission` whose reason does
+  not hold, a permission that does not match the operation
 - tRPC read-only procedures using `requirePermission('entity:update')` instead of `entity:read`
 - Missing `withAuditLog` or `logAudit()` on procedures named `create`, `update`, `delete`, `remove`, `restore`, `unlink`
 

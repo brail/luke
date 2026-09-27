@@ -62,6 +62,7 @@ export const editLockRouter = router({
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to lock.
    * @output {EditLock[]} — the upserted lock records (locked by the caller, with new expiresAt).
    */
+  // nosemgrep: luke-procedure-requires-permission -- assertLockPermissions checks every entity type's permission (AND), which requirePermission's array form (OR) cannot express
   acquireMany: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
@@ -79,6 +80,7 @@ export const editLockRouter = router({
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to renew.
    * @output {EditLock[]} — the renewed lock records with pushed-out expiresAt.
    */
+  // nosemgrep: luke-procedure-requires-permission -- same AND check as acquireMany, via assertLockPermissions
   renew: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
