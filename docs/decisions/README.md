@@ -18,7 +18,7 @@
 | [013](013-asset-derivative-pipeline.md) | Automatic Asset Derivative Pipeline (Thumb/Card/Export) | Accepted |
 | [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Accepted |
 | [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Accepted |
-| [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Accepted |
+| [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Superseded by [026](026-resource-action-permissions-enforced.md) |
 | [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Accepted |
 | [018](018-runtime-configuration-and-bootstrap-environment.md) | Database-Backed Runtime Configuration and Bootstrap-Only Environment | Accepted |
 | [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Accepted |
@@ -28,6 +28,7 @@
 | [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
 | [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
 | [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Accepted |
+| [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Accepted |
 
-_Last updated: 2026-09-24_
+_Last updated: 2026-09-27_
 <!-- luke-docs:end:adr-index -->

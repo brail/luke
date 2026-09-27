@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [026 — Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations](026-resource-action-permissions-enforced.md)
 
 ## Context
 
