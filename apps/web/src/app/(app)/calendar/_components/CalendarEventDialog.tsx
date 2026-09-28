@@ -53,7 +53,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { daysBetween, isEventDateLocked, isEventDeleteLocked } from '../utils';
+import { daysBetween, isEventDeleteLocked } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
@@ -75,6 +75,7 @@ interface ExistingEvent {
   visibilities: { functionId: string }[];
   planningGroupName?: string;
   planningGroupFrozenAt?: Date | string | null;
+  dateLocked?: boolean;
 }
 
 interface Props {
@@ -193,8 +194,8 @@ export function CalendarEventDialog({
   // A phase event whose planning group is frozen and whose deadline has passed is locked: the backend
   // rejects title/phase/date edits (they'd rewrite what the frozen baseline committed to). Date moves
   // only via the motivated reschedule flow; title/phase have no such escape hatch — only unfreezing
-  // the group lifts the lock. Shared helper mirrors isEventDateLocked on the server.
-  const isDateLocked = !!event && isEventDateLocked(event);
+  // the group lifts the lock. Evaluated by the server in the business time zone (`dateLocked`).
+  const isDateLocked = !!event?.dateLocked;
 
   // A phase event whose planning group is frozen can't be hard-deleted — that would destroy the
   // frozen baseline. The backend rejects it (isEventDeleteLocked); mirror it so the button doesn't
@@ -351,9 +352,14 @@ export function CalendarEventDialog({
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  const utils = trpc.useUtils();
   const updateMutation = trpc.seasonCalendar.updateMilestone.useMutation({
     onSuccess: data => { if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning); toast.success('Evento aggiornato'); onSaved(); onClose(); },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // A lock the list did not show yet (the deadline was reached while the page was open).
+      if (err.data?.code === 'PRECONDITION_FAILED') void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   const deleteMutation = trpc.seasonCalendar.deleteMilestone.useMutation({

@@ -197,6 +197,18 @@ describe('every declared default is a value its own key would accept', () => {
   });
 });
 
+describe('app.defaultTimezone is an IANA zone', () => {
+  // The business zone every shared deadline, lock and countdown is counted in. `Intl` also takes a
+  // fixed offset, which has no daylight-saving rules and is refused like any unknown name.
+  it.each(['Europe/Rome', 'Asia/Shanghai', 'America/Los_Angeles', 'UTC'])('accepts %s', value => {
+    expect(validateConfigValue('app.defaultTimezone', value).success).toBe(true);
+  });
+
+  it.each(['Europe/Nowhere', '+01:00', ''])('rejects %j', value => {
+    expect(validateConfigValue('app.defaultTimezone', value).success).toBe(false);
+  });
+});
+
 describe('numeric bounds are declared once, on the schema', () => {
   // Seven of these `max` values used to exist only inside `configManager.getBoundedNumericConfig`,
   // so `saveConfig` validated a write against a schema that had no upper bound, stored it, and the

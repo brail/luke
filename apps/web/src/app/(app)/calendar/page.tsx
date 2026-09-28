@@ -98,7 +98,9 @@ export default function CalendarPage() {
 
   const { data: rawMilestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
     { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
-    { enabled: enabled && selectedBrandIds.length > 0 }
+    // On again for this query (off app-wide in `lib/trpc.tsx`): each event's `dateLocked` is a
+    // server snapshot, and a deadline reached while the tab was in the background must lock the drag.
+    { enabled: enabled && selectedBrandIds.length > 0, refetchOnWindowFocus: true }
   );
   // TS2589: RouterOutputs type is excessively deep — as unknown breaks instantiation before re-narrowing
   const milestones = rawMilestones as unknown as CalendarEventItem[] | undefined;
@@ -155,7 +157,12 @@ export default function CalendarPage() {
 
   const updateEventMutation = trpc.seasonCalendar.updateMilestone.useMutation({
     onSuccess: () => refetchAfterEventChange(),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // A drag on an event whose lock the list did not show yet (its deadline was reached while the
+      // page was open): refresh, so `dateLocked` stops offering the drag.
+      if (err.data?.code === 'PRECONDITION_FAILED') refetchAfterEventChange();
+    },
   });
 
   const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {

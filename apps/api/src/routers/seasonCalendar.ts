@@ -38,6 +38,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
+import { getConfigOrDefault } from '../lib/configManager.js';
 import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -337,14 +338,19 @@ export const seasonCalendarRouter = router({
 
       // A frozen, already-passed phase event is locked: date moves would launder a real delay out of
       // the alert engine, and renaming or reassigning the phase would rewrite what the frozen baseline
-      // committed to. Date has a motivated escape hatch (`rescheduleMilestone`); title/phaseId don't —
-      // only unfreezing the group lifts the lock. Other edits (owner, description, …) stay allowed.
+      // committed to. `allDay` moves the deadline too (end of the day vs its instant), so it is a date
+      // change. Date has a motivated escape hatch (`rescheduleMilestone`); title/phaseId don't — only
+      // unfreezing the group lifts the lock. Other edits (owner, description, …) stay allowed.
       const changesDate =
         (input.data.startAt !== undefined && new Date(input.data.startAt).getTime() !== event.startAt.getTime())
-        || (input.data.endAt !== undefined && (input.data.endAt ? new Date(input.data.endAt).getTime() : null) !== (event.endAt?.getTime() ?? null));
+        || (input.data.endAt !== undefined && (input.data.endAt ? new Date(input.data.endAt).getTime() : null) !== (event.endAt?.getTime() ?? null))
+        || (input.data.allDay !== undefined && input.data.allDay !== event.allDay);
       const changesTitle = input.data.title !== undefined && input.data.title !== event.title;
       const changesPhase = input.data.phaseId !== undefined && input.data.phaseId !== event.phaseId;
-      if ((changesDate || changesTitle || changesPhase) && isEventDateLocked(event)) {
+      if (
+        (changesDate || changesTitle || changesPhase)
+        && isEventDateLocked(event, await getConfigOrDefault(ctx.prisma, 'app.defaultTimezone'))
+      ) {
         const lockedFields = [
           changesDate && 'la data (usa uno spostamento motivato)',
           changesTitle && 'il titolo',

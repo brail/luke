@@ -166,8 +166,10 @@ router always passes `cause: 'MANUAL'`. Automatic revisions are created by
 type per trigger:
 
 1. `MILESTONE_DATA` — the deadline (`endAt ?? startAt`) of a non-cancelled,
-   phase-linked calendar event has passed (7-day lookback). Checked on the
-   hourly tick of `apps/api/src/lib/milestoneDeadlineScheduler.ts`
+   phase-linked calendar event has been reached (7-day lookback): an all-day
+   deadline when its day ends in the business time zone
+   (`app.defaultTimezone`), a timed one at its instant (`deadlineReachedAt`).
+   Checked on the hourly tick of `apps/api/src/lib/milestoneDeadlineScheduler.ts`
 2. `MILESTONE_FASE` — every row of the event's planning group has reached or
    passed the event's phase. Checked when `collectionLayout.rows.update`
    changes a row's phase

@@ -138,7 +138,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'app.defaultTimezone',
-      value: 'Europe/Rome',
+      value: APP_CONFIG_DEFAULTS['app.defaultTimezone'],
       encrypt: false,
     },
     {

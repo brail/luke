@@ -36,7 +36,7 @@ Authenticated group `(app)/`:
 - `/settings/nav` — Microsoft NAV SQL Server connection
 - `/settings/nav-sync` — NAV synchronization scheduling for master data, order portfolio and KIMO, with sync logs
 - `/settings/google` — Google Workspace integration (service account or OAuth 2.0) and per-product toggles
-- `/settings/company` — company profile and organizational structure
+- `/settings/company` — company profile, business time zone and organizational structure
 - `/settings/collection-control` — calendar and phase alert thresholds
 - `/maintenance` — maintenance and diagnostics index
 - `/maintenance/config` — AppConfig keys, the centralized runtime configuration

@@ -1,7 +1,6 @@
 import {
   daysBetween,
   initials,
-  isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
 } from '@luke/core';
 
@@ -127,15 +126,10 @@ export function groupEventsByDay<T extends { startAt: Date | string; endAt?: Dat
 
 /**
  * Thin adapter over the shared `@luke/core` predicate — only reshapes the client's flattened
- * `planningGroupFrozenAt` field into `frozenAt`. The actual lock logic (frozen + phase-tagged +
- * deadline passed) lives in one place so this client-side UX mirror can't drift from the server's
- * enforcement (`apps/api/.../seasonCalendar.service.ts`).
+ * `planningGroupFrozenAt` field into `frozenAt`, so this client-side UX mirror can't drift from the
+ * server's enforcement. The *date* lock has no client mirror: it depends on the business time zone,
+ * so the server evaluates it and sends `dateLocked` with each event.
  */
-export function isEventDateLocked(m: Pick<CalendarEventItem, 'phaseId' | 'planningGroupFrozenAt' | 'startAt' | 'endAt'>): boolean {
-  return isEventDateLockedCore({ phaseId: m.phaseId, frozenAt: m.planningGroupFrozenAt, startAt: m.startAt, endAt: m.endAt });
-}
-
-/** Thin adapter over the shared `@luke/core` predicate — see `isEventDateLocked` above. */
 export function isEventDeleteLocked(m: Pick<CalendarEventItem, 'phaseId' | 'planningGroupFrozenAt'>): boolean {
   return isEventDeleteLockedCore({ phaseId: m.phaseId, frozenAt: m.planningGroupFrozenAt });
 }
@@ -152,13 +146,12 @@ export function isEventDeleteLocked(m: Pick<CalendarEventItem, 'phaseId' | 'plan
  * @param activeBrandId - Currently selected brand from AppContext.
  */
 export function canEditMilestone(
-  m: { brandId?: string | null; phaseId?: string | null; planningGroupFrozenAt?: Date | string | null; startAt?: Date | string; endAt?: Date | string | null; cancelledAt?: Date | string | null },
+  m: { brandId?: string | null; cancelledAt?: Date | string | null; dateLocked?: boolean },
   canUpdate: boolean | undefined,
   activeBrandId: string | undefined,
 ): boolean {
   if (!canUpdate || (m.brandId && m.brandId !== activeBrandId) || m.cancelledAt) return false;
-  if (m.startAt !== undefined && isEventDateLocked({ phaseId: m.phaseId, planningGroupFrozenAt: m.planningGroupFrozenAt, startAt: m.startAt, endAt: m.endAt })) return false;
-  return true;
+  return !m.dateLocked;
 }
 
 /** Joins a milestone's visible functions into a comma-separated display string. */

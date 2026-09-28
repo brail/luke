@@ -18,6 +18,7 @@
  * is null, and Postgres treats NULLs as distinct in a unique index.
  */
 
+import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt } from '@luke/core';
 import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
@@ -148,8 +149,9 @@ async function createAutoRevision(
 // ─── Trigger A: event deadline reached ────────────────────────────────────────
 
 /**
- * Snapshots the layout of every phase-linked calendar event whose deadline (`endAt ?? startAt`) has
- * passed within the lookback window and that has no `MILESTONE_DATA` revision yet. Events whose
+ * Snapshots the layout of every phase-linked calendar event whose deadline was reached within the
+ * lookback window and that has no `MILESTONE_DATA` revision yet — reached as `deadlineReachedAt`
+ * defines it in the business zone (an all-day deadline at the end of its day). Events whose
  * brand+season has no collection layout are skipped.
  *
  * Failures are per-event: one broken layout never blocks the others.
@@ -159,26 +161,37 @@ async function createAutoRevision(
 export async function createRevisionsForReachedEvents(
   prisma: PrismaClient,
   now: Date,
+  timeZone: string,
   logger?: ServiceLogger,
 ): Promise<number> {
   const lookbackFrom = new Date(now.getTime() - REACHED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  // A superset: a deadline is reached up to DEADLINE_REACH_MARGIN_MS after its stored value, never
+  // before, so the exact window is applied below on the reached instant.
+  const storedFrom = new Date(lookbackFrom.getTime() - DEADLINE_REACH_MARGIN_MS);
 
-  const events = await prisma.calendarEvent.findMany({
+  const fetched = await prisma.calendarEvent.findMany({
     where: {
       cancelledAt: null,
       phaseId: { not: null },
-      // Deadline is endAt when set, startAt otherwise — expressed as two mutually exclusive branches.
+      // The stored deadline is endAt when set, startAt otherwise — two mutually exclusive branches.
       OR: [
-        { endAt: { gte: lookbackFrom, lte: now } },
-        { endAt: null, startAt: { gte: lookbackFrom, lte: now } },
+        { endAt: { gte: storedFrom, lte: now } },
+        { endAt: null, startAt: { gte: storedFrom, lte: now } },
       ],
     },
     select: {
       id: true,
       title: true,
+      startAt: true,
+      endAt: true,
+      allDay: true,
       planningGroup: { select: { name: true } },
       calendar: { select: { brandId: true, seasonId: true } },
     },
+  });
+  const events = fetched.filter(e => {
+    const reachedAt = deadlineReachedAt(e, timeZone);
+    return reachedAt >= lookbackFrom && reachedAt <= now;
   });
   if (events.length === 0) return 0;
 

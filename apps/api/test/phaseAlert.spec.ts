@@ -19,6 +19,7 @@ import {
   getCompletionDeadlineEvent,
   getMissingPhasesForCompletion,
   completionOutcome,
+  criticalityFromActivePhase,
   filterApplicableEvents,
   type ActivePhaseResult,
 } from '../src/services/phaseAlert.service';
@@ -33,6 +34,8 @@ function fakeEvent(opts: {
   phaseIsActive?: boolean;
   /** Event deadline (`endAt ?? startAt`), for tests on the completion outcome. */
   deadline?: Date;
+  allDay?: boolean;
+  relevance?: 'COMPANY' | 'VENDOR' | 'BOTH';
 }): RowEvent {
   const now = new Date();
   return {
@@ -40,7 +43,7 @@ function fakeEvent(opts: {
     calendarId: 'cal-1',
     planningGroupId: opts.planningGroupId ?? 'pg-1',
     phaseId: opts.phaseOrder === null ? null : `phase-${opts.phaseOrder}`,
-    calendarDaysRelevance: null,
+    calendarDaysRelevance: opts.relevance ?? null,
     cancelledAt: null,
     cancelReason: null,
     cancelledByUserId: null,
@@ -50,7 +53,7 @@ function fakeEvent(opts: {
     endAt: null,
     baselineStartAt: null,
     baselineEndAt: null,
-    allDay: false,
+    allDay: opts.allDay ?? false,
     publishExternally: true,
     templateItemId: null,
     createdAt: now,
@@ -225,45 +228,104 @@ describe('getCompletionDeadlineEvent', () => {
   });
 });
 
+const THRESHOLDS = {
+  default: {
+    bands: [
+      { minDaysToDeadline: -9999, maxDaysToDeadline: 0, color: '#B91C1C', label: 'In ritardo', emphasis: 'solid' as const },
+      { minDaysToDeadline: 0, maxDaysToDeadline: null, color: '#D97706', label: 'Urgente', emphasis: 'soft' as const },
+    ],
+  },
+  completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' as const },
+  completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' as const },
+};
+const ALERT = { thresholds: THRESHOLDS, timeZone: 'Europe/Rome' };
+const NO_WORKING_DAYS = { companyCountryCode: null, holidays: [] };
+
+describe('criticalityFromActivePhase', () => {
+  const active = (event: RowEvent): ActivePhaseResult => ({ status: 'active', event });
+
+  it('an all-day deadline is due all its day: count 0, not reached, not late', () => {
+    const event = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
+    const result = criticalityFromActivePhase('row-1', active(event), null, ALERT, new Date('2026-10-02T21:59:59Z'), null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysToDeadline: 0, reached: false, band: { label: 'Urgente' } });
+  });
+
+  it('the same deadline once its day has ended in the business zone is late', () => {
+    const event = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
+    const result = criticalityFromActivePhase('row-1', active(event), null, ALERT, new Date('2026-10-02T22:00:00Z'), null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysToDeadline: -1, reached: true, band: { label: 'In ritardo' } });
+  });
+
+  it('a timed deadline passed earlier today keeps its real count of 0 but is late', () => {
+    const event = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T08:00:00Z') });
+    const result = criticalityFromActivePhase('row-1', active(event), null, ALERT, new Date('2026-10-02T08:01:00Z'), null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysToDeadline: 0, reached: true, band: { label: 'In ritardo' } });
+  });
+
+  it('counts from today in the business zone, not in the process zone', () => {
+    // 16:30 UTC on the 1st is already the 2nd in Tokyo, still the 1st in UTC, Rome and Los Angeles:
+    // code reading the process zone would count 1 under any of those.
+    const event = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
+    const tokyo = { ...ALERT, timeZone: 'Asia/Tokyo' };
+    const result = criticalityFromActivePhase('row-1', active(event), null, tokyo, new Date('2026-10-01T16:30:00Z'), null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysToDeadline: 0, reached: false });
+  });
+
+  it('a Sunday deadline seen on Monday counts 0 working days but is late', () => {
+    const event = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-04T00:00:00Z'), allDay: true, relevance: 'COMPANY' });
+    const italy = { companyCountryCode: 'IT', holidays: [] };
+    const result = criticalityFromActivePhase('row-1', active(event), null, ALERT, new Date('2026-10-05T08:00:00Z'), null, italy);
+    expect(result).toMatchObject({ daysToDeadline: 0, daysMode: 'working', reached: true, band: { label: 'In ritardo' } });
+  });
+
+  it('gives the next phase its own count and reached state', () => {
+    const current = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
+    const next = fakeEvent({ id: 'e2', phaseOrder: 1, deadline: new Date('2026-10-09T00:00:00Z'), allDay: true });
+    const result = criticalityFromActivePhase('row-1', active(current), next, ALERT, new Date('2026-10-02T10:00:00Z'), null, NO_WORKING_DAYS);
+    expect(result?.nextPhase).toMatchObject({ daysUntil: 7, reached: false });
+  });
+});
+
 describe('completionOutcome', () => {
-  const thresholds = {
-    default: { bands: [{ minDaysToDeadline: -9999, maxDaysToDeadline: null, color: '#000', label: 'B', emphasis: 'outline' as const }] },
-    completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' as const },
-    completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' as const },
-  };
-  const ctx = { companyCountryCode: null, holidays: [] };
   const deadline = new Date('2026-08-31T00:00:00Z');
+  const allDayGate = () => fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline, allDay: true });
 
   it('without a reference milestone → "on time" band and no invented delta', () => {
-    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), null, thresholds, null, ctx);
+    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), null, ALERT, null, NO_WORKING_DAYS);
     expect(result).toMatchObject({
       state: 'completed',
       daysVsDeadline: null,
+      late: false,
       deadline: null,
       eventId: null,
-      band: thresholds.completedBand,
+      band: THRESHOLDS.completedBand,
     });
   });
 
   it('completed before the deadline → positive delta (early) and "on time" band', () => {
-    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
-    const result = completionOutcome('row-1', new Date('2026-08-12T00:00:00Z'), event, thresholds, null, ctx);
-    expect(result.daysVsDeadline).toBe(19);
-    expect(result.band).toEqual(thresholds.completedBand);
+    const result = completionOutcome('row-1', new Date('2026-08-12T00:00:00Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysVsDeadline: 19, late: false, band: THRESHOLDS.completedBand });
   });
 
   it('completed after the deadline → negative delta (late) and "late" band', () => {
-    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
-    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), event, thresholds, null, ctx);
-    expect(result.daysVsDeadline).toBe(-10);
-    expect(result.band).toEqual(thresholds.completedLateBand);
+    const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysVsDeadline: -10, late: true, band: THRESHOLDS.completedLateBand });
   });
 
-  it('completed on the deadline day itself counts as on time', () => {
-    const event = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline });
-    const result = completionOutcome('row-1', deadline, event, thresholds, null, ctx);
-    expect(result.daysVsDeadline).toBe(0);
-    expect(result.band).toEqual(thresholds.completedBand);
+  it('completed on the all-day deadline itself, up to its last moment in the business zone, is on time', () => {
+    const result = completionOutcome('row-1', new Date('2026-08-31T21:59:59.999Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysVsDeadline: 0, late: false, band: THRESHOLDS.completedBand });
+  });
+
+  it('completed exactly when the day ends is late', () => {
+    const result = completionOutcome('row-1', new Date('2026-08-31T22:00:00Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysVsDeadline: -1, late: true, band: THRESHOLDS.completedLateBand });
+  });
+
+  it('completed later on the day of a timed deadline is late with a count of 0', () => {
+    const timed = fakeEvent({ id: 'gate-3', phaseOrder: 2, deadline: new Date('2026-08-31T08:00:00Z') });
+    const result = completionOutcome('row-1', new Date('2026-08-31T15:00:00Z'), timed, ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ daysVsDeadline: 0, late: true, band: THRESHOLDS.completedLateBand });
   });
 });
 

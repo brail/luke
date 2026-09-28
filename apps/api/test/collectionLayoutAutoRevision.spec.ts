@@ -31,6 +31,7 @@ vi.mock('../src/storage', () => ({
 }));
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
+const ROME = 'Europe/Rome';
 
 type FakePrismaOpts = {
   events?: unknown[];
@@ -53,11 +54,17 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 
 const fakeLogger = { warn: vi.fn(), info: vi.fn() };
 
-/** Event with a phase, already overdue, belonging to the given planning group. */
-function reachedEvent(id: string, title: string, groupName: string) {
+/**
+ * Event with a phase, belonging to the given planning group. By default an all-day deadline on the
+ * day before NOW, so already reached in Rome (at 22:00Z that day).
+ */
+function reachedEvent(id: string, title: string, groupName: string, startAt = new Date('2026-07-31T00:00:00.000Z')) {
   return {
     id,
     title,
+    startAt,
+    endAt: null,
+    allDay: true,
     planningGroup: { name: groupName },
     calendar: { brandId: 'brand-1', seasonId: 'season-1' },
   };
@@ -86,7 +93,7 @@ describe('createRevisionsForReachedEvents', () => {
       layouts: [LAYOUT],
     });
 
-    const created = await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    const created = await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     expect(created).toBe(1);
     expect(createRevision).toHaveBeenCalledTimes(1);
@@ -108,7 +115,7 @@ describe('createRevisionsForReachedEvents', () => {
       layouts: [LAYOUT],
     });
 
-    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     // The copier handed to the snapshot used to return the live key unchanged, so the revision
     // pointed at a `collection-row-pictures` object that no revision reader looks in.
@@ -123,7 +130,7 @@ describe('createRevisionsForReachedEvents', () => {
       layouts: [LAYOUT],
     });
 
-    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
     expect(prisma.auditLog.create.mock.calls[0][0].data).toMatchObject({
@@ -141,7 +148,7 @@ describe('createRevisionsForReachedEvents', () => {
       existingRevisions: [{ milestoneId: 'ev-1' }],
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
@@ -151,25 +158,46 @@ describe('createRevisionsForReachedEvents', () => {
       layouts: [],
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
   it('queries only active events with a phase and a deadline already past, within the lookback window', async () => {
     const prisma = buildFakePrisma({ events: [] });
 
-    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     const where = prisma.calendarEvent.findMany.mock.calls[0][0].where;
     expect(where.cancelledAt).toBeNull();
     expect(where.phaseId).toEqual({ not: null });
-    // endAt when set, otherwise startAt — two mutually exclusive branches
+    // endAt when set, otherwise startAt — two mutually exclusive branches, over a superset of the
+    // 7-day window: a deadline is reached up to 48 h after its stored value.
     expect(where.OR).toHaveLength(2);
     for (const branch of where.OR) {
       const range = branch.endAt ?? branch.startAt;
       expect(range.lte).toEqual(NOW);
-      expect(NOW.getTime() - range.gte.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
+      expect(NOW.getTime() - range.gte.getTime()).toBe((7 * 24 + 48) * 60 * 60 * 1000);
     }
+  });
+
+  it('keeps exactly the deadlines reached within the window, at UTC−12 as well', async () => {
+    // At UTC−12 an all-day deadline is reached 36 h after its stored UTC midnight. The window
+    // starts at 2026-07-25T12:00Z: the 24th is reached exactly then, the 23rd a day before it, and
+    // the 1st of August has not ended yet at NOW.
+    const prisma = buildFakePrisma({
+      events: [
+        reachedEvent('ev-before', 'Prima', 'Uomo FW26', new Date('2026-07-23T00:00:00.000Z')),
+        reachedEvent('ev-edge', 'Al confine', 'Uomo FW26', new Date('2026-07-24T00:00:00.000Z')),
+        reachedEvent('ev-open', 'Ancora aperta', 'Uomo FW26', new Date('2026-08-01T00:00:00.000Z')),
+      ],
+      layouts: [LAYOUT],
+    });
+
+    expect(await createRevisionsForReachedEvents(prisma, NOW, 'Etc/GMT+12', fakeLogger)).toBe(1);
+    expect(createRevision).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(createRevision).mock.calls[0][0]).toMatchObject({ milestoneId: 'ev-edge' });
+    const where = prisma.calendarEvent.findMany.mock.calls[0][0].where;
+    expect(where.OR[1].startAt.gte.getTime()).toBeLessThanOrEqual(new Date('2026-07-24T00:00:00.000Z').getTime());
   });
 
   it('creates nothing if there is no active admin to attribute the revision to', async () => {
@@ -179,7 +207,7 @@ describe('createRevisionsForReachedEvents', () => {
       admin: null,
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
     expect(fakeLogger.warn).toHaveBeenCalled();
   });
@@ -191,7 +219,7 @@ describe('createRevisionsForReachedEvents', () => {
     });
     vi.mocked(createRevision).mockRejectedValue(duplicateRevisionError());
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     // Lost race = revision already exists, not an error to report
     expect(fakeLogger.warn).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
@@ -209,7 +237,7 @@ describe('createRevisionsForReachedEvents', () => {
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce({ id: 'rev-2', revisionNumber: 4 } as never);
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(1);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(1);
     expect(createRevision).toHaveBeenCalledTimes(2);
   });
 });

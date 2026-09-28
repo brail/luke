@@ -41,12 +41,15 @@ function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: s
  * used in the row drawer) and the table's batched lookup in `CollectionGroupSection` — same payload
  * either way, only the fetch strategy differs.
  */
-export function formatCriticalityTooltip({ daysToDeadline, deadline, eventTitle, daysMode, relevantCountryCodes }: CriticalityInfo): string {
+export function formatCriticalityTooltip({ daysToDeadline, reached, deadline, eventTitle, daysMode, relevantCountryCodes }: CriticalityInfo): string {
   // `formatDate` from @luke/core (day only, locale it-IT) — not from `lib/configHelpers`,
   // built for audit timestamps and with a time-of-day that isn't needed here.
   const dateLabel = formatDate(new Date(deadline));
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   if (daysToDeadline < 0) return `In ritardo di ${Math.abs(daysToDeadline)} ${unitLabel} — «${eventTitle}»: ${dateLabel}`;
+  // Reached with a count of 0 (a timed deadline passed today, a weekend one seen on Monday in
+  // working days): late, with no day of delay to state.
+  if (reached) return `Scaduta — «${eventTitle}»: ${dateLabel}`;
   if (daysToDeadline === 0) return `Scade oggi — «${eventTitle}»: ${dateLabel}`;
   return `${daysToDeadline} ${unitLabel} alla scadenza — «${eventTitle}»: ${dateLabel}`;
 }
@@ -58,9 +61,10 @@ export function formatCriticalityTooltip({ daysToDeadline, deadline, eventTitle,
  *
  * `daysVsDeadline` follows the same sign convention as `daysToDeadline` (positive = ahead of the
  * deadline), and is `null` when the row's planning group has no milestone to measure against — in
- * which case the tooltip states just the date, with no delta invented.
+ * which case the tooltip states just the date, with no delta invented. `late` decides a count of 0:
+ * completed after a timed deadline on its own day is past it, not "on the day".
  */
-export function formatCompletionTooltip({ completedAt, daysVsDeadline, deadline, eventTitle, daysMode, relevantCountryCodes }: CompletionInfo): string {
+export function formatCompletionTooltip({ completedAt, daysVsDeadline, late, deadline, eventTitle, daysMode, relevantCountryCodes }: CompletionInfo): string {
   const completedLabel = formatDate(new Date(completedAt));
   if (daysVsDeadline === null || deadline === null) {
     return `Conclusa il ${completedLabel} — nessuna milestone di riferimento`;
@@ -68,22 +72,23 @@ export function formatCompletionTooltip({ completedAt, daysVsDeadline, deadline,
   const dateLabel = formatDate(new Date(deadline));
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   const delta = daysVsDeadline === 0
-    ? 'nel giorno della scadenza'
+    ? late ? 'oltre la scadenza' : 'nel giorno della scadenza'
     : daysVsDeadline > 0
       ? `${daysVsDeadline} ${unitLabel} di anticipo`
       : `${Math.abs(daysVsDeadline)} ${unitLabel} di ritardo`;
   return `Conclusa il ${completedLabel}, ${delta} su «${eventTitle}»: ${dateLabel}`;
 }
 
-/** "5 giorni di ritardo" (overdue, negative) / "scade oggi" (zero) / "tra 12 giorni" (days left,
- * positive) — same day count `formatCriticalityTooltip` spells out, spelled out in full for the
- * "Situazione" detail line (not the abbreviated "gg" form — that reads fine in a dense tooltip,
- * not as a standalone sentence). */
-export function formatDaysLabel(daysToDeadline: number): string {
+/** "5 giorni di ritardo" (overdue, negative) / "scaduta" (reached, zero) / "scade oggi" (zero) /
+ * "tra 12 giorni" (days left, positive) — same day count `formatCriticalityTooltip` spells out,
+ * spelled out in full for the "Situazione" detail line (not the abbreviated "gg" form — that reads
+ * fine in a dense tooltip, not as a standalone sentence). */
+export function formatDaysLabel(daysToDeadline: number, reached: boolean): string {
   if (daysToDeadline < 0) {
     const days = Math.abs(daysToDeadline);
     return `${days} ${days === 1 ? 'giorno' : 'giorni'} di ritardo`;
   }
+  if (reached) return 'scaduta';
   if (daysToDeadline === 0) return 'scade oggi';
   return `tra ${daysToDeadline} ${daysToDeadline === 1 ? 'giorno' : 'giorni'}`;
 }
@@ -142,18 +147,18 @@ export function CriticalitySituation({ rowId, phaseById, className }: Props & { 
     );
   }
 
-  const isLate = data.daysToDeadline < 0;
+  const isLate = data.reached;
   const nextPhaseLabel = data.nextPhase ? phaseById.get(data.nextPhase.phaseId ?? '')?.label ?? '—' : null;
 
   return (
     <div className={cn('flex items-center gap-1.5 text-xs', className)}>
       <CriticalityBandBadge band={data.band} tooltip={formatCriticalityTooltip(data)} />
       {isLate && (
-        <span className="text-muted-foreground">{formatDaysLabel(data.daysToDeadline)}</span>
+        <span className="text-muted-foreground">{formatDaysLabel(data.daysToDeadline, data.reached)}</span>
       )}
       {!isLate && data.nextPhase && (
         <span className="text-muted-foreground">
-          Prossima fase: {nextPhaseLabel} · {formatDaysLabel(data.nextPhase.daysUntil)}
+          Prossima fase: {nextPhaseLabel} · {formatDaysLabel(data.nextPhase.daysUntil, data.nextPhase.reached)}
         </span>
       )}
     </div>

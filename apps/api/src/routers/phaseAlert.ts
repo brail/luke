@@ -30,7 +30,11 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ rowId: string }}
-   * @output {{ rowId, eventId, phaseId, deadline, daysToDeadline, band } | null}
+   * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartAt, phaseId, deadline,
+   *   daysToDeadline, reached, daysMode, relevantCountryCodes, band, nextPhase }
+   *   | { state: 'completed', rowId, completedAt, eventId, eventTitle, deadline, daysVsDeadline, late,
+   *   daysMode, relevantCountryCodes, band } | null} — counts in the business time zone;
+   *   `reached`/`late` decide lateness, the count stays real.
    */
   criticalityForRow: protectedProcedure
     .use(requirePermission('collection_alert:read'))
@@ -67,7 +71,7 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
-   * @output {{ rowId, eventId, phaseId, deadline, daysToDeadline, band }[]} — rows with no active
+   * @output {Array<same union as `criticalityForRow`, plus productCategory>} — rows with no active
    *   phase (not yet frozen calendar / all phases completed) are omitted.
    */
   criticalityForLayout: protectedProcedure

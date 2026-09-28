@@ -8,6 +8,7 @@ import {
   TabsTrigger,
 } from '../../../../components/ui/tabs';
 
+import { BusinessTimeZoneCard } from './_components/BusinessTimeZoneCard';
 import { OrganizationTab } from './_components/OrganizationTab';
 import { ProfileTab } from './_components/ProfileTab';
 
@@ -23,8 +24,9 @@ export default function CompanySettingsPage() {
           <TabsTrigger value="profile">Profilo</TabsTrigger>
           <TabsTrigger value="organizzazione">Organizzazione</TabsTrigger>
         </TabsList>
-        <TabsContent value="profile" className="mt-6">
+        <TabsContent value="profile" className="mt-6 space-y-6">
           <ProfileTab />
+          <BusinessTimeZoneCard />
         </TabsContent>
         <TabsContent value="organizzazione" className="mt-6">
           <OrganizationTab />

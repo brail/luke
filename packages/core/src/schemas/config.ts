@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
+import { isValidTimeZone } from '../utils/dateUtils.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
 import { LDAP_STRATEGIES } from './ldap.js';
@@ -53,7 +54,8 @@ export const AppConfigRegistry = {
   'app.name':            z.string().min(1),
   'app.environment':     z.string(),
   'app.locale':          z.string(),
-  'app.defaultTimezone': z.string(),
+  /** The business time zone (IANA): the day shared deadlines, locks and countdowns are counted in. */
+  'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido'),
   'app.baseUrl':         z.string().url(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
@@ -245,8 +247,9 @@ export function parseConfigValue<K extends AppConfigKey>(
  *   refuses to start rather than substituting one of its own.
  */
 export const APP_CONFIG_DEFAULTS = {
-  'app.name':    'Luke',
-  'app.baseUrl': 'http://localhost:3000',
+  'app.name':            'Luke',
+  'app.baseUrl':         'http://localhost:3000',
+  'app.defaultTimezone': 'Europe/Rome',
 
   'smtp.secure': 'false',
 

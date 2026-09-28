@@ -1,8 +1,15 @@
+import {
+  DEADLINE_REACH_MARGIN_MS,
+  calendarDateIn,
+  calendarDaysBetween,
+  deadlineDay,
+  deadlineReachedAt,
+} from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
 import { createRevisionsForReachedEvents } from '../services/collectionLayoutAutoRevision.service';
-import { computeCriticalityForLayout, resolveAlertThresholds } from '../services/phaseAlert.service';
+import { computeCriticalityForLayout, resolveAlertContext, type AlertContext } from '../services/phaseAlert.service';
 
 import { guardMaintenance } from './maintenanceMode';
 import { createNotification, notifyDeduped } from './notifications';
@@ -18,6 +25,12 @@ const TICK_INTERVAL_MS = 60 * 60 * 1000;
 const MILESTONE_DEDUP_MS = 23 * 60 * 60 * 1000;
 
 type DeadlineType = 'upcoming' | 'overdue';
+
+/** How far back a reached deadline is still notified as overdue. */
+const OVERDUE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** "scade …" by calendar days to the deadline's day (0, 1, 2); further out is not notified yet. */
+const UPCOMING_LABELS = ['oggi', 'domani', 'tra 2 giorni'];
 
 async function notifyMilestone(
   prisma: PrismaClient,
@@ -40,26 +53,26 @@ async function notifyMilestone(
 
 /**
  * Notifies once per row+event+day when a collection row's current phase has slipped past its
- * calendar deadline (`daysToDeadline < 0`, per `computeCriticalityForLayout` — same criticality
- * engine as the Controllo dashboards, no new calculation). Recipients are the event's visible
- * users, same resolution as milestone deadline notifications.
+ * calendar deadline (`reached`, per `computeCriticalityForLayout` — same criticality engine as the
+ * Controllo dashboards, no new calculation: an all-day deadline at the end of its day in the
+ * business zone). Recipients are the event's visible users, same resolution as milestone deadline
+ * notifications.
  *
  * Rows marked as concluded are skipped (`state === 'active'` guard): they carry a frozen outcome
  * instead of a countdown, and nagging about a deadline on work someone already closed is noise.
  */
-async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
+async function checkRowPhaseOverdue(prisma: PrismaClient, now: Date, alert: AlertContext): Promise<void> {
   const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
-  const thresholds = await resolveAlertThresholds(prisma);
 
   const overdueRows = (
     await Promise.all(
-      layouts.map(layout => computeCriticalityForLayout(layout.id, new Date(), prisma, thresholds))
+      layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, alert))
     )
   )
     .flat()
     // Type predicate, not a plain boolean: the criticality result is a union and only the 'active'
     // arm carries `eventId`/`eventTitle`, which the notification below needs.
-    .filter((r): r is Extract<typeof r, { state: 'active' }> => r.state === 'active' && r.daysToDeadline < 0);
+    .filter((r): r is Extract<typeof r, { state: 'active' }> => r.state === 'active' && r.reached);
   if (overdueRows.length === 0) return;
 
   const rowIds = overdueRows.map(r => r.rowId);
@@ -96,41 +109,65 @@ async function checkRowPhaseOverdue(prisma: PrismaClient): Promise<void> {
   );
 }
 
+/**
+ * What to notify about one event's deadline at `now`, or nothing — the whole rule of
+ * `checkDeadlines`. Measured on the deadline (`endAt ?? startAt`) the way every other consumer
+ * measures it: "in scadenza" while it is not reached and its day is at most two calendar days away
+ * in the business zone, "scaduta" for three days after it is reached. Pure.
+ */
+export function milestoneNotice(
+  m: { title: string; startAt: Date; endAt: Date | null; allDay: boolean },
+  now: Date,
+  timeZone: string,
+): { type: DeadlineType; message: string } | null {
+  const reachedAt = deadlineReachedAt(m, timeZone);
+  if (reachedAt <= now) {
+    return reachedAt.getTime() >= now.getTime() - OVERDUE_WINDOW_MS
+      ? { type: 'overdue', message: `"${m.title}" è scaduta senza essere completata` }
+      : null;
+  }
+  const label = UPCOMING_LABELS[calendarDaysBetween(calendarDateIn(now, timeZone), deadlineDay(m, timeZone))];
+  return label ? { type: 'upcoming', message: `"${m.title}" scade ${label}` } : null;
+}
+
 async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstance['log']): Promise<void> {
   const now = new Date();
+  const alert = await resolveAlertContext(prisma);
+  const { timeZone } = alert;
 
-  const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-  const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  // A superset of stored deadlines: reached no earlier than the overdue window (minus the reach
+  // margin), and on a day no later than today + 2 — within three days of now, plus a day of slack
+  // for a DST change in between. Exact rules below.
+  const storedFrom = new Date(now.getTime() - OVERDUE_WINDOW_MS - DEADLINE_REACH_MARGIN_MS);
+  const storedTo = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+  const events = await prisma.calendarEvent.findMany({
+    where: {
+      cancelledAt: null,
+      OR: [
+        { endAt: { gte: storedFrom, lte: storedTo } },
+        { endAt: null, startAt: { gte: storedFrom, lte: storedTo } },
+      ],
+    },
+    select: { id: true, title: true, startAt: true, endAt: true, allDay: true },
+  });
 
-  const [upcoming, overdue] = await Promise.all([
-    prisma.calendarEvent.findMany({
-      where: { startAt: { gte: now, lte: in48h }, cancelledAt: null },
-      select: { id: true, title: true, startAt: true },
-    }),
-    prisma.calendarEvent.findMany({
-      where: { startAt: { gte: threeDaysAgo, lt: now }, cancelledAt: null },
-      select: { id: true, title: true, startAt: true },
-    }),
-  ]);
+  const notifications = events.flatMap(m => {
+    const notice = milestoneNotice(m, now, timeZone);
+    return notice ? [notifyMilestone(prisma, m, notice.type, notice.message)] : [];
+  });
 
   await Promise.all([
-    ...upcoming.map(m => {
-      const hoursLeft = Math.round((m.startAt.getTime() - now.getTime()) / 3_600_000);
-      return notifyMilestone(prisma, m, 'upcoming', `"${m.title}" scade ${hoursLeft <= 24 ? 'domani' : 'tra 2 giorni'}`);
-    }),
-    ...overdue.map(m =>
-      notifyMilestone(prisma, m, 'overdue', `"${m.title}" è scaduta senza essere completata`)
-    ),
-    checkRowPhaseOverdue(prisma),
-    // Auto-revision of the collection layout for every phase-linked event whose deadline just passed.
-    createRevisionsForReachedEvents(prisma, now, logger),
+    ...notifications,
+    checkRowPhaseOverdue(prisma, now, alert),
+    // Auto-revision of the collection layout for every phase-linked event whose deadline was reached.
+    createRevisionsForReachedEvents(prisma, now, timeZone, logger),
   ]);
 }
 
 /**
  * Registers the milestone deadline notification scheduler as a Fastify plugin.
- * Checks for upcoming (within 48 h) and overdue (within 3 days) calendar events
- * on an hourly tick and creates per-user notifications with per-day deduplication.
+ * Checks for upcoming (due within two calendar days) and overdue (reached within 3 days) calendar
+ * events on an hourly tick and creates per-user notifications with per-day deduplication.
  * The first check runs 60 seconds after server ready to avoid boot-time noise.
  */
 export function registerMilestoneDeadlineScheduler(

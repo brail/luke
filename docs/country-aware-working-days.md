@@ -70,8 +70,9 @@ How an event gets its value:
 | `cloneFromBrandSeason` | Not copied, and neither is `phaseId`: cloned events start at `null`. |
 
 The field is outside the post-freeze lock. On a frozen phase event whose
-deadline has passed, only the dates, the title and the phase are locked
-(`isEventDateLocked`, enforced by `seasonCalendar.updateMilestone`). The
+deadline has been reached, only the dates (`allDay` included, since it moves the
+deadline), the title and the phase are locked (`isEventDateLocked`, enforced by
+`seasonCalendar.updateMilestone`). The
 relevance stays editable, and changing it re-scores both the countdown and any
 completion outcome measured against that event.
 
@@ -99,32 +100,39 @@ and never saves them on the event. An event belongs to a planning group, and one
 planning group can hold many rows with different vendors, so an event has no
 single vendor country of its own.
 
-| Mode | Codes passed to `workingDaysBetween` | Unknown country |
+| Mode | Codes passed to `workingDaysBetweenDates` | Unknown country |
 | --- | --- | --- |
 | `COMPANY` | `[companyCountry]` | No company country: weekends only. |
 | `VENDOR` | `[vendorCountry]` | Row has no vendor, or vendor has no country: weekends only. |
 | `BOTH` | `[companyCountry, vendorCountry]`, unknown ones dropped | One missing: the other alone. Both missing: weekends only. |
 
-For "weekends only" the code calls `workingDaysBetween(from, to, [], [])`, which
-passes an empty holiday list. It does not pass the fetched holidays with an
-empty country list, because `isWorkingDay` reads an empty country list as "apply
-every holiday passed, whatever its country", the opposite of what is wanted.
+For "weekends only" the code calls `workingDaysBetweenDates(from, to, [], [])`,
+which passes an empty holiday list. It does not pass the fetched holidays with
+an empty country list, because `isWorkingDate` reads an empty country list as
+"apply every holiday passed, whatever its country", the opposite of what is
+wanted.
 
 The company code comes first in the list and the vendor code second. The list is
 not de-duplicated.
 
 ## Counting working days
 
-The count is `workingDaysBetween` in `packages/core/src/utils/dateUtils.ts`,
-built on `isWorkingDay`:
+The count is `workingDaysBetweenDates` in `packages/core/src/utils/dateUtils.ts`,
+built on `isWorkingDate`. Both work on calendar dates (`CalendarDate`,
+`'YYYY-MM-DD'`), never on instants:
 
 - A working day is a Monday to Friday that falls inside no `Holiday` range
   (`startDate` to `endDate`, inclusive) whose `countryCode` is in the list.
-- Dates are read in the API process's local time zone.
+  Holidays are `@db.Date` columns, read as the dates they are.
+- "Today" is the date of now in the business time zone
+  (`app.defaultTimezone`, Settings → Azienda). The deadline's date is
+  `deadlineDay` (`packages/core/src/utils/calendarEventLock.ts`): an all-day
+  deadline is its own date, a timed one is the date of its instant in the
+  business zone. The zone the API process runs in plays no part.
 
 ### Intersection of open days in both
 
-When the list holds more than one country code, `isWorkingDay` excludes any date
+When the list holds more than one country code, `isWorkingDate` excludes any date
 that is a holiday in **any** of them. For `BOTH`, that is exactly "a day counts
 only if it is open in both calendars", the intersection of the open days, with
 no combination logic of its own. For example, take Monday to Friday with a
@@ -133,10 +141,10 @@ counts 4, `VENDOR` (CN) counts 4 and `BOTH` counts 3.
 
 ### Endpoint convention
 
-Both counts are a difference of calendar dates: the time of day is ignored, the
-start date is excluded, the end date is included, and two instants on the same
-date give 0. `daysBetween` counts every date; `workingDaysBetween` counts only
-the working ones, so with no non-working day in range the two agree.
+Both counts are a difference of calendar dates: the start date is excluded, the
+end date is included, and the same date gives 0. `calendarDaysBetween` counts
+every date; `workingDaysBetweenDates` counts only the working ones, so with no
+non-working day in range the two agree.
 
 With now = Monday 10:00 and no holidays:
 
@@ -149,21 +157,32 @@ With now = Monday 10:00 and no holidays:
 | Next Monday, all-day | 7 | 5 |
 | Monday, all-day, seen from Tuesday 10:00 | −1 | −1 |
 
+The count says how far away the deadline is; it does not decide whether it is
+late. A deadline is late once **reached** (`deadlineReachedAt`): an all-day
+deadline when its day ends in the business zone, a timed one at its instant.
+When a reached deadline still counts 0 — a timed deadline passed earlier today,
+or a Sunday deadline seen on Monday in working mode — the row takes the band a
+count of −1 would take, but the count it returns stays 0. The payload carries
+`reached` (`late` for a concluded row, measured at `completedAt`), and the UI
+says "Scaduta" / "oltre la scadenza" instead of inventing a day of delay.
+
 Consequences for an opted-in event:
 
-- A deadline on the current date scores 0 ("Scade oggi") and a row concluded
-  on the due date scores as on time, in both modes.
+- An all-day deadline on the current date scores 0 ("Scade oggi") all day, and
+  a row concluded at any time on that date scores as on time, in both modes. A
+  timed deadline is late from its instant on.
 - A Friday deadline seen on Saturday is −1 in both modes.
 - A deadline on a non-working day counts only the working days around it: a
   Sunday deadline seen on Friday is 0, and seen on Monday it is still 0 (−1 in
-  calendar mode) until Tuesday. The freeze-time warning catches this only when
-  the event's `startAt` is the non-working day; see
+  calendar mode) but reached, so late ("Scaduta"). The freeze-time warning
+  catches this only when the event's `startAt` is the non-working day; see
   [Freeze-time warning](#freeze-time-warning).
 
-Until 2026-09-26 `workingDaysBetween` stepped between the two instants and
-counted both endpoints, so an all-day milestone was one working day overdue on
-its own due date. `packages/core/src/utils/__tests__/dateUtils.test.ts` pins the
-convention; the country resolution in `resolveDaysCount` still has no test.
+Until 2026-09-26 the count stepped between the two instants and counted both
+endpoints, so an all-day milestone was one working day overdue on its own due
+date. `packages/core/src/utils/__tests__/dateUtils.test.ts` pins the convention
+under several process time zones; `apps/api/test/phaseAlert.spec.ts` pins the
+reached rule. The country resolution in `resolveDaysCount` still has no test.
 
 ### Where the count is used
 
@@ -172,18 +191,20 @@ the relevance of the event it measures against:
 
 | Count | Between | Relevance of |
 | --- | --- | --- |
-| `daysToDeadline` | now → active milestone's deadline | active event |
-| `nextPhase.daysUntil` | now → next milestone's deadline | next event |
-| `daysVsDeadline` (concluded rows) | `completedAt` → last milestone on an active phase | that milestone |
+| `daysToDeadline` | today → active milestone's deadline day | active event |
+| `nextPhase.daysUntil` | today → next milestone's deadline day | next event |
+| `daysVsDeadline` (concluded rows) | `completedAt`'s date → last milestone on an active phase | that milestone |
 
-The deadline is always the event's live `endAt ?? startAt` (`eventDeadline`) and
-never the frozen baseline. Each result carries `daysMode` (`'calendar'` or
+Every date is read in the business time zone. The deadline is always the
+event's live `endAt ?? startAt` (`deadlineDay` / `deadlineReachedAt`) and never
+the frozen baseline. Each result carries `daysMode` (`'calendar'` or
 `'working'`) and `relevantCountryCodes`, so that the UI can state the unit. The
 next-phase entry carries them too, but the UI does not render its unit.
 
 Alert bands (`collectionControl.alertThresholds`) do not know which unit they
 receive: the same `minDaysToDeadline` / `maxDaysToDeadline` bounds classify both
-calendar-day and working-day counts.
+calendar-day and working-day counts, with −1 standing in for a reached deadline
+that counts 0.
 
 ### Data fetching
 
@@ -204,12 +225,15 @@ The holiday query filters by country only, not by date range.
 
 The band and `daysToDeadline` both come from this count. An opted-in event
 therefore changes the following for the rows it applies to: the criticality
-badge, the saturation heatmap, the bottleneck index, and the row-phase-overdue
-notification (`checkRowPhaseOverdue`, which fires when `daysToDeadline < 0`).
+badge, the saturation heatmap and the bottleneck index. The row-phase-overdue
+notification (`checkRowPhaseOverdue`) fires when the deadline is `reached`,
+which does not depend on the count.
 
-The calendar milestone notifications in `milestoneDeadlineScheduler.ts` are not
-affected. Their "upcoming" window (next 48 hours) and "overdue" window (last 3
-days) are wall-clock windows on the event's `startAt`.
+The calendar milestone notifications in `milestoneDeadlineScheduler.ts`
+(`milestoneNotice`) do not use the working-day count. They are measured on the
+deadline (`endAt ?? startAt`) in the business zone: "in scadenza" while it is
+not reached and its day is at most two calendar days away ("oggi", "domani",
+"tra 2 giorni"), "scaduta" for three days after it is reached.
 
 ## Holiday sources
 
@@ -271,8 +295,8 @@ the code list is not de-duplicated, an Italian vendor under an Italian company
 reads "IT+IT" in `BOTH` mode.
 
 Only the tooltip states the unit. The detail line next to the badge ("tra 12
-giorni", "5 giorni di ritardo", "Prossima fase: … · tra N giorni") prints the
-number as "giorni" in either mode. The next-phase figure also uses the next
+giorni", "5 giorni di ritardo", "scaduta" for a reached deadline that counts 0,
+"Prossima fase: … · tra N giorni") prints the number as "giorni" in either mode. The next-phase figure also uses the next
 event's relevance, which may differ from the badge's.
 
 ### Freeze-time warning
@@ -284,7 +308,8 @@ the countdown, with these rules:
 
 - It checks only events that are not cancelled, are tagged with a phase and have
   a relevance set.
-- It checks the event's `startAt`, not its deadline.
+- It checks the date of the event's `startAt` (an all-day value's own date, a
+  timed one read in the business zone), not its deadline.
 - An event on a weekend is reported once, as "weekend".
 - Otherwise, it is flagged "festività azienda" if the day is a company holiday
   (`COMPANY` / `BOTH`).
@@ -319,9 +344,14 @@ The code differs from the design as first written in these points:
   country at all for `VENDOR`.
 - **Tooltip wording.** Planned as "N gg lavorativi (calendario fornitore CN)";
   implemented as "N gg lavorativi (CN)", with codes joined by "+" for `BOTH`.
-- **Notifications.** As planned, the scheduler's 48-hour and 3-day windows stay
-  in wall-clock time. The row-phase-overdue notification, however, follows the
-  working-day count, because it reuses the criticality engine.
+- **Notifications.** Planned to stay in wall-clock windows on `startAt`, and did
+  until 2026-09-28; they are now measured on the deadline in the business zone
+  (see [Downstream effects](#downstream-effects)). The row-phase-overdue
+  notification reuses the criticality engine and fires on `reached`.
+- **Business time zone.** Until 2026-09-28 every date was read in the API
+  process's zone, and an all-day deadline was reached at the start of its day
+  (00:00 UTC). Counts now run on calendar dates in `app.defaultTimezone`, and an
+  all-day deadline is reached when its day ends there.
 - **Schema location.** The models moved out of `apps/api/prisma/schema.prisma`:
   the enum, `CalendarEvent`, `MilestoneTemplateItem` and `Holiday` are now in
   `packages/db/prisma/calendar.prisma`, `Vendor` in `catalog.prisma`,

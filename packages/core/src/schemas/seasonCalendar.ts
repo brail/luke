@@ -17,6 +17,13 @@ export const VendorClosureUpsertInputSchema = z.object({
 });
 export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSchema>;
 
+/**
+ * An event instant as the API accepts it: ISO 8601 (UTC, four-digit year) within 1900–9999, the
+ * years the calendar-date helpers support. A year typed as "26" would otherwise be stored as year 26
+ * and make every deadline evaluation on the event throw.
+ */
+const calendarInstantSchema = z.string().datetime().refine(value => value >= '1900', 'Anno fuori intervallo (1900–9999)');
+
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
 /** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */
@@ -39,9 +46,9 @@ export const CalendarEventBaseSchema = z.object({
   phaseId:                      z.string().uuid().optional().nullable(),
   calendarDaysRelevance:        z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                        z.string().min(1).max(200),
-  startAt:                      z.string().datetime(),
+  startAt:                      calendarInstantSchema,
   description:                  z.string().max(2000).optional(),
-  endAt:                        z.string().datetime().optional(),
+  endAt:                        calendarInstantSchema.optional(),
   allDay:                       z.boolean().default(false),
   publishExternally:            z.boolean().default(true),
   templateItemId:               z.string().uuid().optional(),
@@ -76,8 +83,8 @@ export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSc
  */
 export const MilestoneRescheduleInputSchema = z.object({
   id: z.string().uuid(),
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime().optional().nullable(),
+  startAt: calendarInstantSchema,
+  endAt: calendarInstantSchema.optional().nullable(),
   allDay: z.boolean().optional(),
   reason: MandatoryReasonSchema,
 });
@@ -103,7 +110,7 @@ export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
 export const ApplyTemplateInputSchema = z.object({
   planningGroupId: z.string().uuid(),
   templateId:      z.string().uuid(),
-  anchorDate:      z.string().datetime().optional(),
+  anchorDate:      calendarInstantSchema.optional(),
   force:           z.boolean().default(false),
 });
 export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;

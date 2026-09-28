@@ -31,6 +31,8 @@ let adminSession: UserSession;
 let editorSession: UserSession;
 let viewerSession: UserSession;
 
+let brandId: string;
+let seasonId: string;
 let calendarId: string;
 let planningGroupId: string;
 let phaseId: string;
@@ -82,6 +84,8 @@ beforeAll(async () => {
   viewerSession = viewer.session;
 
   const fixture = await createCalendarFixture(prisma, { prefix: 'MIL', groupName: 'Main group' });
+  brandId = fixture.brandId;
+  seasonId = fixture.seasonId;
   calendarId = fixture.calendarId;
   planningGroupId = fixture.planningGroupId;
 
@@ -197,6 +201,26 @@ describe('rescheduleMilestone — the only way out of a frozen event', () => {
     const metadata = log!.metadata as { oldAllDay?: unknown; newAllDay?: unknown };
     expect(metadata.oldAllDay).toBe(false);
     expect(metadata.newAllDay).toBe(true);
+  });
+});
+
+describe('the post-freeze lock', () => {
+  it('treats an allDay change like a date change: it moves the deadline', async () => {
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+
+    await expect(
+      asAdmin().seasonCalendar.updateMilestone({ id: locked.id, data: { allDay: true } })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+  });
+
+  it('is evaluated by the server and reported per event, so the client never needs the zone', async () => {
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+    const future = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2099-01-01'), withPhase: true });
+
+    const list = await asAdmin().seasonCalendar.listMilestones({ seasonId, brandIds: [brandId] });
+
+    expect(list.find(e => e.id === locked.id)?.dateLocked).toBe(true);
+    expect(list.find(e => e.id === future.id)?.dateLocked).toBe(false);
   });
 });
 

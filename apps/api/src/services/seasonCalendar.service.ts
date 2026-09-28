@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
 import {
-  eventDeadline,
+  deadlineReachedAt,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
   type CalendarEventInput,
@@ -10,6 +10,8 @@ import {
   type SeasonCalendarStatus,
 } from '@luke/core';
 import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@luke/db';
+
+import { getConfigOrDefault } from '../lib/configManager';
 
 import { eventVisibilityWhere } from './calendarAudience.service';
 
@@ -264,19 +266,24 @@ type LockableEvent = {
   phaseId: string | null;
   startAt: Date;
   endAt: Date | null;
+  allDay: boolean;
   planningGroup: { frozenAt: Date | null };
 };
 
 /**
  * Thin adapter over the shared `@luke/core` predicate — only reshapes the server's nested
- * `planningGroup.frozenAt` into the flat `frozenAt` the shared function expects. The actual lock
- * logic lives in one place so the server and the client UX mirror (`apps/web/.../calendar/utils.ts`)
- * can't drift on what "locked" means. The only way to move a locked event is a *motivated* reschedule
+ * `planningGroup.frozenAt` into the flat `frozenAt` the shared function expects. The client has no
+ * mirror of this lock — it depends on the business time zone — and receives the result as
+ * `dateLocked` from `listMilestonesDb`. The only way to move a locked event is a *motivated* reschedule
  * (`rescheduleMilestone`, reason audited) — title/phaseId have no equivalent path, only unfreezing
  * the group lifts the lock.
  */
-export function isEventDateLocked(event: LockableEvent, now: Date = new Date()): boolean {
-  return isEventDateLockedCore({ phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt, startAt: event.startAt, endAt: event.endAt }, now);
+export function isEventDateLocked(event: LockableEvent, timeZone: string, now: Date = new Date()): boolean {
+  return isEventDateLockedCore(
+    { phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt, startAt: event.startAt, endAt: event.endAt, allDay: event.allDay },
+    timeZone,
+    now,
+  );
 }
 
 /** Thin adapter over the shared `@luke/core` predicate — see `isEventDateLocked` above. */
@@ -311,24 +318,28 @@ export async function rescheduleMilestone(
  * phase events in the same planning group — an earlier phase scheduled after a later one, or vice
  * versa. Returns a human message or null. This is a soft warning surfaced on save (toast); it does
  * NOT block, and reintroduces no phase dependency graph (the what-if solver stays removed) — it only
- * compares `Phase.order` against `endAt ?? startAt`.
+ * compares `Phase.order` against the instants the deadlines are reached, so an all-day and a timed
+ * deadline on the same day compare as the business zone reads them.
  */
 export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaClient): Promise<string | null> {
   const event = await prisma.calendarEvent.findUnique({
     where: { id: eventId },
-    select: { planningGroupId: true, cancelledAt: true, startAt: true, endAt: true, phase: { select: { order: true, label: true } } },
+    select: { planningGroupId: true, cancelledAt: true, startAt: true, endAt: true, allDay: true, phase: { select: { order: true, label: true } } },
   });
   if (!event || event.cancelledAt || !event.phase) return null;
 
-  const deadline = eventDeadline(event);
-  const siblings = await prisma.calendarEvent.findMany({
-    where: { planningGroupId: event.planningGroupId, cancelledAt: null, phaseId: { not: null }, id: { not: eventId } },
-    select: { startAt: true, endAt: true, phase: { select: { order: true, label: true } } },
-  });
+  const [siblings, timeZone] = await Promise.all([
+    prisma.calendarEvent.findMany({
+      where: { planningGroupId: event.planningGroupId, cancelledAt: null, phaseId: { not: null }, id: { not: eventId } },
+      select: { startAt: true, endAt: true, allDay: true, phase: { select: { order: true, label: true } } },
+    }),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
+  const deadline = deadlineReachedAt(event, timeZone);
 
   for (const s of siblings) {
     if (!s.phase) continue;
-    const sDeadline = eventDeadline(s);
+    const sDeadline = deadlineReachedAt(s, timeZone);
     if (s.phase.order < event.phase.order && sDeadline > deadline) {
       return `Ordine fasi incoerente: la fase precedente «${s.phase.label}» è pianificata dopo «${event.phase.label}».`;
     }
@@ -363,10 +374,13 @@ export async function listMilestonesDb(
   functionId?: string,
   allowedFunctionIds?: string[] | null
 ) {
-  const calendars = await prisma.seasonCalendar.findMany({
-    where: { seasonId, brandId: { in: brandIds } },
-    select: { id: true, brandId: true },
-  });
+  const [calendars, timeZone] = await Promise.all([
+    prisma.seasonCalendar.findMany({
+      where: { seasonId, brandId: { in: brandIds } },
+      select: { id: true, brandId: true },
+    }),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
   // `undefined` (parameter omitted) and `null` (admin, unrestricted) are distinct — collapsing
   // them with `??` would treat an admin as having no functions instead of no restriction.
   const visibilityWhere = eventVisibilityWhere(userId, allowedFunctionIds === undefined ? [] : allowedFunctionIds);
@@ -389,13 +403,17 @@ export async function listMilestonesDb(
     orderBy: { startAt: 'asc' },
   });
 
+  const now = new Date();
   return events.map(({ planningGroup, ...e }) => ({
     ...e,
     brandId: calendarBrandMap.get(e.calendarId) ?? null,
     planningGroupName: planningGroup.name,
-    // Surfaced so the client can compute post-freeze date-lock (see isEventDateLocked) without a
-    // second round-trip: a phase event whose group is frozen and whose deadline has passed is locked.
+    // Surfaced for the client's delete-lock mirror (`isEventDeleteLocked`).
     planningGroupFrozenAt: planningGroup.frozenAt,
+    // The date lock, evaluated here in the business zone so the client never needs the zone. It is
+    // a snapshot: the list refetches on window focus and after a lock rejection, and every
+    // mutation re-evaluates the lock on the server.
+    dateLocked: isEventDateLocked({ ...e, planningGroup }, timeZone, now),
   }));
 }
 
