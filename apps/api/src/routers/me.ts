@@ -21,6 +21,7 @@ import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { selfProcedure, router } from '../lib/trpc';
+import { resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -32,7 +33,9 @@ export const meRouter = router({
    *
    * @auth {authenticated}
    * @input {none}
-   * @output {User with provider, profileCompletion, loginCount, lastLoginAt.}
+   * @output {User with provider, profileCompletion, loginCount, lastLoginAt. `timezone` is the zone
+   *   the server renders in (`resolveUserTimeZone`): the business zone when the stored value is not
+   *   an IANA name.}
    */
   get: selfProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
@@ -70,12 +73,16 @@ export const meRouter = router({
     // Determines the main provider (first identity)
     const provider = user.identities[0]?.provider || 'LOCAL';
 
+    // The zone the server renders this user's dates in, not the raw column: the web formats with
+    // it and the profile form saves it back, which a legacy non-IANA value would fail.
+    const timezone = await resolveUserTimeZone(ctx.prisma, user, ctx.logger);
+
     // Calculates profile completion percentage
     const profileCompletion = calculateProfileCompletion({
       firstName: user.firstName,
       lastName: user.lastName,
       locale: user.locale,
-      timezone: user.timezone,
+      timezone,
     });
 
     const dailyGreetingEnabled = await getUserPreferenceValue(
@@ -87,6 +94,7 @@ export const meRouter = router({
 
     return {
       ...user,
+      timezone,
       provider,
       profileCompletion,
       dailyGreetingEnabled,
@@ -491,12 +499,13 @@ export const meRouter = router({
     }
 
     const [user, content] = await Promise.all([
-      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true } }),
+      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, timezone: true } }),
       selectGreetingContent(),
     ]);
 
+    const timeZone = await resolveUserTimeZone(ctx.prisma, { id: userId, timezone: user?.timezone ?? '' }, ctx.logger);
     const hour = Number(
-      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date())
+      new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(new Date())
     );
 
     return {

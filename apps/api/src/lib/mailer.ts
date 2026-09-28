@@ -10,7 +10,7 @@ import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
-import { calcBackoffDelay, parseConfigValue } from '@luke/core';
+import { calcBackoffDelay, formatDateWithTimezone, parseConfigValue } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
@@ -293,16 +293,21 @@ export async function sendAccountApprovedEmail(
 /**
  * Sends a branded notice that a maintenance window has been scheduled or started.
  * `reason` is the free-text message the admin entered when scheduling/activating, if any.
+ * `timeZone` is the recipient's (`resolveUserTimeZone`): the time is written there, with the
+ * zone's short name.
  */
 export async function sendMaintenanceScheduledEmail(
   prisma: PrismaClient,
   to: string,
   scheduledAt: Date,
   reason: string | null,
-  baseUrl: string
+  baseUrl: string,
+  timeZone: string
 ): Promise<void> {
   const subject = 'Manutenzione programmata - Luke';
-  const whenLabel = scheduledAt.toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' });
+  const whenLabel = formatDateWithTimezone(scheduledAt, timeZone, {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  });
   const message = reason
     ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${reason}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
     : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;

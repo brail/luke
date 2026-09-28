@@ -31,7 +31,7 @@ export const FALLBACK_QUOTES: { content: string; author: string }[] = [
 ];
 
 /**
- * Returns the time-of-day greeting for Europe/Rome hour buckets:
+ * Returns the time-of-day greeting for an hour read in the reader's zone:
  * 05:00-11:59 Buongiorno, 12:00-17:59 Buon pomeriggio, 18:00-04:59 Buonasera.
  */
 export function getTimeBasedGreeting(hour: number): string {

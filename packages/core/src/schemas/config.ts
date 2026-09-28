@@ -56,8 +56,9 @@ export const AppConfigRegistry = {
   'app.locale':          z.string(),
   /**
    * The business time zone (IANA): the day shared deadlines, locks and countdowns are counted in,
-   * the zone scheduled wall-clock times are read in (`backup.schedule.dailyTime`), and the days the
-   * dashboard's weekly sales end on.
+   * the zone scheduled wall-clock times are read in (`backup.schedule.dailyTime`), the days the
+   * dashboard's weekly sales end on, and the zone a user reads in when their stored `User.timezone`
+   * is not an IANA name (`resolveUserTimeZone`).
    */
   'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido'),
   'app.baseUrl':         z.string().url(),

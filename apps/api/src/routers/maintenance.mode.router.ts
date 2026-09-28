@@ -10,6 +10,7 @@
 import { TRPCError } from '@trpc/server';
 
 import {
+  formatDateWithTimezone,
   MaintenanceModeActivateInputSchema,
   MaintenanceModeScheduleInputSchema,
 } from '@luke/core';
@@ -20,6 +21,7 @@ import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail
 import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
 import { adminProcedure, publicProcedure, router } from '../lib/trpc';
+import { groupByTimeZone } from '../lib/userTimeZone';
 
 import type { MaintenanceModeState } from '../lib/maintenanceMode';
 import type { Context } from '../lib/trpc';
@@ -43,14 +45,14 @@ async function getBaseUrl(ctx: Context): Promise<string> {
 }
 
 /**
- * Fire-and-forget fan-out of `send` to `emails` (via `sendBulkEmail`) — the admin's mutation
+ * Fire-and-forget fan-out of `send` to `recipients` (via `sendBulkEmail`) — the admin's mutation
  * response shouldn't block on however long SMTP takes for a potentially large user base.
  * Failures are logged in aggregate, never thrown.
  */
-function emailUsers(ctx: Context, emails: string[], send: (email: string) => Promise<void>): void {
-  void sendBulkEmail(emails, send)
+function emailUsers<T>(ctx: Context, recipients: T[], send: (recipient: T) => Promise<void>): void {
+  void sendBulkEmail(recipients, send)
     .then(({ failed }) => {
-      if (failed > 0) ctx.logger.error({ failed, total: emails.length }, 'Maintenance mode: email send failed for some users');
+      if (failed > 0) ctx.logger.error({ failed, total: recipients.length }, 'Maintenance mode: email send failed for some users');
     })
     .catch(err => ctx.logger.error({ err }, 'Maintenance mode: email send failed'));
 }
@@ -103,24 +105,31 @@ export const maintenanceModeRouter = router({
       // A single user query, reused for both the in-app notification and the optional email
       // (previously there were two identical fetches on `isActive:true`, one inside `notifyAllUsers`, one
       // inside the email fan-out).
-      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true } });
+      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true, timezone: true } });
+      const scheduledAt = new Date(input.scheduledAt);
+      const usersByZone = await groupByTimeZone(ctx.prisma, users, ctx.logger);
 
       // Immediate notice to everyone, regardless of the configured threshold ladder (which
       // only fires as the countdown crosses each one) — someone scheduling well in advance wants
-      // users to know right away, not just 15/5/1 minute before.
-      void bulkNotify(ctx.prisma, users.map(u => u.id), {
-        category: 'SYSTEM',
-        title: 'Manutenzione programmata',
-        message: input.message
-          ? `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}. ${input.message}`
-          : `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}.`,
-        data: { type: 'maintenance_mode_scheduled' },
-      }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: schedule notification failed'));
+      // users to know right away, not just 15/5/1 minute before. One notice per zone: the time is
+      // written in each reader's zone, with the zone's short name.
+      for (const [timeZone, group] of usersByZone) {
+        const when = formatDateWithTimezone(scheduledAt, timeZone, {
+          day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+        });
+        void bulkNotify(ctx.prisma, group.map(u => u.id), {
+          category: 'SYSTEM',
+          title: 'Manutenzione programmata',
+          message: input.message ? `Prevista per ${when}. ${input.message}` : `Prevista per ${when}.`,
+          data: { type: 'maintenance_mode_scheduled' },
+        }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: schedule notification failed'));
+      }
 
       if (input.notifyByEmail) {
         const baseUrl = await getBaseUrl(ctx);
-        emailUsers(ctx, users.map(u => u.email), email =>
-          sendMaintenanceScheduledEmail(ctx.prisma, email, new Date(input.scheduledAt), input.message ?? null, baseUrl)
+        const recipients = [...usersByZone].flatMap(([timeZone, group]) => group.map(u => ({ email: u.email, timeZone })));
+        emailUsers(ctx, recipients, recipient =>
+          sendMaintenanceScheduledEmail(ctx.prisma, recipient.email, scheduledAt, input.message ?? null, baseUrl, recipient.timeZone)
         );
       }
 

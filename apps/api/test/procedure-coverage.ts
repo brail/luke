@@ -82,8 +82,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   me: {
     reason:
-      'changePassword, get and revokeAllSessions covered by the session specs; changeEmail, profile, timezone and the daily greeting are not',
-    uncovered: 5,
+      'changePassword, get and revokeAllSessions covered by the session specs; profile, timezone and the daily greeting by meTimeZone.integration.spec.ts; changeEmail is not',
+    uncovered: 1,
   },
   users: {
     reason:

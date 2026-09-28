@@ -24,7 +24,8 @@ const KEY = 'app.defaultTimezone';
 
 /**
  * The business time zone (`app.defaultTimezone`): the day shared deadlines, post-freeze locks and
- * countdowns are counted in, and the zone of the scheduled backup hour. Read with `config:read` and saved through
+ * countdowns are counted in, the zone of the scheduled backup hour, and the zone a user reads in when
+ * their stored `User.timezone` is not an IANA name. Read with `config:read` and saved through
  * `config.set` (`config:update`, audited, validated against the registry) — no dedicated procedure.
  */
 export function BusinessTimeZoneCard() {
