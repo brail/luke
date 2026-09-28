@@ -1,10 +1,16 @@
 /**
  * Automatic backup scheduling + retention pruning.
  *
- * Hourly tick. Once `backup.schedule.enabled` is on and the current hour matches
- * `backup.schedule.dailyTime`, kicks off a `trigger=SCHEDULED` backup — same engine
- * (`runBackupJob`) as a manual create, just with no `createdById`. At most once per day
- * (in-memory guard, same pattern as `calendarDigestScheduler`).
+ * Hourly tick. Once `backup.schedule.enabled` is on, kicks off a `trigger=SCHEDULED` backup —
+ * same engine (`runBackupJob`) as a manual create, just with no `createdById` — at the first tick
+ * at or after `backup.schedule.dailyTime` in the business time zone (`app.defaultTimezone`). At
+ * most once per scheduled slot, read from the database, not from memory: a `SCHEDULED` record
+ * created at or after the slot — whatever its status, a failed attempt included — means the slot
+ * has had its run, so a restart never repeats it. A slot crossed between two ticks (23:30 with
+ * ticks at :15) runs at the next tick, after midnight, still counted as that slot's run. The same
+ * rule catches up on purpose: enabling the schedule after today's slot, or moving `dailyTime` later
+ * on a day whose slot already ran, runs a backup at the next tick, since the most recent slot has
+ * none yet.
  *
  * Every tick — independently of whether scheduling is enabled — also:
  * - Reaps backups stuck in `RUNNING`/`PENDING` (the process that ran them crashed mid-job):
@@ -19,12 +25,13 @@
  *   dumpPipeline.ts, their `expiresAt` is always `null`.
  */
 
+import { addCalendarDays, calendarDateIn, instantAt } from '@luke/core';
 import type { BackupScope, BackupStatus, PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../storage';
 
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from './backup/dumpPipeline';
-import { getBackupScheduleSettings } from './configManager';
+import { getBackupScheduleSettings, getConfigOrDefault } from './configManager';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
@@ -35,9 +42,14 @@ const TICK_INTERVAL_MS = 60 * 60 * 1000;
 /** How long a backup can sit in RUNNING/PENDING before it's considered abandoned. */
 const STUCK_JOB_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
-/** Hour component of a validated "HH:mm" string — `getBackupScheduleSettings` guarantees the format. */
-function hourOf(dailyTime: string): number {
-  return parseInt(dailyTime.slice(0, 2), 10);
+/**
+ * The most recent scheduled instant at or before `now`: today's `dailyTime` in the business zone,
+ * or yesterday's while today's is still ahead. Pure.
+ */
+export function latestBackupSlot(now: Date, dailyTime: string, timeZone: string): Date {
+  const today = calendarDateIn(now, timeZone);
+  const slot = instantAt(today, dailyTime, timeZone);
+  return slot <= now ? slot : instantAt(addCalendarDays(today, -1), dailyTime, timeZone);
 }
 
 async function runScheduledBackup(
@@ -139,18 +151,20 @@ async function pruneExpiredBackups(
   log.info({ deleted, retentionMinCount }, 'Backup retention: pruning completed');
 }
 
-async function runTick(
-  prisma: PrismaClient,
-  log: FastifyInstance['log'],
-  state: { lastRunDate: string | null },
-): Promise<void> {
+async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const config = await getBackupScheduleSettings(prisma);
+  const [config, timeZone] = await Promise.all([
+    getBackupScheduleSettings(prisma),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
 
-  if (config.enabled && state.lastRunDate !== today && now.getHours() === hourOf(config.dailyTime)) {
-    state.lastRunDate = today;
-    await runScheduledBackup(prisma, log, config.scope, config.notifyOnFailure);
+  if (config.enabled) {
+    const slot = latestBackupSlot(now, config.dailyTime, timeZone);
+    const slotRun = await prisma.backupRecord.findFirst({
+      where: { trigger: 'SCHEDULED', createdAt: { gte: slot } },
+      select: { id: true },
+    });
+    if (!slotRun) await runScheduledBackup(prisma, log, config.scope, config.notifyOnFailure);
   }
   await reapStuckBackups(prisma, log);
   await pruneExpiredBackups(prisma, log, config.retentionMinCount);
@@ -162,9 +176,8 @@ async function runTick(
  */
 export function registerBackupScheduler(fastify: FastifyInstance, prisma: PrismaClient): void {
   let timer: ReturnType<typeof setInterval> | null = null;
-  const state = { lastRunDate: null as string | null };
 
-  const lockedTick = withSchedulerLock(prisma, 'backup', () => runTick(prisma, fastify.log, state));
+  const lockedTick = withSchedulerLock(prisma, 'backup', () => runTick(prisma, fastify.log));
   const run = () =>
     lockedTick().catch(err =>
       fastify.log.error({ err }, 'Backup scheduler: unhandled error')

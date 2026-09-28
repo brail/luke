@@ -24,7 +24,7 @@ const KEY = 'app.defaultTimezone';
 
 /**
  * The business time zone (`app.defaultTimezone`): the day shared deadlines, post-freeze locks and
- * countdowns are counted in. Read with `config:read` and saved through
+ * countdowns are counted in, and the zone of the scheduled backup hour. Read with `config:read` and saved through
  * `config.set` (`config:update`, audited, validated against the registry) — no dedicated procedure.
  */
 export function BusinessTimeZoneCard() {
@@ -57,7 +57,7 @@ export function BusinessTimeZoneCard() {
   return (
     <SectionCard
       title="Fuso orario aziendale"
-      description="Il giorno in cui si contano scadenze, blocchi post-freeze e conteggi alla scadenza"
+      description="Il giorno in cui si contano scadenze, blocchi post-freeze e conteggi alla scadenza, e il fuso dell'ora del backup pianificato"
     >
       <div className="max-w-sm space-y-1.5">
         <Label htmlFor="business-time-zone">Fuso orario</Label>

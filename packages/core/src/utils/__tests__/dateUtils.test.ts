@@ -7,6 +7,7 @@ import {
   calendarDateIn,
   calendarDateOf,
   calendarDaysBetween,
+  instantAt,
   isValidTimeZone,
   isWorkingDate,
   parseCalendarDate,
@@ -183,6 +184,25 @@ describe.each([
 
     it('throws on an invalid zone', () => {
       expect(() => startOfDayIn(date('2026-09-28'), 'Foo/Bar')).toThrow(RangeError);
+    });
+  });
+
+  describe('instantAt', () => {
+    it.each([
+      ['2026-10-02', '09:30', 'Europe/Rome', '2026-10-02T07:30:00.000Z'],
+      ['2026-10-02', '23:00', 'America/Los_Angeles', '2026-10-03T06:00:00.000Z'],
+      ['2026-10-02', '05:00', 'Asia/Kolkata', '2026-10-01T23:30:00.000Z'],
+      // A wall time the spring-forward jump skips: the first instant after the jump (03:00 CEST).
+      ['2026-03-29', '02:30', 'Europe/Rome', '2026-03-29T01:00:00.000Z'],
+      // A wall time the fall-back repeats: its first occurrence (02:30 CEST).
+      ['2026-10-25', '02:30', 'Europe/Rome', '2026-10-25T00:30:00.000Z'],
+      ['2026-09-28', '00:00', 'Europe/Rome', '2026-09-27T22:00:00.000Z'],
+    ])('%s %s in %s is %s', (day, time, timeZone, expected) => {
+      expect(iso(instantAt(date(day), time, timeZone))).toBe(expected);
+    });
+
+    it.each(['24:00', '9:30', '09:60', ''])('throws on the wall time %j', time => {
+      expect(() => instantAt(date('2026-10-02'), time, 'Europe/Rome')).toThrow(RangeError);
     });
   });
 

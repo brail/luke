@@ -121,7 +121,7 @@ export function BackupScheduleCard() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <FormDescription>Ora locale del server a cui parte il backup pianificato</FormDescription>
+                    <FormDescription>Ora a cui parte il backup pianificato, nel fuso orario aziendale (Impostazioni → Azienda)</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

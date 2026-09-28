@@ -7,11 +7,16 @@ import {
   DEFAULT_FOREX_PAIRS,
   DashboardTaskInputSchema,
   DashboardWidgetsSchema,
+  addCalendarDays,
+  calendarDateIn,
+  calendarDateOf,
+  utcMidnightOf,
   type WidgetConfigItem,
 } from '@luke/core';
 import { type Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { getConfigOrDefault } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router, selfProcedure } from '../lib/trpc';
 import { assertBrandAccess } from '../services/context.service';
@@ -227,7 +232,8 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Returns daily sales order counts for the past 7 days for a brand/season.
+   * Returns daily sales order counts for the 7 days ending today in the business time zone
+   * (`app.defaultTimezone`) for a brand/season.
    *
    * @auth {sales:read}
    * @input {{ brandId: string, seasonId: string }}
@@ -239,36 +245,33 @@ export const dashboardRouter = router({
     .query(async ({ ctx, input }) => {
     await assertBrandAccess(ctx, input.brandId);
 
-    const [brand, season] = await Promise.all([
+    const [brand, season, timeZone] = await Promise.all([
       ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true } }),
       ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
+      getConfigOrDefault(ctx.prisma, 'app.defaultTimezone'),
     ]);
     if (!brand || !season) return [] as { date: string; count: number }[];
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const today = calendarDateIn(new Date(), timeZone);
+    const result: { date: string; count: number }[] = Array.from({ length: 7 }, (_, i) => ({
+      date: addCalendarDays(today, i - 6),
+      count: 0,
+    }));
 
     const headers = await ctx.prisma.navPfSalesHeader.findMany({
       where: {
         sellingSeasonCode: season.code,
         shortcutDimension2Code: brand.code,
-        orderDate: { gte: sevenDaysAgo },
+        orderDate: { gte: utcMidnightOf(addCalendarDays(today, -6)) },
       },
       select: { orderDate: true },
     });
 
-    const result: { date: string; count: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      result.push({ date: d.toISOString().split('T')[0], count: 0 });
-    }
-
+    // `orderDate` is a NAV date, synced as its UTC midnight: read it as the date it is.
     const byDate = new Map(result.map(r => [r.date, r]));
     for (const h of headers) {
       if (!h.orderDate) continue;
-      const slot = byDate.get(h.orderDate.toISOString().split('T')[0]);
+      const slot = byDate.get(calendarDateOf(h.orderDate));
       if (slot) slot.count++;
     }
 

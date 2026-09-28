@@ -2,9 +2,12 @@ import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
 import {
+  addCalendarDays,
+  calendarDateOf,
   deadlineReachedAt,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
+  utcMidnightOf,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
   type SeasonCalendarStatus,
@@ -593,11 +596,14 @@ export async function applyTemplate(
     });
     if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
 
+    // Calendar arithmetic on the anchor's date (a `@db.Date` / UTC midnight): zone-free, so the
+    // generated dates never depend on the zone the API process runs in.
+    const anchorDay = calendarDateOf(anchorDate);
     const itemsWithDates = template.items.map(item => {
-      const startAt = new Date(anchorDate);
-      startAt.setDate(startAt.getDate() + item.offsetDays);
+      const startDay = addCalendarDays(anchorDay, item.offsetDays);
+      const startAt = utcMidnightOf(startDay);
       const endAt = item.durationDays > 1
-        ? new Date(startAt.getTime() + (item.durationDays - 1) * MS_PER_DAY)
+        ? utcMidnightOf(addCalendarDays(startDay, item.durationDays - 1))
         : undefined;
       return { item, startAt, endAt };
     });

@@ -54,7 +54,11 @@ export const AppConfigRegistry = {
   'app.name':            z.string().min(1),
   'app.environment':     z.string(),
   'app.locale':          z.string(),
-  /** The business time zone (IANA): the day shared deadlines, locks and countdowns are counted in. */
+  /**
+   * The business time zone (IANA): the day shared deadlines, locks and countdowns are counted in,
+   * the zone scheduled wall-clock times are read in (`backup.schedule.dailyTime`), and the days the
+   * dashboard's weekly sales end on.
+   */
   'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido'),
   'app.baseUrl':         z.string().url(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
@@ -187,7 +191,7 @@ export const AppConfigRegistry = {
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
   'backup.schedule.enabled':        booleanConfigSchema,
-  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
+  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm", wall time in app.defaultTimezone
   'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
   'backup.retentionDays':           z.coerce.number().int().min(1).max(3650),
   'backup.retentionMinCount':       z.coerce.number().int().min(0).max(1000),

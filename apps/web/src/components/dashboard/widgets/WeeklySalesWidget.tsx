@@ -20,7 +20,9 @@ export function WeeklySalesWidget() {
     { enabled },
   );
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // The server's seven dates always end on today in the business time zone: the last bar is today,
+  // whatever the browser's clock or zone says.
+  const isToday = (i: number) => data !== undefined && i === data.length - 1;
   const maxCount = data && data.length > 0 ? Math.max(...data.map(d => d.count), 1) : 1;
 
   return (
@@ -40,15 +42,14 @@ export function WeeklySalesWidget() {
         ) : (
           <div className="space-y-2">
             <div className="flex items-end gap-1 h-16">
-              {data.map(({ date, count }) => {
-                const isToday = date === todayStr;
+              {data.map(({ date, count }, i) => {
                 const pct = Math.max(4, Math.round((count / maxCount) * 100));
                 return (
                   <div key={date} className="flex-1 flex flex-col items-center gap-0.5 group">
                     <div
                       className={cn(
                         'w-full rounded-sm transition-all',
-                        isToday ? 'bg-foreground' : 'bg-primary group-hover:bg-primary/80'
+                        isToday(i) ? 'bg-foreground' : 'bg-primary group-hover:bg-primary/80'
                       )}
                       style={{ height: `${pct}%` }}
                       title={`${count} ordini`}
@@ -58,12 +59,11 @@ export function WeeklySalesWidget() {
               })}
             </div>
             <div className="flex justify-between text-xs text-muted-foreground">
-              {data.map(({ date, count }) => {
-                const isToday = date === todayStr;
+              {data.map(({ date, count }, i) => {
                 return (
                   <div key={date} className="flex-1 text-center">
-                    <div className={cn(isToday && 'font-medium text-foreground')}>
-                      {isToday ? 'Oggi' : new Date(date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short' })}
+                    <div className={cn(isToday(i) && 'font-medium text-foreground')}>
+                      {isToday(i) ? 'Oggi' : new Date(date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short' })}
                     </div>
                     <div className="font-medium text-foreground">{count}</div>
                   </div>

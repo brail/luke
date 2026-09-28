@@ -171,24 +171,36 @@ export function calendarDateIn(instant: Date, timeZone: string): CalendarDate {
  * (the first one). A date the zone skipped altogether (Pacific/Apia 2011-12-30) starts when the
  * next one does, so "the start of D + 1" is always an instant. Throws a `RangeError` for an
  * unknown zone.
+ */
+export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
+  return instantAt(date, '00:00', timeZone);
+}
+
+/**
+ * The earliest instant at which the wall clock in `timeZone` reads `time` (`'HH:mm'`) on `date` or
+ * later: a wall time the zone skips (spring forward) is the first instant after the jump, one it
+ * repeats (fall back) is its first occurrence. Throws a `RangeError` for an unknown zone or a
+ * malformed time.
  *
- * With M the UTC midnight of `date`, the start lies in [M − 15 h, M + 13 h) for any offset in
- * [−12 h, +14 h]. With one offset in the window it is M − offset. With two, the transition T is
- * found to the second, and within each constant-offset piece the local date is `date` or later
- * exactly from M − offset on: the answer is the first such point.
+ * With W the wall time written as if it were UTC, the answer lies in [W − 15 h, W + 13 h) for any
+ * offset in [−12 h, +14 h]. With one offset in the window it is W − offset. With two, the transition
+ * T is found to the second, and within each constant-offset piece the wall clock reads W or later
+ * exactly from W − offset on: the answer is the first such point.
  *
  * ponytail: assumes offsets within [−12 h, +14 h] and at most one offset change in those 28 hours
  * — true of the tzdb data since 1900, checked once rather than guaranteed by IANA (future rules
  * are predictions). A zone breaking it would need the transitions scanned across the window.
  */
-export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
+export function instantAt(date: CalendarDate, time: string, timeZone: string): Date {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  if (!match) throw new RangeError(`Not a wall time: ${time}`);
   const format = wallClockFormat(timeZone);
-  const midnight = utcMs(date);
-  let before = midnight - 15 * MS_PER_HOUR;
-  let after = midnight + 13 * MS_PER_HOUR;
+  const wall = utcMs(date) + (Number(match[1]) * 60 + Number(match[2])) * 60_000;
+  let before = wall - 15 * MS_PER_HOUR;
+  let after = wall + 13 * MS_PER_HOUR;
   const offsetBefore = offsetMs(format, before);
   const offsetAfter = offsetMs(format, after);
-  if (offsetBefore === offsetAfter) return new Date(midnight - offsetBefore);
+  if (offsetBefore === offsetAfter) return new Date(wall - offsetBefore);
 
   // Bisect to the first second on the new offset; both bounds stay whole seconds.
   while (after - before > 1000) {
@@ -197,8 +209,8 @@ export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
     else after = mid;
   }
   const transition = after;
-  const startOnOldOffset = midnight - offsetBefore;
-  return new Date(startOnOldOffset < transition ? startOnOldOffset : Math.max(transition, midnight - offsetAfter));
+  const onOldOffset = wall - offsetBefore;
+  return new Date(onOldOffset < transition ? onOldOffset : Math.max(transition, wall - offsetAfter));
 }
 
 /**
