@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '../../../../components/ui/dropdown-menu';
 import { triggerBlobDownload } from '../../../../lib/download';
+import { toLocalIsoDate } from '../utils';
 
 interface Props {
   seasonId: string;
@@ -50,7 +51,7 @@ async function downloadExport(
  * @param seasonId - Season whose calendar events are exported.
  * @param brandIds - Brand IDs included in the export scope.
  * @param view - Active calendar view name (passed to PDF export only).
- * @param viewDate - Currently visible date (passed to PDF export only).
+ * @param viewDate - Currently visible date, sent as its local calendar date (PDF export only).
  */
 export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: Props) {
   const { data: session } = useSession();
@@ -63,7 +64,7 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       return;
     }
 
-    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate });
+    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate: toLocalIsoDate(viewDate) });
     const ext = format === 'ical' ? 'ics' : format;
     const filename = `luke-calendar-${seasonId}.${ext}`;
 

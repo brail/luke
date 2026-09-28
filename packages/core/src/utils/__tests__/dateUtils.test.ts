@@ -7,6 +7,8 @@ import {
   calendarDateIn,
   calendarDateOf,
   calendarDaysBetween,
+  eventCalendarDays,
+  formatCalendarDate,
   instantAt,
   isValidTimeZone,
   isWorkingDate,
@@ -148,6 +150,41 @@ describe.each([
       expect(working('2026-10-05', '2026-10-04')).toBe(0);
       expect(working('2026-09-28', '2026-10-05', [{ countryCode: 'IT', ...tuesdayHoliday }])).toBe(4);
       expect(working('2026-09-28', '2026-10-05', [{ countryCode: 'CN', ...tuesdayHoliday }])).toBe(5);
+    });
+  });
+
+  describe('formatCalendarDate', () => {
+    it('writes the date itself, whatever the process zone', () => {
+      expect(formatCalendarDate(date('2026-11-05'), { day: 'numeric', month: 'short', year: 'numeric' })).toBe('5 nov 2026');
+      expect(formatCalendarDate(date('2026-01-01'), { day: '2-digit', month: '2-digit', year: 'numeric' })).toBe('01/01/2026');
+    });
+  });
+
+  describe('eventCalendarDays', () => {
+    const at = (iso: string) => new Date(iso);
+
+    it('takes an all-day event as its stored dates, never converted to a zone', () => {
+      expect(eventCalendarDays(at('2026-11-05T00:00:00Z'), at('2026-11-07T00:00:00Z'), true, 'America/Los_Angeles'))
+        .toEqual(['2026-11-05', '2026-11-07']);
+      expect(eventCalendarDays(at('2026-11-05T00:00:00Z'), null, true, 'Asia/Tokyo')).toEqual(['2026-11-05', '2026-11-05']);
+    });
+
+    it('takes a timed event as the dates of its instants in the zone', () => {
+      // 20:00Z on March 1 is 05:00 on March 2 in Tokyo, 21:00 on March 1 in Rome.
+      expect(eventCalendarDays(at('2032-03-01T20:00:00Z'), null, false, 'Asia/Tokyo')).toEqual(['2032-03-02', '2032-03-02']);
+      expect(eventCalendarDays(at('2032-03-01T20:00:00Z'), null, false, 'Europe/Rome')).toEqual(['2032-03-01', '2032-03-01']);
+    });
+
+    it('treats the end of a timed event as exclusive: ending at local midnight does not reach the next day', () => {
+      expect(eventCalendarDays(at('2032-03-10T09:00:00Z'), at('2032-03-10T23:00:00Z'), false, 'Europe/Rome'))
+        .toEqual(['2032-03-10', '2032-03-10']);
+      expect(eventCalendarDays(at('2032-03-10T09:00:00Z'), at('2032-03-10T23:00:01Z'), false, 'Europe/Rome'))
+        .toEqual(['2032-03-10', '2032-03-11']);
+    });
+
+    it('keeps a timed event whose end is not after its start on its start date', () => {
+      expect(eventCalendarDays(at('2032-03-10T09:00:00Z'), at('2032-03-10T09:00:00Z'), false, 'Europe/Rome'))
+        .toEqual(['2032-03-10', '2032-03-10']);
     });
   });
 

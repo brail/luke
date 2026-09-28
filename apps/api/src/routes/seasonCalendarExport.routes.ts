@@ -8,7 +8,12 @@
  *
  * Query parameters: seasonId (required), brandIds (comma-separated, required),
  * functionId (optional filter), view (list|week|month|gantt, default: list),
- * viewDate (ISO date string used by week/month views).
+ * viewDate (the `YYYY-MM-DD` calendar date the week/month views show; default: today; a malformed
+ * one is a 400 on every endpoint).
+ *
+ * PDF and XLSX write every date in the requester's zone (`resolveUserTimeZone`): an all-day event
+ * as its stored date, a timed one as the date its instant falls on there (`eventCalendarDays`).
+ * iCal carries UTC instants and the stored all-day dates; the calendar app converts them.
  */
 
 import ExcelJS from 'exceljs';
@@ -16,7 +21,17 @@ import fp from 'fastify-plugin';
 
 
 import { generateIcal } from '@luke/calendar';
-import { isDevelopment, type Role } from '@luke/core';
+import {
+  addCalendarDays,
+  calendarDateIn,
+  eventCalendarDays,
+  formatCalendarDate,
+  isDevelopment,
+  parseCalendarDate,
+  utcMidnightOf,
+  type CalendarDate,
+  type Role,
+} from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
@@ -28,6 +43,7 @@ import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // orphaned Promise rejected with an unhandled TypeError, which `server.ts`'s
 // guards turn into `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
+import { resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedIds } from '../services/context.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
 
@@ -48,6 +64,9 @@ interface ExportMilestone {
   allDay: boolean;
   publishExternally: boolean;
   brandCode: string;
+  /** First and last calendar dates the milestone covers for the requester. */
+  firstDay: CalendarDate;
+  lastDay: CalendarDate;
 }
 
 // ─── Data fetch ───────────────────────────────────────────────────────────────
@@ -57,6 +76,7 @@ async function fetchExportMilestones(
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
+  timeZone: string,
   functionId?: string,
   allowedFunctionIds?: string[] | null
 ): Promise<ExportMilestone[]> {
@@ -81,23 +101,35 @@ async function fetchExportMilestones(
     for (const f of functions) functionNameMap.set(f.id, f.name);
   }
 
-  return milestones.map(m => ({
-    id: m.id,
-    title: m.title,
-    description: m.description,
-    status: m.cancelledAt ? 'CANCELLED' : 'ACTIVE',
-    visibleFunctionNames: m.visibilities.map(v => functionNameMap.get(v.functionId) ?? v.functionId).join(', '),
-    startAt: new Date(m.startAt),
-    endAt: m.endAt ? new Date(m.endAt) : null,
-    allDay: m.allDay,
-    publishExternally: m.publishExternally,
-    brandCode: m.brandId ? (brandMap.get(m.brandId) ?? m.brandId) : '—',
-  }));
+  return milestones.map(m => {
+    const startAt = new Date(m.startAt);
+    const endAt = m.endAt ? new Date(m.endAt) : null;
+    const [firstDay, lastDay] = eventCalendarDays(startAt, endAt, m.allDay, timeZone);
+    return {
+      id: m.id,
+      title: m.title,
+      description: m.description,
+      status: m.cancelledAt ? 'CANCELLED' : 'ACTIVE',
+      visibleFunctionNames: m.visibilities.map(v => functionNameMap.get(v.functionId) ?? v.functionId).join(', '),
+      startAt,
+      endAt,
+      allDay: m.allDay,
+      publishExternally: m.publishExternally,
+      brandCode: m.brandId ? (brandMap.get(m.brandId) ?? m.brandId) : '—',
+      firstDay,
+      lastDay,
+    };
+  });
+}
+
+/** "Esportato il …" for the requester's today. */
+function exportedOnLabel(today: CalendarDate): string {
+  return `Esportato il ${formatCalendarDate(today, { day: '2-digit', month: 'long', year: 'numeric' })}`;
 }
 
 // ─── PDF generation (pdfmake) ─────────────────────────────────────────────────
 
-function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promise<Buffer> {
+function generatePdf(milestones: ExportMilestone[], seasonLabel: string, today: CalendarDate): Promise<Buffer> {
   const headerCell = (text: string): TableCell => ({
     text,
     bold: true,
@@ -126,9 +158,9 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
     ...milestones.map((m, i) => {
       const cancelled = m.status === 'CANCELLED';
       const fill = cancelled ? '#fee2e2' : (i % 2 === 0 ? '#f8fafc' : '#ffffff');
-      const dateStr = m.startAt.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: '2-digit' });
-      const endStr = m.endAt
-        ? ` → ${m.endAt.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}`
+      const dateStr = formatCalendarDate(m.firstDay, { day: '2-digit', month: 'short', year: '2-digit' });
+      const endStr = m.lastDay !== m.firstDay
+        ? ` → ${formatCalendarDate(m.lastDay, { day: '2-digit', month: 'short' })}`
         : '';
       return [
         dataCell(`${dateStr}${endStr}`, fill),
@@ -150,7 +182,7 @@ function generatePdf(milestones: ExportMilestone[], seasonLabel: string): Promis
       columns: [
         { text: `Calendario Stagionale — ${seasonLabel}`, bold: true, fontSize: 13, margin: [30, 15, 0, 0] },
         {
-          text: `Esportato il ${new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+          text: exportedOnLabel(today),
           alignment: 'right',
           color: '#64748b',
           fontSize: 8,
@@ -190,26 +222,42 @@ const MONTH_IT_SHORT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 
 const MONTH_IT_LONG = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno', 'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
 const DAY_IT_SHORT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
-function mondayOf(d: Date): Date {
-  const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
-  return r;
+/** The Monday-to-Sunday week `viewDate` falls in. */
+export function weekDays(viewDate: CalendarDate): CalendarDate[] {
+  const monday = addCalendarDays(viewDate, -((utcMidnightOf(viewDate).getUTCDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, i) => addCalendarDays(monday, i));
 }
 
-function addDaysLocal(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
+/** The month `viewDate` falls in (`'YYYY-MM'`) and its 6 × 7 grid, from the Monday on or before the 1st. */
+export function monthGrid(viewDate: CalendarDate): { month: string; cells: CalendarDate[] } {
+  const firstOfMonth = addCalendarDays(viewDate, 1 - Number(viewDate.slice(8, 10)));
+  const gridStart = weekDays(firstOfMonth)[0]!;
+  return { month: firstOfMonth.slice(0, 7), cells: Array.from({ length: 42 }, (_, i) => addCalendarDays(gridStart, i)) };
 }
 
-function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+/** Day of the month of a calendar date, as written in a grid cell. */
+function dayNumber(date: CalendarDate): string {
+  return String(Number(date.slice(8, 10)));
 }
 
-function milestonesOnDay(milestones: ExportMilestone[], day: Date): ExportMilestone[] {
-  const s = day.getTime();
-  const e = s + 86_400_000 - 1;
-  return milestones.filter(m => m.startAt.getTime() <= e && (m.endAt ?? m.startAt).getTime() >= s);
+/** `'YYYY-MM'` → the following month, same shape. */
+function nextMonth(month: string): string {
+  const year = Number(month.slice(0, 4));
+  const monthNumber = Number(month.slice(5, 7));
+  return monthNumber === 12 ? `${year + 1}-01` : `${year}-${String(monthNumber + 1).padStart(2, '0')}`;
+}
+
+/** Every month (`'YYYY-MM'`) from the earliest first day to the latest last day; at least one milestone. */
+export function ganttMonths(milestones: Pick<ExportMilestone, 'firstDay' | 'lastDay'>[]): string[] {
+  const minMonth = milestones.map(m => m.firstDay.slice(0, 7)).reduce((a, b) => a < b ? a : b);
+  const maxMonth = milestones.map(m => m.lastDay.slice(0, 7)).reduce((a, b) => a > b ? a : b);
+  const months: string[] = [];
+  for (let month = minMonth; month <= maxMonth; month = nextMonth(month)) months.push(month);
+  return months;
+}
+
+function milestonesOnDay(milestones: ExportMilestone[], day: CalendarDate): ExportMilestone[] {
+  return milestones.filter(m => m.firstDay <= day && day <= m.lastDay);
 }
 
 const BRAND_PALETTE = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
@@ -221,7 +269,7 @@ function milestoneColor(m: ExportMilestone): string {
   return BRAND_PALETTE[Math.abs(hash) % BRAND_PALETTE.length]!;
 }
 
-function makePdfHeader(title: string, subtitle: string): Content {
+function makePdfHeader(title: string, subtitle: string, today: CalendarDate): Content {
   return {
     columns: [
       {
@@ -232,7 +280,7 @@ function makePdfHeader(title: string, subtitle: string): Content {
         margin: [30, 12, 0, 0],
       },
       {
-        text: `Esportato il ${new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+        text: exportedOnLabel(today),
         alignment: 'right',
         color: '#64748b',
         fontSize: 8,
@@ -244,12 +292,12 @@ function makePdfHeader(title: string, subtitle: string): Content {
 
 // ─── PDF week view ────────────────────────────────────────────────────────────
 
-function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, viewDate: Date): Promise<Buffer> {
-  const weekStart = mondayOf(viewDate);
-  const days = Array.from({ length: 7 }, (_, i) => addDaysLocal(weekStart, i));
+function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, viewDate: CalendarDate, today: CalendarDate): Promise<Buffer> {
+  const days = weekDays(viewDate);
+  const weekStart = days[0]!;
 
-  const startFmt = weekStart.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-  const endFmt = days[6]!.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+  const startFmt = formatCalendarDate(weekStart, { day: 'numeric', month: 'short' });
+  const endFmt = formatCalendarDate(days[6]!, { day: 'numeric', month: 'short', year: 'numeric' });
   const weekLabel = `Settimana ${startFmt} – ${endFmt}`;
 
   const colWidths = Array(7).fill('*') as string[];
@@ -257,9 +305,9 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
   const headerRow: TableCell[] = days.map((d, i) => ({
     stack: [
       { text: DAY_IT_SHORT[i], fontSize: 7, color: '#64748b' } as Content,
-      { text: String(d.getDate()), fontSize: 11, bold: true } as Content,
+      { text: dayNumber(d), fontSize: 11, bold: true } as Content,
     ],
-    fillColor: isSameDay(d, new Date()) ? '#eff6ff' : '#f8fafc',
+    fillColor: d === today ? '#eff6ff' : '#f8fafc',
     alignment: 'center' as const,
     margin: [2, 4, 2, 4],
   } as unknown as TableCell));
@@ -269,7 +317,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     days.map(day => {
       const items = milestonesOnDay(milestones, day);
       const m = items[rowIdx];
-      if (!m) return { text: '', margin: [2, 2, 2, 2], fillColor: isSameDay(day, new Date()) ? '#eff6ff' : '#ffffff' } as unknown as TableCell;
+      if (!m) return { text: '', margin: [2, 2, 2, 2], fillColor: day === today ? '#eff6ff' : '#ffffff' } as unknown as TableCell;
       return {
         stack: [
           { text: m.title, fontSize: 7, bold: true, color: '#ffffff' } as Content,
@@ -286,7 +334,7 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
     defaultStyle: { font: 'Roboto', fontSize: 8 },
-    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, weekLabel),
+    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, weekLabel, today),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
       table: { headerRows: 1, widths: colWidths, body: [headerRow, ...contentRows] },
@@ -299,13 +347,9 @@ function generatePdfWeek(milestones: ExportMilestone[], seasonLabel: string, vie
 
 // ─── PDF month view ───────────────────────────────────────────────────────────
 
-function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, viewDate: Date): Promise<Buffer> {
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const gridStart = mondayOf(new Date(year, month, 1));
-  const cells = Array.from({ length: 42 }, (_, i) => addDaysLocal(gridStart, i));
-  const today = new Date();
-  const monthLabel = `${MONTH_IT_LONG[month]} ${year}`;
+function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, viewDate: CalendarDate, today: CalendarDate): Promise<Buffer> {
+  const { month, cells } = monthGrid(viewDate);
+  const monthLabel = `${MONTH_IT_LONG[Number(month.slice(5, 7)) - 1]} ${month.slice(0, 4)}`;
 
   const MAX_PER_CELL = 3;
   const colWidths = Array(7).fill('*') as string[];
@@ -318,8 +362,8 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
   const weeks: TableCell[][] = [];
   for (let w = 0; w < 6; w++) {
     weeks.push(cells.slice(w * 7, w * 7 + 7).map(day => {
-      const inMonth = day.getMonth() === month;
-      const isToday = isSameDay(day, today);
+      const inMonth = day.slice(0, 7) === month;
+      const isToday = day === today;
       const items = milestonesOnDay(milestones, day);
       const shown = items.slice(0, MAX_PER_CELL);
       const overflow = items.length - MAX_PER_CELL;
@@ -327,7 +371,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
       return {
         stack: [
           {
-            text: String(day.getDate()),
+            text: dayNumber(day),
             fontSize: 7,
             bold: isToday,
             color: isToday ? '#3b82f6' : inMonth ? '#1e293b' : '#94a3b8',
@@ -354,7 +398,7 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
     defaultStyle: { font: 'Roboto', fontSize: 8 },
-    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, monthLabel),
+    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, monthLabel, today),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
       table: { headerRows: 1, widths: colWidths, body: [dayHeaderRow, ...weeks] },
@@ -367,41 +411,27 @@ function generatePdfMonth(milestones: ExportMilestone[], seasonLabel: string, vi
 
 // ─── PDF gantt view ───────────────────────────────────────────────────────────
 
-function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): Promise<Buffer> {
-  if (milestones.length === 0) return generatePdf(milestones, seasonLabel);
+function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string, today: CalendarDate): Promise<Buffer> {
+  if (milestones.length === 0) return generatePdf(milestones, seasonLabel, today);
 
   const LABEL_W = 160;
 
-  // Compute month range
-  const starts = milestones.map(m => new Date(m.startAt.getFullYear(), m.startAt.getMonth(), 1));
-  const ends = milestones.map(m => {
-    const e = m.endAt ?? m.startAt;
-    return new Date(e.getFullYear(), e.getMonth(), 1);
-  });
-  const minMonth = starts.reduce((a, b) => a < b ? a : b);
-  const maxMonth = ends.reduce((a, b) => a > b ? a : b);
-
-  const months: Date[] = [];
-  const cur = new Date(minMonth);
-  while (cur <= maxMonth) {
-    months.push(new Date(cur));
-    cur.setMonth(cur.getMonth() + 1);
-  }
+  const months = ganttMonths(milestones);
 
   const colWidths: (string | number)[] = [LABEL_W, ...months.map(() => '*')];
 
   const headerRow: TableCell[] = [
     { text: 'Milestone', bold: true, fontSize: 8, fillColor: '#1e293b', color: '#ffffff', margin: [4, 4, 4, 4] } as unknown as TableCell,
     ...months.map(m => ({
-      text: `${MONTH_IT_SHORT[m.getMonth()]} ${m.getFullYear()}`,
+      text: `${MONTH_IT_SHORT[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`,
       bold: true, fontSize: 7, fillColor: '#1e293b', color: '#ffffff',
       alignment: 'center' as const, margin: [2, 4, 2, 4],
     } as unknown as TableCell)),
   ];
 
   const dataRows: TableCell[][] = milestones.map(m => {
-    const mStart = new Date(m.startAt.getFullYear(), m.startAt.getMonth(), 1);
-    const mEnd = m.endAt ? new Date(m.endAt.getFullYear(), m.endAt.getMonth(), 1) : mStart;
+    const mStart = m.firstDay.slice(0, 7);
+    const mEnd = m.lastDay.slice(0, 7);
     const color = milestoneColor(m);
 
     return [
@@ -409,7 +439,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
       ...months.map(mon => {
         const inRange = mon >= mStart && mon <= mEnd;
         return {
-          text: inRange && isSameDay(mon, mStart) ? (m.title.length > 12 ? m.title.slice(0, 12) + '…' : m.title) : '',
+          text: inRange && mon === mStart ? (m.title.length > 12 ? m.title.slice(0, 12) + '…' : m.title) : '',
           fontSize: 6,
           color: '#ffffff',
           fillColor: inRange ? color : '#f8fafc',
@@ -424,7 +454,7 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
     pageOrientation: 'landscape',
     pageMargins: [30, 55, 30, 40],
     defaultStyle: { font: 'Roboto', fontSize: 8 },
-    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, 'Vista Gantt'),
+    header: makePdfHeader(`Calendario Stagionale — ${seasonLabel}`, 'Vista Gantt', today),
     footer: (p: number, t: number): Content => ({ text: `${p} / ${t}`, alignment: 'center', color: '#94a3b8', fontSize: 8, margin: [0, 10, 0, 0] }),
     content: [{
       table: { headerRows: 1, widths: colWidths, body: [headerRow, ...dataRows] },
@@ -436,6 +466,9 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string): P
 }
 
 // ─── XLSX generation (ExcelJS) ────────────────────────────────────────────────
+
+/** `dd/mm/yyyy`, what the sheet has always shown. */
+const XLSX_DATE: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
 
 async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -467,8 +500,8 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
   milestones.forEach((m, i) => {
     const cancelled = m.status === 'CANCELLED';
     const row = ws.addRow([
-      m.startAt.toLocaleDateString('it-IT'),
-      m.endAt ? m.endAt.toLocaleDateString('it-IT') : '',
+      formatCalendarDate(m.firstDay, XLSX_DATE),
+      m.endAt ? formatCalendarDate(m.lastDay, XLSX_DATE) : '',
       m.title,
       m.brandCode,
       m.visibleFunctionNames,
@@ -550,9 +583,17 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     const parsedView = (view && ['list', 'week', 'month', 'gantt'].includes(view))
       ? (view as 'list' | 'week' | 'month' | 'gantt')
       : 'list';
-    const parsedViewDate = viewDate ? new Date(viewDate) : new Date();
 
-    return { session, seasonId, allowedBrandIds, allowedFunctionIds: allowed.functionIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate };
+    const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { timezone: true } });
+    const timeZone = await resolveUserTimeZone(prisma, { id: session.user.id, timezone: user?.timezone ?? '' }, req.log);
+    const today = calendarDateIn(new Date(), timeZone);
+    const parsedViewDate = viewDate ? parseCalendarDate(viewDate) : today;
+    if (!parsedViewDate) {
+      reply.code(400).send({ error: 'viewDate must be a YYYY-MM-DD calendar date' });
+      return null;
+    }
+
+    return { session, seasonId, allowedBrandIds, allowedFunctionIds: allowed.functionIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate, timeZone, today };
   }
 
   app.get('/download/season-calendar/ical', exportRateLimit, async (req, reply) => {
@@ -560,7 +601,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
     );
 
     const icalString = generateIcal(
@@ -583,18 +624,18 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
     );
 
     let pdfBuffer: Buffer;
     if (ctx.view === 'week') {
-      pdfBuffer = await generatePdfWeek(milestones, ctx.seasonLabel, ctx.viewDate);
+      pdfBuffer = await generatePdfWeek(milestones, ctx.seasonLabel, ctx.viewDate, ctx.today);
     } else if (ctx.view === 'month') {
-      pdfBuffer = await generatePdfMonth(milestones, ctx.seasonLabel, ctx.viewDate);
+      pdfBuffer = await generatePdfMonth(milestones, ctx.seasonLabel, ctx.viewDate, ctx.today);
     } else if (ctx.view === 'gantt') {
-      pdfBuffer = await generatePdfGantt(milestones, ctx.seasonLabel);
+      pdfBuffer = await generatePdfGantt(milestones, ctx.seasonLabel, ctx.today);
     } else {
-      pdfBuffer = await generatePdf(milestones, ctx.seasonLabel);
+      pdfBuffer = await generatePdf(milestones, ctx.seasonLabel, ctx.today);
     }
 
     return reply
@@ -608,7 +649,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
     );
 
     const xlsxBuffer = await generateXlsx(milestones, ctx.seasonLabel);

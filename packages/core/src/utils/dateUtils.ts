@@ -166,6 +166,31 @@ export function calendarDateIn(instant: Date, timeZone: string): CalendarDate {
 }
 
 /**
+ * `date` written with `Intl` `options` in `locale`. Zone-free: its UTC midnight read in UTC, so a
+ * reader west of UTC never sees the day before.
+ */
+export function formatCalendarDate(date: CalendarDate, options: Intl.DateTimeFormatOptions, locale = 'it-IT'): string {
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(utcMidnightOf(date));
+}
+
+/**
+ * The first and last calendar dates an event covers for a reader in `timeZone`: an all-day event its
+ * stored dates, never converted to a zone; a timed one the dates of its instants there, the end
+ * exclusive — an event ending at local midnight does not reach the next day. Throws a `RangeError`
+ * for an invalid `Date` or a year outside 1900–9999, and, for a timed event, an unknown zone.
+ */
+export function eventCalendarDays(
+  startAt: Date,
+  endAt: Date | null,
+  allDay: boolean,
+  timeZone: string,
+): [CalendarDate, CalendarDate] {
+  if (allDay) return [calendarDateOf(startAt), calendarDateOf(endAt ?? startAt)];
+  const last = endAt && endAt > startAt ? new Date(endAt.getTime() - 1) : startAt;
+  return [calendarDateIn(startAt, timeZone), calendarDateIn(last, timeZone)];
+}
+
+/**
  * The earliest instant at which the local date in `timeZone` is `date` or later — the start of
  * `date`, even when its midnight is skipped (the day then starts at the transition) or repeated
  * (the first one). A date the zone skipped altogether (Pacific/Apia 2011-12-30) starts when the

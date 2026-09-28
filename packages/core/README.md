@@ -47,7 +47,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 ### Additional entry points
 
 - `@luke/core/server` exports the master-key secret derivation helpers and the AppConfig-backed RBAC cache. It is server-only and must never be imported by a client component.
-- `@luke/core/utils/date` exposes the date helpers as a narrow subpath for consumers that do not need the full main barrel.
+- `@luke/core/utils/date` exposes the `Intl` date formatters (`formatDate`, `formatDateWithTimezone`, …) as a narrow subpath for consumers that do not need the full main barrel; the calendar-date and working-day helpers (`CalendarDate`, `calendarDateIn`, `formatCalendarDate`, …) are main-entry only.
 <!-- luke-docs:end:exports -->
 
 ## Concetti chiave

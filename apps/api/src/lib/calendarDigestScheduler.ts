@@ -36,6 +36,8 @@ import {
   calendarDateIn,
   calendarDateOf,
   CATEGORY_LEVEL_EVENT_KEY,
+  eventCalendarDays,
+  formatCalendarDate,
   formatDateWithTimezone,
   fullName,
   instantAt,
@@ -88,27 +90,11 @@ const DAY_MEDIUM: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short',
 const DAY_LONG: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
 const TIME_OF_DAY: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
 
-/** A calendar date in Italian. Zone-free: the UTC components of its UTC midnight. */
-function formatDay(date: CalendarDate, options: Intl.DateTimeFormatOptions): string {
-  return formatDateWithTimezone(utcMidnightOf(date), 'UTC', options);
-}
-
-/**
- * The first and last calendar dates an event covers for a reader in `timeZone`: an all-day event
- * its stored dates (never converted), a timed one the dates of its instants there, the end
- * exclusive — an event ending at midnight does not reach the next day.
- */
-function eventDays(startAt: Date, endAt: Date | null, allDay: boolean, timeZone: string): [CalendarDate, CalendarDate] {
-  if (allDay) return [calendarDateOf(startAt), calendarDateOf(endAt ?? startAt)];
-  const last = endAt && endAt > startAt ? new Date(endAt.getTime() - 1) : startAt;
-  return [calendarDateIn(startAt, timeZone), calendarDateIn(last, timeZone)];
-}
-
 function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, timeZone: string): string {
-  const [first, last] = eventDays(startAt, endAt, allDay, timeZone);
-  if (first !== last) return `${formatDay(first, DAY_SHORT)}–${formatDay(last, DAY_MEDIUM)}`;
-  if (allDay) return formatDay(first, DAY_MEDIUM);
-  return `${formatDay(first, DAY_MEDIUM)}, ${formatDateWithTimezone(startAt, timeZone, TIME_OF_DAY)}`;
+  const [first, last] = eventCalendarDays(startAt, endAt, allDay, timeZone);
+  if (first !== last) return `${formatCalendarDate(first, DAY_SHORT)}–${formatCalendarDate(last, DAY_MEDIUM)}`;
+  if (allDay) return formatCalendarDate(first, DAY_MEDIUM);
+  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${formatDateWithTimezone(startAt, timeZone, TIME_OF_DAY)}`;
 }
 
 /**
@@ -257,8 +243,8 @@ export async function buildDigestTasks(
   const firstDay = calendarDateIn(range.start, timeZone);
   const lastDay = calendarDateIn(new Date(range.end.getTime() - 1), timeZone);
   const dateLabel = firstDay === lastDay
-    ? formatDay(firstDay, DAY_LONG)
-    : `dal ${formatDay(firstDay, DAY_LONG)} al ${formatDay(lastDay, DAY_LONG)}`;
+    ? formatCalendarDate(firstDay, DAY_LONG)
+    : `dal ${formatCalendarDate(firstDay, DAY_LONG)} al ${formatCalendarDate(lastDay, DAY_LONG)}`;
 
   const logs = await prisma.auditLog.findMany({
     where: {
@@ -441,23 +427,23 @@ export async function buildDigestTasks(
       const allDayAtChange = firstDateChange.meta.allDay === true;
       const oldAllDay = changedFields.includes(ALL_DAY_FIELD_LABEL) ? !allDayAtChange : allDayAtChange;
       const oldEnd = metaDate(firstDateChange.meta.oldEndAt);
-      const [oldFirst] = eventDays(oldStart, oldEnd, oldAllDay, timeZone);
-      const [newFirst] = eventDays(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay, timeZone);
+      const [oldFirst] = eventCalendarDays(oldStart, oldEnd, oldAllDay, timeZone);
+      const [newFirst] = eventCalendarDays(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay, timeZone);
 
       // All-day values compare as dates, timed ones as instants.
       const startMoved = oldAllDay !== liveEvent.allDay
         || (liveEvent.allDay ? oldFirst !== newFirst : oldStart.getTime() !== liveEvent.startAt.getTime());
       if (startMoved) {
         const later = newFirst === oldFirst ? liveEvent.startAt.getTime() > oldStart.getTime() : newFirst > oldFirst;
-        dateChangeLabel = `${later ? 'Posticipato' : 'Anticipato'}: ${formatDay(oldFirst, DAY_SHORT)} → ${formatDay(newFirst, DAY_SHORT)}`;
+        dateChangeLabel = `${later ? 'Posticipato' : 'Anticipato'}: ${formatCalendarDate(oldFirst, DAY_SHORT)} → ${formatCalendarDate(newFirst, DAY_SHORT)}`;
       } else if (liveEvent.allDay) {
         // No end means a one-day event, so only the last day counts.
         const oldLast = calendarDateOf(oldEnd ?? oldStart);
         const newLast = calendarDateOf(liveEvent.endAt ?? liveEvent.startAt);
-        if (oldLast !== newLast) dateChangeLabel = `Durata modificata: fine ${formatDay(oldLast, DAY_SHORT)} → ${formatDay(newLast, DAY_SHORT)}`;
+        if (oldLast !== newLast) dateChangeLabel = `Durata modificata: fine ${formatCalendarDate(oldLast, DAY_SHORT)} → ${formatCalendarDate(newLast, DAY_SHORT)}`;
       } else if ((oldEnd?.getTime() ?? null) !== (liveEvent.endAt?.getTime() ?? null)) {
         const formatEnd = (end: Date | null) => end
-          ? `${formatDay(calendarDateIn(end, timeZone), DAY_SHORT)}, ${formatDateWithTimezone(end, timeZone, TIME_OF_DAY)}`
+          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${formatDateWithTimezone(end, timeZone, TIME_OF_DAY)}`
           : '—';
         dateChangeLabel = `Durata modificata: fine ${formatEnd(oldEnd)} → ${formatEnd(liveEvent.endAt)}`;
       }

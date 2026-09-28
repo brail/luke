@@ -234,7 +234,8 @@ export function buildSeasonCalendarExportUrl(
     seasonId: string;
     brandIds: string[];
     view?: 'list' | 'week' | 'month' | 'gantt' | 'day';
-    viewDate?: Date;
+    /** The `YYYY-MM-DD` calendar date the viewer is looking at — a date, never an instant. */
+    viewDate?: string;
   },
   options: UrlOptions = {}
 ): string {
@@ -244,7 +245,7 @@ export function buildSeasonCalendarExportUrl(
   });
   if (format === 'pdf') {
     if (params.view) query.set('view', params.view);
-    if (params.viewDate) query.set('viewDate', params.viewDate.toISOString());
+    if (params.viewDate) query.set('viewDate', params.viewDate);
   }
   return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`, options);
 }
