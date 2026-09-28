@@ -85,6 +85,8 @@ model User {
   editLocks                         EditLock[]
   /// Manual backups triggered by this user.
   backupRecords                     BackupRecord[]
+  /// Daily calendar digest emails claimed or sent to this user, one per calendar and local date.
+  calendarDigestDeliveries          CalendarDigestDelivery[]
 
   @@map("users")
 }

@@ -23,7 +23,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { CATEGORY_LEVEL_EVENT_KEY } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { buildDigestTasks, type DigestDateRange } from '../src/lib/calendarDigestScheduler';
+import { buildDigestTasks, type DigestBuildOptions } from '../src/lib/calendarDigestScheduler';
 
 import {
   createCallerWithSession,
@@ -49,8 +49,8 @@ let userDYId: string; let userDYEmail: string;
 let adminNoTeamId: string; let adminNoTeamEmail: string;
 
 /** Covers "just now" — every scenario below writes its AuditLog rows synchronously before use. */
-function nowRange(): DigestDateRange {
-  return { start: new Date(Date.now() - 60_000), end: new Date(Date.now() + 60_000) };
+function justNow(): DigestBuildOptions {
+  return { range: { start: new Date(Date.now() - 60_000), end: new Date(Date.now() + 60_000) }, timeZone: 'Europe/Rome' };
 }
 
 beforeAll(async () => {
@@ -103,7 +103,7 @@ describe('buildDigestTasks — event created', () => {
       visibilityFunctionIds: [fnD],
     });
 
-    const { tasks } = await buildDigestTasks(prisma, log, nowRange());
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
     const emails = tasks.map(t => t.email);
 
     // The actor (userDX) is here because they're legitimately in the audience (their own team,
@@ -128,7 +128,7 @@ describe('buildDigestTasks — event created', () => {
       visibilityFunctionIds: [fnD],
     });
 
-    const { tasks } = await buildDigestTasks(prisma, log, nowRange(), adminNoTeamId);
+    const { tasks } = await buildDigestTasks(prisma, log, { ...justNow(), onlyUserId: adminNoTeamId });
     expect(tasks.map(t => t.email)).toContain(adminNoTeamEmail);
 
     await prisma.calendarEvent.delete({ where: { id: created.id } });
@@ -160,7 +160,7 @@ describe('buildDigestTasks — delete snapshot too wide (pre-fix audit)', () => 
     });
 
     try {
-      const { tasks } = await buildDigestTasks(prisma, log, nowRange());
+      const { tasks } = await buildDigestTasks(prisma, log, justNow());
       const emails = tasks.map(t => t.email);
       expect(emails).toContain(userDXEmail);
       expect(emails).not.toContain(userDYEmail);
@@ -188,7 +188,7 @@ describe('buildDigestTasks — notification preferences', () => {
         visibilityFunctionIds: [fnD],
       });
 
-      const { tasks } = await buildDigestTasks(prisma, log, nowRange());
+      const { tasks } = await buildDigestTasks(prisma, log, justNow());
       expect(tasks.map(t => t.email)).toContain(userDXEmail);
 
       await prisma.calendarEvent.delete({ where: { id: created.id } });
@@ -212,7 +212,7 @@ describe('buildDigestTasks — notification preferences', () => {
         visibilityFunctionIds: [fnD],
       });
 
-      const { tasks } = await buildDigestTasks(prisma, log, nowRange());
+      const { tasks } = await buildDigestTasks(prisma, log, justNow());
       expect(tasks.map(t => t.email)).not.toContain(userDXEmail);
 
       await prisma.calendarEvent.delete({ where: { id: created.id } });

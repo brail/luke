@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { parseCalendarDate } from '../utils/dateUtils.js';
+
 import { MandatoryReasonSchema } from './reason.js';
 
 /** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
@@ -23,6 +25,16 @@ export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSc
  * and make every deadline evaluation on the event throw.
  */
 const calendarInstantSchema = z.string().datetime().refine(value => value >= '1900', 'Anno fuori intervallo (1900–9999)');
+
+/** A `YYYY-MM-DD` calendar date that exists (`2026-02-30` is refused), years 1900–9999. */
+const calendarDateSchema = z.string().transform((value, ctx) => {
+  const date = parseCalendarDate(value);
+  if (date === null) {
+    ctx.addIssue({ code: 'custom', message: 'Data non valida' });
+    return z.NEVER;
+  }
+  return date;
+});
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
@@ -65,8 +77,8 @@ export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
  */
 export const CalendarDigestRangeInputSchema = z
   .object({
-    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
-    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+    from: calendarDateSchema,
+    to: calendarDateSchema,
   })
   .refine(value => value.to >= value.from, {
     path: ['to'],

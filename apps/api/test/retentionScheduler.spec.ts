@@ -60,6 +60,9 @@ function buildFakePrisma() {
     notificationDedupKey: {
       deleteMany: vi.fn(async () => ({ count: 0 })),
     },
+    calendarDigestDelivery: {
+      deleteMany: vi.fn(async () => ({ count: 0 })),
+    },
   } as any;
 }
 
@@ -185,6 +188,16 @@ describe('retentionScheduler', () => {
     expect(prisma.notificationDedupKey.deleteMany).toHaveBeenCalledTimes(1);
     const call = prisma.notificationDedupKey.deleteMany.mock.calls[0][0];
     expect(call.where.lastSentAt.lt.getTime()).toBe(tickTime - 30 * DAY_MS);
+  });
+
+  it('deletes digest deliveries 30 days after their send day ended, with a single deleteMany by date', async () => {
+    const prisma = buildFakePrisma();
+
+    await runOneTick(prisma);
+
+    expect(prisma.calendarDigestDelivery.deleteMany).toHaveBeenCalledTimes(1);
+    const call = prisma.calendarDigestDelivery.deleteMany.mock.calls[0][0];
+    expect(call.where.expiresAt.lt.getTime()).toBe(tickTime - 30 * DAY_MS);
   });
 
   it('archives and deletes nothing when there are no expired rows (no empty file, no empty deleteMany)', async () => {

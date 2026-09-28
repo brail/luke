@@ -6,11 +6,13 @@ import { router, protectedProcedure } from '../lib/trpc';
 
 export const systemRouter = router({
   /**
-   * Manually triggers the calendar phase-alert digest email for a given date range, outside its
-   * normal cron schedule — used for testing/re-sending. See `runDigestNow`.
+   * Sends the caller their own calendar digest (the AuditLog change recap) for a date range, outside
+   * the scheduled 07:00 run — used for testing/re-sending. It bypasses the caller's CALENDAR opt-out
+   * and records no delivery row. See `runDigestNow`.
    *
    * @auth {season_calendar:read}
-   * @input {CalendarDigestRangeInputSchema} — inclusive date range as `YYYY-MM-DD` strings.
+   * @input {CalendarDigestRangeInputSchema} — inclusive range of calendar dates (`YYYY-MM-DD`), read in
+   *   the caller's zone.
    * @output {{ ok: true }}
    */
   triggerCalendarDigest: protectedProcedure
@@ -19,11 +21,7 @@ export const systemRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(CalendarDigestRangeInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const range = {
-        start: new Date(`${input.from}T00:00:00`),
-        end: new Date(new Date(`${input.to}T00:00:00`).getTime() + 24 * 60 * 60 * 1000),
-      };
-      await runDigestNow(ctx.prisma, ctx.logger, range, ctx.session.user.id);
+      await runDigestNow(ctx.prisma, ctx.logger, input, ctx.session.user.id);
       return { ok: true };
     }),
 });

@@ -88,10 +88,68 @@ model SeasonCalendar {
   bindings       GoogleCalendarBinding[]
   /// Planning groups scoping this calendar's events and the collection layout's rows.
   planningGroups PlanningGroup[]
+  /// Daily digest emails about this calendar, one per recipient and local date.
+  digestDeliveries CalendarDigestDelivery[]
 
   @@unique([brandId, seasonId])
   @@index([seasonId])
   @@map("season_calendars")
+}
+
+/// State of one daily digest email: SENDING (claimed; `leaseUntil` bounds the claim) | SENT |
+/// FAILED (the last attempt failed; not re-claimable before `leaseUntil`, the retry backoff) |
+/// ABANDONED (attempts exhausted, the recipient's send day over, or a rebuild no longer produces the
+/// email — recipient deactivated, opted out, lost access; terminal, logged).
+enum CalendarDigestDeliveryStatus {
+  SENDING
+  SENT
+  FAILED
+  ABANDONED
+}
+
+/// One daily calendar digest email: a recipient, a calendar, and the recipient's local send date.
+/// The unique key allows one row, so one first claim, per recipient, calendar and local date, across
+/// restarts and instances; every state change is one conditional statement (an insert-if-absent,
+/// then updates) the caller owns only if it affected this row. Re-claims are bounded (3 attempts) and
+/// can duplicate an email whose SMTP reply was lost: bounded retry, not exactly-once. The zone and
+/// window are fixed at the first claim, and every retry reuses them.
+model CalendarDigestDelivery {
+  id          String                       @id @default(uuid())
+  /// FK to User (recipient). Cascade delete: the row is bookkeeping with no meaning without its recipient.
+  userId      String
+  /// FK to SeasonCalendar. Cascade delete: same reason, without its calendar.
+  calendarId  String
+  /// The send date in the recipient's zone at the first claim.
+  localDate   DateTime                     @db.Date
+  /// IANA zone the window and labels were computed in.
+  timeZone    String
+  /// Start (inclusive) of the recipient's "yesterday" the digest covers.
+  windowStart DateTime
+  /// End (exclusive) of that window.
+  windowEnd   DateTime
+  /// Start of the day after `localDate` in `timeZone`: no claim at or after it.
+  expiresAt   DateTime
+  status      CalendarDigestDeliveryStatus
+  /// Claims made so far, a crashed one included; at most 3.
+  attempts    Int
+  /// Random token of the current claim: only its holder may record the outcome.
+  claimToken  String
+  /// SENDING: the claim's lease. FAILED: the earliest re-claim (backoff).
+  leaseUntil  DateTime
+  sentAt      DateTime?
+  /// Last send error, truncated.
+  lastError   String?
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calendar SeasonCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, localDate, calendarId])
+  @@index([calendarId])
+  @@index([status, expiresAt])
+  @@index([expiresAt])
+  @@map("calendar_digest_deliveries")
 }
 
 /// A named scope within a SeasonCalendar decoupling calendar events from collection layout rows: an

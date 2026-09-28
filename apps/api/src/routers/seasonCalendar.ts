@@ -38,6 +38,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
+import { ALL_DAY_FIELD_LABEL } from '../lib/calendarDigestScheduler.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
 import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -369,7 +370,7 @@ export const seasonCalendarRouter = router({
       const FIELD_LABELS: Record<string, string> = {
         description: 'Descrizione',
         publishExternally: 'Sincronizzazione Google', templateItemId: 'Template',
-        allDay: 'Giornata intera',
+        allDay: ALL_DAY_FIELD_LABEL,
       };
       const changedFields = Object.keys(FIELD_LABELS).filter(
         k => JSON.stringify((event as Record<string, unknown>)[k]) !== JSON.stringify((result as Record<string, unknown>)[k])

@@ -4,9 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
-import { z } from 'zod';
 
-import { CalendarDigestRangeInputSchema } from '@luke/core';
+import { calendarDateIn, CalendarDigestRangeInputSchema } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -28,20 +27,19 @@ import { Input } from '../../../../components/ui/input';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-type DigestRangeForm = z.infer<typeof CalendarDigestRangeInputSchema>;
-
 /**
  * Dialog letting an admin manually send the calendar digest recap for an arbitrary date range.
+ *
+ * The server reads the range in the caller's zone as `me.get` resolves it, so "today" is taken in
+ * that same zone, never the browser's: the fields stay empty and sending stays disabled until it
+ * has loaded.
  */
 export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const form = useForm<DigestRangeForm>({
+  const form = useForm({
     resolver: zodResolver(CalendarDigestRangeInputSchema),
-    defaultValues: { from: todayIso(), to: todayIso() },
+    defaultValues: { from: '', to: '' },
   });
+  const timezone = trpc.me.get.useQuery().data?.timezone;
 
   const digestMutation = trpc.system.triggerCalendarDigest.useMutation({
     onSuccess: () => {
@@ -55,8 +53,10 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
   // The dialog stays mounted across open/close, so without this reset the previous range is still
   // sitting in the fields the next time it opens.
   useEffect(() => {
-    if (open) form.reset({ from: todayIso(), to: todayIso() });
-  }, [open, form]);
+    if (!open || !timezone) return;
+    const today = calendarDateIn(new Date(), timezone);
+    form.reset({ from: today, to: today });
+  }, [open, timezone, form]);
 
   // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
   // without this guard the dialog is dismissable mid-send while Cancel sits disabled.
@@ -106,7 +106,7 @@ export function SendDigestDialog({ open, onClose }: { open: boolean; onClose: ()
               <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
                 Annulla
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || !timezone}>
                 {isPending ? 'Invio...' : 'Invia'}
               </Button>
             </DialogFooter>
