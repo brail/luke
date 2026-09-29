@@ -148,6 +148,42 @@ describe('buildDigestTasks — event created', () => {
     await prisma.calendarEvent.deleteMany({ where: { id: { in: [created.id, earlier.id] } } });
   });
 
+  it('lists a motivated reschedule as a date change, with its reason', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Spostato ${randomUUID().slice(0, 6)}`,
+        startAt: new Date('2099-10-10T00:00:00.000Z'), allDay: true, visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, startAt: '2099-10-12T00:00:00.000Z', reason: 'Ritardo fornitore' });
+
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    const html = tasks.find(t => t.email === userDXEmail)?.html ?? '';
+    expect(html).toContain(event.title);
+    expect(html).toMatch(/Posticipato: [^<]*10[^<]*→[^<]*12[^<]*Ritardo fornitore/);
+
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+  });
+
+  it('reads the old kind of a reschedule that turned a timed event all-day from its own record', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Giornata ${randomUUID().slice(0, 6)}`,
+        // 23:30 UTC on the 10th is the 11th in Rome, the recipient's zone: read as all-day it would be the 10th.
+        startAt: new Date('2099-10-10T23:30:00.000Z'), allDay: false, visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, startAt: '2099-10-12T00:00:00.000Z', allDay: true, reason: 'Tutto il giorno' });
+
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    const html = tasks.find(t => t.email === userDXEmail)?.html ?? '';
+    expect(html).toMatch(/Posticipato: [^<]*11[^<]*→[^<]*12/);
+
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+  });
+
   it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({

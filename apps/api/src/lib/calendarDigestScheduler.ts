@@ -98,6 +98,20 @@ function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, tim
 }
 
 /**
+ * Whether an event was all-day before the change recorded in `c`. A reschedule records `oldAllDay`
+ * when it changed the kind and nothing when it did not, so the event's current kind stands in. An
+ * update row stores the new `allDay` only: the old value was the other kind when that update listed
+ * `allDay` among its changed fields (`changedFields` is the label list the router writes).
+ */
+function oldAllDayOf(c: { action: string; meta: Record<string, unknown> }, currentAllDay: boolean): boolean {
+  if (typeof c.meta.oldAllDay === 'boolean') return c.meta.oldAllDay;
+  if (c.action === 'CALENDAR_EVENT_RESCHEDULE') return currentAllDay;
+  const changedFields = Array.isArray(c.meta.changedFields) ? (c.meta.changedFields as string[]) : [];
+  const allDayAtChange = c.meta.allDay === true;
+  return changedFields.includes(ALL_DAY_FIELD_LABEL) ? !allDayAtChange : allDayAtChange;
+}
+
+/**
  * A date read from audit metadata, or `null` when it is missing, redacted or not a date — one
  * malformed row must not fail the whole digest (the calendar-date helpers throw on an invalid date).
  */
@@ -251,7 +265,7 @@ export async function buildDigestTasks(
   const logs = await prisma.auditLog.findMany({
     where: {
       targetType: { in: ['CalendarEvent', 'CalendarMilestone'] },
-      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_CANCEL', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
+      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_RESCHEDULE', 'CALENDAR_EVENT_CANCEL', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
       result: 'SUCCESS',
       createdAt: { gte: range.start, lt: range.end },
     },
@@ -411,11 +425,13 @@ export async function buildDigestTasks(
     // Pure update(s)/cancellation — collapse into a single net diff over the whole period.
     const updateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE');
     const cancelChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_CANCEL');
+    // A motivated reschedule moves the dates like an update does, and records the old ones the same way.
+    const dateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE' || c.action === 'CALENDAR_EVENT_RESCHEDULE');
 
     let dateChangeLabel: string | undefined;
     let firstDateChange: Change | undefined;
     let oldStart: Date | null = null;
-    for (const c of updateChanges) {
+    for (const c of dateChanges) {
       oldStart = metaDate(c.meta.oldStartAt);
       if (oldStart) {
         firstDateChange = c;
@@ -423,11 +439,7 @@ export async function buildDigestTasks(
       }
     }
     if (firstDateChange && oldStart && liveEvent) {
-      // The update row stores the new `allDay` only; the old values were of the other kind when
-      // that same update also changed `allDay`. `changedFields` is the string list the router writes.
-      const changedFields = Array.isArray(firstDateChange.meta.changedFields) ? (firstDateChange.meta.changedFields as string[]) : [];
-      const allDayAtChange = firstDateChange.meta.allDay === true;
-      const oldAllDay = changedFields.includes(ALL_DAY_FIELD_LABEL) ? !allDayAtChange : allDayAtChange;
+      const oldAllDay = oldAllDayOf(firstDateChange, liveEvent.allDay);
       const oldEnd = metaDate(firstDateChange.meta.oldEndAt);
       const [oldFirst] = eventCalendarDays(oldStart, oldEnd, oldAllDay, timeZone);
       const [newFirst] = eventCalendarDays(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay, timeZone);
@@ -450,6 +462,14 @@ export async function buildDigestTasks(
         dateChangeLabel = `Durata modificata: fine ${formatEnd(oldEnd)} → ${formatEnd(liveEvent.endAt)}`;
       }
     }
+
+    // A reschedule carries a mandatory reason: it goes with the date change it explains.
+    const rescheduleReason = dateChanges
+      .filter(c => c.action === 'CALENDAR_EVENT_RESCHEDULE')
+      .map(c => c.meta.reason)
+      .reverse()
+      .find((r): r is string => typeof r === 'string' && !isRedactedValue(r));
+    if (dateChangeLabel && rescheduleReason) dateChangeLabel += ` — motivo: ${rescheduleReason}`;
 
     // A cancellation is terminal — surface it (with its reason) as the event's status line.
     let statusChangeLabel: string | undefined;
