@@ -51,7 +51,7 @@ import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../ser
 
 import { isRedactedValue } from './auditLog';
 import { getConfigOrDefault } from './configManager';
-import { getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
+import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { withSchedulerLock } from './schedulerLock';
 import { groupByTimeZone, resolveUserTimeZone } from './userTimeZone';
@@ -123,11 +123,13 @@ interface UserDigest {
 // ─── HTML generation ─────────────────────────────────────────────────────────
 
 function entryRow(e: DigestEntry): string {
+  // Every field carries user-entered text — titles, names, reasons, field values — so each is
+  // escaped where it enters the HTML.
   const extraLines = [e.dateLabel, e.dateChangeLabel, e.statusChangeLabel, e.otherFieldsLabel]
     .filter((l): l is string => !!l)
-    .map(l => `<div style="margin-top:2px;font-size:12px;color:#94a3b8">${l}</div>`)
+    .map(l => `<div style="margin-top:2px;font-size:12px;color:#94a3b8">${escapeHtml(l)}</div>`)
     .join('');
-  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${e.title}${extraLines}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${e.actorName} · ${e.time}</td></tr>`;
+  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${escapeHtml(e.title)}${extraLines}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${escapeHtml(e.actorName)} · ${escapeHtml(e.time)}</td></tr>`;
 }
 
 function section(heading: string, color: string, entries: DigestEntry[]): string {
@@ -149,7 +151,7 @@ function generateDigestHtml(dateLabel: string, digest: UserDigest, calendarUrl: 
 
   const total = digest.created.length + digest.updated.length + digest.deleted.length;
 
-  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Recap calendario</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:32px 40px 24px;border-bottom:1px solid #e5e7eb"><h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#1e293b">Recap calendario</h1><p style="margin:0 0 2px;font-size:15px;font-weight:600;color:#475569">${calendarLabel}</p><p style="margin:0;font-size:14px;color:#64748b">${dateLabel} · ${total} modific${total === 1 ? 'a' : 'he'}</p><p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Orari in ${timeZone}</p></td></tr><tr><td style="padding:24px 40px 32px">${body}<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px"><tr><td align="center"><a href="${calendarUrl}" style="display:inline-block;padding:12px 28px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600">Vai al calendario</a></td></tr></table><p style="margin:24px 0 0;font-size:12px;color:#94a3b8">Per non ricevere questi aggiornamenti, disabilitali nelle <strong>preferenze di notifica → Calendario</strong>.</p></td></tr><tr><td style="padding:20px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:12px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Recap calendario</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:32px 40px 24px;border-bottom:1px solid #e5e7eb"><h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#1e293b">Recap calendario</h1><p style="margin:0 0 2px;font-size:15px;font-weight:600;color:#475569">${escapeHtml(calendarLabel)}</p><p style="margin:0;font-size:14px;color:#64748b">${escapeHtml(dateLabel)} · ${total} modific${total === 1 ? 'a' : 'he'}</p><p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Orari in ${escapeHtml(timeZone)}</p></td></tr><tr><td style="padding:24px 40px 32px">${body}<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px"><tr><td align="center"><a href="${escapeHtml(calendarUrl)}" style="display:inline-block;padding:12px 28px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600">Vai al calendario</a></td></tr></table><p style="margin:24px 0 0;font-size:12px;color:#94a3b8">Per non ricevere questi aggiornamenti, disabilitali nelle <strong>preferenze di notifica → Calendario</strong>.</p></td></tr><tr><td style="padding:20px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:12px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
 }
 
 function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel: string, timeZone: string): string {

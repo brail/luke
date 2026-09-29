@@ -122,6 +122,32 @@ describe('buildDigestTasks — event created', () => {
     await prisma.calendarEvent.delete({ where: { id: created.id } });
   });
 
+  it('writes user-entered text into the email as text, never as markup', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    // Created in the window: listed as new, with its title.
+    const created = await caller.seasonCalendar.createMilestone({
+      planningGroupId: planningGroupDX, title: `<a href="https://evil.example">Clicca ${randomUUID().slice(0, 6)}</a>`,
+      startAt: todayAllDay(), allDay: true, publishExternally: false, visibilityFunctionIds: [fnD],
+    });
+    // Created before the window (no audit row) and cancelled in it: listed as changed, with its reason.
+    const earlier = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Esistente ${randomUUID().slice(0, 6)}`,
+        startAt: new Date(todayAllDay()), allDay: true, visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    await caller.seasonCalendar.cancelMilestone({ id: earlier.id, reason: '<b>motivo</b> & "altro"' });
+
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    const html = tasks.find(t => t.email === userDXEmail)?.html ?? '';
+    expect(html).toContain('&lt;a href=&quot;https://evil.example&quot;&gt;');
+    expect(html).not.toContain('<a href="https://evil.example">');
+    expect(html).toContain('&lt;b&gt;motivo&lt;/b&gt; &amp; &quot;altro&quot;');
+    expect(html).not.toContain('<b>motivo</b>');
+
+    await prisma.calendarEvent.deleteMany({ where: { id: { in: [created.id, earlier.id] } } });
+  });
+
   it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({

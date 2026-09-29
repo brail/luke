@@ -177,8 +177,20 @@ const LOGO_TD =
   '</svg>' +
   '</td>';
 
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 /**
- * Genera template HTML branded con logo Luke (DRY)
+ * `text` as HTML text or attribute content — the one way user-entered text (a name, a title, a
+ * reason) enters an email body. Interpolated raw, it would put real markup or a link inside a
+ * trusted Luke email.
+ */
+export function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, c => HTML_ESCAPES[c]!);
+}
+
+/**
+ * The branded HTML email with the Luke logo. `message` is HTML: the caller escapes any user-entered
+ * text it interpolates; `buttonUrl` is escaped here.
  */
 function generateBrandedHtml(
   title: string,
@@ -189,7 +201,7 @@ function generateBrandedHtml(
   note: string
 ): string {
   const year = new Date().getFullYear();
-  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:40px 40px 32px;text-align:center;border-bottom:1px solid #e5e7eb"><table cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>${LOGO_TD}</tr></table><h1 style="margin:16px 0 0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:-.5px">Luke</h1></td></tr><tr><td style="padding:40px"><h2 style="margin:0 0 24px;font-size:24px;font-weight:600;color:#1e293b">${heading}</h2><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569">${message}</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0"><tr><td align="center"><a href="${buttonUrl}" style="display:inline-block;padding:14px 32px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:16px;font-weight:600;letter-spacing:.3px">${buttonText}</a></td></tr></table><p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#64748b">Se il pulsante non funziona, copia questo link:<br/><span style="color:#3b82f6;word-break:break-all">${buttonUrl}</span></p><table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:24px;border-top:1px solid #e5e7eb"><tr><td><p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8"><strong>Nota:</strong> ${note}</p></td></tr></table></td></tr><tr><td style="padding:24px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:13px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:40px 40px 32px;text-align:center;border-bottom:1px solid #e5e7eb"><table cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>${LOGO_TD}</tr></table><h1 style="margin:16px 0 0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:-.5px">Luke</h1></td></tr><tr><td style="padding:40px"><h2 style="margin:0 0 24px;font-size:24px;font-weight:600;color:#1e293b">${heading}</h2><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569">${message}</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0"><tr><td align="center"><a href="${escapeHtml(buttonUrl)}" style="display:inline-block;padding:14px 32px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:16px;font-weight:600;letter-spacing:.3px">${buttonText}</a></td></tr></table><p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#64748b">Se il pulsante non funziona, copia questo link:<br/><span style="color:#3b82f6;word-break:break-all">${escapeHtml(buttonUrl)}</span></p><table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:24px;border-top:1px solid #e5e7eb"><tr><td><p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8"><strong>Nota:</strong> ${note}</p></td></tr></table></td></tr><tr><td style="padding:24px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:13px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
 }
 
 /**
@@ -275,7 +287,7 @@ export async function sendAccountApprovedEmail(
   const html = generateBrandedHtml(
     'Account Attivato - Luke',
     'Il tuo account è stato attivato!',
-    `Ciao ${displayName}! Il tuo account su Luke è stato approvato da un amministratore. Puoi ora accedere al sistema con le tue credenziali.`,
+    `Ciao ${escapeHtml(displayName)}! Il tuo account su Luke è stato approvato da un amministratore. Puoi ora accedere al sistema con le tue credenziali.`,
     'Accedi ora',
     loginUrl,
     'Se non hai richiesto questo account, contatta il tuo amministratore di sistema.'
@@ -309,7 +321,7 @@ export async function sendMaintenanceScheduledEmail(
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
   });
   const message = reason
-    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${reason}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
+    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${escapeHtml(reason)}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
     : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;
 
   const html = generateBrandedHtml(
