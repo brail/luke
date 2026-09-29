@@ -13,12 +13,15 @@
 
 import { describe, it, expect } from 'vitest';
 
+import { parseCalendarDate } from '@luke/core';
+
 import {
   getActivePhaseFromEvents,
   getNextPhaseFromEvents,
   getCompletionDeadlineEvent,
   getMissingPhasesForCompletion,
   completionOutcome,
+  byEventStartDay,
   criticalityFromActivePhase,
   filterApplicableEvents,
   type ActivePhaseResult,
@@ -282,7 +285,29 @@ describe('criticalityFromActivePhase', () => {
     const current = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
     const next = fakeEvent({ id: 'e2', phaseOrder: 1, deadline: new Date('2026-10-09T00:00:00Z'), allDay: true });
     const result = criticalityFromActivePhase('row-1', active(current), next, ALERT, new Date('2026-10-02T10:00:00Z'), null, NO_WORKING_DAYS);
-    expect(result?.nextPhase).toMatchObject({ daysUntil: 7, reached: false });
+    expect(result?.nextPhase).toMatchObject({ daysUntil: 7, reached: false, deadlineDay: '2026-10-09' });
+  });
+
+  it('names the deadline and start as calendar dates: all-day its own, timed in the business zone', () => {
+    const allDay = fakeEvent({ id: 'e1', phaseOrder: 0, deadline: new Date('2026-10-02T00:00:00Z'), allDay: true });
+    expect(criticalityFromActivePhase('row-1', active(allDay), null, ALERT, new Date('2026-09-30T10:00:00Z'), null, NO_WORKING_DAYS))
+      .toMatchObject({ deadlineDay: '2026-10-02', eventStartDay: '2026-10-02' });
+    // 22:30 UTC on the 2nd is already the 3rd in Rome: the day the countdown counts to.
+    const timed = fakeEvent({ id: 'e2', phaseOrder: 0, deadline: new Date('2026-10-02T22:30:00Z') });
+    expect(criticalityFromActivePhase('row-1', active(timed), null, ALERT, new Date('2026-09-30T10:00:00Z'), null, NO_WORKING_DAYS))
+      .toMatchObject({ deadlineDay: '2026-10-03', eventStartDay: '2026-10-03', daysToDeadline: 3 });
+    // A window: the start is the first day, the deadline the day of its end.
+    const window = { ...fakeEvent({ id: 'e3', phaseOrder: 0, deadline: new Date('2026-10-01T22:30:00Z') }), endAt: new Date('2026-10-05T08:00:00Z') };
+    expect(criticalityFromActivePhase('row-1', active(window), null, ALERT, new Date('2026-09-30T10:00:00Z'), null, NO_WORKING_DAYS))
+      .toMatchObject({ eventStartDay: '2026-10-02', deadlineDay: '2026-10-05' });
+  });
+});
+
+describe('byEventStartDay', () => {
+  it('orders by start date, then title and id, so same-day milestones keep one order', () => {
+    const entry = (day: string, eventTitle: string, eventId: string) => ({ eventStartDay: parseCalendarDate(day)!, eventTitle, eventId });
+    const sorted = [entry('2026-10-03', 'B', '2'), entry('2026-10-02', 'Z', '9'), entry('2026-10-03', 'A', '5'), entry('2026-10-03', 'A', '1')].sort(byEventStartDay);
+    expect(sorted.map(e => `${e.eventStartDay}/${e.eventTitle}/${e.eventId}`)).toEqual(['2026-10-02/Z/9', '2026-10-03/A/1', '2026-10-03/A/5', '2026-10-03/B/2']);
   });
 });
 
@@ -296,7 +321,7 @@ describe('completionOutcome', () => {
       state: 'completed',
       daysVsDeadline: null,
       late: false,
-      deadline: null,
+      deadlineDay: null,
       eventId: null,
       band: THRESHOLDS.completedBand,
     });
@@ -304,7 +329,7 @@ describe('completionOutcome', () => {
 
   it('completed before the deadline → positive delta (early) and "on time" band', () => {
     const result = completionOutcome('row-1', new Date('2026-08-12T00:00:00Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
-    expect(result).toMatchObject({ daysVsDeadline: 19, late: false, band: THRESHOLDS.completedBand });
+    expect(result).toMatchObject({ daysVsDeadline: 19, late: false, band: THRESHOLDS.completedBand, deadlineDay: '2026-08-31' });
   });
 
   it('completed after the deadline → negative delta (late) and "late" band', () => {

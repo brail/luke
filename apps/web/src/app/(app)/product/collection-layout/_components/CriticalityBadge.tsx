@@ -1,7 +1,7 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
-import { formatDate } from '@luke/core';
+import { formatCalendarDate, formatDate } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
@@ -35,16 +35,19 @@ function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: s
   return `gg lavorativi${relevantCountryCodes.length > 0 ? ` (${relevantCountryCodes.join('+')})` : ''}`;
 }
 
+/** `formatDate`'s day-only `dd/mm/yyyy`, for a calendar date. */
+const DAY_ONLY = { year: 'numeric', month: '2-digit', day: '2-digit' } as const;
+
 /**
  * Tooltip text for a criticality badge — the band label alone ("Urgente") doesn't say how urgent;
  * this spells out the exact day count and deadline. Shared by `CriticalitySituation` (per-row query,
  * used in the row drawer) and the table's batched lookup in `CollectionGroupSection` — same payload
  * either way, only the fetch strategy differs.
  */
-export function formatCriticalityTooltip({ daysToDeadline, reached, deadline, eventTitle, daysMode, relevantCountryCodes }: CriticalityInfo): string {
-  // `formatDate` from @luke/core (day only, locale it-IT) — not from `lib/configHelpers`,
-  // built for audit timestamps and with a time-of-day that isn't needed here.
-  const dateLabel = formatDate(new Date(deadline));
+export function formatCriticalityTooltip({ daysToDeadline, reached, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CriticalityInfo, 'daysToDeadline' | 'reached' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
+  // The day the count runs to, as the server names it in the business zone — formatting the
+  // instant here would show a different day to a viewer in another zone.
+  const dateLabel = formatCalendarDate(deadlineDay, DAY_ONLY);
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   if (daysToDeadline < 0) return `In ritardo di ${Math.abs(daysToDeadline)} ${unitLabel} — «${eventTitle}»: ${dateLabel}`;
   // Reached with a count of 0 (a timed deadline passed today, a weekend one seen on Monday in
@@ -64,12 +67,12 @@ export function formatCriticalityTooltip({ daysToDeadline, reached, deadline, ev
  * which case the tooltip states just the date, with no delta invented. `late` decides a count of 0:
  * completed after a timed deadline on its own day is past it, not "on the day".
  */
-export function formatCompletionTooltip({ completedAt, daysVsDeadline, late, deadline, eventTitle, daysMode, relevantCountryCodes }: CompletionInfo): string {
+export function formatCompletionTooltip({ completedAt, daysVsDeadline, late, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CompletionInfo, 'completedAt' | 'daysVsDeadline' | 'late' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
   const completedLabel = formatDate(new Date(completedAt));
-  if (daysVsDeadline === null || deadline === null) {
+  if (daysVsDeadline === null || deadlineDay === null) {
     return `Conclusa il ${completedLabel} — nessuna milestone di riferimento`;
   }
-  const dateLabel = formatDate(new Date(deadline));
+  const dateLabel = formatCalendarDate(deadlineDay, DAY_ONLY);
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   const delta = daysVsDeadline === 0
     ? late ? 'oltre la scadenza' : 'nel giorno della scadenza'

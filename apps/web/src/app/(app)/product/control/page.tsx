@@ -3,7 +3,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { formatDate } from '@luke/core';
+import { formatCalendarDate } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { Badge } from '../../../../components/ui/badge';
@@ -261,7 +261,7 @@ function BottleneckTab() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{event.eventTitle}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatDate(new Date(event.eventStartAt))} · {total} righe
+                      {formatCalendarDate(event.eventStartDay, { year: 'numeric', month: '2-digit', day: '2-digit' })} · {total} righe
                     </span>
                   </div>
                   <div className="flex h-3 w-full rounded overflow-hidden bg-muted">

@@ -16,6 +16,7 @@ import {
   calendarDaysBetween,
   deadlineDay,
   deadlineReachedAt,
+  eventCalendarDays,
   isWorkingDate,
   workingDaysBetweenDates,
   CollectionAlertThresholdsSchema,
@@ -485,18 +486,6 @@ export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaCl
 }
 
 /**
- * Resolves the deadline for an active-phase result: always the event's current `endAt ?? startAt`,
- * live and freely editable even after freeze. The frozen baseline (`baselineStartAt`/`baselineEndAt`,
- * written once by `freezePlanningGroup`) is a separate, fixed commitment — it must never feed the
- * criticality countdown, or rescheduling an event during the season would leave the alert pinned to
- * a dead date forever. No lead-time recompute. Pure — no I/O.
- */
-function deadlineFromActivePhase(active: ActivePhaseResult) {
-  if (active.status !== 'active') return null;
-  return { event: active.event, deadline: active.event.endAt ?? active.event.startAt };
-}
-
-/**
  * Resolves the display fields for the row's next phase, at the same point in time / working-days
  * context as the active phase's own countdown. Pure — no I/O. Split out of `criticalityFromActivePhase`
  * so that function can take an early return instead of nesting this behind a ternary.
@@ -508,7 +497,7 @@ function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, timeZone:
   return {
     phaseId: nextEvent.phaseId,
     eventTitle: nextEvent.title,
-    deadline: nextEvent.endAt ?? nextEvent.startAt,
+    deadlineDay: deadlineDay(nextEvent, timeZone),
     daysUntil: days,
     reached: now >= deadlineReachedAt(nextEvent, timeZone),
     daysMode,
@@ -538,24 +527,30 @@ export function criticalityFromActivePhase(
   vendorCountryCode: string | null,
   workingDaysCtx: WorkingDaysContext
 ) {
-  const deadlineInfo = deadlineFromActivePhase(active);
-  if (!deadlineInfo) return null;
+  if (active.status !== 'active') return null;
+  // The event's live date, never the frozen baseline (`baselineStartAt`/`baselineEndAt`, written
+  // once by `freezePlanningGroup`): `deadlineDay`/`deadlineReachedAt` read its current
+  // `endAt ?? startAt`, so rescheduling an event during the season moves the countdown with it
+  // instead of pinning the alert to a dead date. No lead-time recompute.
+  const { event } = active;
 
   const { timeZone } = alert;
   const { days: daysToDeadline, daysMode, relevantCountryCodes } = resolveDaysCount(
-    calendarDateIn(now, timeZone), deadlineDay(deadlineInfo.event, timeZone), deadlineInfo.event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    calendarDateIn(now, timeZone), deadlineDay(event, timeZone), event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
-  const reached = now >= deadlineReachedAt(deadlineInfo.event, timeZone);
-  const band = bandFor(bandsForPhase(alert.thresholds, deadlineInfo.event.phase?.value ?? null), daysToDeadline, reached);
+  const reached = now >= deadlineReachedAt(event, timeZone);
+  const band = bandFor(bandsForPhase(alert.thresholds, event.phase?.value ?? null), daysToDeadline, reached);
 
   return {
     state: 'active' as const,
     rowId,
-    eventId: deadlineInfo.event.id,
-    eventTitle: deadlineInfo.event.title,
-    eventStartAt: deadlineInfo.event.startAt,
-    phaseId: deadlineInfo.event.phaseId,
-    deadline: deadlineInfo.deadline,
+    eventId: event.id,
+    eventTitle: event.title,
+    // Both as calendar dates, the deadline being the day `daysToDeadline` counts to: what the
+    // client shows, with no zone of its own to read an instant in.
+    eventStartDay: eventCalendarDays(event.startAt, event.endAt, event.allDay, timeZone)[0],
+    phaseId: event.phaseId,
+    deadlineDay: deadlineDay(event, timeZone),
     daysToDeadline,
     reached,
     daysMode,
@@ -576,9 +571,9 @@ export function criticalityFromActivePhase(
  * deadline is late with a count of 0.
  *
  * Pure — no I/O. No countdown: a concluded row has stopped moving, so the only thing left to say is
- * whether it made it. Recomputed from `completedAt` on every read rather than persisted, matching
- * `deadlineFromActivePhase`'s decision to always measure against the event's live date — rescheduling
- * a milestone after the fact re-scores the outcome instead of leaving it pinned to a dead date.
+ * whether it made it. Recomputed from `completedAt` on every read rather than persisted, matching the
+ * active countdown's decision to always measure against the event's live date — rescheduling a
+ * milestone after the fact re-scores the outcome instead of leaving it pinned to a dead date.
  */
 export function completionOutcome(
   rowId: string,
@@ -589,7 +584,6 @@ export function completionOutcome(
   workingDaysCtx: WorkingDaysContext
 ) {
   const { timeZone, thresholds } = alert;
-  const deadline = completionEvent ? completionEvent.endAt ?? completionEvent.startAt : null;
   // No reference milestone: only the completion date remains, no invented delta.
   const counted = completionEvent
     ? resolveDaysCount(calendarDateIn(completedAt, timeZone), deadlineDay(completionEvent, timeZone), completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
@@ -603,7 +597,7 @@ export function completionOutcome(
     completedAt,
     eventId: completionEvent?.id ?? null,
     eventTitle: completionEvent?.title ?? null,
-    deadline,
+    deadlineDay: completionEvent ? deadlineDay(completionEvent, timeZone) : null,
     daysVsDeadline: counted.days,
     late,
     daysMode: counted.daysMode,
@@ -788,6 +782,17 @@ export async function computeSaturationHeatmap(
 }
 
 /**
+ * Bottleneck order: by start date, then title and id — every milestone on the same business day
+ * ties on the date, and the rows it is aggregated from come in no defined order.
+ */
+export function byEventStartDay(
+  a: { eventStartDay: CalendarDate; eventTitle: string; eventId: string },
+  b: { eventStartDay: CalendarDate; eventTitle: string; eventId: string },
+): number {
+  return a.eventStartDay.localeCompare(b.eventStartDay) || a.eventTitle.localeCompare(b.eventTitle) || a.eventId.localeCompare(b.eventId);
+}
+
+/**
  * Bottleneck index (Phase 6.2): for a single layout, counts rows per criticality band grouped by
  * their active event — identifies which specific milestone is holding up the most rows.
  *
@@ -801,14 +806,14 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
     .filter(r => r.state === 'active');
 
   const byEvent = new Map<string, {
-    eventId: string; eventTitle: string; eventStartAt: Date;
+    eventId: string; eventTitle: string; eventStartDay: CalendarDate;
     bands: Map<string, { label: string; color: string; emphasis: AlertBandEmphasis; count: number }>;
   }>();
 
   for (const row of rows) {
     let eventEntry = byEvent.get(row.eventId);
     if (!eventEntry) {
-      eventEntry = { eventId: row.eventId, eventTitle: row.eventTitle, eventStartAt: row.eventStartAt, bands: new Map() };
+      eventEntry = { eventId: row.eventId, eventTitle: row.eventTitle, eventStartDay: row.eventStartDay, bands: new Map() };
       byEvent.set(row.eventId, eventEntry);
     }
     const bandEntry = eventEntry.bands.get(row.band.label);
@@ -821,5 +826,5 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
 
   return Array.from(byEvent.values())
     .map(e => ({ ...e, bands: Array.from(e.bands.values()) }))
-    .sort((a, b) => a.eventStartAt.getTime() - b.eventStartAt.getTime());
+    .sort(byEventStartDay);
 }

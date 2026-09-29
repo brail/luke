@@ -30,11 +30,12 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ rowId: string }}
-   * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartAt, phaseId, deadline,
+   * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartDay, phaseId, deadlineDay,
    *   daysToDeadline, reached, daysMode, relevantCountryCodes, band, nextPhase }
-   *   | { state: 'completed', rowId, completedAt, eventId, eventTitle, deadline, daysVsDeadline, late,
+   *   | { state: 'completed', rowId, completedAt, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
    *   daysMode, relevantCountryCodes, band } | null} — counts in the business time zone;
-   *   `reached`/`late` decide lateness, the count stays real.
+   *   `reached`/`late` decide lateness, the count stays real; `deadlineDay`/`eventStartDay` are
+   *   calendar dates — an all-day event's own, a timed one's in that zone.
    */
   criticalityForRow: protectedProcedure
     .use(requirePermission('collection_alert:read'))
@@ -131,7 +132,7 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ seasonId: string, brandIds: string[] }}
-   * @output {{ brandId, productCategory, label, color, count }[]}
+   * @output {{ brandId, productCategory, label, color, emphasis, count }[]}
    */
   saturationHeatmap: protectedProcedure
     .use(requirePermission('collection_alert:read'))
@@ -146,7 +147,8 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
-   * @output {{ eventId, eventTitle, eventStartAt, bands: { label, color, count }[] }[]} — sorted by eventStartAt.
+   * @output {{ eventId, eventTitle, eventStartDay, bands: { label, color, emphasis, count }[] }[]} — sorted by
+   *   eventStartDay (a calendar date, as for `criticalityForRow`), then title and id.
    */
   bottleneckByEvent: protectedProcedure
     .use(requirePermission('collection_alert:read'))
