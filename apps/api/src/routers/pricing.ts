@@ -19,6 +19,7 @@ import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { assertBrandAccess } from '../services/context.service';
 import { buildPricingGridPdf, buildPricingGridXlsx } from '../services/pricing.export.service';
 import {
@@ -60,6 +61,7 @@ const exportRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Nessun parametro trovato per questo contesto' });
       }
       const buffer = await buildPricingGridXlsx(sets, brand, season);
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       await logAudit(ctx, {
         action: 'PRICING_GRID_EXPORT_XLSX',
         targetType: 'Brand',
@@ -67,7 +69,7 @@ const exportRouter = router({
         result: 'SUCCESS',
         metadata: { brandId: input.brandId, seasonId: input.seasonId },
       });
-      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.xlsx` };
+      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp(timeZone)}.xlsx` };
     }),
 
   /**
@@ -102,7 +104,8 @@ const exportRouter = router({
       const fullName = exportUser
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
-      const buffer = await buildPricingGridPdf(sets, brand, season, ctx.prisma, fullName, new Date());
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+      const buffer = await buildPricingGridPdf(sets, brand, season, ctx.prisma, fullName, new Date(), timeZone);
       await logAudit(ctx, {
         action: 'PRICING_GRID_EXPORT_PDF',
         targetType: 'Brand',
@@ -110,7 +113,7 @@ const exportRouter = router({
         result: 'SUCCESS',
         metadata: { brandId: input.brandId, seasonId: input.seasonId },
       });
-      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp()}.pdf` };
+      return { data: buffer.toString('base64'), filename: `${brand.code}-${season.code}-Griglia-${exportTimestamp(timeZone)}.pdf` };
     }),
 });
 

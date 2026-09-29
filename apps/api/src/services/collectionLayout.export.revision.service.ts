@@ -125,17 +125,19 @@ export async function buildRevisionXlsx(
  * any, is rendered as an extra footer line.
  *
  * @param extractedBy - Display name of the requesting user (shown in the page header).
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header time is written in.
  * @returns A Buffer containing the PDF file.
  */
 export async function buildRevisionPdf(
   revisionId: string,
   collectionLayoutId: string,
   extractedBy: string,
+  timeZone: string,
   revisionMeta: RevisionMeta,
   prisma: PrismaClient,
   logger?: Logger,
 ): Promise<Buffer> {
   const layout = await buildRevisionExportLayout(revisionId, collectionLayoutId, prisma) as unknown as CollectionLayoutForPdf;
   const extraFooterNote = revisionMeta.notes ? `Nota revisione: ${revisionMeta.notes}` : null;
-  return buildCollectionLayoutPdf(layout, prisma, extractedBy, new Date(), logger, 'collection-row-pictures-revisions', extraFooterNote);
+  return buildCollectionLayoutPdf(layout, prisma, extractedBy, new Date(), timeZone, logger, 'collection-row-pictures-revisions', extraFooterNote);
 }

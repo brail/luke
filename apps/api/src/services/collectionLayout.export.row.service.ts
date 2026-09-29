@@ -7,7 +7,7 @@
 import ExcelJS from 'exceljs';
 
 
-import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
+import { calcMaxSupplierCost, formatDateTimeWithTimezone } from '@luke/core';
 import type { PrismaClient,
   Brand,
   CollectionLayoutRow,
@@ -125,6 +125,7 @@ const ROW_PHOTO_HEIGHT = 90;
  *
  * @param extractedBy - Display name of the requesting user (shown in the header).
  * @param extractedAt - Timestamp to include in the header.
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header time is written in.
  * @returns A Buffer containing the PDF file.
  */
 export async function buildCollectionRowPdf(
@@ -132,6 +133,7 @@ export async function buildCollectionRowPdf(
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
+  timeZone: string,
   logger?: Logger,
 ): Promise<Buffer> {
   const { brand, season, row } = ctx;
@@ -156,7 +158,7 @@ export async function buildCollectionRowPdf(
     1,
     {
       subtitle: `${row.line}${row.article ? ` / ${row.article}` : ''} — ${season.code} ${season.year}`,
-      extractedInfo: `${extractedBy} — ${formatDateTime(extractedAt)}`,
+      extractedInfo: `${extractedBy} — ${formatDateTimeWithTimezone(extractedAt, timeZone)}`,
     },
   );
 

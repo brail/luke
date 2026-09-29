@@ -19,6 +19,7 @@ import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, san
 
 import { appVersion } from '../lib/appVersion';
 import { getConfig } from '../lib/configManager';
+import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
@@ -29,6 +30,7 @@ import {
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedBrandIds } from '../services/context.service';
 import { buildKimoXlsx } from '../services/kimo.statistics';
 import { buildPortafoglioXlsx } from '../services/sales.statistics';
@@ -295,16 +297,13 @@ const portafoglioRouter = router({
         author: authorName,
         manager: `Luke - v${appVersion()}`,
       });
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
       const filterSuffix = input.customerCode
         ? `_${input.customerCode}`
         : input.salespersonCode
           ? `_${input.salespersonCode}`
           : '';
-      const filename = `Luke-AnalisiVendite-${datePart}-${timePart}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
+      const filename = `Luke-AnalisiVendite-${stamp}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
 
       return {
         data: buffer.toString('base64'),
@@ -502,16 +501,13 @@ const kimoRouter = router({
         manager: `Luke - v${appVersion()}`,
       });
 
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
       const filterSuffix = input.customerCode
         ? `_${input.customerCode}`
         : input.salespersonCode
           ? `_${input.salespersonCode}`
           : '';
-      const filename = `Luke-KimoBidone-${datePart}-${timePart}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
+      const filename = `Luke-KimoBidone-${stamp}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
 
       return {
         data: buffer.toString('base64'),

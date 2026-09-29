@@ -23,6 +23,7 @@ import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import {
   resolveLayoutBrandAccess,
   resolveRevisionBrandAccess,
@@ -156,9 +157,10 @@ export const collectionLayoutRevisionRouter = router({
         });
         const buf = await buildRevisionXlsx(input.revisionId, collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
+        const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
         return {
           data: buf.toString('base64'),
-          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp()}.xlsx`,
+          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp(timeZone)}.xlsx`,
         };
       }),
 
@@ -187,11 +189,12 @@ export const collectionLayoutRevisionRouter = router({
         const fullName = exportUser
           ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
           : ctx.session.user.email;
-        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
+        const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, timeZone, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),
-          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp()}.pdf`,
+          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp(timeZone)}.pdf`,
         };
       }),
   }),

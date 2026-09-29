@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
+import * as pdf from '../../lib/export/pdf';
 import { readAssetBuffer } from '../asset.service';
 import { buildCollectionRowPdf, buildCollectionRowXlsx } from '../collectionLayout.export.row.service';
 
@@ -87,7 +88,7 @@ describe('buildCollectionRowPdf', () => {
     const noise = await makeLargeJpeg();
     vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
 
-    const buffer = await buildCollectionRowPdf(makeCtx('huge.jpg'), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionRowPdf(makeCtx('huge.jpg'), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     // The full-size source photo (base64-encoded into the content stream) must
     // not survive into the output PDF — a single large photo embedded at
@@ -96,10 +97,21 @@ describe('buildCollectionRowPdf', () => {
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
   });
 
+  it("writes the header's extraction time in the requester's zone", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const header = vi.spyOn(pdf, 'buildBrandPageHeader');
+
+    // 20:05Z on March 1 is 05:05 on March 2 in Tokyo.
+    await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date('2032-03-01T20:05:00Z'), 'Asia/Tokyo');
+
+    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 02/03/2032, 05:05');
+    header.mockRestore();
+  });
+
   it('produces a valid non-empty PDF buffer when there is no photo (smoke test)', async () => {
     vi.mocked(readAssetBuffer).mockResolvedValue(null);
 
-    const buffer = await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');

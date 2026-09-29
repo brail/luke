@@ -1,5 +1,5 @@
 
-import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange } from '@luke/core';
+import { calcMaxSupplierCost, calculateCompanyMultiplier, formatShortDate, generateRetailPriceRange } from '@luke/core';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
@@ -147,6 +147,7 @@ export async function buildPricingGridXlsx(
  *
  * @param extractedBy - Display name of the requesting user (shown in the header).
  * @param extractedAt - Timestamp to include in the header.
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header date is written in.
  * @returns A Buffer containing the PDF file.
  */
 export async function buildPricingGridPdf(
@@ -156,6 +157,7 @@ export async function buildPricingGridPdf(
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
+  timeZone: string,
 ): Promise<Buffer> {
   const retailPrices = generateRetailPriceRange();
   const refSet = sets[0];
@@ -166,7 +168,7 @@ export async function buildPricingGridPdf(
   ]);
 
   const subtitle = `${season.code} ${season.year ?? ''} — Griglia Prezzi`;
-  const extractedInfo = `Estratto da ${extractedBy} il ${extractedAt.toLocaleDateString('it-IT')}`;
+  const extractedInfo = `Estratto da ${extractedBy} il ${formatShortDate(extractedAt, timeZone)}`;
 
   // Parameters section
   const paramRows: Content[] = [];

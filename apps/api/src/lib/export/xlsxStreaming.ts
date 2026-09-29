@@ -68,13 +68,15 @@ export function createStreamingBuffer(meta: XlsxMeta): {
 }
 
 /**
- * Returns a compact timestamp string formatted as `YYYYMMdd-HHmm`.
- * Suitable for embedding in export filenames.
+ * Returns a compact timestamp string formatted as `YYYYMMdd-HHmm`, on the wall clock in `timeZone`
+ * (the requester's, `getUserTimeZone`). Suitable for embedding in export filenames.
  */
-export function exportTimestamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+export function exportTimestamp(timeZone: string, now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? '';
+  return `${part('year')}${part('month')}${part('day')}-${part('hour')}${part('minute')}`;
 }
 
 /**

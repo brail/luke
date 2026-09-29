@@ -32,6 +32,7 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { resolveVariantUrls } from '../services/asset.service';
 import {
   assertBrandAccess,
@@ -664,6 +665,7 @@ const exportRouter = router({
         ctx.prisma,
         ctx.logger,
       );
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_ROW_EXPORT_XLSX',
         targetType: 'CollectionLayoutRow',
@@ -673,7 +675,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.xlsx`,
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp(timeZone)}.xlsx`,
       };
     }),
 
@@ -705,11 +707,13 @@ const exportRouter = router({
         : ctx.session.user.username;
 
       const { collectionLayout, ...rowData } = row;
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       const buffer = await buildCollectionRowPdf(
         { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
         ctx.prisma,
         fullName,
         new Date(),
+        timeZone,
         ctx.logger,
       );
       await logAudit(ctx, {
@@ -721,7 +725,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.pdf`,
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp(timeZone)}.pdf`,
       };
     }),
 
@@ -748,6 +752,7 @@ const exportRouter = router({
       await assertBrandAccess(ctx, layout.brandId);
 
       const buffer = await buildCollectionLayoutXlsx(layout, ctx.prisma, ctx.logger);
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -757,7 +762,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.xlsx`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp(timeZone)}.xlsx`,
       };
     }),
 
@@ -792,7 +797,8 @@ const exportRouter = router({
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), ctx.logger);
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), timeZone, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',
@@ -802,7 +808,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.pdf`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp(timeZone)}.pdf`,
       };
     }),
 });

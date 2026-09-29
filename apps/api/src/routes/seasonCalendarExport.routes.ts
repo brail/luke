@@ -11,7 +11,7 @@
  * viewDate (the `YYYY-MM-DD` calendar date the week/month views show; default: today; a malformed
  * one is a 400 on every endpoint).
  *
- * PDF and XLSX write every date in the requester's zone (`resolveUserTimeZone`): an all-day event
+ * PDF and XLSX write every date in the requester's zone (`getUserTimeZone`): an all-day event
  * as its stored date, a timed one as the date its instant falls on there (`eventCalendarDays`).
  * iCal carries UTC instants and the stored all-day dates; the calendar app converts them.
  */
@@ -43,7 +43,7 @@ import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // orphaned Promise rejected with an unhandled TypeError, which `server.ts`'s
 // guards turn into `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
-import { resolveUserTimeZone } from '../lib/userTimeZone';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedIds } from '../services/context.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
 
@@ -584,8 +584,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       ? (view as 'list' | 'week' | 'month' | 'gantt')
       : 'list';
 
-    const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { timezone: true } });
-    const timeZone = await resolveUserTimeZone(prisma, { id: session.user.id, timezone: user?.timezone ?? '' }, req.log);
+    const timeZone = await getUserTimeZone(prisma, session.user.id, req.log);
     const today = calendarDateIn(new Date(), timeZone);
     const parsedViewDate = viewDate ? parseCalendarDate(viewDate) : today;
     if (!parsedViewDate) {

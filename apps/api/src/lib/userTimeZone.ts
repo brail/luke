@@ -31,6 +31,12 @@ export function resolveUserTimeZone(prisma: PrismaClient, user: ZonedUser, log: 
   return resolveOr(user, log, () => getConfigOrDefault(prisma, 'app.defaultTimezone'));
 }
 
+/** The zone `userId` reads in (`resolveUserTimeZone`), from their row; the business zone if there is none. */
+export async function getUserTimeZone(prisma: PrismaClient, userId: string, log: FastifyBaseLogger): Promise<string> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { timezone: true } });
+  return resolveUserTimeZone(prisma, { id: userId, timezone: user?.timezone ?? '' }, log);
+}
+
 /**
  * `users` grouped by the zone each one reads in (`resolveUserTimeZone`); the business zone is read
  * at most once, however many rows need it.

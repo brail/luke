@@ -99,7 +99,7 @@ describe('buildCollectionLayoutPdf', () => {
       return null;
     });
 
-    await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
     expect(readAssetBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
@@ -109,7 +109,7 @@ describe('buildCollectionLayoutPdf', () => {
     vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', 'missing.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
   });
@@ -124,7 +124,7 @@ describe('buildCollectionLayoutPdf', () => {
     vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
     const rows = [makeRow('row-1', 'huge.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     // The full-size source photo (base64-encoded into the content stream)
     // must not survive into the output PDF — this is the actual bug: a
@@ -141,7 +141,7 @@ describe('buildCollectionLayoutPdf', () => {
     vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: undecodable, contentType: 'image/jpeg', width: null, height: null });
     const rows = [makeRow('row-1', 'corrupt.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.length).toBeLessThan(undecodable.length);
@@ -151,7 +151,7 @@ describe('buildCollectionLayoutPdf', () => {
     vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');

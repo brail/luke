@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { APP_CONFIG_DEFAULTS } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { groupByTimeZone, resolveUserTimeZone } from '../src/lib/userTimeZone';
+import { getUserTimeZone, groupByTimeZone, resolveUserTimeZone } from '../src/lib/userTimeZone';
 
 import { createSilentLogger } from './helpers/logger';
 
@@ -65,5 +65,23 @@ describe('groupByTimeZone', () => {
     const groups = await groupByTimeZone(prisma, users, createSilentLogger());
     expect([...groups.keys()]).toEqual(['Asia/Tokyo']);
     expect(findUnique).toHaveBeenCalledOnce();
+  });
+});
+
+describe('getUserTimeZone', () => {
+  function prismaWithUser(timezone: string | null) {
+    const { prisma } = prismaWith('Asia/Tokyo');
+    // `getUserTimeZone` reads the user's row, then AppConfig only when the stored zone is unusable.
+    Object.assign(prisma, { user: { findUnique: vi.fn(async () => (timezone === null ? null : { timezone })) } });
+    return prisma;
+  }
+
+  it("reads the user's stored zone", async () => {
+    await expect(getUserTimeZone(prismaWithUser('America/Los_Angeles'), 'u1', createSilentLogger())).resolves.toBe('America/Los_Angeles');
+  });
+
+  it('falls back to the business zone for a missing user or an invalid zone', async () => {
+    await expect(getUserTimeZone(prismaWithUser(null), 'u1', createSilentLogger())).resolves.toBe('Asia/Tokyo');
+    await expect(getUserTimeZone(prismaWithUser('Mars/Olympus'), 'u1', createSilentLogger())).resolves.toBe('Asia/Tokyo');
   });
 });
