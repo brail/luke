@@ -830,6 +830,13 @@ export default [
     rules: { '@luke/audit-metadata-object-literal': 'error' },
   },
   {
+    // Detached-JSDoc backstop, on every source file: a JSDoc stacked directly on another documents
+    // nothing, because TypeScript keeps only the last block. See `lessons.md` (2026-09-29).
+    files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],
+    plugins: { '@luke': lukePlugin },
+    rules: { '@luke/no-detached-jsdoc': 'error' },
+  },
+  {
     // Disabled-tooltip backstop: a tooltip that explains why a control is disabled is worthless
     // if only the mouse can reach it. `PermissionButton` solved this once; four files
     // reimplemented the wrapper inline and dropped the tabIndex that makes it reachable.

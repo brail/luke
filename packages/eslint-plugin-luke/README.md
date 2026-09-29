@@ -1,7 +1,7 @@
 # eslint-plugin-luke
 
 <!-- luke-docs:start:overview -->
-Internal ESLint plugin that turns constraints written in `CLAUDE.md` and paid for in `lessons.md` into rules the build refuses to pass, instead of conventions a reviewer has to remember. Ten rules, covering TypeScript strictness, Zod partials, workspace dependency declarations, module boundaries, audit metadata and four `apps/web` UI patterns.
+Internal ESLint plugin that turns constraints written in `CLAUDE.md` and paid for in `lessons.md` into rules the build refuses to pass, instead of conventions a reviewer has to remember. Eleven rules, covering TypeScript strictness, doc-comment placement, Zod partials, workspace dependency declarations, module boundaries, audit metadata and four `apps/web` UI patterns.
 
 The plugin is enforcement only: the normative statement of each rule lives in `CLAUDE.md`, the lesson that produced it in `lessons.md`, and the file globs each rule runs on in the root `eslint.config.mjs`.
 <!-- luke-docs:end:overview -->
@@ -17,7 +17,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 ## Export principali
 
 <!-- luke-docs:start:exports -->
-`index.js` has a single default export — `{ rules: { … } }` — holding the ten rules below. A rule file that is not listed there is not loaded by anything.
+`index.js` has a single default export — `{ rules: { … } }` — holding the eleven rules below. A rule file that is not listed there is not loaded by anything.
 
 ### Repository-wide (every workspace TypeScript file)
 
@@ -26,6 +26,12 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 | `@luke/no-bare-zod-partial` | Refuses a direct `.partial()` call: Zod re-injects the `.default()` of every field the input omits, so a partial schema feeding a Prisma update silently overwrites stored data. Requires `partialWithoutDefaults()` from `@luke/core`. Switched off in `packages/core/src/utils/zod.ts`, the one file that implements that helper |
 | `@luke/no-uncommented-any` | Refuses a `TSAnyKeyword` with no explanatory comment on the same line or in the three lines above it. Off in test files, where casting a mock is the standard vitest idiom |
 | `@luke/no-undeclared-workspace-import` | Declaration integrity, not direction: a reference to a workspace package must be declared by the nearest `package.json`, under `dependencies` or — for a type-only reference — `devDependencies`. Also refuses self-imports, absolute specifiers (POSIX, Windows drive, `file:`) and relative paths that leave the owning package directory. Judged lexically, with no module resolution, so it holds in CI's lint step, which runs before any `dist` exists. Takes `workspacePackages` (required) and `allowDevDependencies`; the config passes the names it reads from `pnpm-workspace.yaml` and the manifests, so the unscoped `eslint-plugin-luke` is judged exactly like `@luke/core` |
+
+### Every linted source file (TypeScript and JavaScript, `tools/` and `scripts/` included)
+
+| Rule | Description |
+|------|-------------|
+| `@luke/no-detached-jsdoc` | Refuses a JSDoc block followed directly by another one, with only whitespace and no blank line between: TypeScript keeps only the last block, so the first documents nothing and the declaration it was written for is left undocumented. A blank line keeps a file header apart from the first declaration's doc. |
 
 ### Module boundary
 
@@ -59,7 +65,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 - **Two rules share one view of what a module reference is.** `rules/lib/module-references.js` normalises every statically knowable form — `import`, `export … from`, `export *`, `import()`, a template literal with no interpolation, `require()`, `import x = require()`, `import('x').T` — into a single callback, marking the compiler-erased ones `typeOnly`. A rule that visits `ImportDeclaration` alone is silent on the rest, which is exactly what was measured before this existed. A specifier built from an expression is not judged: it is not statically knowable, and silence there is the honest answer.
 - **Rules that take options validate them with an object-form schema.** With ESLint's array form only the options that are present are checked, so a bare `'error'` reached `create` with no options at all and failed as a `TypeError` while loading the rule. `minItems` makes a missing option a configuration error ESLint reports as one, which is the difference between failing loudly and judging nothing.
 - **No build step, and the lint cache knows it.** Plain ESM JavaScript (`"type": "module"`, `exports` mapping `.` to `./index.js`), consumed directly through `workspace:*` — there is no `tsc`, no `dist`. Turbo's `lint` task lists `index.js` and `rules/**/*.js` as inputs, so editing a rule invalidates every workspace's cached lint result instead of leaving stale green ones behind.
-- **The rules have their own tests, and not all of them are covered.** `pnpm --filter eslint-plugin-luke test` runs `node --test` over `rules/__tests__/*.test.js` — the shared module-reference visitor, `no-restricted-module-references`, `no-undeclared-workspace-import`, `audit-metadata-object-literal` and `no-unreachable-disabled-tooltip`. The other six rules are exercised only by the repository's own lint run.
+- **The rules have their own tests, and not all of them are covered.** `pnpm --filter eslint-plugin-luke test` runs `node --test` over `rules/__tests__/*.test.js` — the shared module-reference visitor, `no-restricted-module-references`, `no-undeclared-workspace-import`, `audit-metadata-object-literal`, `no-unreachable-disabled-tooltip` and `no-detached-jsdoc`. The other six rules are exercised only by the repository's own lint run.
 <!-- luke-docs:end:concepts -->
 
 ## Esempio d'uso

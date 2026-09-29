@@ -189,26 +189,6 @@ const CONTRACT_DIST = 'dist';
 const WEB_RUNTIME_FORBIDDEN = ['apps/api/src'] as const;
 
 /**
- * The package owning the Prisma schema, and the script that must regenerate its
- * client on install.
- *
- * `@prisma/client` ships as a stub until `prisma generate` has run against a
- * schema. Without it a fresh clone cannot start: `pnpm install && pnpm dev`
- * died at `@luke/nav#build` with
- * `TS2305: Module '"@prisma/client"' has no exported member 'PrismaClient'`,
- * and no dev task ever started. CI and both Dockerfiles ran the step
- * explicitly, so every automated path was fine and only a human with a new
- * checkout hit it.
- *
- * A `postinstall` makes the development lifecycle self-sufficient rather than
- * documented, and this invariant is what stops it being dropped again.
- *
- * It has to be the **root** manifest. Measured on a full install: pnpm runs
- * lifecycle scripts for the root project (`. postinstall$ ...`) and for
- * dependencies, but not for workspace projects — the same hook on
- * `apps/api/package.json` never fired, and the fresh clone stayed broken.
- */
-/**
  * Dependencies a package must declare because of what its **emitted
  * declarations** name, not because of what its source imports.
  *
@@ -262,6 +242,26 @@ const PRISMA_GENERATED_TREE = {
   generate: 'prisma generate',
 } as const;
 
+/**
+ * The manifest, and the script in it, that must regenerate the Prisma client on
+ * install.
+ *
+ * `@prisma/client` ships as a stub until `prisma generate` has run against a
+ * schema. Without it a fresh clone cannot start: `pnpm install && pnpm dev`
+ * died at `@luke/nav#build` with
+ * `TS2305: Module '"@prisma/client"' has no exported member 'PrismaClient'`,
+ * and no dev task ever started. CI and both Dockerfiles ran the step
+ * explicitly, so every automated path was fine and only a human with a new
+ * checkout hit it.
+ *
+ * A `postinstall` makes the development lifecycle self-sufficient rather than
+ * documented, and this invariant is what stops it being dropped again.
+ *
+ * It has to be the **root** manifest. Measured on a full install: pnpm runs
+ * lifecycle scripts for the root project (`. postinstall$ ...`) and for
+ * dependencies, but not for workspace projects — the same hook on
+ * `apps/api/package.json` never fired, and the fresh clone stayed broken.
+ */
 const PRISMA_GENERATE_SITE = {
   file: 'package.json',
   script: 'postinstall',
