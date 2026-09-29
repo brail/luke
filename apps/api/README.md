@@ -353,6 +353,15 @@ Creating a migration is a workflow of its own, not a single command: see [`docs/
 `schema.prisma` itself holds only the `generator` and `datasource` blocks.
 <!-- luke-docs:end:database -->
 
+### All-day event dates
+
+An all-day event is stored at the UTC midnight of its date. The API refuses any write that would leave an all-day row off midnight — moving only one end of a row already stored that way included — and refuses to clone one; older clients wrote the local midnight of whoever entered the event. `db:fix-allday-dates` rereads every all-day row in `Europe/Rome` and moves it to the UTC midnight of that day — the day a user in Rome picked, wrong only for a row entered from another zone — then resyncs the affected Google calendars (`--no-sync` skips that). Read the `--dry-run` list before applying it, and run it before users edit on a web that reads the stored date: saving such a row from the event form writes the date it reads, a day early for a row entered in Rome. The image pins `TZ=UTC`, so in the API container the compiled script takes the zone on its own command line:
+
+```bash
+pnpm --filter @luke/api db:fix-allday-dates --dry-run                        # development
+TZ=Europe/Rome node dist-scripts/scripts/fix-allday-event-dates.js --dry-run   # API container
+```
+
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->

@@ -6,8 +6,8 @@
  * time instead of UTC midnight, causing a one-day rollback once converted to UTC).
  * Recomputes every row as UTC midnight of the current local calendar day — an idempotent
  * operation: rows already correct (UTC midnight) are left unchanged, corrupted ones have
- * the day the user originally picked restored (the same auto-correction mechanism that
- * already makes Luke's UI display correctly today).
+ * the day a user in Rome originally picked restored. The web reads an all-day value as its
+ * stored UTC date, so until this runs such a row shows, and is saved back as, the day before.
  *
  * Requires TZ=Europe/Rome in the process (set by the npm script, not here in the file: static
  * imports run before any top-level statement of this module).
