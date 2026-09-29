@@ -99,13 +99,20 @@ hand-maintained list: a list has an asymmetric failure mode, where a missing
 entry is noticed immediately but a stale one after a rename is not, and a whole
 suite silently drops out of the run.
 
-| Tier        | Membership                                        | Config                                   |
-| ----------- | ------------------------------------------------- | ---------------------------------------- |
-| unit (api)  | anything not matching `*.integration.spec.ts`     | `apps/api/vitest.config.mts`             |
-| integration | `apps/api/test/**/*.integration.spec.ts`          | `apps/api/vitest.integration.config.mts` |
-| unit (web)  | pure modules under `apps/web/src/lib/`            | `apps/web/vitest.config.mts`             |
-| component   | `apps/web/src/**/*.browser.test.tsx`              | `apps/web/vitest.browser.config.mts`     |
-| E2E         | `apps/web/tests/smoke/*.smoke.spec.ts`            | `apps/web/playwright.config.ts`          |
+| Tier             | Membership                                                          | Config                                        |
+| ---------------- | ------------------------------------------------------------------- | --------------------------------------------- |
+| unit (api)       | anything not matching `*.integration.spec.ts`                       | `apps/api/vitest.config.mts`                  |
+| integration      | `apps/api/test/**/*.integration.spec.ts`                            | `apps/api/vitest.integration.config.mts`      |
+| unit (web)       | pure modules under `apps/web/src/lib/`                              | `apps/web/vitest.config.mts`                  |
+| unit (core)      | `packages/core/**/*.test.ts` (vitest default)                       | `packages/core/vitest.config.mts`             |
+| unit (calendar)  | `packages/calendar/**/*.test.ts` (vitest default)                   | `packages/calendar/vitest.config.mts`         |
+| component        | `apps/web/src/**/*.browser.test.tsx`, except the time-zone ones     | `apps/web/vitest.browser.config.mts`          |
+| component (zone) | `apps/web/src/**/*.timezone.browser.test.tsx`, once per named zone  | `apps/web/vitest.browser.timezone.config.mts` |
+| E2E              | `apps/web/tests/smoke/*.smoke.spec.ts`                              | `apps/web/playwright.config.ts`               |
+
+A `*.timezone.browser.test.tsx` file runs only in the zone project: the component
+config excludes it, because its instances are what put the browser off UTC. Both
+run under `pnpm --filter @luke/web test:browser`.
 
 The component tier deliberately keeps its own config and script so that
 `pnpm test` stays the fast Node tier: the local loop and `.husky/pre-push` must
