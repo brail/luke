@@ -262,6 +262,54 @@ describe('first sends', () => {
   });
 });
 
+describe('a settled cohort', () => {
+  /** A second calendar for `to`, with a change dated `changedAt`: a pair the digest has not sent. */
+  async function secondCalendar(to: Recipient, changedAt: Date): Promise<string> {
+    const fixture = await createCalendarFixture(prisma, { prefix: 'DGS' });
+    const { functionId } = await grantBrandAccess(prisma, { brandIds: [fixture.brandId], userIds: [to.userId], label: 'Digest settled' });
+    await change({ ...to, calendarId: fixture.calendarId, planningGroupId: fixture.planningGroupId, functionId }, changedAt);
+    return fixture.calendarId;
+  }
+
+  it('is not rebuilt by later ticks of the same day, until its members change', async () => {
+    const d = day('06-11');
+    const yesterday = instantAt(addCalendarDays(d, -1), '11:00', ROME);
+    const to = await recipientWithChange(ROME, yesterday);
+    const { sent, send } = recorder();
+    const settled = new Map();
+    const tick = (at: Date) => runDigestTick(prisma, log, { ...deps(at, send), settled });
+
+    await tick(instantAt(d, '07:30', ROME));
+    expect(sentTo(sent, to)).toHaveLength(1);
+    // Nothing left to send: the cohort is settled for the day.
+    await tick(instantAt(d, '07:45', ROME));
+
+    // A pair appearing now would be sent by a rebuild — a settled cohort is not rebuilt.
+    const calendarId = await secondCalendar(to, yesterday);
+    await tick(instantAt(d, '08:00', ROME));
+    expect(sent.filter(t => t.calendarId === calendarId)).toHaveLength(0);
+
+    // A new member of the zone makes it rebuild, and the pending pair goes out with it.
+    const newcomer = await recipientWithChange(ROME, yesterday);
+    await tick(instantAt(d, '08:15', ROME));
+    expect(sentTo(sent, newcomer)).toHaveLength(1);
+    expect(sent.filter(t => t.calendarId === calendarId)).toHaveLength(1);
+  });
+
+  it('is rebuilt on the next day', async () => {
+    const d = day('06-21');
+    const to = await recipientWithChange(ROME, instantAt(addCalendarDays(d, -1), '11:00', ROME));
+    const { sent, send } = recorder();
+    const settled = new Map();
+    const tick = (at: Date) => runDigestTick(prisma, log, { ...deps(at, send), settled });
+
+    await tick(instantAt(addCalendarDays(d, -1), '07:30', ROME));
+    await tick(instantAt(addCalendarDays(d, -1), '07:45', ROME));
+    await tick(instantAt(d, '07:30', ROME));
+    expect(sentTo(sent, to)).toHaveLength(1);
+  });
+});
+
 describe('retries and abandonment', () => {
   it('retries a failed email after its backoff, then never again', async () => {
     const d = day('06-11');

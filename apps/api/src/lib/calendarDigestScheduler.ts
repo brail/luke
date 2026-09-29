@@ -558,6 +558,14 @@ export interface DigestTickDeps {
   send: (task: EmailTask) => Promise<void>;
   /** `false` when SMTP is not configured: the tick then claims nothing. */
   smtpReady: () => Promise<boolean>;
+  /**
+   * Cohorts with nothing left to send today, by zone — kept across ticks by whoever owns the deps.
+   * Yesterday's window is closed, so once a build finds no unsent pair, later builds that day find
+   * none either unless the cohort's members change, which rebuilds it. A recipient who opts back in,
+   * or is granted a brand, after that point gets the change from the next day. Absent: every tick
+   * rebuilds.
+   */
+  settled?: Map<string, { localDate: CalendarDate; members: string }>;
 }
 
 function defaultDeps(prisma: PrismaClient): DigestTickDeps {
@@ -571,6 +579,7 @@ function defaultDeps(prisma: PrismaClient): DigestTickDeps {
         throw err;
       },
     ),
+    settled: new Map(),
   };
 }
 
@@ -719,6 +728,9 @@ async function sendDueDigests(
   const windowEnd = startOfDayIn(localDate, timeZone);
   const expiresAt = startOfDayIn(addCalendarDays(localDate, 1), timeZone);
   const localDateValue = utcMidnightOf(localDate);
+  const members = [...memberIds].sort().join(',');
+  const settled = deps.settled?.get(timeZone);
+  if (settled?.localDate === localDate && settled.members === members) return;
 
   const recorded = await prisma.calendarDigestDelivery.findMany({
     where: { localDate: localDateValue, userId: { in: [...memberIds] } },
@@ -730,6 +742,10 @@ async function sendDueDigests(
     timeZone,
     include: (userId, calendarId) => memberIds.has(userId) && !recordedPairs.has(pairKey(userId, calendarId)),
   });
+  if (tasks.length === 0) {
+    deps.settled?.set(timeZone, { localDate, members });
+    return;
+  }
 
   await sendBulkEmail(tasks, async task => {
     try {
@@ -838,7 +854,9 @@ export function registerCalendarDigestScheduler(
   // an overlapping tick in this process would drop its successor's lock. Claims stay safe either way.
   let running = false;
 
-  const lockedTick = withSchedulerLock(prisma, 'calendar-digest', () => runDigestTick(prisma, fastify.log));
+  // One set of deps for the scheduler's life, so what `settled` learns carries from tick to tick.
+  const deps = defaultDeps(prisma);
+  const lockedTick = withSchedulerLock(prisma, 'calendar-digest', () => runDigestTick(prisma, fastify.log, deps));
   const guardedTick = guardMaintenance(prisma, async () => {
     await lockedTick();
   });
