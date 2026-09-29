@@ -4,11 +4,13 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, u
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import { ReactNode, useCallback, useMemo, useState } from 'react';
 
+import { calendarDaysBetween } from '@luke/core';
+
 import { Button } from '../../../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/ui/popover';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, MONTH_NAMES_IT, cancelledClass } from '../constants';
-import { addDays, addMonths, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay, toLocalIsoDate } from '../utils';
+import { addDays, addMonths, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveEvent, resolveBrandColor, sameDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -88,11 +90,8 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
     if (!event.over || !canUpdate) return;
     const m = milestones.find(x => x.id === event.active.id as string);
     if (!m) return;
-    const delta = daysBetween(startOfDay(new Date(m.startAt)), startOfDay(new Date(event.over.id as string)));
-    if (delta === 0) return;
-    const newStart = addDays(new Date(m.startAt), delta);
-    const newEnd = m.endAt ? addDays(new Date(m.endAt), delta) : undefined;
-    onEventUpdate(event.active.id as string, { startAt: newStart.toISOString(), endAt: newEnd ? newEnd.toISOString() : null });
+    const moved = moveEvent(m, calendarDaysBetween(eventDays(m)[0], cellDate(new Date(event.over.id as string))));
+    if (moved) onEventUpdate(m.id, moved);
   }, [canUpdate, milestones, onEventUpdate]);
 
   return (
@@ -115,7 +114,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
         <div className="flex-1">
           {Array.from({ length: 6 }, (_, rowIdx) => {
             const weekDays = cells.slice(rowIdx * 7, rowIdx * 7 + 7);
-            const weekNum = getIsoWeek(weekDays[0]!);
+            const weekNum = getIsoWeek(cellDate(weekDays[0]!));
             return (
               <div key={rowIdx} className="flex border-b last:border-b-0">
                 <div className="w-7 shrink-0 flex items-center justify-center border-r border-border/40 bg-muted/10">
@@ -133,15 +132,12 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                   const isToday = sameDay(day, today);
                   const items = byDay[cellIdx] ?? [];
                   const overflow = items.length - MAX_CHIPS;
-                  // `day` is a LOCAL calendar cell (built by `mondayOf`/`addDays`, both local-getter
-                  // arithmetic) — its holiday lookup key must read it back the same way. `HolidayMap`
-                  // is keyed by `toUtcIsoDate` on the *holiday's own* date (a plain calendar date with
-                  // no attached timezone, correctly represented as UTC midnight — see `useHolidays.ts`),
-                  // which numerically equals the intended 'YYYY-MM-DD' string; `toLocalIsoDate(day)`
-                  // recovers that same string from a local-midnight cell. `day.toISOString().slice(0,
-                  // 10)` instead goes through UTC first and reports the PREVIOUS calendar day in any
-                  // positive-offset zone (e.g. Europe/Rome) — a holiday would then shade the wrong cell.
-                  const holidayKey = toLocalIsoDate(day);
+                  // `day` is a LOCAL calendar cell (built by `mondayOf`/`addDays`), so its key is the date
+                  // it reads as locally. `HolidayMap` is keyed by each holiday's own calendar date
+                  // (`useHolidays.ts`), so the two compare directly. `day.toISOString().slice(0, 10)`
+                  // goes through UTC first and reports the PREVIOUS date in any positive-offset zone
+                  // (e.g. Europe/Rome) — a holiday would then shade the wrong cell.
+                  const holidayKey = cellDate(day);
                   return (
                     <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(holidayKey)} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
                       <div className="mb-0.5 flex items-center gap-0.5 flex-wrap">
@@ -163,10 +159,9 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                       <div className="space-y-0.5 flex-1">
                         {items.slice(0, MAX_CHIPS).map(m => {
                           const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
-                          const start = new Date(m.startAt);
-                          const end = m.endAt ? new Date(m.endAt) : null;
-                          const isStart = sameDay(start, day);
-                          const span = end ? daysBetween(start, end) : 0;
+                          const [first, last] = eventDays(m);
+                          const isStart = first === holidayKey;
+                          const span = calendarDaysBetween(first, last);
                           const hasNote = !!(m.notes?.[0]?.body);
                           const color = resolveBrandColor(m.brandId, brandColorMap);
                           const badge = groupBadge(showGroupBadge, m.planningGroupName);

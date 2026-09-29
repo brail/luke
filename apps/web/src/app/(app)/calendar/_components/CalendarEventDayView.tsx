@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { cancelledClass } from '../constants';
-import { addDays, canEditMilestone, groupBadge, groupTooltip, resolveBrandColor, sameDay } from '../utils';
+import { addDays, canEditMilestone, groupBadge, groupEventsByDay, groupTooltip, hoursWithinDay, resolveBrandColor, sameDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -60,15 +60,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
   const today = useMemo(() => new Date(), []);
   const isToday = sameDay(viewDate, today);
 
-  const dayEvents = useMemo(() => {
-    const dayStart = new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate()).getTime();
-    const dayEnd = dayStart + 86_400_000 - 1;
-    return milestones.filter(m => {
-      const s = new Date(m.startAt).getTime();
-      const e = m.endAt ? new Date(m.endAt).getTime() : s;
-      return s <= dayEnd && e >= dayStart;
-    });
-  }, [milestones, viewDate]);
+  const dayEvents = useMemo(() => groupEventsByDay(milestones, [viewDate])[0]!, [milestones, viewDate]);
 
   const allDayEvents = useMemo(() => dayEvents.filter(m => m.allDay), [dayEvents]);
   const timedEvents = useMemo(() => dayEvents.filter(m => !m.allDay), [dayEvents]);
@@ -228,8 +220,11 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const deltaMin = isDragging ? drag.deltaMinutes : 0;
             const start = new Date(m.startAt);
             const end = m.endAt ? new Date(m.endAt) : new Date(start.getTime() + 3_600_000);
-            const startH = start.getHours() + start.getMinutes() / 60 + deltaMin / 60;
-            const endH = end.getHours() + end.getMinutes() / 60 + deltaMin / 60;
+            // Clipped to the viewed day first: an overnight event is drawn up to midnight on its
+            // first day and from midnight on the next, never from its own hours on both.
+            const [dayStartH, dayEndH] = hoursWithinDay(m, viewDate);
+            const startH = dayStartH + deltaMin / 60;
+            const endH = dayEndH + deltaMin / 60;
             const clampedStart = Math.max(startH, GRID_START);
             const clampedEnd = Math.min(endH, GRID_END);
             const top = (clampedStart - GRID_START) * ROW_H;

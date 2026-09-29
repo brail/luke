@@ -7,9 +7,9 @@ import { parseLocalIsoDate, toLocalIsoDate } from '../utils';
 import { paramsFromLastReplace } from './navigationTestHelpers';
 
 /**
- * Timezone-sensitive regression proof — runs in a real Chromium under two different
- * `Intl.DateTimeFormat` zones (see `vitest.browser.timezone.config.mts`: Europe/Rome, a positive
- * UTC offset, and America/Los_Angeles, a negative one), never under the runner's default (often
+ * Timezone-sensitive regression proof — runs in a real Chromium under each `Intl.DateTimeFormat`
+ * zone of `vitest.browser.timezone.config.mts` (among them Europe/Rome, a positive UTC offset, and
+ * America/Los_Angeles, a negative one), never under the runner's default (often
  * UTC, where a local-vs-UTC date bug shows on neither direction and would pass unnoticed).
  *
  * The bug this guards against: the calendar's `?date=` URL param and `viewDate` state used to

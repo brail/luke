@@ -165,7 +165,7 @@ export default function CalendarPage() {
     },
   });
 
-  const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {
+  const handleEventUpdate = (id: string, data: { startAt?: string; endAt?: string | null }) => {
     updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
   };
 

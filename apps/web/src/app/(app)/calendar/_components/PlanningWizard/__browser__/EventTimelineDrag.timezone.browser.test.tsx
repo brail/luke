@@ -7,11 +7,11 @@ import type { HolidayEntry, HolidayMap } from '../../useHolidays';
 
 /**
  * Timezone-sensitive regression proof for `EventTimelineDrag`'s blocked-day lookup — runs under
- * Europe/Rome and America/Los_Angeles (see `vitest.browser.timezone.config.mts`).
+ * each zone of `vitest.browser.timezone.config.mts`.
  *
  * The bug: `anchorDate`/`value` come from a real event instant (`EventStep` passes `new
  * Date(event.startAt)`), not a timezone-less plain date, so the time-of-day it carries matters.
- * `toUtcIsoDate(value)` reads back which UTC calendar day that instant falls on — but the day
+ * The old code read back which UTC calendar day that instant falls on — but the day
  * NUMBER actually shown to the user in the strip (`d.getDate()`) is a local getter. For an instant
  * late enough in the UTC day, the two disagree: in a positive-offset zone (Europe/Rome), an event
  * at 23:30 UTC on March 5 is already local March 6 — the UI shows "6" but the old code checked

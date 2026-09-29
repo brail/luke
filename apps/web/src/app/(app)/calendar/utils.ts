@@ -1,7 +1,13 @@
 import {
+  addCalendarDays,
+  calendarDateIn,
+  calendarDateOf,
+  type CalendarDate,
   daysBetween,
+  eventCalendarDays,
   initials,
   isEventDeleteLocked as isEventDeleteLockedCore,
+  utcMidnightOf,
 } from '@luke/core';
 
 import { type CalendarEventItem } from './_components/types';
@@ -35,16 +41,11 @@ export function sameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-/** Returns 'YYYY-MM-DD' in UTC — used as HolidayMap key. */
-export function toUtcIsoDate(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-}
-
 /**
  * Returns 'YYYY-MM-DD' for the LOCAL calendar day `d` falls on — never `d.toISOString()`, which
  * converts to UTC first and silently shifts the date by one for any positive UTC offset (e.g.
- * Europe/Rome): a local midnight becomes the previous day's evening in UTC. Use this (not
- * `toUtcIsoDate`) for anything meant to round-trip as "the day the user is looking at" — the
+ * Europe/Rome): a local midnight becomes the previous day's evening in UTC. Use this for anything
+ * meant to round-trip as "the day the user is looking at" — the
  * calendar's `?date=` URL param, the day/week-number navigation target.
  */
 export function toLocalIsoDate(d: Date): string {
@@ -74,20 +75,103 @@ export function parseLocalIsoDate(s: string): Date | null {
 // milliseconds, 1 in dates).
 export { daysBetween };
 
-/** Expands a start/end range (inclusive) into its UTC ISO ('YYYY-MM-DD') dates, one per day. */
-export function expandDateRangeToIsoDates(start: Date, end: Date): string[] {
-  const span = daysBetween(start, end);
-  const dates: string[] = [];
-  for (let i = 0; i <= span; i++) dates.push(toUtcIsoDate(addDays(start, i)));
+/** Every calendar date of a stored range (UTC midnights, both ends included), one per day. */
+export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[] {
+  const dates: CalendarDate[] = [];
+  const last = calendarDateOf(end);
+  for (let d = calendarDateOf(start); d <= last; d = addCalendarDays(d, 1)) dates.push(d);
   return dates;
 }
 
-/** Returns the ISO 8601 week number (1–53) for the given date. */
-export function getIsoWeek(d: Date): number {
-  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+/** Returns the ISO 8601 week number (1–53) of `d`. */
+export function getIsoWeek(d: CalendarDate): number {
+  const date = utcMidnightOf(d);
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
   const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
   return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+/** The zone the browser renders in: view cells and timed events are read in it. */
+export function browserTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/** The calendar date of a view cell — any instant of that local day, usually its midnight. */
+export function cellDate(d: Date): CalendarDate {
+  return calendarDateIn(d, browserTimeZone());
+}
+
+type EventDates = Pick<CalendarEventItem, 'startAt' | 'endAt' | 'allDay'>;
+
+/**
+ * The first and last calendar date `m` occupies in the browser zone: an all-day event its own
+ * stored dates in every zone, a timed one its instants projected here, the end exclusive.
+ */
+export function eventDays(m: EventDates): [CalendarDate, CalendarDate] {
+  return eventCalendarDays(new Date(m.startAt), m.endAt ? new Date(m.endAt) : null, m.allDay, browserTimeZone());
+}
+
+/**
+ * Chronological order as the views list events: by first occupied date, then by start instant — so
+ * an all-day event never sorts among the previous evening's timed events west of UTC.
+ */
+export function byFirstDay(a: EventDates, b: EventDates): number {
+  return eventDays(a)[0].localeCompare(eventDays(b)[0]) || new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+}
+
+/**
+ * `m` moved by `days` calendar days, or `null` when there is nothing to send (no move, or a source
+ * whose end is before its start). All-day: both dates by calendar arithmetic, so they stay at UTC
+ * midnight. Timed: the start keeps its wall clock — a time the zone skips resolves forward, a
+ * repeated one to its first occurrence — and the end follows at the original elapsed duration, so
+ * the interval can never invert across a DST change (its end's wall clock may move by that hour).
+ */
+export function moveEvent(m: EventDates, days: number): { startAt: string; endAt: string | null } | null {
+  const start = new Date(m.startAt);
+  const end = m.endAt ? new Date(m.endAt) : null;
+  if (days === 0 || (end && end < start)) return null;
+  if (m.allDay) {
+    const shift = (d: Date) => utcMidnightOf(addCalendarDays(calendarDateOf(d), days)).toISOString();
+    return { startAt: shift(start), endAt: end ? shift(end) : null };
+  }
+  const newStart = addDays(start, days);
+  return {
+    startAt: newStart.toISOString(),
+    endAt: end ? new Date(newStart.getTime() + end.getTime() - start.getTime()).toISOString() : null,
+  };
+}
+
+/**
+ * The new end of `m` after a Gantt resize by `days`, or `null` when nothing changes or the result
+ * is not valid; the start is never part of it. All-day: the last date moves, never before the
+ * first. Timed: the end (the start when there is none) moves by `days` local days, the same wall
+ * clock semantics as `moveEvent`, and is refused unless it stays after the start.
+ */
+export function resizeEvent(m: EventDates, days: number): { endAt: string } | null {
+  if (days === 0) return null;
+  if (m.allDay) {
+    const [first, last] = eventDays(m);
+    const moved = addCalendarDays(last, days);
+    const newLast = moved < first ? first : moved;
+    return newLast === last ? null : { endAt: utcMidnightOf(newLast).toISOString() };
+  }
+  const start = new Date(m.startAt);
+  const newEnd = addDays(m.endAt ? new Date(m.endAt) : start, days);
+  return newEnd > start ? { endAt: newEnd.toISOString() } : null;
+}
+
+/**
+ * The wall-clock hours of a timed event within the local day `day`, clipped to it: `[0, 24]` when
+ * it runs through the whole day (24 is the next midnight). An event with no end lasts an hour.
+ */
+export function hoursWithinDay(m: Pick<CalendarEventItem, 'startAt' | 'endAt'>, day: Date): [number, number] {
+  // Each bound is its own day's start: where a zone skips midnight that start is 01:00.
+  const dayStart = startOfDay(day);
+  const nextDay = startOfDay(addDays(day, 1));
+  const start = new Date(m.startAt);
+  const end = m.endAt ? new Date(m.endAt) : new Date(start.getTime() + 3_600_000);
+  const hours = (d: Date) => d.getHours() + d.getMinutes() / 60;
+  return [start < dayStart ? 0 : hours(start), end >= nextDay ? 24 : hours(end)];
 }
 
 const PALETTE = [
@@ -106,22 +190,12 @@ const PALETTE = [
 ];
 
 /**
- * Groups calendar events by day, returning one array per day in `days`.
- * An event appears in every day it overlaps (i.e. start ≤ dayEnd and end ≥ dayStart).
+ * Groups calendar events by day, returning one array per view cell in `days`: an event appears in
+ * every cell whose date it occupies (`eventDays`).
  */
-export function groupEventsByDay<T extends { startAt: Date | string; endAt?: Date | string | null }>(
-  events: T[],
-  days: Date[],
-): T[][] {
-  return days.map(day => {
-    const dayStart = day.getTime();
-    const dayEnd = dayStart + 86_400_000 - 1;
-    return events.filter(m => {
-      const start = new Date(m.startAt).getTime();
-      const end = m.endAt ? new Date(m.endAt).getTime() : start;
-      return start <= dayEnd && end >= dayStart;
-    });
-  });
+export function groupEventsByDay<T extends EventDates>(events: T[], days: Date[]): T[][] {
+  const spans = events.map(eventDays);
+  return days.map(cellDate).map(day => events.filter((_, i) => spans[i]![0] <= day && day <= spans[i]![1]));
 }
 
 /**

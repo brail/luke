@@ -3,9 +3,11 @@
 import { StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { addCalendarDays, calendarDaysBetween, type CalendarDate, formatCalendarDate, utcMidnightOf } from '@luke/core';
+
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, daysBetween, formatVisibleFunctions, groupBadge, groupTooltip, resolveBrandColor, startOfDay, toUtcIsoDate } from '../utils';
+import { byFirstDay, canEditMilestone, cellDate, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, parseLocalIsoDate, resizeEvent, resolveBrandColor } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
@@ -13,7 +15,8 @@ import { type HolidayMap } from './useHolidays';
 interface Props {
   milestones: CalendarEvent[];
   onEventClick: (id: string) => void;
-  onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
+  /** A resize sends `endAt` alone: the start of a resized event is never rewritten. */
+  onEventUpdate: (id: string, data: { startAt?: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
   onDayClick?: (isoDate: string) => void;
   activeBrandId?: string;
@@ -34,19 +37,18 @@ const MONTH_ROW_H = 22;
 const DAY_ROW_H = 26;
 const HEADER_H = MONTH_ROW_H + DAY_ROW_H;
 
-const FMT = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+const FMT = (d: CalendarDate) => formatCalendarDate(d, { day: 'numeric', month: 'short' });
 
-function dragLabel(origStart: Date, origEnd: Date | null, dayDelta: number, mode: 'drag' | 'resize'): string {
-  if (mode === 'drag') {
-    const s = addDays(origStart, dayDelta);
-    if (!origEnd || daysBetween(origStart, origEnd) === 0) return FMT(s);
-    return `${FMT(s)} – ${FMT(addDays(origEnd, dayDelta))}`;
-  }
-  const base = origEnd ?? origStart;
-  const raw = addDays(base, dayDelta);
-  const clamped = raw < addDays(origStart, 1) ? addDays(origStart, 1) : raw;
-  const dur = daysBetween(origStart, clamped) + 1;
-  return `→ ${FMT(clamped)} (${dur} gg)`;
+/** The dates `m` would occupy after a drag or resize by `dayDelta` — derived from the change that
+ * would be sent, so the preview can never disagree with the result. */
+function previewDays(m: CalendarEvent, dayDelta: number, mode: 'drag' | 'resize'): [CalendarDate, CalendarDate] {
+  const change = mode === 'drag' ? moveEvent(m, dayDelta) : resizeEvent(m, dayDelta);
+  return eventDays(change ? { ...m, ...change } : m);
+}
+
+function dragLabel([first, last]: [CalendarDate, CalendarDate], mode: 'drag' | 'resize'): string {
+  if (mode === 'drag') return first === last ? FMT(first) : `${FMT(first)} – ${FMT(last)}`;
+  return `→ ${FMT(last)} (${calendarDaysBetween(first, last) + 1} gg)`;
 }
 
 type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: number };
@@ -67,37 +69,28 @@ type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: 
  */
 export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const sorted = useMemo(
-    () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    () => [...milestones].sort(byFirstDay),
     [milestones]
   );
 
   const { rangeStart, totalDays, dayW, months } = useMemo(() => {
+    // The axis is calendar dates: one column per date, whatever the length of the local day.
     if (sorted.length === 0) {
-      const today = startOfDay(new Date());
-      return { rangeStart: today, totalDays: 90, dayW: DAY_W_LARGE, months: [] as { label: string; startDay: number; width: number }[] };
+      return { rangeStart: cellDate(new Date()), totalDays: 90, dayW: DAY_W_LARGE, months: [] as { label: string; startDay: number; width: number }[] };
     }
-    const starts = sorted.map(m => startOfDay(new Date(m.startAt)));
-    const ends = sorted.map(m => m.endAt ? startOfDay(new Date(m.endAt)) : startOfDay(new Date(m.startAt)));
-    const minDate = starts.reduce((a, b) => a < b ? a : b);
-    const maxDate = ends.reduce((a, b) => a > b ? a : b);
-    const rangeStart = addDays(minDate, -7);
-    const rangeEnd = addDays(maxDate, 14);
-    const totalDays = Math.max(daysBetween(rangeStart, rangeEnd), 30);
+    const spans = sorted.map(eventDays);
+    const minDate = spans.reduce((a, [first]) => first < a ? first : a, spans[0]![0]);
+    const maxDate = spans.reduce((a, [, last]) => last > a ? last : a, spans[0]![1]);
+    const rangeStart = addCalendarDays(minDate, -7);
+    const totalDays = Math.max(calendarDaysBetween(rangeStart, addCalendarDays(maxDate, 14)), 30);
     const dayW = totalDays > 150 ? DAY_W_SMALL : DAY_W_LARGE;
     const months: { label: string; startDay: number; width: number }[] = [];
     let day = 0;
     while (day < totalDays) {
-      const date = new Date(rangeStart.getTime() + day * 86_400_000);
-      const month = date.getMonth();
-      const year = date.getFullYear();
-      let count = 0;
-      while (day + count < totalDays) {
-        const d = new Date(rangeStart.getTime() + (day + count) * 86_400_000);
-        if (d.getMonth() !== month || d.getFullYear() !== year) break;
-        count++;
-      }
-      if (count === 0) break;
-      months.push({ label: `${MONTH_NAMES_SHORT_IT[month]} ${year}`, startDay: day, width: count * dayW });
+      const month = addCalendarDays(rangeStart, day).slice(0, 7);
+      let count = 1;
+      while (day + count < totalDays && addCalendarDays(rangeStart, day + count).startsWith(month)) count++;
+      months.push({ label: `${MONTH_NAMES_SHORT_IT[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`, startDay: day, width: count * dayW });
       day += count;
     }
     return { rangeStart, totalDays, dayW, months };
@@ -105,42 +98,39 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
 
   const dayMeta = useMemo(() =>
     Array.from({ length: totalDays }, (_, i) => {
-      const d = new Date(rangeStart.getTime() + i * 86_400_000);
-      const dow = d.getDay();
-      return { date: d, dayNum: d.getDate(), isWeekend: dow === 0 || dow === 6, isMonthStart: i > 0 && d.getDate() === 1, monthIndex: d.getMonth() };
+      const date = addCalendarDays(rangeStart, i);
+      const dow = utcMidnightOf(date).getUTCDay();
+      const dayNum = Number(date.slice(8));
+      return { date, dayNum, isWeekend: dow === 0 || dow === 6, isMonthStart: i > 0 && dayNum === 1, monthIndex: Number(date.slice(5, 7)) - 1 };
     }), [rangeStart, totalDays]);
 
   const monthBoundaries = useMemo(() =>
-    dayMeta.filter(d => d.isMonthStart).map(d => daysBetween(rangeStart, d.date) * dayW),
-    [dayMeta, rangeStart, dayW]);
+    dayMeta.flatMap((d, i) => d.isMonthStart ? [i * dayW] : []),
+    [dayMeta, dayW]);
 
   const weekendOffsets = useMemo(() =>
-    dayMeta.filter(d => d.isWeekend).map(d => daysBetween(rangeStart, d.date) * dayW),
-    [dayMeta, rangeStart, dayW]);
+    dayMeta.flatMap((d, i) => d.isWeekend ? [i * dayW] : []),
+    [dayMeta, dayW]);
 
   const holidayOffsets = useMemo(() => {
     if (!holidayDates) return [];
-    return dayMeta.flatMap(d => {
-      const iso = toUtcIsoDate(d.date);
-      const entries = holidayDates.get(iso);
-      if (!entries?.length) return [];
-      return [{ x: daysBetween(rangeStart, d.date) * dayW, entries }];
+    return dayMeta.flatMap((d, i) => {
+      const entries = holidayDates.get(d.date);
+      return entries?.length ? [{ x: i * dayW, entries }] : [];
     });
-  }, [dayMeta, rangeStart, dayW, holidayDates]);
+  }, [dayMeta, dayW, holidayDates]);
 
   const totalW = totalDays * dayW;
-  const todayOffset = daysBetween(rangeStart, startOfDay(new Date()));
+  const todayOffset = calendarDaysBetween(rangeStart, cellDate(new Date()));
   const showToday = todayOffset >= 0 && todayOffset < totalDays;
 
   const bars = useMemo(() =>
     sorted.map(m => {
-      const start = startOfDay(new Date(m.startAt));
-      const end = m.endAt ? startOfDay(new Date(m.endAt)) : start;
-      const left = daysBetween(rangeStart, start) * dayW;
-      const spanDays = Math.max(1, daysBetween(start, end));
-      const width = Math.max(spanDays * dayW, dayW);
+      const days = eventDays(m);
+      const left = calendarDaysBetween(rangeStart, days[0]) * dayW;
+      const width = (calendarDaysBetween(days[0], days[1]) + 1) * dayW;
       const visibleFunctionNames = formatVisibleFunctions(m.visibilities, functionsById);
-      return { ...m, left, width, _start: start, _end: end, visibleFunctionNames };
+      return { ...m, left, width, days, visibleFunctionNames };
     }), [sorted, rangeStart, dayW, functionsById]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -164,17 +154,8 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
       if (dayDelta === 0) { setDrag(null); dragRef.current = null; return; }
       wasDraggingRef.current = true;
       const m = eventsRef.current.find(x => x.id === id);
-      if (m) {
-        const origStart = startOfDay(new Date(m.startAt));
-        const origEnd = m.endAt ? startOfDay(new Date(m.endAt)) : origStart;
-        if (mode === 'drag') {
-          onEventUpdate(id, { startAt: addDays(origStart, dayDelta).toISOString(), endAt: m.endAt ? addDays(origEnd, dayDelta).toISOString() : null });
-        } else {
-          const minEnd = addDays(origStart, 1);
-          const newEnd = addDays(origEnd, dayDelta);
-          onEventUpdate(id, { startAt: origStart.toISOString(), endAt: (newEnd < minEnd ? minEnd : newEnd).toISOString() });
-        }
-      }
+      const change = m && (mode === 'drag' ? moveEvent(m, dayDelta) : resizeEvent(m, dayDelta));
+      if (change) onEventUpdate(id, change);
       setDrag(null);
       dragRef.current = null;
     };
@@ -239,10 +220,11 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
             const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
             const isDragging = drag?.id === m.id;
             const dayDeltaPreview = isDragging ? Math.round(drag.deltaX / dayW) : 0;
-            const previewLeft = drag?.mode === 'drag' && isDragging ? m.left + dayDeltaPreview * dayW : m.left;
-            const previewWidth = drag?.mode === 'resize' && isDragging ? Math.max(dayW, m.width + dayDeltaPreview * dayW) : m.width;
+            const preview = isDragging && dayDeltaPreview !== 0 ? previewDays(m, dayDeltaPreview, drag.mode) : null;
+            const previewLeft = preview ? calendarDaysBetween(rangeStart, preview[0]) * dayW : m.left;
+            const previewWidth = preview ? (calendarDaysBetween(preview[0], preview[1]) + 1) * dayW : m.width;
             const barColor = resolveBrandColor(m.brandId, brandColorMap);
-            const label = isDragging ? dragLabel(m._start, m.endAt ? m._end : null, dayDeltaPreview, drag.mode) : null;
+            const label = isDragging ? dragLabel(preview ?? m.days, drag.mode) : null;
             const hasNote = !!(m.notes?.[0]?.body);
             const badge = groupBadge(showGroupBadge, m.planningGroupName);
 
@@ -278,7 +260,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                     if (!onDayClick) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const dayIndex = Math.floor((e.clientX - rect.left) / dayW);
-                    if (dayIndex >= 0 && dayIndex < totalDays) onDayClick(addDays(rangeStart, dayIndex).toISOString());
+                    if (dayIndex >= 0 && dayIndex < totalDays) onDayClick(parseLocalIsoDate(addCalendarDays(rangeStart, dayIndex))!.toISOString());
                   }}
                 >
                   <div style={{ width: totalW, height: ROW_H, position: 'relative', overflow: 'visible' }}>

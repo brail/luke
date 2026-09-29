@@ -7,13 +7,13 @@ import type { HolidayEntry, HolidayMap } from '../useHolidays';
 
 /**
  * Timezone-sensitive regression proof for the December 2026 month grid's holiday lookup — runs
- * under Europe/Rome and America/Los_Angeles (see `vitest.browser.timezone.config.mts`, the same
+ * under every zone of `vitest.browser.timezone.config.mts` (the same
  * dedicated config `dateSerialization.timezone.browser.test.tsx` uses), never under the runner's
  * ambient default.
  *
  * The bug: `holidayDates?.get(day.toISOString().slice(0, 10))` converted the LOCAL calendar cell
  * `day` (built by `mondayOf`/`addDays`, both local-getter arithmetic — see `calendar/utils.ts`) to
- * UTC before looking it up in a `HolidayMap` keyed by `toUtcIsoDate` on the holiday's OWN date (see
+ * UTC before looking it up in a `HolidayMap` keyed by the holiday's OWN calendar date (see
  * `useHolidays.ts` — a plain calendar date with no attached timezone, correctly represented as UTC
  * midnight, whose UTC-ISO string numerically equals the intended 'YYYY-MM-DD'). In Europe/Rome
  * (positive UTC offset), the local-midnight December 25 cell converts to UTC December 24 — the

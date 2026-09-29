@@ -4,10 +4,12 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, u
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'react';
 
+import { calendarDaysBetween } from '@luke/core';
+
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, daysBetween, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, resolveBrandColor, sameDay, startOfDay } from '../utils';
+import { addDays, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveEvent, resolveBrandColor, sameDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -76,7 +78,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
 
   const weekLabel = useMemo(() => {
     const end = days[6]!;
-    const wn = getIsoWeek(weekStart);
+    const wn = getIsoWeek(cellDate(weekStart));
     const startFmt = weekStart.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
     const endFmt = end.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
     return `W${wn} · ${startFmt} – ${endFmt}`;
@@ -90,11 +92,8 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
     if (!event.over || !canUpdate) return;
     const m = milestones.find(x => x.id === event.active.id as string);
     if (!m) return;
-    const delta = daysBetween(startOfDay(new Date(m.startAt)), startOfDay(new Date(event.over.id as string)));
-    if (delta === 0) return;
-    const newStart = addDays(new Date(m.startAt), delta);
-    const newEnd = m.endAt ? addDays(new Date(m.endAt), delta) : undefined;
-    onEventUpdate(event.active.id as string, { startAt: newStart.toISOString(), endAt: newEnd ? newEnd.toISOString() : null });
+    const moved = moveEvent(m, calendarDaysBetween(eventDays(m)[0], cellDate(new Date(event.over.id as string))));
+    if (moved) onEventUpdate(m.id, moved);
   }, [canUpdate, milestones, onEventUpdate]);
 
   return (
@@ -112,13 +111,14 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
             const isToday = sameDay(day, today);
             const isWeekend = i >= 5;
             const items = byDay[i] ?? [];
+            const dayKey = cellDate(day);
             return (
               <div key={i} className={cn('flex border-b last:border-b-0', isToday && 'bg-blue-50/20 dark:bg-blue-950/10')}>
                 <div className={cn('w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r', isWeekend && 'bg-muted/20')}>
                   <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
                   <div className="flex items-center gap-0.5">
                     {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
-                    {holidayDates?.get(day.toISOString().slice(0, 10))?.map((h, hi) => (
+                    {holidayDates?.get(dayKey)?.map((h, hi) => (
                       <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                     ))}
                     <span
@@ -132,13 +132,12 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
                   </div>
                 </div>
                 <WeekDayRow dayIso={day.toISOString()} isToday={isToday} isWeekend={isWeekend} isDragging={!!draggingId}
-                  holidays={holidayDates?.get(day.toISOString().slice(0, 10))}
+                  holidays={holidayDates?.get(dayKey)}
                   onDayClick={canUpdate ? () => onDayClick?.(day.toISOString()) : undefined}>
                   {items.map(m => {
-                    const start = new Date(m.startAt);
-                    const end = m.endAt ? new Date(m.endAt) : null;
-                    const isStart = sameDay(start, day);
-                    const span = end ? daysBetween(start, end) : 0;
+                    const [first, last] = eventDays(m);
+                    const isStart = first === dayKey;
+                    const span = calendarDaysBetween(first, last);
                     const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
                     const hasNote = !!(m.notes?.[0]?.body);
                     const color = resolveBrandColor(m.brandId, brandColorMap);

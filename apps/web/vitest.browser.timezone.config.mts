@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Separate from `vitest.browser.config.mts` on purpose: this project runs its (narrow) set of
- * tests twice, once per named instance below, each in a **real Chromium launched with a specific
+ * tests once per named instance below, each in a **real Chromium launched with a specific
  * `timezoneId`** — Playwright's per-context timezone override.
  *
  * `process.env.TZ` genuinely does reach the launched browser too (Playwright spawns Chromium as a
@@ -21,6 +21,8 @@ import { defineConfig } from 'vitest/config';
  * `Europe/Rome` (positive UTC offset) and `America/Los_Angeles` (negative UTC offset) were chosen
  * because that class of bug shows up in exactly one direction per offset sign — a suite that only
  * ran under one of them would not have caught the regression this project exists to pin down.
+ * `Asia/Shanghai` adds a zone east of Rome with no DST, `Asia/Kolkata` a fractional offset (+05:30):
+ * a day computed by whole-hour arithmetic lands on the wrong date only there.
  *
  * Getting the per-instance override right took a few failed shapes: a flat `context` or
  * `contextOptions` key on the instance object is silently ignored (every instance still launches
@@ -45,9 +47,12 @@ export default defineConfig({
     // `CalendarEventMonthView` (DndContext + Popover) rather than only a hook — same "discovered
     // mid-run instead of before it" failure mode as 'zod' above, on a cold `.vite` cache.
     // '@radix-ui/react-label' was added for EventTimelineDrag.timezone.browser.test.tsx, same reason.
+    // The last row is `CalendarEventTimeline`'s (ConfirmDialog, Checkbox), for
+    // calendarViews.timezone.browser.test.tsx — a cold-cache run reloaded mid-test without it.
     include: [
       'vitest-browser-react', 'react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client', 'next/navigation', 'zod',
       '@dnd-kit/core', '@radix-ui/react-popover', '@radix-ui/react-slot', '@radix-ui/react-label', 'class-variance-authority', 'clsx', 'lucide-react', 'tailwind-merge',
+      '@hookform/resolvers/zod', '@radix-ui/react-alert-dialog', '@radix-ui/react-checkbox', 'react-hook-form',
     ],
   },
   oxc: {
@@ -61,6 +66,8 @@ export default defineConfig({
       instances: [
         { browser: 'chromium', name: 'tz-europe-rome', provider: playwright({ contextOptions: { timezoneId: 'Europe/Rome' } }) },
         { browser: 'chromium', name: 'tz-america-los_angeles', provider: playwright({ contextOptions: { timezoneId: 'America/Los_Angeles' } }) },
+        { browser: 'chromium', name: 'tz-asia-shanghai', provider: playwright({ contextOptions: { timezoneId: 'Asia/Shanghai' } }) },
+        { browser: 'chromium', name: 'tz-asia-kolkata', provider: playwright({ contextOptions: { timezoneId: 'Asia/Kolkata' } }) },
       ],
       // Same reasoning as the main browser config: keep failure screenshots out of `src/`.
       screenshotDirectory: '.vitest-attachments/screenshots',

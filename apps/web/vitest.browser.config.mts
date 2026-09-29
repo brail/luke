@@ -78,7 +78,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.browser.test.tsx'],
     // `*.timezone.browser.test.tsx` asserts it's running under a non-UTC offset — true under
-    // `vitest.browser.timezone.config.mts`'s explicit Europe/Rome / America/Los_Angeles instances,
+    // `vitest.browser.timezone.config.mts`'s explicit non-UTC instances,
     // but this project's single default instance inherits whatever TZ the host/CI runner is on
     // (often UTC), which would fail that guard for a reason unrelated to the code under test.
     exclude: [...defaultExclude, 'src/**/*.timezone.browser.test.tsx'],

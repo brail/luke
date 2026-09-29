@@ -34,9 +34,9 @@ function isBlocked(iso: string, holidayDates: HolidayMap, closedDates: Set<strin
 // arithmetic) preserves whatever time-of-day that instant carries onto every cell in `days[]`. The
 // day NUMBER shown to the user (`d.getDate()` below) is always a local getter, so the lookup key
 // used to decide whether that same visible cell is blocked has to be derived the same way —
-// `toLocalIsoDate`, not `toUtcIsoDate` — or an event whose `startAt` falls late enough in the UTC
-// day (common for one created in the evening from a positive-offset zone) shows one calendar day
-// in the picker while checking `holidayDates`/`closedDates` (both keyed by the *held* date's own
+// `toLocalIsoDate`, never the instant's UTC date — or an event whose `startAt` falls late enough in
+// the UTC day (common for one created in the evening from a positive-offset zone) shows one
+// calendar day in the picker while checking `holidayDates`/`closedDates` (both keyed by the *held* date's own
 // UTC-midnight encoding — see `useHolidays.ts`/`useVendorClosures.ts`, not a viewer-local one) for
 // a different one. See `EventTimelineDrag.timezone.browser.test.tsx` for the regression proof.
 
