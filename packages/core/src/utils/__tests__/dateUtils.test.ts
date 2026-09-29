@@ -10,6 +10,7 @@ import {
   eventCalendarDays,
   formatCalendarDate,
   instantAt,
+  canonicalTimeZone,
   isValidTimeZone,
   isWorkingDate,
   parseCalendarDate,
@@ -252,5 +253,14 @@ describe.each([
     it.each(['Foo/Bar', '', '+01:00', '-05:00', '−01:00', '−0100'])('rejects %j', tz => {
       expect(isValidTimeZone(tz)).toBe(false);
     });
+  });
+
+  describe('canonicalTimeZone', () => {
+    // Stored as typed, a zone spelled in another case splits every grouping by zone and matches no
+    // option of a zone list; an alias is left alone, browsers disagree on which name is primary.
+    it.each([['europe/rome', 'Europe/Rome'], ['EUROPE/ROME', 'Europe/Rome'], ['utc', 'UTC'], ['Europe/Rome', 'Europe/Rome'], ['Asia/Kolkata', 'Asia/Kolkata'], ['Asia/Calcutta', 'Asia/Calcutta']])(
+      '%s → %s', (tz, expected) => {
+        expect(canonicalTimeZone(tz)).toBe(expected);
+      });
   });
 });

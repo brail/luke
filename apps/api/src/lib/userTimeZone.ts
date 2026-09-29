@@ -4,7 +4,7 @@
  * bad zone never throws, so one such row cannot stop a batch over many users.
  */
 
-import { isValidTimeZone } from '@luke/core';
+import { canonicalTimeZone, isValidTimeZone } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfigOrDefault } from './configManager';
@@ -18,7 +18,8 @@ interface ZonedUser {
 
 /** `user.timezone` when valid; otherwise a warning naming the user, and `businessZone()`. */
 function resolveOr(user: ZonedUser, log: FastifyBaseLogger, businessZone: () => Promise<string>): Promise<string> {
-  if (isValidTimeZone(user.timezone)) return Promise.resolve(user.timezone);
+  // In the case Intl spells it, so a row written before the schema normalised it joins its zone.
+  if (isValidTimeZone(user.timezone)) return Promise.resolve(canonicalTimeZone(user.timezone));
   log.warn({ userId: user.id, timezone: user.timezone }, 'User.timezone is not an IANA zone; using the business zone');
   return businessZone();
 }

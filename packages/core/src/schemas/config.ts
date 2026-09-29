@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
-import { isValidTimeZone } from '../utils/dateUtils.js';
+import { canonicalTimeZone, isValidTimeZone } from '../utils/dateUtils.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
 import { LDAP_STRATEGIES } from './ldap.js';
@@ -60,7 +60,9 @@ export const AppConfigRegistry = {
    * dashboard's weekly sales end on, and the zone a user reads in when their stored `User.timezone`
    * is not an IANA name (`resolveUserTimeZone`).
    */
-  'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido'),
+  // Read in the case `Intl` spells it: the value is stored as written, and a zone typed in another
+  // case must still name that zone rather than fail the read and fall back to the default.
+  'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido').transform(canonicalTimeZone),
   'app.baseUrl':         z.string().url(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),

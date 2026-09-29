@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isValidTimeZone } from '../utils/dateUtils.js';
+import { canonicalTimeZone, isValidTimeZone } from '../utils/dateUtils.js';
 
 import { passwordPrefilterSchema } from './password.js';
 
@@ -10,7 +10,8 @@ const userTimeZoneSchema = z
   .trim()
   .min(1, 'Timezone obbligatorio')
   .max(64, 'Timezone troppo lungo')
-  .refine(isValidTimeZone, 'Fuso orario non valido');
+  .refine(isValidTimeZone, 'Fuso orario non valido')
+  .transform(canonicalTimeZone);
 
 /** Input schema for updating the authenticated user's profile (all editable fields). */
 export const UserProfileSchema = z.object({

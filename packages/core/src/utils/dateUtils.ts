@@ -228,6 +228,19 @@ export function instantAt(date: CalendarDate, time: string, timeZone: string): D
 }
 
 /**
+ * `timeZone` in the letter case `Intl` gives it (`europe/rome` → `Europe/Rome`, `utc` → `UTC`), so
+ * one zone is never stored under two spellings — that would split every grouping by zone and match
+ * no option of a zone list. Only the case: an alias `Intl` resolves to another name
+ * (`Asia/Kolkata` → `Asia/Calcutta`) is left as written, since browsers disagree on which name is
+ * primary. A name `Intl` does not know is returned unchanged.
+ */
+export function canonicalTimeZone(timeZone: string): string {
+  if (!isValidTimeZone(timeZone)) return timeZone;
+  const resolved = new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
+  return resolved.toLowerCase() === timeZone.toLowerCase() ? resolved : timeZone;
+}
+
+/**
  * `true` when `timeZone` is a zone name `Intl` knows. A fixed offset such as `'+01:00'`, which
  * `Intl` also accepts, is refused: it is not an IANA name and has no daylight-saving rules. The
  * check reads the name `Intl` resolves to, so every spelling it normalises to an offset is caught

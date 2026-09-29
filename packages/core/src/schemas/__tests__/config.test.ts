@@ -25,6 +25,7 @@ import {
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
+  parseConfigValue,
   validateConfigValue,
 } from '../config.js';
 import { passwordPrefilterSchema } from '../password.js';
@@ -206,6 +207,10 @@ describe('app.defaultTimezone is an IANA zone', () => {
 
   it.each(['Europe/Nowhere', '+01:00', ''])('rejects %j', value => {
     expect(validateConfigValue('app.defaultTimezone', value).success).toBe(false);
+  });
+
+  it('reads a value stored in another case as the zone it names, not as the fallback', () => {
+    expect(parseConfigValue('app.defaultTimezone', 'asia/shanghai')).toBe('Asia/Shanghai');
   });
 });
 

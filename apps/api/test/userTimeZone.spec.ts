@@ -37,6 +37,11 @@ describe('resolveUserTimeZone', () => {
     expect(warn).toHaveBeenCalledOnce();
   });
 
+  it('returns a stored zone in the case Intl spells it', async () => {
+    const { prisma } = prismaWith('Asia/Tokyo');
+    await expect(resolveUserTimeZone(prisma, { id: 'u1', timezone: 'europe/rome' }, createSilentLogger())).resolves.toBe('Europe/Rome');
+  });
+
   it('falls back to the registry default when the business zone is not configured', async () => {
     const { prisma } = prismaWith(null);
     await expect(resolveUserTimeZone(prisma, { id: 'u1', timezone: 'Mars/Olympus' }, createSilentLogger()))
@@ -51,10 +56,11 @@ describe('groupByTimeZone', () => {
       { id: 'rome', timezone: 'Europe/Rome' },
       { id: 'shanghai', timezone: 'Asia/Shanghai' },
       { id: 'legacy', timezone: 'Mars/Olympus' },
+      { id: 'lowercase', timezone: 'europe/rome' },
     ];
     const groups = await groupByTimeZone(prisma, users, createSilentLogger());
     expect(Object.fromEntries([...groups].map(([zone, members]) => [zone, members.map(u => u.id)]))).toEqual({
-      'Europe/Rome': ['rome', 'legacy'],
+      'Europe/Rome': ['rome', 'legacy', 'lowercase'],
       'Asia/Shanghai': ['shanghai'],
     });
   });

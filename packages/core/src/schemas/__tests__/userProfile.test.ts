@@ -21,6 +21,11 @@ describe('User.timezone on write', () => {
     expect(UserProfileSchema.safeParse({ ...PROFILE, timezone }).success).toBe(false);
   });
 
+  it('stores a zone typed in another case the way Intl spells it', () => {
+    expect(UpdateTimezoneSchema.parse({ timezone: 'europe/rome' }).timezone).toBe('Europe/Rome');
+    expect(UserProfileSchema.parse({ ...PROFILE, timezone: 'utc' }).timezone).toBe('UTC');
+  });
+
   it('names the problem', () => {
     const result = UpdateTimezoneSchema.safeParse({ timezone: 'Mars/Olympus' });
     expect(result.error?.issues[0]?.message).toBe('Fuso orario non valido');
