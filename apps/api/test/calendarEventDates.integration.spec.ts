@@ -16,7 +16,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { assertEventDates, rescheduleMilestone, updateMilestone } from '../src/services/seasonCalendar.service';
+import { assertEventDates, detectPhaseOrderWarning, rescheduleMilestone, updateMilestone } from '../src/services/seasonCalendar.service';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
@@ -175,6 +175,39 @@ describe('a write is conditional on the dates it was validated against', () => {
     const read = { startAt: event.startAt, endAt: event.endAt, allDay: event.allDay };
     await prisma.calendarEvent.update({ where: { id: event.id }, data: { startAt: NEXT_MIDNIGHT } });
     await expect(rescheduleMilestone(event.id, MIDNIGHT.toISOString(), null, prisma, undefined, read)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('detectPhaseOrderWarning compares deadlines by day, then by time when both are timed', () => {
+  // Business zone Europe/Rome (the default); 16:00 UTC is 18:00 there in October.
+  async function pair(earlier: { startAt: Date; allDay: boolean }, later: { startAt: Date; allDay: boolean }) {
+    const uid = randomUUID().slice(0, 6);
+    const order = 5000 + Math.floor(Math.random() * 100_000);
+    const [p1, p2] = await Promise.all([
+      prisma.phase.create({ data: { value: `ORD1_${uid}`, label: 'Prima', order, isActive: true } }),
+      prisma.phase.create({ data: { value: `ORD2_${uid}`, label: 'Seconda', order: order + 1, isActive: true } }),
+    ]);
+    const group = await prisma.planningGroup.create({ data: { calendarId, name: `Ordine ${uid}` } });
+    await prisma.calendarEvent.create({ data: { calendarId, planningGroupId: group.id, phaseId: p1.id, title: 'Prima', ...earlier } });
+    const second = await prisma.calendarEvent.create({ data: { calendarId, planningGroupId: group.id, phaseId: p2.id, title: 'Seconda', ...later } });
+    return detectPhaseOrderWarning(second.id, prisma);
+  }
+  const FRIDAY = new Date('2099-10-09T00:00:00.000Z');
+  const SATURDAY = new Date('2099-10-10T00:00:00.000Z');
+  const FRIDAY_18 = new Date('2099-10-09T16:00:00.000Z');
+  const FRIDAY_10 = new Date('2099-10-09T08:00:00.000Z');
+
+  it('an all-day phase due Friday is not after a timed one due Friday evening', async () => {
+    expect(await pair({ startAt: FRIDAY, allDay: true }, { startAt: FRIDAY_18, allDay: false })).toBeNull();
+  });
+
+  it('an all-day phase due Saturday is', async () => {
+    expect(await pair({ startAt: SATURDAY, allDay: true }, { startAt: FRIDAY_18, allDay: false })).toMatch(/Ordine fasi incoerente/);
+  });
+
+  it('two timed phases on the same day compare by time', async () => {
+    expect(await pair({ startAt: FRIDAY_18, allDay: false }, { startAt: FRIDAY_10, allDay: false })).toMatch(/Ordine fasi incoerente/);
+    expect(await pair({ startAt: FRIDAY_10, allDay: false }, { startAt: FRIDAY_18, allDay: false })).toBeNull();
   });
 });
 

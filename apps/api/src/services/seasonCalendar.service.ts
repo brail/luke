@@ -4,6 +4,7 @@ import pino from 'pino';
 import {
   addCalendarDays,
   calendarDateOf,
+  deadlineDay,
   deadlineReachedAt,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
@@ -376,15 +377,18 @@ export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaCli
     }),
     getConfigOrDefault(prisma, 'app.defaultTimezone'),
   ]);
-  const deadline = deadlineReachedAt(event, timeZone);
+  // By the day each deadline falls on in the business zone, then by time when both have one: an
+  // all-day deadline covers its whole day, so it is not "after" a timed one on that same day.
+  const compare = (a: EventDates, b: EventDates) =>
+    deadlineDay(a, timeZone).localeCompare(deadlineDay(b, timeZone))
+    || (a.allDay || b.allDay ? 0 : deadlineReachedAt(a, timeZone).getTime() - deadlineReachedAt(b, timeZone).getTime());
 
   for (const s of siblings) {
     if (!s.phase) continue;
-    const sDeadline = deadlineReachedAt(s, timeZone);
-    if (s.phase.order < event.phase.order && sDeadline > deadline) {
+    if (s.phase.order < event.phase.order && compare(s, event) > 0) {
       return `Ordine fasi incoerente: la fase precedente «${s.phase.label}» è pianificata dopo «${event.phase.label}».`;
     }
-    if (s.phase.order > event.phase.order && sDeadline < deadline) {
+    if (s.phase.order > event.phase.order && compare(s, event) < 0) {
       return `Ordine fasi incoerente: la fase successiva «${s.phase.label}» è pianificata prima di «${event.phase.label}».`;
     }
   }
