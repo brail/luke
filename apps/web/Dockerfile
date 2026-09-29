@@ -1,4 +1,8 @@
 FROM node:24-alpine AS base
+# A tripwire, not a setting: what runs on the server must not depend on the process time zone, and
+# pinning it keeps the server from following whatever zone a host would inject. The browser renders
+# in its own zone.
+ENV TZ=UTC
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable

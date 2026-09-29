@@ -91,13 +91,18 @@ beforeAll(async () => {
   ]);
 });
 
+/** Today as an all-day value: the UTC midnight of today's date, the only form one is stored in. */
+function todayAllDay(): string {
+  return `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
+}
+
 describe('buildDigestTasks — event created', () => {
   it('brand-scoped recipients: only the right brand team, no admin fan-out', async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({
       planningGroupId: planningGroupDX,
       title: `Created Event ${randomUUID().slice(0, 6)}`,
-      startAt: new Date().toISOString(),
+      startAt: todayAllDay(),
       allDay: true,
       publishExternally: false,
       visibilityFunctionIds: [fnD],
@@ -122,7 +127,7 @@ describe('buildDigestTasks — event created', () => {
     const created = await caller.seasonCalendar.createMilestone({
       planningGroupId: planningGroupDX,
       title: `Manual Bypass Event ${randomUUID().slice(0, 6)}`,
-      startAt: new Date().toISOString(),
+      startAt: todayAllDay(),
       allDay: true,
       publishExternally: false,
       visibilityFunctionIds: [fnD],
@@ -182,7 +187,7 @@ describe('buildDigestTasks — notification preferences', () => {
       const created = await caller.seasonCalendar.createMilestone({
         planningGroupId: planningGroupDX,
         title: `Muted-Event-Key Event ${randomUUID().slice(0, 6)}`,
-        startAt: new Date().toISOString(),
+        startAt: todayAllDay(),
         allDay: true,
         publishExternally: false,
         visibilityFunctionIds: [fnD],
@@ -206,7 +211,7 @@ describe('buildDigestTasks — notification preferences', () => {
       const created = await caller.seasonCalendar.createMilestone({
         planningGroupId: planningGroupDX,
         title: `Muted-Category Event ${randomUUID().slice(0, 6)}`,
-        startAt: new Date().toISOString(),
+        startAt: todayAllDay(),
         allDay: true,
         publishExternally: false,
         visibilityFunctionIds: [fnD],

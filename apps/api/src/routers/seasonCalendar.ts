@@ -363,7 +363,7 @@ export const seasonCalendarRouter = router({
         });
       }
 
-      const result = await updateMilestone(input.id, input.data, ctx.prisma);
+      const result = await updateMilestone(input.id, input.data, ctx.prisma, event);
 
       const dateChanged = event.startAt.getTime() !== result.startAt.getTime()
         || (event.endAt?.getTime() ?? null) !== (result.endAt?.getTime() ?? null);
@@ -404,7 +404,7 @@ export const seasonCalendarRouter = router({
 
   /**
    * Motivated in-place reschedule of an event's dates — the only way to move a frozen, already-passed
-   * phase event (see `isEventDateLocked`). Only `startAt`/`endAt` change; the frozen baseline is left
+   * phase event (see `isEventDateLocked`). Only `startAt`/`endAt`/`allDay` change; the frozen baseline is left
    * intact so scheduling variance keeps measuring against the original plan. The reason is mandatory
    * and recorded in the audit log alongside the old/new dates.
    *
@@ -428,7 +428,7 @@ export const seasonCalendarRouter = router({
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
-      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay);
+      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay, event);
 
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {

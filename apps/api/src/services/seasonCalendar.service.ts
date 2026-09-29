@@ -12,7 +12,7 @@ import {
   type CloneSeasonCalendarInput,
   type SeasonCalendarStatus,
 } from '@luke/core';
-import type { CalendarDaysRelevance, Prisma, PrismaClient } from '@luke/db';
+import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db';
 
 import { getConfigOrDefault } from '../lib/configManager';
 
@@ -294,8 +294,49 @@ export function isEventDeleteLocked(event: LockableEvent): boolean {
   return isEventDeleteLockedCore({ phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt });
 }
 
+/** An event's stored dates, as a write reads them before changing them. */
+export interface EventDates {
+  startAt: Date;
+  endAt: Date | null;
+  allDay: boolean;
+}
+
 /**
- * Motivated in-place move of a locked (or any) event's dates. Only `startAt`/`endAt` change — the
+ * Refuses dates an event must never be stored with: an all-day value off UTC midnight — a calendar
+ * date stored as anything else is read as another day by some reader — and an end before
+ * the start. Judged on what the write leaves in the row, and only by writes that touch the dates:
+ * a row already stored off midnight stays editable until its dates are changed.
+ *
+ * @throws {TRPCError} BAD_REQUEST
+ */
+export function assertEventDates({ startAt, endAt, allDay }: EventDates): void {
+  if (allDay && [startAt, endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Un evento di un giorno intero deve iniziare e finire a mezzanotte (UTC)' });
+  }
+  if (endAt && endAt < startAt) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: "La fine dell'evento non può precedere l'inizio" });
+  }
+}
+
+/**
+ * The `where` of a write conditional on the dates it was validated against: if another request
+ * changed them since they were read, the row no longer matches and Prisma answers P2025, turned
+ * into CONFLICT by `onStaleDates`. It guards against stale event-row dates only — not a deadline
+ * crossed by the clock, nor the group's freeze state.
+ */
+function readDates(id: string, read: EventDates) {
+  return { id, startAt: read.startAt, endAt: read.endAt, allDay: read.allDay };
+}
+
+function onStaleDates(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+    throw new TRPCError({ code: 'CONFLICT', message: "L'evento è stato modificato nel frattempo: ricarica e riprova" });
+  }
+  throw error;
+}
+
+/**
+ * Motivated in-place move of a locked (or any) event's dates. Only `startAt`/`endAt`/`allDay` change — the
  * frozen baseline is never touched, so scheduling variance keeps measuring against the original plan
  * while the alert countdown follows the new target. The reason is captured in the audit log by the caller.
  */
@@ -304,16 +345,13 @@ export async function rescheduleMilestone(
   startAt: string,
   endAt: string | null | undefined,
   prisma: PrismaClient,
-  allDay?: boolean
+  allDay: boolean | undefined,
+  read: EventDates
 ) {
-  return prisma.calendarEvent.update({
-    where: { id: eventId },
-    data: {
-      startAt: new Date(startAt),
-      endAt: endAt ? new Date(endAt) : null,
-      ...(allDay !== undefined && { allDay }),
-    },
-  });
+  // A reschedule rewrites both ends: an omitted end is cleared, not kept.
+  const next = { startAt: new Date(startAt), endAt: endAt ? new Date(endAt) : null, allDay: allDay ?? read.allDay };
+  assertEventDates(next);
+  return prisma.calendarEvent.update({ where: readDates(eventId, read), data: next }).catch(onStaleDates);
 }
 
 /**
@@ -435,6 +473,7 @@ export async function createMilestone(
   calendarId: string,
   prisma: PrismaClient
 ) {
+  assertEventDates({ startAt: new Date(input.startAt), endAt: input.endAt ? new Date(input.endAt) : null, allDay: input.allDay });
   return prisma.$transaction(async tx => {
     const event = await tx.calendarEvent.create({
       data: {
@@ -466,15 +505,27 @@ export async function createMilestone(
 /**
  * Partially updates a calendar event. When `visibilityFunctionIds` is provided,
  * existing visibility entries are replaced atomically within a transaction.
+ *
+ * @param read - The dates the caller read and validated the request against: the dates the
+ *   update leaves are each input field over them (an omitted `endAt` is kept), and the write only
+ *   lands if the row still holds them.
  */
 export async function updateMilestone(
   eventId: string,
   input: Partial<CalendarEventInput>,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  read: EventDates
 ) {
+  if (input.startAt !== undefined || input.endAt !== undefined || input.allDay !== undefined) {
+    assertEventDates({
+      startAt: input.startAt !== undefined ? new Date(input.startAt) : read.startAt,
+      endAt: input.endAt !== undefined ? new Date(input.endAt) : read.endAt,
+      allDay: input.allDay ?? read.allDay,
+    });
+  }
   return prisma.$transaction(async tx => {
     const updated = await tx.calendarEvent.update({
-      where: { id: eventId },
+      where: readDates(eventId, read),
       data: {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
@@ -498,7 +549,7 @@ export async function updateMilestone(
     }
 
     return updated;
-  });
+  }).catch(onStaleDates);
 }
 
 /**
@@ -880,6 +931,18 @@ export async function cloneFromBrandSeason(
   });
   if (sourceGroups.length !== sourcePlanningGroupIds.length) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Uno o più gruppi di pianificazione sorgente non trovati' });
+  }
+
+  // Shifting by whole days keeps a midnight a midnight, and copies an all-day source stored off it
+  // as it is: refused, not normalised — which date it was meant to be depends on the zone it was
+  // entered in, which the row does not record.
+  const offMidnight = sourceGroups.flatMap(g => g.events).filter(e =>
+    e.allDay && [e.startAt, e.endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0));
+  if (offMidnight.length > 0) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Eventi di un giorno intero con una data non valida, da correggere prima di clonare: ${offMidnight.map(e => `«${e.title}»`).join(', ')}`,
+    });
   }
 
   const shift = dateShiftDays;

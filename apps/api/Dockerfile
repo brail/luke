@@ -1,4 +1,10 @@
 FROM node:24-alpine AS base
+# A tripwire, not a setting: no business logic derives a day from the process time zone — every
+# day is computed in a named zone. What still reads it (the storage key date partitions, the
+# copyright year in emails) stays on UTC whatever zone a host would inject. The one exception is
+# the compiled `fix-allday-event-dates` script, which refuses to run unless started with an
+# explicit `TZ=Europe/Rome` on its own command line.
+ENV TZ=UTC
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
