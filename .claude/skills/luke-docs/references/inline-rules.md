@@ -135,4 +135,7 @@ model CollectionLayout {
 - [ ] Every tRPC procedure with `@auth` has the correct value (verified against the middleware)
 - [ ] Prisma `///` comments are on the field, not on the inline type
 - [ ] No comment was removed (only added or modified)
+- [ ] No comment cites a planning item (`X25 §6.3`): `.planning/` is gitignored, so the reference
+      resolves only on the author's disk — state the reason in the comment. Enforced by semgrep
+      `luke-no-untracked-planning-citation`
 - [ ] `luke-docs:flag` markers were added where expected

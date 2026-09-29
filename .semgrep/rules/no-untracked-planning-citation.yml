@@ -1,0 +1,16 @@
+rules:
+  - id: luke-no-untracked-planning-citation
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Cites a section of a planning item (e.g. `X25 §6.3`). Planning items live
+      in `.planning/`, which `.gitignore` excludes: the reference resolves on the
+      author's disk and nowhere else. State the rationale in the comment itself,
+      or cite a tracked document (an ADR, a file under `docs/`).
+    pattern-regex: '\b[A-Z][0-9]{1,2}[a-z]?\s+§\s?[0-9]'
+    paths:
+      include:
+        - '/apps/**'
+        - '/packages/**'
+        - '/tools/**'
+        - '/scripts/**'
