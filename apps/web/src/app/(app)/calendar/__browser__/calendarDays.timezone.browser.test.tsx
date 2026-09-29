@@ -10,6 +10,7 @@ import {
   hoursWithinDay,
   moveEvent,
   moveEventTo,
+  moveToCell,
   resizeEvent,
 } from '../utils';
 
@@ -127,6 +128,16 @@ describe(`calendar day helpers (${ZONE})`, () => {
     const start = new Date(2026, 2, 5, 23, 30);
     const moved = moveEventTo(timed(start, null), date('2026-03-09'))!;
     expect([new Date(moved.startAt).getDate(), new Date(moved.startAt).getHours(), moved.endAt]).toEqual([9, 23, null]);
+  });
+
+  test('moveToCell reads a cell id (its local midnight) as that local date, in every zone', () => {
+    // Month and week cells are droppables keyed by `day.toISOString()` of a local-midnight cell.
+    for (const day of [22, 24, 28]) {
+      const id = new Date(2026, 11, day).toISOString();
+      expect(moveToCell(allDay('2026-12-22'), id)).toEqual(day === 22 ? null : { startAt: `2026-12-${day}T00:00:00.000Z`, endAt: null });
+    }
+    // Across the spring change the cell's local midnight is still its own date.
+    expect(moveToCell(allDay('2026-03-06'), new Date(2026, 2, 30).toISOString())!.startAt).toBe('2026-03-30T00:00:00.000Z');
   });
 
   test('resizeEvent sends only the end, and shrinks an all-day event down to its first day', () => {

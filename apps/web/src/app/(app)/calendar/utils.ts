@@ -142,6 +142,14 @@ export function moveEventTo(m: EventDates, date: CalendarDate): { startAt: strin
 }
 
 /**
+ * `m` dropped on a month/week cell, whose droppable id is the ISO string of that cell's local
+ * midnight (`day.toISOString()`): the drop lands its first date on the cell's local date.
+ */
+export function moveToCell(m: EventDates, droppableId: string): { startAt: string; endAt: string | null } | null {
+  return moveEventTo(m, cellDate(new Date(droppableId)));
+}
+
+/**
  * The new end of `m` after a Gantt resize by `days`, or `null` when nothing changes or the result
  * is not valid; the start is never part of it. All-day: the last date moves, never before the
  * first. Timed: the end (the start when there is none) moves by `days` local days, the same wall

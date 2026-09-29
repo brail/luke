@@ -9,7 +9,7 @@ import { calendarDaysBetween } from '@luke/core';
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveEventTo, resolveBrandColor, sameDay } from '../utils';
+import { addDays, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveToCell, resolveBrandColor, sameDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -92,7 +92,7 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
     if (!event.over || !canUpdate) return;
     const m = milestones.find(x => x.id === event.active.id as string);
     if (!m) return;
-    const moved = moveEventTo(m, cellDate(new Date(event.over.id as string)));
+    const moved = moveToCell(m, String(event.over.id));
     if (moved) onEventUpdate(m.id, moved);
   }, [canUpdate, milestones, onEventUpdate]);
 

@@ -37,7 +37,7 @@ export default defineConfig({
     // cache, a dependency discovered mid-run instead of pre-bundled up front makes Vite reload
     // the whole test mid-flight, and `vi.mock('next/navigation', ...)` only reliably intercepts
     // the module when it's pre-bundled ahead of the mocking call.
-    // 'zod' isn't imported directly by this test file, but `../utils` pulls in `@luke/core`,
+    // 'zod' isn't imported directly by these tests, but `calendar/utils` pulls in `@luke/core`,
     // which does — on a truly cold cache (no prior run of any config in this package) it's
     // discovered mid-run rather than pre-bundled, triggering the same "unexpectedly reloaded a
     // test" failure this whole list exists to avoid.
@@ -46,13 +46,17 @@ export default defineConfig({
     // CalendarEventMonthView.timezone.browser.test.tsx, which mounts the real
     // `CalendarEventMonthView` (DndContext + Popover) rather than only a hook — same "discovered
     // mid-run instead of before it" failure mode as 'zod' above, on a cold `.vite` cache.
-    // '@radix-ui/react-label' was added for the wizard step's EventStep.timezone.browser.test.tsx, same reason.
-    // The last row is `CalendarEventTimeline`'s (ConfirmDialog, Checkbox), for
-    // calendarViews.timezone.browser.test.tsx — a cold-cache run reloaded mid-test without it.
+    // '@radix-ui/react-label' was added for the wizard step's EventStep.timezone.browser.test.tsx,
+    // same reason.
+    // The last two rows are `CalendarEventTimeline`'s (ConfirmDialog, Checkbox) and
+    // `CalendarEventDialog`'s tree (Dialog, Select, Tooltip, sonner, and the modules its mocked
+    // `lib/trpc`/session imports still reach), for the calendar view and dialog tests — a cold-cache
+    // run reloaded mid-test without them and silently ran fewer tests.
     include: [
       'vitest-browser-react', 'react', 'react/jsx-runtime', 'react/jsx-dev-runtime', 'react-dom/client', 'next/navigation', 'zod',
       '@dnd-kit/core', '@radix-ui/react-popover', '@radix-ui/react-slot', '@radix-ui/react-label', 'class-variance-authority', 'clsx', 'lucide-react', 'tailwind-merge',
       '@hookform/resolvers/zod', '@radix-ui/react-alert-dialog', '@radix-ui/react-checkbox', 'react-hook-form',
+      '@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-tooltip', '@tanstack/react-query', '@trpc/client', '@trpc/react-query', 'next-auth/react', 'sonner',
     ],
   },
   oxc: {

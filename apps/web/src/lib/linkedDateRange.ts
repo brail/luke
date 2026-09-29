@@ -77,17 +77,16 @@ export interface DateRangeState {
 
 /**
  * The form fields for a stored event, read so that submitting them unchanged (`resolveIso`) gives
- * back the same instants. With no end, the end mirrors the start date an hour later.
+ * back the same instants. With no end, a timed event gets the instant an hour after its start —
+ * never the same date with the hour wrapped past midnight, which would end it before it starts —
+ * and an all-day one its own start date.
  */
 export function rangeFromEvent(startAt: Date | string, endAt: Date | string | null | undefined, allDay: boolean): DateRangeState {
   const startDate = toDateInput(startAt, allDay);
   const startTime = toTimeInput(startAt, allDay);
-  return {
-    startDate,
-    startTime,
-    endDate: endAt ? toDateInput(endAt, allDay) : startDate,
-    endTime: endAt && !allDay ? toTimeInput(endAt) : addOneHour(startTime),
-  };
+  if (allDay) return { startDate, startTime, endDate: endAt ? toDateInput(endAt, true) : startDate, endTime: addOneHour(startTime) };
+  const end = endAt ?? new Date(new Date(startAt).getTime() + 3_600_000);
+  return { startDate, startTime, endDate: toDateInput(end), endTime: toTimeInput(end) };
 }
 
 export type RangeSide = 'start' | 'end';
