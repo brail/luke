@@ -184,6 +184,27 @@ describe('buildDigestTasks — event created', () => {
     await prisma.calendarEvent.delete({ where: { id: event.id } });
   });
 
+  it('a date outside 1900–9999 in an audit row degrades that entry, not the whole digest', async () => {
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Anno 26 ${randomUUID().slice(0, 6)}`,
+        startAt: new Date('2099-10-10T00:00:00.000Z'), allDay: true, visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    // An update that repaired a year typed as "26": its record keeps the old value.
+    await prisma.auditLog.create({
+      data: {
+        actorId: userDXId, action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: event.id, result: 'SUCCESS',
+        metadata: { title: event.title, calendarId: calDX, oldStartAt: '0026-10-10T00:00:00.000Z', allDay: true, changedFields: ['Titolo'] },
+      },
+    });
+
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    expect(tasks.find(t => t.email === userDXEmail)?.html).toContain(event.title);
+
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+  });
+
   it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({

@@ -112,13 +112,15 @@ function oldAllDayOf(c: { action: string; meta: Record<string, unknown> }, curre
 }
 
 /**
- * A date read from audit metadata, or `null` when it is missing, redacted or not a date — one
- * malformed row must not fail the whole digest (the calendar-date helpers throw on an invalid date).
+ * A date read from audit metadata, or `null` when it is missing, redacted, not a date or outside
+ * 1900–9999 — one malformed row must not fail the whole digest (the calendar-date helpers throw on
+ * an invalid date and outside those years, and a record keeps whatever an older schema accepted).
  */
 function metaDate(value: unknown): Date | null {
   if (typeof value !== 'string' || isRedactedValue(value)) return null;
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+  const year = date.getUTCFullYear();
+  return Number.isNaN(year) || year < 1900 || year > 9999 ? null : date;
 }
 
 /** Builds an event date label from raw (possibly redacted/missing) audit metadata values. */
