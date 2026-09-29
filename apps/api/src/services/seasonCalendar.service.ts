@@ -302,6 +302,11 @@ export interface EventDates {
   allDay: boolean;
 }
 
+/** An all-day event stored off UTC midnight on either end — the one rule for a valid all-day value. */
+function isOffMidnightAllDay({ startAt, endAt, allDay }: EventDates): boolean {
+  return allDay && [startAt, endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0);
+}
+
 /**
  * Refuses dates an event must never be stored with: an all-day value off UTC midnight — a calendar
  * date stored as anything else is read as another day by some reader — and an end before
@@ -310,8 +315,9 @@ export interface EventDates {
  *
  * @throws {TRPCError} BAD_REQUEST
  */
-export function assertEventDates({ startAt, endAt, allDay }: EventDates): void {
-  if (allDay && [startAt, endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0)) {
+export function assertEventDates(dates: EventDates): void {
+  const { startAt, endAt } = dates;
+  if (isOffMidnightAllDay(dates)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Un evento di un giorno intero deve iniziare e finire a mezzanotte (UTC)' });
   }
   if (endAt && endAt < startAt) {
@@ -940,8 +946,7 @@ export async function cloneFromBrandSeason(
   // Shifting by whole days keeps a midnight a midnight, and copies an all-day source stored off it
   // as it is: refused, not normalised — which date it was meant to be depends on the zone it was
   // entered in, which the row does not record.
-  const offMidnight = sourceGroups.flatMap(g => g.events).filter(e =>
-    e.allDay && [e.startAt, e.endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0));
+  const offMidnight = sourceGroups.flatMap(g => g.events).filter(isOffMidnightAllDay);
   if (offMidnight.length > 0) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
