@@ -115,6 +115,24 @@ describe('an all-day event is stored at UTC midnight', () => {
   });
 });
 
+describe('the database refuses calendar dates outside 1900–9999', () => {
+  // The calendar-date helpers throw outside those years, and every reader of a row would fail
+  // with them: the constraint keeps such a row from existing, whoever writes it.
+  it('on every date of an event', async () => {
+    await expect(createEvent({ startAt: new Date('0026-06-01T00:00:00.000Z'), allDay: true })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    await expect(createEvent({ startAt: MIDNIGHT, endAt: new Date('1899-12-31T00:00:00.000Z'), allDay: true })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    await expect(prisma.calendarEvent.create({
+      data: { calendarId, planningGroupId, title: 'Baseline', startAt: MIDNIGHT, allDay: true, baselineStartAt: new Date('0026-06-01T00:00:00.000Z') },
+    })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    await expect(createEvent({ startAt: new Date('1900-01-01T00:00:00.000Z'), endAt: new Date('9999-12-31T00:00:00.000Z'), allDay: true })).resolves.toBeDefined();
+  });
+
+  it('on a planning group anchor date', async () => {
+    await expect(prisma.planningGroup.create({ data: { calendarId, name: `Ancora ${randomUUID().slice(0, 8)}`, anchorDate: new Date('1899-12-31T00:00:00.000Z') } }))
+      .rejects.toThrow(/planning_groups_anchor_date_in_supported_years/);
+  });
+});
+
 describe('assertEventDates', () => {
   it('reads midnight by the epoch remainder, before 1970 too', () => {
     expect(() => assertEventDates({ startAt: new Date('1900-01-01T00:00:00.000Z'), endAt: null, allDay: true })).not.toThrow();

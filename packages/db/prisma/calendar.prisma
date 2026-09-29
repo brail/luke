@@ -165,6 +165,8 @@ model PlanningGroup {
   /// (see migration) plus an application-level check on creation — cannot be renamed or deleted.
   isDefault  Boolean   @default(false)
   /// Reference date for milestone template offset calculations, scoped to this group. Date only.
+  /// Held to the years 1900–9999 by a CHECK constraint Prisma does not model (migration
+  /// `20260929224334_calendar_dates_in_supported_years`).
   anchorDate DateTime? @db.Date
   /// Timestamp when this group's baseline was frozen. One-shot — never re-frozen without admin unfreeze.
   frozenAt   DateTime?
@@ -206,6 +208,8 @@ model CalendarEvent {
   cancelledByUserId     String?
   title                 String
   description           String?
+  /// Every date of an event (start, end, baselines) is held to the years 1900–9999 by a CHECK
+  /// constraint Prisma does not model (migration `20260929224334_calendar_dates_in_supported_years`).
   startAt               DateTime
   endAt                 DateTime?
   /// Snapshot of startAt at freeze time. Written once by freezeCalendar, never updated afterwards —

@@ -51,6 +51,36 @@ reset it, deleting the data.
   for the deployment (Env Policy in `CLAUDE.md`), not `@luke/db` configuration —
   there is one database, so it is declared in one place.
 
+### CHECK constraints Prisma does not model
+
+A `CHECK` constraint has no representation in the `.prisma` files, so it lives only in a
+hand-written migration: `db:migrate:new` cannot generate it (there is no schema difference to
+diff), `migrate diff` does not report it, and `db push` never creates it. Document it with a `///`
+comment on the fields it covers, since the schema alone does not show it. Two exist:
+`company_profile_singleton` (`20260515000000_company_structure`) and the calendar date range
+(`20260929224334_calendar_dates_in_supported_years`).
+
+Write the migration by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`, then check it
+from `packages/db/` on a throwaway database, as the CI `migrations` job does — never with
+`db:migrate:deploy`, which loads `apps/api/.env` and targets the development database:
+
+```bash
+docker run --rm -d --name luke-pg-migrate -p 5433:5432 \
+  -e POSTGRES_USER=luke -e POSTGRES_PASSWORD=luke -e POSTGRES_DB=luke postgres:16-alpine
+until docker exec luke-pg-migrate pg_isready -U luke -d luke; do sleep 1; done
+docker exec luke-pg-migrate psql -U luke -d luke -c 'CREATE DATABASE luke_shadow'
+export DATABASE_URL=postgresql://luke:luke@localhost:5433/luke
+export SHADOW_DATABASE_URL=postgresql://luke:luke@localhost:5433/luke_shadow
+pnpm exec prisma migrate deploy
+pnpm exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema ./prisma --exit-code
+docker stop luke-pg-migrate
+```
+
+The development database is aligned with `db push`, which will not create the constraint: apply the
+same SQL to it directly (`docker exec -i luke-db-1 psql -U luke -d luke -v ON_ERROR_STOP=1 <
+prisma/migrations/<timestamp>_<name>/migration.sql`). The integration test database is built with
+`migrate deploy` and gets it on its own.
+
 ## Production
 
 - `apps/api/entrypoint.sh` runs `prisma migrate deploy` when the container boots.

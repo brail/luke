@@ -3,7 +3,8 @@
 
 /// Singleton company profile record. Always queried by id="singleton". Holds legal, contact and export settings.
 model CompanyProfile {
-  /// Fixed PK "singleton" — only one record allowed per deployment.
+  /// Fixed PK "singleton" — only one record allowed per deployment, held by a CHECK constraint Prisma
+  /// does not model (`company_profile_singleton`, migration `20260515000000_company_structure`).
   id             String   @id @default("singleton")
   legalName      String
   displayName    String

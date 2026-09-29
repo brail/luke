@@ -362,6 +362,29 @@ pnpm --filter @luke/api db:fix-allday-dates --dry-run                        # d
 TZ=Europe/Rome node dist-scripts/scripts/fix-allday-event-dates.js --dry-run   # API container
 ```
 
+### Calendar date range
+
+Every date of a calendar event (`startAt`, `endAt`, `baselineStartAt`, `baselineEndAt`) and a
+planning group's `anchorDate` must lie in the years 1900–9999: the calendar-date helpers throw
+outside them. Migration `20260929224334_calendar_dates_in_supported_years` enforces it with CHECK
+constraints, validated when they are added — on a database holding a row out of range, `migrate
+deploy` fails and `entrypoint.sh` stops the API from starting. Count such rows before deploying it;
+the result must be 0:
+
+```sql
+SELECT count(*) FROM calendar_events
+WHERE "startAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
+   OR "endAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
+   OR "baselineStartAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
+   OR "baselineEndAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999';
+SELECT count(*) FROM planning_groups WHERE "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-31';
+```
+
+A row out of range was typed wrong (a year entered as `26`): correct its date by hand. If the
+migration has already failed, correct the rows, mark it rolled back with `prisma migrate resolve
+--rolled-back 20260929224334_calendar_dates_in_supported_years` (from `packages/db/`, against that
+database) and deploy again.
+
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->
