@@ -46,7 +46,7 @@ export default defineConfig({
     // CalendarEventMonthView.timezone.browser.test.tsx, which mounts the real
     // `CalendarEventMonthView` (DndContext + Popover) rather than only a hook — same "discovered
     // mid-run instead of before it" failure mode as 'zod' above, on a cold `.vite` cache.
-    // '@radix-ui/react-label' was added for EventTimelineDrag.timezone.browser.test.tsx, same reason.
+    // '@radix-ui/react-label' was added for the wizard step's EventStep.timezone.browser.test.tsx, same reason.
     // The last row is `CalendarEventTimeline`'s (ConfirmDialog, Checkbox), for
     // calendarViews.timezone.browser.test.tsx — a cold-cache run reloaded mid-test without it.
     include: [

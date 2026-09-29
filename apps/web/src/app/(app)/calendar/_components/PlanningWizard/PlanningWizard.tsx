@@ -4,6 +4,8 @@ import { Info } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { type CalendarDate } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -16,6 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { byFirstDay, eventDays, moveEventTo } from '../../utils';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
@@ -58,14 +61,15 @@ interface Props {
  */
 export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, events, holidayDates }: Props) {
   const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
+    () => [...events].sort(byFirstDay),
     [events]
   );
 
   const [stepIndex, setStepIndex] = useState(0);
   const [phase, setPhase] = useState<'stepping' | 'freeze'>('stepping');
-  const [draftDates, setDraftDates] = useState<Map<string, Date>>(
-    () => new Map(sortedEvents.map(m => [m.id, new Date(m.startAt)]))
+  // Each event's first date as the user moves it; saving moves the whole event by the difference.
+  const [draftDates, setDraftDates] = useState<Map<string, CalendarDate>>(
+    () => new Map(sortedEvents.map(m => [m.id, eventDays(m)[0]]))
   );
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
@@ -165,9 +169,11 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     if (!canMutate || !currentEvent) return;
 
     const draft = draftDates.get(currentEvent.id);
-    const dateChanged = draft && draft.getTime() !== new Date(currentEvent.startAt).getTime();
-    if (dateChanged) {
-      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: draft.toISOString() } });
+    // The end moves with the start (an all-day event keeps its length in days, a timed one its
+    // duration); a start-only write used to leave a multi-day event's end behind.
+    const moved = draft && moveEventTo(currentEvent, draft);
+    if (moved) {
+      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: moved.startAt, endAt: moved.endAt ?? undefined } });
     }
 
     if (stepIndex < sortedEvents.length - 1) {
@@ -248,7 +254,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
 
               <EventStep
                 event={currentEvent}
-                draftDate={draftDates.get(currentEvent.id) ?? new Date(currentEvent.startAt)}
+                draftDate={draftDates.get(currentEvent.id) ?? eventDays(currentEvent)[0]}
                 onDraftDateChange={d => setDraftDates(prev => new Map(prev).set(currentEvent.id, d))}
                 holidayDates={holidayDates}
                 closedDates={closedDates}

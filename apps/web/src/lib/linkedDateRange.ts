@@ -5,14 +5,22 @@
  * rule decides milestone dates, and it is precisely the kind of logic that breaks silently.
  */
 
-export function toDateInput(val: Date | string | null | undefined): string {
+/**
+ * The date field for a stored value: an all-day value is a calendar date at UTC midnight and reads
+ * as that date in every zone; a timed one reads as its local date. Deliberately not core's
+ * `calendarDateOf`, which throws outside 1900–9999: a date input passes through years like 0002
+ * while one is typed, and the linked-range rule reads every such value back.
+ */
+export function toDateInput(val: Date | string | null | undefined, allDay = false): string {
   if (!val) return '';
   const d = new Date(val);
-  return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+  const [y, m, day] = allDay ? [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()] : [d.getFullYear(), d.getMonth(), d.getDate()];
+  return `${y.toString().padStart(4, '0')}-${(m + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
 }
 
-export function toTimeInput(val: Date | string | null | undefined): string {
-  if (!val) return '09:00';
+/** The time field for a stored value; an all-day value has no time of its own, so it seeds 09:00. */
+export function toTimeInput(val: Date | string | null | undefined, allDay = false): string {
+  if (!val || allDay) return '09:00';
   const d = new Date(val);
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
@@ -60,16 +68,26 @@ function toInstant(date: string, time: string, allDay: boolean): number {
   return allDay ? new Date(date).getTime() : new Date(`${date}T${time}:00`).getTime();
 }
 
-function fromInstant(ms: number): { date: string; time: string } {
-  const d = new Date(ms);
-  return { date: toDateInput(d), time: toTimeInput(d) };
-}
-
 export interface DateRangeState {
   startDate: string;
   startTime: string;
   endDate: string;
   endTime: string;
+}
+
+/**
+ * The form fields for a stored event, read so that submitting them unchanged (`resolveIso`) gives
+ * back the same instants. With no end, the end mirrors the start date an hour later.
+ */
+export function rangeFromEvent(startAt: Date | string, endAt: Date | string | null | undefined, allDay: boolean): DateRangeState {
+  const startDate = toDateInput(startAt, allDay);
+  const startTime = toTimeInput(startAt, allDay);
+  return {
+    startDate,
+    startTime,
+    endDate: endAt ? toDateInput(endAt, allDay) : startDate,
+    endTime: endAt && !allDay ? toTimeInput(endAt) : addOneHour(startTime),
+  };
 }
 
 export type RangeSide = 'start' | 'end';
@@ -90,11 +108,13 @@ function sideInstant(state: DateRangeState, side: RangeSide, allDay: boolean): n
     : toInstant(state.endDate, state.endTime, allDay);
 }
 
-function withSide(state: DateRangeState, side: RangeSide, ms: number): DateRangeState {
-  const { date, time } = fromInstant(ms);
+/** `state` with one side set to the instant `ms`; an all-day side takes the date and keeps its time field. */
+function withSide(state: DateRangeState, side: RangeSide, ms: number, allDay: boolean): DateRangeState {
+  const d = new Date(ms);
+  const date = toDateInput(d, allDay);
   return side === 'start'
-    ? { ...state, startDate: date, startTime: time }
-    : { ...state, endDate: date, endTime: time };
+    ? { ...state, startDate: date, startTime: allDay ? state.startTime : toTimeInput(d) }
+    : { ...state, endDate: date, endTime: allDay ? state.endTime : toTimeInput(d) };
 }
 
 /**
@@ -141,7 +161,7 @@ export function applyLinkedEdit(
     // Linked shift: the other side has never been directly edited, so move it by the same
     // delta to preserve the current duration — like dragging the whole event.
     const delta = sideInstant(merged, side, allDay) - sideInstant(prev, side, allDay);
-    return { next: withSide(merged, other, sideInstant(prev, other, allDay) + delta), touched: nextTouched };
+    return { next: withSide(merged, other, sideInstant(prev, other, allDay) + delta, allDay), touched: nextTouched };
   }
 
   // Independent resize: both sides are touched from here on, recompute freely and just
@@ -150,7 +170,7 @@ export function applyLinkedEdit(
   const endMs = sideInstant(merged, 'end', allDay);
   if (endMs < startMs) {
     return {
-      next: side === 'start' ? withSide(merged, 'end', startMs) : withSide(merged, 'start', endMs),
+      next: side === 'start' ? withSide(merged, 'end', startMs, allDay) : withSide(merged, 'start', endMs, allDay),
       touched: nextTouched,
     };
   }

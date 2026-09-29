@@ -7,7 +7,10 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import {
+  calendarDateOf,
+  calendarDaysBetween,
   CalendarEventBaseSchema,
+  formatCalendarDate,
   MilestoneCancelInputSchema,
   MilestoneRescheduleInputSchema,
   type CalendarDaysRelevance,
@@ -45,6 +48,7 @@ import {
   UNTOUCHED_SIDES,
   addOneHour,
   applyLinkedEdit,
+  rangeFromEvent,
   resolveIso,
   toDateInput,
   toTimeInput,
@@ -53,7 +57,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { daysBetween, isEventDeleteLocked } from '../utils';
+import { eventDays, isEventDeleteLocked } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
@@ -163,7 +167,9 @@ const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | u
 /** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
 function describeBaselineDrift(event: ExistingEvent): string | null {
   if (!event.baselineStartAt) return null;
-  const diff = daysBetween(new Date(event.baselineStartAt), new Date(event.startAt));
+  // The baseline carries no `allDay` of its own, so it is read as the event's current kind.
+  const firstDay = (at: Date | string) => eventDays({ startAt: at, endAt: null, allDay: event.allDay })[0];
+  const diff = calendarDaysBetween(firstDay(event.baselineStartAt), firstDay(event.startAt));
   if (diff === 0) return null;
   return diff > 0 ? `Spostato di ${diff}g rispetto al piano originale` : `Anticipato di ${-diff}g rispetto al piano originale`;
 }
@@ -272,8 +278,14 @@ export function CalendarEventDialog({
   }, [isEdit, existingMilestones, event, effectivePlanningGroupId, phases]);
 
   useEffect(() => {
-    const sd = toDateInput(event?.startAt ?? defaultDate);
-    const st = event ? toTimeInput(event.startAt) : (defaultAllDay ? '09:00' : toTimeInput(defaultDate));
+    // An existing event is read so that resubmitting it unchanged writes the same instants; a new
+    // one starts on the local day the user clicked (`defaultDate` is that day's local midnight, or
+    // the clicked hour in the day view).
+    const sd = toDateInput(defaultDate);
+    const st = defaultAllDay ? '09:00' : toTimeInput(defaultDate);
+    const range = event
+      ? rangeFromEvent(event.startAt, event.endAt, event.allDay)
+      : { startDate: sd, startTime: st, endDate: sd, endTime: addOneHour(st) };
     rangeTouched.current = { ...UNTOUCHED_SIDES };
     form.reset({
       title: event?.title ?? '',
@@ -284,10 +296,7 @@ export function CalendarEventDialog({
       visibilityFunctionIds: event ? event.visibilities.map(v => v.functionId) : [],
       allDay: event?.allDay ?? defaultAllDay,
       publishExternally: event?.publishExternally ?? true,
-      startDate: sd,
-      startTime: st,
-      endDate: event?.endAt ? toDateInput(event.endAt) : sd,
-      endTime: event?.endAt ? toTimeInput(event.endAt) : addOneHour(st),
+      ...range,
     });
     // Deliberately not depending on `form`: it is stable, and listing it would reset the fields
     // under the user on every render.
@@ -472,7 +481,7 @@ export function CalendarEventDialog({
   };
 
   if ((readOnly || isCancelled) && event) {
-    const dateStr = new Date(event.startAt).toLocaleDateString('it-IT', {
+    const dateStr = formatCalendarDate(eventDays(event)[0], {
       weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     });
     const timeStr = !event.allDay
@@ -510,7 +519,7 @@ export function CalendarEventDialog({
               <p className="text-sm capitalize">{dateStr}{timeStr ? ` · ${timeStr}` : ''}</p>
               {event.endAt && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  → {new Date(event.endAt).toLocaleDateString('it-IT')}
+                  → {event.allDay ? formatCalendarDate(calendarDateOf(new Date(event.endAt)), {}) : new Date(event.endAt).toLocaleDateString('it-IT')}
                   {!event.allDay && ` · ${new Date(event.endAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
                 </p>
               )}

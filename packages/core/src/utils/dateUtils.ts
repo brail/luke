@@ -1,14 +1,3 @@
-/**
- * Returns the number of calendar days from `a` to `b` (positive when `b` is after `a`).
- * Calculation is UTC-based to avoid DST shifts.
- */
-export function daysBetween(a: Date, b: Date): number {
-  const msPerDay = 1000 * 60 * 60 * 24;
-  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((utcB - utcA) / msPerDay);
-}
-
 // ─── Calendar dates ──────────────────────────────────────────────────────────
 
 /**

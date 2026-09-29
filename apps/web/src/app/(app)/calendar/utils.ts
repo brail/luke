@@ -2,8 +2,8 @@ import {
   addCalendarDays,
   calendarDateIn,
   calendarDateOf,
+  calendarDaysBetween,
   type CalendarDate,
-  daysBetween,
   eventCalendarDays,
   initials,
   isEventDeleteLocked as isEventDeleteLockedCore,
@@ -70,11 +70,6 @@ export function parseLocalIsoDate(s: string): Date | null {
   return isValid ? parsed : null;
 }
 
-// Core's calendar-date difference. The copy here rounded raw milliseconds, which is a
-// different answer as soon as the two times of day differ (Monday 22:00 to Tuesday 08:00 is 0 in
-// milliseconds, 1 in dates).
-export { daysBetween };
-
 /** Every calendar date of a stored range (UTC midnights, both ends included), one per day. */
 export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[] {
   const dates: CalendarDate[] = [];
@@ -139,6 +134,11 @@ export function moveEvent(m: EventDates, days: number): { startAt: string; endAt
     startAt: newStart.toISOString(),
     endAt: end ? new Date(newStart.getTime() + end.getTime() - start.getTime()).toISOString() : null,
   };
+}
+
+/** `m` moved so that its first occupied date is `date` (a drop on a cell, a wizard draft). */
+export function moveEventTo(m: EventDates, date: CalendarDate): { startAt: string; endAt: string | null } | null {
+  return moveEvent(m, calendarDaysBetween(eventDays(m)[0], date));
 }
 
 /**

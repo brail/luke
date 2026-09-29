@@ -4,6 +4,8 @@ import { AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { formatCalendarDate } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -17,6 +19,7 @@ import {
 import { ScrollArea } from '../../../../components/ui/scroll-area';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { eventDays } from '../utils';
 
 import type { CalendarEventItem } from './types';
 
@@ -138,7 +141,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
                     <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded text-sm">
                       <span className="flex-1 truncate">{m.title}</span>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {new Date(m.startAt).toLocaleDateString('it-IT')}
+                        {formatCalendarDate(eventDays(m)[0], {})}
                       </span>
                       {overlapReasons && (
                         <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">

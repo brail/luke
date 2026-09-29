@@ -9,6 +9,7 @@ import {
   groupEventsByDay,
   hoursWithinDay,
   moveEvent,
+  moveEventTo,
   resizeEvent,
 } from '../utils';
 
@@ -114,6 +115,18 @@ describe(`calendar day helpers (${ZONE})`, () => {
     expect(moveEvent(allDay('2026-03-10'), 0)).toBeNull();
     expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), new Date(2026, 3, 13, 9, 0)), 1)).toBeNull();
     expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), null), 1)!.endAt).toBeNull();
+  });
+
+  test('moveEventTo lands the first date on the target and carries the end along', () => {
+    expect(moveEventTo(allDay('2026-03-27', '2026-03-30'), date('2026-04-02'))).toEqual({
+      startAt: '2026-04-02T00:00:00.000Z',
+      endAt: '2026-04-05T00:00:00.000Z',
+    });
+    expect(moveEventTo(allDay('2026-03-27'), date('2026-03-27'))).toBeNull();
+    // A timed event late in the UTC day: its first date is the local one, and so is the target.
+    const start = new Date(2026, 2, 5, 23, 30);
+    const moved = moveEventTo(timed(start, null), date('2026-03-09'))!;
+    expect([new Date(moved.startAt).getDate(), new Date(moved.startAt).getHours(), moved.endAt]).toEqual([9, 23, null]);
   });
 
   test('resizeEvent sends only the end, and shrinks an all-day event down to its first day', () => {

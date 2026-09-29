@@ -10,7 +10,7 @@ import { Button } from '../../../../components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../../components/ui/popover';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, MONTH_NAMES_IT, cancelledClass } from '../constants';
-import { addDays, addMonths, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveEvent, resolveBrandColor, sameDay } from '../utils';
+import { addDays, addMonths, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveEventTo, resolveBrandColor, sameDay } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -90,7 +90,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
     if (!event.over || !canUpdate) return;
     const m = milestones.find(x => x.id === event.active.id as string);
     if (!m) return;
-    const moved = moveEvent(m, calendarDaysBetween(eventDays(m)[0], cellDate(new Date(event.over.id as string))));
+    const moved = moveEventTo(m, cellDate(new Date(event.over.id as string)));
     if (moved) onEventUpdate(m.id, moved);
   }, [canUpdate, milestones, onEventUpdate]);
 

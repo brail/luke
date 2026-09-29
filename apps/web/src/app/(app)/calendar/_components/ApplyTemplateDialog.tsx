@@ -36,6 +36,7 @@ import {
 } from '../../../../components/ui/select';
 import { narrowRouterOutput, trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { toLocalIsoDate } from '../utils';
 
 import type { CalendarEventItem } from './types';
 
@@ -48,8 +49,9 @@ interface Props {
   seasonId: string;
 }
 
+/** Today on the user's own calendar — the UTC date is a day off near midnight. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return toLocalIsoDate(new Date());
 }
 
 /**
