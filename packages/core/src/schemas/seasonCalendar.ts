@@ -89,6 +89,19 @@ export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSc
 // ─── Milestone lifecycle inputs ───────────────────────────────────────────────
 
 /**
+ * The dates a client read and based a write on. The write lands only if the event still holds
+ * them, so a move computed from a stale list, or saved from a form left open, cannot silently undo
+ * a move someone else made in between: the caller gets a CONFLICT and reloads. Required on every
+ * write that can move an event, so no caller can forget it.
+ */
+export const EventDatesExpectedSchema = z.object({
+  startAt: z.string().datetime(),
+  endAt: z.string().datetime().nullable(),
+  allDay: z.boolean(),
+});
+export type EventDatesExpected = z.infer<typeof EventDatesExpectedSchema>;
+
+/**
  * Motivated in-place move of a milestone's dates — the only way past `isEventDateLocked`, so the
  * reason is the whole point of the endpoint rather than a courtesy. The baseline is deliberately
  * not a field: a reschedule must not rewrite what scheduling variance is measured against.
@@ -99,6 +112,7 @@ export const MilestoneRescheduleInputSchema = z.object({
   endAt: calendarInstantSchema.optional().nullable(),
   allDay: z.boolean().optional(),
   reason: MandatoryReasonSchema,
+  expected: EventDatesExpectedSchema,
 });
 export type MilestoneRescheduleInput = z.infer<typeof MilestoneRescheduleInputSchema>;
 

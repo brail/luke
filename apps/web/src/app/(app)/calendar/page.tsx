@@ -35,7 +35,7 @@ import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { useCalendarViewNavigation } from './useCalendarViewNavigation';
-import { assignBrandColors, resolveBrandColor } from './utils';
+import { assignBrandColors, expectedDates, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
 
@@ -160,13 +160,17 @@ export default function CalendarPage() {
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
       // A drag on an event whose lock the list did not show yet (its deadline was reached while the
-      // page was open): refresh, so `dateLocked` stops offering the drag.
-      if (err.data?.code === 'PRECONDITION_FAILED') refetchAfterEventChange();
+      // page was open), or one someone else moved meanwhile (CONFLICT): refresh, so the list shows
+      // what the server holds.
+      if (err.data?.code === 'PRECONDITION_FAILED' || err.data?.code === 'CONFLICT') refetchAfterEventChange();
     },
   });
 
   const handleEventUpdate = (id: string, data: { startAt?: string; endAt?: string | null }) => {
-    updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
+    // The move was computed from this list: it names the dates it saw.
+    const seen = milestones?.find(m => m.id === id);
+    if (!seen) return;
+    updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined }, expected: expectedDates(seen) });
   };
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({

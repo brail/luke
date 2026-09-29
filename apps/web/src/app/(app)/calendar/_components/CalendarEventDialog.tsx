@@ -57,7 +57,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { eventDays, isEventDeleteLocked } from '../utils';
+import { eventDays, expectedDates, isEventDeleteLocked } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
@@ -366,8 +366,9 @@ export function CalendarEventDialog({
     onSuccess: data => { if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning); toast.success('Evento aggiornato'); onSaved(); onClose(); },
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      // A lock the list did not show yet (the deadline was reached while the page was open).
-      if (err.data?.code === 'PRECONDITION_FAILED') void utils.seasonCalendar.listMilestones.invalidate();
+      // A lock the list did not show yet (the deadline was reached while the page was open), or a
+      // move someone else made while the form was open (CONFLICT).
+      if (err.data?.code === 'PRECONDITION_FAILED' || err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
     },
   });
 
@@ -410,7 +411,10 @@ export function CalendarEventDialog({
       onSaved();
       onClose();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   /**
@@ -431,7 +435,7 @@ export function CalendarEventDialog({
     }
 
     const parsed = MilestoneRescheduleInputSchema.safeParse({
-      id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason,
+      id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason, expected: expectedDates(event),
     });
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
@@ -474,7 +478,8 @@ export function CalendarEventDialog({
       // only ever go through the motivated `rescheduleMilestone` flow (handleReschedule).
       const { title: _title, phaseId: _phaseId, startAt: _startAt, endAt: _endAt, allDay: _allDay, ...unlockedPayload } = payload;
       const updatePayload = isDateLocked ? unlockedPayload : payload;
-      updateMutation.mutate({ id: event.id, data: updatePayload });
+      // The form was filled from `event`: its dates are what this save is based on.
+      updateMutation.mutate({ id: event.id, data: updatePayload, expected: expectedDates(event) });
     } else {
       createMutation.mutate({ planningGroupId: data.planningGroupId, ...payload });
     }

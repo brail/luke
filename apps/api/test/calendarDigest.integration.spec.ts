@@ -29,6 +29,7 @@ import {
   createCallerWithSession,
   createSilentLogger,
   createTestUser,
+  expectedOf,
   grantBrandAccess,
   setupTestDb,
 } from './helpers';
@@ -156,7 +157,7 @@ describe('buildDigestTasks — event created', () => {
         startAt: new Date('2099-10-10T00:00:00.000Z'), allDay: true, visibilities: { create: [{ functionId: fnD }] },
       },
     });
-    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, startAt: '2099-10-12T00:00:00.000Z', reason: 'Ritardo fornitore' });
+    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), startAt: '2099-10-12T00:00:00.000Z', reason: 'Ritardo fornitore' });
 
     const { tasks } = await buildDigestTasks(prisma, log, justNow());
     const html = tasks.find(t => t.email === userDXEmail)?.html ?? '';
@@ -175,7 +176,7 @@ describe('buildDigestTasks — event created', () => {
         startAt: new Date('2099-10-10T23:30:00.000Z'), allDay: false, visibilities: { create: [{ functionId: fnD }] },
       },
     });
-    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, startAt: '2099-10-12T00:00:00.000Z', allDay: true, reason: 'Tutto il giorno' });
+    await caller.seasonCalendar.rescheduleMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), startAt: '2099-10-12T00:00:00.000Z', allDay: true, reason: 'Tutto il giorno' });
 
     const { tasks } = await buildDigestTasks(prisma, log, justNow());
     const html = tasks.find(t => t.email === userDXEmail)?.html ?? '';
@@ -214,7 +215,7 @@ describe('buildDigestTasks — event created', () => {
         startAt: new Date('2099-10-10T23:30:00.000Z'), allDay: false, visibilities: { create: [{ functionId: fnD }] },
       },
     });
-    await caller.seasonCalendar.updateMilestone({ id: event.id, data: { allDay: true, startAt: '2099-10-12T00:00:00.000Z' } });
+    await caller.seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { allDay: true, startAt: '2099-10-12T00:00:00.000Z' } });
 
     const audit = await prisma.auditLog.findFirstOrThrow({ where: { targetId: event.id, action: 'CALENDAR_EVENT_UPDATE' } });
     expect(audit.metadata).toMatchObject({ oldAllDay: false, allDay: true });

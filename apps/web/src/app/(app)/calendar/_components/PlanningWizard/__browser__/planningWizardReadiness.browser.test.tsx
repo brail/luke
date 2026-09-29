@@ -116,6 +116,8 @@ vi.mock('../../../../../../lib/trpc', () => ({
       },
     },
     holidays: { listVendorClosuresBatch: { useQuery: () => ({ data: [] }) } },
+    // Reached only by a CONFLICT on save, which these tests never produce.
+    useUtils: () => ({ seasonCalendar: { listMilestones: { invalidate: async () => undefined } } }),
   },
   narrowRouterOutput: (value: unknown) => value,
 }));

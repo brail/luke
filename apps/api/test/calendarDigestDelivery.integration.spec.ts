@@ -35,6 +35,7 @@ import {
   createCallerWithSession,
   createSilentLogger,
   createTestUser,
+  expectedOf,
   grantBrandAccess,
   setupTestDb,
 } from './helpers';
@@ -505,7 +506,7 @@ describe('labels', () => {
       publishExternally: false,
       visibilityFunctionIds: [to.functionId],
     });
-    await caller.seasonCalendar.updateMilestone({ id: event.id, data: { startAt: `${YEAR}-11-07T00:00:00.000Z` } });
+    await caller.seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { startAt: `${YEAR}-11-07T00:00:00.000Z` } });
 
     const movedAt = new Date(`${YEAR}-11-02T18:00:00.000Z`);
     await prisma.auditLog.updateMany({ where: { targetId: event.id, action: 'CALENDAR_EVENT_CREATE' }, data: { createdAt: plusMinutes(movedAt, -3 * 24 * 60) } });
@@ -534,7 +535,7 @@ describe('labels', () => {
       publishExternally: false,
       visibilityFunctionIds: [to.functionId],
     });
-    await caller.seasonCalendar.updateMilestone({ id: event.id, data: { endAt: `${YEAR}-11-12T11:00:00.000Z` } });
+    await caller.seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { endAt: `${YEAR}-11-12T11:00:00.000Z` } });
 
     const movedAt = new Date(`${YEAR}-11-10T18:00:00.000Z`);
     await prisma.auditLog.updateMany({ where: { targetId: event.id, action: 'CALENDAR_EVENT_CREATE' }, data: { createdAt: plusMinutes(movedAt, -3 * 24 * 60) } });

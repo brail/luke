@@ -319,6 +319,7 @@ export async function buildTestServer() {
  */
 export {
   createCalendarFixture,
+  expectedOf,
   grantBrandAccess,
   type CalendarFixture,
   type CalendarFixtureOptions,

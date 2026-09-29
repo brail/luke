@@ -18,7 +18,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { assertEventDates, detectPhaseOrderWarning, rescheduleMilestone, updateMilestone } from '../src/services/seasonCalendar.service';
 
-import { createCalendarFixture, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { createCalendarFixture, createCallerWithSession, createTestUser, expectedOf, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -86,31 +86,31 @@ describe('an all-day event is stored at UTC midnight', () => {
 
   it('update: turning a timed event all-day without moving it off 09:00 is refused, and nothing is written', async () => {
     const event = await createEvent({ startAt: new Date('2099-06-01T09:00:00.000Z'), allDay: false });
-    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { allDay: true } }));
+    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { allDay: true } }));
     expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ allDay: false });
   });
 
   it('update: turning it all-day together with midnight dates is accepted', async () => {
     const event = await createEvent({ startAt: new Date('2099-06-01T09:00:00.000Z'), allDay: false });
-    await asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { allDay: true, startAt: MIDNIGHT.toISOString() } });
+    await asAdmin().seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { allDay: true, startAt: MIDNIGHT.toISOString() } });
     expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ allDay: true, startAt: MIDNIGHT });
   });
 
   it('update: a row already stored off midnight stays editable while the dates are not touched', async () => {
     const legacy = await createEvent({ startAt: ROME_LOCAL_MIDNIGHT, allDay: true });
-    await asAdmin().seasonCalendar.updateMilestone({ id: legacy.id, data: { title: 'Rinominato' } });
+    await asAdmin().seasonCalendar.updateMilestone({ id: legacy.id, expected: await expectedOf(prisma, legacy.id), data: { title: 'Rinominato' } });
     expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ title: 'Rinominato', startAt: ROME_LOCAL_MIDNIGHT });
   });
 
   it('update: moving only the end of such a row is refused — its start stays off midnight', async () => {
     const legacy = await createEvent({ startAt: ROME_LOCAL_MIDNIGHT, endAt: new Date('2099-06-03T22:00:00.000Z'), allDay: true });
-    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: legacy.id, data: { endAt: new Date('2099-06-02T00:00:00.000Z').toISOString() } }));
+    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: legacy.id, expected: await expectedOf(prisma, legacy.id), data: { endAt: new Date('2099-06-02T00:00:00.000Z').toISOString() } }));
   });
 
   it('reschedule: refused off midnight; moving a legacy row onto midnight dates repairs it', async () => {
     const legacy = await createEvent({ startAt: ROME_LOCAL_MIDNIGHT, allDay: true });
-    await expectBadRequest(asAdmin().seasonCalendar.rescheduleMilestone({ id: legacy.id, startAt: ROME_LOCAL_MIDNIGHT.toISOString(), reason: 'prova' }));
-    await asAdmin().seasonCalendar.rescheduleMilestone({ id: legacy.id, startAt: NEXT_MIDNIGHT.toISOString(), reason: 'prova' });
+    await expectBadRequest(asAdmin().seasonCalendar.rescheduleMilestone({ id: legacy.id, expected: await expectedOf(prisma, legacy.id), startAt: ROME_LOCAL_MIDNIGHT.toISOString(), reason: 'prova' }));
+    await asAdmin().seasonCalendar.rescheduleMilestone({ id: legacy.id, expected: await expectedOf(prisma, legacy.id), startAt: NEXT_MIDNIGHT.toISOString(), reason: 'prova' });
     expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ startAt: NEXT_MIDNIGHT, endAt: null });
   });
 });
@@ -147,10 +147,10 @@ describe('an event never ends before it starts', () => {
       allDay: false, publishExternally: false, visibilityFunctionIds: [fnA],
     }));
     const timed = await createEvent({ startAt: new Date('2099-06-01T10:00:00.000Z'), allDay: false });
-    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: timed.id, data: { endAt: '2099-06-01T09:00:00.000Z' } }));
+    await expectBadRequest(asAdmin().seasonCalendar.updateMilestone({ id: timed.id, expected: await expectedOf(prisma, timed.id), data: { endAt: '2099-06-01T09:00:00.000Z' } }));
     const allDay = await createEvent({ startAt: NEXT_MIDNIGHT, allDay: true });
     await expectBadRequest(asAdmin().seasonCalendar.rescheduleMilestone({
-      id: allDay.id, startAt: NEXT_MIDNIGHT.toISOString(), endAt: MIDNIGHT.toISOString(), reason: 'prova',
+      id: allDay.id, expected: await expectedOf(prisma, allDay.id), startAt: NEXT_MIDNIGHT.toISOString(), endAt: MIDNIGHT.toISOString(), reason: 'prova',
     }));
   });
 });
@@ -193,6 +193,34 @@ describe('a write is conditional on the dates it was validated against', () => {
     const read = { startAt: event.startAt, endAt: event.endAt, allDay: event.allDay };
     await prisma.calendarEvent.update({ where: { id: event.id }, data: { startAt: NEXT_MIDNIGHT } });
     await expect(rescheduleMilestone(event.id, MIDNIGHT.toISOString(), null, prisma, undefined, read)).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+});
+
+describe('a write carries the dates its client read', () => {
+  // A move computed from a stale list, or saved from a form left open, must not silently undo a
+  // move someone else made in between: the write names the dates it was based on.
+  const readAt = (startAt: Date) => ({ startAt: startAt.toISOString(), endAt: null, allDay: true });
+  const THIRD = new Date('2099-06-03T00:00:00.000Z');
+
+  it('update: refused once another user moved the event, though the server read alone would pass', async () => {
+    const event = await createEvent({ startAt: MIDNIGHT, allDay: true });
+    await asAdmin().seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { startAt: NEXT_MIDNIGHT.toISOString() } });
+    await expect(asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { startAt: THIRD.toISOString() }, expected: readAt(MIDNIGHT) }))
+      .rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ startAt: NEXT_MIDNIGHT });
+  });
+
+  it('reschedule: the same', async () => {
+    const event = await createEvent({ startAt: MIDNIGHT, allDay: true });
+    await asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), startAt: NEXT_MIDNIGHT.toISOString(), reason: 'primo' });
+    await expect(asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, startAt: THIRD.toISOString(), reason: 'secondo', expected: readAt(MIDNIGHT) }))
+      .rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('accepted when the event still holds them', async () => {
+    const event = await createEvent({ startAt: MIDNIGHT, allDay: true });
+    await asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { startAt: THIRD.toISOString() }, expected: readAt(MIDNIGHT) });
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ startAt: THIRD });
   });
 });
 

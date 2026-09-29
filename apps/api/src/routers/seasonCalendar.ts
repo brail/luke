@@ -24,6 +24,7 @@ import { z } from 'zod';
 import {
   CalendarEventBaseSchema,
   CloneSeasonCalendarInputSchema,
+  EventDatesExpectedSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
   ApplyTemplateInputSchema,
@@ -71,6 +72,7 @@ import {
   updateMilestone,
   deleteMilestone,
   rescheduleMilestone,
+  datesFromExpected,
   isEventDateLocked,
   isEventDeleteLocked,
   detectPhaseOrderWarning,
@@ -312,7 +314,8 @@ export const seasonCalendarRouter = router({
    * Updates a calendar event and triggers an async Google Calendar sync.
    *
    * @auth season_calendar:update
-   * @input { id, data: Partial<CalendarEventBase> }
+   * @input { id, data: Partial<CalendarEventBase>, expected } — `expected`: the dates the client
+   *   based the write on (`EventDatesExpectedSchema`); CONFLICT when the event no longer holds them
    * @output Updated CalendarEvent
    */
   updateMilestone: protectedProcedure
@@ -321,6 +324,7 @@ export const seasonCalendarRouter = router({
     .input(z.object({
       id: z.string().uuid(),
       data: partialWithoutDefaults(CalendarEventBaseSchema).omit({ planningGroupId: true }),
+      expected: EventDatesExpectedSchema,
     }))
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
@@ -362,7 +366,8 @@ export const seasonCalendarRouter = router({
         });
       }
 
-      const result = await updateMilestone(input.id, input.data, ctx.prisma, event);
+      // Conditional on the dates the client read and based this write on.
+      const result = await updateMilestone(input.id, input.data, ctx.prisma, datesFromExpected(input.expected));
 
       const dateChanged = event.startAt.getTime() !== result.startAt.getTime()
         || (event.endAt?.getTime() ?? null) !== (result.endAt?.getTime() ?? null);
@@ -411,7 +416,8 @@ export const seasonCalendarRouter = router({
    * and recorded in the audit log alongside the old/new dates.
    *
    * @auth season_calendar:update
-   * @input MilestoneRescheduleInputSchema — id, startAt, optional endAt/allDay, mandatory reason (trimmed, 1-500)
+   * @input MilestoneRescheduleInputSchema — id, startAt, optional endAt/allDay, mandatory reason (trimmed, 1-500),
+   *   `expected` (the dates the client read; CONFLICT when the event no longer holds them)
    * @output Updated CalendarEvent
    */
   rescheduleMilestone: protectedProcedure
@@ -430,7 +436,7 @@ export const seasonCalendarRouter = router({
         assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
       ]);
 
-      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay, event);
+      const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay, datesFromExpected(input.expected));
 
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {

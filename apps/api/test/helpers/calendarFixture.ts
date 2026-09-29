@@ -170,3 +170,12 @@ export async function grantBrandAccess(
 
   return { functionId: resolvedFunctionId, teamId: team.id };
 }
+
+/**
+ * The dates an event holds now, in the shape a client sends them as the precondition of a write
+ * that can move it (`EventDatesExpectedSchema`): the client that read the event just before writing.
+ */
+export async function expectedOf(prisma: PrismaClient, eventId: string) {
+  const event = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: eventId }, select: { startAt: true, endAt: true, allDay: true } });
+  return { startAt: event.startAt.toISOString(), endAt: event.endAt?.toISOString() ?? null, allDay: event.allDay };
+}

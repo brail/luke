@@ -5,6 +5,7 @@ import { parseCalendarDate, type CalendarDate } from '@luke/core';
 import {
   eventDays,
   expandDateRangeToIsoDates,
+  expectedDates,
   getIsoWeek,
   groupEventsByDay,
   hoursWithinDay,
@@ -175,6 +176,14 @@ describe(`calendar day helpers (${ZONE})`, () => {
       expect([dates[0], dates[4]]).toEqual([first, last]);
       expect(new Set(dates).size).toBe(5);
     }
+  });
+
+  test('expectedDates sends the dates the client holds, as stored instants', () => {
+    expect(expectedDates(allDay('2026-03-10', '2026-03-12'))).toEqual({
+      startAt: '2026-03-10T00:00:00.000Z', endAt: '2026-03-12T00:00:00.000Z', allDay: true,
+    });
+    const start = new Date(2026, 3, 13, 10, 0);
+    expect(expectedDates({ startAt: start, endAt: null, allDay: false })).toEqual({ startAt: start.toISOString(), endAt: null, allDay: false });
   });
 
   test('getIsoWeek reads a calendar date', () => {

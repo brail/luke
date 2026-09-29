@@ -11,6 +11,7 @@ import {
   utcMidnightOf,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
+  type EventDatesExpected,
   type SeasonCalendarStatus,
 } from '@luke/core';
 import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db';
@@ -300,6 +301,11 @@ export interface EventDates {
   startAt: Date;
   endAt: Date | null;
   allDay: boolean;
+}
+
+/** The dates a client sent as the precondition of its write, as the conditional write compares them. */
+export function datesFromExpected(expected: EventDatesExpected): EventDates {
+  return { startAt: new Date(expected.startAt), endAt: expected.endAt ? new Date(expected.endAt) : null, allDay: expected.allDay };
 }
 
 /** An all-day event stored off UTC midnight on either end — the one rule for a valid all-day value. */

@@ -80,8 +80,10 @@ describe(`event dialog (${ZONE})`, () => {
 
     await screen.getByRole('button', { name: 'Salva' }).click();
     await expect.poll(() => updateMock.mock.calls.length).toBe(1);
-    const sent = updateMock.mock.calls[0]?.[0] as { data: { startAt: string; endAt: string; allDay: boolean } };
+    const sent = updateMock.mock.calls[0]?.[0] as { data: { startAt: string; endAt: string; allDay: boolean }; expected: unknown };
     expect(sent.data).toMatchObject({ startAt: '2026-03-10T00:00:00.000Z', endAt: '2026-03-12T00:00:00.000Z', allDay: true });
+    // The dates the form was opened on travel with the save, so a move made meanwhile is not undone.
+    expect(sent.expected).toEqual({ startAt: '2026-03-10T00:00:00.000Z', endAt: '2026-03-12T00:00:00.000Z', allDay: true });
   });
 
   test('a timed event with no end, late in the evening, gets an end an hour later — not before it', async () => {

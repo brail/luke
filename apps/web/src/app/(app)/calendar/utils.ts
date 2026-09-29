@@ -115,6 +115,14 @@ export function byFirstDay(a: EventDates, b: EventDates): number {
 }
 
 /**
+ * The dates a write is based on, sent with it as its precondition: the server refuses the write
+ * (CONFLICT) if the event no longer holds them — a move made meanwhile by someone else.
+ */
+export function expectedDates(m: EventDates): { startAt: string; endAt: string | null; allDay: boolean } {
+  return { startAt: new Date(m.startAt).toISOString(), endAt: m.endAt ? new Date(m.endAt).toISOString() : null, allDay: m.allDay };
+}
+
+/**
  * `m` moved by `days` calendar days, or `null` when there is nothing to send (no move, or a source
  * whose end is before its start). All-day: both dates by calendar arithmetic, so they stay at UTC
  * midnight. Timed: the start keeps its wall clock — a time the zone skips resolves forward, a

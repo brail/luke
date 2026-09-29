@@ -19,6 +19,7 @@ import {
   createCallerWithSession,
   createAnonymousCaller,
   createTestUser,
+  expectedOf,
   expectUnauthorized,
   grantBrandAccess,
   setupTestDb,
@@ -109,7 +110,7 @@ describe('rescheduleMilestone — the reason', () => {
     await expect(
       // @ts-expect-error -- mandatory in the schema: this checks that it is at runtime too,
       // for a client that bypasses the types.
-      asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, startAt: new Date('2099-07-01').toISOString() })
+      asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString() })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
@@ -117,12 +118,12 @@ describe('rescheduleMilestone — the reason', () => {
     const event = await createEvent();
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
-        id: event.id, startAt: new Date('2099-07-01').toISOString(), reason: '   ',
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: '   ',
       })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
     await asAdmin().seasonCalendar.rescheduleMilestone({
-      id: event.id, startAt: new Date('2099-07-01').toISOString(), reason: '  slitta la consegna  ',
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: '  slitta la consegna  ',
     });
     const log = await prisma.auditLog.findFirst({
       where: { targetId: event.id, action: 'CALENDAR_EVENT_RESCHEDULE' },
@@ -135,13 +136,13 @@ describe('rescheduleMilestone — the reason', () => {
     const event = await createEvent();
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
-        id: event.id, startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(501),
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(501),
       })
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
-        id: event.id, startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(500),
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(500),
       })
     ).resolves.toMatchObject({ id: event.id });
   });
@@ -155,13 +156,13 @@ describe('rescheduleMilestone — the only way out of a frozen event', () => {
 
     await expect(
       asAdmin().seasonCalendar.updateMilestone({
-        id: locked.id, data: { startAt: new Date('2020-02-01').toISOString() },
+        id: locked.id, expected: await expectedOf(prisma, locked.id), data: { startAt: new Date('2020-02-01').toISOString() },
       })
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
 
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
-        id: locked.id, startAt: new Date('2020-02-01').toISOString(), reason: 'fornitore in ritardo',
+        id: locked.id, expected: await expectedOf(prisma, locked.id), startAt: new Date('2020-02-01').toISOString(), reason: 'fornitore in ritardo',
       })
     ).resolves.toMatchObject({ id: locked.id });
   });
@@ -178,7 +179,7 @@ describe('rescheduleMilestone — the only way out of a frozen event', () => {
     });
 
     await asAdmin().seasonCalendar.rescheduleMilestone({
-      id: event.id, startAt: new Date('2099-09-01').toISOString(), reason: 'ripianificato',
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-09-01').toISOString(), reason: 'ripianificato',
     });
 
     const after = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } });
@@ -191,7 +192,7 @@ describe('rescheduleMilestone — the only way out of a frozen event', () => {
     // hides the keys from the type check on `AuditMetadata`, so nobody had noticed.
     const event = await createEvent({ allDay: false });
     await asAdmin().seasonCalendar.rescheduleMilestone({
-      id: event.id, startAt: new Date('2099-07-01').toISOString(), allDay: true, reason: 'diventa giornata intera',
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), allDay: true, reason: 'diventa giornata intera',
     });
 
     const log = await prisma.auditLog.findFirst({
@@ -209,7 +210,7 @@ describe('the post-freeze lock', () => {
     const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
 
     await expect(
-      asAdmin().seasonCalendar.updateMilestone({ id: locked.id, data: { allDay: true } })
+      asAdmin().seasonCalendar.updateMilestone({ id: locked.id, expected: await expectedOf(prisma, locked.id), data: { allDay: true } })
     ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
   });
 
@@ -266,7 +267,7 @@ describe('cancelMilestone — retiring without destroying', () => {
     await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'annullata' });
     await expect(
       asAdmin().seasonCalendar.rescheduleMilestone({
-        id: event.id, startAt: new Date('2099-08-01').toISOString(), reason: 'tentativo',
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-08-01').toISOString(), reason: 'tentativo',
       })
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
@@ -304,7 +305,7 @@ describe('who can move and cancel', () => {
     const event = await createEvent();
     await expect(
       asEditor().seasonCalendar.rescheduleMilestone({
-        id: event.id, startAt: new Date('2099-07-15').toISOString(), reason: 'riorganizzazione',
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-15').toISOString(), reason: 'riorganizzazione',
       })
     ).resolves.toMatchObject({ id: event.id });
   });

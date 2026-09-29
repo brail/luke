@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { byFirstDay, eventDays, moveEventTo } from '../../utils';
+import { byFirstDay, eventDays, expectedDates, moveEventTo } from '../../utils';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
@@ -127,8 +127,13 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
   }, [layout, planningGroupId]);
   const closedDates = useVendorClosures(relevantVendorIds, seasonId);
 
+  const utils = trpc.useUtils();
   const updateMilestone = trpc.seasonCalendar.updateMilestone.useMutation({
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // Someone else moved the event after this wizard read it: reload, so the step shows it.
+      if (err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   /**
@@ -173,7 +178,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     // duration); a start-only write used to leave a multi-day event's end behind.
     const moved = draft && moveEventTo(currentEvent, draft);
     if (moved) {
-      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: moved.startAt, endAt: moved.endAt ?? undefined } });
+      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: moved.startAt, endAt: moved.endAt ?? undefined }, expected: expectedDates(currentEvent) });
     }
 
     if (stepIndex < sortedEvents.length - 1) {
