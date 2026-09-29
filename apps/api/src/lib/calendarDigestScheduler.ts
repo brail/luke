@@ -67,11 +67,11 @@ const MAX_ATTEMPTS = 3;
 /** A failed email is re-claimable this long × the attempts made so far after the failure. */
 const RETRY_BACKOFF_MS = 30 * 60 * 1000;
 /**
- * The label `seasonCalendar.updateMilestone` writes into `changedFields` when `allDay` changes; the
- * digest reads it back to tell the kind of the old dates. Audit history already holds it, so it is
- * persisted data, not free text: changing it breaks the reading of every row written before.
+ * The `changedFields` label an update row carried for `allDay` before update rows recorded
+ * `oldAllDay` (2026-09-30). Only those older rows are read with it — frozen audit data, so it stays
+ * as written even if the label the router shows changes.
  */
-export const ALL_DAY_FIELD_LABEL = 'Giornata intera';
+const LEGACY_ALL_DAY_LABEL = 'Giornata intera';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -100,15 +100,15 @@ function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, tim
 /**
  * Whether an event was all-day before the change recorded in `c`. A reschedule records `oldAllDay`
  * when it changed the kind and nothing when it did not, so the event's current kind stands in. An
- * update row stores the new `allDay` only: the old value was the other kind when that update listed
- * `allDay` among its changed fields (`changedFields` is the label list the router writes).
+ * update row records `oldAllDay` too; one written before it did stores the new `allDay` only, and the
+ * old value was the other kind when that update listed `allDay` among its changed fields.
  */
 function oldAllDayOf(c: { action: string; meta: Record<string, unknown> }, currentAllDay: boolean): boolean {
   if (typeof c.meta.oldAllDay === 'boolean') return c.meta.oldAllDay;
   if (c.action === 'CALENDAR_EVENT_RESCHEDULE') return currentAllDay;
   const changedFields = Array.isArray(c.meta.changedFields) ? (c.meta.changedFields as string[]) : [];
   const allDayAtChange = c.meta.allDay === true;
-  return changedFields.includes(ALL_DAY_FIELD_LABEL) ? !allDayAtChange : allDayAtChange;
+  return changedFields.includes(LEGACY_ALL_DAY_LABEL) ? !allDayAtChange : allDayAtChange;
 }
 
 /**

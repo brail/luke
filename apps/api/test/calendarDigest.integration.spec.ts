@@ -205,6 +205,25 @@ describe('buildDigestTasks — event created', () => {
     await prisma.calendarEvent.delete({ where: { id: event.id } });
   });
 
+  it('an update that changes the kind records the old one, and the digest reads the move from it', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Tipo ${randomUUID().slice(0, 6)}`,
+        // 23:30 UTC on the 10th is the 11th in Rome: read as all-day it would be the 10th.
+        startAt: new Date('2099-10-10T23:30:00.000Z'), allDay: false, visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    await caller.seasonCalendar.updateMilestone({ id: event.id, data: { allDay: true, startAt: '2099-10-12T00:00:00.000Z' } });
+
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { targetId: event.id, action: 'CALENDAR_EVENT_UPDATE' } });
+    expect(audit.metadata).toMatchObject({ oldAllDay: false, allDay: true });
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    expect(tasks.find(t => t.email === userDXEmail)?.html).toMatch(/Posticipato: [^<]*11[^<]*→[^<]*12/);
+
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+  });
+
   it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({

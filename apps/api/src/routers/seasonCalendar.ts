@@ -38,7 +38,6 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
-import { ALL_DAY_FIELD_LABEL } from '../lib/calendarDigestScheduler.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
 import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -370,7 +369,7 @@ export const seasonCalendarRouter = router({
       const FIELD_LABELS: Record<string, string> = {
         description: 'Descrizione',
         publishExternally: 'Sincronizzazione Google', templateItemId: 'Template',
-        allDay: ALL_DAY_FIELD_LABEL,
+        allDay: 'Giornata intera',
       };
       const changedFields = Object.keys(FIELD_LABELS).filter(
         k => JSON.stringify((event as Record<string, unknown>)[k]) !== JSON.stringify((result as Record<string, unknown>)[k])
@@ -397,6 +396,9 @@ export const seasonCalendarRouter = router({
           oldEndAt: dateChanged ? event.endAt?.toISOString() ?? null : undefined,
           newEndAt: dateChanged ? result.endAt?.toISOString() ?? null : undefined,
           allDay: dateChanged ? result.allDay : undefined,
+          // The kind the old dates had: without it the digest would have to infer it from the
+          // label in `changedFields`, which is display text.
+          oldAllDay: event.allDay !== result.allDay ? event.allDay : undefined,
           changedFields: changedFields.length > 0 ? changedFields : undefined,
         },
       }));
