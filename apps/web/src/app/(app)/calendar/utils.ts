@@ -20,7 +20,7 @@ export function mondayOf(d: Date): Date {
 }
 
 /** Returns a new Date representing midnight (00:00:00) on the same local day as `d`. */
-export function startOfDay(d: Date): Date {
+function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
@@ -87,7 +87,7 @@ export function getIsoWeek(d: CalendarDate): number {
 }
 
 /** The zone the browser renders in: view cells and timed events are read in it. */
-export function browserTimeZone(): string {
+function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
@@ -107,11 +107,15 @@ export function eventDays(m: EventDates): [CalendarDate, CalendarDate] {
 }
 
 /**
- * Chronological order as the views list events: by first occupied date, then by start instant — so
- * an all-day event never sorts among the previous evening's timed events west of UTC.
+ * `events` in the order the views list them: by first occupied date, then by start instant — so an
+ * all-day event never sorts among the previous evening's timed events west of UTC. Each event's
+ * date is read once, not once per comparison.
  */
-export function byFirstDay(a: EventDates, b: EventDates): number {
-  return eventDays(a)[0].localeCompare(eventDays(b)[0]) || new Date(a.startAt).getTime() - new Date(b.startAt).getTime();
+export function sortByFirstDay<T extends EventDates>(events: T[]): T[] {
+  return events
+    .map(m => ({ m, day: eventDays(m)[0], at: new Date(m.startAt).getTime() }))
+    .sort((a, b) => a.day.localeCompare(b.day) || a.at - b.at)
+    .map(({ m }) => m);
 }
 
 /**

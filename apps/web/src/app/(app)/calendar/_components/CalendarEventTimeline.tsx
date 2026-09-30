@@ -11,7 +11,7 @@ import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT } from '../constants';
-import { byFirstDay, eventDays, formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, parseLocalIsoDate, resolveBrandColor } from '../utils';
+import { eventDays, formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, parseLocalIsoDate, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -47,7 +47,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const sorted = useMemo(
-    () => [...milestones].sort(byFirstDay),
+    () => sortByFirstDay(milestones),
     [milestones]
   );
 

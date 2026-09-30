@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { byFirstDay, eventDays, expectedDates, moveEventTo } from '../../utils';
+import { eventDays, expectedDates, moveEventTo, sortByFirstDay } from '../../utils';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
@@ -61,7 +61,7 @@ interface Props {
  */
 export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, events, holidayDates }: Props) {
   const sortedEvents = useMemo(
-    () => [...events].sort(byFirstDay),
+    () => sortByFirstDay(events),
     [events]
   );
 

@@ -3,11 +3,11 @@
 import { StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { addCalendarDays, calendarDaysBetween, type CalendarDate, formatCalendarDate, utcMidnightOf } from '@luke/core';
+import { addCalendarDays, calendarDaysBetween, type CalendarDate, formatCalendarDate, isWorkingDate } from '@luke/core';
 
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
-import { byFirstDay, canEditMilestone, cellDate, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, parseLocalIsoDate, resizeEvent, resolveBrandColor } from '../utils';
+import { canEditMilestone, cellDate, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, parseLocalIsoDate, resizeEvent, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
@@ -69,7 +69,7 @@ type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: 
  */
 export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
   const sorted = useMemo(
-    () => [...milestones].sort(byFirstDay),
+    () => sortByFirstDay(milestones),
     [milestones]
   );
 
@@ -99,9 +99,9 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
   const dayMeta = useMemo(() =>
     Array.from({ length: totalDays }, (_, i) => {
       const date = addCalendarDays(rangeStart, i);
-      const dow = utcMidnightOf(date).getUTCDay();
       const dayNum = Number(date.slice(8));
-      return { date, dayNum, isWeekend: dow === 0 || dow === 6, isMonthStart: i > 0 && dayNum === 1, monthIndex: Number(date.slice(5, 7)) - 1 };
+      // No holidays passed: not a working date means Saturday or Sunday.
+      return { date, dayNum, isWeekend: !isWorkingDate(date, [], []), isMonthStart: i > 0 && dayNum === 1, monthIndex: Number(date.slice(5, 7)) - 1 };
     }), [rangeStart, totalDays]);
 
   const monthBoundaries = useMemo(() =>
@@ -124,14 +124,18 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
   const todayOffset = calendarDaysBetween(rangeStart, cellDate(new Date()));
   const showToday = todayOffset >= 0 && todayOffset < totalDays;
 
+  /** Where a bar covering `[first, last]` sits on the axis, both ends included. */
+  const box = useCallback(([first, last]: [CalendarDate, CalendarDate]) => ({
+    left: calendarDaysBetween(rangeStart, first) * dayW,
+    width: (calendarDaysBetween(first, last) + 1) * dayW,
+  }), [rangeStart, dayW]);
+
   const bars = useMemo(() =>
     sorted.map(m => {
       const days = eventDays(m);
-      const left = calendarDaysBetween(rangeStart, days[0]) * dayW;
-      const width = (calendarDaysBetween(days[0], days[1]) + 1) * dayW;
       const visibleFunctionNames = formatVisibleFunctions(m.visibilities, functionsById);
-      return { ...m, left, width, days, visibleFunctionNames };
-    }), [sorted, rangeStart, dayW, functionsById]);
+      return { ...m, ...box(days), days, visibleFunctionNames };
+    }), [sorted, box, functionsById]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -221,8 +225,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
             const isDragging = drag?.id === m.id;
             const dayDeltaPreview = isDragging ? Math.round(drag.deltaX / dayW) : 0;
             const preview = isDragging && dayDeltaPreview !== 0 ? previewDays(m, dayDeltaPreview, drag.mode) : null;
-            const previewLeft = preview ? calendarDaysBetween(rangeStart, preview[0]) * dayW : m.left;
-            const previewWidth = preview ? (calendarDaysBetween(preview[0], preview[1]) + 1) * dayW : m.width;
+            const { left: previewLeft, width: previewWidth } = preview ? box(preview) : m;
             const barColor = resolveBrandColor(m.brandId, brandColorMap);
             const label = isDragging ? dragLabel(preview ?? m.days, drag.mode) : null;
             const hasNote = !!(m.notes?.[0]?.body);

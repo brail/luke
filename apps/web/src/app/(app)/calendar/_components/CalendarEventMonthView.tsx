@@ -132,14 +132,10 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                   const isToday = sameDay(day, today);
                   const items = byDay[cellIdx] ?? [];
                   const overflow = items.length - MAX_CHIPS;
-                  // `day` is a LOCAL calendar cell (built by `mondayOf`/`addDays`), so its key is the date
-                  // it reads as locally. `HolidayMap` is keyed by each holiday's own calendar date
-                  // (`useHolidays.ts`), so the two compare directly. `day.toISOString().slice(0, 10)`
-                  // goes through UTC first and reports the PREVIOUS date in any positive-offset zone
-                  // (e.g. Europe/Rome) — a holiday would then shade the wrong cell.
-                  const holidayKey = cellDate(day);
+                  // The cell's own date: the holiday key and the start of an event, never `day`'s UTC date.
+                  const dayKey = cellDate(day);
                   return (
-                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(holidayKey)} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
+                    <MonthDayCell key={dayIdx} dayIso={day.toISOString()} isToday={isToday} isDragging={!!draggingId} isCurrentMonth={isCurrentMonth} holidays={holidayDates?.get(dayKey)} onDayClick={onDayClick ? () => onDayClick(day.toISOString()) : undefined}>
                       <div className="mb-0.5 flex items-center gap-0.5 flex-wrap">
                         <span
                           className={cn('text-xs inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0',
@@ -152,7 +148,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                           {day.getDate()}
                         </span>
                         {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
-                        {holidayDates?.get(holidayKey)?.map((h, hi) => (
+                        {holidayDates?.get(dayKey)?.map((h, hi) => (
                           <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                         ))}
                       </div>
@@ -160,7 +156,7 @@ export function CalendarEventMonthView({ milestones, viewDate, onViewDateChange,
                         {items.slice(0, MAX_CHIPS).map(m => {
                           const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
                           const [first, last] = eventDays(m);
-                          const isStart = first === holidayKey;
+                          const isStart = first === dayKey;
                           const span = calendarDaysBetween(first, last);
                           const hasNote = !!(m.notes?.[0]?.body);
                           const color = resolveBrandColor(m.brandId, brandColorMap);
