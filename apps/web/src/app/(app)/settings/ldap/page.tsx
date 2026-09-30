@@ -417,7 +417,7 @@ export default function LdapSettingsPage() {
               render={({ field }) => (
                 <SensitiveField
                   label="Bind DN"
-                  description="DN dell'account amministrativo per cercare gli utenti"
+                  description="DN dell'account di servizio con cui cercare gli utenti. Va sempre configurato insieme alla password: senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene."
                   hasValue={hasBindDN}
                   placeholder="cn=admin,dc=example,dc=com"
                   disabled={!canUpdate || !form.watch('enabled')}

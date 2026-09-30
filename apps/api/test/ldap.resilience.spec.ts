@@ -19,47 +19,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { LdapUnavailableError, ResilientLdapClient, resetLdapBreakers } from '../src/lib/ldapClient';
 
+import { ClientConstructor, MockInvalidCredentialsError, MockResultCodeError, mockClient } from './helpers/ldapts';
 import { createSilentLogger } from './helpers/logger';
 
-const { mockClient, MockResultCodeError, MockInvalidCredentialsError, ClientConstructor } =
-  vi.hoisted(() => {
-    /** ldapts's base class for errors carrying an LDAP result code. */
-    class MockResultCodeError extends Error {
-      constructor(public code: number, message: string) {
-        super(message);
-      }
-    }
-
-    class MockInvalidCredentialsError extends MockResultCodeError {
-      constructor() {
-        super(49, 'Invalid credentials');
-        this.name = 'InvalidCredentialsError';
-      }
-    }
-
-    const mockClient = {
-      bind: vi.fn(),
-      search: vi.fn(),
-      unbind: vi.fn(),
-    };
-
-    // `function`, not arrow: it's invoked with `new` and arrows aren't
-    // constructible. Always returns the same instance, so tests can
-    // configure its behavior before calling connect().
-    const ClientConstructor = vi.fn(function () {
-      return mockClient;
-    });
-
-    return { mockClient, MockResultCodeError, MockInvalidCredentialsError, ClientConstructor };
-  });
-
-vi.mock('ldapts', async importOriginal => ({
-  Client: ClientConstructor,
-  InvalidCredentialsError: MockInvalidCredentialsError,
-  ResultCodeError: MockResultCodeError,
-  // The real parser: the client parses a filter itself, before anything is sent.
-  FilterParser: (await importOriginal<typeof import('ldapts')>()).FilterParser,
-}));
+vi.mock('ldapts', async importOriginal => (await import('./helpers/ldapts')).ldaptsMock(importOriginal));
 
 const ldapConfig = {
   enabled: true,

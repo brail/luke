@@ -37,7 +37,7 @@ const TRY_AGAIN_RESULT_CODES = new Set([51, 52]);
  * read from the ldapts error itself or from the `cause` of the tRPC error it was mapped to. A wrong
  * password is an answer, and so is "no such object". Anything else is no usable answer.
  */
-function isDirectoryAnswer(error: unknown): boolean {
+export function isDirectoryAnswer(error: unknown): boolean {
   const original = error instanceof TRPCError && error.cause ? error.cause : error;
   return original instanceof ResultCodeError && !TRY_AGAIN_RESULT_CODES.has(original.code);
 }

@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { SASL_MECHANISMS } from 'ldapts';
 import pino from 'pino';
 
 import { Roles, type Role } from '@luke/core';
@@ -15,7 +16,8 @@ import {
   type LdapConfig,
 } from './configManager';
 import { sendVerificationEmail } from './emailHelpers';
-import { ResilientLdapClient } from './ldapClient';
+import { toErrorCode, toErrorMessage } from './error';
+import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
 
 import type { Entry } from 'ldapts';
 
@@ -52,20 +54,45 @@ export function escapeLdapFilter(value: string): string {
 }
 
 /**
- * Authenticates a user against the configured LDAP directory.
- * Performs bind authentication, group-based role resolution, and
- * creates or updates the local user record on success.
+ * What an LDAP login that did not authenticate tells the caller. `ldap_unavailable` means the
+ * directory never judged the credentials — a step got no usable answer, or could not be carried
+ * out — and is for the audit trail only: the public answer to a refusal is the same either way.
+ */
+export interface LdapRefusal {
+  user: null;
+  reason: 'invalid_credentials' | 'ldap_unavailable';
+  errorCode?: string;
+}
+
+/** The outcome of an LDAP login: the local user it authenticated, or why it refused. */
+export type LdapLogin = { user: User } | LdapRefusal;
+
+const REFUSED: LdapRefusal = { user: null, reason: 'invalid_credentials' };
+
+/**
+ * Authenticates a user against the configured LDAP directory: service-account bind, search, bind as
+ * the user, then creation or update of the local user record.
  *
- * @param prisma - Prisma client.
- * @returns Local `User` record on success, or `null` if authentication fails
- *   (LDAP disabled, user not found, or invalid credentials).
- * @throws {TRPCError} If the LDAP configuration is incomplete or an unexpected error occurs.
+ * What it does with a failure depends on whether the username has been sent to the directory yet.
+ * Before that — incomplete configuration, the service-account bind, the circuit breaker in front of
+ * it — a failure says nothing about the person logging in, and is thrown. From the search on, a
+ * failure is returned as a refusal, whatever its cause: answering differently there would tell a
+ * caller with no password which usernames the directory knows. The one throw past that point needs
+ * the password: the user record could not be written after the directory verified it.
+ *
+ * @returns The local `User`, or a refusal with the reason for the audit trail.
+ * @throws {TRPCError} When the login could not complete for a reason independent of the username,
+ *   or the user record could not be synced after the password was verified.
  */
 export async function authenticateViaLdap(
   prisma: PrismaClient,
   username: string,
   password: string
-): Promise<User | null> {
+): Promise<LdapLogin> {
+  // A simple bind with an empty password is an unauthenticated bind, which a directory may answer
+  // with success (RFC 4513 §5.1.2): it must never count as a verified password. Not trimmed.
+  if (password === '') return REFUSED;
+
   let ldapClient: ResilientLdapClient | null = null;
 
   try {
@@ -78,7 +105,7 @@ export async function authenticateViaLdap(
     // Check that LDAP is enabled
     if (!config.enabled) {
       logger.debug('LDAP authentication disabled');
-      return null;
+      return REFUSED;
     }
 
     // Check that the configuration is complete
@@ -103,47 +130,17 @@ export async function authenticateViaLdap(
       await ldapClient.serviceBind(config.bindDN, config.bindPassword);
     }
 
-    // Search for the user
-    const userResult = await searchUser(ldapClient, config, username);
-    if (!userResult) {
-      logger.info({ username }, 'User not found in LDAP');
-      return null;
-    }
+    const verified = await verifyCandidate(ldapClient, config, username, password);
+    if (verified.user === null) return verified;
 
-    const { dn: userDN, attributes: userAttributes } = userResult;
-
-    // Verify the user's credentials
-    const isValidCredentials = await verifyUserCredentials(
-      ldapClient,
-      userDN,
-      password
-    );
-    if (!isValidCredentials) {
-      logger.info({ username }, 'Invalid credentials for user');
-      return null;
-    }
-
-    // Restore the administrative bind for the group search,
-    // since verifyUserCredentials binds the client as the end user
-    if (config.bindDN && config.bindPassword) {
-      await ldapClient.bind(config.bindDN, config.bindPassword);
-    }
-
-    // Search for the user's groups
-    const userGroups = await searchUserGroups(ldapClient, config, userDN);
-
+    const userGroups = await lookUpGroups(ldapClient, config, verified.dn);
     const role = determineUserRole(userGroups, config.roleMapping, logger);
 
     // Create or update the user in the database
-    const user = await createOrUpdateUser(
-      prisma,
-      username,
-      role,
-      userAttributes
-    );
+    const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
 
     logger.info({ username, role }, 'LDAP authentication successful');
-    return user;
+    return { user };
   } catch (error) {
     if (error instanceof TRPCError) {
       throw error;
@@ -170,6 +167,54 @@ export async function authenticateViaLdap(
         );
       }
     }
+  }
+}
+
+/** The directory entry of a user whose password the directory has verified. */
+interface VerifiedEntry {
+  user?: undefined;
+  dn: string;
+  attributes: Record<string, string[]>;
+}
+
+/**
+ * The part of a login that carries the candidate: the search for the username, then the bind as
+ * the entry found. It never throws — anything that goes wrong here, an LDAP error of any kind or an
+ * unexpected one while reading the search result, comes back as a refusal.
+ */
+async function verifyCandidate(
+  client: ResilientLdapClient,
+  config: LdapConfig,
+  username: string,
+  password: string
+): Promise<VerifiedEntry | LdapRefusal> {
+  try {
+    const found = await searchUser(client, config, username);
+    if (!found) {
+      logger.info({ username }, 'User not found in LDAP');
+      return REFUSED;
+    }
+
+    // A bind proves a password only if it is a simple bind of a named entry. An empty DN makes it
+    // an anonymous one, and ldapts reads a DN that is exactly a SASL mechanism name as a request
+    // for that mechanism.
+    if (!found.dn || (SASL_MECHANISMS as readonly string[]).includes(found.dn)) {
+      logger.warn({ username }, 'LDAP entry has no usable DN');
+      return REFUSED;
+    }
+
+    await client.bind(found.dn, password);
+    return found;
+  } catch (error) {
+    if (isDirectoryAnswer(error)) {
+      logger.info({ username, error: toErrorMessage(error) }, 'LDAP refused the login');
+      return REFUSED;
+    }
+    logger.warn(
+      { username, code: toErrorCode(error), error: toErrorMessage(error) },
+      'LDAP could not verify the login'
+    );
+    return { user: null, reason: 'ldap_unavailable', errorCode: toErrorCode(error) };
   }
 }
 
@@ -222,30 +267,10 @@ async function searchUser(
 }
 
 /**
- * Verify the user's credentials
+ * The groups of a user the directory has just verified. Optional: they decide only the role of a
+ * user created at first login, so a failure here is logged and the login goes on with none.
  */
-async function verifyUserCredentials(
-  client: ResilientLdapClient,
-  userDN: string,
-  password: string
-): Promise<boolean> {
-  try {
-    await client.bind(userDN, password);
-    return true;
-  } catch (error) {
-    // If it's a credentials error, return false
-    if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') {
-      return false;
-    }
-    // For other errors (network, timeout), rethrow
-    throw error;
-  }
-}
-
-/**
- * Search for the user's groups
- */
-async function searchUserGroups(
+async function lookUpGroups(
   client: ResilientLdapClient,
   config: LdapConfig,
   userDN: string
@@ -266,13 +291,17 @@ async function searchUserGroups(
   };
 
   try {
+    // The connection is bound as the user now. Back to the service account first; if that fails,
+    // the catch below skips the search rather than run it under an uncertain identity.
+    if (config.bindDN && config.bindPassword) {
+      await client.bind(config.bindDN, config.bindPassword);
+    }
     const entries = await client.search(config.groupSearchBase, options);
     return entries.map(entry => entry.dn);
   } catch (error) {
-    // Don't fail authentication on group search errors
     logger.warn(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Group search failed, proceeding without group membership'
+      { error: toErrorMessage(error) },
+      'Group lookup failed, proceeding without group membership'
     );
     return [];
   }

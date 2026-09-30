@@ -36,7 +36,8 @@ Two consequences of guarding that step alone:
 - **The service account is a setup requirement.** Without both a bind DN and a
   bind password the directory is searched anonymously, the first thing sent
   already carries the username, and there is nothing for the breaker to guard:
-  it never opens, and during an outage every login waits out its own timeouts.
+  it never opens, during an outage every login waits out its own timeouts, and
+  the outage is answered as wrong credentials (see the table below).
 - A failure past the service bind — the bind answered, the search hanging —
   leaves the breaker closed. Each login waits out its own timeouts.
 
@@ -49,18 +50,45 @@ Two consequences of guarding that step alone:
 | No answer, or 51/52, on every attempt | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), the last error as its cause |
 
 `src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
-or `ldap-first` using `auth.strategy`. In `ldap-first`, local authentication is
-attempted after LDAP returns no user, including when `src/lib/ldapAuth.ts`
-converts rejected user credentials to `null`. It also follows any error thrown
-by `authenticateViaLdap` (incomplete configuration, a failed service-account
-bind, an invalid filter, the network, a failed user sync): the error is logged
-at `warn` as `LDAP authentication could not complete` and counted as no LDAP
-login. The same holds for the LDAP step of `local-first` and for `ldap-only`,
-where the attempt ends as `UNAUTHORIZED` with audit reason
-`invalid_credentials`. This is not a guarantee that local fallback happens only
-during an LDAP outage. Local fallback still requires an active Luke account, a
-LOCAL identity with a stored credential and a valid local password. Disabling
-only the directory account does not necessarily disable that local access path.
+or `ldap-first` using `auth.strategy`. `src/lib/ldapAuth.ts` runs the LDAP half
+of a login, and what it does with a failure depends on whether the username has
+been sent to the directory yet:
+
+| Where the LDAP login stopped | `authenticateViaLdap` | Answer when nobody is authenticated | Audit `reason` |
+|------------------------------|-----------------------|-------------------------------------|----------------|
+| Before the username is sent: incomplete configuration, breaker open, service-account bind refused or left without an answer | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
+| LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| After the directory verified the password: the user record could not be written | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+
+The answer is decided by what happens before the username is on the wire, and
+by nothing else. A 503 for a failure met after that point would tell a caller
+with no password which usernames the directory knows, so such a failure is
+answered like a wrong password and recorded in the audit row, with its
+`errorCode`, as what it was. The last row needs the password.
+
+Every failure, thrown or returned, counts as no LDAP login, so each strategy's
+local fallback applies first: under `ldap-first` and `local-first` a user with a
+LOCAL credential and the right password logs in while LDAP is down, and the
+table describes the answer only when nobody was authenticated. This is not a
+guarantee that local fallback happens only during an LDAP outage. Local fallback
+still requires an active Luke account, a LOCAL identity with a stored credential
+and a valid local password. Disabling only the directory account does not
+necessarily disable that local access path.
+
+A bind proves a password only if it is a simple bind of a named entry: an empty
+password is refused before anything is sent, and an entry whose DN is empty or
+is the name of a SASL mechanism is never bound as. The group lookup decides only
+the role of a user created at first login, so its failure — or that of the
+service-account rebind before it — does not fail the login.
+
+On the web side the two answers that say nothing about the account reach the
+login page as the `code` of the Auth.js sign-in result. `unavailable`, for a
+`SERVICE_UNAVAILABLE` (this one, or maintenance mode's), is thrown by
+`apps/web/src/lib/loginAuthorize.ts`. `throttled`, for a rate-limited login, is
+written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`, through
+`throttledSignIn` in `lib/loginThrottleContext.ts`) together with the `429`.
 
 `ldap-only` has no local path, so a broken LDAP configuration locks every user
 out. Recovery is in the database: set the `auth.strategy` row to a strategy

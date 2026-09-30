@@ -13,8 +13,8 @@ import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
-import { toErrorMessage } from '../lib/error';
-import { authenticateViaLdap } from '../lib/ldapAuth';
+import { toErrorCode, toErrorMessage } from '../lib/error';
+import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
 import {
   sendPasswordResetEmail,
   sendEmailVerificationEmail,
@@ -82,7 +82,9 @@ export async function authenticateLocal(
  * local-only, or ldap-only). Writes an audit log entry on success or failure.
  *
  * @returns User profile, signed JWT token, and the auth method used.
- * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email unverified.
+ * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email
+ *   unverified, SERVICE_UNAVAILABLE if nobody was authenticated and LDAP could not complete the login for
+ *   a reason that has nothing to do with the username.
  */
 export async function authenticateUser(
   ctx: Context,
@@ -121,21 +123,32 @@ export async function authenticateUser(
   let authenticatedUser: User | null;
   let authMethod: 'local' | 'ldap';
 
-  // `authenticateViaLdap` already answers `null` for a wrong user password; what it throws means
-  // LDAP authentication could not complete (incomplete configuration, a wrong service-account
-  // bind, an invalid filter, the network, a failed user sync). None of those is a decision about
-  // the user, so it counts as no LDAP login and each strategy's local fallback applies.
-  // Rethrowing it used to lock every user out under ldap-first, local admin included.
-  const tryLdap = async () => {
+  // Why the LDAP attempt, if one is made, did not authenticate. `couldNotComplete` is what decides
+  // the public answer: it is set only when `authenticateViaLdap` threw, which it does for a failure
+  // that has nothing to do with the username (incomplete configuration, the service-account bind,
+  // the circuit breaker) or once the directory has verified the password. A refusal it returns
+  // stays a generic one in public, and carries the reason for the audit row.
+  // Held in an object: `tryLdap` assigns it from inside a closure, which the compiler does not
+  // follow when it narrows a plain `let`.
+  const ldap: {
+    failure: { couldNotComplete: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
+  } = { failure: null };
+
+  // Either way it counts as no LDAP login, so each strategy's local fallback applies: rethrowing
+  // used to lock every user out under ldap-first, local admin included.
+  const tryLdap = async (): Promise<User | null> => {
     try {
-      return await authenticateViaLdap(ctx.prisma, username, password);
+      const login = await authenticateViaLdap(ctx.prisma, username, password);
+      if (login.user) return login.user;
+      ldap.failure = { couldNotComplete: false, reason: login.reason, errorCode: login.errorCode };
     } catch (e) {
       ctx.logger.warn(
         { username, code: e instanceof TRPCError ? e.code : undefined, error: toErrorMessage(e) },
         'LDAP authentication could not complete'
       );
-      return null;
+      ldap.failure = { couldNotComplete: true, reason: 'ldap_unavailable', errorCode: toErrorCode(e) };
     }
+    return null;
   };
 
   switch (strategy) {
@@ -197,16 +210,27 @@ export async function authenticateUser(
   }
 
   if (!authenticatedUser) {
+    // The audit row says what happened; the answer says only what cannot tell one username from
+    // another. An outage met after the username was sent to the directory is recorded here as
+    // `ldap_unavailable` and answered like a wrong password.
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
       result: 'FAILURE',
       metadata: {
         username: input.username,
-        reason: 'invalid_credentials',
+        reason: ldap.failure?.reason ?? 'invalid_credentials',
         strategy,
+        errorCode: ldap.failure?.errorCode,
       },
     });
+
+    if (ldap.failure?.couldNotComplete) {
+      throw new TRPCError({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Servizio di autenticazione non disponibile',
+      });
+    }
 
     throw new TRPCError({
       code: 'UNAUTHORIZED',

@@ -157,6 +157,7 @@ never on the message text:
 | Condition | `error.data.code` | HTTP |
 |---|---|---|
 | Rate limit exceeded | `TOO_MANY_REQUESTS` | 429 |
+| Login that LDAP could not complete — which failures count is in the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
 | Idempotency key reused with a different input | `CONFLICT` | 409 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 

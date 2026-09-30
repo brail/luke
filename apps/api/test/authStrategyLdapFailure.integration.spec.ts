@@ -1,13 +1,18 @@
 /**
- * An LDAP that cannot complete a login does not lock local users out.
+ * An LDAP that cannot complete a login does not lock local users out, and is not reported as a
+ * wrong password.
  *
- * `authenticateViaLdap` answers `null` for a wrong user password; what it throws is LDAP failing
- * (incomplete configuration, a wrong service-account bind, an invalid filter, the network).
- * Under ldap-first every such error that was not a 502/503 used to be rethrown, so the local
- * fallback never ran and a single wrong service-account password locked out every user, local
- * admin included. It now counts as no LDAP login: each strategy's local fallback applies, and the
- * checks after authentication (active user, local credential, pending approval, email
- * verification) still decide.
+ * `authenticateViaLdap` returns a refusal for a login the directory did not accept; what it throws
+ * is LDAP failing before the username was ever sent (incomplete configuration, the service-account
+ * bind, the circuit breaker). Under ldap-first every such error that was not a 502/503 used to be
+ * rethrown, so the local fallback never ran and a single wrong service-account password locked out
+ * every user, local admin included. It now counts as no LDAP login: each strategy's local fallback
+ * applies, and the checks after authentication (active user, local credential, pending approval,
+ * email verification) still decide.
+ *
+ * When the fallback does not authenticate either, the answer is `SERVICE_UNAVAILABLE` and the audit
+ * row says `ldap_unavailable`: the directory never judged the credentials. It used to read
+ * "invalid credentials" in both places.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -34,6 +39,9 @@ afterEach(() => {
 async function useStrategy(strategy: 'ldap-first' | 'local-first' | 'ldap-only') {
   await prisma.appConfig.create({ data: { key: 'auth.strategy', value: strategy, isEncrypted: false } });
 }
+
+/** What a login is answered when nobody was authenticated and LDAP could not complete. */
+const UNAVAILABLE = { code: 'SERVICE_UNAVAILABLE', message: 'Servizio di autenticazione non disponibile' };
 
 /** LDAP throws `code`, as a wrong service-account bind (`UNAUTHORIZED`) or a broken config does. */
 function ldapFailsWith(code: TRPCError['code']) {
@@ -90,14 +98,14 @@ describe('ldap-first, LDAP failing', () => {
       ldapFailsWith('UNAUTHORIZED');
     });
 
+    // Nobody was authenticated and the directory never judged the credentials: an outage, said so.
     it('a wrong password', async () => {
       const { user } = await createTestUser('editor');
 
-      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
-        code: 'UNAUTHORIZED',
-      });
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({
-        reason: 'invalid_credentials',
+        reason: 'ldap_unavailable',
+        errorCode: 'UNAUTHORIZED',
       });
     });
 
@@ -105,14 +113,14 @@ describe('ldap-first, LDAP failing', () => {
       const { user } = await createTestUser('editor');
       await prisma.identity.deleteMany({ where: { userId: user.id } });
 
-      await expect(login(user.username).result).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
     });
 
     it('an inactive user', async () => {
       const { user } = await createTestUser('editor');
       await prisma.user.update({ where: { id: user.id }, data: { isActive: false } });
 
-      await expect(login(user.username).result).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+      await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
     });
 
     it('a user pending approval', async () => {
@@ -143,14 +151,49 @@ describe('ldap-first, LDAP failing', () => {
 });
 
 describe('local-first, LDAP failing', () => {
-  it('a wrong local password is invalid credentials, not a server error', async () => {
+  it('a wrong local password is answered as an outage, not as a server error', async () => {
     await useStrategy('local-first');
     ldapFailsWith('INTERNAL_SERVER_ERROR');
     const { user } = await createTestUser('editor');
 
-    await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
-      code: 'UNAUTHORIZED',
-    });
+    await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
+  });
+});
+
+describe('an outage met after the username was sent to the directory', () => {
+  // `authenticateViaLdap` returns it as a refusal: a 503 there would tell a caller with no password
+  // which usernames the directory knows. The public answer stays generic; the audit row is exact.
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
+    '%s: answered as invalid credentials, audited as an outage',
+    async strategy => {
+      await useStrategy(strategy);
+      vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({
+        user: null,
+        reason: 'ldap_unavailable',
+        errorCode: 'SERVICE_UNAVAILABLE',
+      });
+      const { user } = await createTestUser('editor');
+
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        message: 'Credenziali non valide',
+      });
+      expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({
+        reason: 'ldap_unavailable',
+        errorCode: 'SERVICE_UNAVAILABLE',
+      });
+    },
+  );
+
+  it('a login the directory refused stays invalid credentials in both places', async () => {
+    await useStrategy('ldap-first');
+    vi.spyOn(ldapAuth, 'authenticateViaLdap').mockResolvedValue({ user: null, reason: 'invalid_credentials' });
+    const { user } = await createTestUser('editor');
+
+    await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    const metadata = (await lastAudit('AUTH_LOGIN_FAILED'))?.metadata;
+    expect(metadata).toMatchObject({ reason: 'invalid_credentials' });
+    expect(metadata).not.toHaveProperty('errorCode');
   });
 });
 
@@ -162,6 +205,6 @@ describe('ldap-only, LDAP failing', () => {
     ldapFailsWith('INTERNAL_SERVER_ERROR');
     const { user } = await createTestUser('admin');
 
-    await expect(login(user.username).result).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
   });
 });
