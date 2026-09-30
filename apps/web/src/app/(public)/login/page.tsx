@@ -46,7 +46,18 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        // Auth.js v5 always flattens authorize() errors to "CredentialsSignin".
+        // Auth.js v5 flattens every authorize() error to "CredentialsSignin"; `code` is the one
+        // thing that tells them apart. These two say nothing about the account, so they are
+        // handled before asking whether it is pending approval.
+        if (result.code === 'unavailable') {
+          setError('Servizio di autenticazione non disponibile. Riprova più tardi.');
+          return;
+        }
+        if (result.code === 'throttled') {
+          setError('Troppi tentativi. Riprova tra qualche minuto.');
+          return;
+        }
+
         // After failure, check if user is awaiting LDAP approval.
         if (result.error === 'CredentialsSignin') {
           const pending = await utils.auth.getPendingStatus.fetch({ username });

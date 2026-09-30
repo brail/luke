@@ -8,7 +8,7 @@ import { getNextAuthSecret } from '@luke/core/server';
 import { checkTokenVersion, populateSession, SESSION_MAX_AGE, SESSION_UPDATE_AGE } from './auth.shared';
 import { forwardedFor } from './lib/clientIp';
 import { debugError, debugLog } from './lib/debug';
-import { markLoginThrottled } from './lib/loginThrottleContext';
+import { authorizeLogin } from './lib/loginAuthorize';
 
 import type { NextAuthConfig } from 'next-auth';
 
@@ -39,62 +39,6 @@ const tokenVersionCache = new Map<string, number>(); // userId → validatedAt (
 const TOKEN_VERSION_CACHE_TTL = 30_000;
 
 /**
- * Calls the `auth.login` tRPC endpoint and returns the raw API response data,
- * or a `{ pendingApproval, needsEmail }` object for accounts awaiting approval.
- * Returns `null` on any error or non-OK response.
- *
- * The client IP in `incomingHeaders` is forwarded as `X-Forwarded-For` on this server-to-server call.
- * Without it, apps/api sees every login attempt (from every real user) as coming from this
- * same internal call — collapsing the per-IP rate-limit bucket into one shared by the whole
- * app instead of one per attacker (root cause of the Strix RC brute-force finding).
- */
-async function callTRPCAuth(
-  username: string,
-  password: string,
-  incomingHeaders: { get(name: string): string | null }
-) {
-  try {
-    const response = await fetch(buildTrpcUrl('auth.login'), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...forwardedFor(incomingHeaders),
-      },
-      body: JSON.stringify({
-        username,
-        password,
-      }),
-    });
-
-    if (!response.ok) {
-      // Propagate specific errors so the frontend can handle them
-      const errorData = await response.json().catch(() => null);
-      const message: string = errorData?.error?.message || '';
-      if (message.startsWith('ACCOUNT_PENDING_APPROVAL')) {
-        return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
-      }
-      // Signals the rate limit to the route wrapper ([...nextauth]/route.ts) through
-      // AsyncLocalStorage: NextAuth responds with 200 anyway below (return null →
-      // generic CredentialsSignin), the real 429 is constructed outside this call stack.
-      if (errorData?.error?.data?.code === 'TOO_MANY_REQUESTS') {
-        const retryAfterSeconds =
-          typeof errorData.error.data.retryAfterSeconds === 'number'
-            ? errorData.error.data.retryAfterSeconds
-            : 60;
-        markLoginThrottled(retryAfterSeconds);
-      }
-      return null;
-    }
-
-    const data = await response.json();
-    return data.result?.data;
-  } catch (error) {
-    debugError('Auth API call error:', error);
-    return null;
-  }
-}
-
-/**
  * Full Auth.js v5 configuration for Luke (Node.js runtime only).
  * Uses the `Credentials` provider backed by the `auth.login` tRPC endpoint.
  * JWT callbacks verify `tokenVersion` on each token refresh, using a 30 s
@@ -109,43 +53,7 @@ export const config = {
         username: { label: 'Username', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
-      async authorize(credentials, request) {
-        if (!credentials?.username || !credentials?.password) {
-          return null;
-        }
-
-        try {
-          // Call tRPC API for authentication
-          const authResult = await callTRPCAuth(
-            credentials.username as string,
-            credentials.password as string,
-            request.headers
-          );
-
-          // LDAP user awaiting approval: Auth.js does not allow propagating
-          // custom errors from authorize(), so we return null.
-          // The login page detects pending with a separate call.
-          if (!authResult?.user) {
-            return null;
-          }
-
-          return {
-            id: authResult.user.id,
-            name: authResult.user.username,
-            email: authResult.user.email,
-            firstName: authResult.user.firstName,
-            lastName: authResult.user.lastName,
-            role: authResult.user.role,
-            locale: authResult.user.locale,
-            timezone: authResult.user.timezone,
-            tokenVersion: authResult.user.tokenVersion,
-            accessToken: authResult.token,
-          };
-        } catch (error) {
-          debugError('Authentication error:', error);
-          return null;
-        }
-      },
+      authorize: authorizeLogin,
     }),
   ],
   session: {

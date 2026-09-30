@@ -32,6 +32,19 @@ export function markLoginThrottled(retryAfterSeconds: number): void {
 }
 
 /** Reads a `LoginThrottleState` and reports whether `markLoginThrottled()` was called. */
-export function isLimited(state: LoginThrottleState): boolean {
+export function isLimited(state: LoginThrottleState): state is { retryAfterSeconds: number } {
   return state.retryAfterSeconds !== undefined;
+}
+
+/**
+ * What the route wrapper answers in place of NextAuth's `200` for a throttled login: the body shape
+ * NextAuth itself returns (`{ url }`, which `next-auth/react`'s `signIn()` parses for `error` and
+ * `code`), a real `429` and `Retry-After`. `code=throttled` is what lets the login page say "too
+ * many attempts" instead of "wrong credentials".
+ */
+export function throttledSignIn(requestUrl: string, retryAfterSeconds: number) {
+  return {
+    body: { url: new URL('/login?error=CredentialsSignin&code=throttled', requestUrl).toString() },
+    init: { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } },
+  };
 }

@@ -70,6 +70,9 @@ export default defineConfig({
       // "discovered mid-run" reload on a cold `.vite` cache, which failed the first run of the
       // suite three times on 2026-09-25 (the second run, on a warm cache, always passed).
       'next/image',
+      // Added for loginFailure.browser.test.tsx, which mounts login/page.tsx: same "discovered
+      // mid-run" reload, on the first run after this test was written.
+      'next/link',
     ],
   },
   oxc: {

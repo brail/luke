@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { isLimited, loginThrottleContext, markLoginThrottled } from '../loginThrottleContext';
+import { isLimited, loginThrottleContext, markLoginThrottled, throttledSignIn } from '../loginThrottleContext';
 
 describe('markLoginThrottled', () => {
   it('does nothing outside an active AsyncLocalStorage context', () => {
@@ -65,5 +65,18 @@ describe('isLimited', () => {
   it('true when retryAfterSeconds is set (even to 0)', () => {
     expect(isLimited({ retryAfterSeconds: 30 })).toBe(true);
     expect(isLimited({ retryAfterSeconds: 0 })).toBe(true);
+  });
+});
+
+describe('throttledSignIn', () => {
+  it('answers 429 with Retry-After, in the body shape signIn() parses', () => {
+    const { body, init } = throttledSignIn('https://luke.example/api/auth/callback/credentials', 42);
+
+    expect(init).toEqual({ status: 429, headers: { 'Retry-After': '42' } });
+    const url = new URL(body.url);
+    expect(url.origin + url.pathname).toBe('https://luke.example/login');
+    // What `next-auth/react` reads back into `signIn()`'s result.
+    expect(url.searchParams.get('error')).toBe('CredentialsSignin');
+    expect(url.searchParams.get('code')).toBe('throttled');
   });
 });
