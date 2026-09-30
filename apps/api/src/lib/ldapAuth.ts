@@ -96,9 +96,11 @@ export async function authenticateViaLdap(
     ldapClient = new ResilientLdapClient(config, resilienceConfig, logger);
     await ldapClient.connect();
 
-    // Administrative bind to search for the user
+    // Administrative bind to search for the user. The one step behind the circuit breaker: it
+    // carries nothing about the person logging in. Without a service account there is no such
+    // step, and the directory is searched anonymously with no breaker in front of it.
     if (config.bindDN && config.bindPassword) {
-      await ldapClient.bind(config.bindDN, config.bindPassword);
+      await ldapClient.serviceBind(config.bindDN, config.bindPassword);
     }
 
     // Search for the user

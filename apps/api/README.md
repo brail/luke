@@ -7,31 +7,46 @@ Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC proc
 ## LDAP resilience and authentication fallback
 
 `src/lib/ldapClient.ts` owns the resilient LDAP client; its settings come from
-`auth.ldap.resilience.*` in AppConfig. With the defaults in
-`packages/core/src/schemas/appConfig.ts`, its circuit breaker opens after five
-consecutive unavailability failures: network errors, timeouts, and the
-directory's `busy` (51) or `unavailable` (52) results. Any other LDAP result — a
-rejected password, a missing entry — is an answer: it proves the directory is up
-and resets the count, so wrong passwords cannot open the breaker. An error raised
-locally, such as a filter the parser rejects, counts neither way. After a
-ten-second cooldown, the next operation
-enters half-open state. One successful operation closes it by default; a failure
-reopens it. `halfOpenMaxAttempts` counts successful half-open operations toward
-closure, not concurrent requests: it does not limit admission to one request.
+`auth.ldap.resilience.*` in AppConfig.
 
-There is one breaker per directory URL for the whole process, shared by the
-client every login creates. While it is open, a login fails fast and each
-strategy's local fallback applies.
+Every operation is retried with exponential backoff while it gets no usable
+answer: nothing came back (a refused or reset connection, an unreachable host, a
+TLS failure, a timeout), or the directory answered `busy` (51) or `unavailable`
+(52). Any other LDAP result — a rejected password, a missing entry, an exceeded
+time limit — is an answer and is final. The client tells the two apart by where
+the error arises, not by its message: what ldapts rejects a bind or a search
+with is either a result code or a failure to get an answer, and a search filter
+is parsed before anything is sent.
 
-Error handling in the LDAP client is distinct from the authentication strategy:
+The circuit breaker guards one step: the service-account bind that opens every
+login. That bind carries nothing about the person logging in, so nothing a
+caller types can move the breaker; the search, the user's own bind and the group
+lookup are never counted, in either direction. With the defaults in
+`packages/core/src/schemas/appConfig.ts` it opens after five consecutive service
+binds without a usable answer, and a service bind the directory answers — a
+refusal included — zeroes the count. While it is open a login is refused before
+any connection. After the ten-second cooldown it is half-open: one login at a
+time is let through as a probe and every other is refused;
+`halfOpenMaxAttempts` probes the directory answers — a refusal included — close
+it (one by default), and a probe without a usable answer reopens it. There is one breaker per directory URL for
+the whole process, shared by the client every login creates.
+
+Two consequences of guarding that step alone:
+
+- **The service account is a setup requirement.** Without both a bind DN and a
+  bind password the directory is searched anonymously, the first thing sent
+  already carries the username, and there is nothing for the breaker to guard:
+  it never opens, and during an outage every login waits out its own timeouts.
+- A failure past the service bind — the bind answered, the search hanging —
+  leaves the breaker closed. Each login waits out its own timeouts.
 
 | Condition | Client behavior |
 |-----------|-----------------|
-| Circuit already open, cooldown not elapsed | `SERVICE_UNAVAILABLE` |
-| Invalid credentials during bind | `UNAUTHORIZED`, without retry |
-| Invalid search filter or syntax | `BAD_REQUEST`, without retry |
-| Search network error | Initially mapped to `BAD_GATEWAY` and retried; the retry loop can remap the final error to `SERVICE_UNAVAILABLE` based on its message |
-| Network error recognized after retries are exhausted | `SERVICE_UNAVAILABLE` |
+| Circuit open and cooldown not elapsed, or half-open with a probe in flight | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), nothing sent |
+| Invalid credentials during a bind (49) | `UNAUTHORIZED`, without retry |
+| Any other directory result except 51 and 52 | The ldapts error, without retry |
+| A search filter that does not parse | `BAD_REQUEST`, before anything is sent |
+| No answer, or 51/52, on every attempt | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), the last error as its cause |
 
 `src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
 or `ldap-first` using `auth.strategy`. In `ldap-first`, local authentication is
@@ -227,7 +242,7 @@ values in the environment table below, and no configuration file is read. Ration
 - Error handling globale: Fastify `setErrorHandler` e hook `onError` loggano in modo strutturato con `traceId` da header `x-luke-trace-id`. In produzione i messaggi sono generici (niente stack in response).
 - tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs the path, the code, the original message and the cause's message, unredacted.
 - Process guards: `SIGTERM`/`SIGINT` eseguono graceful shutdown con timeout; `uncaughtException`/`unhandledRejection` loggano a livello `fatal`, tentano `app.close()` best-effort, poi `process.exit(1)`.
-- Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi. Le integrazioni esterne (es. LDAP) rispettano `AbortController` per abort controllato.
+- Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi.
 
 ## Router tRPC
 

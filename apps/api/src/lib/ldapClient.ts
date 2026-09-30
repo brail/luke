@@ -1,10 +1,16 @@
 /**
- * Resilient LDAP client with circuit breaker, exponential-backoff retry, and timeout.
- * Handles network errors, timeouts, and semantic error mapping for safe fallback behaviour.
+ * Resilient LDAP client: timeout, retry with exponential backoff, and a circuit breaker on the
+ * service-account bind.
+ *
+ * An error is classified by where it arises, never by its wording. For the inputs Luke sends — a
+ * fixed scope, no controls, string DNs and credentials — what ldapts rejects a bind or a search
+ * with is either a `ResultCodeError` (the directory answered) or a failure to get an answer. ldapts
+ * can still fail locally inside a call for inputs Luke does not send (an invalid scope, a
+ * paged-results control, a non-string argument); those would be read as no answer.
  */
 
 import { TRPCError } from '@trpc/server';
-import { Client, InvalidCredentialsError, ResultCodeError } from 'ldapts';
+import { Client, FilterParser, InvalidCredentialsError, ResultCodeError } from 'ldapts';
 import pino from 'pino';
 
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
@@ -13,24 +19,54 @@ import type { LdapConfig } from './configManager';
 import type { SearchOptions, Entry } from 'ldapts';
 
 /**
- * Possible states of the circuit breaker state machine.
+ * The directory gave no usable answer: nothing came back, or it kept answering busy/unavailable,
+ * for every attempt of an operation — or the breaker refused the login before it was tried. The
+ * error behind it, result code included, is the `cause`.
  */
-enum CircuitBreakerState {
-  CLOSED = 'closed',
-  OPEN = 'open',
-  HALF_OPEN = 'halfOpen',
+export class LdapUnavailableError extends TRPCError {
+  constructor(cause?: unknown, message = 'LDAP service unavailable') {
+    super({ code: 'SERVICE_UNAVAILABLE', message, cause });
+  }
 }
 
+/** LDAP result codes busy (51) and unavailable (52): the directory answered "try again". */
+const TRY_AGAIN_RESULT_CODES = new Set([51, 52]);
+
 /**
- * LDAP-specific circuit breaker implementing the closed → open → half-open → closed
- * state machine. Trips when the failure count reaches the configured threshold.
+ * Whether the directory answered an operation for good: a result code other than busy/unavailable,
+ * read from the ldapts error itself or from the `cause` of the tRPC error it was mapped to. A wrong
+ * password is an answer, and so is "no such object". Anything else is no usable answer.
+ */
+function isDirectoryAnswer(error: unknown): boolean {
+  const original = error instanceof TRPCError && error.cause ? error.cause : error;
+  return original instanceof ResultCodeError && !TRY_AGAIN_RESULT_CODES.has(original.code);
+}
+
+type BreakerState = 'closed' | 'open' | 'halfOpen';
+
+/**
+ * Circuit breaker on the service-account bind, the one step of a login that carries nothing about
+ * the person logging in. Counting only that step is what keeps the breaker — shared by every login
+ * against a directory, and visible from outside as a refused login — from being moved by what a
+ * caller types. The search and the user bind are never counted, in either direction.
+ *
+ * closed → open after `breakerFailureThreshold` consecutive binds without a usable answer; open →
+ * half-open once `breakerCooldownMs` has passed; half-open admits one probe at a time and closes
+ * after `halfOpenMaxAttempts` of them succeed, or reopens on the first that fails.
  */
 class CircuitBreaker {
-  private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
-  private failureCount = 0;
-  private successCount = 0;
-  private lastFailureTime = 0;
-  private halfOpenAttempts = 0;
+  private state: BreakerState = 'closed';
+  private failures = 0;
+  private openedAt = 0;
+  private probeInFlight = false;
+  private probeSuccesses = 0;
+  /**
+   * Bumped by every state transition. A bind admitted under an older epoch settles into a state it
+   * was not admitted to, and is ignored: a login that started while the breaker was closed cannot
+   * restart the cooldown by failing late, nor close a half-open breaker, nor free a probe slot it
+   * does not hold, by succeeding late.
+   */
+  private epoch = 0;
 
   constructor(
     /** Refreshed by `breakerFor` on every login: AppConfig can change between two of them. */
@@ -38,113 +74,68 @@ class CircuitBreaker {
     private logger: pino.Logger
   ) {}
 
-  /**
-   * Executes an operation through the circuit breaker
-   */
   async execute<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.state === CircuitBreakerState.OPEN) {
-      if (this.shouldAttemptReset()) {
-        this.state = CircuitBreakerState.HALF_OPEN;
-        this.halfOpenAttempts = 0;
-        this.logger.info('Circuit breaker transitioning to HALF_OPEN');
-      } else {
-        this.logger.warn('Circuit breaker OPEN - rejecting request');
-        throw new TRPCError({
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'LDAP service temporarily unavailable',
-        });
-      }
+    // Admission and the probe reservation run before the first `await`, so two logins arriving
+    // together cannot both take the probe slot.
+    if (this.state === 'open') {
+      if (Date.now() - this.openedAt < this.config.breakerCooldownMs) throw this.refusal();
+      this.moveTo('halfOpen');
     }
+    const probing = this.state === 'halfOpen';
+    if (probing) {
+      if (this.probeInFlight) throw this.refusal();
+      this.probeInFlight = true;
+    }
+    // Read after the open → half-open transition above: the probe belongs to the new epoch.
+    const epoch = this.epoch;
 
     try {
       const result = await operation();
-      this.onSuccess();
+      this.settle(epoch, probing, 'answered');
       return result;
     } catch (error) {
-      // The breaker measures availability. A directory result (wrong password, missing entry)
-      // proves it is up: counting it as a failure would let anyone open the circuit, and cut LDAP
-      // for everybody, by typing a few wrong passwords. An error raised locally (a filter the
-      // parser rejects) says nothing either way.
-      const outcome = breakerOutcome(error);
-      if (outcome === 'answered') this.onSuccess();
-      else if (outcome === 'unavailable') this.onFailure();
+      // A directory result (a wrong service password) proves the directory is up. An error raised
+      // locally says nothing either way.
+      const outcome =
+        error instanceof LdapUnavailableError ? 'unavailable' : isDirectoryAnswer(error) ? 'answered' : 'local';
+      this.settle(epoch, probing, outcome);
       throw error;
     }
   }
 
-  private shouldAttemptReset(): boolean {
-    const now = Date.now();
-    return now - this.lastFailureTime >= this.config.breakerCooldownMs;
+  /** A refused admission is not a failed bind: it neither counts nor restarts the cooldown. */
+  private refusal(): LdapUnavailableError {
+    this.logger.warn('Circuit breaker open - rejecting LDAP login');
+    return new LdapUnavailableError(undefined, 'LDAP service temporarily unavailable');
   }
 
-  private onSuccess(): void {
-    this.failureCount = 0;
-    this.successCount++;
+  private settle(epoch: number, probing: boolean, outcome: 'answered' | 'unavailable' | 'local'): void {
+    if (epoch !== this.epoch) return;
 
-    if (this.state === CircuitBreakerState.HALF_OPEN) {
-      this.halfOpenAttempts++;
-      if (this.halfOpenAttempts >= this.config.halfOpenMaxAttempts) {
-        this.state = CircuitBreakerState.CLOSED;
-        this.logger.info('Circuit breaker transitioning to CLOSED');
+    if (probing) {
+      this.probeInFlight = false;
+      if (outcome === 'unavailable') this.moveTo('open');
+      else if (outcome === 'answered' && ++this.probeSuccesses >= this.config.halfOpenMaxAttempts) {
+        this.moveTo('closed');
       }
+      return;
+    }
+
+    if (outcome === 'answered') this.failures = 0;
+    else if (outcome === 'unavailable' && ++this.failures >= this.config.breakerFailureThreshold) {
+      this.moveTo('open');
     }
   }
 
-  private onFailure(): void {
-    this.failureCount++;
-    this.successCount = 0;
-    this.lastFailureTime = Date.now();
-
-    if (this.state === CircuitBreakerState.HALF_OPEN) {
-      this.state = CircuitBreakerState.OPEN;
-      this.logger.warn(
-        'Circuit breaker transitioning to OPEN (half-open failure)'
-      );
-    } else if (this.failureCount >= this.config.breakerFailureThreshold) {
-      this.state = CircuitBreakerState.OPEN;
-      this.logger.warn(
-        'Circuit breaker transitioning to OPEN (threshold reached)'
-      );
-    }
+  private moveTo(state: BreakerState): void {
+    this.logger.info({ from: this.state, to: state }, 'LDAP circuit breaker state change');
+    this.state = state;
+    this.epoch++;
+    this.failures = 0;
+    this.probeInFlight = false;
+    this.probeSuccesses = 0;
+    if (state === 'open') this.openedAt = Date.now();
   }
-
-  getState(): CircuitBreakerState {
-    return this.state;
-  }
-}
-
-/** LDAP result codes busy (51) and unavailable (52): the directory answered that it cannot serve. */
-const UNAVAILABLE_RESULT_CODES = new Set([51, 52]);
-
-/** Whether an error message is a network failure or a timeout. */
-function isNetworkError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('timeout') ||
-      message.includes('econnrefused') ||
-      message.includes('enotfound') ||
-      message.includes('enetunreach') ||
-      message.includes('etimedout') ||
-      message.includes('connection') ||
-      message.includes('network')
-    );
-  }
-  return false;
-}
-
-/**
- * What an operation's error says about the directory's availability, read from the original
- * ldapts error (the `cause` of the tRPC error it was converted to): a result code other than
- * busy/unavailable is an answer, a network failure or busy/unavailable is unavailability, and
- * anything else was raised locally.
- */
-function breakerOutcome(error: unknown): 'answered' | 'unavailable' | 'local' {
-  const original = error instanceof TRPCError && error.cause ? error.cause : error;
-  if (original instanceof ResultCodeError) {
-    return UNAVAILABLE_RESULT_CODES.has(original.code) ? 'unavailable' : 'answered';
-  }
-  return isNetworkError(original) ? 'unavailable' : 'local';
 }
 
 /**
@@ -169,8 +160,8 @@ export function resetLdapBreakers(): void {
 }
 
 /**
- * LDAP client with transparent retry, timeout, and circuit-breaker protection.
- * All public operations route through the circuit breaker and the retry loop.
+ * LDAP client with timeout and retry on every operation, and the circuit breaker on
+ * `serviceBind`.
  */
 export class ResilientLdapClient {
   private _client: Client | null = null;
@@ -186,12 +177,9 @@ export class ResilientLdapClient {
 
   /**
    * Initialises the underlying ldapts `Client`.
-   * The TCP connection is established lazily on the first `bind()` call.
+   * The TCP connection is established lazily, by the first bind or search.
    */
   async connect(): Promise<void> {
-    // No network here — the TCP connection opens on the first bind, which the breaker and the
-    // retry guard. Routing this through the breaker counted a success on every login, resetting
-    // the failure count of the shared breaker before the bind could add to it.
     if (this._client) {
       try {
         await this._client.unbind();
@@ -208,32 +196,34 @@ export class ResilientLdapClient {
   }
 
   /**
-   * Binds to the LDAP server with the given DN and password.
-   * Maps `InvalidCredentialsError` (LDAP code 49) to a `UNAUTHORIZED` TRPCError.
+   * The first bind of a login, as the service account, through the circuit breaker. The guard ends
+   * with this bind: everything a login does afterwards goes through `bind` and `search`, which the
+   * breaker does not see.
    *
-   * @throws {TRPCError} `UNAUTHORIZED` for invalid credentials; other errors are retried.
+   * @throws {LdapUnavailableError} When the breaker is open, or the bind got no usable answer.
+   * @throws {TRPCError} `UNAUTHORIZED` when the directory refuses the service credentials.
+   */
+  async serviceBind(dn: string, password: string): Promise<void> {
+    return this.breaker.execute(() => this.bind(dn, password));
+  }
+
+  /**
+   * Binds to the LDAP server with the given DN and password.
+   *
+   * @throws {TRPCError} `UNAUTHORIZED` for invalid credentials (LDAP code 49), not retried.
+   * @throws {LdapUnavailableError} When no attempt got a usable answer.
    */
   async bind(dn: string, password: string): Promise<void> {
-    return this.breaker.execute(async () => {
-      return this.retryWithBackoff(async () => {
-        if (!this._client) {
-          throw new Error('LDAP client not connected');
+    const client = this.connected();
+    return this.withRetry(async () => {
+      try {
+        await client.bind(dn, password);
+      } catch (error) {
+        if (error instanceof InvalidCredentialsError) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid credentials', cause: error });
         }
-
-        try {
-          await this._client.bind(dn, password);
-        } catch (error) {
-          // Map LDAP error code 49 (InvalidCredentials) → UNAUTHORIZED
-          if (this.isInvalidCredentialsError(error)) {
-            throw new TRPCError({
-              code: 'UNAUTHORIZED',
-              message: 'Invalid credentials',
-              cause: error,
-            });
-          }
-          throw error;
-        }
-      });
+        throw error;
+      }
     });
   }
 
@@ -241,41 +231,24 @@ export class ResilientLdapClient {
    * Performs an LDAP search under the given base DN.
    *
    * @returns Array of matching directory entries.
-   * @throws {TRPCError} `BAD_GATEWAY` on network errors, `BAD_REQUEST` for invalid filters.
+   * @throws {TRPCError} `BAD_REQUEST` for a filter that does not parse, before anything is sent.
+   * @throws {LdapUnavailableError} When no attempt got a usable answer.
    */
-  async search(
-    base: string,
-    options: SearchOptions
-  ): Promise<Entry[]> {
-    return this.breaker.execute(async () => {
-      return this.retryWithBackoff(async () => {
-        if (!this._client) {
-          throw new Error('LDAP client not connected');
-        }
+  async search(base: string, options: SearchOptions): Promise<Entry[]> {
+    const client = this.connected();
 
-        try {
-          const { searchEntries } = await this._client.search(base, options);
-          return searchEntries;
-        } catch (error) {
-          // Map search errors
-          if (isNetworkError(error)) {
-            throw new TRPCError({
-              code: 'BAD_GATEWAY',
-              message: 'LDAP search failed due to network error',
-              cause: error,
-            });
-          }
-          if (this.isInvalidFilterError(error)) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Invalid LDAP search filter',
-              cause: error,
-            });
-          }
-          throw error;
-        }
-      });
-    });
+    // Parsed here, with the parser ldapts would use, so that a filter error is known to be local
+    // and is never mistaken for the directory failing to answer.
+    let filter = options.filter;
+    if (typeof filter === 'string') {
+      try {
+        filter = FilterParser.parseString(filter);
+      } catch (error) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid LDAP search filter', cause: error });
+      }
+    }
+
+    return this.withRetry(async () => (await client.search(base, { ...options, filter })).searchEntries);
   }
 
   /**
@@ -311,120 +284,50 @@ export class ResilientLdapClient {
     }
   }
 
-  /**
-   * Retry with exponential backoff and jitter
-   */
-  private async retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
-    let lastError: Error | null = null;
+  private connected(): Client {
+    if (!this._client) throw new Error('LDAP client not connected');
+    return this._client;
+  }
 
-    for (
-      let attempt = 0;
-      attempt <= this.resilienceConfig.maxRetries;
-      attempt++
-    ) {
+  /**
+   * Runs an operation, retrying with exponential backoff while it gets no usable answer: nothing
+   * came back, or the directory said busy/unavailable. Any other answer is final and is rethrown at
+   * once — a wrong password retried is another strike toward the account's lockout, and a search
+   * the directory called too slow (`timeLimitExceeded`) repeated is more load on a directory that
+   * has just said it is slow.
+   */
+  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= this.resilienceConfig.maxRetries; attempt++) {
       try {
         return await operation();
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Unknown error');
-
-        // Don't retry authentication or validation errors
-        if (this.isNonRetryableError(error)) {
-          throw error;
-        }
+        if (isDirectoryAnswer(error)) throw error;
+        lastError = error;
 
         if (attempt < this.resilienceConfig.maxRetries) {
-          const delay = this.calculateBackoffDelay(attempt);
+          const delay = this.backoffDelay(attempt);
           this.logger.warn(
             {
               attempt: attempt + 1,
               maxRetries: this.resilienceConfig.maxRetries,
               delay,
-              error: lastError.message,
+              error: error instanceof Error ? error.message : 'Unknown error',
             },
             'LDAP operation failed, retrying'
           );
-          await this.sleep(delay);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
 
-    // Map final error to appropriate TRPCError
-    if (lastError) {
-      if (isNetworkError(lastError)) {
-        throw new TRPCError({
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'LDAP service unavailable',
-          cause: lastError,
-        });
-      }
-      throw lastError;
-    }
-
-    throw new Error('Retry exhausted without error');
+    throw new LdapUnavailableError(lastError);
   }
 
-  /**
-   * Calculate delay for exponential backoff with jitter
-   */
-  private calculateBackoffDelay(attempt: number): number {
+  /** Exponential backoff with up to 10% jitter. */
+  private backoffDelay(attempt: number): number {
     const exponentialDelay = calcBackoffDelay(attempt, this.resilienceConfig.baseDelayMs, 5000);
-    const jitter = Math.random() * 0.1 * exponentialDelay;
-    return exponentialDelay + jitter;
-  }
-
-  /**
-   * Sleep utility
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
-   * Checks whether the error is invalid credentials (non-retryable)
-   */
-  private isInvalidCredentialsError(error: unknown): boolean {
-    return error instanceof InvalidCredentialsError;
-  }
-
-  /**
-   * Checks whether the error is an invalid filter (non-retryable)
-   */
-  private isInvalidFilterError(error: unknown): boolean {
-    if (error instanceof Error) {
-      const message = error.message.toLowerCase();
-      return (
-        message.includes('invalid filter') ||
-        message.includes('syntax error') ||
-        message.includes('malformed')
-      );
-    }
-    return false;
-  }
-
-  /**
-   * Checks whether the error is not retryable.
-   *
-   * Includes the `TRPCError`s already mapped by `bind()` and `search()`: those
-   * methods translate the library's error BEFORE the retry logic sees it, so
-   * checking only the original error isn't enough. In particular, a wrong
-   * password becomes `UNAUTHORIZED`, and without this check it used to be
-   * retried `maxRetries + 1` times — meaning every failed login hit Active
-   * Directory three times, bringing the account closer to lockout with every typo.
-   *
-   * `BAD_GATEWAY` is deliberately left out: it's the mapping of network errors
-   * in `search()`, which are transient and therefore legitimately retryable.
-   */
-  private isNonRetryableError(error: unknown): boolean {
-    if (error instanceof TRPCError) {
-      return (
-        error.code === 'UNAUTHORIZED' ||
-        error.code === 'FORBIDDEN' ||
-        error.code === 'BAD_REQUEST'
-      );
-    }
-
-    return (
-      this.isInvalidCredentialsError(error) || this.isInvalidFilterError(error)
-    );
+    return exponentialDelay + Math.random() * 0.1 * exponentialDelay;
   }
 }

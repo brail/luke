@@ -61,7 +61,7 @@ export const LdapResilienceSchema = z.object({
   breakerFailureThreshold: z.number().int().min(1).default(5),
   /** Circuit breaker cooldown in milliseconds */
   breakerCooldownMs: z.number().int().min(500).default(10000),
-  /** Maximum number of attempts in half-open state */
+  /** Probes the directory must answer, one at a time, to close the breaker from half-open */
   halfOpenMaxAttempts: z.number().int().min(1).default(1),
 });
 
