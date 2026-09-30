@@ -40,7 +40,6 @@ export const ldapRouter = router({
             encrypt: false,
           },
           { key: 'auth.ldap.url', value: input.url, encrypt: true },
-          { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
           {
             key: 'auth.ldap.searchBase',
             value: input.searchBase,
@@ -69,10 +68,20 @@ export const ldapRouter = router({
           { key: 'auth.strategy', value: input.strategy, encrypt: false },
         ];
 
+        // The two write-only credentials. `getLdapConfig` answers only whether each is stored, so
+        // the form cannot send back what it holds and sends them empty on every save: for these
+        // an empty field keeps the stored value, and removing one is `config.delete`. Never
+        // trimmed — a password is stored as typed.
+        const credentials: typeof configMappings = [
+          { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
+          { key: 'auth.ldap.bindPassword', value: input.bindPassword, encrypt: true },
+        ];
+        const writes = [...configMappings, ...credentials.filter(({ value }) => value)];
+
         // Every value answers to the registry, as through `saveConfig`: checked on the plaintext,
         // all of them before the transaction writes any. An empty optional field is "not
         // configured", which is an absent key, never `''` (the reader already defaults absent ones).
-        for (const { key, value } of configMappings) {
+        for (const { key, value } of writes) {
           if (!value) continue;
           const check = validateConfigValue(key, value);
           if (!check.success) {
@@ -81,7 +90,7 @@ export const ldapRouter = router({
         }
 
         await ctx.prisma.$transaction(async (tx) => {
-          for (const mapping of configMappings) {
+          for (const mapping of writes) {
             if (mapping.value === undefined) continue;
             if (mapping.value === '') {
               await tx.appConfig.deleteMany({ where: { key: mapping.key } });
@@ -92,14 +101,6 @@ export const ldapRouter = router({
               where: { key: mapping.key },
               update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
               create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
-            });
-          }
-          if (input.bindPassword != null && input.bindPassword !== '') {
-            const encryptedPassword = encryptValue(input.bindPassword);
-            await tx.appConfig.upsert({
-              where: { key: 'auth.ldap.bindPassword' },
-              update: { value: encryptedPassword, isEncrypted: true, updatedAt: new Date() },
-              create: { key: 'auth.ldap.bindPassword', value: encryptedPassword, isEncrypted: true },
             });
           }
         });
