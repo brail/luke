@@ -842,9 +842,6 @@ export function registerCalendarDigestScheduler(
   prisma: PrismaClient,
 ): void {
   let timer: ReturnType<typeof setInterval> | null = null;
-  // A tick can outlive the scheduler lock's TTL, and `release` deletes the lock by instance id, so
-  // an overlapping tick in this process would drop its successor's lock. Claims stay safe either way.
-  let running = false;
 
   // One set of deps for the scheduler's life, so what `settled` learns carries from tick to tick.
   const deps = defaultDeps(prisma);
@@ -852,17 +849,10 @@ export function registerCalendarDigestScheduler(
   const guardedTick = guardMaintenance(prisma, async () => {
     await lockedTick();
   });
-  const run = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await guardedTick();
-    } catch (err) {
-      fastify.log.error({ err }, 'Calendar digest scheduler: unhandled error');
-    } finally {
-      running = false;
-    }
-  };
+  const run = () =>
+    guardedTick().catch(err =>
+      fastify.log.error({ err }, 'Calendar digest scheduler: unhandled error')
+    );
 
   fastify.addHook('onReady', async () => {
     fastify.log.info("Calendar digest scheduler: started (15-min tick, 07:00 in each recipient's zone)");

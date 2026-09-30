@@ -82,6 +82,23 @@ describe('withSchedulerLock', () => {
     expect(tick2).toHaveBeenCalledTimes(1);
   });
 
+  it('skips a tick while this process still runs one that outlived the TTL', async () => {
+    let finishFirst!: () => void;
+    const first = withSchedulerLock(testPrisma, 'backup', () => new Promise<void>(resolve => { finishFirst = resolve; }))();
+    await vi.waitFor(() => expect(finishFirst).toBeDefined());
+    await testPrisma.schedulerLock.update({ where: { name: 'backup' }, data: { expiresAt: new Date(Date.now() - 1000) } });
+
+    // Re-acquiring the lapsed row here would put it under the same instance id, and the first
+    // tick's release would then delete it while this one still runs.
+    const second = vi.fn(async () => 'done');
+    expect(await withSchedulerLock(testPrisma, 'backup', second)()).toBeUndefined();
+    expect(second).not.toHaveBeenCalled();
+
+    finishFirst();
+    await first;
+    expect(await withSchedulerLock(testPrisma, 'backup', second)()).toBe('done');
+  });
+
   it('locks on different names are independent (per-entity nav-sync runs do not serialize each other)', async () => {
     await testPrisma.schedulerLock.create({
       data: { name: 'nav-sync:vendor', heldBy: 'other-instance', expiresAt: new Date(Date.now() + 60_000) },

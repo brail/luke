@@ -2,8 +2,8 @@
  * Postgres-row-based leader lock for tick-based schedulers, so a second API instance
  * (horizontal scale-out) skips a tick instead of running it concurrently with another
  * instance's — prod runs a single API replica today, but nothing stops someone from setting
- * `replicas: 2` in Portainer, and every scheduler in this directory has an in-memory `isRunning`
- * guard that only protects against double-execution *within* one process.
+ * `replicas: 2` in Portainer. Within one process the wrapper also skips a tick while the previous
+ * one for the same name is still running (`runningHere`).
  *
  * Same idiom as `EditLock` (row + `expiresAt`, no session/connection pinning needed — unlike a
  * Postgres advisory lock, which would require pinning one physical connection for the whole tick
@@ -30,6 +30,14 @@ const LOCK_TTL_MS = 15 * 60 * 1000;
 
 /** One random id per process — identifies which instance holds each lock (informational + safe release). */
 const INSTANCE_ID = randomUUID();
+
+/**
+ * Names this process is running a tick for. Most schedulers fire from a bare `setInterval`, so a tick
+ * that outlives the TTL would otherwise start a second one here, which would re-acquire the expired
+ * row under the same `INSTANCE_ID` — and the first tick's `release` would then delete its
+ * successor's lock. With one tick per name per process, the instance id identifies the acquisition.
+ */
+const runningHere = new Set<SchedulerName>();
 
 /**
  * One entry per tick-based scheduler in this directory that mutates shared state (not just a
@@ -102,11 +110,17 @@ export function withSchedulerLock<T>(
   tick: () => Promise<T>,
 ): () => Promise<T | undefined> {
   return async () => {
-    if (!(await tryAcquire(prisma, name))) return undefined;
+    if (runningHere.has(name)) return undefined;
+    runningHere.add(name);
     try {
-      return await tick();
+      if (!(await tryAcquire(prisma, name))) return undefined;
+      try {
+        return await tick();
+      } finally {
+        await release(prisma, name);
+      }
     } finally {
-      await release(prisma, name);
+      runningHere.delete(name);
     }
   };
 }
