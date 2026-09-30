@@ -196,15 +196,3 @@ describe('an outage met after the username was sent to the directory', () => {
     expect(metadata).not.toHaveProperty('errorCode');
   });
 });
-
-describe('ldap-only, LDAP failing', () => {
-  it('refuses the local admin: ldap-only has no local path', async () => {
-    // Recovery is outside the application: set the `auth.strategy` row back to a strategy with
-    // a local path, and log in as a user with a local credential.
-    await useStrategy('ldap-only');
-    ldapFailsWith('INTERNAL_SERVER_ERROR');
-    const { user } = await createTestUser('admin');
-
-    await expect(login(user.username).result).rejects.toMatchObject(UNAVAILABLE);
-  });
-});

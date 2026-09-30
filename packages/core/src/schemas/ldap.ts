@@ -8,7 +8,8 @@ import { z } from 'zod';
 /**
  * Supported LDAP authentication strategies — the one list the `auth.strategy` AppConfig schema,
  * the LDAP config schemas below and the API's config reader all derive from.
- * `local-first` tries local credentials before LDAP; `ldap-only` disables local login entirely.
+ * `local-first` tries local credentials before LDAP; `ldap-only` refuses local login except to an
+ * administrator, as the break-glass path.
  */
 export const LDAP_STRATEGIES = [
   'local-first',
@@ -22,6 +23,9 @@ export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];
 /**
  * Input schema for saving LDAP configuration.
  * `roleMapping` must be a valid JSON string mapping LDAP group names to Luke role names.
+ * `ldap-only` with LDAP disabled is refused: only the local administrators could log in. The issue
+ * sits on `strategy` so the settings form shows it under that field. A convenience for this form
+ * and `saveLdapConfig`; Maintenance → Config writes the same keys without it.
  */
 export const ldapConfigSchema = z.object({
   enabled: z.boolean(),
@@ -52,6 +56,14 @@ export const ldapConfigSchema = z.object({
       { message: 'Role Mapping deve essere un JSON valido' }
     ),
   strategy: z.enum(LDAP_STRATEGIES),
+}).superRefine((config, ctx) => {
+  if (config.strategy === 'ldap-only' && !config.enabled) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['strategy'],
+      message: 'La strategia ldap-only richiede LDAP abilitato',
+    });
+  }
 });
 
 /**

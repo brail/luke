@@ -16,6 +16,7 @@ import { escapeLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { countBreakGlassAdmins } from '../services/auth.service';
 
 export const ldapRouter = router({
   /**
@@ -87,6 +88,18 @@ export const ldapRouter = router({
           if (!check.success) {
             throw new TRPCError({ code: 'BAD_REQUEST', message: `Valore non valido per '${key}': ${check.message}` });
           }
+        }
+
+        // `ldap-only` leaves the local administrators as the only way in when LDAP authenticates
+        // nobody. Refused when none could use it — checked now, not guaranteed later.
+        if (input.strategy === 'ldap-only' && (await countBreakGlassAdmins(ctx.prisma)) === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "La strategia ldap-only richiede almeno un amministratore attivo e approvato con una password locale, " +
+              "che è l'accesso di emergenza quando LDAP non autentica nessuno. Un accesso locale forzato conta solo " +
+              'dopo che il link per impostare la password è stato usato.',
+          });
         }
 
         await ctx.prisma.$transaction(async (tx) => {

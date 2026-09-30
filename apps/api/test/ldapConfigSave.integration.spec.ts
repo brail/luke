@@ -19,7 +19,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { getConfig, saveConfig } from '../src/lib/configManager';
 
-import { createCallerAs, setupTestDb } from './helpers';
+import { createCallerAs, createTestUser, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -93,6 +93,93 @@ describe('integrations.auth.saveLdapConfig', () => {
       await caller.integrations.auth.saveLdapConfig({ ...input, bindPassword: '  padded pw ' });
 
       expect(await getConfig(prisma, 'auth.ldap.bindPassword', true)).toBe('  padded pw ');
+    });
+  });
+
+  describe('ldap-only needs a local administrator to fall back on', () => {
+    const ldapOnly = { ...input, strategy: 'ldap-only' as const };
+
+    /** A caller that is an administrator with no local credential, as a directory administrator is. */
+    async function directoryAdmin() {
+      const caller = await createCallerAs('admin');
+      await prisma.identity.deleteMany({ where: { provider: 'LOCAL' } });
+      return caller;
+    }
+
+    async function storedStrategy() {
+      return (await prisma.appConfig.findUnique({ where: { key: 'auth.strategy' } }))?.value;
+    }
+
+    it('refuses ldap-only with LDAP disabled, before writing anything', async () => {
+      const caller = await createCallerAs('admin');
+
+      await expect(caller.integrations.auth.saveLdapConfig({ ...ldapOnly, enabled: false })).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+      expect(await storedStrategy()).toBeUndefined();
+    });
+
+    it('refuses ldap-only when no administrator has a local credential, before writing anything', async () => {
+      const caller = await directoryAdmin();
+
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      expect(await storedStrategy()).toBeUndefined();
+    });
+
+    it.each([
+      ['inactive', { isActive: false }],
+      ['pending approval', { pendingApproval: true }],
+    ])('does not count an administrator who could not log in: %s', async (_name, state) => {
+      const caller = await directoryAdmin();
+      const { user } = await createTestUser('admin');
+      await prisma.user.update({ where: { id: user.id }, data: state });
+
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('does not count a local identity with no credential', async () => {
+      const caller = await directoryAdmin();
+      const { user } = await createTestUser('admin');
+      await prisma.localCredential.deleteMany({ where: { identity: { userId: user.id } } });
+
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('does not count an unverified email while verification is required, and does when it is not', async () => {
+      const caller = await directoryAdmin();
+      const { user } = await createTestUser('admin');
+      await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: null } });
+
+      await saveConfig(prisma, 'auth.requireEmailVerification', 'true');
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+      await saveConfig(prisma, 'auth.requireEmailVerification', 'false');
+      await caller.integrations.auth.saveLdapConfig(ldapOnly);
+      expect(await storedStrategy()).toBe('ldap-only');
+    });
+
+    it('does not count a local identity left under an old username', async () => {
+      const caller = await directoryAdmin();
+      const { user } = await createTestUser('admin');
+      await prisma.user.update({ where: { id: user.id }, data: { username: `${user.username}-renamed` } });
+
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('does not count a local editor', async () => {
+      const caller = await directoryAdmin();
+      await createTestUser('editor');
+
+      await expect(caller.integrations.auth.saveLdapConfig(ldapOnly)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('accepts ldap-only with one administrator who can log in locally', async () => {
+      const caller = await directoryAdmin();
+      await createTestUser('admin');
+
+      await caller.integrations.auth.saveLdapConfig(ldapOnly);
+
+      expect(await storedStrategy()).toBe('ldap-only');
     });
   });
 });

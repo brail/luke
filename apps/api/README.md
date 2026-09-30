@@ -90,10 +90,38 @@ login page as the `code` of the Auth.js sign-in result. `unavailable`, for a
 written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`, through
 `throttledSignIn` in `lib/loginThrottleContext.ts`) together with the `429`.
 
-`ldap-only` has no local path, so a broken LDAP configuration locks every user
-out. Recovery is in the database: set the `auth.strategy` row to a strategy
-with a local path (for example `local-first`), then log in as a user with a
-LOCAL credential; the strategy is read on every login.
+Under `ldap-only` the directory decides every login, with one exception: once
+LDAP has not authenticated them, an administrator with a LOCAL credential can
+log in with it. The `AUTH_LOGIN` row records it as `provider: 'local'` with
+`strategy: 'ldap-only'`, and the administrators get an in-app notification (best
+effort: muted for whoever turned the category off). There is no condition on why
+LDAP refused, because a directory answering from the wrong subtree cannot be
+told from an unknown user. Nobody else has a local path: a non-administrator's
+correct local password is refused as a wrong one would be, before any check that
+could answer differently, and audited as `local_login_not_allowed` — a reason that
+replaces the LDAP one, while the row keeps its `errorCode`.
+
+What this costs: under `ldap-only` a local administrator password is always a
+live login path, for every administrator who has one — the seeded account, one
+given local access on purpose, a local account later promoted — and nothing done
+in the directory revokes it. LDAP provisioning creates no LOCAL credential.
+
+**Setup requirement.** Before choosing `ldap-only`, make sure at least one
+administrator can log in locally: active, approved, with a verified email when
+`auth.requireEmailVerification` is on, and a local password somebody knows. A
+forced local access counts only once its reset link has been used. The LDAP
+settings page refuses `ldap-only` with LDAP disabled, and when no administrator
+is active, approved, verified where required and holds a LOCAL credential under
+their current username. That check sees a credential row, not whether anyone
+knows the password: an unused forced local access passes it. Both are checks at
+the moment of saving, and Maintenance → Config writes the same keys without
+them.
+
+While LDAP authenticates nobody and no such administrator exists, nobody can get
+in. Changing the `auth.strategy` row in the database (it is read on every login)
+restores the local fallback to the users who hold a LOCAL credential, but gives
+nobody a password, and Luke has no tool yet to set one from outside the
+application.
 
 ## Password reset and email verification audit events
 

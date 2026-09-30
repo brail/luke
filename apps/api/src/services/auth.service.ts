@@ -6,7 +6,7 @@ import { randomBytes, createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-
+import { hasPermission } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
@@ -20,6 +20,7 @@ import {
   sendEmailVerificationEmail,
 } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
+import { notifyAdmins } from '../lib/notifications';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
@@ -78,6 +79,38 @@ export async function authenticateLocal(
 }
 
 /**
+ * How many administrators could take the break-glass path of `ldap-only` right now, as far as the
+ * database shows: active, approved, holding a LOCAL credential under their current username, with a
+ * verified email when verification is required — what `authenticateUser` asks of them.
+ *
+ * A check at a moment, not a guarantee: a later deactivation, demotion, credential change or
+ * verification policy change can undo it. And a credential row is not proof that anyone knows the
+ * password: forcing local access (`users.forceLocalAccess`) stores a random one until the
+ * reset link is used.
+ */
+export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<number> {
+  const requireEmailVerification =
+    (await getConfig(prisma, 'auth.requireEmailVerification', false)) === 'true';
+
+  const localIdentity = { provider: 'LOCAL' as const, localCredential: { isNot: null } };
+  const admins = await prisma.user.findMany({
+    where: {
+      // The one role holding `*:*`, which is what the break-glass path checks.
+      role: 'admin',
+      isActive: true,
+      pendingApproval: false,
+      emailVerifiedAt: requireEmailVerification ? { not: null } : undefined,
+      identities: { some: localIdentity },
+    },
+    select: { username: true, identities: { where: localIdentity, select: { providerId: true } } },
+  });
+  // `authenticateLocal` finds the identity by the current username, a comparison between two
+  // columns that a Prisma filter cannot express. An identity left under an old username does not
+  // log anyone in, so it does not count.
+  return admins.filter(admin => admin.identities.some(identity => identity.providerId === admin.username)).length;
+}
+
+/**
  * Authenticates a user using the configured auth strategy (local-first, ldap-first,
  * local-only, or ldap-only). Writes an audit log entry on success or failure.
  *
@@ -133,6 +166,8 @@ export async function authenticateUser(
   const ldap: {
     failure: { couldNotComplete: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
   } = { failure: null };
+  // Set when `ldap-only` meets a correct local password that is not an administrator's.
+  let localLoginRefused = false;
 
   // Either way it counts as no LDAP login, so each strategy's local fallback applies: rethrowing
   // used to lock every user out under ldap-first, local admin included.
@@ -164,6 +199,22 @@ export async function authenticateUser(
     case 'ldap-only':
       authenticatedUser = await tryLdap();
       authMethod = 'ldap';
+
+      // The break-glass path: once LDAP did not authenticate them, an administrator with a LOCAL
+      // credential can use it; nobody else can. Without it a directory that authenticates nobody
+      // locks every administrator out as well, and one that answers from the wrong subtree cannot
+      // be told from an unknown user — so there is no condition on why LDAP refused.
+      if (!authenticatedUser) {
+        const local = await authenticateLocal(ctx.prisma, username, password);
+        if (local && hasPermission({ role: local.role }, '*:*')) {
+          authenticatedUser = local;
+          authMethod = 'local';
+        } else if (local) {
+          // A correct password that grants nothing is refused here, as a wrong one is: the
+          // checks below would answer it with a 403 and so tell the two apart.
+          localLoginRefused = true;
+        }
+      }
       break;
 
     case 'local-first':
@@ -219,7 +270,7 @@ export async function authenticateUser(
       result: 'FAILURE',
       metadata: {
         username: input.username,
-        reason: ldap.failure?.reason ?? 'invalid_credentials',
+        reason: localLoginRefused ? 'local_login_not_allowed' : (ldap.failure?.reason ?? 'invalid_credentials'),
         strategy,
         errorCode: ldap.failure?.errorCode,
       },
@@ -337,6 +388,18 @@ export async function authenticateUser(
   });
 
   ctx.logger.info({ username, authMethod }, `Authentication successful`);
+
+  // Every use of the break-glass path, once it has passed every check above. In-app, and muted for
+  // an administrator who turned the category off: the `AUTH_LOGIN` row is the record, this is the
+  // prompt to look at it. It must never cost the login.
+  if (strategy === 'ldap-only' && authMethod === 'local') {
+    await notifyAdmins(ctx.prisma, {
+      category: 'SYSTEM',
+      title: 'Accesso di emergenza con credenziale locale',
+      message: `${authenticatedUser.username} è entrato con la password locale mentre la strategia è ldap-only.`,
+      data: { type: 'ldap_only_local_login', userId: authenticatedUser.id },
+    }).catch(err => ctx.logger.error({ err, username }, 'Failed to notify admins of an emergency local login'));
+  }
 
   return {
     user: {

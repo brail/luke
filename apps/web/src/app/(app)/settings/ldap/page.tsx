@@ -277,7 +277,7 @@ export default function LdapSettingsPage() {
                         Solo autenticazione locale
                       </SelectItem>
                       <SelectItem value="ldap-only">
-                        Solo autenticazione LDAP
+                        Solo LDAP (admin locali come accesso di emergenza)
                       </SelectItem>
                     </SelectContent>
                   </Select>
