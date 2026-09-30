@@ -32,35 +32,6 @@ export function formatDate(date: Date, locale: string = 'it-IT'): string {
 }
 
 /**
- * Formats a date with time according to local conventions
- *
- * @param date - The date to format
- * @param locale - The locale for formatting (default: 'it-IT')
- * @returns Formatted date and time string
- *
- * @example
- * ```typescript
- * formatDateTime(new Date('2024-01-15T14:30:00')) // "15/01/2024, 14:30"
- * ```
- */
-export function formatDateTime(date: Date, locale: string = 'it-IT'): string {
-  try {
-    const formatter = new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
-    return formatter.format(date);
-  } catch {
-    // Fallback to ISO format if locale is invalid
-    return date.toLocaleString('it-IT');
-  }
-}
-
-/**
  * Checks if a date is valid
  *
  * @param date - The date to check

@@ -1,7 +1,7 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
-import { formatCalendarDate, formatDate } from '@luke/core';
+import { formatCalendarDate, formatDate, NUMERIC_DATE } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
@@ -35,9 +35,6 @@ function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: s
   return `gg lavorativi${relevantCountryCodes.length > 0 ? ` (${relevantCountryCodes.join('+')})` : ''}`;
 }
 
-/** `formatDate`'s day-only `dd/mm/yyyy`, for a calendar date. */
-const DAY_ONLY = { year: 'numeric', month: '2-digit', day: '2-digit' } as const;
-
 /**
  * Tooltip text for a criticality badge — the band label alone ("Urgente") doesn't say how urgent;
  * this spells out the exact day count and deadline. Shared by `CriticalitySituation` (per-row query,
@@ -47,7 +44,7 @@ const DAY_ONLY = { year: 'numeric', month: '2-digit', day: '2-digit' } as const;
 export function formatCriticalityTooltip({ daysToDeadline, reached, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CriticalityInfo, 'daysToDeadline' | 'reached' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
   // The day the count runs to, as the server names it in the business zone — formatting the
   // instant here would show a different day to a viewer in another zone.
-  const dateLabel = formatCalendarDate(deadlineDay, DAY_ONLY);
+  const dateLabel = formatCalendarDate(deadlineDay, NUMERIC_DATE);
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   if (daysToDeadline < 0) return `In ritardo di ${Math.abs(daysToDeadline)} ${unitLabel} — «${eventTitle}»: ${dateLabel}`;
   // Reached with a count of 0 (a timed deadline passed today, a weekend one seen on Monday in
@@ -72,7 +69,7 @@ export function formatCompletionTooltip({ completedAt, daysVsDeadline, late, dea
   if (daysVsDeadline === null || deadlineDay === null) {
     return `Conclusa il ${completedLabel} — nessuna milestone di riferimento`;
   }
-  const dateLabel = formatCalendarDate(deadlineDay, DAY_ONLY);
+  const dateLabel = formatCalendarDate(deadlineDay, NUMERIC_DATE);
   const unitLabel = daysUnitLabel(daysMode, relevantCountryCodes);
   const delta = daysVsDeadline === 0
     ? late ? 'oltre la scadenza' : 'nel giorno della scadenza'

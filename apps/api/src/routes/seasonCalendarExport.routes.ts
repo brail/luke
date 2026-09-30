@@ -27,6 +27,7 @@ import {
   eventCalendarDays,
   formatCalendarDate,
   isDevelopment,
+  NUMERIC_DATE,
   parseCalendarDate,
   utcMidnightOf,
   type CalendarDate,
@@ -468,8 +469,6 @@ function generatePdfGantt(milestones: ExportMilestone[], seasonLabel: string, to
 // ─── XLSX generation (ExcelJS) ────────────────────────────────────────────────
 
 /** `dd/mm/yyyy`, what the sheet has always shown. */
-const XLSX_DATE: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
-
 async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Luke';
@@ -500,8 +499,8 @@ async function generateXlsx(milestones: ExportMilestone[], seasonLabel: string):
   milestones.forEach((m, i) => {
     const cancelled = m.status === 'CANCELLED';
     const row = ws.addRow([
-      formatCalendarDate(m.firstDay, XLSX_DATE),
-      m.endAt ? formatCalendarDate(m.lastDay, XLSX_DATE) : '',
+      formatCalendarDate(m.firstDay, NUMERIC_DATE),
+      m.endAt ? formatCalendarDate(m.lastDay, NUMERIC_DATE) : '',
       m.title,
       m.brandCode,
       m.visibleFunctionNames,

@@ -284,11 +284,7 @@ type LockableEvent = {
  * the group lifts the lock.
  */
 export function isEventDateLocked(event: LockableEvent, timeZone: string, now: Date = new Date()): boolean {
-  return isEventDateLockedCore(
-    { phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt, startAt: event.startAt, endAt: event.endAt, allDay: event.allDay },
-    timeZone,
-    now,
-  );
+  return isEventDateLockedCore({ ...event, frozenAt: event.planningGroup.frozenAt }, timeZone, now);
 }
 
 /** Thin adapter over the shared `@luke/core` predicate — see `isEventDateLocked` above. */

@@ -333,7 +333,7 @@ export async function resolveHolidayOverlapsForGroup(planningGroupId: string, pr
       overlaps.push({ eventId: event.id, eventTitle: event.title, eventStartAt: event.startAt, reason, vendorName });
     // The day the event lands on: an all-day value is its own date, a timed one is read in the
     // business zone.
-    const day = event.allDay ? calendarDateOf(event.startAt) : calendarDateIn(event.startAt, timeZone);
+    const [day] = eventCalendarDays(event.startAt, null, event.allDay, timeZone);
 
     // Empty countryCodes/holidays reduces isWorkingDate to a pure weekend check — same definition
     // of "weekend" the company/vendor checks below build on, no separate day-of-week logic here.
@@ -491,13 +491,14 @@ export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaCl
  * so that function can take an early return instead of nesting this behind a ternary.
  */
 function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, timeZone: string, vendorCountryCode: string | null, workingDaysCtx: WorkingDaysContext) {
+  const due = deadlineDay(nextEvent, timeZone);
   const { days, daysMode, relevantCountryCodes } = resolveDaysCount(
-    calendarDateIn(now, timeZone), deadlineDay(nextEvent, timeZone), nextEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    calendarDateIn(now, timeZone), due, nextEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
   return {
     phaseId: nextEvent.phaseId,
     eventTitle: nextEvent.title,
-    deadlineDay: deadlineDay(nextEvent, timeZone),
+    deadlineDay: due,
     daysUntil: days,
     reached: now >= deadlineReachedAt(nextEvent, timeZone),
     daysMode,
@@ -535,8 +536,9 @@ export function criticalityFromActivePhase(
   const { event } = active;
 
   const { timeZone } = alert;
+  const due = deadlineDay(event, timeZone);
   const { days: daysToDeadline, daysMode, relevantCountryCodes } = resolveDaysCount(
-    calendarDateIn(now, timeZone), deadlineDay(event, timeZone), event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    calendarDateIn(now, timeZone), due, event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
   const reached = now >= deadlineReachedAt(event, timeZone);
   const band = bandFor(bandsForPhase(alert.thresholds, event.phase?.value ?? null), daysToDeadline, reached);
@@ -550,7 +552,7 @@ export function criticalityFromActivePhase(
     // client shows, with no zone of its own to read an instant in.
     eventStartDay: eventCalendarDays(event.startAt, event.endAt, event.allDay, timeZone)[0],
     phaseId: event.phaseId,
-    deadlineDay: deadlineDay(event, timeZone),
+    deadlineDay: due,
     daysToDeadline,
     reached,
     daysMode,
@@ -585,8 +587,9 @@ export function completionOutcome(
 ) {
   const { timeZone, thresholds } = alert;
   // No reference milestone: only the completion date remains, no invented delta.
-  const counted = completionEvent
-    ? resolveDaysCount(calendarDateIn(completedAt, timeZone), deadlineDay(completionEvent, timeZone), completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
+  const due = completionEvent ? deadlineDay(completionEvent, timeZone) : null;
+  const counted = completionEvent && due
+    ? resolveDaysCount(calendarDateIn(completedAt, timeZone), due, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
     : { days: null, daysMode: 'calendar' as const, relevantCountryCodes: [] as string[] };
   // With no deadline to measure against, the completion can't be late.
   const late = completionEvent ? completedAt >= deadlineReachedAt(completionEvent, timeZone) : false;
@@ -597,7 +600,7 @@ export function completionOutcome(
     completedAt,
     eventId: completionEvent?.id ?? null,
     eventTitle: completionEvent?.title ?? null,
-    deadlineDay: completionEvent ? deadlineDay(completionEvent, timeZone) : null,
+    deadlineDay: due,
     daysVsDeadline: counted.days,
     late,
     daysMode: counted.daysMode,

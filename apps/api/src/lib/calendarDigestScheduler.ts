@@ -38,7 +38,7 @@ import {
   CATEGORY_LEVEL_EVENT_KEY,
   eventCalendarDays,
   formatCalendarDate,
-  formatDateWithTimezone,
+  formatTime,
   fullName,
   instantAt,
   startOfDayIn,
@@ -88,13 +88,12 @@ interface DigestEntry {
 const DAY_SHORT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
 const DAY_MEDIUM: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
 const DAY_LONG: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
-const TIME_OF_DAY: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
 
 function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, timeZone: string): string {
   const [first, last] = eventCalendarDays(startAt, endAt, allDay, timeZone);
   if (first !== last) return `${formatCalendarDate(first, DAY_SHORT)}–${formatCalendarDate(last, DAY_MEDIUM)}`;
   if (allDay) return formatCalendarDate(first, DAY_MEDIUM);
-  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${formatDateWithTimezone(startAt, timeZone, TIME_OF_DAY)}`;
+  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${formatTime(startAt, timeZone)}`;
 }
 
 /**
@@ -297,7 +296,7 @@ export async function buildDigestTasks(
   for (const entry of logs) {
     const actor = entry.actor;
     const actorName = actor ? fullName(actor) : 'Sistema';
-    const time = formatDateWithTimezone(entry.createdAt, timeZone, TIME_OF_DAY);
+    const time = formatTime(entry.createdAt, timeZone);
     const meta = (entry.metadata ?? {}) as Record<string, unknown>;
 
     if (entry.action === 'CALENDAR_EVENT_DELETE' && Array.isArray(meta.snapshots)) {
@@ -431,15 +430,8 @@ export async function buildDigestTasks(
     const dateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE' || c.action === 'CALENDAR_EVENT_RESCHEDULE');
 
     let dateChangeLabel: string | undefined;
-    let firstDateChange: Change | undefined;
-    let oldStart: Date | null = null;
-    for (const c of dateChanges) {
-      oldStart = metaDate(c.meta.oldStartAt);
-      if (oldStart) {
-        firstDateChange = c;
-        break;
-      }
-    }
+    const firstDateChange = dateChanges.find(c => metaDate(c.meta.oldStartAt));
+    const oldStart = firstDateChange ? metaDate(firstDateChange.meta.oldStartAt) : null;
     if (firstDateChange && oldStart && liveEvent) {
       const oldAllDay = oldAllDayOf(firstDateChange, liveEvent.allDay);
       const oldEnd = metaDate(firstDateChange.meta.oldEndAt);
@@ -459,14 +451,14 @@ export async function buildDigestTasks(
         if (oldLast !== newLast) dateChangeLabel = `Durata modificata: fine ${formatCalendarDate(oldLast, DAY_SHORT)} → ${formatCalendarDate(newLast, DAY_SHORT)}`;
       } else if ((oldEnd?.getTime() ?? null) !== (liveEvent.endAt?.getTime() ?? null)) {
         const formatEnd = (end: Date | null) => end
-          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${formatDateWithTimezone(end, timeZone, TIME_OF_DAY)}`
+          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${formatTime(end, timeZone)}`
           : '—';
         dateChangeLabel = `Durata modificata: fine ${formatEnd(oldEnd)} → ${formatEnd(liveEvent.endAt)}`;
       }
     }
 
     // A reschedule carries a mandatory reason: it goes with the date change it explains.
-    const rescheduleReason = dateChanges
+    const rescheduleReason = chgs
       .filter(c => c.action === 'CALENDAR_EVENT_RESCHEDULE')
       .map(c => c.meta.reason)
       .reverse()

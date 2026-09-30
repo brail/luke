@@ -154,12 +154,21 @@ export function calendarDateIn(instant: Date, timeZone: string): CalendarDate {
   return utcDateOf(wallClockMs(wallClockFormat(timeZone), instant.getTime()));
 }
 
+/** `dd/mm/yyyy` in it-IT: the day-only numeric form the tables, tooltips and exports use. */
+export const NUMERIC_DATE: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
+
+const calendarDateFormats = new Map<string, Intl.DateTimeFormat>();
+
 /**
  * `date` written with `Intl` `options` in `locale`. Zone-free: its UTC midnight read in UTC, so a
- * reader west of UTC never sees the day before.
+ * reader west of UTC never sees the day before. One formatter per locale and options, reused: views
+ * and exports call it once per row.
  */
 export function formatCalendarDate(date: CalendarDate, options: Intl.DateTimeFormatOptions, locale = 'it-IT'): string {
-  return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(utcMidnightOf(date));
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let format = calendarDateFormats.get(key);
+  if (!format) calendarDateFormats.set(key, (format = new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' })));
+  return format.format(utcMidnightOf(date));
 }
 
 /**
