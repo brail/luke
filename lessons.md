@@ -819,3 +819,21 @@ audit caught it. The same shape had sat in `tools/scripts/check-platform-integri
 on a bait file": the rule first went into a config block that does not reach `tools/`, and reported
 zero on the repository while the known occurrence was still there — the per-area bait probe (one
 stacked and one blank-line-separated block, expected exactly 1 finding) is what exposed the scope.
+
+## An absolute security claim over an external system cannot be defended with machinery (2026-09-30)
+
+**What happened.** Planning the LDAP outage reporting (an unreachable directory was answered as
+"invalid credentials"), I wrote the requirement as "the public answer never depends on which
+username was typed" and then defended it across three review rounds by adding mechanism: an answer
+chosen per phase, a login-wide circuit breaker, a decoy bind for absent users. Each round found a
+way around it, because the property is not Luke's to guarantee: authentication is delegated to a
+directory that may treat one entry differently from another, and every public availability signal
+fed by an operation that carries the candidate — the 503, and the shared breaker's state — is a
+possible channel.
+
+**Rule.** For behaviour delegated to a system Luke does not control, claim only what holds by
+construction, and take the rest to the owner as an explicit decision instead of engineering around
+it. Here the constructible boundary was "what happens before the candidate is sent": the
+configuration check and the service-account bind. Driving the 503 and the breaker from that alone
+made the design smaller than the one it replaced. A second failed review round on the same
+requirement is the signal to reopen the requirement, not to add a third mechanism.
