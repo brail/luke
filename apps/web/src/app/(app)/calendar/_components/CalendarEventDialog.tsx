@@ -57,7 +57,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { eventDays, expectedDates, isEventDeleteLocked } from '../utils';
+import { eventDays, expectedDates, isEventDeleteLocked, isStaleListError } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
@@ -366,9 +366,7 @@ export function CalendarEventDialog({
     onSuccess: data => { if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning); toast.success('Evento aggiornato'); onSaved(); onClose(); },
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      // A lock the list did not show yet (the deadline was reached while the page was open), or a
-      // move someone else made while the form was open (CONFLICT).
-      if (err.data?.code === 'PRECONDITION_FAILED' || err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
     },
   });
 
@@ -413,7 +411,7 @@ export function CalendarEventDialog({
     },
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      if (err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
     },
   });
 

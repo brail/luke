@@ -35,7 +35,7 @@ import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { useCalendarViewNavigation } from './useCalendarViewNavigation';
-import { assignBrandColors, expectedDates, resolveBrandColor } from './utils';
+import { assignBrandColors, expectedDates, isStaleListError, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
 
@@ -159,10 +159,8 @@ export default function CalendarPage() {
     onSuccess: () => refetchAfterEventChange(),
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      // A drag on an event whose lock the list did not show yet (its deadline was reached while the
-      // page was open), or one someone else moved meanwhile (CONFLICT): refresh, so the list shows
-      // what the server holds.
-      if (err.data?.code === 'PRECONDITION_FAILED' || err.data?.code === 'CONFLICT') refetchAfterEventChange();
+      // A drag the list was out of date for: refresh, so it shows what the server holds.
+      if (isStaleListError(err)) refetchAfterEventChange();
     },
   });
 

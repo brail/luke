@@ -18,7 +18,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
-import { eventDays, expectedDates, moveEventTo, sortByFirstDay } from '../../utils';
+import { eventDays, expectedDates, isStaleListError, moveEventTo, sortByFirstDay } from '../../utils';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
@@ -131,8 +131,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
   const updateMilestone = trpc.seasonCalendar.updateMilestone.useMutation({
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      // Someone else moved the event after this wizard read it: reload, so the step shows it.
-      if (err.data?.code === 'CONFLICT') void utils.seasonCalendar.listMilestones.invalidate();
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
     },
   });
 

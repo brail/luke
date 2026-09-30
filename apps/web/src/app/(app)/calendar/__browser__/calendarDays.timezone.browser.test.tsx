@@ -9,6 +9,7 @@ import {
   getIsoWeek,
   groupEventsByDay,
   hoursWithinDay,
+  isStaleListError,
   moveEvent,
   moveEventTo,
   moveToCell,
@@ -184,6 +185,13 @@ describe(`calendar day helpers (${ZONE})`, () => {
     });
     const start = new Date(2026, 3, 13, 10, 0);
     expect(expectedDates({ startAt: start, endAt: null, allDay: false })).toEqual({ startAt: start.toISOString(), endAt: null, allDay: false });
+  });
+
+  test('isStaleListError: a write refused because the list was out of date, and nothing else', () => {
+    expect(isStaleListError({ data: { code: 'PRECONDITION_FAILED' } })).toBe(true);
+    expect(isStaleListError({ data: { code: 'CONFLICT' } })).toBe(true);
+    expect(isStaleListError({ data: { code: 'BAD_REQUEST' } })).toBe(false);
+    expect(isStaleListError({ data: null })).toBe(false);
   });
 
   test('getIsoWeek reads a calendar date', () => {
