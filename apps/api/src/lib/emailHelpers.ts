@@ -87,20 +87,15 @@ export async function sendVerificationEmail(
   try {
     await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
 
-    // Audit log SUCCESS (no PII)
-    // logAudit requires a full Context; here we build a partial one —
-    // some callers (e.g. ldapAuth.ts during automatic provisioning)
-    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
-    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
-    // the caller already catches it with .catch(). Pre-existing behavior, not
-    // changed by this cast.
+    // Audit log SUCCESS (no PII). Some callers have no request at all (LDAP provisioning), and
+    // `logAudit` writes their row without one.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as unknown as Context,
+      },
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',
@@ -116,19 +111,13 @@ export async function sendVerificationEmail(
     };
   } catch (error) {
     // Audit log FAILURE (no PII)
-    // logAudit requires a full Context; here we build a partial one —
-    // some callers (e.g. ldapAuth.ts during automatic provisioning)
-    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
-    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
-    // the caller already catches it with .catch(). Pre-existing behavior, not
-    // changed by this cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as unknown as Context,
+      },
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',

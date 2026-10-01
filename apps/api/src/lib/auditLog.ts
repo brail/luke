@@ -6,10 +6,12 @@
  * `/download/audit-log` CSV route, so neither has to import from the other.
  */
 
+import pino from 'pino';
+
 import { fullName, type AuditLogFilters, type AuditLogResult } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
-import type { Context } from './trpc';
+import type { FastifyBaseLogger } from 'fastify';
 
 /**
  * Parameters for a single audit log entry.
@@ -479,25 +481,62 @@ export function sanitizeMetadata(obj: unknown, depth = 0, path = ''): unknown {
   return obj; // Primitives safe
 }
 
+/** The two logger methods `logAudit` uses. A request's logger, a context's, or a pino logger fit. */
+type AuditLogger = Pick<FastifyBaseLogger, 'info' | 'error'>;
+
+/**
+ * What `logAudit` needs from its caller. A tRPC `Context` is one. A context with no HTTP request — a
+ * CLI script, a background flow — is another: its row has no IP, and its log line goes to the
+ * logger it carries, or to this module's. `prisma` can be a transaction client, so that the row
+ * commits or rolls back with the change it records.
+ */
+export interface AuditContext {
+  prisma: Pick<PrismaClient, 'auditLog'>;
+  session?: { user?: { id: string } } | null;
+  traceId?: string;
+  req?: { ip?: string; log: AuditLogger };
+  logger?: AuditLogger;
+}
+
+/** For a context that brings no logger of its own. */
+const fallbackLogger: AuditLogger = pino({ level: 'info' });
+
+/**
+ * A log line about an audit row is secondary to the row. A logger that throws must neither turn a
+ * written row into a failure nor replace the database error the caller needs to see.
+ */
+function emit(write: () => void): void {
+  try {
+    write();
+  } catch {
+    // Nowhere left to report it.
+  }
+}
+
 /**
  * Persists an audit event to the database and emits a structured Pino log entry.
  * Metadata is sanitised before storage; keys matching sensitive patterns are redacted.
- * For actions in `CRITICAL_AUDIT_ACTIONS`, any DB write failure is re-thrown
- * rather than swallowed, surfacing the compliance risk to the caller.
+ * A failed write is logged and swallowed, except for actions in `CRITICAL_AUDIT_ACTIONS` and when
+ * the caller passes `required: true`: then it is re-thrown, surfacing the compliance risk — and, in
+ * a transaction, rolling back the change the row was meant to record.
  *
- * @param ctx - tRPC context supplying Prisma, session, traceId, and request IP.
+ * @param ctx - Prisma (or a transaction client), and the session, trace, request and logger when
+ *   there are any. See `AuditContext`.
  * @param params - Audit event details.
- * @throws If the DB write fails and the action is considered critical.
+ * @param options.required - Re-throw a failed write whatever the action.
+ * @throws If the DB write fails and the action is critical or the write required.
  */
 export async function logAudit(
-  ctx: Context,
-  params: AuditParams
+  ctx: AuditContext,
+  params: AuditParams,
+  options: { required?: boolean } = {}
 ): Promise<void> {
   // Outside the try on purpose. Everything below it is I/O, whose failure is swallowed for
   // non-critical actions; a key missing from `SAFE_KEY_LIST` is a programming error, and letting
   // it be caught there would turn the gate into a log line nobody reads — exactly the silence it
   // exists to break.
   const sanitizedMetadata = params.metadata ? sanitizeMetadata(params.metadata) : undefined;
+  const log = ctx.req?.log ?? ctx.logger ?? fallbackLogger;
 
   try {
     // Create AuditLog record with the new schema
@@ -510,29 +549,34 @@ export async function logAudit(
         result: params.result || 'SUCCESS',
         metadata: sanitizedMetadata as Prisma.InputJsonValue | undefined, // sanitizeMetadata only ever returns JSON-safe primitives/objects/arrays
         traceId: ctx.traceId,
-        ip: ctx.req.ip || null,
+        ip: ctx.req?.ip || null,
       },
     });
+  } catch (error) {
+    emit(() =>
+      log.error({
+        traceId: ctx.traceId,
+        error: error instanceof Error ? error.message : 'Unknown',
+        action: params.action,
+        message: 'Failed to log audit event',
+      })
+    );
+    if (options.required || CRITICAL_AUDIT_ACTIONS.has(params.action)) {
+      throw error;
+    }
+    return;
+  }
 
-    // Log with Pino for correlation
-    ctx.req.log.info({
+  // Log with Pino for correlation
+  emit(() =>
+    log.info({
       traceId: ctx.traceId,
       action: params.action,
       targetType: params.targetType,
       result: params.result || 'SUCCESS',
       message: `Audit: ${params.action}`,
-    });
-  } catch (error) {
-    ctx.req.log.error({
-      traceId: ctx.traceId,
-      error: error instanceof Error ? error.message : 'Unknown',
-      action: params.action,
-      message: 'Failed to log audit event',
-    });
-    if (CRITICAL_AUDIT_ACTIONS.has(params.action)) {
-      throw error;
-    }
-  }
+    })
+  );
 }
 
 // Entity-specific helpers removed - everything centralized in logAudit() for DRY
