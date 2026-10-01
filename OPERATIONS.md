@@ -170,6 +170,6 @@ the rate-limit bucket: it is meant for the logs, not for display.
 ## Related documentation
 
 - [README.md](README.md) - Main project documentation
-- [API documentation](apps/api/README.md) - API reference, security headers, health and readiness checks, LDAP resilience and local tracing
+- [API documentation](apps/api/README.md) - API reference, security headers, health and readiness checks, LDAP resilience, [recovering administrator access](apps/api/README.md#recovering-administrator-access) when nobody can sign in, and local tracing
 - [Frontend documentation](apps/web/README.md) - Includes the client data-refresh standard after mutations
 - [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance

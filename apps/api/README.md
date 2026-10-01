@@ -120,13 +120,67 @@ them.
 While LDAP authenticates nobody and no such administrator exists, nobody can get
 in. Changing the `auth.strategy` row in the database (it is read on every login)
 restores the local fallback to the users who hold a LOCAL credential, but gives
-nobody a password, and Luke has no tool yet to set one from outside the
-application.
+nobody a password: that is what the command below is for.
+
+## Recovering administrator access
+
+When no administrator can sign in, `db:grant-local-access` issues a single-use
+password-reset link for one named administrator, from a shell in the API
+container:
+
+```bash
+node dist-scripts/scripts/grant-local-access.js --username <administrator> --dry-run
+node dist-scripts/scripts/grant-local-access.js --username <administrator>
+```
+
+It prints the target database (host, port, name — never credentials), the
+account it found, the application origin the link points to and what issuing
+it does, then asks for the username to be typed back; `--yes` replaces that
+confirmation in a non-interactive run, and without a terminal and without
+`--yes` it refuses. `--dry-run` runs every check and writes nothing.
+
+**The link is a credential.** Whoever opens it first sets that administrator's
+password, so whoever can read the terminal output — scrollback, a recorded
+console session, a shared screen — can take the account. It is printed once,
+on standard output, and nowhere else: not in the logs, the audit row or the
+notification. Open it directly, over HTTPS, and clear the terminal afterwards.
+It works once, for 30 minutes. When `app.baseUrl` is not stored, or is not an
+http(s) URL, only the path is printed, to be opened on the application's host.
+
+What it does, in one transaction with its audit row: it creates the LOCAL
+identity if the account has none (with a password nobody knows), deletes the
+account's other reset tokens — every reset link sent before stops working, even
+if the new one is never used — and issues the new one. The password and the open
+sessions change only when the link is used, through the normal reset page,
+which applies the password policy and signs out every session. Under `ldap-only`
+the administrator then signs in through the break-glass path above; under the
+other strategies, through the local one. Every issuance writes a
+`USER_LOCAL_ACCESS_FORCED` row (`source: 'cli'`) and notifies the administrators
+in-app — best effort: muted for whoever turned the category off, and a failed
+notification is only reported on standard error.
+
+What it never does: create an administrator, change a role, reactivate, approve
+or verify. It refuses an unknown username, a non-administrator, a deactivated
+account, and a LOCAL identity it cannot use (left under an old username by a
+rename, or belonging to another account). An account pending approval, or with
+an unverified email while `auth.requireEmailVerification` is on, is refused
+unless `--anyway` is given; the link is then issued, but the sign-in keeps being
+refused until that state is changed. A deactivated account must be reactivated
+before the command will run at all; approval and verification can be changed
+before or after. Each is a decision of its own, made in the database and
+recorded nowhere else:
+
+```sql
+UPDATE users SET "isActive" = true WHERE username = '<administrator>';
+UPDATE users SET "pendingApproval" = false WHERE username = '<administrator>';
+UPDATE users SET "emailVerifiedAt" = now() WHERE username = '<administrator>';
+```
 
 ## Password reset and email verification audit events
 
-The authentication service (`src/services/auth.service.ts`) records these action
-names for the password-reset and email-verification flows:
+These action names are recorded for the password-reset and email-verification
+flows, by the authentication service (`src/services/auth.service.ts`) unless the
+table names another emitter:
 
 | Action | Flow |
 |--------|------|
@@ -134,6 +188,7 @@ names for the password-reset and email-verification flows:
 | `PASSWORD_CHANGED` | Password-reset confirmation |
 | `EMAIL_VERIFICATION_SENT` | Email-verification requests; also emitted by `src/lib/emailHelpers.ts` |
 | `EMAIL_VERIFIED` | Email-verification confirmation |
+| `USER_LOCAL_ACCESS_FORCED` | A reset link issued to give an account local access. Written by `users.forceLocalAccess` (success and failure), and by `db:grant-local-access` (`source: 'cli'`) only for a link it issued: a refusal, a dry run or a rolled-back attempt writes no row |
 
 These names do not imply success: inspect the audit row's `result` and available
 metadata, such as `reason`. Failure paths also use these actions. A generic

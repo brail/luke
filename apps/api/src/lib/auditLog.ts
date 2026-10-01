@@ -262,6 +262,10 @@ const SAFE_KEY_LIST = [
   // `passwordUpdated` is a boolean "was it rotated", `authMode` is a strategy name
   // ('oauth' | 'service_account'). Neither ever carries the secret itself.
   'passwordUpdated',
+  // `db:grant-local-access`: how a recovery link was issued (no secret in any of them).
+  'identityCreated',
+  'readinessBypassed',
+  'resetTokensRevoked',
   'authMode',
 
   // Config / RBAC

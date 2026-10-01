@@ -145,13 +145,14 @@ export interface CreateResetTokenResult {
  * Generates a password-reset token and persists it as a `UserToken` (type `RESET`, 30-minute
  * expiry). Does not send anything or check for an existing `LocalCredential` — callers own that
  * (self-service `requestPasswordReset` treats a missing one as user-not-found; admin-triggered
- * `forceLocalAccess` may have just created one in the same request).
+ * `forceLocalAccess` and the `db:grant-local-access` command may have just created one, the command
+ * in the same transaction as this token).
  *
- * @param prisma - Prisma client.
+ * @param prisma - Prisma client or transaction client; only `userToken` is used.
  * @param userId - Target user.
  */
 export async function createResetToken(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, 'userToken'>,
   userId: string
 ): Promise<CreateResetTokenResult> {
   const token = randomBytes(32).toString('hex');

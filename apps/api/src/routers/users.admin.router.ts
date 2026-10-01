@@ -3,8 +3,6 @@
  * email-verification override, and the local-access bypass for LDAP/OIDC users.
  */
 
-import { randomBytes } from 'crypto';
-
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -17,11 +15,16 @@ import { getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
-import { hashPassword } from '../lib/password';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure } from '../lib/trpc';
+import {
+  LocalAccessRefused,
+  assertOwnLocalIdentity,
+  placeholderPasswordHash,
+  prepareLocalIdentity,
+} from '../services/localAccess.service';
 
 export const usersAdminRouter = router({
   /**
@@ -271,7 +274,14 @@ export const usersAdminRouter = router({
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },
-        include: { identities: { select: { provider: true } } },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          identities: {
+            select: { id: true, provider: true, providerId: true, localCredential: { select: { id: true } } },
+          },
+        },
       });
 
       if (!user) {
@@ -297,32 +307,29 @@ export const usersAdminRouter = router({
         });
       }
 
-      const hasLocalIdentity = user.identities.some(i => i.provider === 'LOCAL');
-
-      if (!hasLocalIdentity) {
-        // Hashed outside the transaction (argon2 is CPU-bound, must not hold a DB
-        // transaction open — same reasoning as users.core.router.ts). The password is
-        // random and discarded: it only exists to satisfy LocalCredential's NOT NULL
-        // constraint until the user sets a real one via the reset link below.
-        const placeholderHash = await hashPassword(randomBytes(32).toString('hex'));
-
+      // A LOCAL identity under the current username, with a credential: created if missing (the
+      // credential is a random placeholder until the user sets a password through the link below).
+      const local = user.identities.find(i => i.provider === 'LOCAL');
+      if (!local || !local.localCredential || local.providerId !== user.username) {
+        const placeholderHash = await placeholderPasswordHash();
         try {
-          await ctx.prisma.$transaction(async tx => {
-            const identity = await tx.identity.create({
-              data: { userId: user.id, provider: 'LOCAL', providerId: user.username },
-            });
-            await tx.localCredential.create({
-              data: { identityId: identity.id, passwordHash: placeholderHash },
-            });
-          });
-        } catch (err) {
-          // `user.identities` was read outside any transaction: a concurrent call for the
-          // same user can race this one. The `@@unique([provider, providerId])` constraint
-          // is the actual race arbiter — losing that race means the identity now exists
-          // (created by the winner), so just proceed to (re)send the link below.
-          if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
-            throw err;
+          try {
+            await ctx.prisma.$transaction(tx => prepareLocalIdentity(tx, user, placeholderHash));
+          } catch (err) {
+            // `user.identities` was read outside any transaction: a concurrent call for the same
+            // user can race this one, and the `(provider, providerId)` unique key decides it. The
+            // identity that won is acceptable only if it is this user's, with a credential.
+            if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+            await assertOwnLocalIdentity(ctx.prisma, user);
           }
+        } catch (err) {
+          if (!(err instanceof LocalAccessRefused)) throw err;
+          ctx.logger.warn({ userId: user.id, reason: err.message }, 'forceLocalAccess: unusable LOCAL identity');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "L'identità locale di questo utente non è utilizzabile: è registrata con un altro username o appartiene a un altro account.",
+          });
         }
       }
 
@@ -338,9 +345,9 @@ export const usersAdminRouter = router({
         await sendPasswordResetEmail(ctx.prisma, user.email, token, baseUrl);
       } catch (error) {
         // The LOCAL identity/credential (if just created) is deliberately left in place —
-        // it's unusable without the link and the next call just resends it (see
-        // `hasLocalIdentity` above). Only the orphaned token, which nobody received, is
-        // cleaned up, mirroring `requestPasswordReset` in `auth.service.ts`.
+        // it's unusable without the link, and the next call finds it ready and just resends
+        // the link. Only the orphaned token, which nobody received, is cleaned up, mirroring
+        // `requestPasswordReset` in `auth.service.ts`; a link sent earlier is never touched.
         if (userToken) {
           await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
             ctx.logger.warn({ err: e, tokenId: userToken!.id }, 'Failed to delete orphaned reset token');

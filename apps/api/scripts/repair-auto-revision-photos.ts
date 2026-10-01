@@ -26,17 +26,7 @@ import { randomUUID } from 'crypto';
 import { repairAutoRevisionPhotos } from '../src/services/autoRevisionPhotoRepair.service.js';
 
 import { createScriptPrismaClient } from './lib/prisma.js';
-
-/** Host and database of the connection string, without credentials, so the report names its target. */
-function describeTarget(url: string | undefined): string {
-  if (!url) return '(DATABASE_URL not set)';
-  try {
-    const parsed = new URL(url);
-    return `${parsed.hostname}:${parsed.port || '5432'}${parsed.pathname}`;
-  } catch {
-    return '(unparseable DATABASE_URL)';
-  }
-}
+import { describeTarget } from './lib/target.js';
 
 async function main() {
   const apply = process.argv.includes('--apply');

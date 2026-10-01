@@ -184,6 +184,39 @@ describe('users.forceLocalAccess', () => {
     });
     expect(orphanedToken).toBeNull();
   });
+
+  it('email send failed → deletes only the token it created, never a link sent earlier', async () => {
+    const target = await createDualIdentityUser();
+    const earlier = await prisma.userToken.create({
+      data: { userId: target.id, type: 'RESET', tokenHash: `earlier-${randomUUID()}`, expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), { code: 'INTERNAL_SERVER_ERROR' });
+
+    const tokens = await prisma.userToken.findMany({ where: { userId: target.id, type: 'RESET' } });
+    expect(tokens.map(t => t.id)).toEqual([earlier.id]);
+  });
+
+  it('a LOCAL identity left under an old username → BAD_REQUEST, nothing created', async () => {
+    const target = await createDualIdentityUser();
+    await prisma.user.update({ where: { id: target.id }, data: { username: `${target.username}-renamed` } });
+
+    await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), { code: 'BAD_REQUEST' });
+
+    expect(await prisma.identity.count({ where: { userId: target.id, provider: 'LOCAL' } })).toBe(1);
+    expect(await prisma.userToken.count({ where: { userId: target.id } })).toBe(0);
+  });
+
+  it("the username's LOCAL identity belongs to another account → BAD_REQUEST, no link issued", async () => {
+    const target = await createLdapUser();
+    const other = await createLdapUser();
+    await prisma.identity.create({ data: { userId: other.id, provider: 'LOCAL', providerId: target.username } });
+
+    await expectToThrow(usersAs('admin').forceLocalAccess({ id: target.id }), { code: 'BAD_REQUEST' });
+
+    expect(await prisma.identity.count({ where: { userId: target.id, provider: 'LOCAL' } })).toBe(0);
+    expect(await prisma.userToken.count({ where: { userId: target.id } })).toBe(0);
+  });
 });
 
 describe('users.revokeLocalAccess', () => {
