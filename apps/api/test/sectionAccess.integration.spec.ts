@@ -445,19 +445,41 @@ describe('sectionAccess — parent sections are derived from their children (ADR
     await expect(prisma.userSectionAccess.count({ where: { userId: viewer.id } })).resolves.toBe(0);
   });
 
-  it('follows the derived parent in the section middleware', async () => {
-    // `storage.getConfig` is gated on `withSectionAccess('settings')`. With every settings child
-    // off, the derived `settings` is off too, whatever the admin role default says.
-    const { session: adminSession, user: admin } = await createTestUser('admin');
-    await createTestUser('admin');
-    const caller = createCallerWithSession(adminSession);
+  describe('the storage settings are guarded by settings.storage, not by the derived parent', () => {
+    // `storage.getConfig` returns the S3 credentials and `storage.saveConfig` writes them. Guarded
+    // on `settings`, they stayed open while any other settings child was on.
+    const localConfig = {
+      type: 'local' as const,
+      basePath: '/tmp/luke-section-guard',
+      maxFileSizeMB: 10,
+      enableProxy: true,
+    };
 
-    await expect(caller.storage.getConfig()).resolves.toBeDefined();
+    it('refuses both procedures when settings.storage is off and the other children are on', async () => {
+      const { session: adminSession, user: admin } = await createTestUser('admin');
+      await createTestUser('admin'); // a second way out, so the recovery guard stays quiet
+      const caller = createCallerWithSession(adminSession);
 
-    for (const child of childSectionsOf('settings')) {
-      await caller.sectionAccess.set({ userId: admin.id, section: child, enabled: false });
-    }
-    await expect(caller.storage.getConfig()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(caller.storage.getConfig()).resolves.toBeDefined();
+
+      await caller.sectionAccess.set({ userId: admin.id, section: 'settings.storage', enabled: false });
+
+      expect((await caller.sectionAccess.getEffectiveForMe()).settings).toBe(true);
+      await expect(caller.storage.getConfig()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(caller.storage.saveConfig(localConfig)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('allows them with settings.storage on and every other settings child off', async () => {
+      const { session: adminSession, user: admin } = await createTestUser('admin');
+      await createTestUser('admin');
+      const caller = createCallerWithSession(adminSession);
+
+      for (const child of childSectionsOf('settings')) {
+        if (child === 'settings.storage') continue;
+        await caller.sectionAccess.set({ userId: admin.id, section: child, enabled: false });
+      }
+      await expect(caller.storage.getConfig()).resolves.toBeDefined();
+    });
   });
 
   describe('kill switch (app.sections.disabled)', () => {
@@ -483,6 +505,15 @@ describe('sectionAccess — parent sections are derived from their children (ADR
       await expect(writeKillSwitch(session, ['settings.users'])).rejects.toMatchObject({
         code: 'BAD_REQUEST',
       });
+    });
+
+    it('closes the storage settings when settings.storage alone is disabled', async () => {
+      const { session } = await createTestUser('admin');
+      await writeKillSwitch(session, ['settings.storage']);
+
+      const caller = createCallerWithSession(session);
+      expect((await caller.sectionAccess.getEffectiveForMe()).settings).toBe(true);
+      await expect(caller.storage.getConfig()).rejects.toMatchObject({ code: 'FORBIDDEN' });
     });
 
     it('accepts switching off every sales child, which hides sales as well', async () => {

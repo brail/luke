@@ -251,7 +251,7 @@ export const storageRouter = router({
    */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
-    .use(withSectionAccess('settings'))
+    .use(withSectionAccess('settings.storage'))
     .query(async ({ ctx }) => {
       // Every fallback and coercion here used to be written out, and disagreed with the copy in
       // `storage/index.ts` that opens the actual connection — the page showed `seaweedfs` while
@@ -309,7 +309,7 @@ export const storageRouter = router({
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .use(withSectionAccess('settings'))
+    .use(withSectionAccess('settings.storage'))
     .input(storageSaveConfigSchema)
     .mutation(async ({ input, ctx }) => {
       if (input.type === 'local') {

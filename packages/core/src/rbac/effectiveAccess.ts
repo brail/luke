@@ -24,8 +24,9 @@ type EffectiveAccessParams = {
     Partial<Record<Section, SectionDefault>>
   >;
   /**
-   * The user's overrides, section → enabled. The whole map, not the one for `section`: a parent
-   * section is derived from its children, so evaluating it reads their overrides (ADR-025).
+   * The user's overrides, section → enabled. For a section with children, the whole map: a parent
+   * is derived from its children, so evaluating it reads their overrides (ADR-025). A section
+   * without children reads only its own entry.
    */
   userOverrides: ReadonlyMap<string, boolean> | null | undefined;
   /** Section to evaluate */

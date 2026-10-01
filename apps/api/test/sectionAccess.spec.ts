@@ -213,30 +213,34 @@ describe('Section Access Overrides', () => {
   });
 
   describe('Middleware enforcement', () => {
-    it('should throw FORBIDDEN when access denied', async () => {
-      const { withSectionAccess } = await import(
-        '../src/lib/sectionAccessMiddleware'
-      );
+    /**
+     * A procedure guarded on `settings.storage`, called by a user of `role` whose one stored
+     * override is `override` (absent when `undefined`). `readOverride` replaces the override read,
+     * to make it fail. No AppConfig row: static defaults, nothing disabled.
+     */
+    async function callGuarded(
+      role: string,
+      override?: boolean,
+      readOverride?: () => Promise<unknown>
+    ) {
+      const { withSectionAccess } = await import('../src/lib/sectionAccessMiddleware');
 
       // `withSectionAccess` returns a tRPC MiddlewareBuilder, not a callable:
       // it must be exercised through a real procedure, as in production.
       const probeRouter = router({
-        probe: publicProcedure
-          .use(withSectionAccess('settings'))
-          .query(() => 'success'),
+        probe: publicProcedure.use(withSectionAccess('settings.storage')).query(() => 'success'),
       });
 
-      // Context with a viewer user, no override
       const mockCtx = {
-        session: {
-          user: {
-            id: 'test-user',
-            role: 'viewer',
-          },
-        },
+        session: { user: { id: 'test-user', role } },
         prisma: {
           userSectionAccess: {
-            findMany: async () => [], // No override
+            findUnique:
+              readOverride ??
+              (async ({ where }: { where: { userId_section: { userId: string; section: string } } }) =>
+                override === undefined || where.userId_section.section !== 'settings.storage'
+                  ? null
+                  : { section: 'settings.storage', enabled: override }),
           },
           // `getRbacConfig` reads rbac.sectionAccessDefaults and app.sections.disabled:
           // no row → static defaults, no section disabled.
@@ -247,9 +251,36 @@ describe('Section Access Overrides', () => {
         logger: createSilentLogger(),
       } as unknown as Context;
 
-      await expect(probeRouter.createCaller(mockCtx).probe()).rejects.toThrow(
-        'Accesso negato alla sezione settings'
+      return probeRouter.createCaller(mockCtx).probe();
+    }
+
+    it('should throw FORBIDDEN when access denied', async () => {
+      await expect(callGuarded('viewer')).rejects.toThrow(
+        'Accesso negato alla sezione settings.storage'
       );
+    });
+
+    it('applies the stored override of the guarded leaf', async () => {
+      await expect(callGuarded('admin')).resolves.toBe('success');
+      await expect(callGuarded('admin', false)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(callGuarded('viewer', true)).resolves.toBe('success');
+    });
+
+    it('fails the request when the override cannot be read, rather than using the role default', async () => {
+      // A swallowed read would fall through to the admin's default and open the section.
+      await expect(
+        callGuarded('admin', undefined, async () => {
+          throw new Error('database unavailable');
+        })
+      ).rejects.toThrow('database unavailable');
+    });
+
+    it('refuses to guard a section that has children', async () => {
+      const { withSectionAccess } = await import('../src/lib/sectionAccessMiddleware');
+
+      // A parent is on as soon as any child is (ADR-025), so a guard on `settings` let through a
+      // user whose `settings.storage` was off. Built at module load, the refusal stops the API.
+      expect(() => withSectionAccess('settings')).toThrow(/settings/);
     });
   });
 });
