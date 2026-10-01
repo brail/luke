@@ -1,4 +1,3 @@
-import { sectionEnum } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 
 /**
@@ -94,12 +93,6 @@ export interface TableProps {
   error?: unknown;
 }
 
-/**
- * Per-section visibility overrides for a user.
- * A missing key means the role default applies; `true`/`false` is an explicit override.
- */
-export type SectionOverrideMap = Partial<Record<string, boolean>>;
-
 /** Minimal user shape required by `ApproveUserDialog`. */
 export type UserForApproval = {
   id: string;
@@ -144,6 +137,3 @@ export const SECTION_LABELS: Record<Section, string> = {
   planning: 'Pianificazione',
   'settings.company': '↳ Azienda',
 };
-
-/** All valid section keys derived directly from `sectionEnum` — never duplicate manually. */
-export const ALL_SECTIONS: readonly Section[] = sectionEnum.options;

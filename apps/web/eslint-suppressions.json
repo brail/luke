@@ -145,9 +145,6 @@
     }
   },
   "src/app/(app)/settings/users/_components/UserAccessDialog.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    },
     "react/no-unescaped-entities": {
       "count": 1
     }

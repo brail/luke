@@ -1,6 +1,11 @@
 'use client';
 
-import { childSectionsOf, type Section } from '@luke/core';
+import {
+  childSectionsOf,
+  effectiveSectionAccess,
+  type Section,
+  type SectionDefault,
+} from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import { Label } from '../../../../../components/ui/label';
@@ -10,7 +15,6 @@ import {
   isSectionOverridden,
   resetSection,
   sectionRows,
-  sectionValue,
   toggleSection,
   type SectionOverrides,
 } from '../../../../../lib/sectionTree';
@@ -18,31 +22,62 @@ import {
 import { SECTION_LABELS } from './types';
 
 interface SectionAccessListProps {
+  /** The role whose defaults the overrides sit on. */
+  role: string;
+  /**
+   * The role defaults and the kill switch (`sectionAccess.getDefaults`), or `undefined` while they
+   * have not answered: until then no switch is shown, since every one would be computed against
+   * an empty table.
+   */
+  defaults:
+    | {
+        sectionAccessDefaults: Record<string, Partial<Record<Section, SectionDefault>>>;
+        disabledSections: string[];
+      }
+    | undefined;
   overrides: SectionOverrides;
   onChange: (next: SectionOverrides) => void;
-  /** The role default for a leaf section, as resolved by the server (`sectionAccess.getDefaults`). */
-  roleDefault: (section: Section) => boolean;
-  /** The kill switch (`app.sections.disabled`), shown as off and locked whatever the override. */
-  disabledSections: readonly string[];
+  /** Every switch and reset disabled, while the dialog saves. */
+  disabled?: boolean;
 }
 
 /**
- * The section-visibility switches shared by the user access and approval dialogs. A parent
- * section shows the state of its children and switches all of them (ADR-025); only leaf
- * overrides are ever produced.
+ * The section-visibility switches shared by the user access and approval dialogs. Every switch is
+ * resolved by the core's `effectiveSectionAccess`, the one the server enforces with: a parent shows
+ * the state of its children and switches the leaves under it the kill switch does not cover
+ * (ADR-027); only leaf overrides are ever produced.
  */
 export function SectionAccessList({
+  role,
+  defaults,
   overrides,
   onChange,
-  roleDefault,
-  disabledSections,
+  disabled = false,
 }: SectionAccessListProps) {
+  if (!defaults) {
+    return <div className="py-4 text-center text-sm text-muted-foreground">Caricamento...</div>;
+  }
+
+  const { sectionAccessDefaults, disabledSections } = defaults;
+  const userOverrides = new Map(
+    Object.entries(overrides).filter((entry): entry is [string, boolean] => entry[1] !== undefined)
+  );
+  const resolve = (section: Section, withOverrides: boolean) =>
+    effectiveSectionAccess({
+      role,
+      sectionAccessDefaults,
+      userOverrides: withOverrides ? userOverrides : null,
+      section,
+      disabledSections,
+    });
+  const roleDefault = (section: Section) => resolve(section, false);
+
   return (
     <div className="space-y-2">
       {sectionRows().map(section => {
         const isParent = childSectionsOf(section).length > 0;
         const locked = isSectionLocked(section, disabledSections);
-        const overridden = isSectionOverridden(section, overrides);
+        const overridden = isSectionOverridden(section, overrides, disabledSections);
         const status = locked
           ? '(disabilitata globalmente)'
           : isParent
@@ -62,10 +97,10 @@ export function SectionAccessList({
             <div className="flex items-center gap-2">
               <Switch
                 id={`section-${section}`}
-                checked={sectionValue(section, overrides, roleDefault, disabledSections)}
-                disabled={locked}
+                checked={resolve(section, true)}
+                disabled={locked || disabled}
                 onCheckedChange={checked =>
-                  onChange(toggleSection(overrides, section, checked, roleDefault))
+                  onChange(toggleSection(overrides, section, checked, roleDefault, disabledSections))
                 }
               />
               {overridden && (
@@ -73,7 +108,8 @@ export function SectionAccessList({
                   variant="ghost"
                   size="sm"
                   className="h-6 px-1 text-xs text-muted-foreground"
-                  onClick={() => onChange(resetSection(overrides, section))}
+                  disabled={disabled}
+                  onClick={() => onChange(resetSection(overrides, section, disabledSections))}
                 >
                   Reset
                 </Button>

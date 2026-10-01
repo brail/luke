@@ -73,6 +73,10 @@ export default defineConfig({
       // Added for loginFailure.browser.test.tsx, which mounts login/page.tsx: same "discovered
       // mid-run" reload, on the first run after this test was written.
       'next/link',
+      // Added for the section-access dialog tests (UserAccessDialog, ApproveUserDialog), the first
+      // to mount a Switch and a Select: listed up front for the same cold-cache reason.
+      '@radix-ui/react-switch',
+      '@radix-ui/react-select',
     ],
   },
   oxc: {

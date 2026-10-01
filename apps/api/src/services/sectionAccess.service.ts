@@ -3,8 +3,8 @@
  * Handles CRUD and safety checks for UserSectionAccess records.
  */
 
-import { effectiveSectionAccess, sectionEnum, Roles } from '@luke/core';
-import type { Section, Role } from '@luke/core';
+import { effectiveSectionAccess, sectionEnum } from '@luke/core';
+import type { Section } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 import type { Prisma, PrismaClient } from '@luke/db';
 
@@ -15,27 +15,13 @@ type PrismaLike = PrismaClient | Prisma.TransactionClient;
 const ALL_SECTIONS = sectionEnum.options;
 
 /**
- * Returns `sectionAccessDefaults`, `disabledSections`, and `computedRoleDefaults`
- * in a single cached call. `computedRoleDefaults` represents effective section access
- * per role without any user-level override (evaluation layers 0 + 2 + 3).
+ * Returns the per-role section defaults (static table with the AppConfig entries merged over it)
+ * and the kill switch, from the cached RBAC configuration. The access dialogs resolve every switch
+ * from these with the core's `effectiveSectionAccess`, the resolver the server enforces with.
  */
 export async function getSectionDefaults(prisma: PrismaClient) {
-  const rbacConfig = await getRbacConfig(prisma);
-  const { sectionAccessDefaults, disabledSections } = rbacConfig;
-
-  const computedRoleDefaults = Object.fromEntries(
-    Roles.map(role => [
-      role,
-      Object.fromEntries(
-        ALL_SECTIONS.map(section => [
-          section,
-          effectiveSectionAccess({ role, sectionAccessDefaults, userOverrides: null, section, disabledSections }),
-        ])
-      ),
-    ])
-  ) as Record<Role, Record<Section, boolean>>;
-
-  return { sectionAccessDefaults, disabledSections, computedRoleDefaults };
+  const { sectionAccessDefaults, disabledSections } = await getRbacConfig(prisma);
+  return { sectionAccessDefaults, disabledSections };
 }
 
 /**

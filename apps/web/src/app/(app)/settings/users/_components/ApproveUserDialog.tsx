@@ -1,10 +1,10 @@
 'use client';
 
 import { ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import type { Role, Section } from '@luke/core';
+import type { Role } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -25,10 +25,8 @@ import {
 import { trpc } from '../../../../../lib/trpc';
 
 import { SectionAccessList } from './SectionAccessList';
-import { type SectionOverrideMap, type UserForApproval } from './types';
-
-// Keys in SectionOverrideMap are always valid Section values
-const toSection = (s: string) => s as Section;
+import { type UserForApproval } from './types';
+import { useSectionOverridesEditor } from './useSectionOverridesEditor';
 
 interface ApproveUserDialogProps {
   user: UserForApproval;
@@ -39,8 +37,13 @@ interface ApproveUserDialogProps {
 
 /**
  * Dialog that forces an admin to configure role and section access before approving a pending user.
+ *
+ * An attempt is the role (only if the administrator changed it), the override edits, then the
+ * approval; every control is disabled for its whole length. After any failure the dialog re-reads
+ * the stored role, the pending status and the overrides before another attempt (ADR-027): a call
+ * that committed but answered with an error is then neither repeated nor mistaken for not done.
  * @param user - Pending user to approve, with current role pre-populated.
- * @param onApproved - Called after the user has been successfully approved.
+ * @param onApproved - Called after the user has been approved, or found no longer pending.
  */
 export function ApproveUserDialog({
   user,
@@ -48,10 +51,17 @@ export function ApproveUserDialog({
   onOpenChange,
   onApproved,
 }: ApproveUserDialogProps) {
-  const [pendingRole, setPendingRole] = useState<Role>(user.role);
-  const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
+  const utils = trpc.useUtils();
+  const editor = useSectionOverridesEditor({ userId: user.id, open });
+
+  /** The role stored for the account, from the last read; `null` until the first one answers. */
+  const [storedRole, setStoredRole] = useState<Role | null>(null);
+  /** The role the administrator chose, while it differs from the stored one. */
+  const [roleEdit, setRoleEdit] = useState<Role | null>(null);
+  const [roleReadFailed, setRoleReadFailed] = useState(false);
   const [selectedFunctionId, setSelectedFunctionId] = useState<string>('');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const { data: functions = [] } = trpc.company.function.list.useQuery(undefined, { enabled: open });
   const { data: teams = [] } = trpc.company.team.listByFunction.useQuery(
@@ -59,46 +69,88 @@ export function ApproveUserDialog({
     { enabled: open && !!selectedFunctionId }
   );
 
-  // The runtime defaults (static table + AppConfig override), the same ones the server resolves
-  // with — not the static table alone, which ignores a per-role override stored in AppConfig.
-  const { data: sectionDefaults } = trpc.sectionAccess.getDefaults.useQuery(undefined, {
-    enabled: open,
-  });
-
-  const getRoleDefault = (section: Section): boolean =>
-    sectionDefaults?.computedRoleDefaults?.[pendingRole]?.[section] ?? false;
-
   const updateUserMutation = trpc.users.update.useMutation();
-  const setSectionMutation = trpc.sectionAccess.set.useMutation();
   const approveMutation = trpc.users.approvePending.useMutation();
 
-  const [isSaving, setIsSaving] = useState(false);
+  /**
+   * The account as stored, read bypassing the query cache, or `null` when it is no longer in the
+   * pending list (approved, rejected or deactivated: `listPending` filters both) — the caller then
+   * ends the dialog.
+   */
+  const readPending = useCallback(async () => {
+    const { users } = await utils.users.listPending.fetch(undefined, { staleTime: 0 });
+    return users.find(candidate => candidate.id === user.id) ?? null;
+  }, [utils, user.id]);
+
+  const endNoLongerPending = useCallback(() => {
+    toast.info('Questo account non è più tra le richieste in attesa');
+    onApproved();
+  }, [onApproved]);
+
+  // A new opening starts from nothing (reset during render, as in `useSectionOverridesEditor`).
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    setStoredRole(null);
+    setRoleEdit(null);
+    setRoleReadFailed(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    readPending().then(
+      stored => {
+        if (!current) return;
+        if (stored) setStoredRole(stored.role);
+        else endNoLongerPending();
+      },
+      () => {
+        if (current) setRoleReadFailed(true);
+      }
+    );
+    return () => {
+      current = false;
+    };
+  }, [open, readPending, endNoLongerPending]);
+
+  const shownRole = roleEdit ?? storedRole;
+  const stale = editor.stale || roleReadFailed;
+  const ready = shownRole !== null && editor.defaults !== undefined && !stale;
+
+  const chooseRole = (role: Role) => {
+    setRoleEdit(role === storedRole ? null : role);
+    editor.resetToRoleDefaults();
+  };
 
   const handleSaveAndApprove = async () => {
     setIsSaving(true);
     try {
-      if (pendingRole !== user.role) {
-        await updateUserMutation.mutateAsync({ id: user.id, role: pendingRole });
+      if (roleEdit) {
+        await updateUserMutation.mutateAsync({ id: user.id, role: roleEdit });
       }
-
-      // New user: no existing overrides — only send explicit changes, skip no-ops
-      await Promise.all(
-        Object.keys(pendingSection).map(section =>
-          setSectionMutation.mutateAsync({
-            userId: user.id,
-            section: toSection(section),
-            enabled: pendingSection[section]!,
-          })
-        )
-      );
+      const failures = await editor.save();
+      if (failures > 0) throw new Error(`${failures} sezione/i non aggiornata/e`);
 
       await approveMutation.mutateAsync({ id: user.id, teamId: selectedTeamId });
 
       toast.success('Utente approvato con accesso configurato');
       onApproved();
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : undefined;
-      toast.error(msg ?? "Errore durante l'approvazione");
+      toast.error(e instanceof Error ? e.message : "Errore durante l'approvazione");
+      await editor.reconcile();
+      try {
+        const stored = await readPending();
+        if (!stored) {
+          endNoLongerPending();
+          return;
+        }
+        setStoredRole(stored.role);
+        // A role edit the store already reflects is no edit any more.
+        setRoleEdit(roleEdit === stored.role ? null : roleEdit);
+      } catch {
+        setRoleReadFailed(true);
+      }
     } finally {
       setIsSaving(false);
     }
@@ -124,14 +176,19 @@ export function ApproveUserDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
+          {stale && (
+            <p className="text-sm text-destructive">
+              Impossibile verificare lo stato salvato dell&apos;account: chiudi e riapri la finestra.
+            </p>
+          )}
+
           <div>
             <h3 className="text-sm font-semibold mb-3">Ruolo</h3>
             <Select
-              value={pendingRole}
-              onValueChange={v => {
-                setPendingRole(v as Role);
-                setPendingSection({});
-              }}
+              value={shownRole ?? ''}
+              // The items below are exactly the three roles, so the value is one of them.
+              onValueChange={v => chooseRole(v as Role)}
+              disabled={!ready || isSaving}
             >
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -146,12 +203,15 @@ export function ApproveUserDialog({
 
           <div>
             <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
-            <SectionAccessList
-              overrides={pendingSection}
-              onChange={setPendingSection}
-              roleDefault={getRoleDefault}
-              disabledSections={sectionDefaults?.disabledSections ?? []}
-            />
+            {!stale && (
+              <SectionAccessList
+                role={shownRole ?? user.role}
+                defaults={ready ? editor.defaults : undefined}
+                overrides={editor.shown}
+                onChange={editor.onChange}
+                disabled={isSaving}
+              />
+            )}
           </div>
 
           <div>
@@ -164,6 +224,7 @@ export function ApproveUserDialog({
               <Select
                 value={selectedFunctionId}
                 onValueChange={v => { setSelectedFunctionId(v); setSelectedTeamId(''); }}
+                disabled={isSaving}
               >
                 <SelectTrigger className="flex-1">
                   <SelectValue placeholder="Funzione…" />
@@ -177,7 +238,7 @@ export function ApproveUserDialog({
               <Select
                 value={selectedTeamId}
                 onValueChange={setSelectedTeamId}
-                disabled={!selectedFunctionId}
+                disabled={!selectedFunctionId || isSaving}
               >
                 <SelectTrigger className="flex-1">
                   <SelectValue placeholder="Team…" />
@@ -211,7 +272,7 @@ export function ApproveUserDialog({
           >
             Annulla
           </Button>
-          <Button onClick={handleSaveAndApprove} disabled={isSaving || !selectedTeamId}>
+          <Button onClick={handleSaveAndApprove} disabled={isSaving || !ready || !selectedTeamId}>
             {isSaving ? 'Approvazione...' : 'Salva e approva'}
           </Button>
         </DialogFooter>

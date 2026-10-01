@@ -56,6 +56,18 @@ export function effectiveSectionAccess(params: EffectiveAccessParams): boolean {
   return leafSectionAccess(params);
 }
 
+/**
+ * Layer 0, the global kill switch (`app.sections.disabled`): `true` when it lists the section or any
+ * section it is nested under. One predicate for the resolver and for the access dialogs, which
+ * show such a section as off and locked.
+ */
+export function isGloballyDisabled(
+  section: Section,
+  disabledSections: readonly string[] | undefined
+): boolean {
+  return [section, ...ancestorSectionsOf(section)].some(s => disabledSections?.includes(s));
+}
+
 function leafSectionAccess({
   role,
   sectionAccessDefaults,
@@ -64,10 +76,7 @@ function leafSectionAccess({
   disabledSections,
 }: EffectiveAccessParams): boolean {
   // 0) Global kill switch - maximum precedence. Disabling a parent disables its whole group.
-  if (disabledSections?.includes(section)) return false;
-  if (ancestorSectionsOf(section).some(ancestor => disabledSections?.includes(ancestor))) {
-    return false;
-  }
+  if (isGloballyDisabled(section, disabledSections)) return false;
 
   // 1) User override - high precedence
   const override = userOverrides?.get(section);

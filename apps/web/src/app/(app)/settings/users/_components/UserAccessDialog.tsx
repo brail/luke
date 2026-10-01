@@ -1,10 +1,8 @@
 'use client';
 
 import { Info, Settings2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
-
-import type { Section } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -15,16 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { leafOverridesOnly } from '../../../../../lib/sectionTree';
-import { trpc } from '../../../../../lib/trpc';
-import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import { SectionAccessList } from './SectionAccessList';
-import {
-  ALL_SECTIONS,
-  type SectionOverrideMap,
-  type UserListItem,
-} from './types';
+import { type UserListItem } from './types';
+import { useSectionOverridesEditor } from './useSectionOverridesEditor';
 
 interface UserAccessDialogProps {
   user: UserListItem;
@@ -33,98 +25,36 @@ interface UserAccessDialogProps {
 }
 
 /**
- * Dialog for editing section-visibility overrides for an existing user.
+ * Dialog for editing section-visibility overrides for an existing user. It saves only the
+ * administrator's edits, and re-reads the server after a failure (`useSectionOverridesEditor`).
  * @param user - The user whose section access is being managed.
  */
 export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogProps) {
-  const utils = trpc.useUtils();
-  const initialized = useRef(false);
-
-  const { data: serverSectionOverrides, isLoading: loadingSection } =
-    trpc.sectionAccess.getByUser.useQuery({ userId: user.id }, { enabled: open });
-
-  const { data: sectionDefaults } = trpc.sectionAccess.getDefaults.useQuery(undefined, {
-    enabled: open,
-  });
-
-  const [pendingSection, setPendingSection] = useState<SectionOverrideMap>({});
-  const [isDirty, setIsDirty] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      initialized.current = false;
-      return;
-    }
-    if (initialized.current) return;
-    if (loadingSection) return;
-
-    initialized.current = true;
-
-    const sectionMap: SectionOverrideMap = {};
-    serverSectionOverrides?.forEach(o => {
-      if (o.enabled !== null) sectionMap[o.section] = o.enabled;
-    });
-    setPendingSection(leafOverridesOnly(sectionMap));
-    setIsDirty(false);
-  }, [open, loadingSection, serverSectionOverrides]);
-
-  const getRoleDefault = (section: Section): boolean =>
-    sectionDefaults?.computedRoleDefaults?.[user.role]?.[section] ?? false;
-
-  const setSectionMutation = trpc.sectionAccess.set.useMutation();
+  const editor = useSectionOverridesEditor({ userId: user.id, open });
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const serverSectionMap: Record<string, boolean | null> = {};
-      serverSectionOverrides?.forEach(o => {
-        if (o.enabled !== null) serverSectionMap[o.section] = o.enabled;
-      });
-      const changedSections = ALL_SECTIONS.filter(section => {
-        const desired = section in pendingSection ? pendingSection[section]! : null;
-        const current = serverSectionMap[section] ?? null;
-        return desired !== current;
-      });
-      const results = await Promise.allSettled(
-        changedSections.map(section =>
-          setSectionMutation.mutateAsync({
-            userId: user.id,
-            section,
-            enabled: section in pendingSection ? pendingSection[section]! : null,
-          })
-        )
-      );
-
-      await utils.sectionAccess.getByUser.invalidate({ userId: user.id });
-
-      const failures = results.filter(r => r.status === 'rejected');
-      if (failures.length > 0) {
-        const fresh = await utils.sectionAccess.getByUser.fetch({ userId: user.id });
-        const sectionMap: SectionOverrideMap = {};
-        fresh?.forEach(o => { if (o.enabled !== null) sectionMap[o.section as Section] = o.enabled!; });
-        setPendingSection(leafOverridesOnly(sectionMap));
-        toast.error(`${failures.length} sezione/i non aggiornata/e`);
+      const failures = await editor.save();
+      if (failures > 0) {
+        toast.error(`${failures} sezione/i non aggiornata/e`);
         return;
       }
-
       toast.success('Accesso aggiornato');
-      setIsDirty(false);
       onOpenChange(false);
-    } catch (e: unknown) {
-      toast.error(getTrpcErrorMessage(e) ?? 'Errore nel salvataggio');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleCancel = () => {
-    setIsDirty(false);
-    onOpenChange(false);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={open => { if (!open) handleCancel(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={next => {
+        if (!next && !isSaving) onOpenChange(false);
+      }}
+    >
       <DialogContent className="sm:max-w-[560px] max-h-[85vh] p-0 gap-0 flex flex-col"> {/* px/vh: dialog width tuned to content, vh cap has no Tailwind scale equivalent */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -138,22 +68,22 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-        {loadingSection ? (
-          <div className="py-8 text-center text-muted-foreground">Caricamento...</div>
-        ) : (
           <div className="space-y-6">
-            {/* Section overrides */}
             <div>
               <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
-              <SectionAccessList
-                overrides={pendingSection}
-                onChange={next => {
-                  setPendingSection(next);
-                  setIsDirty(true);
-                }}
-                roleDefault={getRoleDefault}
-                disabledSections={sectionDefaults?.disabledSections ?? []}
-              />
+              {editor.stale ? (
+                <p className="text-sm text-destructive">
+                  Impossibile verificare gli accessi salvati: chiudi e riapri la finestra.
+                </p>
+              ) : (
+                <SectionAccessList
+                  role={user.role}
+                  defaults={editor.defaults}
+                  overrides={editor.shown}
+                  onChange={editor.onChange}
+                  disabled={isSaving}
+                />
+              )}
             </div>
 
             {/* Brand access info */}
@@ -165,14 +95,16 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
               </p>
             </div>
           </div>
-        )}
         </div>
 
         <DialogFooter className="px-6 py-4 border-t shrink-0">
-          <Button variant="outline" onClick={handleCancel} disabled={isSaving}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Annulla
           </Button>
-          <Button onClick={handleSave} disabled={!isDirty || isSaving}>
+          <Button
+            onClick={handleSave}
+            disabled={!editor.hasChanges || editor.stale || !editor.defaults || isSaving}
+          >
             {isSaving ? 'Salvataggio...' : 'Salva'}
           </Button>
         </DialogFooter>
