@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
 
   # The same aggregate as ci.yml's `CI gate` — see there for why it runs
   # `always()`, why it counts its arguments before looping, and why `shell:` is
@@ -124,7 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
 
   # Same job, aimed at the active release train, because the rule above cuts
   # both ways: a scheduled run reads the workflow from the default branch *and*
@@ -150,7 +150,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TRAIN_BRANCH }}
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.5.1
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.6.0
 
   # `contains(needs.*.result, 'failure')` ignora gli skip: i job push-only sono
   # 'skipped' (non 'failure') sui trigger schedule, e viceversa, quindi questo
