@@ -837,3 +837,18 @@ it. Here the constructible boundary was "what happens before the candidate is se
 configuration check and the service-account bind. Driving the 503 and the breaker from that alone
 made the design smaller than the one it replaced. A second failed review round on the same
 requirement is the signal to reopen the requirement, not to add a third mechanism.
+
+## A data migration translates from the old reader, not from a summary of it (2026-10-01)
+
+**What happened.** Planning the migration of pre-ADR-025 section overrides (R2), I described the old
+role default as "stored value, or the permission fallback when absent". The old reader has two
+different absences: a section missing from a role the stored map contains falls to the permission
+fallback, but a role the map does not contain keeps the whole static table. With a map that omits
+the viewer role, the plan would have inserted `admin.brands = true` for a viewer whose parent
+override was `true` — widening access in a migration meant to preserve it. Codex found it in the
+first review round, by reading `getRbacConfig`'s per-role spread next to the plan.
+
+**Rule.** Before writing a migration that preserves behaviour, derive its "before" value as one
+function from the old reader's code, branch by branch (which key is absent, which value is invalid,
+which flag it ignores), and use that single function everywhere the migration needs the old value.
+Test each absence separately, including the one where the containing object itself is missing.

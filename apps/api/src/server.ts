@@ -22,6 +22,7 @@ import { IMAGE_BUCKETS, isDevelopment, isProduction } from '@luke/core';
 import {
   deriveSecret,
   HKDF_INFO_COOKIE,
+  setRbacConfigWarningHandler,
 } from '@luke/core/server';
 import { createPrismaClient } from '@luke/db';
 
@@ -645,6 +646,12 @@ const start = async () => {
 
     // Validate critical keys in AppConfig
     await validateCriticalConfig(prisma);
+
+    // `@luke/core` has no logger: section-access entries its reader ignores (an invalid stored
+    // value, falling back to the static table) are reported here, keys only.
+    setRbacConfigWarningHandler((key, ignored) => {
+      fastify.log.warn({ key, ignored }, 'Ignored invalid section-access configuration entries');
+    });
 
     // Register plugins and routes in the correct order
     const corsAllowedOrigins = await registerSecurityPlugins(); // CORS must be registered before tRPC

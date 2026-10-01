@@ -34,12 +34,9 @@ type Mode = 'enabled' | 'disabled' | 'auto';
 type Defaults = Record<Role, Record<Section, Mode>>;
 
 /**
- * Complete role defaults, derived from `SECTION_ACCESS_DEFAULTS`.
- *
- * `setRoleDefaultsInput` uses `z.record(sectionEnum, ...)`, which in Zod 4 is
- * **exhaustive**: every listed role must carry all sections. Building them by
- * hand with two entries seems to work until you read the schema — and a
- * real caller will have to do exactly this.
+ * Complete role defaults, derived from `SECTION_ACCESS_DEFAULTS`, with `overrides` over them. The
+ * input is partial (an omitted role or section keeps its static default); the complete map makes
+ * every test independent of that rule, which has tests of its own.
  */
 function defaultsFor(
   overrides: Partial<Record<Role, Partial<Record<Section, Mode>>>> = {}
@@ -210,6 +207,11 @@ describe('sectionAccess — getEffectiveForMe applies the four levels', () => {
 });
 
 describe('sectionAccess — last-admin guard', () => {
+  // A role map written here stays in the 60 s RBAC cache after the tables are truncated.
+  afterEach(() => {
+    invalidateRbacCache();
+  });
+
   it('setRoleDefaults rejects a config that locks out every admin', async () => {
     const { session } = await createTestUser('admin');
 
@@ -253,6 +255,31 @@ describe('sectionAccess — last-admin guard', () => {
       })
     ).resolves.toEqual({ success: true });
     expect((await caller.getEffectiveForMe()).settings).toBe(true);
+  });
+
+  it('setRoleDefaults takes a partial map: what it omits keeps the static default', async () => {
+    const { session: adminSession } = await createTestUser('admin');
+    const { session: viewerSession } = await createTestUser('viewer');
+
+    await expect(
+      callerFor(adminSession).setRoleDefaults({
+        sectionAccessDefaults: { viewer: { 'admin.brands': 'enabled' } },
+      })
+    ).resolves.toEqual({ success: true });
+
+    const effective = await callerFor(viewerSession).getEffectiveForMe();
+    expect(effective['admin.brands']).toBe(true);
+    // Omitted, so static (`false`) — not the permission fallback, which `users:read` would open.
+    expect(effective['settings.users']).toBe(false);
+  });
+
+  it('setRoleDefaults still refuses a partial map that locks every admin out', async () => {
+    const { session } = await createTestUser('admin');
+    await expect(
+      callerFor(session).setRoleDefaults({
+        sectionAccessDefaults: { admin: { 'settings.users': 'disabled' } },
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('setRoleDefaults accepts a config that keeps the admins operational', async () => {
@@ -423,25 +450,18 @@ describe('sectionAccess — parent sections are derived from their children (ADR
     expect(effective.product).toBe(false);
   });
 
-  it('refuses to switch a parent section and still accepts null to clear an old row', async () => {
+  it('refuses an override on a parent section, null included', async () => {
     const { session: adminSession } = await createTestUser('admin');
     const { user: viewer } = await createTestUser('viewer');
     const caller = callerFor(adminSession);
 
-    for (const enabled of [true, false]) {
+    // `null` used to be accepted to clear rows stored before ADR-025; the migration of ADR-027
+    // removed them, and a parent takes no override at all.
+    for (const enabled of [true, false, null]) {
       await expect(
         caller.set({ userId: viewer.id, section: 'admin', enabled })
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     }
-    await expect(prisma.userSectionAccess.count({ where: { userId: viewer.id } })).resolves.toBe(0);
-
-    // A row written before ADR-025 is meaningless now; `null` must still be able to remove it.
-    await prisma.userSectionAccess.create({
-      data: { userId: viewer.id, section: 'admin', enabled: true },
-    });
-    await expect(
-      caller.set({ userId: viewer.id, section: 'admin', enabled: null })
-    ).resolves.toBeNull();
     await expect(prisma.userSectionAccess.count({ where: { userId: viewer.id } })).resolves.toBe(0);
   });
 

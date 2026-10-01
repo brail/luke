@@ -1,13 +1,23 @@
 /**
- * Server-side RBAC configuration management
- * Shared between API and Web for zero-latency access
+ * Server-side RBAC configuration: the per-role section defaults and the kill switch AppConfig
+ * holds, read with a short cache. Only the API reads it.
  */
 
-import { z } from 'zod';
-
-import { SECTION_ACCESS_DEFAULTS } from '../schemas/rbac.js';
+import { Roles, type Role } from '../rbac.js';
+import { AppConfigRegistry } from '../schemas/config.js';
+import {
+  SECTION_ACCESS_DEFAULTS,
+  sectionDefaultSchema,
+  sectionEnum,
+  type Section,
+  type SectionAccessDefaults,
+  type SectionDefault,
+} from '../schemas/rbac.js';
 
 import type { IPrismaConfigClient } from '../runtime/env.js';
+
+/** Every role's default for every section, as `effectiveSectionAccess` reads it at layer 2. */
+export type ResolvedSectionAccessDefaults = Record<Role, Record<Section, SectionDefault>>;
 
 /**
  * Static base of section defaults, in the vocabulary that
@@ -24,18 +34,113 @@ import type { IPrismaConfigClient } from '../runtime/env.js';
  * Now the table is the **base** and AppConfig the **override**, which is exactly
  * how CLAUDE.md describes the system.
  */
-const STATIC_SECTION_DEFAULTS: Record<string, Record<string, string>> =
-  Object.fromEntries(
-    Object.entries(SECTION_ACCESS_DEFAULTS).map(([role, sections]) => [
-      role,
-      Object.fromEntries(
-        Object.entries(sections).map(([section, allowed]) => [
-          section,
-          allowed ? 'enabled' : 'disabled',
-        ])
-      ),
-    ])
-  );
+const STATIC_SECTION_DEFAULTS = Object.fromEntries(
+  Roles.map(role => [
+    role,
+    Object.fromEntries(
+      sectionEnum.options.map(section => [
+        section,
+        SECTION_ACCESS_DEFAULTS[role][section] ? 'enabled' : 'disabled',
+      ])
+    ),
+  ])
+  // `Object.fromEntries` loses the key types; both maps are built from the exhaustive lists.
+) as ResolvedSectionAccessDefaults;
+
+/**
+ * The stored defaults over the static table, **per section**: an entry the stored map omits keeps
+ * its static value, never `'auto'`. The permission fallback is therefore reached only by an
+ * explicit `'auto'`, and a section added to `sectionEnum` later takes its static value on a
+ * deployment that stores a map (ADR-027). Used by the reader and by the `setRoleDefaults` guard,
+ * which must count against the map the reader will produce.
+ */
+export function mergeSectionAccessDefaults(
+  stored: SectionAccessDefaults
+): ResolvedSectionAccessDefaults {
+  return Object.fromEntries(
+    Roles.map(role => [role, { ...STATIC_SECTION_DEFAULTS[role], ...stored[role] }])
+    // `Object.fromEntries` loses the key types; every role of `Roles` is present.
+  ) as ResolvedSectionAccessDefaults;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Reads a stored `rbac.sectionAccessDefaults` value entry by entry. Roles and sections the code no
+ * longer knows are dropped (a section removed from the enum must not cost the rest of the row).
+ * An entry with an invalid value, a role whose value is not an object, and a row that is not a JSON
+ * object are ignored and named in `ignored`, so they take the static value.
+ *
+ * This is an availability policy, not a fail-closed one: an ignored entry takes the static value,
+ * which can grant what an intended but corrupt denial would have refused. Failing closed was
+ * rejected — `'disabled'` on a corrupt admin entry can lock every administrator out of user
+ * administration, and throwing fails every guarded request, including the ones that repair the
+ * row. Per entry rather than per row, so one bad value does not discard the row's valid denials.
+ */
+function readStoredSectionDefaults(raw: string): {
+  stored: SectionAccessDefaults;
+  ignored: string[];
+} {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { stored: {}, ignored: ['row'] };
+  }
+  if (!isObject(parsed)) return { stored: {}, ignored: ['row'] };
+
+  const stored: SectionAccessDefaults = {};
+  const ignored: string[] = [];
+  for (const role of Roles) {
+    if (!Object.hasOwn(parsed, role)) continue;
+    const sections = parsed[role];
+    if (!isObject(sections)) {
+      ignored.push(role);
+      continue;
+    }
+    const entries: Partial<Record<Section, SectionDefault>> = {};
+    for (const section of sectionEnum.options) {
+      if (!Object.hasOwn(sections, section)) continue;
+      const value = sectionDefaultSchema.safeParse(sections[section]);
+      if (value.success) {
+        entries[section] = value.data;
+      } else {
+        ignored.push(`${role}.${section}`);
+      }
+    }
+    stored[role] = entries;
+  }
+  return { stored, ignored };
+}
+
+/**
+ * Receives the entries of a stored RBAC row that the reader ignored: the AppConfig key, and the
+ * entries by name (`viewer.admin.brands`, `viewer`, `row`), never their values.
+ */
+export type RbacConfigWarningHandler = (key: string, ignored: readonly string[]) => void;
+
+let warningHandler: RbacConfigWarningHandler | undefined;
+
+/**
+ * Registers, for this process, where `getRbacConfig` reports the entries it ignored: `@luke/core`
+ * has no logger, so the API registers its own at startup. Without a handler (unit tests, scripts)
+ * nothing is reported. Called on every read that ignores something — every cache rebuild,
+ * `bypassCache` read and read after an invalidation — so no frequency is promised.
+ */
+export function setRbacConfigWarningHandler(handler: RbacConfigWarningHandler | undefined): void {
+  warningHandler = handler;
+}
+
+function reportIgnored(key: string, ignored: readonly string[]): void {
+  if (ignored.length === 0 || !warningHandler) return;
+  try {
+    warningHandler(key, ignored);
+  } catch {
+    // Reporting never turns the fallback into a failed request.
+  }
+}
 
 // Extend interface for write operations if needed
 /** Extends `IPrismaConfigClient` with write capabilities needed for upsert operations. */
@@ -50,8 +155,7 @@ export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
 }
 
 interface RbacConfig {
-  roleToPermissions: Record<string, string[]>;
-  sectionAccessDefaults: Record<string, Record<string, string>>;
+  sectionAccessDefaults: ResolvedSectionAccessDefaults;
   disabledSections: string[];
 }
 
@@ -93,45 +197,27 @@ export async function getRbacConfig(
     prisma.appConfig.findUnique({ where: { key: 'app.sections.disabled' } }),
   ]);
 
-  // Static base, overridden per-role by what is in AppConfig. The merge is
-  // per-role not per-section: `setRoleDefaults` always writes the full map
-  // (`z.record(sectionEnum, …)` is exhaustive), so a role present
-  // in AppConfig is already exhaustive by itself.
-  let sectionAccessDefaults: Record<string, Record<string, string>> = {
-    ...STATIC_SECTION_DEFAULTS,
-  };
-
+  let stored: SectionAccessDefaults = {};
   if (sectionDefaultsRow) {
-    try {
-      const stored = JSON.parse(sectionDefaultsRow.value) as Record<
-        string,
-        Record<string, string>
-      >;
-      sectionAccessDefaults = { ...sectionAccessDefaults, ...stored };
-    } catch {
-      // Malformed row: fall back to static base, **not** to `{}`.
-      // Degrading to empty map here would open every section to every
-      // role that had the corresponding permission — a visibility check
-      // that fails in opening instead of closing.
-    }
+    const read = readStoredSectionDefaults(sectionDefaultsRow.value);
+    stored = read.stored;
+    reportIgnored('rbac.sectionAccessDefaults', read.ignored);
   }
 
+  // An unreadable kill switch disables nothing: the alternative, everything disabled, would lock
+  // every administrator out of the only place where it can be corrected.
   let disabledSections: string[] = [];
   if (disabledRow) {
-    try {
-      disabledSections = z.array(z.string()).parse(JSON.parse(disabledRow.value));
-    } catch {
-      // parsing error — use empty default
+    const parsed = AppConfigRegistry['app.sections.disabled'].safeParse(disabledRow.value);
+    if (parsed.success) {
+      disabledSections = parsed.data;
+    } else {
+      reportIgnored('app.sections.disabled', ['row']);
     }
   }
 
   const rbacConfig: RbacConfig = {
-    roleToPermissions: {
-      admin: ['*'],
-      editor: ['read', 'update'],
-      viewer: ['read'],
-    },
-    sectionAccessDefaults,
+    sectionAccessDefaults: mergeSectionAccessDefaults(stored),
     disabledSections,
   };
 
@@ -162,7 +248,7 @@ export async function getSectionsDisabled(
  */
 export async function setRbacSectionDefaultsTx(
   prisma: IPrismaConfigClientWithWrite,
-  sectionAccessDefaults: Record<string, Partial<Record<string, string>>>
+  sectionAccessDefaults: SectionAccessDefaults
 ): Promise<void> {
   await prisma.appConfig.upsert({
     where: { key: 'rbac.sectionAccessDefaults' },

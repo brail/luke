@@ -6,9 +6,14 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { childSectionsOf, sectionEnum, Roles } from '@luke/core';
+import { childSectionsOf, sectionAccessDefaultsSchema, sectionEnum } from '@luke/core';
 import type { Section } from '@luke/core';
-import { getRbacConfig, invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server';
+import {
+  getRbacConfig,
+  invalidateRbacCache,
+  mergeSectionAccessDefaults,
+  setRbacSectionDefaultsTx,
+} from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
@@ -28,10 +33,7 @@ import {
 const sectionSchema = sectionEnum;
 
 const setRoleDefaultsInput = z.object({
-  sectionAccessDefaults: z.record(
-    z.enum(Roles),
-    z.record(sectionEnum, z.enum(['enabled', 'disabled', 'auto']))
-  ),
+  sectionAccessDefaults: sectionAccessDefaultsSchema,
 });
 
 const setInput = z.object({
@@ -103,10 +105,11 @@ export const sectionAccessRouter = router({
   /**
    * Persists per-role section-access defaults to AppConfig (`rbac.sectionAccessDefaults`)
    * and invalidates the RBAC cache. This is the only reachable write path for that key —
-   * the generic config.set/update endpoints don't allow the `rbac` key prefix.
+   * the generic config.set/update endpoints don't allow the `rbac` key prefix. The map replaces
+   * the stored one; a role or section it omits keeps its static default (ADR-027).
    *
    * @auth {admin}
-   * @input {{ sectionAccessDefaults: Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>> }}
+   * @input {{ sectionAccessDefaults: Partial<Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>>> }}
    * @output {{ success: true }}
    */
   setRoleDefaults: adminProcedure
@@ -121,9 +124,11 @@ export const sectionAccessRouter = router({
         // the only place reachable to undo the change.
         await acquireLastAdminLock(tx);
         const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
+        // Counted against the map the reader will build from this input, not the input itself:
+        // an omitted entry is the static default, never the permission fallback.
         const survivingAdmins = await countRecoveryCapableAdmins(
           tx,
-          input.sectionAccessDefaults,
+          mergeSectionAccessDefaults(input.sectionAccessDefaults),
           disabledSections
         );
 
@@ -160,8 +165,8 @@ export const sectionAccessRouter = router({
 
   /**
    * Sets a section access override for a user; blocks removal of settings access from the last admin.
-   * A parent section is derived from its children (ADR-025): switching it on or off is refused, and
-   * `null` is still accepted, so an override stored before ADR-025 can be removed.
+   * A parent section is derived from its children, so it takes no override at all, `null` included:
+   * the overrides stored on parents before that rule were removed by migration (ADR-027).
    *
    * @auth {admin}
    * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
@@ -173,7 +178,7 @@ export const sectionAccessRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { userId, section, enabled } = input;
 
-      if (enabled !== null && childSectionsOf(section).length > 0) {
+      if (childSectionsOf(section).length > 0) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: `La sezione ${section} dipende dalle sue sottosezioni: abilita o disabilita quelle.`,

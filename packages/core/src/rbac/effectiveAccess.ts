@@ -1,11 +1,9 @@
 import { hasPermission, type Permission } from '../auth/permissions.js';
-import { SECTION_TO_PERMISSION, type Section } from '../schemas/rbac.js';
+import { SECTION_TO_PERMISSION, type Section, type SectionDefault } from '../schemas/rbac.js';
 
 import { ancestorSectionsOf, childSectionsOf } from './sectionHierarchy.js';
 
 import type { Role } from '../rbac.js';
-
-type SectionDefault = 'auto' | 'enabled' | 'disabled';
 
 /**
  * Parameters for evaluating effective section access.
@@ -15,9 +13,9 @@ type EffectiveAccessParams = {
   role: string;
   /**
    * Per-role section defaults, already resolved by the caller. `getRbacConfig`
-   * builds this map from the static `SECTION_ACCESS_DEFAULTS` base with any
-   * AppConfig per-role override merged over it; this resolver never reads
-   * AppConfig itself. See ADR-025.
+   * builds this map from the static `SECTION_ACCESS_DEFAULTS` base with the
+   * AppConfig entries merged over it per section; this resolver never reads
+   * AppConfig itself. See ADR-027.
    */
   sectionAccessDefaults: Record<
     string,

@@ -155,7 +155,7 @@ model UserToken {
   @@map("user_tokens")
 }
 
-/// Per-user override for section visibility. For a leaf section it takes precedence over role defaults and AppConfig in the 4-level access evaluation; a row on a parent section is inert, since parents are derived from their children (ADR-025).
+/// Per-user override for section visibility, on sections without children only: it takes precedence over role defaults and AppConfig in the 4-level access evaluation. A parent section is derived from its children; `sectionAccess.set` refuses it, and the rows stored on parents before that rule were rewritten by migration `20261001220553_section_access_leaf_overrides` (ADR-027).
 model UserSectionAccess {
   id        String   @id @default(uuid())
   /// FK to User. Cascade delete: overrides are removed when the user is deleted.

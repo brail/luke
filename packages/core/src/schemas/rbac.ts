@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { Role } from '../rbac.js';
+import { Roles, type Role } from '../rbac.js';
 
 /**
  * All navigable sections in the system, including sub-sections expressed in dot-notation
@@ -48,6 +48,24 @@ export const sectionEnum = z.enum([
   'settings.company',
 ]);
 export type Section = z.infer<typeof sectionEnum>;
+
+/**
+ * A per-role section default stored in AppConfig (`rbac.sectionAccessDefaults`): `'enabled'` and
+ * `'disabled'` decide, `'auto'` defers to the role's permission through `SECTION_TO_PERMISSION`.
+ */
+export const sectionDefaultSchema = z.enum(['auto', 'enabled', 'disabled']);
+export type SectionDefault = z.infer<typeof sectionDefaultSchema>;
+
+/**
+ * The stored `rbac.sectionAccessDefaults` value: per role, per section, a default over the static
+ * `SECTION_ACCESS_DEFAULTS`. Partial at both levels — an omitted role or section keeps its static
+ * value (ADR-027).
+ */
+export const sectionAccessDefaultsSchema = z.partialRecord(
+  z.enum(Roles),
+  z.partialRecord(sectionEnum, sectionDefaultSchema)
+);
+export type SectionAccessDefaults = z.infer<typeof sectionAccessDefaultsSchema>;
 
 /**
  * Maps each section key to the `Resource:Action` permission required to access it.

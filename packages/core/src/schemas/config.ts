@@ -7,6 +7,7 @@ import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsS
 import { LDAP_STRATEGIES } from './ldap.js';
 import { smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
+import { sectionAccessDefaultsSchema } from './rbac.js';
 
 /**
  * A boolean setting, as AppConfig stores it: a string.
@@ -73,10 +74,10 @@ export const AppConfigRegistry = {
   'auth.nextAuthSecret':                 z.string().min(32),
 
   // ── RBAC ─────────────────────────────────────────────────────────────────
-  // `z.custom` accepts whatever parsed, which is what the previous `as` cast did — typing the
-  // shape without checking it. Narrowing it to a real schema would start rejecting stored blobs
-  // that are accepted today, which is a decision about RBAC defaults, not about JSON parsing.
-  'rbac.sectionAccessDefaults': jsonConfigSchema(z.custom<Record<string, Record<string, string>>>()),
+  // What a valid row is. The reader (`getRbacConfig`) is more lenient on purpose: it keeps every
+  // valid entry of a row this schema rejects, and the stored rows written under the previous reader
+  // were made valid by migration `20261001220553_section_access_leaf_overrides` (ADR-027).
+  'rbac.sectionAccessDefaults': jsonConfigSchema(sectionAccessDefaultsSchema),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
@@ -151,8 +152,8 @@ export const AppConfigRegistry = {
   'auth.ldap.searchFilter':   z.string(),
   'auth.ldap.groupSearchBase':   z.string(),
   'auth.ldap.groupSearchFilter': z.string(),
-  // Same as `rbac.sectionAccessDefaults`: types the shape, does not check it. `configManager`
-  // has a stricter `RoleMappingSchema` it applies where it actually needs the guarantee.
+  // `z.custom` types the shape without checking it. `configManager` has a stricter
+  // `RoleMappingSchema` it applies where it actually needs the guarantee.
   'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
 
   // ── LDAP resilience (individual scalars) ─────────────────────────────────
