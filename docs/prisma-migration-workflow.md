@@ -51,18 +51,26 @@ reset it, deleting the data.
   for the deployment (Env Policy in `CLAUDE.md`), not `@luke/db` configuration —
   there is one database, so it is declared in one place.
 
-### CHECK constraints Prisma does not model
+### Hand-written migrations
 
-A `CHECK` constraint has no representation in the `.prisma` files, so it lives only in a
-hand-written migration: `db:migrate:new` cannot generate it (there is no schema difference to
-diff), `migrate diff` does not report it, and `db push` never creates it. Document it with a `///`
-comment on the fields it covers, since the schema alone does not show it. Two exist:
-`company_profile_singleton` (`20260515000000_company_structure`) and the calendar date range
-(`20260929224334_calendar_dates_in_supported_years`).
+Two kinds of migration have no schema difference for `db:migrate:new` to generate, so they are
+written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
 
-Write the migration by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`, then check it
-from `packages/db/` on a throwaway database, as the CI `migrations` job does — never with
-`db:migrate:deploy`, which loads `apps/api/.env` and targets the development database:
+- **A `CHECK` constraint Prisma does not model.** It has no representation in the `.prisma` files:
+  `migrate diff` does not report it and `db push` never creates it. Document it with a `///`
+  comment on the fields it covers, since the schema alone does not show it. Two exist:
+  `company_profile_singleton` (`20260515000000_company_structure`) and the calendar date range
+  (`20260929224334_calendar_dates_in_supported_years`).
+- **A one-time rewrite of stored data** that must reach every database, restored backups included:
+  only a versioned migration is replayed by the backup migration bridge, which a `db:*` script is
+  not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
+  so a replay on an older backup does not depend on later code, and state in its header whether
+  it is safe to run twice. One exists: `20261001220553_section_access_leaf_overrides` (ADR-027),
+  which is not. Ordinary backfills stay `db:*` scripts in `@luke/api`.
+
+Check a hand-written migration from `packages/db/` on a throwaway database, as the CI
+`migrations` job does — never with `db:migrate:deploy`, which loads `apps/api/.env` and targets
+the development database:
 
 ```bash
 docker run --rm -d --name luke-pg-migrate -p 5433:5432 \
@@ -76,10 +84,15 @@ pnpm exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema 
 docker stop luke-pg-migrate
 ```
 
-The development database is aligned with `db push`, which will not create the constraint: apply the
-same SQL to it directly (`docker exec -i luke-db-1 psql -U luke -d luke -v ON_ERROR_STOP=1 <
-prisma/migrations/<timestamp>_<name>/migration.sql`). The integration test database is built with
-`migrate deploy` and gets it on its own.
+The development database is aligned with `db push`, which neither creates a constraint nor runs a
+data rewrite: apply the same SQL to it directly, **once** (`docker exec -i luke-db-1 psql -U luke -d
+luke -v ON_ERROR_STOP=1 < prisma/migrations/<timestamp>_<name>/migration.sql`) — `psql` records
+nothing, so a data rewrite that is not safe to run twice must not be applied again by hand. The
+integration test database gets it on its own when it is created (`ensureTestSchema` runs `migrate
+deploy` only while it has no `_prisma_migrations` table), so the persistent local one, on port 5434,
+needs it by hand — from `packages/db/`, never through `db:migrate:deploy`, which targets the
+development database:
+`DATABASE_URL=postgresql://luke:luke_test@localhost:5434/luke_test pnpm exec prisma migrate deploy`.
 
 ## Production
 

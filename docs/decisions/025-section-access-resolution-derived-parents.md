@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [027 — Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data](027-section-access-leaf-overrides-and-validated-defaults.md)
 
 ## Context
 

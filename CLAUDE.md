@@ -291,18 +291,19 @@ Two distinct layers that must stay in sync.
 
 - Access evaluated by `effectiveSectionAccess()`, 4-level precedence:
   kill switch → user override → role default → RBAC fallback — for leaf sections;
-  a parent section is on iff at least one child is, never set directly, and a
-  parent in the kill switch disables its whole group (ADR-025)
+  a parent section is on iff at least one child is, takes no override (`set`
+  refuses it), and a parent in the kill switch disables its whole group (ADR-027)
 - **New section = update THREE places in sync**: `sectionEnum`,
   `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS` (all three roles)
 - The role default is the static `SECTION_ACCESS_DEFAULTS` table as the **base**,
-  with the AppConfig key (`rbac.sectionAccessDefaults`) merged over it per role.
-  With that key absent or written through the supported paths, a known role with
-  no override for a leaf section takes the static value, and the RBAC fallback is
-  reached only by an explicit `'auto'` or by a role outside `Roles`, which it
-  denies. The reader does not validate the stored shape or its values, so a row
-  written directly to the database is outside that guarantee. Rationale:
-  `docs/decisions/025-section-access-resolution-derived-parents.md`
+  with the AppConfig key (`rbac.sectionAccessDefaults`) merged over it **per
+  section**: an entry the stored map omits, or holds with an invalid value, keeps
+  its static value; unknown roles and sections are dropped, and ignored entries
+  are logged (keys only). The RBAC fallback is reached only by an explicit
+  `'auto'` or by a role outside `Roles`, which it denies. Rationale:
+  `docs/decisions/027-section-access-leaf-overrides-and-validated-defaults.md`
+- `withSectionAccess` guards only a section without children (it throws when the
+  procedure is built); `Resource:Action` stays the API boundary everywhere else
 - Always `invalidateRbacCache()` after writing to RBAC keys in AppConfig
 
 ## LDAP

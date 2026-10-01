@@ -243,8 +243,8 @@ describe('sectionAccess — last-admin guard', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('a parent value in the role defaults no longer governs access (ADR-025)', async () => {
-    // Still accepted — the per-role map stays exhaustive over `sectionEnum` (ADR-025) — but
+  it('a parent value in the role defaults no longer governs access (ADR-027)', async () => {
+    // Still accepted — the schema keys on `sectionEnum`, parents included (ADR-027) — but
     // ignored: `settings` follows its children, which stay enabled for the admin role.
     const { session } = await createTestUser('admin');
     const caller = callerFor(session);

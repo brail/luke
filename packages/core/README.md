@@ -31,7 +31,9 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 |--------|-------------|
 | `hasPermission` / `expandRole` | Evaluate a `resource:action` permission or expand a role into its effective permission set |
 | `Permission`, `Resource`, `Action` | Typed permission vocabulary derived from the central resource and action declarations |
-| `effectiveSectionAccess` | Resolve section visibility: a leaf through the kill switch, user override, role defaults and permission fallback; a parent from its children (ADR-025) |
+| `effectiveSectionAccess` | Resolve section visibility: a leaf through the kill switch, user override, role defaults and permission fallback; a parent from its children (ADR-027) |
+| `isGloballyDisabled` | Layer 0: whether the kill switch covers a section or any section it is nested under; shared by the resolver and the access dialogs |
+| `sectionAccessDefaultsSchema`, `SectionDefault` | The stored per-role section defaults: partial over roles and sections, `'enabled'`, `'disabled'` or `'auto'` |
 | `parentSectionOf`, `childSectionsOf`, `ancestorSectionsOf` | The section tree, derived from the dot notation of `sectionEnum` |
 | `sectionEnum`, `SECTION_TO_PERMISSION`, `SECTION_ACCESS_DEFAULTS` | The three declarations that must move together when a navigation section is added |
 
@@ -46,7 +48,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 
 ### Additional entry points
 
-- `@luke/core/server` exports the master-key secret derivation helpers and the AppConfig-backed RBAC cache. It is server-only and must never be imported by a client component.
+- `@luke/core/server` exports the master-key secret derivation helpers and the AppConfig-backed RBAC cache (`getRbacConfig`, which reads the stored role defaults per entry and merges them per section over the static table; `mergeSectionAccessDefaults`; `setRbacConfigWarningHandler`). It is server-only and must never be imported by a client component.
 - `@luke/core/utils/date` exposes the `Intl` date formatters (`formatDate`, `formatDateWithTimezone`, …) as a narrow subpath for consumers that do not need the full main barrel; the calendar-date and working-day helpers (`CalendarDate`, `calendarDateIn`, `formatCalendarDate`, …) are main-entry only.
 <!-- luke-docs:end:exports -->
 

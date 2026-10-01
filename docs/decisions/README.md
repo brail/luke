@@ -27,8 +27,9 @@
 | [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Accepted |
 | [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
 | [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
-| [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Accepted |
+| [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Superseded by [027](027-section-access-leaf-overrides-and-validated-defaults.md) |
 | [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Accepted |
+| [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
 
-_Last updated: 2026-09-27_
+_Last updated: 2026-10-02_
 <!-- luke-docs:end:adr-index -->
