@@ -90,13 +90,15 @@ function consumeTicket(ticketId: string): string | null {
   return ticket.userId;
 }
 
-// Cleans up expired tickets every 5 minutes
+// Cleans up expired tickets every 5 minutes. `unref`: the server is kept alive by its listener, and
+// a timer of its own would keep alive any other process that imports this module through the
+// notifications — a CLI script never exited.
 setInterval(() => {
   const now = Date.now();
   for (const [id, ticket] of tickets) {
     if (now > ticket.expiresAt) tickets.delete(id);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 /**
  * Singleton SSE store exposing the full connection pool and ticket API.
