@@ -22,11 +22,12 @@ import {
   CreateBucketCommand,
   PutObjectCommand,
   CopyObjectCommand,
+  NoSuchKey,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-import { APP_STORAGE_BUCKETS } from '@luke/core';
+import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
 import type {
   IStorageCapabilities,
   IStorageProvider,
@@ -175,13 +176,18 @@ export class S3Provider implements IStorageProvider {
   /**
    * Retrieves a file as a readable stream.
    *
-   * @throws If the object does not exist in the bucket.
+   * @throws {StorageObjectNotFoundError} If the backend answers `NoSuchKey`; any other failure
+   *   (including `NoSuchBucket`) unchanged. A backend that answers a missing key with
+   *   `AccessDenied` (AWS without `s3:ListBucket`) therefore never reports absence.
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const res = await this.client.send(new GetObjectCommand({
       Bucket: params.bucket,
       Key: params.key,
-    }));
+    })).catch((err: unknown) => {
+      if (err instanceof NoSuchKey) throw new StorageObjectNotFoundError(params.bucket, params.key, { cause: err });
+      throw err;
+    });
 
     if (!res.Body) throw new Error(`Object not found: ${params.bucket}/${params.key}`);
 

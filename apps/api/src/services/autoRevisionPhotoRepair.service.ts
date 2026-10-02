@@ -17,7 +17,7 @@ import { createHash } from 'crypto';
 import type { StorageBucket } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { copyToImmutableBucket, getStorageProvider } from '../storage/index.js';
+import { copyToImmutableBucket, getStorageProvider, readObjectBuffer } from '../storage/index.js';
 
 const LIVE: StorageBucket = 'collection-row-pictures';
 const IMMUTABLE: StorageBucket = 'collection-row-pictures-revisions';
@@ -53,13 +53,6 @@ async function isListed(provider: Provider, bucket: StorageBucket, key: string):
     throw new Error(`listing of ${bucket} under ${key} may be incomplete`);
   }
   return false;
-}
-
-async function readAll(provider: Provider, bucket: StorageBucket, key: string): Promise<Buffer> {
-  const { stream } = await provider.get({ bucket, key });
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) chunks.push(chunk as Buffer);
-  return Buffer.concat(chunks);
 }
 
 /**
@@ -113,7 +106,7 @@ export async function repairAutoRevisionPhotos(
         continue;
       }
 
-      const bytes = await readAll(provider, LIVE, key);
+      const bytes = await readObjectBuffer(prisma, LIVE, key);
       const checksum = createHash('sha256').update(bytes).digest('hex');
       if (liveRecord && liveRecord.checksumSha256 !== checksum) {
         keys.push({ key, outcome: 'error', reason: 'live object does not match its checksum', revisionIds });

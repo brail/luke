@@ -27,7 +27,7 @@ import type {
   StorageListResult,
   LocalStorageConfig,
 } from '@luke/core';
-import { APP_STORAGE_BUCKETS, isPathSafe } from '@luke/core';
+import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError, isPathSafe } from '@luke/core';
 
 /**
  * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
@@ -291,7 +291,9 @@ export class LocalFsProvider implements IStorageProvider {
    * Opens a readable stream for a stored file.
    *
    * @returns A stream, the file size, and a default content type (`application/octet-stream`).
-   * @throws If the path does not exist or is not a regular file.
+   * @throws {StorageObjectNotFoundError} If nothing exists at the path in an existing bucket
+   *   directory; another error if the bucket directory is missing, or the path is not a regular file
+   *   or cannot be read.
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const filePath = join(params.bucket, params.key);
@@ -315,8 +317,16 @@ export class LocalFsProvider implements IStorageProvider {
         contentType,
       };
     } catch (error) {
+      // `stat` rejects with a Node errno error. ENOENT means "no such object" only while the bucket
+      // directory exists: without it the provider is looking in the wrong place.
+      if (
+        (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+        (await stat(this.validatePathSafety(params.bucket)).then(s => s.isDirectory(), () => false))
+      ) {
+        throw new StorageObjectNotFoundError(params.bucket, params.key, { cause: error });
+      }
       throw new Error(
-        `File not found: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `File read failed: ${error instanceof Error ? error.message : 'Unknown'}`,
         { cause: error }
       );
     }

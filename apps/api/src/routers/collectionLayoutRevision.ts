@@ -56,8 +56,7 @@ export const collectionLayoutRevisionRouter = router({
     .mutation(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 
-      const copyPhoto = (sourceKey: string) =>
-        copyToImmutableBucket(ctx.prisma, sourceKey, ctx.logger);
+      const copyPhoto = (sourceKey: string) => copyToImmutableBucket(ctx.prisma, sourceKey);
 
       const revision = await createRevision(
         { ...input, cause: 'MANUAL' },

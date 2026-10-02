@@ -240,6 +240,23 @@ export interface PresignedGetResult {
 }
 
 /**
+ * Thrown by `IStorageProvider.get` when no object has the requested key, and only then. Any other
+ * failure (permissions, network, a missing bucket, something other than a file at the path) is a
+ * different error, so a caller can act on absence without mistaking an outage for it.
+ */
+export class StorageObjectNotFoundError extends Error {
+  readonly bucket: StorageBucket;
+  readonly key: string;
+
+  constructor(bucket: StorageBucket, key: string, options?: ErrorOptions) {
+    super(`Storage object not found: ${bucket}/${key}`, options);
+    this.name = 'StorageObjectNotFoundError';
+    this.bucket = bucket;
+    this.key = key;
+  }
+}
+
+/**
  * Unified storage provider interface for all concrete implementations (LocalFs, S3, etc.).
  * Implementations must be registered via the storage service — never instantiated directly by callers.
  *
@@ -250,6 +267,7 @@ export interface IStorageProvider {
   readonly capabilities: IStorageCapabilities;
 
   put(params: StoragePutParams): Promise<StoragePutResult>;
+  /** @throws {StorageObjectNotFoundError} When no object has that key; anything else for other failures. */
   get(params: StorageGetParams): Promise<StorageGetResult>;
   delete(params: StorageDeleteParams): Promise<void>;
   list(params: StorageListParams): Promise<StorageListResult>;

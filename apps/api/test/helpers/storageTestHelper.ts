@@ -5,6 +5,8 @@
 
 import { Readable } from 'stream';
 
+import { StorageObjectNotFoundError } from '@luke/core';
+import type { StorageBucket } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { resetStorageProvider } from '../../src/storage';
@@ -62,12 +64,13 @@ export class MockStorageProvider {
   }
 
   async get(params: {
-    bucket: string;
+    bucket: StorageBucket;
     key: string;
   }): Promise<{ stream: NodeJS.ReadableStream }> {
     const file = this.files.get(`${params.bucket}/${params.key}`);
     if (!file) {
-      throw new Error(`File not found: ${params.bucket}/${params.key}`);
+      // The provider contract: absence is its own error.
+      throw new StorageObjectNotFoundError(params.bucket, params.key);
     }
 
     return {

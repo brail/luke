@@ -24,6 +24,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { streamToBuffer } from '../lib/imageUpload';
 
 
 import { LocalFsProvider } from './providers/local';
@@ -416,6 +417,16 @@ export async function deleteObjectByKey(
 }
 
 /**
+ * Reads a whole object from storage into a Buffer.
+ *
+ * @throws {StorageObjectNotFoundError} If no object has that key; another error for any other failure.
+ */
+export async function readObjectBuffer(prisma: PrismaClient, bucket: StorageBucket, key: string): Promise<Buffer> {
+  const provider = await getStorageProvider(prisma);
+  return streamToBuffer((await provider.get({ bucket, key })).stream);
+}
+
+/**
  * Reads a file from storage as a Buffer, identified by bucket and key.
  *
  * Used internally for PDF/XLSX exports where no session context is available.
@@ -428,14 +439,7 @@ export async function readFileBuffer(
   logger?: { warn: (obj: object, msg: string) => void },
 ): Promise<Buffer | null> {
   try {
-    const provider = await getStorageProvider(prisma);
-    const { stream } = await provider.get({ bucket, key });
-    const chunks: Buffer[] = [];
-    return await new Promise<Buffer>((resolve, reject) => {
-      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-      stream.on('end', () => resolve(Buffer.concat(chunks)));
-      stream.on('error', reject);
-    });
+    return await readObjectBuffer(prisma, bucket, key);
   } catch (err) {
     logger?.warn({ err, bucket, key }, 'readFileBuffer: failed to read file');
     return null;
@@ -455,25 +459,20 @@ export async function readFileBuffer(
  * (same SHA-256) and produces no logical duplicates.
  *
  * @returns The storage key of the immutable copy.
+ * @throws {StorageObjectNotFoundError} If the source object is gone; another error if it cannot be
+ *   read or the copy cannot be written.
  */
-export async function copyToImmutableBucket(
-  prisma: PrismaClient,
-  sourceKey: string,
-  logger?: { warn: (obj: object, msg: string) => void },
-): Promise<string> {
+export async function copyToImmutableBucket(prisma: PrismaClient, sourceKey: string): Promise<string> {
   // Read source file — the master (or its already-normalized bytes if it went
   // through the asset pipeline), never a derivative: this is the ISO 9001 quality
   // register, which preserves full quality, not a downsized preview.
   const [buffer, sourceFileObject] = await Promise.all([
-    readFileBuffer(prisma, 'collection-row-pictures', sourceKey, logger),
+    readObjectBuffer(prisma, 'collection-row-pictures', sourceKey),
     prisma.fileObject.findFirst({
       where: { bucket: 'collection-row-pictures', key: sourceKey },
       select: { contentType: true },
     }),
   ]);
-  if (!buffer) {
-    throw new Error(`copyToImmutableBucket: source file not found — key=${sourceKey}`);
-  }
   // Real content-type from the source's own FileObject row — never assumed. A
   // hardcoded 'image/jpeg' here previously mislabeled every PNG/WebP row picture
   // copied into the immutable register.

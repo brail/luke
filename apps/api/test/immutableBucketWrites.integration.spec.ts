@@ -18,6 +18,7 @@ import { Readable } from 'stream';
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
+import { StorageObjectNotFoundError } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { copyToImmutableBucket, getStorageProvider, resetStorageProvider } from '../src/storage';
@@ -150,6 +151,14 @@ describe('copyToImmutableBucket dedup', () => {
 
     expect(copied).not.toBe('planted/image.png');
     expect(await prisma.fileObject.count({ where: { bucket: REVISIONS, key: copied, createdBy: 'system' } })).toBe(1);
+  });
+
+  it('reports a source that is gone as StorageObjectNotFoundError, and copies nothing', async () => {
+    const { key } = await livePhoto();
+    await (await getStorageProvider(prisma)).delete({ bucket: 'collection-row-pictures', key });
+
+    await expect(copyToImmutableBucket(prisma, key)).rejects.toBeInstanceOf(StorageObjectNotFoundError);
+    expect(await prisma.fileObject.count({ where: { bucket: REVISIONS } })).toBe(0);
   });
 
   it('still reuses its own copy: same key, no second object', async () => {

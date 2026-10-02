@@ -1,6 +1,7 @@
+import { NoSuchKey } from '@aws-sdk/client-s3';
 import { describe, it, expect, vi } from 'vitest';
 
-import { APP_STORAGE_BUCKETS } from '@luke/core';
+import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
 import type { S3StorageConfig, StorageBucket } from '@luke/core';
 
 import { S3Provider } from '../s3';
@@ -122,5 +123,30 @@ describe('S3Provider.init — bucket provisioning', () => {
 
     const commands = new Set(sent.map(c => c.name));
     expect([...commands].sort()).toEqual(['CreateBucketCommand', 'HeadBucketCommand']);
+  });
+});
+
+describe('S3Provider.get - absence', () => {
+  function failingClient(provider: S3Provider, error: Error) {
+    const send = vi.fn(async () => {
+      throw error;
+    });
+    (provider as unknown as { client: { send: typeof send } }).client = { send };
+  }
+
+  it('throws StorageObjectNotFoundError when the backend answers NoSuchKey', async () => {
+    const provider = new S3Provider(CONFIG);
+    failingClient(provider, new NoSuchKey({ message: 'The specified key does not exist.', $metadata: {} }));
+
+    await expect(provider.get({ bucket: 'collection-row-pictures', key: 'gone.png' }))
+      .rejects.toBeInstanceOf(StorageObjectNotFoundError);
+  });
+
+  it('rethrows any other failure unchanged', async () => {
+    const provider = new S3Provider(CONFIG);
+    const outage = new Error('connect ECONNREFUSED');
+    failingClient(provider, outage);
+
+    await expect(provider.get({ bucket: 'collection-row-pictures', key: 'k.png' })).rejects.toBe(outage);
   });
 });

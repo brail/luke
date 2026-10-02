@@ -1,8 +1,10 @@
-import { mkdtempSync, symlinkSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, symlinkSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import { StorageObjectNotFoundError } from '@luke/core';
 
 import { LocalFsProvider } from '../local';
 
@@ -87,5 +89,39 @@ describe('LocalFsProvider - Path Traversal Protection', () => {
     expect(() => {
       provider['validatePathSafety']('uploads/test\x00.txt');
     }).toThrow('Unsafe path');
+  });
+});
+
+describe('LocalFsProvider.get - absence', () => {
+  let testDir: string;
+  let provider: LocalFsProvider;
+
+  beforeEach(async () => {
+    testDir = mkdtempSync(join(tmpdir(), 'luke-storage-test-'));
+    provider = new LocalFsProvider({ basePath: testDir, maxFileSizeMB: 10 });
+    await provider.init();
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('throws StorageObjectNotFoundError for a key with no file', async () => {
+    await expect(provider.get({ bucket: 'collection-row-pictures', key: '2026/01/01/gone.png' }))
+      .rejects.toBeInstanceOf(StorageObjectNotFoundError);
+  });
+
+  it('throws another error when the bucket itself is missing', async () => {
+    rmSync(join(testDir, 'collection-row-pictures'), { recursive: true, force: true });
+    const read = provider.get({ bucket: 'collection-row-pictures', key: 'k.png' });
+    await expect(read).rejects.toThrow();
+    await expect(read).rejects.not.toBeInstanceOf(StorageObjectNotFoundError);
+  });
+
+  it('throws another error when something other than a file is at the key', async () => {
+    mkdirSync(join(testDir, 'collection-row-pictures', 'a-directory'), { recursive: true });
+    const read = provider.get({ bucket: 'collection-row-pictures', key: 'a-directory' });
+    await expect(read).rejects.toThrow();
+    await expect(read).rejects.not.toBeInstanceOf(StorageObjectNotFoundError);
   });
 });
