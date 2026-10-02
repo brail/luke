@@ -29,6 +29,9 @@
  * ## What it proves for `--validate vX.Y.Z[-rc.N]`
  *
  * - the tag does not exist anywhere yet, and the repository is a full clone;
+ * - HEAD's committed `CHANGELOG.md` carries no notes for it yet — a preparation
+ *   committed and never tagged is tagged, or its section removed, not prepared
+ *   over;
  * - a stable tag `S` — the highest one reachable from HEAD — exists, and no
  *   stable tag anywhere outranks it (an unmerged hotfix must be merged first,
  *   or the release would silently skip it);
@@ -435,6 +438,31 @@ export interface TargetValidation {
   min: string;
 }
 
+/**
+ * Notes for this version already committed at HEAD: a preparation whose commit
+ * was never tagged. Preparing again would prepend a second section, which the
+ * tree checker refuses only after `CHANGELOG.md` has been written. The prefix
+ * includes the closing bracket, so `rc.10` never answers for `rc.1` nor a
+ * candidate for its stable version — the same rule `changelogSection` uses.
+ */
+function assertNoNotesYet(repo: string, version: string): void {
+  if (
+    git(repo, ['ls-tree', '--name-only', 'HEAD', '--', 'CHANGELOG.md']) === ''
+  ) {
+    return;
+  }
+  const heading = `## [${version}]`;
+  const notes = git(repo, ['cat-file', 'blob', 'HEAD:CHANGELOG.md']);
+  if (notes.split(/\r?\n/).some(line => line.startsWith(heading))) {
+    throw new ReleaseTrainError(
+      `HEAD already carries release notes for ${version} ("${heading}" in ` +
+        'CHANGELOG.md): a preparation was committed and never tagged. Tag the ' +
+        'commit that carries them, or remove the section, instead of preparing ' +
+        'again.'
+    );
+  }
+}
+
 function assertFullClone(repo: string): void {
   if (git(repo, ['rev-parse', '--is-shallow-repository']) !== 'false') {
     throw new ReleaseTrainError(
@@ -492,6 +520,7 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
         'next one.'
     );
   }
+  assertNoNotesYet(repo, requested.version);
 
   const reachable = reachableTags(repo);
   const stable = highestStable(reachable);
@@ -672,7 +701,14 @@ if (require.main === module) {
     main();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[release-train] REJECTED — ${message}`);
+    // A git failure is a rejection too, and its stderr is the only place that
+    // says what actually went wrong — as in check-release-tree.ts.
+    const stderr = (err as { stderr?: unknown }).stderr;
+    const detail =
+      typeof stderr === 'string' && stderr.trim() !== ''
+        ? `\n${stderr.trim()}`
+        : '';
+    console.error(`[release-train] REJECTED — ${message}${detail}`);
     process.exit(1);
   }
 }

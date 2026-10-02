@@ -543,16 +543,17 @@ the train every train commit dated before it lands on the published side of that
 line — breaking changes included — and the computed bump comes back too small.
 A routine main-to-train synchronisation is enough to cause it, and one did.
 
-The validator refuses a tag that exists anywhere, a base that is not reachable,
-a stable tag on another line that outranks that base (merge the hotfix first), a
-target that is not the live train's frozen one, an rc counter that skips, a
-range with nothing releasable in it, a graduation whose tree is not its last
-candidate's (`CHANGELOG.md` aside), and — the SemVer rule above made
-mechanical — **any version below the minimum bump** git-cliff computes for the
-commits since the base, a running train's next candidate included. Equal to the
-minimum or higher passes; there is no
-override flag, because a gate that can be waived on the day it is inconvenient
-is not a gate. Nothing is written until every one of those has passed.
+The validator refuses a tag that exists anywhere, notes for it already committed
+at HEAD (a preparation committed and never tagged), a base that is not
+reachable, a stable tag on another line that outranks that base (merge the
+hotfix first), a target that is not the live train's frozen one, an rc counter
+that skips, a range with nothing releasable in it, a graduation whose tree is
+not its last candidate's (`CHANGELOG.md` aside), and — the SemVer rule above
+made mechanical — **any version below the minimum bump** git-cliff computes for
+the commits since the base, a running train's next candidate included. Equal to
+the minimum or higher passes; there is no override flag, because a gate that can
+be waived on the day it is inconvenient is not a gate. Nothing is written until
+every one of those has passed.
 
 **RC trains**: a release train produces several candidates for **one** stable
 target — `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z` — never a new stable version
@@ -609,8 +610,8 @@ actually belongs to the next section or to the historical footer, and any
 `## [Unreleased]` heading are all rejections. For a stable tag that graduates a
 train it also proves the tree is the highest candidate of that version
 unchanged, `CHANGELOG.md` aside; the job fetches the release tags explicitly so
-a missing candidate cannot read as "no graduation". The same checker is what
-`release:prepare` and `.husky/pre-push` run, so one contract has one
+a candidate the remote holds cannot read as "no graduation". The same checker is
+what `release:prepare` and `.husky/pre-push` run, so one contract has one
 implementation — the hook predicts the workflow's verdict, it does not replace
 it.
 

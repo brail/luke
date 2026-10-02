@@ -180,7 +180,8 @@ case "$TAG" in
     ;;
 esac
 
-# Fails closed on its own for a taken tag, a missing or unreachable base, an
+# Fails closed on its own for a taken tag, notes for it already committed at
+# HEAD (a preparation never tagged), a missing or unreachable base, an
 # unmerged hotfix, the wrong train, a counter that skips, a range with nothing
 # releasable in it, any target below the minimum bump, and a graduation whose
 # tree is not its last candidate's (CHANGELOG.md aside). Nothing here

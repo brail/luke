@@ -434,9 +434,9 @@ test('content, not commit history, decides a graduation', () => {
   commit(dir, 'feat(api): the cycle work');
   git(dir, 'tag', 'v3.0.0-rc.1');
 
-  // The release notes are the one path a graduation may change.
-  write(dir, 'CHANGELOG.md', '## [3.0.0]\n\n- notes\n');
-  commit(dir, 'docs: release notes');
+  // The notes file is the one path a graduation may change.
+  write(dir, 'CHANGELOG.md', '# Changelog\n\n- an edit to older notes\n');
+  commit(dir, 'docs: edit the notes');
   assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
   git(dir, 'rm', '-q', 'CHANGELOG.md');
   commit(dir, 'docs: back to the candidate');
@@ -480,6 +480,40 @@ test('a train graduates from the stable line through a merge', () => {
   git(dir, 'checkout', '-q', 'main');
   merge(dir, 'develop-3.0', 'Merge pull request #2 from brail/develop-3.0');
   assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
+});
+
+// ── Notes already committed ──────────────────────────────────────────────────
+
+test('notes already committed for the version refuse a second preparation', () => {
+  // A preparation committed and never tagged: preparing again would prepend a
+  // second section, refused by the tree checker only after CHANGELOG.md was
+  // written. Every kind, graduation included — its tree rule excuses the notes.
+  const dir = trainAtRc1();
+  write(dir, 'CHANGELOG.md', '# Changelog\n\n## [3.0.0] - 2026-10-02\n\n- notes\n');
+  commit(dir, 'chore(release): notes for 3.0.0');
+  rejects(dir, 'v3.0.0', /HEAD already carries release notes for 3\.0\.0/);
+
+  // A heading names one version: the stable's is not the next candidate's.
+  assert.equal(validateTarget(dir, 'v3.0.0-rc.2').kind, 'rc-next');
+
+  // Only a heading counts, never the same text inside a line.
+  write(dir, 'CHANGELOG.md', '# Changelog\n\nSee ## [3.0.0-rc.2] below.\n');
+  commit(dir, 'docs: mention it');
+  assert.equal(validateTarget(dir, 'v3.0.0-rc.2').kind, 'rc-next');
+  write(dir, 'CHANGELOG.md', '## [3.0.0-rc.2] - 2026-10-02\n\n- notes\n');
+  commit(dir, 'chore(release): notes for 3.0.0-rc.2');
+  rejects(dir, 'v3.0.0-rc.2', /HEAD already carries release notes for 3\.0\.0-rc\.2/);
+
+  // Nor is `rc.10` the heading of `rc.1`.
+  const first = afterStable();
+  commit(first, 'feat(api): the cycle work');
+  write(first, 'CHANGELOG.md', '## [3.0.0-rc.10]\n\n- notes\n');
+  commit(first, 'docs: notes of another candidate');
+  assert.equal(validateTarget(first, 'v3.0.0-rc.1').kind, 'rc-first');
+
+  write(first, 'CHANGELOG.md', '## [3.0.0-rc.10]\n\n- notes\n\n## [3.0.0-rc.1]\n\n- notes\n');
+  commit(first, 'chore(release): notes for 3.0.0-rc.1');
+  rejects(first, 'v3.0.0-rc.1', /HEAD already carries release notes for 3\.0\.0-rc\.1/);
 });
 
 // ── Fail-closed states ───────────────────────────────────────────────────────
@@ -600,12 +634,15 @@ test('a base commit shared with another tag is refused, not guessed at', () => {
 
 test('the working tree does not change the verdict', () => {
   const dir = lukeShape();
+  // Committed notes are read from HEAD, so HEAD carries a CHANGELOG.md to read.
+  write(dir, 'CHANGELOG.md', '# Changelog\n');
+  commit(dir, 'docs: start the changelog');
   const clean = validateTarget(dir, 'v3.0.0-rc.1');
 
   // The state release-prepare.sh refuses to start from, and the state it is in
   // between its two writers: neither may reach this verdict.
   writeFileSync(join(dir, 'package.json'), '{"version":"9.9.9"}\n');
-  writeFileSync(join(dir, 'CHANGELOG.md'), '## [9.9.9]\n\n- invented\n');
+  writeFileSync(join(dir, 'CHANGELOG.md'), '## [3.0.0-rc.1]\n\n- just written\n');
 
   assert.deepEqual(validateTarget(dir, 'v3.0.0-rc.1'), clean);
 });

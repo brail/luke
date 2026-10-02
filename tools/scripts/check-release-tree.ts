@@ -282,7 +282,7 @@ export function changelogSection(text: string, version: string): number {
     throw new ReleaseTreeError(
       `${CHANGELOG} has ${headings.length} "## [${version}]" headings (lines ` +
         `${headings.map(i => i + 1).join(', ')}). Remove the duplicated section — ` +
-        'a second `release:prepare <tag>` for the same version produces this.'
+        'a hand edit, or a merge that brought the section in twice, produces this.'
     );
   }
 
@@ -380,14 +380,10 @@ export function checkGraduation(
     '--list',
     `v${release.version}-rc.*`,
   ]).split('\n')) {
+    // The glob fixes the version; the grammar refuses anything else it lets
+    // through (`rc.01`, `rc.1x`).
     const candidate = parseReleaseTag(name.trim());
     if (candidate?.channel !== 'rc') continue;
-    if (
-      `${candidate.major}.${candidate.minor}.${candidate.patch}` !==
-      release.version
-    ) {
-      continue;
-    }
     if (latest === null || (candidate.rc ?? 0) > (latest.rc ?? 0)) {
       latest = candidate;
     }

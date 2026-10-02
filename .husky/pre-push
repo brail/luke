@@ -5,9 +5,9 @@
 #
 # It is not enforcement. `--no-verify` skips it and a clone that never ran
 # `pnpm install` does not have it — `release.yml` is the authority. The
-# graduation half compares with the candidate tags this clone holds:
-# `release:prepare` fetches them, and a clone without them gets no early verdict
-# on it, only release.yml's.
+# graduation half compares with the candidate tags this clone holds, so missing
+# or stale ones give a wrong early verdict, not none: `release:prepare` fetches
+# them, and release.yml, which fetches its own, decides.
 #
 # What it replaced asked about the **working tree** rather than the object being
 # pushed, and resolved its expectation with `git describe --tags --abbrev=0` —
