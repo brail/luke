@@ -106,7 +106,7 @@ async function livePhoto(): Promise<string> {
 /** An automatic revision snapshotted the pre-fix way: the row keeps its live key. */
 async function legacyAutoRevision(pictureKey: string) {
   await prisma.collectionLayoutRow.update({ where: { id: rowId }, data: { pictureKey } });
-  const revision = await createRevision(
+  const { revision } = await createRevision(
     {
       collectionLayoutId: layoutId,
       revisionTypeValue: 'MILESTONE_DATA',

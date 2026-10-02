@@ -58,12 +58,15 @@ export const collectionLayoutRevisionRouter = router({
 
       const copyPhoto = (sourceKey: string) => copyToImmutableBucket(ctx.prisma, sourceKey);
 
-      const revision = await createRevision(
+      const { revision, missingPhotoRowIds } = await createRevision(
         { ...input, cause: 'MANUAL' },
         ctx.session.user.id,
         copyPhoto,
         ctx.prisma,
       );
+      if (missingPhotoRowIds.length > 0) {
+        ctx.logger?.warn({ revisionId: revision.id, missingPhotoRowIds }, 'Revision created without the row photos gone from storage');
+      }
 
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_REVISION_CREATE',
@@ -75,6 +78,7 @@ export const collectionLayoutRevisionRouter = router({
           revisionNumber: revision.revisionNumber,
           revisionTypeValue: input.revisionTypeValue,
           rowsIncluded: revision.groups.flatMap(g => g.rows).length,
+          missingPhotoRowIds: missingPhotoRowIds.length > 0 ? missingPhotoRowIds : undefined,
         },
       });
 

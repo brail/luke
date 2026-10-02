@@ -1,3 +1,4 @@
+import { StorageObjectNotFoundError } from '@luke/core';
 import type { CreateRevisionInput } from '@luke/core';
 import {
   CollectionLayoutRevision,
@@ -7,6 +8,7 @@ import {
   PrismaClient,
 } from '@luke/db';
 
+import { imageFetchLimiter } from '../lib/export/concurrency.js';
 
 // ─── Return types ─────────────────────────────────────────────────────────────
 
@@ -53,15 +55,23 @@ export type CollectionLayoutAsOfRevision = {
  * Snapshots the current collection layout as a new revision. Photos are copied to the
  * immutable bucket before the transaction to keep the transaction short.
  *
- * @param copyPhoto - Callback that copies a photo by source key and returns the new key.
- * @returns The created revision with all groups, rows, and quotation snapshots.
+ * A row whose photo object is gone from live storage is snapshotted without a photo and reported
+ * in `missingPhotoRowIds`, for the caller to record: the row cannot be copied as it was loaded,
+ * and failing the whole revision over it would block every later one too — provided the storage
+ * served at least one other photo of the layout. Otherwise, and on any other copy failure, the
+ * revision fails, so it is retried rather than recorded short.
+ *
+ * @param copyPhoto - Callback that copies a photo by source key and returns the new key; it throws
+ *   `StorageObjectNotFoundError` when the source is gone.
+ * @returns The created revision with all groups, rows, and quotation snapshots, and the rows whose
+ *   photo was gone.
  */
 export async function createRevision(
   input: CreateRevisionInput,
   userId: string,
   copyPhoto: (sourceKey: string) => Promise<string>,
   prisma: PrismaClient,
-): Promise<RevisionDetail> {
+): Promise<{ revision: RevisionDetail; missingPhotoRowIds: string[] }> {
   // Load layout with all relations before entering transaction
   const layout = await prisma.collectionLayout.findUniqueOrThrow({
     where: { id: input.collectionLayoutId },
@@ -88,15 +98,33 @@ export async function createRevision(
   const allRows = layout.groups.flatMap(g => g.rows);
 
   // Pre-copy photos OUTSIDE the transaction — orphan files if tx fails are acceptable
-  // (CAS via sha256 dedup ensures no data loss, only unreferenced bytes in the bucket)
+  // (CAS via sha256 dedup ensures no data loss, only unreferenced bytes in the bucket).
+  // A bounded number at a time: each copy holds its photo in memory.
   const rowsWithPhotos = allRows.filter(r => !!r.pictureKey);
-
-  const photoCopyEntries = await Promise.all(
-    rowsWithPhotos.map(async r => [r.id, await copyPhoto(r.pictureKey!)] as const),
+  const photoCopyMap = new Map<string, string>();
+  const limit = imageFetchLimiter();
+  await Promise.all(
+    rowsWithPhotos.map(r => limit(async () => {
+      try {
+        photoCopyMap.set(r.id, await copyPhoto(r.pictureKey!));
+      } catch (err) {
+        if (err instanceof StorageObjectNotFoundError) return;
+        limit.clearQueue(); // the revision fails: start no further copies
+        throw err;
+      }
+    })),
   );
-  const photoCopyMap = new Map(photoCopyEntries);
+  const missingPhotoRowIds = rowsWithPhotos.filter(r => !photoCopyMap.has(r.id)).map(r => r.id);
+  // Absence is believed only from a storage that served at least one photo of this layout: one
+  // that serves none is more likely looking in the wrong place (an empty volume, a new bucket) than
+  // to have lost every photo, and a revision recorded then would stay without them for good.
+  if (missingPhotoRowIds.length > 0 && photoCopyMap.size === 0) {
+    throw new Error(
+      `No photo of layout ${input.collectionLayoutId} could be read from storage (${missingPhotoRowIds.length} rows); not recording a revision without them`,
+    );
+  }
 
-  return prisma.$transaction(async tx => {
+  const detail = await prisma.$transaction(async tx => {
     // Next revision number (0-indexed)
     const aggregate = await tx.collectionLayoutRevision.aggregate({
       where: { collectionLayoutId: input.collectionLayoutId },
@@ -182,13 +210,13 @@ export async function createRevision(
           },
         });
       }
-
-      // Mark row as revised
-      await tx.collectionLayoutRow.update({
-        where: { id: row.id },
-        data: { lastRevisedAt: new Date() },
-      });
     }
+
+    // Mark rows as revised, in one statement: a row deleted since the layout was loaded is skipped.
+    await tx.collectionLayoutRow.updateMany({
+      where: { id: { in: allRows.map(r => r.id) } },
+      data: { lastRevisedAt: new Date() },
+    });
 
     // Return full revision detail
     return tx.collectionLayoutRevision.findUniqueOrThrow({
@@ -207,6 +235,8 @@ export async function createRevision(
       },
     });
   }, { timeout: 30_000 }) as unknown as RevisionDetail;
+
+  return { revision: detail, missingPhotoRowIds };
 }
 
 // ─── listRevisions ────────────────────────────────────────────────────────────

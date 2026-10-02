@@ -123,6 +123,7 @@ const SAFE_KEY_LIST = [
   'cause',
   'milestoneId',
   'rowsIncluded',
+  'missingPhotoRowIds',
   'title',
   'status',
   'calendarId',

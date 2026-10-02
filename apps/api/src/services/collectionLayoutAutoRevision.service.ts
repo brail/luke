@@ -16,6 +16,11 @@
  * window where two concurrent triggers both pass it. Losing that race surfaces as P2002 and is
  * treated as "already done", not as an error. Manual revisions are untouched — their `milestoneId`
  * is null, and Postgres treats NULLs as distinct in a unique index.
+ *
+ * A row photo gone from storage does not fail a revision (see `createRevision`); any other failure
+ * does, and is logged. The date trigger tries again every tick while the event is within the
+ * lookback, so a failure lasting the whole window loses that revision; the phase trigger does not
+ * retry, and the group's next phase change snapshots the layout as it is then.
  */
 
 import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt } from '@luke/core';
@@ -105,10 +110,11 @@ async function createAutoRevision(
   revisionTypeValue: string,
   notes: string,
   actorUserId: string,
+  logger?: ServiceLogger,
 ): Promise<boolean> {
-  let revision;
+  let created;
   try {
-    revision = await createRevision(
+    created = await createRevision(
       {
         collectionLayoutId: event.collectionLayoutId,
         revisionTypeValue,
@@ -126,6 +132,10 @@ async function createAutoRevision(
     if (isDuplicateRevision(err)) return false;
     throw err;
   }
+  const { revision, missingPhotoRowIds } = created;
+  if (missingPhotoRowIds.length > 0) {
+    logger?.warn({ revisionId: revision.id, missingPhotoRowIds }, 'Auto-revision created without the row photos gone from storage');
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -139,6 +149,7 @@ async function createAutoRevision(
         revisionTypeValue,
         eventId: event.id,
         collectionLayoutId: event.collectionLayoutId,
+        missingPhotoRowIds: missingPhotoRowIds.length > 0 ? missingPhotoRowIds : undefined,
       },
     },
   });
@@ -227,10 +238,11 @@ export async function createRevisionsForReachedEvents(
         AUTO_REVISION_TYPE_DATE,
         `Evento raggiunto: "${event.title}" — Gruppo: "${event.planningGroupName}"`,
         actorUserId,
+        logger,
       );
       if (done) created += 1;
     } catch (err) {
-      logger?.warn({ err, eventId: event.id }, 'Auto-revision (data raggiunta) failed');
+      logger?.warn({ err, eventId: event.id }, 'Auto-revision (deadline reached) failed');
     }
   }
 
@@ -246,6 +258,8 @@ export async function createRevisionsForReachedEvents(
  * row without a phase means nothing is complete yet.
  *
  * Called after a row phase transition. Never throws: a revision failure must not fail the row save.
+ * Unlike the date trigger, the first failure ends the call: every pending event snapshots the same
+ * layout, so the next one would fail the same way while the row save waits.
  *
  * @returns The number of revisions created.
  */
@@ -296,6 +310,7 @@ export async function createRevisionsForCompletedPhase(
         AUTO_REVISION_TYPE_PHASE,
         `Fase completata: "${event.title}" — Gruppo: "${event.planningGroupName}"`,
         actorUserId,
+        logger,
       );
       if (done) created += 1;
     }

@@ -83,7 +83,7 @@ function duplicateRevisionError() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(createRevision).mockResolvedValue({ id: 'rev-1', revisionNumber: 3 } as never);
+  vi.mocked(createRevision).mockResolvedValue({ revision: { id: 'rev-1', revisionNumber: 3 }, missingPhotoRowIds: [] } as never);
 });
 
 describe('createRevisionsForReachedEvents', () => {
@@ -139,6 +139,22 @@ describe('createRevisionsForReachedEvents', () => {
       targetType: 'CollectionLayoutRevision',
       targetId: 'rev-1',
     });
+  });
+
+  it('names the rows whose photo was gone in the audit row and a warning', async () => {
+    vi.mocked(createRevision).mockResolvedValue({ revision: { id: 'rev-1', revisionNumber: 3 }, missingPhotoRowIds: ['row-9'] } as never);
+    const prisma = buildFakePrisma({
+      events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
+      layouts: [LAYOUT],
+    });
+
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(1);
+
+    expect(prisma.auditLog.create.mock.calls[0][0].data.metadata).toMatchObject({ missingPhotoRowIds: ['row-9'] });
+    expect(fakeLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ revisionId: 'rev-1', missingPhotoRowIds: ['row-9'] }),
+      expect.any(String),
+    );
   });
 
   it('does not recreate the revision if that event already has one of the same type', async () => {
@@ -235,7 +251,7 @@ describe('createRevisionsForReachedEvents', () => {
     });
     vi.mocked(createRevision)
       .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce({ id: 'rev-2', revisionNumber: 4 } as never);
+      .mockResolvedValueOnce({ revision: { id: 'rev-2', revisionNumber: 4 }, missingPhotoRowIds: [] } as never);
 
     expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(1);
     expect(createRevision).toHaveBeenCalledTimes(2);
@@ -316,5 +332,19 @@ describe('createRevisionsForCompletedPhase', () => {
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
     expect(fakeLogger.warn).toHaveBeenCalled();
+  });
+
+  it('a failure ends the call: every pending event would snapshot the same layout', async () => {
+    const prisma = buildFakePrisma({
+      rows: [{ phase: { order: 3 } }],
+      events: [
+        { id: 'ev-1', title: 'Primo', planningGroup: { name: 'Uomo FW26' } },
+        { id: 'ev-2', title: 'Secondo', planningGroup: { name: 'Uomo FW26' } },
+      ],
+    });
+    vi.mocked(createRevision).mockRejectedValueOnce(new Error('boom'));
+
+    expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
+    expect(createRevision).toHaveBeenCalledTimes(1);
   });
 });

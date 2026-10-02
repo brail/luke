@@ -73,10 +73,15 @@ entries:
    snapshots every row of the layout
 4. `CreateRevisionDialog` calls `trpc.collectionLayoutRevision.create`
 5. The service copies the photos into the immutable bucket
-   (`collection-row-pictures-revisions`) BEFORE the transaction
+   (`collection-row-pictures-revisions`) BEFORE the transaction, a bounded
+   number at a time (`IMAGE_FETCH_CONCURRENCY`). A row whose photo object is
+   gone from live storage is snapshotted without a photo and named in the
+   revision's audit row (`missingPhotoRowIds`), provided storage served at
+   least one other photo of the layout. When it served none, and on any other
+   copy failure, the revision fails
 6. The transaction creates the `CollectionLayoutRevision` plus the group and
    row snapshots
-7. Every row gets `lastRevisedAt = now()`
+7. Every row still in the layout gets `lastRevisedAt = now()`
 
 ### History view
 
@@ -178,10 +183,12 @@ Both snapshot the whole layout with `milestoneId` set to the event, and
 `@@unique([milestoneId, revisionTypeValue])` allows one revision per event and
 type. They are credited to the oldest active admin (skipped when there is
 none), and row photos are copied to the immutable bucket, as for a manual
-revision. A photo that cannot be copied fails the whole snapshot: the date
-trigger logs it and retries on its next hourly tick within the lookback window;
-the phase trigger logs it and does not retry, and a later trigger snapshots the
-layout as it is then.
+revision, including a row whose photo object is gone. Any other failure (storage
+or database unavailable) fails that event's snapshot: the date trigger logs it
+and retries on its next hourly tick, so an event still failing when it leaves the
+7-day lookback window gets no `MILESTONE_DATA` revision; the phase trigger logs
+it and does not retry, and the group's next phase change snapshots the layout as
+it is then.
 
 **Known gap:** until 2026-09-26 automatic revisions stored keys of the live
 `collection-row-pictures` bucket, while the revision page and the revision
@@ -204,6 +211,9 @@ lost for that revision.
 |------|-----------|
 | Live row deleted after the revision | `sourceRowId` is a soft FK — the backward lookup still works |
 | `wasDeleted=true` | Means the row was already deleted at revision time — filtered out of time travel. No write path sets it today: `createRevision` always writes `false`, so a row deleted between two revisions still appears, from its last snapshot, when the later revision is viewed |
+| Row photo gone from live storage when the revision is taken | The row is snapshotted without a photo, named in the revision's audit row (`missingPhotoRowIds`) and in a warning. Includes a photo replaced while the snapshot runs: the old object is deleted once the row update commits |
+| No row photo of the layout readable | The revision fails: a storage that serves none is more likely looking in the wrong place (an empty volume, a new bucket) than to have lost them all, so it is retried rather than recorded without photos |
+| Row deleted while the revision is taken | Snapshotted as the layout was loaded; only its `lastRevisedAt` write is skipped |
 | Orphan photos in the immutable bucket | Kept with their `FileObject` row and reused by a retried revision (see the Immutable Bucket section) |
 | Revision with 0 rows (layout with no rows) | Allowed — the groups are snapshotted with no rows |
 | Same row snapshotted twice in the same revision | Blocked by `@@unique([revisionId, sourceRowId])` |

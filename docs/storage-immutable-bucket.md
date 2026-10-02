@@ -10,7 +10,10 @@ formal revisions (ISO 9001:2015 quality register).
 `copyToImmutableBucket()` in `apps/api/src/storage/index.ts`. The
 `collectionLayoutRevision.create` procedure passes it to the `createRevision`
 service, which calls it for every row with a photo BEFORE the Prisma
-transaction.
+transaction. A source object that is gone makes it throw
+`StorageObjectNotFoundError`, and that row is snapshotted without a photo as long
+as another photo of the layout was read (see
+[collection-layout-versioning.md](collection-layout-versioning.md#creating-a-revision)).
 
 Automatic MILESTONE revisions copy photos here too
 (`apps/api/src/services/collectionLayoutAutoRevision.service.ts`). Until
@@ -49,8 +52,8 @@ bucket; the common case is a photo that has not changed between revisions,
 since every revision copies the photo of every row. It is a lookup, not a
 guarantee: `FileObject` is unique only on `bucket` + `key`, so copies of
 identical content that run concurrently can each miss the lookup and upload
-their own copy. The photos of one revision are copied in parallel, so two of
-its rows sharing a photo are enough.
+their own copy. The photos of one revision are copied in parallel, a bounded
+number at a time, so two of its rows sharing a photo are enough.
 
 ### Orphan files
 
