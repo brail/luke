@@ -32,12 +32,12 @@ import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   assertBrandAccess,
-  resolveMerchImageBrandAccess,
   resolveMerchPlanBrandAccess,
   resolveMerchPlanRowBrandAccess,
   resolveMerchSpecsheetBrandAccess,
 } from '../services/brandScope.service';
 import { getUserAllowedIds } from '../services/context.service';
+import { deleteSpecsheetImage, setDefaultSpecsheetImage } from '../services/specsheetImage.service';
 
 /** A row's parameter set must be one of its plan's brand and season, or none. */
 async function assertParameterSetOfPlan(
@@ -423,7 +423,8 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted.
+   * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted
+   * (`deleteSpecsheetImage`, under the specsheet's image lock).
    *
    * @auth merchandising_plan:update
    * @input { id }
@@ -434,37 +435,21 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await resolveMerchImageBrandAccess(ctx, input.id);
-
-      await ctx.prisma.$transaction(async tx => {
-        await tx.merchandisingImage.delete({ where: { id: input.id } });
-
-        if (image.isDefault) {
-          const next = await tx.merchandisingImage.findFirst({
-            where: { specsheetId: image.specsheetId },
-            orderBy: { order: 'asc' },
-          });
-          if (next) {
-            await tx.merchandisingImage.update({
-              where: { id: next.id },
-              data: { isDefault: true },
-            });
-          }
-        }
-      });
+      const { specsheetId } = await deleteSpecsheetImage(ctx, input.id);
 
       await logAudit(ctx, {
         action: 'MERCHANDISING_IMAGE_DELETE',
         targetType: 'MerchandisingImage',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { specsheetId: image.specsheetId },
+        metadata: { specsheetId },
       });
       return { success: true };
     }),
 
   /**
-   * Sets a specific image as the default for its specsheet (resets all others, then sets this one).
+   * Sets a specific image as the default for its specsheet (resets all others, then sets this one;
+   * `setDefaultSpecsheetImage`, under the specsheet's image lock).
    *
    * @auth merchandising_plan:update
    * @input { id }
@@ -475,25 +460,14 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await resolveMerchImageBrandAccess(ctx, input.id);
-
-      await ctx.prisma.$transaction([
-        ctx.prisma.merchandisingImage.updateMany({
-          where: { specsheetId: image.specsheetId },
-          data: { isDefault: false },
-        }),
-        ctx.prisma.merchandisingImage.update({
-          where: { id: input.id },
-          data: { isDefault: true },
-        }),
-      ]);
+      const { specsheetId } = await setDefaultSpecsheetImage(ctx, input.id);
 
       await logAudit(ctx, {
         action: 'MERCHANDISING_IMAGE_SET_DEFAULT',
         targetType: 'MerchandisingImage',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { specsheetId: image.specsheetId },
+        metadata: { specsheetId },
       });
       return { success: true };
     }),

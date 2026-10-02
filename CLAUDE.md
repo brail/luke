@@ -104,7 +104,9 @@ does not cover, run the script yourself.
   `DECLARATION_GRAPH_DEPENDENCIES` in `tools/scripts/check-platform-integrity.ts`).
   Raw SQL only in `packages/nav/src/` (never in application logic).
   Allowed exceptions, only with a justifying comment: health-probe `SELECT 1`
-  (`observability/readiness.ts`); queries on application-domain tables (not NAV)
+  (`observability/readiness.ts`); a transaction-scoped advisory lock
+  (`pg_advisory_xact_lock`, e.g. `acquireLastAdminLock`) inside an interactive
+  `$transaction`; queries on application-domain tables (not NAV)
   that require SQL features not expressible in the Prisma ORM (e.g. `DISTINCT ON` +
   `json_agg ... FILTER`) — always use the `Prisma.sql` tagged template, never
   `$queryRawUnsafe`/`$executeRawUnsafe` for these.

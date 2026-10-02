@@ -4,8 +4,8 @@
  * An uploaded file is born with `confirmedAt: null`: it exists in storage but
  * doesn't belong to anything yet, and the pending-file reaper in `server.ts`
  * (every 30 minutes, anything pending for over an hour) sweeps it up if it
- * stays that way. Linking it to a brand, a collection row, or the
- * company profile means marking it confirmed and writing its key onto the entity.
+ * stays that way. Linking it to a brand, a collection row, a specsheet image or
+ * the company profile means marking it confirmed and writing its key onto the entity.
  *
  * The predicate used to be copied four times — `brand.create`, `brand.update`,
  * `collectionLayout.rows.create`, `collectionLayout.rows.update` — character for
