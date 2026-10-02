@@ -1,5 +1,5 @@
 /**
- * A settings form is saved as one change (R3a): every key it writes or removes goes through one
+ * A settings form is saved as one change: every key it writes or removes goes through one
  * `saveConfigs` call, validated before anything is written and committed in one transaction.
  *
  * Failures are injected inside the database, by a trigger that raises only for a value this test

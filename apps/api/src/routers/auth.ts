@@ -69,7 +69,8 @@ export const authRouter = router({
   login: publicProcedure
     .use(withRateLimit('login'))
     .input(LoginSchema)
-    .use(withIdempotency())
+    // Public: no session yet, so the key is not scoped to a user.
+    .use(withIdempotency({ scope: 'anonymous' }))
     .mutation(async ({ input, ctx }) => {
       return await authenticateUser(ctx, input);
     }),

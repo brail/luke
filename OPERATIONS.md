@@ -122,16 +122,26 @@ Queries are never deduplicated.
   result (`ok: false`) rather than an exception, and the middleware stores only
   `ok: true`. A retry with the same key after a failure runs the mutation again,
   whatever its input: a failed request leaves nothing to conflict with.
-- **Requests still in flight are not deduplicated.** The result is stored only
-  after the mutation completes, so two concurrent requests carrying the same key
-  both execute. Preventing a second submission while the first is running is the
-  client's job — for example, by disabling the submit control until the mutation
-  settles.
+- **A request still in progress holds its key.** The key is reserved before the
+  mutation runs, so a second request with the same key while the first is still
+  running gets `CONFLICT` (HTTP 409) — same input or not — and is never executed;
+  retry once the first has answered. The reservation lasts until that request
+  settles, however long it takes: it does not expire, and a client disconnect
+  does not end it.
+- **Keys belong to the caller.** A key is filed under the session user, so two
+  users never share one: neither replays the other's result nor is blocked by it.
+  `auth.login`, which has no session yet, uses one anonymous scope.
+- **Too many requests in progress:** with 1,000 reservations held, a request
+  with a new key gets `TOO_MANY_REQUESTS` (HTTP 429); a stored result is still
+  replayed and a running key still answers `CONFLICT`.
 
-The store is in memory and per process: at most 1,000 entries, a five-minute
-TTL, expired entries removed every minute. When full it evicts the entry
-inserted earliest, as the rate-limit store does. Entries are not shared between processes
-(ADR-011).
+The store is in memory and per process: at most 1,000 stored results, a
+five-minute TTL, expired entries removed every minute. When full it evicts the
+result inserted earliest, as the rate-limit store does; reservations are kept
+apart and never evicted. Nothing is shared between processes (ADR-011) and
+everything is lost on restart, so this is not durable exactly-once execution: a
+mutation that commits just before a crash, before its result is stored, runs
+again when retried.
 
 Implementation: [`idempotencyTrpc.ts`](apps/api/src/lib/idempotencyTrpc.ts) and
 [`idempotency.ts`](apps/api/src/lib/idempotency.ts).
@@ -158,10 +168,12 @@ never on the message text:
 |---|---|---|
 | Rate limit exceeded | `TOO_MANY_REQUESTS` | 429 |
 | Login that LDAP could not complete — which failures count is in the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
-| Idempotency key reused with a different input | `CONFLICT` | 409 |
+| Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
+| Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 
-Rate-limit errors also carry `error.data.retryAfterSeconds`. Their message, for
+Rate-limit errors also carry `error.data.retryAfterSeconds`; the idempotency 429
+does not. Their message, for
 example `Rate limit exceeded for login. Max 5 requests per 1 minute(s).`, names
 the rate-limit bucket: it is meant for the logs, not for display.
 

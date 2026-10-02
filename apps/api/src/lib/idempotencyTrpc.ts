@@ -6,22 +6,26 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import pino from 'pino';
 
 import { idempotencyStore } from './idempotency';
-
-const logger = pino({ level: 'info' });
 
 /**
  * Returns a raw tRPC middleware function that enforces idempotency for mutations.
  * Requests without an `Idempotency-Key` header are passed through unchanged.
- * After a successful first request, a second one with the same key and identical body returns
- * the cached response, and one with a different body throws `CONFLICT`. A failure is not cached,
- * so any retry with that key runs again.
+ *
+ * The key is reserved before the mutation runs: a second request with that key while the first is
+ * still running is refused (`CONFLICT`), never run twice. After a successful first request, the same
+ * key with an identical input returns the stored response, and with a different input throws
+ * `CONFLICT`. A failure stores nothing, so a retry with that key runs again.
+ *
+ * Keys belong to the caller: `scope: 'caller'` (the default) files them under the session user id,
+ * stable across a refreshed session, so a key is never shared between users — neither replayed to
+ * another nor blocking one. A public procedure declares `scope: 'anonymous'`, which ignores any
+ * session the request may carry (context authentication runs for public procedures too).
  *
  * @returns Raw tRPC middleware (use directly with `.use()` on a procedure).
  */
-export function withIdempotency() {
+export function withIdempotency({ scope = 'caller' }: { scope?: 'caller' | 'anonymous' } = {}) {
   // Not t.middleware(...)-wrapped: this middleware short-circuits by returning
   // a cached response instead of always going through next(), which is incompatible
   // with the stricter MiddlewareResult type that t.middleware requires — verified
@@ -51,62 +55,70 @@ export function withIdempotency() {
       });
     }
 
-    // Serialize input for the hash (uses path + input as the identifier)
-    const method = 'POST'; // tRPC always uses POST for mutations
-    const pathStr = `/trpc/${path}`;
+    let owner: string;
+    if (scope === 'anonymous') {
+      owner = 'anonymous';
+    } else if (ctx.session?.user?.id) {
+      owner = `user:${ctx.session.user.id}`;
+    } else {
+      // A procedure that requires no session must declare `scope: 'anonymous'`; reaching this is
+      // a wiring error, not a client one, and falling back to a shared scope would let users
+      // collide on keys.
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: `withIdempotency() on ${path} has no session to scope the key to`,
+      });
+    }
+    const key = `${owner}:${idempotencyKey}`;
+
     // `input` comes from the middleware, not from `ctx`: `ctx.input` doesn't exist on
     // the tRPC context and was always undefined, so the body hash was
     // constantly "{}" — two requests with the same key but different payloads
     // ended up identical, and the second one replayed the response of the
     // first instead of the expected CONFLICT. Requires that `.use(withIdempotency())`
     // be chained AFTER `.input(...)`, otherwise the input isn't parsed yet.
-    const body = JSON.stringify(input ?? {});
+    const begun = idempotencyStore.begin(key, 'POST', `/trpc/${path}`, JSON.stringify(input ?? {}));
 
-    // Check whether a response already exists
-    const result = idempotencyStore.check(
-      idempotencyKey,
-      method,
-      pathStr,
-      body
-    );
-
-    if (result.hit) {
-      // Return the cached response
-      return result.response;
-    }
-
-    // If there's a conflict (same key, different body), return 409 Conflict
-    if (result.conflict) {
-      throw new TRPCError({
-        code: 'CONFLICT',
-        message:
-          'Idempotency-Key already used with different request body. Each key must identify a single operation.',
-      });
-    }
-
-    // Execute the original mutation
-    const mutationResult = await next();
-
-    // A procedure error reaches a middleware as a resolved `{ ok: false }`, not as a throw, so
-    // `ok` is the only success signal. Caching a failure would replay it to every retry with the
-    // same key for the whole TTL, even once its cause is gone.
-    if (!mutationResult.ok) {
-      return mutationResult;
+    switch (begun.kind) {
+      case 'hit':
+        return begun.response;
+      case 'conflict':
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message:
+            'Idempotency-Key already used with different request body. Each key must identify a single operation.',
+        });
+      case 'inFlight':
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'A request with this Idempotency-Key is still in progress. Retry once it has finished.',
+        });
+      case 'full':
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many idempotent requests in progress. Retry shortly.',
+        });
     }
 
     try {
-      idempotencyStore.store(
-        idempotencyKey,
-        method,
-        pathStr,
-        body,
-        mutationResult
-      );
-    } catch (error) {
-      // Log the error but don't block the response
-      logger.warn({ err: error }, 'Failed to store idempotency result');
-    }
+      const mutationResult = await next();
 
-    return mutationResult;
+      // A procedure error reaches a middleware as a resolved `{ ok: false }`, not as a throw, so
+      // `ok` is the only success signal. Caching a failure would replay it to every retry with the
+      // same key for the whole TTL, even once its cause is gone.
+      if (mutationResult.ok) {
+        try {
+          idempotencyStore.complete(key, begun.token, mutationResult);
+        } catch (error) {
+          // Log the error but don't block the response
+          ctx.logger.warn({ err: error }, 'Failed to store idempotency result');
+        }
+      }
+      return mutationResult;
+    } finally {
+      // Always: after a completion it finds nothing of its own to drop, and it covers a `next()`
+      // that throws, an `ok: false` and a failed `complete`.
+      idempotencyStore.release(key, begun.token);
+    }
   };
 }

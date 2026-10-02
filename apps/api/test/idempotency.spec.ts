@@ -1,175 +1,81 @@
 /**
- * Tests for Idempotency tRPC Middleware
- * Verifies idempotency functionality for duplicate requests
+ * Tests for the idempotency store: stored results, their identity and expiry. The reservation
+ * lifecycle and the middleware are covered in `idempotencyTrpc.spec.ts`.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 
-import { idempotencyStore } from '../src/lib/idempotency';
+import { IdempotencyStore } from '../src/lib/idempotency';
+
+const METHOD = 'POST';
+const PATH = '/trpc/auth.login';
+const BODY = JSON.stringify({ username: 'test', password: 'test' });
+const RESPONSE = { user: { id: '123', email: 'test@example.com' } };
+
+let store: IdempotencyStore;
+
+/** Runs one request to completion under `key` with `response`. */
+function complete(key: string, response: unknown, body = BODY, path = PATH, method = METHOD) {
+  const begun = store.begin(key, method, path, body);
+  if (begun.kind !== 'reserved') throw new Error(`expected a reservation, got ${begun.kind}`);
+  store.complete(key, begun.token, response);
+}
+
+afterEach(() => {
+  store?.stop();
+  vi.useRealTimers();
+});
 
 describe('Idempotency Store', () => {
-  beforeEach(() => {
-    idempotencyStore.clear();
+  it('reserves a new key', () => {
+    store = new IdempotencyStore();
+    expect(store.begin('k', METHOD, PATH, BODY).kind).toBe('reserved');
   });
 
-  afterEach(() => {
-    idempotencyStore.clear();
+  it('replays the stored response of the same request', () => {
+    store = new IdempotencyStore();
+    complete('k', RESPONSE);
+    expect(store.begin('k', METHOD, PATH, BODY)).toEqual({ kind: 'hit', response: RESPONSE });
   });
 
-  describe('Basic functionality', () => {
-    it('should return miss for new key', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-
-      const result = idempotencyStore.check(key, method, path, body);
-      expect(result.hit).toBe(false);
-    });
-
-    it('should store and retrieve response', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      // Store response
-      idempotencyStore.store(key, method, path, body, response);
-
-      // Check should return hit
-      const result = idempotencyStore.check(key, method, path, body);
-      expect(result.hit).toBe(true);
-      expect(result.response).toEqual(response);
-    });
-
-    it('should miss for different request with same key', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body1 = JSON.stringify({ username: 'test1', password: 'test1' });
-      const body2 = JSON.stringify({ username: 'test2', password: 'test2' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      // Store response for body1
-      idempotencyStore.store(key, method, path, body1, response);
-
-      // Check with body2 should miss
-      const result = idempotencyStore.check(key, method, path, body2);
-      expect(result.hit).toBe(false);
-    });
-
-    it('should miss for different key with same request', () => {
-      const key1 = 'test-key-123';
-      const key2 = 'test-key-456';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      // Store response for key1
-      idempotencyStore.store(key1, method, path, body, response);
-
-      // Check with key2 should miss
-      const result = idempotencyStore.check(key2, method, path, body);
-      expect(result.hit).toBe(false);
-    });
+  it('answers a conflict for a different request under the same key', () => {
+    store = new IdempotencyStore();
+    complete('k', RESPONSE);
+    expect(store.begin('k', METHOD, PATH, JSON.stringify({ username: 'other' })).kind).toBe('conflict');
+    expect(store.begin('k', 'GET', PATH, BODY).kind).toBe('conflict');
+    expect(store.begin('k', METHOD, '/trpc/me.get', BODY).kind).toBe('conflict');
   });
 
-  describe('TTL expiration', () => {
-    it('should miss after TTL expires', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      // Store response
-      idempotencyStore.store(key, method, path, body, response);
-
-      // Should hit initially
-      const result1 = idempotencyStore.check(key, method, path, body);
-      expect(result1.hit).toBe(true);
-
-      // Clear store simulates TTL expiration
-      idempotencyStore.clear();
-
-      // Should miss after expiration
-      const result2 = idempotencyStore.check(key, method, path, body);
-      expect(result2.hit).toBe(false);
-    });
+  it('keeps keys apart', () => {
+    store = new IdempotencyStore();
+    complete('k1', RESPONSE);
+    expect(store.begin('k2', METHOD, PATH, BODY).kind).toBe('reserved');
   });
 
-  describe('Request hash validation', () => {
-    it('should validate request hash correctly', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      // Store response
-      idempotencyStore.store(key, method, path, body, response);
-
-      // Same request should hit
-      const result1 = idempotencyStore.check(key, method, path, body);
-      expect(result1.hit).toBe(true);
-
-      // Different method should miss
-      const result2 = idempotencyStore.check(key, 'GET', path, body);
-      expect(result2.hit).toBe(false);
-
-      // Different path should miss
-      const result3 = idempotencyStore.check(key, method, '/trpc/me.get', body);
-      expect(result3.hit).toBe(false);
-    });
+  it('forgets a stored response after its TTL', () => {
+    vi.useFakeTimers();
+    store = new IdempotencyStore(1000, 5 * 60 * 1000);
+    complete('k', RESPONSE);
+    vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1);
+    expect(store.begin('k', METHOD, PATH, BODY).kind).toBe('reserved');
   });
 
-  describe('Statistics', () => {
-    it('should track statistics correctly', () => {
-      const stats = idempotencyStore.getStats();
-      expect(stats.size).toBe(0);
-      expect(stats.maxSize).toBe(1000);
-      expect(stats.ttlMs).toBe(5 * 60 * 1000); // 5 minutes
-    });
-
-    it('should update statistics after operations', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
-
-      const initialStats = idempotencyStore.getStats();
-      expect(initialStats.size).toBe(0);
-
-      // Store response
-      idempotencyStore.store(key, method, path, body, response);
-
-      const stats = idempotencyStore.getStats();
-      expect(stats.size).toBe(1);
-    });
+  it('evicts the oldest stored response when full', () => {
+    store = new IdempotencyStore(2);
+    complete('a', 'A');
+    complete('b', 'B');
+    complete('c', 'C');
+    expect(store.begin('a', METHOD, PATH, BODY).kind).toBe('reserved');
+    expect(store.begin('c', METHOD, PATH, BODY)).toEqual({ kind: 'hit', response: 'C' });
   });
 
-  describe('Cleanup', () => {
-    it('should handle cleanup correctly', () => {
-      const key = 'test-key-123';
-      const method = 'POST';
-      const path = '/trpc/auth.login';
-      const body = JSON.stringify({ username: 'test', password: 'test' });
-      const response = { user: { id: '123', email: 'test@example.com' } };
+  it('reports stored results and requests in progress', () => {
+    store = new IdempotencyStore(10, 1000);
+    complete('a', 'A');
+    store.begin('b', METHOD, PATH, BODY);
+    expect(store.getStats()).toEqual({ size: 1, inFlight: 1, maxSize: 10, ttlMs: 1000 });
 
-      // Store response
-      idempotencyStore.store(key, method, path, body, response);
-
-      const stats1 = idempotencyStore.getStats();
-      expect(stats1.size).toBe(1);
-
-      // Clear store
-      idempotencyStore.clear();
-
-      const stats2 = idempotencyStore.getStats();
-      expect(stats2.size).toBe(0);
-    });
+    store.clear();
+    expect(store.getStats()).toMatchObject({ size: 0, inFlight: 0 });
   });
 });

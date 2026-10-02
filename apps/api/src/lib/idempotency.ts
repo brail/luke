@@ -1,7 +1,8 @@
 /**
  * In-memory idempotency store for Luke API.
- * Uses a Map with a configurable capacity (default: 1 000 keys), evicting in insertion order,
- * and a 5-minute TTL. Request identity is hashed as SHA-256(method + path + body).
+ * Stored results live in a Map with a configurable capacity (default: 1 000 keys), evicting in
+ * insertion order, and a 5-minute TTL; requests still running hold a reservation outside it.
+ * Request identity is hashed as SHA-256(method + path + body).
  * Clients signal intent via the `Idempotency-Key: <uuid-v4>` header.
  */
 
@@ -27,24 +28,32 @@ interface IdempotencyEntry {
 }
 
 /**
- * Outcome of an idempotency cache lookup.
+ * What `begin` found for a key:
+ * - `hit` — a stored result of this same request, to replay;
+ * - `conflict` — the key belongs to a different request, stored or still running;
+ * - `inFlight` — this same request is still running;
+ * - `full` — no stored result and no running request, but the reservations are at capacity;
+ * - `reserved` — the key is now this request's; `token` proves it to `complete` and `release`.
  */
-interface IdempotencyResult {
-  /** true if a match was found, false otherwise */
-  hit: boolean;
-  /** Cached response (only if hit=true) */
-  response?: unknown;
-  /** Timestamp of the original request */
-  originalTimestamp?: number;
-  /** true if there's a conflict (same key, different body) */
-  conflict?: boolean;
-}
+export type IdempotencyBegin =
+  | { kind: 'hit'; response: unknown }
+  | { kind: 'conflict' }
+  | { kind: 'inFlight' }
+  | { kind: 'full' }
+  | { kind: 'reserved'; token: symbol };
 
 /**
- * In-memory idempotency store with insertion-order (FIFO) eviction and TTL-based expiry.
+ * In-memory idempotency store: stored results, with insertion-order (FIFO) eviction and TTL-based
+ * expiry, and the reservations of requests still running, kept apart from them.
+ *
+ * A reservation never expires and is never evicted: it lasts until its request settles, however
+ * long that takes, because expiring it would let a second execution start while the first may still
+ * commit. A request that never settles holds its key until the process restarts. The store is
+ * process-local (ADR-011) and lost on restart: this is not durable exactly-once execution.
  */
-class IdempotencyStore {
+export class IdempotencyStore {
   private cache = new Map<string, IdempotencyEntry>();
+  private reservations = new Map<string, { requestHash: string; token: symbol }>();
   private readonly maxSize: number;
   private readonly defaultTtlMs: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -75,69 +84,44 @@ class IdempotencyStore {
   }
 
   /**
-   * Checks whether an idempotent request exists
-   *
-   * @param key - Idempotency key from the client
-   * @param method - HTTP method
-   * @param path - Request path
-   * @param body - Request body
-   * @returns Check result
+   * Looks the key up and, when it is free, reserves it — synchronously, so no other request can
+   * slip in between. The stored result and the running reservation are looked up before the
+   * capacity check: a full table never turns a replay or a conflict into `full`.
    */
-  check(
-    key: string,
-    method: string,
-    path: string,
-    body: string
-  ): IdempotencyResult {
+  begin(key: string, method: string, path: string, body: string): IdempotencyBegin {
     const requestHash = this.generateRequestHash(method, path, body);
+
     const entry = this.cache.get(key);
-
-    if (!entry) {
-      return { hit: false };
-    }
-
-    // Check TTL
-    const now = Date.now();
-    if (now > entry.timestamp + entry.ttl) {
+    if (entry && Date.now() > entry.timestamp + entry.ttl) {
       this.cache.delete(key);
-      return { hit: false };
+    } else if (entry) {
+      return entry.requestHash === requestHash
+        ? { kind: 'hit', response: entry.response }
+        : { kind: 'conflict' };
     }
 
-    // Check that the request hash matches
-    if (entry.requestHash !== requestHash) {
-      // Different hash = different request with the same key
-      // Return a conflict instead of removing the entry
-      return { hit: false, conflict: true };
+    const running = this.reservations.get(key);
+    if (running) {
+      return running.requestHash === requestHash ? { kind: 'inFlight' } : { kind: 'conflict' };
     }
 
-    return {
-      hit: true,
-      response: entry.response,
-      originalTimestamp: entry.timestamp,
-    };
+    if (this.reservations.size >= this.maxSize) {
+      return { kind: 'full' };
+    }
+
+    const token = Symbol(key);
+    this.reservations.set(key, { requestHash, token });
+    return { kind: 'reserved', token };
   }
 
   /**
-   * Stores a response for an idempotent request
-   *
-   * @param key - Idempotency key from the client
-   * @param method - HTTP method
-   * @param path - Request path
-   * @param body - Request body
-   * @param response - Response to store
-   * @param ttlMs - Custom TTL (optional)
+   * Stores the result of the request that owns the reservation and ends it. A token that no
+   * longer owns the key (a stale completion) changes nothing.
    */
-  store(
-    key: string,
-    method: string,
-    path: string,
-    body: string,
-    response: unknown,
-    ttlMs?: number
-  ): void {
-    const requestHash = this.generateRequestHash(method, path, body);
-    const now = Date.now();
-    const ttl = ttlMs || this.defaultTtlMs;
+  complete(key: string, token: symbol, response: unknown): void {
+    const running = this.reservations.get(key);
+    if (running?.token !== token) return;
+    this.reservations.delete(key);
 
     // If the cache is full, remove the oldest inserted entry: a Map keeps insertion order, and
     // nothing moves a key on reuse, so this is FIFO, not LRU.
@@ -149,11 +133,18 @@ class IdempotencyStore {
     }
 
     this.cache.set(key, {
-      requestHash,
+      requestHash: running.requestHash,
       response,
-      timestamp: now,
-      ttl,
+      timestamp: Date.now(),
+      ttl: this.defaultTtlMs,
     });
+  }
+
+  /** Ends the reservation without storing anything, if `token` still owns it. */
+  release(key: string, token: symbol): void {
+    if (this.reservations.get(key)?.token === token) {
+      this.reservations.delete(key);
+    }
   }
 
   /**
@@ -197,10 +188,11 @@ class IdempotencyStore {
   }
 
   /**
-   * Completely clears the cache
+   * Completely clears the stored results and the reservations
    */
   clear(): void {
     this.cache.clear();
+    this.reservations.clear();
   }
 
   /**
@@ -208,11 +200,13 @@ class IdempotencyStore {
    */
   getStats(): {
     size: number;
+    inFlight: number;
     maxSize: number;
     ttlMs: number;
   } {
     return {
       size: this.cache.size,
+      inFlight: this.reservations.size,
       maxSize: this.maxSize,
       ttlMs: this.defaultTtlMs,
     };
