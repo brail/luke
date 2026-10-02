@@ -254,6 +254,10 @@ export async function saveConfigs(
   prisma: PrismaClient,
   writes: readonly ConfigWrite[]
 ): Promise<void> {
+  // Excluded by the key type too; refused here as well for a caller that reaches it through a cast.
+  if (writes.some(write => (write.key as AppConfigKey) === 'app.sections.disabled')) {
+    throw new Error('saveConfigs cannot write app.sections.disabled: use saveConfig, which runs its guard');
+  }
   const rows = writes.map(write => (write.value === null ? write : prepareConfigWrite(write)));
 
   await prisma.$transaction(async tx => {

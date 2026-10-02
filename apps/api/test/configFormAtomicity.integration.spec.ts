@@ -162,6 +162,7 @@ describe('NAV closes the old pool only once the new configuration is committed',
   it('runs the whole save through the NAV configuration queue', async () => {
     vi.spyOn(nav, 'closePool').mockResolvedValue(undefined);
     const getConfigSpy = vi.spyOn(configManager, 'getConfig');
+    const writes = vi.spyOn(configManager, 'saveConfigs');
     const pause = vi.spyOn(navScheduler, 'pauseNavScheduler');
     let held: (() => Promise<unknown>) | undefined;
     vi.spyOn(navScheduler.navConfigChanges, 'run').mockImplementation(op => {
@@ -175,11 +176,13 @@ describe('NAV closes the old pool only once the new configuration is committed',
     });
     await vi.waitFor(() => expect(held).toBeDefined());
 
-    // Nothing of the save has started outside the queued operation.
+    // Nothing of the save has started outside the queued operation: no read, pause or write.
     expect(getConfigSpy).not.toHaveBeenCalled();
     expect(pause).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
     await held!();
     expect(getConfigSpy).toHaveBeenCalled();
+    expect(writes).toHaveBeenCalledOnce();
   });
 });
 
@@ -326,14 +329,17 @@ describe('every form writes through exactly one saveConfigs call', () => {
 });
 
 describe('saveConfigs', () => {
-  it('writes nothing when any value fails its registry schema', async () => {
+  it('writes nothing when any value fails its registry schema, and opens no transaction for it', async () => {
     await saveConfig(prisma, 'smtp.host', 'old-host');
+    const transaction = vi.spyOn(prisma, '$transaction');
     await expect(
       configManager.saveConfigs(prisma, [
         { key: 'smtp.host', value: 'new-host' },
         { key: 'smtp.port', value: 'not-a-port' },
       ])
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    // Validated before anything is written, not refused late inside a transaction rolled back.
+    expect(transaction).not.toHaveBeenCalled();
     expect(await getConfig(prisma, 'smtp.host', false)).toBe('old-host');
   });
 
@@ -364,10 +370,14 @@ describe('saveConfigs', () => {
     expect((await getRbacConfig(prisma)).sectionAccessDefaults.viewer['admin.brands']).toBe('enabled');
   });
 
-  it('cannot write the kill switch, whose guard runs its own transaction', () => {
+  it('cannot write the kill switch, whose guard runs its own transaction', async () => {
     // @ts-expect-error — `app.sections.disabled` is excluded from the batch key type.
-    void (() => configManager.saveConfigs(prisma, [{ key: 'app.sections.disabled', value: '[]' }]));
+    const upsert = () => configManager.saveConfigs(prisma, [{ key: 'app.sections.disabled', value: '[]' }]);
     // @ts-expect-error — and from removals.
-    void (() => configManager.saveConfigs(prisma, [{ key: 'app.sections.disabled', value: null }]));
+    const remove = () => configManager.saveConfigs(prisma, [{ key: 'app.sections.disabled', value: null }]);
+    // Refused at run time as well, for a caller that gets past the type.
+    await expect(upsert()).rejects.toThrow('app.sections.disabled');
+    await expect(remove()).rejects.toThrow('app.sections.disabled');
+    expect(await prisma.appConfig.findUnique({ where: { key: 'app.sections.disabled' } })).toBeNull();
   });
 });

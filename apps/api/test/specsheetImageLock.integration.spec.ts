@@ -7,6 +7,11 @@
  * backend waiting on that very lock with the test connection as its blocker (no waiter within five
  * seconds fails the test — a writer that never takes the lock never shows up). While the writer
  * waits, the test changes what it will re-read, then commits, which releases the lock.
+ *
+ * The writer runs on a pooled Prisma connection, so its backend PID is not at hand without wrapping
+ * its transaction to report `pg_backend_pid()`. The waiter is attributed by exclusion instead, in
+ * this file's isolated fixture: no backend waits on the lock before the writer starts, exactly one
+ * does while it runs, and none once it has settled.
  */
 
 import { randomUUID } from 'crypto';
@@ -16,10 +21,11 @@ import { join } from 'path';
 import { Readable } from 'stream';
 
 import { Client } from 'pg';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
+import * as pendingFile from '../src/lib/pendingFile';
 import { uploadSpecsheetImage } from '../src/services/specsheetImage.service';
 import { resetStorageProvider } from '../src/storage';
 
@@ -58,6 +64,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await rm(basePath, { recursive: true, force: true });
 });
 
@@ -84,7 +91,19 @@ async function whileLocked<T>(
   try {
     await holder.query('BEGIN');
     await holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`merchandising-specsheet-images:${specsheetId}`]);
-    const { rows: [{ pid }] } = await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
+    const { rows: [held] } = await holder.query<{ pid: number; database: number; classid: number; objid: number; objsubid: number }>(
+      `SELECT pid, database, classid, objid, objsubid FROM pg_locks
+        WHERE pid = pg_backend_pid() AND locktype = 'advisory' AND granted`
+    );
+    // Every backend waiting on that very lock (database and full lock identity), with its blockers.
+    const waiters = async () =>
+      (await holder.query<{ pid: number; blockers: number[] }>(
+        `SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_locks
+          WHERE locktype = 'advisory' AND NOT granted
+            AND database = $1 AND classid = $2 AND objid = $3 AND objsubid = $4`,
+        [held!.database, held!.classid, held!.objid, held!.objsubid]
+      )).rows;
+    expect(await waiters()).toEqual([]);
 
     running = writer().then(
       value => ({ status: 'fulfilled', value }) as const,
@@ -93,18 +112,9 @@ async function whileLocked<T>(
 
     const deadline = Date.now() + 5000;
     for (;;) {
-      // A backend waiting on the same advisory lock the holder holds, blocked by the holder.
-      const { rows } = await holder.query(
-        `SELECT w.pid
-           FROM pg_locks w
-           JOIN pg_locks h
-             ON h.pid = $1 AND h.locktype = 'advisory' AND h.granted
-            AND h.database = w.database AND h.classid = w.classid AND h.objid = w.objid
-            AND h.objsubid = w.objsubid
-          WHERE w.locktype = 'advisory' AND NOT w.granted AND $1 = ANY (pg_blocking_pids(w.pid))`,
-        [pid]
-      );
-      if (rows.length > 0) break;
+      const now = await waiters();
+      if (now.length === 1 && now[0]!.blockers.includes(held!.pid)) break;
+      if (now.length > 1) throw new Error(`more than one backend waits on the lock: ${JSON.stringify(now)}`);
       if (Date.now() > deadline) throw new Error('no writer waited on the specsheet image lock within 5 s');
       await new Promise(resolve => setTimeout(resolve, 25));
     }
@@ -112,7 +122,9 @@ async function whileLocked<T>(
     await meanwhile(holder);
     await holder.query('COMMIT');
     committed = true;
-    return await running;
+    const outcome = await running;
+    expect(await waiters()).toEqual([]);
+    return outcome;
   } finally {
     if (!committed) await holder.query('ROLLBACK').catch(() => undefined);
     await holder.end();
@@ -153,6 +165,34 @@ describe('specsheet images under the lock', () => {
     });
 
     expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'NOT_FOUND' } });
+    expect(await prisma.merchandisingImage.count({ where: { specsheetId } })).toBe(0);
+    const files = await prisma.fileObject.findMany({
+      where: { bucket: 'merchandising-specsheet-images', parentId: null, createdAt: { gte: before } },
+      select: { confirmedAt: true },
+    });
+    expect(files).toHaveLength(1);
+    expect(files[0]!.confirmedAt).toBeNull();
+  });
+
+  it('an upload whose specsheet goes after the re-read answers NOT_FOUND and rolls back the file confirmation', async () => {
+    const before = new Date();
+    const confirm = pendingFile.confirmPendingFile;
+    vi.spyOn(pendingFile, 'confirmPendingFile').mockImplementation(async (tx, params) => {
+      // The real confirmation, inside the upload's transaction ...
+      const key = await confirm(tx, params);
+      // ... then the specsheet goes, from another connection: a cascade takes no lock, so it can
+      // land between the re-read and the insert.
+      const other = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+      await other.connect();
+      try {
+        await other.query('DELETE FROM merchandising_specsheets WHERE id = $1', [specsheetId]);
+      } finally {
+        await other.end();
+      }
+      return key;
+    });
+
+    await expect(upload()).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(await prisma.merchandisingImage.count({ where: { specsheetId } })).toBe(0);
     const files = await prisma.fileObject.findMany({
       where: { bucket: 'merchandising-specsheet-images', parentId: null, createdAt: { gte: before } },

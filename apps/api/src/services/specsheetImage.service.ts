@@ -1,8 +1,9 @@
 import { TRPCError } from '@trpc/server';
 
-import type { Prisma } from '@luke/db';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { isForeignKeyViolation } from '../lib/error';
 import { confirmPendingFile } from '../lib/pendingFile';
 
 import { ingestImageAsset } from './asset.service';
@@ -23,6 +24,7 @@ async function lockSpecsheetImages(tx: Prisma.TransactionClient, specsheetId: st
 }
 
 const imageNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Immagine non trovata' });
+const specsheetNotFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
 
 /**
  * Validates and stores an image file for a merchandising specsheet.
@@ -68,9 +70,7 @@ export async function uploadSpecsheetImage(
       where: { id: params.specsheetId },
       select: { id: true },
     });
-    if (!specsheet) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
-    }
+    if (!specsheet) throw specsheetNotFound();
 
     const gallery = await tx.merchandisingImage.aggregate({
       where: { specsheetId: params.specsheetId },
@@ -97,6 +97,12 @@ export async function uploadSpecsheetImage(
         caption: params.caption ?? null,
       },
     });
+  }).catch((err: unknown) => {
+    // A cascade from deleting the plan row or the specsheet does not take the lock, so the
+    // specsheet can still go between the re-read and the insert; the whole transaction, the file's
+    // confirmation included, has rolled back.
+    if (isForeignKeyViolation(err, 'merchandising_images_specsheetId_fkey')) throw specsheetNotFound();
+    throw err;
   });
 
   try {
@@ -128,13 +134,16 @@ export async function deleteSpecsheetImage(ctx: Context, imageId: string): Promi
   await ctx.prisma.$transaction(async tx => {
     await lockSpecsheetImages(tx, specsheetId);
 
-    const current = await tx.merchandisingImage.findUnique({ where: { id: imageId }, select: { isDefault: true } });
-    if (!current) throw imageNotFound();
-    // `deleteMany`, not `delete`: only a cascade can remove the image after the re-read, taking the
-    // whole gallery with it, and that is not a reason for a P2025.
-    await tx.merchandisingImage.deleteMany({ where: { id: imageId } });
+    // One statement re-reads and deletes: the row it returns is the image as it was under the lock.
+    let deleted: { isDefault: boolean };
+    try {
+      deleted = await tx.merchandisingImage.delete({ where: { id: imageId }, select: { isDefault: true } });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') throw imageNotFound();
+      throw err;
+    }
 
-    if (current.isDefault) {
+    if (deleted.isDefault) {
       const next = await tx.merchandisingImage.findFirst({ where: { specsheetId }, orderBy: { order: 'asc' } });
       if (next) {
         await tx.merchandisingImage.updateMany({ where: { id: next.id }, data: { isDefault: true } });
