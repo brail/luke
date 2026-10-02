@@ -25,6 +25,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { isForeignKeyViolation } from '../lib/error';
 import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -39,6 +40,9 @@ import {
 import { getUserAllowedIds } from '../services/context.service';
 import { deleteSpecsheetImage, setDefaultSpecsheetImage } from '../services/specsheetImage.service';
 
+const invalidParameterSet = () =>
+  new TRPCError({ code: 'BAD_REQUEST', message: 'Set di parametri non valido per questo piano' });
+
 /** A row's parameter set must be one of its plan's brand and season, or none. */
 async function assertParameterSetOfPlan(
   prisma: PrismaClient,
@@ -50,8 +54,25 @@ async function assertParameterSetOfPlan(
     where: { id: parameterSetId, brandId: plan.brandId, seasonId: plan.seasonId },
     select: { id: true },
   });
-  if (!set) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Set di parametri non valido per questo piano' });
+  if (!set) throw invalidParameterSet();
+}
+
+/**
+ * Runs a row write whose parameter set `assertParameterSetOfPlan` has checked. A set never changes
+ * brand or season and a row never changes plan, so the check can go stale only by the set's
+ * deletion: a write naming a deleted set is refused by the foreign key, and that refusal gets the
+ * check's answer, not a 500 (a deletion after the write nulls the reference, `onDelete: SetNull`).
+ * No transaction around the check and the write — under READ COMMITTED it would not hold the check;
+ * the foreign key does.
+ */
+async function writeCheckedRow<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (isForeignKeyViolation(err, 'merchandising_plan_rows_pricingParameterSetId_fkey')) {
+      throw invalidParameterSet();
+    }
+    throw err;
   }
 }
 
@@ -181,7 +202,7 @@ export const merchandisingPlanRouter = router({
       const plan = await resolveMerchPlanBrandAccess(ctx, input.planId);
       await assertParameterSetOfPlan(ctx.prisma, input.pricingParameterSetId, plan);
 
-      const result = await ctx.prisma.merchandisingPlanRow.create({
+      const result = await writeCheckedRow(() => ctx.prisma.merchandisingPlanRow.create({
         data: {
           planId: input.planId,
           order: input.order ?? 0,
@@ -211,7 +232,7 @@ export const merchandisingPlanRouter = router({
           pricingNotes: input.pricingNotes ?? null,
           generalNotes: input.generalNotes ?? null,
         },
-      });
+      }));
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_CREATE',
         targetType: 'MerchandisingPlanRow',
@@ -242,10 +263,10 @@ export const merchandisingPlanRouter = router({
       const row = await resolveMerchPlanRowBrandAccess(ctx, input.id);
       await assertParameterSetOfPlan(ctx.prisma, input.data.pricingParameterSetId, row.plan);
 
-      const result = await ctx.prisma.merchandisingPlanRow.update({
+      const result = await writeCheckedRow(() => ctx.prisma.merchandisingPlanRow.update({
         where: { id: input.id },
         data: input.data,
-      });
+      }));
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_UPDATE',
         targetType: 'MerchandisingPlanRow',
@@ -493,7 +514,11 @@ export const merchandisingPlanRouter = router({
     .mutation(async ({ input, ctx }) => {
       const row = await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
 
-      // The assignee must be able to open the row they are notified about.
+      // The assignee must be able to open the row they are notified about. A point-in-time check,
+      // with no transaction: assignment grants no access (every read checks brand scope on its own),
+      // and a deactivation or team change landing between this check and the write is the same as
+      // one landing just after it. Accepted consequence: such an assignee still receives the
+      // notification below, with the article code, since `createNotification` does not re-check.
       if (input.userId) {
         const assignee = await ctx.prisma.user.findFirst({
           where: { id: input.userId, isActive: true },

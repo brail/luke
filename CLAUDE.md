@@ -135,8 +135,14 @@ does not cover, run the script yourself.
    always inside `prisma.$transaction(async tx => { ... })`
 2. **individual try/catch in sync batches** — in `syncAll()` and similar, every
    `await syncXxx()` has its own try/catch: one error must not block the other entities
-3. **`$transaction` for check-then-act** — "read → validate → write" always in
-   a transaction (race condition)
+3. **Check-then-act must hold** — "read → validate → write" needs something that
+   keeps the checked condition true until the write commits: a database
+   constraint, a conditional write (`updateMany`/`deleteMany` carrying the
+   condition, then its count), or a lock (`pg_advisory_xact_lock`, as
+   `acquireLastAdminLock`) inside a `$transaction`. A `$transaction` alone may not:
+   under READ COMMITTED its read holds nothing. A foreign key counts only for the
+   property it enforces, and its refusal gets the check's answer, not a 500
+   (`isForeignKeyViolation` in `apps/api/src/lib/error.ts`)
 4. **Audit logging on every mutation** — create/update/delete/restore/unlink →
    `withAuditLog` middleware or explicit `logAudit()`. Metadata keys are typed
    against `SAFE_KEY_LIST` (`apps/api/src/lib/auditLog.ts`): an unlisted key

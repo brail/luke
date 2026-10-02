@@ -190,9 +190,9 @@ invariant is still semantic, the row says so — "moved" is not the same claim a
 | missing `onDelete` / FK index on a Prisma relation | `luke-audit` | platform checker P13 (`luke-deps`) | **deterministic** for `onDelete` presence and an index the FK columns lead; **semantic** for the `Cascade` justification comment and filtered-column indexes, which stay in `luke-audit` |
 | one README for every workspace | `luke-docs` | `check-docs-integrity` | **deterministic** — every directory matched by the `packages:` globs in `pnpm-workspace.yaml` that holds a tracked `package.json` has a tracked `README.md`; discovery fails closed on a missing, unparseable or unsupported glob list and on zero discovered workspaces |
 
-The `requirePermission` + non-transactional write case stayed in `luke-bugs`
-rather than moving: it is a check-then-act race whose defect is the missing
-atomicity, not an attacker primitive.
+The `requirePermission` + unheld-check write case stayed in `luke-bugs` rather
+than moving: it is a check-then-act race whose defect is the checked condition
+not being held until the write (`CLAUDE.md` rule 3), not an attacker primitive.
 
 ### Pending
 

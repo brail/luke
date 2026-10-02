@@ -64,7 +64,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **Race conditions & atomicity:**
 
-- Check-then-act without `$transaction`: `findUnique/findFirst` followed by `create/update/upsert` on related data outside a transaction
+- Check-then-act where nothing keeps the checked condition true until the write commits (`findUnique/findFirst` followed by `create/update/upsert`): the criteria — constraint, conditional write, lock; a `$transaction` alone may not hold — are `CLAUDE.md` Development Patterns rule 3
 - `pauseNavScheduler()` / `resumeNavScheduler()` not called symmetrically — if exception thrown between pause and resume, scheduler stays paused forever
 - RBAC cache: any write to RBAC AppConfig keys without `invalidateRbacCache()` immediately after
 - `prisma.$transaction([...])` array syntax where operations depend on each other (should use callback syntax)
@@ -132,10 +132,14 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **Check-then-act across a permission boundary:**
 
-- `requirePermission` check + sensitive DB write in the same procedure but NOT
-  in a transaction — the permission can be revoked between the check and the
-  write. This is the same TOCTOU shape as the race conditions in area 1, and it
-  stays here: the defect is the missing atomicity, not an attacker primitive.
+- `requirePermission` check + sensitive DB write in the same procedure, with
+  nothing keeping the check true until the write commits (rule 3's criterion,
+  not "is it in a transaction") — the permission can be revoked between the check
+  and the write. Report it when a stale check has an effect beyond that moment; a
+  point-in-time eligibility check stated as such in the code (e.g.
+  `merchandisingPlan.assignUser`) is not a finding. Same TOCTOU shape as the race
+  conditions in area 1, and it stays here: the defect is the condition not held,
+  not an attacker primitive.
 
 **No systematic security hunt here.** IDOR, leaked internals in error
 responses, missing auth rate limiting and secrets reaching client code used to

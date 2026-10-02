@@ -35,6 +35,18 @@ export function toErrorCode(err: unknown): string {
 }
 
 /**
+ * `true` when `err` is Prisma's foreign-key violation (P2003) on the named constraint — and only on
+ * that one, so a failure on another relation keeps its own answer.
+ */
+export function isForeignKeyViolation(err: unknown, constraint: string): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2003') return false;
+  // With the PostgreSQL driver adapter the constraint is reported under
+  // `meta.driverAdapterError.cause.constraint.index`; `meta` is typed as an open record.
+  const adapterError = err.meta?.driverAdapterError as { cause?: { constraint?: { index?: string } } } | undefined;
+  return adapterError?.cause?.constraint?.index === constraint;
+}
+
+/**
  * Extracts the trace ID from the `x-luke-trace-id` request header,
  * falling back to the Fastify-assigned request ID.
  */

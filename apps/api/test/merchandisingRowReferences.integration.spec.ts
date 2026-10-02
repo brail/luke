@@ -10,9 +10,11 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
+
+import * as brandScope from '../src/services/brandScope.service';
 
 import { createCallerAs, createTestUser, setupTestDb } from './helpers';
 
@@ -56,6 +58,50 @@ async function planAndRow() {
   const row = await admin.merchandisingPlan.createRow({ ...rowInput, planId: plan.id });
   return { admin, plan, row };
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('a parameter set deleted between the check and the write', () => {
+  // A parameter set never changes brand or season, so deletion is the only way the check can go
+  // stale; the foreign key refuses the write then. The check's read is made to still see the set,
+  // as it would have a moment before the delete committed.
+  async function staleSet() {
+    const gone = await parameterSet(brandId, seasonId);
+    await prisma.pricingParameterSet.delete({ where: { id: gone.id } });
+    const findFirst = prisma.pricingParameterSet.findFirst.bind(prisma.pricingParameterSet);
+    vi.spyOn(prisma.pricingParameterSet, 'findFirst').mockImplementation(
+      // The spy keeps the delegate's own signature; only the stale id is answered by hand.
+      ((args: { where?: { id?: string } }) =>
+        args?.where?.id === gone.id ? Promise.resolve({ id: gone.id }) : findFirst(args as never)) as never
+    );
+    return gone.id;
+  }
+
+  it('answers the check\'s BAD_REQUEST on create and on update, not a 500', async () => {
+    const { admin, plan, row } = await planAndRow();
+    const goneId = await staleSet();
+
+    await expect(
+      admin.merchandisingPlan.createRow({ ...rowInput, planId: plan.id, pricingParameterSetId: goneId }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(
+      admin.merchandisingPlan.updateRow({ id: row.id, data: { pricingParameterSetId: goneId } }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('still answers 500 for a foreign key it does not own', async () => {
+    const { admin, plan } = await planAndRow();
+    const missingPlanId = randomUUID();
+    // The plan passes its access check and is gone at write time: a different constraint.
+    vi.spyOn(brandScope, 'resolveMerchPlanBrandAccess').mockResolvedValue({ ...plan, id: missingPlanId } as never);
+
+    await expect(
+      admin.merchandisingPlan.createRow({ ...rowInput, planId: missingPlanId }),
+    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+  });
+});
 
 describe('the parameter set of a row', () => {
   it('must belong to the plan’s brand and season, on create and on update', async () => {
