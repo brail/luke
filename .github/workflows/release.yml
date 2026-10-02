@@ -62,7 +62,7 @@ jobs:
         run: |
           git fetch --no-tags --quiet origin \
             "+refs/heads/${STABLE_BRANCH}:refs/remotes/origin/${STABLE_BRANCH}"
-          # The release train is deleted once it has been merged, and stable
+          # The release train is deleted once it has graduated, and stable
           # tags keep being cut from main afterwards. A missing train ref is
           # fatal only for an rc, and that is the checker's call, not this
           # step's.

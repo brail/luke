@@ -546,7 +546,8 @@ A routine main-to-train synchronisation is enough to cause it, and one did.
 The validator refuses a tag that exists anywhere, a base that is not reachable,
 a stable tag on another line that outranks that base (merge the hotfix first), a
 target that is not the live train's frozen one, an rc counter that skips, a
-range with nothing releasable in it, and — the SemVer rule above made
+range with nothing releasable in it, a graduation whose tree is not its last
+candidate's, and — the SemVer rule above made
 mechanical — **any version below the minimum bump** git-cliff computes for the
 commits since the base, a running train's next candidate included. Equal to the
 minimum or higher passes; there is no
@@ -568,6 +569,24 @@ next candidate and its graduation are both refused. Its rc tags stay as
 history — none needs deleting — and the breaking change is
 released by starting a new train at the higher version: `v3.0.0-rc.1` is an
 ordinary first candidate, its notes covering everything since the base.
+
+**A graduation publishes its last candidate unchanged.** `vX.Y.Z` is prepared
+only when HEAD's tree is exactly the tree of the live train's latest candidate:
+the stable images are rebuilt from the tag, so anything changed after that
+candidate would reach `latest` without ever having shipped in one. It is proved
+at prepare time, before the notes commit — which is then the only difference the
+stable tag carries; nothing re-checks it at push or in `release.yml`. After the
+last candidate the train is frozen until it graduates; a later change — a
+documentation fix, a hotfix merged from `main` — ships by cutting the next
+candidate first, and it has to reach the train in a releasable commit: a change
+carried only by commits `.cliff.toml` skips (a conflict resolution inside a
+`Merge …`, a `style:`, a `chore(release)`) cannot be cut as a candidate either.
+Graduate right after merging the train into `main`, with a merge commit — a
+squash merge leaves the candidates unreachable and is refused. Until the stable
+tag exists the train is still live: a change that reached `main` in between goes
+back through it — `git merge --no-ff main` into the train (a fast-forward would
+put the train's tip on `main`, where no candidate can be cut), cut the next
+candidate, merge again.
 
 **Release flow**: push to `main` → CI only (lint + typecheck);
 tag `vX.Y.Z` → provenance gate → Docker build → `ghcr.io` → Portainer pull &
@@ -596,9 +615,10 @@ version any more, so that half is gone rather than weakened — there is no seco
 identity left to compare, and none to drift. What remains is narrow on purpose:
 a `## [X.Y.Z]` heading with one bullet is something a person could type, so the
 tree gate does not prove a release was prepared, and it never did — the manifest
-half was written by a script too. The **number** is proved by
-`check-release-train.ts --validate` at prepare time, and the **line** by the
-provenance gate. This checker proves the tagged tree ships notes for its tag.
+half was written by a script too. The **number** — and, for a graduation, that
+HEAD is its last candidate's tree — is proved by `check-release-train.ts
+--validate` at prepare time, and the **line** by the provenance gate. This
+checker proves the tagged tree ships notes for its tag.
 
 **The `tools/*` prerequisite for porting this checker to `main` is gone.** It
 used to be that no part of `check-release-tree.ts` could be ported until
@@ -628,8 +648,10 @@ what refuses it — it is the backstop for an empty section that reaches the
 release tree by another route. Existing `CHANGELOG.md` sections are not
 rewritten.
 
-**A `develop-X.Y` branch dies on merge into `main`** — it is not reactivated,
-never backport onto a branch that has already been merged: the next feature
+**A `develop-X.Y` branch dies when its train graduates** — when the stable tag
+is cut from its merge into `main`, not at the merge itself: until that tag
+exists the graduation rule above may still send a change back through it. Once
+graduated it is not reactivated, never backport onto it: the next feature
 cycle opens a new `develop-(X+1).0`/`develop-X.(Y+1)` cut from `main`.
 `dependabot.yml` doesn't target any `develop-*` (no `target-branch`, defaults
 to the default branch `main`) — no update needed when the branch changes.
@@ -646,8 +668,8 @@ branch that no longer exists — which is the intended reminder, not a bug.
 is a checklist the build enforces rather than one to remember.
 security.yml's `push` filter is **not** on the list: it matches `develop-*` and
 `release/*` by pattern precisely so it never needs the edit. Then delete the
-previous branch (local + remote): it's stale as soon as it's merged, keeping
-it around invites bad backports.
+previous branch (local + remote): it's stale as soon as it has graduated,
+keeping it around invites bad backports.
 
 **Documentation-only pushes skip CI by design — on `develop-2.2`.** A push
 whose complete changed-path set falls inside the documentation ownership

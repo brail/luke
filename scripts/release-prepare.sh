@@ -182,8 +182,9 @@ esac
 
 # Fails closed on its own for a taken tag, a missing or unreachable base, an
 # unmerged hotfix, the wrong train, a counter that skips, a range with nothing
-# releasable in it, and any target below the minimum bump. Nothing here
-# second-guesses it; nothing has been written yet either.
+# releasable in it, any target below the minimum bump, and a graduation whose
+# tree is not its last candidate's. Nothing here second-guesses it; nothing has
+# been written yet either.
 if ! VALIDATION=$(pnpm exec tsx tools/scripts/check-release-train.ts --validate "$TAG"); then
   echo "" >&2
   echo "   Nothing was written." >&2

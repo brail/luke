@@ -39,6 +39,8 @@
  * - at most one live release train is reachable, and the target belongs to it
  *   when there is one: a train has exactly one stable target, frozen when its
  *   first candidate is cut;
+ * - a graduation publishes the live train's latest candidate unchanged: HEAD's
+ *   tree is that candidate's tree;
  * - the range that will be rendered carries at least one commit.
  *
  * Equal to the minimum or above it is allowed: `feat!` since `S` forbids
@@ -561,6 +563,30 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
         `${target}. A train has one stable target, frozen when its first ` +
         'candidate is cut: graduate it, or delete its candidates to abandon it.'
     );
+  }
+
+  // A graduation publishes what the train tested, not whatever HEAD has become
+  // since: release.yml rebuilds the stable images from the tagged tree, so a
+  // change that never shipped in a candidate would reach `latest` untested.
+  // Tree objects rather than a diff: equal hashes are equal content by
+  // definition, modes included, whatever a diff configuration would hide — and
+  // neither the worktree nor the index is read.
+  if (requested.channel === 'stable' && train !== null) {
+    const [candidate, head] = git(repo, [
+      'rev-parse',
+      `refs/tags/${tagOf(train)}^{tree}`,
+      'HEAD^{tree}',
+    ]).split('\n');
+    if (candidate !== head) {
+      throw new ReleaseTrainError(
+        `HEAD is not the tree ${tagOf(train)} was cut from, and a graduation ` +
+          'publishes its last candidate unchanged (`git diff --stat ' +
+          `${tagOf(train)} HEAD\` shows what changed). Carry the change through ` +
+          'the train in a releasable commit — one already on main by ' +
+          '`git merge --no-ff main` into the train — cut ' +
+          `${target}-rc.${(train.rc ?? 0) + 1}, then graduate.`
+      );
+    }
   }
 
   // A live train's next candidate: its target is already fixed, so only the

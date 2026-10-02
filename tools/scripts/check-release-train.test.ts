@@ -18,9 +18,15 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, test } from 'node:test';
 
 import { ReleaseTrainError, validateTarget } from './check-release-train';
@@ -116,6 +122,17 @@ function merge(dir: string, branch: string, message: string, date = at()): void 
     env: { ...GIT_ENV, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/**
+ * Stage a file with real content. Every other commit here is empty, so every
+ * tree is the same one; the graduation rule compares trees, and its cases need
+ * commits that actually change one.
+ */
+function write(dir: string, path: string, content: string): void {
+  mkdirSync(dirname(join(dir, path)), { recursive: true });
+  writeFileSync(join(dir, path), content);
+  git(dir, 'add', '-A');
 }
 
 /** One released version behind HEAD: the state almost every case starts from. */
@@ -362,6 +379,9 @@ test('a hotfix on the stable line releases from the last stable', () => {
   commit(dir, 'feat(api): the cycle work');
   git(dir, 'tag', 'v3.0.0-rc.1');
   git(dir, 'tag', 'v3.0.0');
+  // A real change: the graduated train's candidates are history, and no rule
+  // about publishing a candidate unchanged reaches a hotfix.
+  write(dir, 'src/api.ts', 'export const fixed = true;\n');
   commit(dir, 'fix(api): a hotfix after the release');
 
   const v = validateTarget(dir, 'v3.0.1');
@@ -384,6 +404,75 @@ test('an abandoned train below the stable line is not a train', () => {
   const v = validateTarget(dir, 'v2.2.0-rc.1');
   assert.equal(v.kind, 'rc-first');
   assert.equal(v.base, 'v2.1.4');
+});
+
+// ── A graduation publishes its last candidate ────────────────────────────────
+
+test('a graduation publishes its last candidate unchanged', () => {
+  const dir = trainAtRc1();
+  write(dir, 'src/api.ts', 'export const late = true;\n');
+  commit(dir, 'fix(api): changed after the candidate');
+
+  // The stable images are rebuilt from the tag: this change never shipped in a
+  // candidate, so it is not what the train tested.
+  rejects(dir, 'v3.0.0', /not the tree v3\.0\.0-rc\.1 was cut from.*cut v3\.0\.0-rc\.2/s);
+  // A candidate is how it ships, and the rule does not reach candidates.
+  assert.equal(validateTarget(dir, 'v3.0.0-rc.2').kind, 'rc-next');
+
+  // Annotated, as a release tag may be: its tree is still its commit's.
+  git(dir, 'tag', '-a', '-m', 'v3.0.0-rc.2', 'v3.0.0-rc.2');
+  // Neither the worktree nor the index is what a tag would publish.
+  write(dir, 'src/staged.ts', 'export const staged = true;\n');
+  writeFileSync(join(dir, 'src/api.ts'), 'export const unsaved = true;\n');
+  assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
+});
+
+test('content, not commit history, decides a graduation', () => {
+  const dir = afterStable();
+  git(dir, 'checkout', '-q', '-b', 'develop-3.0');
+  write(dir, 'bin/run.sh', 'echo run\n');
+  commit(dir, 'feat(api): the cycle work');
+  git(dir, 'tag', 'v3.0.0-rc.1');
+
+  // Changed and changed back: the tree is the candidate's again.
+  write(dir, 'src/api.ts', 'export const tried = true;\n');
+  commit(dir, 'fix(api): an attempt');
+  git(dir, 'rm', '-q', 'src/api.ts');
+  commit(dir, 'fix(api): undo the attempt');
+  assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
+
+  // A mode is content too.
+  git(dir, 'update-index', '--chmod=+x', 'bin/run.sh');
+  commit(dir, 'fix(api): make the script executable');
+  rejects(dir, 'v3.0.0', /not the tree v3\.0\.0-rc\.1 was cut from/);
+});
+
+test('a train graduates from the stable line through a merge', () => {
+  const dir = afterStable();
+  git(dir, 'checkout', '-q', '-b', 'develop-3.0');
+  write(dir, 'src/api.ts', 'export const work = true;\n');
+  commit(dir, 'feat(api): the cycle work');
+  git(dir, 'tag', 'v3.0.0-rc.1');
+
+  // The train merged into main: a new commit, the candidate's tree.
+  git(dir, 'checkout', '-q', 'main');
+  merge(dir, 'develop-3.0', 'Merge pull request #1 from brail/develop-3.0');
+  assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
+
+  // Anything main carries beyond the train never shipped in its candidate.
+  write(dir, 'src/main-only.ts', 'export const late = true;\n');
+  commit(dir, 'chore(deps): bump straight on main');
+  rejects(dir, 'v3.0.0', /not the tree v3\.0\.0-rc\.1 was cut from/);
+
+  // The train is live until it graduates, so the change goes back through it:
+  // a merge commit, since a fast-forward would leave its tip on main.
+  git(dir, 'checkout', '-q', 'develop-3.0');
+  merge(dir, 'main', "Merge branch 'main' into develop-3.0");
+  assert.equal(validateTarget(dir, 'v3.0.0-rc.2').kind, 'rc-next');
+  git(dir, 'tag', 'v3.0.0-rc.2');
+  git(dir, 'checkout', '-q', 'main');
+  merge(dir, 'develop-3.0', 'Merge pull request #2 from brail/develop-3.0');
+  assert.equal(validateTarget(dir, 'v3.0.0').kind, 'stable');
 });
 
 // ── Fail-closed states ───────────────────────────────────────────────────────
