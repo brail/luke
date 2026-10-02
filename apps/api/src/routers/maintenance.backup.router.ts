@@ -32,7 +32,7 @@ import {
   RestorePreconditionError,
   stageBackupArchive,
 } from '../lib/backup/restorePipeline';
-import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
+import { getBackupScheduleSettings, saveConfigs } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
@@ -551,13 +551,14 @@ export const backupRouter = router({
     .use(requirePermission('maintenance:update'))
     .input(BackupScheduleConfigSchema)
     .mutation(async ({ ctx, input }) => {
-      await Promise.all([
-        saveConfig(ctx.prisma, 'backup.schedule.enabled', input.enabled.toString(), false),
-        saveConfig(ctx.prisma, 'backup.schedule.dailyTime', input.dailyTime, false),
-        saveConfig(ctx.prisma, 'backup.schedule.scope', input.scope, false),
-        saveConfig(ctx.prisma, 'backup.retentionDays', input.retentionDays.toString(), false),
-        saveConfig(ctx.prisma, 'backup.retentionMinCount', input.retentionMinCount.toString(), false),
-        saveConfig(ctx.prisma, 'backup.notifyOnFailure', input.notifyOnFailure.toString(), false),
+      // One change: a failure leaves the stored schedule as it was.
+      await saveConfigs(ctx.prisma, [
+        { key: 'backup.schedule.enabled', value: input.enabled.toString() },
+        { key: 'backup.schedule.dailyTime', value: input.dailyTime },
+        { key: 'backup.schedule.scope', value: input.scope },
+        { key: 'backup.retentionDays', value: input.retentionDays.toString() },
+        { key: 'backup.retentionMinCount', value: input.retentionMinCount.toString() },
+        { key: 'backup.notifyOnFailure', value: input.notifyOnFailure.toString() },
       ]);
 
       await logAudit(ctx, {

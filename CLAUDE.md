@@ -236,9 +236,14 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV).
   not a convention: `saveConfig(prisma, key: AppConfigKey, ...)` won't compile
   without it, and it validates the value against that schema before writing
   (on the plaintext, before `encryptValue`). Never widen a schema to accommodate
-  a write: a key that means "not configured" is *absent*, so the write path calls
-  `deleteConfig`, never `saveConfig(key, '')` — `getConfig` already returns `null`
-  for an absent key, and `''` would be a second spelling of the same state
+  a write: a key that means "not configured" is *absent*, so the write path removes
+  it (a `null` entry in a `saveConfigs` batch, or `deleteConfig` for a single key),
+  never `saveConfig(key, '')` — `getConfig` already returns `null` for an absent
+  key, and `''` would be a second spelling of the same state
+- **A form that writes several keys calls `saveConfigs` once** — every value
+  validated before anything is written, all of them in one transaction, so a
+  failure leaves the stored form as it was. One `saveConfig` per key leaves it
+  half-written. Pinned per form by `apps/api/test/configFormAtomicity.integration.spec.ts`
 - Values in the DB are always strings — `z.coerce.*` for numbers/booleans,
   **`jsonConfigSchema(Inner)`** for JSON blobs, never
   `.transform(s => Inner.parse(JSON.parse(s)))`: a `parse` (or a `JSON.parse`

@@ -26,6 +26,7 @@ import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { saveConfig } from '../src/lib/configManager';
+import * as emailHelpers from '../src/lib/emailHelpers';
 import { authenticateViaLdap } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
 
@@ -86,6 +87,10 @@ beforeEach(async () => {
   bind = vi.spyOn(Client.prototype, 'bind');
   search = vi.spyOn(Client.prototype, 'search').mockResolvedValue(found(ALICE));
   vi.spyOn(Client.prototype, 'unbind').mockResolvedValue(undefined);
+  // Provisioning sends the verification email without awaiting it: left real, its writes outlive
+  // the test and deadlock with the next test's TRUNCATE. Its own behaviour is tested elsewhere
+  // (`auditLogWithoutRequest.integration.spec.ts`).
+  vi.spyOn(emailHelpers, 'sendVerificationEmail').mockResolvedValue({ success: true, message: 'stubbed' });
   binds();
 });
 

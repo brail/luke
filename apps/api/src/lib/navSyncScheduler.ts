@@ -24,6 +24,7 @@ import { toErrorMessage } from './error';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
+import { createSerialQueue } from './serialQueue';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -37,6 +38,14 @@ const lastRunAt: Partial<Record<Entity, number>> = {};
 
 // Per-entity flag: avoids concurrent syncs
 const isRunning: Partial<Record<Entity, boolean>> = {};
+
+/**
+ * Changes to the NAV connection settings, one at a time. `pauseNavScheduler` keeps a single resolver
+ * and `resumeNavScheduler` has no owner, so two overlapping saves could strand one pause or resume
+ * the scheduler while the other is still saving; `integrations.nav.saveConfig` runs its whole body,
+ * from reading the previous values to the resume, through this queue.
+ */
+export const navConfigChanges = createSerialQueue();
 
 /**
  * Waits for the in-progress sync (if any) to finish and blocks new runs from starting.

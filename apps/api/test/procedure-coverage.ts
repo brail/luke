@@ -97,8 +97,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, mail.saveConfig, which only writes AppConfig, auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, and nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 17,
+      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, and nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 14,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
@@ -119,8 +119,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   maintenance: {
     reason:
-      'backup/restore and maintenance mode are destructive by construction: turning them on inside the suite would block the specs that follow',
-    uncovered: 14,
+      'backup/restore and maintenance mode are destructive by construction: turning them on inside the suite would block the specs that follow; backup.updateScheduleConfig, which only writes AppConfig, is covered',
+    uncovered: 13,
   },
   system: {
     reason:

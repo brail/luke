@@ -5,7 +5,7 @@ import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefre
 import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig, getConfigOrDefault, deleteConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -73,29 +73,34 @@ export const googleRouter = router({
     .use(requirePermission('config:update'))
     .input(googleWorkspaceConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      await saveConfig(ctx.prisma, 'integrations.google.authMode', input.authMode, false);
-      await saveConfig(ctx.prisma, 'integrations.google.domain', input.domain, false);
-      await saveConfig(ctx.prisma, 'integrations.google.calendarSync.enabled', String(input.calendarSyncEnabled), false);
-
+      // One change: a failure leaves the stored Google settings as they were. A blank secret keeps
+      // the stored one.
+      const common = [
+        { key: 'integrations.google.authMode' as const, value: input.authMode },
+        { key: 'integrations.google.domain' as const, value: input.domain },
+        { key: 'integrations.google.calendarSync.enabled' as const, value: String(input.calendarSyncEnabled) },
+      ];
       if (input.authMode === 'service_account') {
-        await saveConfig(ctx.prisma, 'integrations.google.serviceEmail', input.serviceEmail, false);
-        // An empty field means "no impersonation", which is the absence of the key, not an empty
-        // email stored under it: `getConfig` already returns `null` for an absent key and every
-        // reader of this one collapses both to `undefined`. Writing `''` would have been a second
-        // spelling of the same state that the registry schema (`z.string().email()`) cannot describe.
-        if (input.impersonateEmail) {
-          await saveConfig(ctx.prisma, 'integrations.google.impersonateEmail', input.impersonateEmail, false);
-        } else {
-          await deleteConfig(ctx.prisma, 'integrations.google.impersonateEmail');
-        }
-        if (input.serviceKey?.trim()) {
-          await saveConfig(ctx.prisma, 'integrations.google.serviceKey', input.serviceKey, true);
-        }
+        await saveConfigs(ctx.prisma, [
+          ...common,
+          { key: 'integrations.google.serviceEmail', value: input.serviceEmail },
+          // An empty field means "no impersonation", which is the absence of the key, not an empty
+          // email stored under it: `getConfig` already returns `null` for an absent key and every
+          // reader of this one collapses both to `undefined`. Writing `''` would have been a second
+          // spelling of the same state that the registry schema (`z.string().email()`) cannot describe.
+          { key: 'integrations.google.impersonateEmail', value: input.impersonateEmail || null },
+          ...(input.serviceKey?.trim()
+            ? [{ key: 'integrations.google.serviceKey' as const, value: input.serviceKey, encrypt: true }]
+            : []),
+        ]);
       } else {
-        await saveConfig(ctx.prisma, 'integrations.google.oauth.clientId', input.oauthClientId, false);
-        if (input.oauthClientSecret?.trim()) {
-          await saveConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', input.oauthClientSecret, true);
-        }
+        await saveConfigs(ctx.prisma, [
+          ...common,
+          { key: 'integrations.google.oauth.clientId', value: input.oauthClientId },
+          ...(input.oauthClientSecret?.trim()
+            ? [{ key: 'integrations.google.oauth.clientSecret' as const, value: input.oauthClientSecret, encrypt: true }]
+            : []),
+        ]);
       }
 
       await logAudit(ctx, {
@@ -165,15 +170,13 @@ export const googleRouter = router({
         throw err;
       }
       const { refreshToken, userEmail } = exchanged;
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', refreshToken, true);
-      // No address in Google's answer is no stored address, not an empty one: the registry refuses
-      // `''`, and that refusal used to come after the new token was stored, skipping the audit and
-      // leaving the previous account's address on show.
-      if (userEmail) {
-        await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', userEmail, false);
-      } else {
-        await deleteConfig(ctx.prisma, 'integrations.google.oauth.userEmail');
-      }
+      // Token and address change together. No address in Google's answer is no stored address,
+      // not an empty one: the registry refuses `''`, and that refusal used to come after the new
+      // token was stored, skipping the audit and leaving the previous account's address on show.
+      await saveConfigs(ctx.prisma, [
+        { key: 'integrations.google.oauth.refreshToken', value: refreshToken, encrypt: true },
+        { key: 'integrations.google.oauth.userEmail', value: userEmail || null },
+      ]);
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_CONNECT',
         targetType: 'Config',
@@ -194,8 +197,10 @@ export const googleRouter = router({
     .use(requirePermission('config:update'))
     .mutation(async ({ ctx }) => {
       // Disconnecting removes the keys rather than blanking them — see the impersonation note above.
-      await deleteConfig(ctx.prisma, 'integrations.google.oauth.refreshToken');
-      await deleteConfig(ctx.prisma, 'integrations.google.oauth.userEmail');
+      await saveConfigs(ctx.prisma, [
+        { key: 'integrations.google.oauth.refreshToken', value: null },
+        { key: 'integrations.google.oauth.userEmail', value: null },
+      ]);
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_DISCONNECT',
         targetType: 'Config',

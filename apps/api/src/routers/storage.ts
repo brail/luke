@@ -14,7 +14,7 @@ import { z } from 'zod';
 
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
-import { deleteConfig, getConfig, getConfigOrDefault, saveConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { resolvePublicUrl } from '../lib/storageUrl';
@@ -312,31 +312,30 @@ export const storageRouter = router({
     .use(withSectionAccess('settings.storage'))
     .input(storageSaveConfigSchema)
     .mutation(async ({ input, ctx }) => {
+      // One change: a failure leaves the stored storage settings as they were.
       if (input.type === 'local') {
-        await Promise.all([
-          saveConfig(ctx.prisma, 'storage.type', 'local', false),
-          saveConfig(ctx.prisma, 'storage.local.basePath', input.basePath, false),
-          saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', input.maxFileSizeMB.toString(), false),
-          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(input.enableProxy), false),
+        await saveConfigs(ctx.prisma, [
+          { key: 'storage.type', value: 'local' },
+          { key: 'storage.local.basePath', value: input.basePath },
+          { key: 'storage.local.maxFileSizeMB', value: input.maxFileSizeMB.toString() },
+          { key: 'storage.local.enableProxy', value: String(input.enableProxy) },
         ]);
       } else {
-        await Promise.all([
-          saveConfig(ctx.prisma, 'storage.type', 's3', false),
-          saveConfig(ctx.prisma, 'storage.s3.endpoint', input.endpoint, false),
-          saveConfig(ctx.prisma, 'storage.s3.port', input.port.toString(), false),
-          saveConfig(ctx.prisma, 'storage.s3.useSSL', String(input.useSSL), false),
-          saveConfig(ctx.prisma, 'storage.s3.accessKey', input.accessKey, true),
-          saveConfig(ctx.prisma, 'storage.s3.secretKey', input.secretKey, true),
-          saveConfig(ctx.prisma, 'storage.s3.region', input.region, false),
+        await saveConfigs(ctx.prisma, [
+          { key: 'storage.type', value: 's3' },
+          { key: 'storage.s3.endpoint', value: input.endpoint },
+          { key: 'storage.s3.port', value: input.port.toString() },
+          { key: 'storage.s3.useSSL', value: String(input.useSSL) },
+          { key: 'storage.s3.accessKey', value: input.accessKey, encrypt: true },
+          { key: 'storage.s3.secretKey', value: input.secretKey, encrypt: true },
+          { key: 'storage.s3.region', value: input.region },
           // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
           // two read paths in this router all treat a falsy value as "derive the URL from the
           // endpoint". Storing `''` would be a second spelling of that, and one the registry's
           // `z.string().url()` cannot describe.
-          input.publicBaseUrl
-            ? saveConfig(ctx.prisma, 'storage.s3.publicBaseUrl', input.publicBaseUrl, false)
-            : deleteConfig(ctx.prisma, 'storage.s3.publicBaseUrl'),
-          saveConfig(ctx.prisma, 'storage.s3.presignedPutTtl', input.presignedPutTtl.toString(), false),
-          saveConfig(ctx.prisma, 'storage.s3.presignedGetTtl', input.presignedGetTtl.toString(), false),
+          { key: 'storage.s3.publicBaseUrl', value: input.publicBaseUrl || null },
+          { key: 'storage.s3.presignedPutTtl', value: input.presignedPutTtl.toString() },
+          { key: 'storage.s3.presignedGetTtl', value: input.presignedGetTtl.toString() },
         ]);
       }
 

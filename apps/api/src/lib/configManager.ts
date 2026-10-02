@@ -206,35 +206,71 @@ export async function saveConfig(
   value: string,
   encrypt: boolean = false
 ): Promise<void> {
-  const validation = validateConfigValue(key, value);
+  if (key === 'app.sections.disabled') {
+    const row = prepareConfigWrite({ key, value, encrypt });
+    await saveSectionsDisabledGuarded(prisma, value, row.value, encrypt);
+    invalidateRbacCache();
+    return;
+  }
+  await saveConfigs(prisma, [{ key, value, encrypt }]);
+}
+
+/**
+ * A key `saveConfigs` may write: every registry key but the kill switch, whose guard runs its own
+ * transaction under the last-admin lock (`saveSectionsDisabledGuarded`) and which no form writes.
+ */
+type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
+
+/** One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. */
+export type ConfigWrite =
+  | { key: BatchConfigKey; value: string; encrypt?: boolean }
+  | { key: BatchConfigKey; value: null };
+
+/** Validates a value against its registry schema and encrypts it when asked: the stored form. */
+function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
+  const validation = validateConfigValue(write.key, write.value);
   if (!validation.success) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Valore non valido per '${key}': ${validation.message}`,
+      message: `Valore non valido per '${write.key}': ${validation.message}`,
     });
   }
+  const encrypt = write.encrypt ?? false;
+  return { key: write.key, value: encrypt ? encryptValue(write.value) : write.value, encrypt };
+}
 
-  const finalValue = encrypt ? encryptValue(value) : value;
+/**
+ * Saves several keys as one change — a settings form, which must not be left half-written.
+ *
+ * Every value is validated against its registry schema, and encrypted when asked, before anything
+ * is written; then all the writes run in one transaction, in order: an upsert for a value, a
+ * `deleteMany` for `null` (removing an absent key is not an error). Either every key changes or
+ * none does. What it guarantees is one atomic write, not a consistent snapshot for a reader that
+ * issues several reads across the commit. The RBAC cache is invalidated only after the commit.
+ *
+ * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema; nothing is written.
+ */
+export async function saveConfigs(
+  prisma: PrismaClient,
+  writes: readonly ConfigWrite[]
+): Promise<void> {
+  const rows = writes.map(write => (write.value === null ? write : prepareConfigWrite(write)));
 
-  if (key === 'app.sections.disabled') {
-    await saveSectionsDisabledGuarded(prisma, value, finalValue, encrypt);
-  } else {
-    await prisma.appConfig.upsert({
-      where: { key },
-      update: {
-        value: finalValue,
-        isEncrypted: encrypt,
-        updatedAt: new Date(),
-      },
-      create: {
-        key,
-        value: finalValue,
-        isEncrypted: encrypt,
-      },
-    });
-  }
+  await prisma.$transaction(async tx => {
+    for (const row of rows) {
+      if (row.value === null) {
+        await tx.appConfig.deleteMany({ where: { key: row.key } });
+      } else {
+        await tx.appConfig.upsert({
+          where: { key: row.key },
+          update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
+          create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
+        });
+      }
+    }
+  });
 
-  if (RBAC_CACHE_KEYS.test(key)) {
+  if (rows.some(row => RBAC_CACHE_KEYS.test(row.key))) {
     invalidateRbacCache();
   }
 }

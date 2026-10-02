@@ -12,14 +12,14 @@ import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, test
 
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
+import { getConfig, saveConfigs } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
   createStandardError,
   toTRPCError,
 } from '../lib/errorHandler';
-import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
+import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { withSchedulerLock } from '../lib/schedulerLock';
@@ -422,67 +422,79 @@ export const navRouter = router({
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(navConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
-      const passwordUpdated = !!input.password && input.password.length > 0;
+    .mutation(({ input, ctx }) =>
+      // The whole change, from reading the previous values to the resume, runs alone: two
+      // overlapping saves would otherwise strand a pause or resume the scheduler under each other.
+      navConfigChanges.run(async () => {
+        // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
+        const passwordUpdated = !!input.password && input.password.length > 0;
 
-      // Reads the current values to detect connection changes
-      const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
-        getConfig(ctx.prisma, 'integrations.nav.host', false),
-        getConfig(ctx.prisma, 'integrations.nav.port', false),
-        getConfig(ctx.prisma, 'integrations.nav.database', false),
-        getConfig(ctx.prisma, 'integrations.nav.user', false),
-        getConfig(ctx.prisma, 'integrations.nav.company', false),
-      ]);
+        // Reads the current values to detect connection changes
+        const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
+          getConfig(ctx.prisma, 'integrations.nav.host', false),
+          getConfig(ctx.prisma, 'integrations.nav.port', false),
+          getConfig(ctx.prisma, 'integrations.nav.database', false),
+          getConfig(ctx.prisma, 'integrations.nav.user', false),
+          getConfig(ctx.prisma, 'integrations.nav.company', false),
+        ]);
 
-      const connectionChanged =
-        prevHost !== input.host ||
-        prevPort !== input.port.toString() ||
-        prevDatabase !== input.database ||
-        prevUser !== input.user ||
-        prevCompany !== input.company ||
-        passwordUpdated;
+        const connectionChanged =
+          prevHost !== input.host ||
+          prevPort !== input.port.toString() ||
+          prevDatabase !== input.database ||
+          prevUser !== input.user ||
+          prevCompany !== input.company ||
+          passwordUpdated;
 
-      // If the connection changed, resets the mssql pool (old credentials no longer valid)
-      if (connectionChanged) {
-        await pauseNavScheduler();
+        // A changed connection pauses the scheduler before the write and closes the pool only once
+        // the new settings are committed: closing it first let a tick in between reopen it with the
+        // old credentials. A failed save leaves the pool as it was.
+        if (connectionChanged) await pauseNavScheduler();
         try {
-          await closePool();
+          await saveConfigs(ctx.prisma, [
+            { key: 'integrations.nav.host', value: input.host },
+            { key: 'integrations.nav.port', value: input.port.toString() },
+            { key: 'integrations.nav.database', value: input.database },
+            { key: 'integrations.nav.user', value: input.user },
+            { key: 'integrations.nav.company', value: input.company },
+            { key: 'integrations.nav.readOnly', value: input.readOnly.toString() },
+            { key: 'integrations.nav.syncEnabled', value: input.syncEnabled.toString() },
+            ...(passwordUpdated
+              ? [{ key: 'integrations.nav.password' as const, value: input.password!, encrypt: true }]
+              : []),
+          ]);
+          if (connectionChanged) {
+            try {
+              await closePool();
+            } catch (err) {
+              // The settings are committed; only the old connection survives, until the next
+              // successful save or a restart closes it.
+              ctx.logger.error({ err }, 'NAV pool close failed after the configuration was saved');
+            }
+          }
         } finally {
-          await resumeNavScheduler();
+          if (connectionChanged) resumeNavScheduler();
         }
-      }
 
-      await saveConfig(ctx.prisma, 'integrations.nav.host', input.host, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.port', input.port.toString(), false);
-      await saveConfig(ctx.prisma, 'integrations.nav.database', input.database, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.user', input.user, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.company', input.company, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.readOnly', input.readOnly.toString(), false);
-      await saveConfig(ctx.prisma, 'integrations.nav.syncEnabled', input.syncEnabled.toString(), false);
+        ctx.logger.info(
+          { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
+          'NAV configuration saved'
+        );
 
-      if (passwordUpdated) {
-        await saveConfig(ctx.prisma, 'integrations.nav.password', input.password!, true);
-      }
+        await logAudit(ctx, {
+          action: 'CONFIG_NAV_UPDATE',
+          targetType: 'Config',
+          result: 'SUCCESS',
+          metadata: { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
+        });
 
-      ctx.logger.info(
-        { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
-        'NAV configuration saved'
-      );
-
-      await logAudit(ctx, {
-        action: 'CONFIG_NAV_UPDATE',
-        targetType: 'Config',
-        result: 'SUCCESS',
-        metadata: { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
-      });
-
-      return {
-        success: true,
-        message: 'Configurazione NAV salvata con successo',
-        connectionChanged,
-      };
-    }),
+        return {
+          success: true,
+          message: 'Configurazione NAV salvata con successo',
+          connectionChanged,
+        };
+      })
+    ),
 
   /**
    * Tests the NAV SQL Server connection using the stored credentials.
