@@ -253,7 +253,7 @@ function trainAtRc1(): string {
   return dir;
 }
 
-test('an open train freezes its target and advances only the counter', () => {
+test('a live train freezes its target and advances only the counter', () => {
   const dir = trainAtRc1();
 
   const next = validateTarget(dir, 'v3.0.0-rc.2');
@@ -261,8 +261,9 @@ test('an open train freezes its target and advances only the counter', () => {
   assert.equal(next.base, 'v3.0.0-rc.1');
   assert.equal(next.range, 'v3.0.0-rc.1..HEAD');
   assert.equal(next.ignore, '.*');
-  // The target is frozen: nothing recomputes a bump for a candidate.
-  assert.equal(next.min, null);
+  // The target is frozen, yet the minimum is still asked: it is what tells a
+  // live train from one the commits have overtaken.
+  assert.equal(next.min, 'v2.2.0');
 
   rejects(dir, 'v3.0.0-rc.3', /the next one is v3\.0\.0-rc\.2/);
   rejects(dir, 'v3.1.0-rc.1', /train targets v3\.0\.0, not v3\.1\.0/);
@@ -287,18 +288,50 @@ test('graduation starts at the previous stable and erases the rc boundaries', ()
   assert.equal(g.min, 'v2.2.0');
 });
 
-test('a graduation below the minimum the train grew into is refused', () => {
+/** A train at `v2.2.0-rc.1` overtaken by a breaking change: it can never ship. */
+function deadTrain(): string {
   const dir = afterStable();
   git(dir, 'checkout', '-q', '-b', 'develop-2.2');
   commit(dir, 'feat(api): the cycle work');
   git(dir, 'tag', 'v2.2.0-rc.1');
-  // Accepted mid-train, which the frozen target permits — and which is exactly
-  // why the graduation has to refuse: the train can no longer publish 2.2.0.
   commit(dir, 'feat(api)!: a breaking change nobody planned');
+  return dir;
+}
 
-  assert.equal(validateTarget(dir, 'v2.2.0-rc.2').kind, 'rc-next');
-  rejects(dir, 'v2.2.0', /below v3\.0\.0, the minimum/);
-  rejects(dir, 'v3.0.0-rc.1', /train targets v2\.2\.0/);
+test('a train the commits have overtaken is dead, and the next one starts', () => {
+  const dir = deadTrain();
+
+  // Neither another candidate nor the graduation: 2.2.0 can never be published,
+  // so cutting more of it would only ship rc images of a dead version.
+  for (const tag of ['v2.2.0-rc.2', 'v2.2.0']) {
+    rejects(dir, tag, /below v3\.0\.0, the minimum.*can no longer graduate/s);
+  }
+
+  // A dead train owns nothing, so the next train starts as any first one does.
+  const next = validateTarget(dir, 'v3.0.0-rc.1');
+  assert.equal(next.kind, 'rc-first');
+  assert.equal(next.base, 'v2.1.4');
+  assert.equal(next.min, 'v3.0.0');
+});
+
+test('a dead train stays history while the next one runs', () => {
+  const dir = deadTrain();
+  git(dir, 'tag', 'v3.0.0-rc.1');
+  commit(dir, 'fix(api): candidate feedback');
+
+  // Two trains are reachable, but only one is live: not ambiguous. Its target
+  // is exactly the minimum, which is live — not below it.
+  const next = validateTarget(dir, 'v3.0.0-rc.2');
+  assert.equal(next.kind, 'rc-next');
+  assert.equal(next.base, 'v3.0.0-rc.1');
+  rejects(dir, 'v2.2.0-rc.2', /can no longer graduate/);
+
+  // The graduation covers both trains in one section: every rc tag is erased.
+  git(dir, 'tag', 'v3.0.0-rc.2');
+  const g = validateTarget(dir, 'v3.0.0');
+  assert.equal(g.kind, 'stable');
+  assert.equal(g.base, 'v2.1.4');
+  assert.equal(g.ignore, '.*-rc\\..*');
 });
 
 test('a stable hotfix merged into the train lands in the next candidate', () => {
@@ -317,6 +350,8 @@ test('a stable hotfix merged into the train lands in the next candidate', () => 
   const next = validateTarget(dir, 'v3.0.0-rc.2');
   assert.equal(next.kind, 'rc-next');
   assert.equal(next.base, 'v3.0.0-rc.1');
+  // The base moved to v2.1.5, and every train commit is still above it.
+  assert.equal(next.min, 'v2.2.0');
   // Every tag ignored, so the merged-in stable release does not split the
   // candidate's section in two.
   assert.equal(next.ignore, '.*');
@@ -386,14 +421,14 @@ test('an unmerged candidate for the same target refuses the release', () => {
   rejects(dir, 'v3.0.0-rc.2', /v3\.0\.0-rc\.1 exist but are not reachable/);
 });
 
-test('two ungraduated trains are ambiguous', () => {
+test('two live trains are ambiguous', () => {
   const dir = afterStable();
   commit(dir, 'feat(api): one train');
   git(dir, 'tag', 'v3.0.0-rc.1');
   commit(dir, 'feat(api): another train');
   git(dir, 'tag', 'v3.1.0-rc.1');
 
-  rejects(dir, 'v3.0.0-rc.2', /2 ungraduated trains are reachable/);
+  rejects(dir, 'v3.0.0-rc.2', /2 live trains are reachable/);
 });
 
 test('a malformed target is refused before anything is read', () => {
@@ -519,12 +554,11 @@ test('the CLI prints exactly the key=value lines release-prepare.sh reads', () =
     'min=v3.0.0',
   ]);
 
-  // A frozen target has no minimum to print, and the line still has to be there
-  // for the shell that reads it.
+  // A continued train carries its minimum too: the shell refuses an empty one.
   const train = runCli(['--validate', 'v3.0.0-rc.2', '--repo', trainAtRc1()]);
   assert.equal(train.status, 0, train.stderr);
   assert.match(train.stdout, /^kind=rc-next$/m);
-  assert.match(train.stdout, /^min=$/m);
+  assert.match(train.stdout, /^min=v2\.2\.0$/m);
 });
 
 test('the CLI refuses every malformed invocation', () => {

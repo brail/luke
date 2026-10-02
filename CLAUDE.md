@@ -510,7 +510,8 @@ has to do something. `apps/web` is not that somebody; a standalone client on
 the API would be.
 
 The label is expensive in both directions: it spends a major version, and
-mid-train it cannot even deliver one — see the frozen-target note below.
+mid-train it kills the running train, so the major ships as a new one — see the
+frozen-target note below.
 
 **Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
 
@@ -544,10 +545,11 @@ A routine main-to-train synchronisation is enough to cause it, and one did.
 
 The validator refuses a tag that exists anywhere, a base that is not reachable,
 a stable tag on another line that outranks that base (merge the hotfix first), a
-target that is not the open train's frozen one, an rc counter that skips, a
+target that is not the live train's frozen one, an rc counter that skips, a
 range with nothing releasable in it, and — the SemVer rule above made
 mechanical — **any version below the minimum bump** git-cliff computes for the
-commits since the base. Equal to the minimum or higher passes; there is no
+commits since the base, a running train's next candidate included. Equal to the
+minimum or higher passes; there is no
 override flag, because a gate that can be waived on the day it is inconvenient
 is not a gate. Nothing is written until every one of those has passed.
 
@@ -557,13 +559,15 @@ per candidate. Name the candidate (`pnpm release:prepare v3.0.0-rc.2`) and the
 validator checks it against the train it can see: the target must be the one
 already cut, and the counter must advance by exactly one.
 
-The target is **frozen when rc.1 is cut**: a `feat!` landing mid-train moves
-`v2.2.0-rc.1` to `v2.2.0-rc.2`, not to `v3.0.0-rc.1`. That is the point — a
-train has one target — and the frozen target is validated, not merely
-documented: the candidate is accepted, and it is the *graduation* that then
-refuses, because the minimum bump has become major and `v2.2.0` is below it. A
-breaking change accepted after the first candidate is released by starting a new
-train at the higher version, not by continuing the current one.
+The target is **frozen when rc.1 is cut**: while the train is live, the
+candidate after `v2.2.0-rc.1` is `v2.2.0-rc.2`, never `v3.0.0-rc.1` — a train
+has one target. A train is **live** while its target is above the base and not
+below the minimum bump. A `feat!` landing mid-train raises that minimum to
+major, and the train **dies at once**: `v2.2.0` can never be published, so its
+next candidate and its graduation are both refused. Its rc tags stay as
+history — none needs deleting — and the breaking change is
+released by starting a new train at the higher version: `v3.0.0-rc.1` is an
+ordinary first candidate, its notes covering everything since the base.
 
 **Release flow**: push to `main` → CI only (lint + typecheck);
 tag `vX.Y.Z` → provenance gate → Docker build → `ghcr.io` → Portainer pull &

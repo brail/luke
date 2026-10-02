@@ -25,7 +25,7 @@
 #
 # So the operator names the release and `check-release-train.ts --validate`
 # proves it: the tag is free, the base is the highest stable reachable from
-# HEAD, an open train owns its own target, and the version is **not below** the
+# HEAD, a live train owns its own target, and the version is **not below** the
 # minimum bump the conventional commits since that base require — git-cliff's
 # own verdict on the range, with no override. It also returns the range and the
 # `--ignore-tags` value the notes must be rendered with, so the number and the
@@ -202,18 +202,15 @@ VERSION=$(field version)
 RANGE=$(field range)
 IGNORE=$(field ignore)
 CONFIG=$(field config)
-# `min` is deliberately outside the completeness check below: a candidate after
-# the first has a frozen target and no minimum, so an empty value is its correct
-# answer rather than a missing one.
 MIN=$(field min)
 
 if [ -z "$KIND" ] || [ -z "$VERSION" ] || [ -z "$RANGE" ] ||
-  [ -z "$IGNORE" ] || [ -z "$CONFIG" ]; then
+  [ -z "$IGNORE" ] || [ -z "$CONFIG" ] || [ -z "$MIN" ]; then
   echo "❌ check-release-train returned an incomplete answer. Refusing to guess." >&2
   exit 1
 fi
 
-echo "📦 Preparing $TAG ($KIND) — notes from $RANGE${MIN:+, minimum $MIN}"
+echo "📦 Preparing $TAG ($KIND) — notes from $RANGE, minimum $MIN"
 echo
 
 # One section for the whole range. `--ignore-tags` comes from the validator

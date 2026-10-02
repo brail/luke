@@ -32,12 +32,13 @@
  * - a stable tag `S` — the highest one reachable from HEAD — exists, and no
  *   stable tag anywhere outranks it (an unmerged hotfix must be merged first,
  *   or the release would silently skip it);
- * - at most one ungraduated release train is reachable, and the target belongs
- *   to it when there is one: a train has exactly one stable target, frozen when
- *   its first candidate is cut;
  * - the target is **not below the minimum bump** the conventional commits since
- *   `S` require. That minimum is git-cliff's own `bump_type` over `S..HEAD`,
- *   never a second Conventional Commit grammar written here;
+ *   `S` require, whatever is requested — candidates included. That minimum is
+ *   git-cliff's own `bump_type` over `S..HEAD`, never a second Conventional
+ *   Commit grammar written here;
+ * - at most one live release train is reachable, and the target belongs to it
+ *   when there is one: a train has exactly one stable target, frozen when its
+ *   first candidate is cut;
  * - the range that will be rendered carries at least one commit.
  *
  * Equal to the minimum or above it is allowed: `feat!` since `S` forbids
@@ -45,11 +46,12 @@
  * CLAUDE.md keeps the Conventional Commits → SemVer mapping mandatory, and a
  * gate that can be waived on the day it is inconvenient is not a gate.
  *
- * A candidate after the first is the one case with no minimum: its target was
- * frozen when `rc.1` was cut, so only the counter moves. A breaking change
- * landing mid-train is therefore accepted into the next candidate and refused at
- * the graduation, where the minimum has become major and the frozen target is
- * below it — the train is then abandoned for a new one at the higher version.
+ * A train is **live** while its target is above `S` and not below that
+ * minimum, and only a live train owns the next release. A breaking change
+ * landing mid-train raises the minimum past the frozen target: from then on the
+ * train can no longer graduate, so its next candidate and its graduation are
+ * both refused at once, its candidates stay as history, and a new train at the
+ * higher version starts as an ordinary first candidate.
  *
  * ## What it deliberately does not do
  *
@@ -65,8 +67,8 @@
  *   tsx tools/scripts/check-release-train.ts --validate v3.0.0-rc.1 [--repo .]
  *
  * Prints the values `release-prepare.sh` consumes — `kind=`, `version=`,
- * `range=`, `ignore=`, `min=`, `config=` — so the number, the section and the
- * manifests all come from this one answer. Regression-tested by
+ * `range=`, `ignore=`, `min=`, `config=` — so the number and the section both
+ * come from this one answer. Regression-tested by
  * `check-release-train.test.ts` (`pnpm test:tools`).
  */
 
@@ -162,13 +164,18 @@ function highestStable(tags: string[]): ReleaseTag | null {
 }
 
 /**
- * The open release trains, one entry each: the highest-numbered candidate of a
- * train that is reachable and still ahead of the line.
+ * The live release trains, one entry each: the highest-numbered candidate of a
+ * train that is reachable, still ahead of the line, and not below the minimum
+ * the commits since that line require.
  *
- * Outranking the highest reachable stable is the whole rule, and it is enough.
- * It is what keeps an abandoned train from being selected forever: this
- * repository has one, `v1.10.0-rc.1..15`, whose cycle shipped as `2.0.0`
- * instead, so `v1.10.0` will never be tagged.
+ * Outranking the highest reachable stable keeps an abandoned train from being
+ * selected forever: this repository has one, `v1.10.0-rc.1..15`, whose cycle
+ * shipped as `2.0.0` instead, so `v1.10.0` will never be tagged. The minimum
+ * retires a train the commits have overtaken: after a breaking change lands
+ * behind `v2.2.0-rc.1`, `v2.2.0` can never be published, and a train that
+ * cannot graduate must not own the next release — the only way left to start
+ * the next train would be deleting published candidates. For a given base the
+ * minimum only grows, so a train that has died stays dead.
  *
  * A graduated or superseded target never reaches that comparison, because the
  * caller has already established the stable base it is measured against: a
@@ -180,13 +187,17 @@ function highestStable(tags: string[]): ReleaseTag | null {
  * Everything is decided from the reachable tag list the caller already read,
  * with no further git call.
  */
-function ungraduatedTrains(reachable: string[], stable: Semver): ReleaseTag[] {
+function liveTrains(
+  reachable: string[],
+  stable: Semver,
+  min: Semver
+): ReleaseTag[] {
   const latest = new Map<string, ReleaseTag>();
 
   for (const tag of reachable) {
     const v = asRcTag(tag);
     if (v === null) continue;
-    if (compare(v, stable) <= 0) continue;
+    if (compare(v, stable) <= 0 || compare(v, min) < 0) continue;
 
     const target = formatStable(v);
     const best = latest.get(target);
@@ -416,8 +427,8 @@ export interface TargetValidation {
   ignore: string;
   /** The git-cliff configuration every answer here was computed under. */
   config: string;
-  /** Lowest version the commits allow, or `null` for a frozen train target. */
-  min: string | null;
+  /** Lowest version the commits allow — what tells a live train from a dead one. */
+  min: string;
 }
 
 function assertFullClone(repo: string): void {
@@ -517,17 +528,32 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
     );
   }
 
-  const trains = ungraduatedTrains(reachable, stable);
+  // Asked of every request, candidates included, and before any train logic:
+  // a train whose target the commits have overtaken can no longer graduate, so
+  // its next candidate is refused for what it is rather than read as a counter
+  // that skips.
+  const min = minimumVersion(repo, config, stable);
+  if (compare(requested, min) < 0) {
+    throw new ReleaseTrainError(
+      `${tag} is below ${formatStable(min)}, the minimum the commits since ` +
+        `${tagOf(stable)} require. The Conventional Commits in that range are ` +
+        'what decide it, and this gate has no override: release ' +
+        `${formatStable(min)} or higher. A train whose target is below it can ` +
+        'no longer graduate; its candidates stay as history.'
+    );
+  }
+
+  const trains = liveTrains(reachable, stable, min);
   if (trains.length > 1) {
     throw new ReleaseTrainError(
-      `${trains.length} ungraduated trains are reachable ` +
+      `${trains.length} live trains are reachable ` +
         `(${trains.map(formatStable).join(', ')}). Graduate or abandon all ` +
         'but one before releasing; refusing to guess which one owns this tag.'
     );
   }
   const train = trains[0] ?? null;
 
-  // One rule, one place: while a train is open it owns the next release, and
+  // One rule, one place: while a train is live it owns the next release, and
   // its target was frozen when its first candidate was cut.
   if (train !== null && formatStable(train) !== target) {
     throw new ReleaseTrainError(
@@ -537,7 +563,7 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
     );
   }
 
-  // The one case with no minimum: the target is already fixed, so only the
+  // A live train's next candidate: its target is already fixed, so only the
   // counter is in question.
   const continuing = requested.channel === 'rc' && train !== null ? train : null;
   if (requested.channel === 'rc') {
@@ -566,17 +592,6 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
   const base = continuing === null ? tagOf(stable) : tagOf(continuing);
   const ignore =
     requested.channel === 'rc' ? IGNORE_FOR_RC : IGNORE_FOR_STABLE;
-  const min = continuing === null ? minimumVersion(repo, config, stable) : null;
-
-  if (min !== null && compare(requested, min) < 0) {
-    throw new ReleaseTrainError(
-      `${tag} is below ${formatStable(min)}, the minimum the commits since ` +
-        `${tagOf(stable)} require. The Conventional Commits in that range are ` +
-        'what decide it, and this gate has no override: release ' +
-        `${formatStable(min)} or higher.`
-    );
-  }
-
   const range = `${base}..HEAD`;
   const release = singleRelease(
     readContext(repo, config, { range, ignore, bump: false }),
@@ -593,7 +608,7 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
     range,
     ignore,
     config,
-    min: min === null ? null : formatStable(min),
+    min: formatStable(min),
   };
 }
 
@@ -627,7 +642,7 @@ function main(): void {
   console.log(`range=${result.range}`);
   console.log(`ignore=${result.ignore}`);
   console.log(`config=${result.config}`);
-  console.log(`min=${result.min ?? ''}`);
+  console.log(`min=${result.min}`);
 }
 
 if (require.main === module) {
