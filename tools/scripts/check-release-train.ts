@@ -40,7 +40,8 @@
  *   when there is one: a train has exactly one stable target, frozen when its
  *   first candidate is cut;
  * - a graduation publishes the live train's latest candidate unchanged: HEAD's
- *   tree is that candidate's tree;
+ *   tree is that candidate's tree, `CHANGELOG.md` aside — `checkGraduation` in
+ *   `check-release-tree.ts`, the same function that re-proves it on the tag;
  * - the range that will be rendered carries at least one commit.
  *
  * Equal to the minimum or above it is allowed: `feat!` since `S` forbids
@@ -79,6 +80,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
+import { ReleaseTreeError, checkGraduation } from './check-release-tree';
 import { REPO_ROOT } from './lib/report';
 
 /**
@@ -566,26 +568,20 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
   }
 
   // A graduation publishes what the train tested, not whatever HEAD has become
-  // since: release.yml rebuilds the stable images from the tagged tree, so a
-  // change that never shipped in a candidate would reach `latest` untested.
-  // Tree objects rather than a diff: equal hashes are equal content by
-  // definition, modes included, whatever a diff configuration would hide — and
-  // neither the worktree nor the index is read.
-  if (requested.channel === 'stable' && train !== null) {
-    const [candidate, head] = git(repo, [
-      'rev-parse',
-      `refs/tags/${tagOf(train)}^{tree}`,
-      'HEAD^{tree}',
-    ]).split('\n');
-    if (candidate !== head) {
-      throw new ReleaseTrainError(
-        `HEAD is not the tree ${tagOf(train)} was cut from, and a graduation ` +
-          'publishes its last candidate unchanged (`git diff --stat ' +
-          `${tagOf(train)} HEAD\` shows what changed). Carry the change through ` +
-          'the train in a releasable commit — one already on main by ' +
-          '`git merge --no-ff main` into the train — cut ' +
-          `${target}-rc.${(train.rc ?? 0) + 1}, then graduate.`
-      );
+  // since. One rule with one implementation: the tree checker re-proves it on
+  // the tagged commit at push and in release.yml. By now every candidate of the
+  // requested version is reachable and belongs to the live train — strays, dead
+  // trains and a foreign target were refused above — so the highest candidate
+  // of the version is the train's latest. Committed trees only: neither the
+  // worktree nor the index is read.
+  if (requested.channel === 'stable') {
+    try {
+      checkGraduation(repo, tag, 'HEAD');
+    } catch (err) {
+      if (err instanceof ReleaseTreeError) {
+        throw new ReleaseTrainError(err.message, { cause: err });
+      }
+      throw err;
     }
   }
 

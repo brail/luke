@@ -557,6 +557,15 @@ test('the provenance job runs the tree checker on the commit the gate resolved',
   // The triggering tag, verbatim — not a re-derivation, and not a literal.
   assert.match(job.slice(treeCheck), /--tag "\$GITHUB_REF_NAME"/);
 
+  // A graduation is compared with its last candidate, which the job can only
+  // find among tags it has fetched — explicitly, and with no fallback that
+  // would let a failed fetch through.
+  const tagFetch = job.search(
+    /^ {10}git fetch --no-tags --quiet origin 'refs\/tags\/v\*:refs\/tags\/v\*'$/m
+  );
+  assert.notEqual(tagFetch, -1, 'the provenance job no longer fetches the release tags');
+  assert.ok(tagFetch < treeCheck, 'the release tags must be fetched before the tree check');
+
   // The gate's own commit, carried through `env` rather than interpolated into
   // the shell, and read back as a plain variable.
   assert.match(job, /GATE_SHA: \$\{\{ steps\.gate\.outputs\.sha \}\}/);

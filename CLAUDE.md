@@ -547,7 +547,7 @@ The validator refuses a tag that exists anywhere, a base that is not reachable,
 a stable tag on another line that outranks that base (merge the hotfix first), a
 target that is not the live train's frozen one, an rc counter that skips, a
 range with nothing releasable in it, a graduation whose tree is not its last
-candidate's, and — the SemVer rule above made
+candidate's (`CHANGELOG.md` aside), and — the SemVer rule above made
 mechanical — **any version below the minimum bump** git-cliff computes for the
 commits since the base, a running train's next candidate included. Equal to the
 minimum or higher passes; there is no
@@ -571,12 +571,14 @@ released by starting a new train at the higher version: `v3.0.0-rc.1` is an
 ordinary first candidate, its notes covering everything since the base.
 
 **A graduation publishes its last candidate unchanged.** `vX.Y.Z` is prepared
-only when HEAD's tree is exactly the tree of the live train's latest candidate:
-the stable images are rebuilt from the tag, so anything changed after that
-candidate would reach `latest` without ever having shipped in one. It is proved
-at prepare time, before the notes commit — which is then the only difference the
-stable tag carries; nothing re-checks it at push or in `release.yml`. After the
-last candidate the train is frozen until it graduates; a later change — a
+only when HEAD's tree is the tree of the live train's latest candidate,
+`CHANGELOG.md` aside: the stable images are rebuilt from the tag, so anything
+else changed after that candidate would reach `latest` without ever having
+shipped in one. It is proved at prepare time on HEAD, and again on the tagged
+commit at push and in `release.yml` — the notes commit is the only difference
+the stable tag may carry. One function, `checkGraduation` in
+`check-release-tree.ts`, answers all three. After the last candidate the train
+is frozen until it graduates; a later change to anything but `CHANGELOG.md` — a
 documentation fix, a hotfix merged from `main` — ships by cutting the next
 candidate first, and it has to reach the train in a releasable commit: a change
 carried only by commits `.cliff.toml` skips (a conflict resolution inside a
@@ -604,7 +606,10 @@ and never the working tree, that `CHANGELOG.md` has exactly one
 `## [<version>]` heading for `parseReleaseTag(tag).version` — optionally dated —
 with at least one `- ` entry under it. A duplicate heading, an entry that
 actually belongs to the next section or to the historical footer, and any
-`## [Unreleased]` heading are all rejections. The same checker is what
+`## [Unreleased]` heading are all rejections. For a stable tag that graduates a
+train it also proves the tree is the highest candidate of that version
+unchanged, `CHANGELOG.md` aside; the job fetches the release tags explicitly so
+a missing candidate cannot read as "no graduation". The same checker is what
 `release:prepare` and `.husky/pre-push` run, so one contract has one
 implementation — the hook predicts the workflow's verdict, it does not replace
 it.
@@ -615,10 +620,10 @@ version any more, so that half is gone rather than weakened — there is no seco
 identity left to compare, and none to drift. What remains is narrow on purpose:
 a `## [X.Y.Z]` heading with one bullet is something a person could type, so the
 tree gate does not prove a release was prepared, and it never did — the manifest
-half was written by a script too. The **number** — and, for a graduation, that
-HEAD is its last candidate's tree — is proved by `check-release-train.ts
---validate` at prepare time, and the **line** by the provenance gate. This
-checker proves the tagged tree ships notes for its tag.
+half was written by a script too. The **number** is proved by
+`check-release-train.ts --validate` at prepare time, and the **line** by the
+provenance gate. This checker proves the tagged tree ships notes for its tag
+and, for a graduation, that it is its last candidate unchanged.
 
 **The `tools/*` prerequisite for porting this checker to `main` is gone.** It
 used to be that no part of `check-release-tree.ts` could be ported until

@@ -34,6 +34,7 @@ import { after, test } from 'node:test';
 import {
   ReleaseTreeError,
   changelogSection,
+  checkGraduation,
   checkReleaseTree,
   revTree,
   worktreeTree,
@@ -572,6 +573,137 @@ test('a revision that would be read as a git option is refused', () => {
   assert.throws(() => revTree(repo, '--all'), reason(/leading "-"/));
 });
 
+// ── A graduation publishes its last candidate ────────────────────────────────
+
+/** Write, stage and commit: the next commit of a fixture's history. */
+function commitFiles(
+  repo: string,
+  contents: Record<string, string>,
+  message: string
+): void {
+  writeAll(repo, contents);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', message);
+}
+
+/**
+ * A train whose last candidate is `v2.2.0-rc.2`, annotated, and the notes
+ * commit that graduates it: the tree a stable tag names when nothing changed
+ * after that candidate. `rc.1` holds a different tree, so a check against the
+ * first candidate instead of the last one refuses this graduation.
+ */
+function graduation(): string {
+  const repo = repoWith({ version: '2.2.0-rc.1' });
+  git(repo, 'tag', 'v2.2.0-rc.1');
+  commitFiles(
+    repo,
+    {
+      'apps/api/src/work.ts': 'export const work = true;\n',
+      'CHANGELOG.md': changelog('2.2.0-rc.2'),
+    },
+    'feat(api): candidate feedback'
+  );
+  git(repo, 'tag', '-a', 'v2.2.0-rc.2', '-m', 'candidate');
+  commitFiles(
+    repo,
+    { 'CHANGELOG.md': changelog('2.2.0') },
+    'chore(release): notes for 2.2.0'
+  );
+  return repo;
+}
+
+test('a graduation that changed only its notes is its last candidate', () => {
+  const repo = graduation();
+  assert.equal(checkGraduation(repo, 'v2.2.0', 'HEAD'), 'v2.2.0-rc.2');
+});
+
+test('a graduation that changed anything but CHANGELOG.md is refused', () => {
+  // `README.md`: only CHANGELOG.md is excused, not Markdown. `docs/…`: only the
+  // root CHANGELOG.md, not a file that happens to share its name.
+  for (const path of [
+    'apps/api/src/late.ts',
+    'README.md',
+    'docs/CHANGELOG.md',
+  ]) {
+    const repo = graduation();
+    commitFiles(repo, { [path]: 'changed after the candidate\n' }, 'fix: late');
+
+    assert.throws(
+      () => checkGraduation(repo, 'v2.2.0', 'HEAD'),
+      reason(
+        new RegExp(
+          `v2\\.2\\.0 is not v2\\.2\\.0-rc\\.2 unchanged.*${path.replace(/\./g, '\\.')}` +
+            '.*cut v2\\.2\\.0-rc\\.3',
+          's'
+        )
+      ),
+      `a change to ${path} must refuse the graduation`
+    );
+  }
+});
+
+test('a mode is part of what a candidate shipped', () => {
+  const repo = graduation();
+  git(repo, 'update-index', '--chmod=+x', 'README.md');
+  git(repo, 'commit', '-q', '-m', 'fix: make it executable');
+
+  assert.throws(
+    () => checkGraduation(repo, 'v2.2.0', 'HEAD'),
+    reason(/is not v2\.2\.0-rc\.2 unchanged.*README\.md/s)
+  );
+});
+
+test('the last candidate is the highest counter, not the last tag in order', () => {
+  // `git tag --list` sorts rc.10 before rc.9.
+  const repo = repoWith({ version: '2.2.0-rc.9' });
+  git(repo, 'tag', 'v2.2.0-rc.9');
+  commitFiles(
+    repo,
+    {
+      'apps/api/src/work.ts': 'export const work = true;\n',
+      'CHANGELOG.md': changelog('2.2.0-rc.10'),
+    },
+    'fix(api): candidate feedback'
+  );
+  git(repo, 'tag', 'v2.2.0-rc.10');
+  commitFiles(repo, { 'CHANGELOG.md': changelog('2.2.0') }, 'notes');
+
+  assert.equal(checkGraduation(repo, 'v2.2.0', 'HEAD'), 'v2.2.0-rc.10');
+});
+
+test('a tag that graduates no candidate of its own version proves nothing here', () => {
+  const repo = graduation();
+  commitFiles(repo, { 'apps/api/src/late.ts': 'late\n' }, 'fix: a hotfix');
+
+  // A candidate is never a graduation.
+  assert.equal(checkGraduation(repo, 'v2.2.0-rc.3', 'HEAD'), null);
+  // A stable-line hotfix: no candidate carries its version.
+  assert.equal(checkGraduation(repo, 'v2.2.1', 'HEAD'), null);
+  // Candidates of a version that only shares a prefix are not its own.
+  git(repo, 'tag', 'v2.2.10-rc.1', 'v2.2.0-rc.1');
+  assert.equal(checkGraduation(repo, 'v2.2.1', 'HEAD'), null);
+});
+
+test('a graduation check that cannot read git refuses rather than passes', () => {
+  // A candidate ref naming an object this repository does not have.
+  const repo = graduation();
+  writeFileSync(
+    join(repo, '.git/refs/tags/v2.2.0-rc.3'),
+    `${'0123456789abcdef'.repeat(2)}01234567\n`
+  );
+  assert.throws(() => checkGraduation(repo, 'v2.2.0', 'HEAD'));
+  // A revision git would read as an option.
+  assert.throws(
+    () => checkGraduation(repo, 'v2.2.0', '--all'),
+    reason(/leading "-"/)
+  );
+
+  // Not a repository at all.
+  const empty = mkdtempSync(join(tmpdir(), 'luke-release-tree-empty-'));
+  created.push(empty);
+  assert.throws(() => checkGraduation(empty, 'v2.2.0', 'HEAD'));
+});
+
 // ── CLI contract ─────────────────────────────────────────────────────────────
 
 interface Run {
@@ -683,6 +815,29 @@ test('the CLI refuses every malformed invocation', () => {
       `wrong reason for ${JSON.stringify(args)}`
     );
   }
+});
+
+test('the CLI proves a graduation in --rev mode and never in --worktree', () => {
+  const repo = graduation();
+  const notes = git(repo, 'rev-parse', 'HEAD');
+
+  const ok = runCli(repo, ['--tag', 'v2.2.0', '--rev', notes]);
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /with 1 entry; it graduates v2\.2\.0-rc\.2 unchanged\.$/m);
+
+  commitFiles(repo, { 'apps/api/src/late.ts': 'late\n' }, 'fix: late');
+  const late = runCli(repo, ['--tag', 'v2.2.0', '--rev', 'HEAD']);
+  assert.equal(late.status, 1);
+  assert.match(
+    late.stderr,
+    /^\[release-tree\] REJECTED — v2\.2\.0 is not v2\.2\.0-rc\.2 unchanged/
+  );
+
+  // release-prepare's self-check: no commit exists yet, and the validator has
+  // already proved HEAD before it wrote anything.
+  const worktree = runCli(repo, ['--tag', 'v2.2.0', '--worktree']);
+  assert.equal(worktree.status, 0, worktree.stderr);
+  assert.doesNotMatch(worktree.stdout, /graduates/);
 });
 
 test('the CLI accepts --worktree for a bump that exists in no commit', () => {

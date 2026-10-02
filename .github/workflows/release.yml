@@ -69,6 +69,12 @@ jobs:
           git fetch --no-tags --quiet origin \
             "+refs/heads/${RELEASE_TRAIN_BRANCH}:refs/remotes/origin/${RELEASE_TRAIN_BRANCH}" \
             || echo "note: ${RELEASE_TRAIN_BRANCH} not on the remote — only a stable tag can pass"
+          # The tree check compares a graduation with its last candidate, so it
+          # needs every release tag. `fetch-depth: 0` brings them today, but a
+          # candidate that is silently absent reads as "not a graduation" and
+          # proves nothing — the dependency is stated here instead. No `+`: a
+          # local tag that differs from the remote's fails the step.
+          git fetch --no-tags --quiet origin 'refs/tags/v*:refs/tags/v*'
 
       - uses: ./.github/actions/setup-workspace
 

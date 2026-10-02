@@ -1,9 +1,13 @@
 # Early feedback on a release tag: does the tree being pushed claim the version
-# the tag names? Same checker `.github/workflows/release.yml` runs after the
-# push, on the same object, so this verdict predicts that one.
+# the tag names — and, for a graduation, is it its last candidate unchanged?
+# Same checker `.github/workflows/release.yml` runs after the push, on the same
+# object, so this verdict predicts that one.
 #
 # It is not enforcement. `--no-verify` skips it and a clone that never ran
-# `pnpm install` does not have it — `release.yml` is the authority.
+# `pnpm install` does not have it — `release.yml` is the authority. The
+# graduation half compares with the candidate tags this clone holds:
+# `release:prepare` fetches them, and a clone without them gets no early verdict
+# on it, only release.yml's.
 #
 # What it replaced asked about the **working tree** rather than the object being
 # pushed, and resolved its expectation with `git describe --tags --abbrev=0` —
@@ -32,8 +36,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       if ! pnpm exec tsx tools/scripts/check-release-tree.ts \
         --tag "$tag" --rev "$local_sha" </dev/null; then
         echo ""
-        echo "   $tag not pushed: the commit it names does not claim it."
-        echo "   Delete it (git tag -d $tag), fix or redo the bump, tag again."
+        echo "   $tag not pushed: the commit it names fails the release tree check above."
+        echo "   Delete it (git tag -d $tag), fix what the check names, tag again."
         echo ""
         exit 1
       fi

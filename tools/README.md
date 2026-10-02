@@ -42,7 +42,7 @@ GitHub Actions, or the pre-push hook:
 |---------|----------|
 | [`check-release-train.ts`](scripts/check-release-train.ts) | Validates an explicitly named release target against the reachable stable line and the live RC train. |
 | [`check-release-provenance.ts`](scripts/check-release-provenance.ts) | Validates the tagged commit's git line and derives the registry tags it may publish. |
-| [`check-release-tree.ts`](scripts/check-release-tree.ts) | Verifies that the exact tagged tree contains release notes for its tag. |
+| [`check-release-tree.ts`](scripts/check-release-tree.ts) | Verifies that the exact tagged tree contains release notes for its tag and, for a graduation, is its last candidate unchanged. |
 
 Use `pnpm release:prepare <tag>` for release preparation rather than invoking
 these implementation scripts as a substitute for the supported workflow.

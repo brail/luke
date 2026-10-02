@@ -183,8 +183,8 @@ esac
 # Fails closed on its own for a taken tag, a missing or unreachable base, an
 # unmerged hotfix, the wrong train, a counter that skips, a range with nothing
 # releasable in it, any target below the minimum bump, and a graduation whose
-# tree is not its last candidate's. Nothing here second-guesses it; nothing has
-# been written yet either.
+# tree is not its last candidate's (CHANGELOG.md aside). Nothing here
+# second-guesses it; nothing has been written yet either.
 if ! VALIDATION=$(pnpm exec tsx tools/scripts/check-release-train.ts --validate "$TAG"); then
   echo "" >&2
   echo "   Nothing was written." >&2
@@ -256,7 +256,8 @@ cat <<EOF
 
   Tag from: $ORIGIN_HINT.
   The tree above already claims $VERSION. \`.husky/pre-push\` re-checks the
-  pushed object with the same checker, and release.yml checks the tagged tree
-  again before any image is built — that run is the authoritative one.
+  pushed object with the same checker — notes and, for a graduation, the last
+  candidate's tree — and release.yml checks the tagged tree again before any
+  image is built — that run is the authoritative one.
 ──────────────────────────────────────────────────────────
 EOF

@@ -33,24 +33,30 @@
  * candidate: `CHANGELOG.md` has exactly one `## [<version>]` heading, optionally
  * dated, and its section carries at least one `- ` entry.
  *
- * That is the whole contract, and it used to be half of one. The other half
- * required every governed `package.json` to declare the same version, which was
- * a second spelling of the release identity maintained by a writer script. The
- * git tag is now the only identity: no manifest carries a version, so there is
- * nothing left to compare and nothing left to drift. What remains is the one
- * claim a tree can still make about the tag that publishes it — that it ships
- * release notes for it.
+ * That is the whole release-notes contract, and it used to be half of one. The
+ * other half required every governed `package.json` to declare the same
+ * version, which was a second spelling of the release identity maintained by a
+ * writer script. The git tag is now the only identity: no manifest carries a
+ * version, so there is nothing left to compare and nothing left to drift. What
+ * remains is the one claim a tree can still make about the tag that publishes
+ * it — that it ships release notes for it.
+ *
+ * For a stable tag that graduates a train, `--rev` also proves the tree is the
+ * highest candidate of that version unchanged, `CHANGELOG.md` aside
+ * (`checkGraduation`) — the same function `check-release-train.ts --validate`
+ * applies to HEAD at prepare time, re-asked of the commit the tag names.
  *
  * It is a fail-closed rejection. A release that is prepared correctly passes
- * unchanged; only a tree that does not claim its own tag is refused, and it is
- * refused before any image exists.
+ * unchanged; only a tree that does not claim its own tag, or a graduation that
+ * is not its last candidate unchanged, is refused — before any image exists.
  *
  * This gate is deliberately narrow, and worth saying plainly: a `## [X.Y.Z]`
  * heading with one bullet under it is something a person could type. It does
  * not prove the release was prepared, and it never did — the manifest half was
  * written by a script too. What proves the *number* is
  * `check-release-train.ts --validate`, at prepare time, and what proves the
- * *line* is the provenance gate.
+ * *line* is the provenance gate. What it does prove of a graduation's content
+ * — its last candidate, unchanged — holds whoever typed the heading.
  *
  * ## Reading one tree and no other
  *
@@ -69,6 +75,8 @@
  * Usage:
  *   tsx tools/scripts/check-release-tree.ts --tag v2.2.0-rc.1 --rev <revision>
  *   tsx tools/scripts/check-release-tree.ts --tag v2.2.0-rc.1 --worktree
+ *   (`--rev` with a stable tag also applies the graduation rule; `--worktree`
+ *   never does — no commit exists yet for a tag to name)
  *   (optional: --repo <path>, defaults to the current directory)
  *
  * Run by `release.yml` after the provenance gate (authoritative), by
@@ -81,7 +89,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { parseReleaseTag } from './check-release-provenance';
+import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
 
 /** A rejection. Distinct type so the tests assert on the gate, not on any throw. */
 export class ReleaseTreeError extends Error {}
@@ -326,6 +334,93 @@ export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
 }
 
 /**
+ * A graduation publishes its last candidate unchanged: the tree a stable tag
+ * names must be the tree of the highest candidate of the same version,
+ * `CHANGELOG.md` aside — the notes commit adds the stable section there and
+ * nothing else. The images are rebuilt from the tag, so any other difference
+ * would reach `latest` without ever having shipped in a candidate.
+ *
+ * Returns the candidate compared with, or `null` when the tag graduates
+ * nothing: a candidate itself, or a stable version no candidate carries (a
+ * stable-line hotfix). Only the tag list decides that `null`; every git failure
+ * propagates as a rejection, because "nothing found" must not be how a missing
+ * object or a missing repository reads.
+ *
+ * The candidates are named by the version, so the question needs no
+ * reachability and no git-cliff, and every candidate of the version counts.
+ * `check-release-train.ts --validate` asks the same function about HEAD before
+ * the notes exist; this module asks it about the tagged commit, at push and in
+ * `release.yml`. It is not part of `checkReleaseTree`: that contract also holds
+ * for a working state (the liveness test reads the real HEAD on every push),
+ * and this one only for the commit a tag names.
+ *
+ * `diff-tree` is plumbing: no porcelain diff configuration applies to it, and a
+ * mode-only change or a gitlink is listed like any other path.
+ */
+export function checkGraduation(
+  repo: string,
+  tag: string,
+  rev: string
+): string | null {
+  if (rev.startsWith('-')) {
+    throw new ReleaseTreeError(
+      `"${rev}" cannot be a revision: a leading "-" would be read by git as an option.`
+    );
+  }
+  const release = parseReleaseTag(tag);
+  if (release === null) {
+    throw new ReleaseTreeError(`"${tag}" is not a release tag.`);
+  }
+  if (release.channel !== 'stable') return null;
+
+  let latest: ReleaseTag | null = null;
+  // `git tag --list` sorts `rc.10` before `rc.9`, so the counter decides.
+  for (const name of git(repo, [
+    'tag',
+    '--list',
+    `v${release.version}-rc.*`,
+  ]).split('\n')) {
+    const candidate = parseReleaseTag(name.trim());
+    if (candidate?.channel !== 'rc') continue;
+    if (
+      `${candidate.major}.${candidate.minor}.${candidate.patch}` !==
+      release.version
+    ) {
+      continue;
+    }
+    if (latest === null || (candidate.rc ?? 0) > (latest.rc ?? 0)) {
+      latest = candidate;
+    }
+  }
+  if (latest === null) return null;
+
+  const last = `v${latest.version}`;
+  const changed = git(repo, [
+    'diff-tree',
+    '-r',
+    '-z',
+    '--name-only',
+    '--no-renames',
+    `refs/tags/${last}^{tree}`,
+    `${rev}^{tree}`,
+  ])
+    .split('\0')
+    .filter(path => path !== '' && path !== CHANGELOG);
+
+  if (changed.length > 0) {
+    throw new ReleaseTreeError(
+      `${tag} is not ${last} unchanged: ${changed.length} path(s) differ ` +
+        `beyond ${CHANGELOG}, first ${changed[0]} (\`git diff --stat ${last} ` +
+        `${rev}\`). A graduation publishes its last candidate unchanged: carry ` +
+        'the change through the train in a releasable commit — one already on ' +
+        'main by `git merge --no-ff main` into the train — cut ' +
+        `v${release.version}-rc.${(latest.rc ?? 0) + 1}, then graduate.`
+    );
+  }
+  return last;
+}
+
+/**
  * A flag's value, or `undefined` when the flag is absent. "Present but empty"
  * is not a third state: `--rev ""` and `--rev --repo x` are both a flag whose
  * value was not supplied, and both reject here rather than reaching a checker
@@ -384,11 +479,15 @@ function main(): void {
     tree: rev === undefined ? worktreeTree(repo) : revTree(repo, rev),
     version: parsed.version,
   });
+  // Only a committed tree can be the tree a tag names; `--worktree` runs after
+  // the validator has already proved HEAD and before any commit exists.
+  const graduated = rev === undefined ? null : checkGraduation(repo, tag, rev);
 
   console.log(
     `[release-tree] ok — ${tag} is claimed by ${result.source}: ` +
       `CHANGELOG section for ${result.version} with ${result.entries} ` +
-      `${result.entries === 1 ? 'entry' : 'entries'}.`
+      `${result.entries === 1 ? 'entry' : 'entries'}` +
+      `${graduated === null ? '' : `; it graduates ${graduated} unchanged`}.`
   );
 }
 
