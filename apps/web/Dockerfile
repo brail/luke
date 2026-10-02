@@ -20,8 +20,9 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ARG INTERNAL_API_URL=http://api:3001
 ENV INTERNAL_API_URL=$INTERNAL_API_URL
 
-# APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
-# Falls back to "dev" when building locally without a tag.
+# APP_VERSION is injected at build time by release.yml from the provenance gate's normalized tag
+# (e.g. 3.0.0-rc.1). Falls back to the "dev" display sentinel when building without it, as CI's web
+# build does; the web only labels the UI with it.
 ARG APP_VERSION=dev
 ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 

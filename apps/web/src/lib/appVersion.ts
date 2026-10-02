@@ -1,3 +1,5 @@
+import { versionLabel } from '@luke/core';
+
 /**
  * The release identity to display, formatted once, in one place.
  *
@@ -14,13 +16,13 @@
  * else, because that literal form is what Next replaces at build time; a dynamic lookup would not
  * be inlined and would read as absent in the browser.
  *
- * The display `v` is applied here and only here. It used to be prepended at each call site, and
- * the API side of that same habit is what shipped `Luke - vv2.1.4` in every exported xlsx once the
- * build argument itself carried a `v`.
+ * The display `v` is applied through `versionLabel` (`@luke/core`), which the API's xlsx exports
+ * share. It used to be prepended at each call site, and the API side of that same habit is what
+ * shipped `Luke - vv2.1.4` in every exported xlsx once the build argument itself carried a `v`.
  *
  * The rule: prefix `v` only when the value starts with a digit. That covers every value this
  * repository can produce, and it is what keeps the `dev` sentinel — the `ARG APP_VERSION=dev`
- * default of both Dockerfiles, and the CI web build — from rendering as `vdev`.
+ * default of the web Dockerfile, and the CI web build — from rendering as `vdev`.
  *
  * | NEXT_PUBLIC_APP_VERSION | returns        |
  * | ----------------------- | -------------- |
@@ -33,7 +35,7 @@ export function appVersionLabel(): string | null {
   if (raw === undefined) return null;
   const version = raw.trim();
   if (version === '') return null;
-  return /^\d/.test(version) ? `v${version}` : version;
+  return versionLabel(version);
 }
 
 /**

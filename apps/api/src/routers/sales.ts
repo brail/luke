@@ -13,6 +13,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { versionLabel } from '@luke/core';
 import type { Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
@@ -295,7 +296,7 @@ const portafoglioRouter = router({
         title: 'Analisi Vendite',
         subject: `${brand.name} - ${season.code}`,
         author: authorName,
-        manager: `Luke - v${appVersion()}`,
+        manager: `Luke - ${versionLabel(appVersion())}`,
       });
       const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
       const filterSuffix = input.customerCode
@@ -498,7 +499,7 @@ const kimoRouter = router({
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
-        manager: `Luke - v${appVersion()}`,
+        manager: `Luke - ${versionLabel(appVersion())}`,
       });
 
       const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));

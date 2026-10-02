@@ -73,3 +73,15 @@ test('next.config.js does not read npm_package_version, which no container sets'
       'Docker build only sets it because pnpm runs the build script'
   );
 });
+
+test('the API Dockerfile gives APP_VERSION no default, so an untagged image carries no release identity', () => {
+  // The API persists its release identity in every backup (`releaseIdentity()` in
+  // `apps/api/src/lib/appVersion.ts`), where `null` means "no release". A default here would stamp
+  // every image built without the argument with a release name nobody released; unset, the `ENV`
+  // is empty and the reader returns `null`. The web Dockerfile keeps its `dev` default on purpose:
+  // it only labels the UI, and CI's web build feeds the same sentinel.
+  const dockerfile = readFileSync(join(REPO_ROOT, 'apps/api/Dockerfile'), 'utf-8');
+  const args = dockerfile.match(/^ARG APP_VERSION\b.*$/gm) ?? [];
+  assert.deepEqual(args, ['ARG APP_VERSION'], `expected exactly one bare \`ARG APP_VERSION\`, got: ${args.join(', ') || '(none)'}`);
+  assert.match(dockerfile, /^ENV APP_VERSION=\$APP_VERSION$/m);
+});

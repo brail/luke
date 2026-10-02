@@ -38,8 +38,10 @@ ENV NODE_ENV=production
 # Version pinned to 16 to match the `postgres:16-alpine` service in docker-compose.prod.yml.
 RUN apk add --no-cache postgresql16-client
 
-# APP_VERSION is injected at build time from the git tag (e.g. v1.2.3).
-ARG APP_VERSION=dev
+# APP_VERSION is the release identity, injected at build time by release.yml from the provenance
+# gate's normalized tag (e.g. 3.0.0-rc.1). No default on purpose: the API persists it in every
+# backup, so an image built without it must carry none (empty → null), not a made-up "dev".
+ARG APP_VERSION
 ENV APP_VERSION=$APP_VERSION
 
 # Workspace manifests (needed for pnpm resolution at runtime)

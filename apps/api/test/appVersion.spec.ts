@@ -23,9 +23,11 @@ const read = (...segments: string[]) => readFileSync(join(SRC, ...segments), 'ut
 
 /** The one shape the xlsx `manager` property may take, asserted against the source. */
 function assert_manager(source: string) {
-  const occurrences = source.match(/manager: `Luke - v\$\{appVersion\(\)\}`,/g) ?? [];
+  const occurrences = source.match(/manager: `Luke - \$\{versionLabel\(appVersion\(\)\)\}`,/g) ?? [];
   expect(occurrences).toHaveLength(2);
-  expect(source).not.toMatch(/Luke - vv/);
+  // A literal `v` in the template is what printed `Luke - vdev` without a release identity, and
+  // `Luke - vv2.1.4` once the build argument carried one.
+  expect(source).not.toMatch(/Luke - v/);
   expect(source).not.toContain('APP_VERSION');
 }
 
@@ -100,11 +102,11 @@ describe('wiring contracts over the production sources (no route or workbook is 
     expect(server.match(/version: appVersion\(\),/g)).toHaveLength(2);
   });
 
-  it('both xlsx call sites use the single-v template', () => {
+  it('both xlsx call sites label the version through the shared display rule', () => {
     // A wiring contract, not a workbook test: it reads the two literals in `sales.ts` and proves
-    // they are the single-`v` template fed by `appVersion()`. It does not build a workbook and does
-    // not inspect one — a second `v` added back here is the exact regression that shipped
-    // `Luke - vv2.1.4`, and reading the source is what sees it.
+    // they format `appVersion()` with `versionLabel` (one `v`, and only before a digit). It does not
+    // build a workbook and does not inspect one — a literal `v` added back here is the exact
+    // regression that shipped `Luke - vv2.1.4`, and reading the source is what sees it.
     assert_manager(read('routers', 'sales.ts'));
   });
 

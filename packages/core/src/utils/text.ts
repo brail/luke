@@ -7,3 +7,12 @@ export function initials(name: string, maxWords = 3): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return words.slice(0, maxWords).map(w => w[0]!.toUpperCase()).join('');
 }
+
+/**
+ * The display form of a release identity: one `v` before a version number, none before anything
+ * else — so the `dev` sentinel never renders as `vdev`, and a value already carrying a `v` never
+ * gets a second one.
+ */
+export function versionLabel(version: string): string {
+  return /^\d/.test(version) ? `v${version}` : version;
+}
