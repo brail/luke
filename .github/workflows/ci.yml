@@ -245,6 +245,42 @@ jobs:
             --to-schema ./prisma \
             --exit-code
 
+  # Builds both runtime images exactly as release.yml does, without pushing, and
+  # proves what each contains from inside it (tools/scripts/check-image-runtime.ts):
+  # the API's store holds its production closure and nothing else, and its native
+  # addons run; the web image holds only what Next traced, and its server answers.
+  # Until this job, the first build of a Dockerfile change was a release tag, and
+  # nothing ever looked inside an image. A matrix without fail-fast, so each image
+  # fails on its own evidence.
+  images:
+    name: Image (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/${{ matrix.image }}/Dockerfile
+          load: true
+          tags: luke-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+
+      - name: Image size
+        run: docker image ls luke-${{ matrix.image }}:ci
+
+      - name: Check runtime contents
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          luke-${{ matrix.image }}:ci /check/check-image-runtime.ts ${{ matrix.image }}
+
   # The aggregate gate: the one context `main`'s ruleset requires in place of
   # the individual job names, a list it could not keep in step with this file.
   # Its `needs` is what lets one name stand for all of them, and
@@ -267,7 +303,7 @@ jobs:
   # it and exit 0.
   gate:
     name: CI gate
-    needs: [checks, browser, integration, migrations]
+    needs: [checks, browser, integration, migrations, images]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

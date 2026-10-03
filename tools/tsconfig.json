@@ -22,7 +22,12 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    // `check-image-runtime.ts` runs inside the images under plain Node, which
+    // strips types but resolves no extensionless import, so it names its one
+    // relative import by the real `.ts` file. Every other script keeps the
+    // extensionless form tsx resolves.
+    "allowImportingTsExtensions": true
   },
   "include": ["**/*.ts"],
   "exclude": ["node_modules"]
