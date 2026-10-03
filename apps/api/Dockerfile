@@ -29,6 +29,29 @@ RUN pnpm --filter @luke/nav build
 RUN pnpm --filter @luke/calendar build
 RUN pnpm --filter @luke/api build
 
+# ── Production dependencies ───────────────────────────────────────────────────
+# The builder installed the whole workspace's toolchain — TypeScript, vitest,
+# ESLint and every advisory against them — and none of it runs here. This stage
+# installs again, into an empty tree, only @luke/api and the workspace packages
+# it depends on, production dependencies only: the same lockfile, served from the
+# store the builder filled.
+#
+# Two steps because pnpm runs the workspace root's own lifecycle scripts even
+# under `--filter`: `prepare` is husky and `postinstall` regenerates the Prisma
+# client, development steps whose tools are devDependencies and are absent
+# here. So the install runs no script at all, and `pnpm rebuild` then runs the
+# dependencies' build scripts alone — argon2, Prisma's engines, protobufjs —
+# under `allowBuilds`.
+#
+# The runner takes every `node_modules` from here and nothing else from here.
+# tools/scripts/check-image-runtime.ts, run by CI's `images` job and by the
+# release before each push, fails on any store entry the production closure
+# does not reach.
+FROM builder AS deps-prod
+RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules \
+ && pnpm install --frozen-lockfile --prod --prefer-offline --ignore-scripts --filter '@luke/api...' \
+ && pnpm rebuild --filter '@luke/api...'
+
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM base AS runner
 WORKDIR /app
@@ -47,13 +70,13 @@ ENV APP_VERSION=$APP_VERSION
 # Workspace manifests (needed for pnpm resolution at runtime)
 COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
 
-# Root node_modules (shared deps + pnpm virtual store)
-COPY --from=builder /app/node_modules ./node_modules
+# Root node_modules (shared deps + pnpm virtual store), production only
+COPY --from=deps-prod /app/node_modules ./node_modules
 
 # @luke/core — only the compiled dist is needed at runtime
 COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
 COPY --from=builder /app/packages/core/dist          ./packages/core/dist
-COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
+COPY --from=deps-prod /app/packages/core/node_modules  ./packages/core/node_modules
 
 # @luke/db — the Prisma client, plus the schema and migrations `prisma migrate
 # deploy` reads at boot. `prisma.config.ts` is what points the CLI at both, and
@@ -62,24 +85,24 @@ COPY --from=builder /app/packages/db/package.json     ./packages/db/package.json
 COPY --from=builder /app/packages/db/dist             ./packages/db/dist
 COPY --from=builder /app/packages/db/prisma           ./packages/db/prisma
 COPY --from=builder /app/packages/db/prisma.config.ts ./packages/db/prisma.config.ts
-COPY --from=builder /app/packages/db/node_modules     ./packages/db/node_modules
+COPY --from=deps-prod /app/packages/db/node_modules     ./packages/db/node_modules
 
 # @luke/nav — NAV sync runtime
 COPY --from=builder /app/packages/nav/package.json ./packages/nav/package.json
 COPY --from=builder /app/packages/nav/dist          ./packages/nav/dist
-COPY --from=builder /app/packages/nav/node_modules  ./packages/nav/node_modules
+COPY --from=deps-prod /app/packages/nav/node_modules  ./packages/nav/node_modules
 
 # @luke/calendar — calendar export runtime
 COPY --from=builder /app/packages/calendar/package.json ./packages/calendar/package.json
 COPY --from=builder /app/packages/calendar/dist          ./packages/calendar/dist
-COPY --from=builder /app/packages/calendar/node_modules  ./packages/calendar/node_modules
+COPY --from=deps-prod /app/packages/calendar/node_modules  ./packages/calendar/node_modules
 
 # @luke/api — compiled output + the domain seed + runtime deps. The schema and
 # the migrations are @luke/db's now; `prisma/` here is the seed and its data.
 COPY --from=builder /app/apps/api/package.json    ./apps/api/package.json
 COPY --from=builder /app/apps/api/dist            ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma          ./apps/api/prisma
-COPY --from=builder /app/apps/api/node_modules    ./apps/api/node_modules
+COPY --from=deps-prod /app/apps/api/node_modules    ./apps/api/node_modules
 
 # Email templates (plain text — tsc does not copy non-TS files)
 COPY --from=builder /app/apps/api/src/templates   ./apps/api/dist/templates
