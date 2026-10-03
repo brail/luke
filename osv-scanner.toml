@@ -1,0 +1,8 @@
+# Every entry names one advisory, says why its code never runs in production, and
+# expires: past `ignoreUntil` the finding is reported again and the gate goes
+# red, so the decision is re-taken instead of forgotten.
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-11-03T00:00:00Z
+reason = "braces <=3.0.3 stack exhaustion on deeply nested patterns; no fixed version exists. Reached only via eslint-config-next -> @next/eslint-plugin-next -> fast-glob -> micromatch, a devDependency that globs the repo's own lint patterns and is never loaded at runtime (`pnpm why -r braces --prod` is empty). The images still carry it on disk: their runtime stages copy the builder's full node_modules."

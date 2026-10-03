@@ -32,14 +32,14 @@ evidence.
 
 ## Modes
 
-| Mode                        | Does                                                  | Writes |
-| --------------------------- | ----------------------------------------------------- | ------ |
-| _(empty)_                   | dependency review + platform summary (§1–§6)          | no     |
-| `platform`                  | platform integrity and architecture drift (§10)       | no     |
-| `apply [path]`              | execute a reviewed plan (§7)                          | yes    |
-| `security [path]`           | advisory-driven response (§9)                         | yes    |
-| `toolchain`                 | Node / pnpm / base image / Actions lifecycle (§8)     | yes    |
-| `evaluate <proposal>`       | technology decision assessment (§11)                  | no     |
+| Mode                  | Does                                              | Writes |
+| --------------------- | ------------------------------------------------- | ------ |
+| _(empty)_             | dependency review + platform summary (§1–§6)      | no     |
+| `platform`            | platform integrity and architecture drift (§10)   | no     |
+| `apply [path]`        | execute a reviewed plan (§7)                      | yes    |
+| `security [path]`     | advisory-driven response (§9)                     | yes    |
+| `toolchain`           | Node / pnpm / base image / Actions lifecycle (§8) | yes    |
+| `evaluate <proposal>` | technology decision assessment (§11)              | no     |
 
 **Invocation arguments:** $ARGUMENTS
 
@@ -111,7 +111,9 @@ Three things `pnpm outdated` will not tell you, and you must check by hand:
   exemption list — read it before concluding a package cannot be updated.
 - **Overrides that outrank the bump.** Anything in the `overrides` block of
   `pnpm-workspace.yaml` wins over `pnpm update`. Cross-check every advisory
-  finding against that block (§6).
+  finding against that block (§6), and against `osv-scanner.toml`: an entry
+  there turns a still-present advisory into a clean scan until it expires,
+  and hides its fixed version. Retire an entry as soon as one ships.
 
 Then read `lessons.md` (protocol §4) — its `## Dependencies` and
 `## CI / Security Gates` sections are direct inputs here.
@@ -357,17 +359,25 @@ the finding.
 
 1. `pnpm security:deps` (osv-scanner).
 2. For each finding: is it a direct dependency or transitive? `pnpm why <pkg>`.
-3. Direct → bump it. Transitive → an `overrides` range in `pnpm-workspace.yaml`
-   with the GHSA id and reason in a comment (§6 rules apply).
+3. Direct → bump it. Transitive → `pnpm update -r <pkg>` when its consumers'
+   ranges already admit the fix and the lockfile diff touches only that
+   package; otherwise an `overrides` range in `pnpm-workspace.yaml` with the
+   GHSA id and reason in a comment (§6 rules apply). No fixed version and
+   `pnpm why -r <pkg> --prod` empty → a time-limited entry in
+   `osv-scanner.toml`, as its header requires. No fixed version and code
+   that runs in production → the owner decides; never an ignore.
 4. Check the finding is not being _caused_ by an existing override.
 5. Re-run `pnpm security:deps` to confirm it is gone — the exit code, not a
-   reading of the diff.
+   reading of the diff. Exit 0 can come from a filter: read the
+   `Filtered … from output` line.
 6. Verify at the level the matrix demands. A security bump is still a bump:
    `603662a` was a hotfix, and it still needed proof.
 
 Note the branch rule: `.github/dependabot.yml` targets the default branch only,
 and a merged `develop-X.Y` is dead — never backport an advisory fix onto one
-(`lessons.md`, "Branch management").
+(`lessons.md`, "Branch management"). A fix on the train does not reach the
+`latest` images: when the advisory reaches production, ask the owner whether
+`main` gets a hotfix too (precedent `603662a`), and record the answer.
 
 ---
 
