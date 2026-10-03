@@ -145,7 +145,7 @@ export default function PricingPage() {
             brandId={brand.id}
             seasonId={season.id}
             onCreateSet={data =>
-              createMutation.mutate({
+              createMutation.mutateAsync({
                 brandId: brand.id,
                 seasonId: season.id,
                 data,

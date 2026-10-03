@@ -24,7 +24,8 @@ import { ParameterSetDialog } from './ParameterSetDialog';
 interface EmptyParameterStateProps {
   brandId: string;
   seasonId: string;
-  onCreateSet: (data: PricingParameterSetInput) => void;
+  /** Settles when the set is created or refused; a refusal is already toasted by the caller. */
+  onCreateSet: (data: PricingParameterSetInput) => Promise<unknown>;
   isLoading?: boolean;
 }
 
@@ -59,10 +60,12 @@ export function EmptyParameterState({
   const previousSeason = previousQuery.data?.season;
   const previousSets = previousQuery.data?.sets ?? [];
 
-  const handleCopyAndCreate = () => {
-    // Create every variant by copying from the previous season
-    for (const s of previousSets) {
-      onCreateSet({
+  const handleCopyAndCreate = async () => {
+    // Create every variant by copying from the previous season. Each one can be refused on its
+    // own (a name now taken, a value today's schema no longer accepts), so the summary counts
+    // what actually happened instead of announcing every variant as copied.
+    const results = await Promise.allSettled(
+      previousSets.map(s => onCreateSet({
         name: s.name,
         countryCode: s.countryCode,
         // The previous season sets already went through PricingParameterSetInputSchema
@@ -78,11 +81,17 @@ export function EmptyParameterState({
         tools: s.tools,
         retailMultiplier: s.retailMultiplier,
         optimalMargin: s.optimalMargin,
-      });
-    }
-    toast.success(
-      `${previousSets.length} variante${previousSets.length > 1 ? 'i' : ''} copiate da ${previousSeason?.code} ${previousSeason?.year}`
+      }))
     );
+    const copied = results.filter(r => r.status === 'fulfilled').length;
+    const from = `${previousSeason?.code} ${previousSeason?.year}`;
+    if (copied === previousSets.length) {
+      toast.success(`${copied} variant${copied === 1 ? 'e copiata' : 'i copiate'} da ${from}`);
+    } else {
+      toast.error(
+        `${copied} di ${previousSets.length} varianti copiate da ${from}: le altre sono state rifiutate`
+      );
+    }
     setIsCopyPreviewOpen(false);
   };
 
@@ -171,7 +180,8 @@ export function EmptyParameterState({
         onOpenChange={setIsCreateDialogOpen}
         mode="create"
         onSubmit={data => {
-          onCreateSet(data);
+          // A refusal is already toasted by the caller's mutation.
+          onCreateSet(data).catch(() => undefined);
           setIsCreateDialogOpen(false);
         }}
         isLoading={isLoading}
