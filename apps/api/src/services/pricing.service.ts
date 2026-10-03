@@ -5,7 +5,12 @@
 
 import { TRPCError } from '@trpc/server';
 
-import { calculateCompanyMultiplier, roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
+import {
+  calculateCompanyMultiplier,
+  landedCostBreakdown,
+  roundRetailPrice,
+  type PricingParameterSetInput,
+} from '@luke/core';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 // ─────────────────────────────────────────────────────────────────
@@ -89,12 +94,8 @@ export function calculateForward(
   params: CalcParams
 ): ForwardResult {
   const {
-    qualityControlPercent,
     transportInsuranceCost,
-    duty,
-    exchangeRate,
     italyAccessoryCosts,
-    tools,
     retailMultiplier,
     optimalMargin,
     purchaseCurrency,
@@ -103,19 +104,9 @@ export function calculateForward(
 
   const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
 
-  // Step 1–2: QC + tools
-  const qualityControlCost = purchasePrice * (qualityControlPercent / 100);
-  const priceWithQC = purchasePrice + qualityControlCost + tools;
-
-  // Step 3: Transport + insurance
-  const priceWithTransport = priceWithQC + transportInsuranceCost;
-
-  // Step 4–5: Duty
-  const dutyCost = priceWithTransport * (duty / 100);
-  const priceWithDuty = priceWithTransport + dutyCost;
-
-  // Step 6: Currency conversion + Italy costs
-  const landedCost = priceWithDuty / exchangeRate + italyAccessoryCosts;
+  // Steps 1–6: QC + tools, transport + insurance, duty, currency conversion + Italy costs.
+  const { qualityControlCost, priceWithQC, priceWithTransport, dutyCost, priceWithDuty, landedCost } =
+    landedCostBreakdown(purchasePrice, params);
 
   // Step 7–9: Multipliers and rounding
   const wholesalePrice = landedCost * companyMultiplier;
@@ -227,15 +218,8 @@ export function calculateMarginOnly(
 ): MarginResult {
   const companyMultiplier = calculateCompanyMultiplier(params.optimalMargin);
 
-  // Calculate landed cost from the purchase price (forward up to landedCost)
-  const qualityControlCost =
-    purchasePrice * (params.qualityControlPercent / 100);
-  const priceWithQC = purchasePrice + qualityControlCost + params.tools;
-  const priceWithTransport = priceWithQC + params.transportInsuranceCost;
-  const dutyCost = priceWithTransport * (params.duty / 100);
-  const priceWithDuty = priceWithTransport + dutyCost;
-  const landedCost =
-    priceWithDuty / params.exchangeRate + params.italyAccessoryCosts;
+  // Landed cost from the purchase price (forward up to landedCost)
+  const { landedCost } = landedCostBreakdown(purchasePrice, params);
 
   // Calculate wholesale from the retail price (inverse first step)
   const wholesalePrice = retailPrice / params.retailMultiplier;

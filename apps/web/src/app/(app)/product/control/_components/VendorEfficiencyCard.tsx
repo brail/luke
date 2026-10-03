@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, XAxis, YAxis } from 'recharts';
 
+import { classifyMargin } from '@luke/core';
+
 import {
   Card,
   CardContent,
@@ -18,7 +20,6 @@ import {
 } from '../../../../../components/ui/chart';
 import {
   MARGIN_STATUS_TEXT_CLASS,
-  computeMarginStatus,
   computeWeightedMargin,
   getReferenceOptimalMargin,
   groupRowsByVendor,
@@ -63,7 +64,7 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
           sku,
           efficiency: sku > 0 ? Math.round((qty / sku) * 100) / 100 : 0,
           margin,
-          marginStatus: margin !== null ? computeMarginStatus(margin * 100, referenceOptimalMargin) : null,
+          marginStatus: margin !== null ? classifyMargin(margin * 100, referenceOptimalMargin) : null,
         };
       })
       .filter(v => v.sku > 0)

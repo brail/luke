@@ -2,6 +2,8 @@
 
 import { useMemo } from 'react';
 
+import { classifyMargin } from '@luke/core';
+
 import {
   Card,
   CardContent,
@@ -13,7 +15,6 @@ import { trpc } from '../../../../../lib/trpc';
 import {
   MARGIN_STATUS_TEXT_CLASS,
   UNASSIGNED_POSITIONING_KEY,
-  computeMarginStatus,
   computeWeightedMargin,
   getReferenceOptimalMargin,
 } from '../../_shared/pricingCalc';
@@ -56,7 +57,7 @@ export function PositioningMarginCrosstab({ rows, parameterSets }: CollectionSta
         label,
         count: groupRows.length,
         margin,
-        marginStatus: margin !== null ? computeMarginStatus(margin * 100, referenceOptimalMargin) : null,
+        marginStatus: margin !== null ? classifyMargin(margin * 100, referenceOptimalMargin) : null,
       };
     });
   }, [rows, parameterSets, positioningCatalog, referenceOptimalMargin]);

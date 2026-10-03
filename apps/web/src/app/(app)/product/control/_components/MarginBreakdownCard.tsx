@@ -18,7 +18,7 @@ const MISSING_COLOR = 'hsl(var(--muted-foreground) / 0.35)';
 /**
  * Requirement 2: how many rows have a margin on target (green), near the target
  * (yellow), below target (red), and how many do not have enough data yet
- * to compute it. Reuses computeRowMargin/computeMarginStatus verbatim — no
+ * to compute it. Reuses computeRowMargin/classifyMargin verbatim — no
  * new threshold, they stay those of PricingParameterSet.optimalMargin per row.
  */
 export function MarginBreakdownCard({ rows, parameterSets }: CollectionStatsCardProps) {

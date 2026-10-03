@@ -7,7 +7,13 @@
 import ExcelJS from 'exceljs';
 
 
-import { calcMaxSupplierCost, formatDateTimeWithTimezone } from '@luke/core';
+import {
+  calcMaxSupplierCost,
+  classifyMargin,
+  formatDateTimeWithTimezone,
+  landedCostBreakdown,
+  retailMargin,
+} from '@luke/core';
 import type { PrismaClient,
   Brand,
   CollectionLayoutRow,
@@ -74,22 +80,15 @@ function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
     return { ...empty, bt, targetMargin };
   }
 
-  const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC     = q.supplierQuotation + qc + ps.tools;
-  const withTransp = withQC + ps.transportInsuranceCost;
-  const withDuty   = withTransp * (1 + ps.duty / 100);
-  const lc         = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+  const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
 
   if (!q.retailPrice || q.retailPrice <= 0) {
     return { ...empty, bt, lc: Math.round(lc * 100) / 100, targetMargin };
   }
 
   const ws     = q.retailPrice / ps.retailMultiplier;
-  const margin = ((ws - lc) / ws) * 100;
-  const status: 'green' | 'yellow' | 'red' =
-    margin >= ps.optimalMargin ? 'green'
-    : margin >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  const margin = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  const status = classifyMargin(margin, ps.optimalMargin);
 
   return {
     bt:          Math.round(bt! * 100) / 100,

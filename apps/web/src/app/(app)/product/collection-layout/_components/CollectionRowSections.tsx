@@ -4,7 +4,14 @@ import { ImageIcon, Plus, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { calcMaxSupplierCost, formatPhaseLabel, type CollectionLayoutRowInput } from '@luke/core';
+import {
+  calcMaxSupplierCost,
+  classifyMargin,
+  formatPhaseLabel,
+  landedCostBreakdown,
+  retailMargin,
+  type CollectionLayoutRowInput,
+} from '@luke/core';
 
 import { NumberInput } from '../../../../../components/NumberInput';
 import { PermissionButton } from '../../../../../components/PermissionButton';
@@ -128,17 +135,10 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
     return { bt, lc: null, ws: null, marginPct: null, marginStatus: null, targetMargin: ps.optimalMargin };
   }
 
-  const qc = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC = q.supplierQuotation + qc + ps.tools;
-  const withTransport = withQC + ps.transportInsuranceCost;
-  const withDuty = withTransport * (1 + ps.duty / 100);
-  const lc = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+  const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
   const ws = q.retailPrice / ps.retailMultiplier;
-  const marginPct = ((ws - lc) / ws) * 100;
-  const marginStatus: 'green' | 'yellow' | 'red' =
-    marginPct >= ps.optimalMargin ? 'green'
-    : marginPct >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  const marginPct = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  const marginStatus = classifyMargin(marginPct, ps.optimalMargin);
   return {
     bt,
     lc: Math.round(lc * 100) / 100,

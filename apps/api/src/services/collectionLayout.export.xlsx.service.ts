@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 
 
 
+import { classifyMargin, retailMargin } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 import type { PrismaClient,
   CollectionLayout,
@@ -58,21 +59,14 @@ type QuotationMarginResult = {
   fillColor: string;
 };
 
-function computeQuotationMargin(q: QuotationWithParamSet): QuotationMarginResult | null {
+export function computeQuotationMargin(q: QuotationWithParamSet): QuotationMarginResult | null {
   if (!q.pricingParameterSet || !q.supplierQuotation || !q.retailPrice) return null;
   if (q.supplierQuotation <= 0 || q.retailPrice <= 0) return null;
   const ps = q.pricingParameterSet;
-  const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC     = q.supplierQuotation + qc + ps.tools;
-  const withTransp = withQC + ps.transportInsuranceCost;
-  const withDuty   = withTransp * (1 + ps.duty / 100);
-  const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-  const wholesale  = q.retailPrice / ps.retailMultiplier;
-  const pct        = Math.round(((wholesale - landed) / wholesale) * 10000) / 100;
-  const status: 'green' | 'yellow' | 'red' =
-    pct >= ps.optimalMargin ? 'green'
-    : pct >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  const margin = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  const pct    = Math.round(margin * 100) / 100;
+  // Classified unrounded, as on screen and in the PDF: the rounded figure is for display.
+  const status = classifyMargin(margin, ps.optimalMargin);
   const fillColor = status === 'green' ? 'C8E6C9' : status === 'yellow' ? 'FFF9C4' : 'FFCDD2';
   return { pct, status, fillColor };
 }

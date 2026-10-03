@@ -1,6 +1,7 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
+import { classifyMargin, retailMargin } from '@luke/core';
 
 /** Pricing parameter set as returned by the router. */
 export type PricingParameterSet =
@@ -15,18 +16,6 @@ export interface MarginComputeInput {
     sku?: number | null;
   }>;
   qtyForecast: number | null;
-}
-
-/** Same green/≥optimal / yellow/≥optimal-3 / red thresholds computeRowMargin uses per row —
- * exported so aggregate views (per-vendor, per-positioning) can classify a plain margin number
- * against a reference optimalMargin without re-deriving the thresholds. */
-export function computeMarginStatus(
-  marginPct: number,
-  optimalMargin: number
-): 'green' | 'yellow' | 'red' {
-  if (marginPct >= optimalMargin) return 'green';
-  if (marginPct >= optimalMargin - 3) return 'yellow';
-  return 'red';
 }
 
 /** SKU-weighted average of `value` across items that have a positive `sku`; arithmetic mean
@@ -64,20 +53,14 @@ export function computeRowMargin(
     const ps = parameterSets.find(p => p.id === q.pricingParameterSetId);
     if (!ps) continue;
 
-    const qc = q.supplierQuotation * (ps.qualityControlPercent / 100);
-    const withQC = q.supplierQuotation + qc + ps.tools;
-    const withTransport = withQC + ps.transportInsuranceCost;
-    const withDuty = withTransport * (1 + ps.duty / 100);
-    const landed = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-    const wholesale = q.retailPrice / ps.retailMultiplier;
-    computed.push({ value: (wholesale - landed) / wholesale, sku: q.sku ?? null });
+    computed.push({ value: retailMargin(q.supplierQuotation, q.retailPrice, ps), sku: q.sku ?? null });
     refOptimalMargin = ps.optimalMargin;
   }
 
   if (computed.length === 0) return null;
 
   const avg = skuWeightedAverage(computed);
-  const marginStatus = computeMarginStatus(avg * 100, refOptimalMargin);
+  const marginStatus = classifyMargin(avg * 100, refOptimalMargin);
 
   return {
     margin: Math.round(avg * 10000) / 10000,
