@@ -65,6 +65,75 @@ export function retailMargin(
   return (wholesale - landedCostBreakdown(purchasePrice, ps).landedCost) / wholesale;
 }
 
+/** Every value of forward mode, unrounded: the landed-cost chain, then the two multipliers. */
+export interface ForwardBreakdown extends LandedCostBreakdown {
+  /** `calculateCompanyMultiplier(optimalMargin)`, rounded to 2 decimals as every mode uses it. */
+  companyMultiplier: number;
+  wholesalePrice: number;
+  retailPriceRaw: number;
+  /** (wholesale − landed) / wholesale: the target margin, give or take the multiplier's rounding. */
+  companyMargin: number;
+}
+
+/** The retail price a purchase price reaches at the target margin, every step (forward mode). */
+export function priceForward(purchasePrice: number, ps: InverseCalcParams): ForwardBreakdown {
+  const breakdown = landedCostBreakdown(purchasePrice, ps);
+  const companyMultiplier = calculateCompanyMultiplier(ps.optimalMargin);
+  const wholesalePrice = breakdown.landedCost * companyMultiplier;
+  return {
+    ...breakdown,
+    companyMultiplier,
+    wholesalePrice,
+    retailPriceRaw: wholesalePrice * ps.retailMultiplier,
+    companyMargin: (wholesalePrice - breakdown.landedCost) / wholesalePrice,
+  };
+}
+
+/** Every value of inverse mode, unrounded. `dutyCost` is in the selling currency here. */
+export interface InverseBreakdown {
+  companyMultiplier: number;
+  wholesalePrice: number;
+  landedCost: number;
+  priceWithoutAccessories: number;
+  priceWithoutDuty: number;
+  dutyCost: number;
+  priceWithoutTransport: number;
+  qualityControlCost: number;
+  purchasePriceRaw: number;
+  companyMargin: number;
+}
+
+/**
+ * The largest purchase price a retail price allows at the target margin, every step (inverse
+ * mode): the forward chain undone — the two multipliers, the Italy costs, the duty (still in the
+ * selling currency), the exchange and the transport, then the tools and the quality control. Tools
+ * come out before QC is divided away: QC is a percentage of the purchase price alone.
+ *
+ * `priceForward` and this function must stay each other's inverse; a full-chain round-trip test pins
+ * it.
+ */
+export function priceInverse(retailPrice: number, ps: InverseCalcParams): InverseBreakdown {
+  const companyMultiplier = calculateCompanyMultiplier(ps.optimalMargin);
+  const wholesalePrice = retailPrice / ps.retailMultiplier;
+  const landedCost = wholesalePrice / companyMultiplier;
+  const priceWithoutAccessories = landedCost - ps.italyAccessoryCosts;
+  const priceWithoutDuty = priceWithoutAccessories / (1 + ps.duty / 100);
+  const priceWithoutTransport = priceWithoutDuty * ps.exchangeRate - ps.transportInsuranceCost;
+  const purchasePriceRaw = (priceWithoutTransport - ps.tools) / (1 + ps.qualityControlPercent / 100);
+  return {
+    companyMultiplier,
+    wholesalePrice,
+    landedCost,
+    priceWithoutAccessories,
+    priceWithoutDuty,
+    dutyCost: priceWithoutAccessories - priceWithoutDuty,
+    priceWithoutTransport,
+    qualityControlCost: purchasePriceRaw * (ps.qualityControlPercent / 100),
+    purchasePriceRaw,
+    companyMargin: (wholesalePrice - landedCost) / wholesalePrice,
+  };
+}
+
 /** How a margin compares with its target. */
 export type MarginStatus = 'green' | 'yellow' | 'red';
 

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
+  calculateCompanyMultiplier,
   PricingParameterSetInputSchema,
   type PricingParameterSetInput,
   PRICING_CURRENCIES,
@@ -89,11 +90,11 @@ export function ParameterSetDialog({
     }
   }, [open, initialData, form]);
 
-  // Compute companyMultiplier live
+  // Compute companyMultiplier live; 0 while the margin being typed is out of range.
   const optimalMargin = form.watch('optimalMargin');
   const companyMultiplier =
     optimalMargin !== undefined && optimalMargin > 0 && optimalMargin < 100
-      ? Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100
+      ? calculateCompanyMultiplier(optimalMargin)
       : 0;
 
   return (

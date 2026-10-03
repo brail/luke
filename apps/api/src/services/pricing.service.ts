@@ -8,6 +8,9 @@ import { TRPCError } from '@trpc/server';
 import {
   calculateCompanyMultiplier,
   landedCostBreakdown,
+  priceForward,
+  priceInverse,
+  retailMargin,
   roundRetailPrice,
   type PricingParameterSetInput,
 } from '@luke/core';
@@ -85,7 +88,8 @@ export interface MarginResult {
 
 /**
  * Forward calculation: given a purchase price, computes the retail price through
- * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail.
+ * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail
+ * (`priceForward`).
  *
  * @returns Breakdown of every intermediate step plus the rounded retail price.
  */
@@ -93,53 +97,32 @@ export function calculateForward(
   purchasePrice: number,
   params: CalcParams
 ): ForwardResult {
-  const {
-    transportInsuranceCost,
-    italyAccessoryCosts,
-    retailMultiplier,
-    optimalMargin,
-    purchaseCurrency,
-    sellingCurrency,
-  } = params;
-
-  const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
-
-  // Steps 1–6: QC + tools, transport + insurance, duty, currency conversion + Italy costs.
-  const { qualityControlCost, priceWithQC, priceWithTransport, dutyCost, priceWithDuty, landedCost } =
-    landedCostBreakdown(purchasePrice, params);
-
-  // Step 7–9: Multipliers and rounding
-  const wholesalePrice = landedCost * companyMultiplier;
-  const retailPriceRaw = wholesalePrice * retailMultiplier;
-  const retailPrice = roundRetailPrice(retailPriceRaw);
-
-  // Step 10: Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
+  const f = priceForward(purchasePrice, params);
 
   return {
     mode: 'forward',
     purchasePrice,
-    qualityControlCost: Math.round(qualityControlCost * 100) / 100,
-    priceWithQC: Math.round(priceWithQC * 100) / 100,
-    transportInsuranceCost,
-    priceWithTransport: Math.round(priceWithTransport * 100) / 100,
-    dutyCost: Math.round(dutyCost * 100) / 100,
-    priceWithDuty: Math.round(priceWithDuty * 100) / 100,
-    italyAccessoryCosts,
-    landedCost: Math.round(landedCost * 100) / 100,
-    companyMultiplier,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    retailPriceRaw: Math.round(retailPriceRaw * 100) / 100,
-    retailPrice,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    purchaseCurrency,
-    sellingCurrency,
+    qualityControlCost: round2(f.qualityControlCost),
+    priceWithQC: round2(f.priceWithQC),
+    transportInsuranceCost: params.transportInsuranceCost,
+    priceWithTransport: round2(f.priceWithTransport),
+    dutyCost: round2(f.dutyCost),
+    priceWithDuty: round2(f.priceWithDuty),
+    italyAccessoryCosts: params.italyAccessoryCosts,
+    landedCost: round2(f.landedCost),
+    companyMultiplier: f.companyMultiplier,
+    wholesalePrice: round2(f.wholesalePrice),
+    retailPriceRaw: round2(f.retailPriceRaw),
+    retailPrice: roundRetailPrice(f.retailPriceRaw),
+    companyMargin: round4(f.companyMargin),
+    purchaseCurrency: params.purchaseCurrency,
+    sellingCurrency: params.sellingCurrency,
   };
 }
 
 /**
  * Inverse calculation: given a retail price, computes the maximum allowable purchase price
- * while maintaining the target margin. Reverses the forward chain step by step.
+ * while maintaining the target margin (`priceInverse`).
  *
  * @returns Breakdown of every intermediate step plus the floor-rounded purchase price.
  */
@@ -147,97 +130,58 @@ export function calculateInverse(
   retailPrice: number,
   params: CalcParams
 ): InverseResult {
-  const {
-    qualityControlPercent,
-    transportInsuranceCost,
-    duty,
-    exchangeRate,
-    italyAccessoryCosts,
-    tools,
-    retailMultiplier,
-    optimalMargin,
-    purchaseCurrency,
-    sellingCurrency,
-  } = params;
-
-  const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
-
-  // Step 1–2: Remove multipliers
-  const wholesalePrice = retailPrice / retailMultiplier;
-  const landedCost = wholesalePrice / companyMultiplier;
-
-  // Step 3: Remove Italy accessory costs
-  const priceWithoutAccessories = landedCost - italyAccessoryCosts;
-
-  // Step 4–5: Remove duty
-  const priceWithoutDuty = priceWithoutAccessories / (1 + duty / 100);
-  const dutyCost = priceWithoutAccessories - priceWithoutDuty;
-
-  // Step 6: Convert to purchase currency + remove transport
-  const priceWithoutTransport =
-    priceWithoutDuty * exchangeRate - transportInsuranceCost;
-
-  // Step 7–8: Remove tools, then QC — a percentage of the purchase price alone, as forward
-  // charges it (landedCostBreakdown), so tools must be out before it is divided away.
-  const purchasePriceRaw =
-    (priceWithoutTransport - tools) / (1 + qualityControlPercent / 100);
-  const qualityControlCost = purchasePriceRaw * (qualityControlPercent / 100);
-
-  // Step 9: Round down (floor), 1 decimal
-  const purchasePrice = Math.floor(purchasePriceRaw * 10) / 10;
-
-  // Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
+  const i = priceInverse(retailPrice, params);
 
   return {
     mode: 'inverse',
     retailPrice,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    landedCost: Math.round(landedCost * 100) / 100,
-    priceWithoutAccessories: Math.round(priceWithoutAccessories * 100) / 100,
-    dutyCost: Math.round(dutyCost * 100) / 100,
-    priceWithoutDuty: Math.round(priceWithoutDuty * 100) / 100,
-    priceWithoutTransport: Math.round(priceWithoutTransport * 100) / 100,
-    qualityControlCost: Math.round(qualityControlCost * 100) / 100,
-    purchasePriceRaw: Math.round(purchasePriceRaw * 100) / 100,
-    purchasePrice,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    purchaseCurrency,
-    sellingCurrency,
+    wholesalePrice: round2(i.wholesalePrice),
+    landedCost: round2(i.landedCost),
+    priceWithoutAccessories: round2(i.priceWithoutAccessories),
+    dutyCost: round2(i.dutyCost),
+    priceWithoutDuty: round2(i.priceWithoutDuty),
+    priceWithoutTransport: round2(i.priceWithoutTransport),
+    qualityControlCost: round2(i.qualityControlCost),
+    purchasePriceRaw: round2(i.purchasePriceRaw),
+    // Down, 1 decimal: rounding the maximum payable price up would erode the margin.
+    purchasePrice: Math.floor(i.purchasePriceRaw * 10) / 10,
+    companyMargin: round4(i.companyMargin),
+    purchaseCurrency: params.purchaseCurrency,
+    sellingCurrency: params.sellingCurrency,
   };
 }
 
 /**
  * Margin-only calculation: given both purchase and retail prices, computes the actual
- * company margin without rounding either input.
+ * company margin without rounding either input — the landed cost forward from the purchase
+ * price, the wholesale backward from the retail price.
  */
 export function calculateMarginOnly(
   purchasePrice: number,
   retailPrice: number,
   params: CalcParams
 ): MarginResult {
-  const companyMultiplier = calculateCompanyMultiplier(params.optimalMargin);
-
-  // Landed cost from the purchase price (forward up to landedCost)
-  const { landedCost } = landedCostBreakdown(purchasePrice, params);
-
-  // Calculate wholesale from the retail price (inverse first step)
-  const wholesalePrice = retailPrice / params.retailMultiplier;
-
-  // Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
-
   return {
     mode: 'margin',
     purchasePrice,
     retailPrice,
-    landedCost: Math.round(landedCost * 100) / 100,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    companyMultiplier,
+    landedCost: round2(landedCostBreakdown(purchasePrice, params).landedCost),
+    wholesalePrice: round2(priceInverse(retailPrice, params).wholesalePrice),
+    companyMargin: round4(retailMargin(purchasePrice, retailPrice, params)),
+    companyMultiplier: calculateCompanyMultiplier(params.optimalMargin),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
+}
+
+/** Presentation rounding of a money amount. */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Presentation rounding of a margin fraction (two decimals of a percentage). */
+function round4(value: number): number {
+  return Math.round(value * 10000) / 10000;
 }
 
 // ─────────────────────────────────────────────────────────────────

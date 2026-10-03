@@ -11,6 +11,7 @@ import {
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
+import { calculateCompanyMultiplier } from '@luke/core';
 import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -39,11 +40,6 @@ interface ParameterSetPanelProps {
   onDeleteSet: (id: string) => void;
   onSetDefault: (id: string) => void;
   isLoading?: boolean;
-}
-
-function calculateCompanyMultiplier(optimalMargin: number) {
-  if (optimalMargin <= 0 || optimalMargin >= 100) return 0;
-  return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
 }
 
 function buildRows(set: PricingParameterSet) {

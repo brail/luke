@@ -139,3 +139,118 @@ describe('calculateMarginOnly', () => {
     expect(result.companyMargin).toBeLessThan(0);
   });
 });
+
+/**
+ * Every field of the three modes, pinned at two margins whose company multipliers round in opposite
+ * directions (52 %: 2.0833 → 2.08; 65 %: 2.857 → 2.86). Captured before the engine moved to core:
+ * a refactor of the chain must leave every one of them where it is.
+ */
+describe('pricing modes, field by field', () => {
+  const GOLDEN = [
+    {
+      optimalMargin: 52,
+      forward: {
+        mode: 'forward',
+        purchasePrice: 137.5,
+        qualityControlCost: 2.75,
+        priceWithQC: 141.25,
+        transportInsuranceCost: 3,
+        priceWithTransport: 144.25,
+        dutyCost: 11.54,
+        priceWithDuty: 155.79,
+        italyAccessoryCosts: 2,
+        landedCost: 146.25,
+        companyMultiplier: 2.08,
+        wholesalePrice: 304.2,
+        retailPriceRaw: 790.92,
+        retailPrice: 789.9,
+        companyMargin: 0.5192,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+      inverse: {
+        mode: 'inverse',
+        retailPrice: 299.9,
+        wholesalePrice: 115.35,
+        landedCost: 55.45,
+        priceWithoutAccessories: 53.45,
+        dutyCost: 3.96,
+        priceWithoutDuty: 49.5,
+        priceWithoutTransport: 50.45,
+        qualityControlCost: 0.97,
+        purchasePriceRaw: 48.49,
+        purchasePrice: 48.4,
+        companyMargin: 0.5192,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+      margin: {
+        mode: 'margin',
+        purchasePrice: 137.5,
+        retailPrice: 299.9,
+        landedCost: 146.25,
+        wholesalePrice: 115.35,
+        companyMargin: -0.2679,
+        companyMultiplier: 2.08,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+    },
+    {
+      optimalMargin: 65,
+      forward: {
+        mode: 'forward',
+        purchasePrice: 137.5,
+        qualityControlCost: 2.75,
+        priceWithQC: 141.25,
+        transportInsuranceCost: 3,
+        priceWithTransport: 144.25,
+        dutyCost: 11.54,
+        priceWithDuty: 155.79,
+        italyAccessoryCosts: 2,
+        landedCost: 146.25,
+        companyMultiplier: 2.86,
+        wholesalePrice: 418.27,
+        retailPriceRaw: 1087.51,
+        retailPrice: 1089.9,
+        companyMargin: 0.6503,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+      inverse: {
+        mode: 'inverse',
+        retailPrice: 299.9,
+        wholesalePrice: 115.35,
+        landedCost: 40.33,
+        priceWithoutAccessories: 38.33,
+        dutyCost: 2.84,
+        priceWithoutDuty: 35.49,
+        priceWithoutTransport: 35.33,
+        qualityControlCost: 0.67,
+        purchasePriceRaw: 33.66,
+        purchasePrice: 33.6,
+        companyMargin: 0.6503,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+      margin: {
+        mode: 'margin',
+        purchasePrice: 137.5,
+        retailPrice: 299.9,
+        landedCost: 146.25,
+        wholesalePrice: 115.35,
+        companyMargin: -0.2679,
+        companyMultiplier: 2.86,
+        purchaseCurrency: 'CNY',
+        sellingCurrency: 'EUR',
+      },
+    },
+  ] as const;
+
+  it.each(GOLDEN)('at $optimalMargin % they stay where they were', ({ optimalMargin, forward, inverse, margin }) => {
+    const params = { ...PARAMS, optimalMargin };
+    expect(calculateForward(137.5, params)).toEqual(forward);
+    expect(calculateInverse(299.9, params)).toEqual(inverse);
+    expect(calculateMarginOnly(137.5, 299.9, params)).toEqual(margin);
+  });
+});

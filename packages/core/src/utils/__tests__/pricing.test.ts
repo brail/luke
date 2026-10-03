@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { calcMaxSupplierCost, classifyMargin, landedCostBreakdown, retailMargin } from '../pricing.js';
+import {
+  calcMaxSupplierCost,
+  classifyMargin,
+  landedCostBreakdown,
+  priceForward,
+  priceInverse,
+  retailMargin,
+} from '../pricing.js';
 
 /** Hand-computable: 10 + 5 % QC + 1 tools = 11.5; + 2 = 13.5; + 10 % duty = 14.85; ÷ 1.1 + 1.5 = 15. */
 const PS = {
@@ -49,6 +56,40 @@ describe('landedCostBreakdown', () => {
       const multiplicative = (withTransport * (1 + ps.duty / 100)) / ps.exchangeRate + ps.italyAccessoryCosts;
       const additive = landedCostBreakdown(price, ps).landedCost;
       expect(Math.abs(additive - multiplicative) / multiplicative).toBeLessThan(1e-12);
+    }
+  });
+});
+
+describe('priceForward and priceInverse', () => {
+  it('extends the landed-cost chain with the rounded company multiplier', () => {
+    const ps = { ...PS, optimalMargin: 52 };
+    const f = priceForward(10, ps);
+    expect(f).toMatchObject(landedCostBreakdown(10, ps));
+    expect(f.companyMultiplier).toBe(2.08);
+    expect(f.wholesalePrice).toBeCloseTo(15 * 2.08, 10);
+    expect(f.retailPriceRaw).toBeCloseTo(15 * 2.08 * 2.5, 10);
+  });
+
+  it('are each other\'s inverse over the whole chain, in order', () => {
+    // A per-step check would pin the pieces, not the order they compose in — and the defect
+    // fixed in R7i (QC divided away before the tools came out) was an order defect.
+    let seed = 42;
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    for (let i = 0; i < 2000; i++) {
+      const ps = {
+        qualityControlPercent: next() * 20,
+        tools: next() * 5,
+        transportInsuranceCost: next() * 10,
+        duty: next() * 30,
+        exchangeRate: 0.5 + next() * 1.5,
+        italyAccessoryCosts: next() * 5,
+        retailMultiplier: 1.5 + next() * 2,
+        optimalMargin: 30 + next() * 45,
+      };
+      const purchase = 1 + next() * 300;
+      const back = priceInverse(priceForward(purchase, ps).retailPriceRaw, ps);
+      expect(Math.abs(back.purchasePriceRaw - purchase) / purchase).toBeLessThan(1e-9);
+      expect(back.qualityControlCost).toBeCloseTo(purchase * (ps.qualityControlPercent / 100), 9);
     }
   });
 });
