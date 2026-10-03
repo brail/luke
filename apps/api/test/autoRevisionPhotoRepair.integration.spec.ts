@@ -161,8 +161,8 @@ describe('repairAutoRevisionPhotos', () => {
     expect(audits[0]?.metadata).toMatchObject({
       runId: 'run-1',
       reason: 'auto-revision-live-key',
-      oldKey: key,
-      newKey,
+      oldPictureKey: key,
+      newPictureKey: newKey,
       checksumSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
       rowRevisionIds: [expect.any(String)],
     });
