@@ -342,8 +342,11 @@ happened because 22 moved to Maintenance and 24 became Active LTS.
 **Do not run `docker build` locally as a validation step** — `lessons.md`
 "Never build the Docker image locally", and the OOM noise it produced is the
 reason. Verify base-image changes statically (image tag, `allowBuilds` and
-`overrides` in `pnpm-workspace.yaml`, target arch in the release workflow) and
-let `.github/workflows/release.yml` be the gate. If the user asks for a local
+`overrides` in `pnpm-workspace.yaml`, target arch in the release workflow),
+then push the change on a branch with a draft pull request and read CI's
+`images` job: it builds both images and checks them from inside
+(`tools/scripts/check-image-runtime.ts`). `.github/workflows/release.yml` runs
+the same check before it pushes. If the user asks for a local
 build anyway on a base-image major, that is their call — say what it can and
 cannot prove.
 

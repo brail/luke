@@ -103,3 +103,24 @@ crashing in production (hotfix v1.9.1).
 "Rate limit map consistency" (every `RATE_LIMIT_CONFIG` route has a policy default and a
 `RateLimitConfigSchema` field; unit suite, blocking in CI and pre-push). The ENV tier the
 lesson mentions was removed later (`805f4102`); the cascade is AppConfig → default.
+
+---
+
+## A runtime image copied the builder's full `node_modules` (2026-10-03)
+
+Both Dockerfiles ran a full `pnpm install` in the builder — every workspace,
+every devDependency — and the runner copied that tree. The API image held 1143
+store entries, 559 of them reached by no production dependency; the web image
+carried the whole workspace to run `next start`. It surfaced through an
+advisory, not a failure: GHSA-vfj7-8cjw-p6xm (`braces`, no fixed version) was
+reachable only through ESLint, yet it was on disk in both production images,
+and the `osv-scanner.toml` entry waiving it had to say so. Nothing could have
+caught it earlier: CI built no image, and the release pushed whatever it built.
+
+**Archived on arrival**: fully enforced from the day it was fixed.
+`tools/scripts/check-image-runtime.ts` runs inside each image — the API store
+against its production closure, the web tree against the list Next's traces
+produce — in CI's `images` job on every push and pull request, and in
+`release.yml` on the exact image before its tags are pushed. Decision and
+rejected alternatives:
+[ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md).

@@ -599,6 +599,14 @@ A tag on the wrong line, or a tag name outside those two shapes, fails before
 any image is built (`tools/scripts/check-release-provenance.ts`).
 **NEVER delete the `luke_api_data` volume** — the master key lives there.
 
+**A runtime image carries runtime dependencies only.** The API image takes its
+`node_modules` from a `--prod` install of `@luke/api`'s closure (stage
+`deps-prod`), the web image is Next's standalone output; neither copies the
+builder's tree. `tools/scripts/check-image-runtime.ts` proves it from inside
+each image — CI's `images` job on every push and pull request, and
+`release.yml` on the exact image before it pushes. Rationale:
+`docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md`.
+
 **The tagged tree must claim its own tag.** Immediately after the provenance
 gate, the same job runs `tools/scripts/check-release-tree.ts` on the exact
 commit the gate resolved (`steps.gate.outputs.sha`, passed through `env`), and
@@ -746,8 +754,8 @@ both aggregate-gate implementations as of `388ff776`, and the `main review gate`
 and `Security gate` — strict, active, no bypass actors — in place of the
 individual job names it used to list. `main`'s `CI gate` needs `checks`,
 `integration` and `migrations`, the jobs that branch actually has; the
-`develop-2.2` version additionally needs `browser`, and the two lists are meant
-to differ. `CI gate` reports on pull requests targeting `main` or the train;
+`develop-2.2` version additionally needs `browser` and `images`, and the two
+lists are meant to differ. `CI gate` reports on pull requests targeting `main` or the train;
 `Security gate` on pull requests targeting `main`. Because the workflows a pull
 request is judged by are the ones on its own branch, a change to either gate
 has to land on `main` itself before `main`'s ruleset can depend on the new
@@ -769,9 +777,10 @@ is judged by the version it is itself proposing.
   Docker container on the same dev machine reaches the local `pnpm dev` via
   the `host.docker.internal` alias and produces a "development mode
   disclosure" false positive that wastes triage time. RC and prod always run
-  `next build` + `next start` behind a reverse proxy (see
-  Dockerfile/docker-compose.*.yml) — only those hosts are valid scope for an
-  assessment.
+  a production `next build`, served by Next's standalone server
+  (`node apps/web/server.js`) behind a reverse proxy (see
+  `apps/web/Dockerfile`, docker-compose.*.yml) — only those hosts are valid
+  scope for an assessment.
 
 ## Commit Conventions
 

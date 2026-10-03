@@ -30,6 +30,7 @@
 | [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Superseded by [027](027-section-access-leaf-overrides-and-validated-defaults.md) |
 | [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Accepted |
 | [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
+| [028](028-runtime-images-carry-runtime-dependencies-only.md) | Runtime Images Carry Runtime Dependencies Only, and Prove It | Accepted |
 
-_Last updated: 2026-10-02_
+_Last updated: 2026-10-03_
 <!-- luke-docs:end:adr-index -->

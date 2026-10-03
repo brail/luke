@@ -156,9 +156,9 @@ lives in the procedure's input, not in `ctx`.
 same machine as the developer; `host.docker.internal` is the Docker Desktop
 alias that resolves to the host — it simply reached the local `pnpm dev`
 (`next dev`, dev mode by design), not a real environment. Verified:
-Dockerfile/every `docker-compose*.yml`/CI always build `next build` +
-`next start` with `NODE_ENV=production`; no real deploy path can ever serve
-dev mode.
+Dockerfile/every `docker-compose*.yml`/CI always run a production
+`next build` (today served by Next's standalone server, `node
+apps/web/server.js`); no real deploy path can ever serve dev mode.
 
 **Rule**: a security scan must **always** be pointed at a genuinely deployed
 hostname (`rc.luke.febos.local`, prod domain), never at
@@ -421,6 +421,8 @@ user.
 
 ## Release / Docker
 
+### A runtime image copied the builder's full `node_modules` — enforced by `tools/scripts/check-image-runtime.ts` (CI `images` job and `release.yml`, blocking). See `lessons-archive.md`.
+
 ### Never build the Docker image locally to "validate before commit"
 
 A hotfix plan (image resizing via `sharp`) included as a mandatory step a
@@ -434,12 +436,13 @@ Desktop (limited resources compared to the host machine) went OOM in the
 binary that was supposed to be checked — noise, not signal.
 
 **Rule**: don't propose/run a local `docker build` as a pre-commit
-validation step. The real build (and the only place where a dependency's
-native binary like `sharp` actually gets verified) is the CI pipeline
-triggered by the `vX.Y.Z` tag push. To de-risk native dependencies before
-commit, check statically instead (Dockerfile base image, `pnpm-workspace.yaml`
-overrides/allowBuilds, target arch in `docker/build-push-action`) and then
-trust CI as the real gate.
+validation step. The real build — and the place where a dependency's native
+binary like `sharp` actually gets verified — is GitHub: CI's `images` job
+builds and checks both images on every push and pull request
+([ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md)),
+and the `vX.Y.Z` tag runs the same check before publishing. To de-risk a
+Dockerfile change before it reaches the train, push it on a branch with a
+draft pull request and read that job.
 
 ## Branch management
 

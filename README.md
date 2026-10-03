@@ -407,7 +407,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 ## Workflow
 
 <!-- luke-docs:start:deployment -->
-The release flow is triggered by pushing a `vX.Y.Z` tag. A provenance gate proves the tag may publish from the line it was cut on, then GitHub Actions builds the Docker images and publishes them to `ghcr.io`; Portainer picks the new images up and redeploys the stack. Release-candidate artifacts come from the release train and publish `rc-latest`, stable artifacts come from `main` and publish `latest` plus the `X.Y` series tag. A push to a branch runs CI only — no image is ever built outside a tag.
+The release flow is triggered by pushing a `vX.Y.Z` tag. A provenance gate proves the tag may publish from the line it was cut on, then GitHub Actions builds the Docker images and publishes them to `ghcr.io`; Portainer picks the new images up and redeploys the stack. Release-candidate artifacts come from the release train and publish `rc-latest`, stable artifacts come from `main` and publish `latest` plus the `X.Y` series tag. A push to a branch runs CI only: CI builds both images to check what they contain ([ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md)) but publishes none — an image reaches `ghcr.io` only from a tag, after the same check passes on it.
 
 The `luke_api_data` volume holds the master key (`~/.luke/secret.key`) and must never be deleted. In production, `entrypoint.sh` runs `prisma migrate deploy` before the server starts.
 <!-- luke-docs:end:deployment -->
