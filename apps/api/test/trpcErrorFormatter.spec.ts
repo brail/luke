@@ -68,6 +68,10 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
       .input(z.object({ name: z.string().min(1, 'Nome obbligatorio') }))
       .query(() => 'ok'),
     coreSchema: t.procedure.input(BrandInputSchema).query(() => 'ok'),
+    // The shape most mutations take: the entity's fields under `data`.
+    nestedSchema: t.procedure
+      .input(z.object({ brandId: z.string(), data: BrandInputSchema }))
+      .query(() => 'ok'),
     invalidOutput: t.procedure
       .output(z.object({ n: z.number() }))
       // Deliberately breaks the declared output schema: that is the failure under test.
@@ -140,20 +144,27 @@ describe('trpcErrorFormatter in production', () => {
   it('tells which field each issue of a failed input parse belongs to', async () => {
     const error = await callError(await loadRouter('production'), 'coreSchema', { code: '', name: '' });
 
-    expect(error.data.zodError).toEqual({
-      formErrors: [],
-      fieldErrors: {
-        code: ['Codice obbligatorio', 'Solo lettere, numeri, _ e -'],
-        name: ['Nome obbligatorio'],
-      },
-    });
+    expect(error.data.zodIssues).toEqual([
+      { path: 'code', message: 'Codice obbligatorio' },
+      { path: 'code', message: 'Solo lettere, numeri, _ e -' },
+      { path: 'name', message: 'Nome obbligatorio' },
+    ]);
   });
 
-  it('carries no zodError on a 5xx with a Zod cause, nor on a 4xx without one', async () => {
+  it('keeps the full path of a nested field, not only its first segment', async () => {
+    const error = await callError(await loadRouter('production'), 'nestedSchema', {
+      brandId: 'b',
+      data: { code: 'OK', name: '' },
+    });
+
+    expect(error.data.zodIssues).toEqual([{ path: 'data.name', message: 'Nome obbligatorio' }]);
+  });
+
+  it('carries no zodIssues on a 5xx with a Zod cause, nor on a 4xx without one', async () => {
     const router = await loadRouter('production');
 
-    expect((await callError(router, 'invalidOutput')).data.zodError).toBeUndefined();
-    expect((await callError(router, 'CONFLICT')).data.zodError).toBeUndefined();
+    expect((await callError(router, 'invalidOutput')).data.zodIssues).toBeUndefined();
+    expect((await callError(router, 'CONFLICT')).data.zodIssues).toBeUndefined();
   });
 
   it('keeps an explicit message even when the cause is a ZodError', async () => {

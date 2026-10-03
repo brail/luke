@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { z, ZodError } from 'zod';
+import { ZodError } from 'zod';
 
 import { isProduction } from '@luke/core';
 import { Prisma } from '@luke/db';
@@ -169,21 +169,25 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
   });
 }
 
-/** A failed input parse, issue by issue: `formErrors` for the root, `fieldErrors` by key. */
-export interface ZodErrorData {
-  formErrors: string[];
-  fieldErrors: Record<string, string[] | undefined>;
+/**
+ * One issue of a failed input parse. `path` is the full dotted path (`data.retailMultiplier`), not
+ * its first segment: most mutations nest their fields, so `z.flattenError`'s first-segment
+ * grouping filed every issue under `data`. `''` for an issue on the input itself.
+ */
+export interface ZodIssueData {
+  path: string;
+  message: string;
 }
 
 /**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
  * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
  *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it;
- * - `zodError`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
- *   and this keeps which field each issue belongs to.
+ * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
+ *   and this keeps every issue with the field it belongs to.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
-  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number; zodError?: ZodErrorData };
+  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number; zodIssues?: ZodIssueData[] };
 }
 
 /**
@@ -212,9 +216,9 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
     : undefined;
   // A 4xx only: an output that breaks its schema is a 500 with a ZodError cause too, and its
   // paths describe the server's schema, not anything the caller sent.
-  const zodError: ZodErrorData | undefined =
+  const zodIssues: ZodIssueData[] | undefined =
     shape.data.httpStatus < 500 && error.cause instanceof ZodError
-      ? z.flattenError(error.cause)
+      ? error.cause.issues.map(issue => ({ path: issue.path.map(String).join('.'), message: issue.message }))
       : undefined;
 
   return {
@@ -223,7 +227,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
     data: {
       ...shape.data,
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
-      ...(zodError !== undefined && { zodError }),
+      ...(zodIssues !== undefined && { zodIssues }),
     },
   };
 };
