@@ -135,11 +135,10 @@ the table above is where that is written, and every other statement points here.
    files are read as text; never `prisma migrate/generate`, `pnpm db:*`, `pnpm test`.
 3. **Parallel agents: max 3** simultaneously.
 4. **Preserve markers** — never overwrite content outside the
-   `luke-docs:start/end` markers. Marker integrity, internal-link and supported
-   heading-fragment resolution, README-rooted reachability, workspace README
-   presence, owned index surfaces, and exact ADR index titles are **not**
-   verified here:
-   `tools/scripts/check-docs-integrity.ts` checks them, blocking in CI. It's
+   `luke-docs:start/end` markers. Nothing listed under "What it checks" in the
+   header of `tools/scripts/check-docs-integrity.ts` — markers, links,
+   fragments, reachability, ADR index and citations, among others — is
+   verified here: that checker owns it, blocking in CI. It's
    pure parsing, and parsing entrusted to an LLM is a level-4 control where a
    level-2 one is enough.
 5. **Dry-run** — in a write mode, `--dry-run` prints the plan without writing
@@ -199,7 +198,11 @@ the repository, and paths that do not satisfy the selected mode's rule. Do not
 reinterpret a rejected path as a default-scope invocation.
 
 For `--since <ref>`, first require git to resolve `<ref>`, then derive changed
-paths with `git diff --name-only <ref> HEAD`. A path plus `--since` is the
+paths with `git diff --name-only --diff-filter=d <ref>` plus
+`git ls-files --others --exclude-standard`: the working tree against `<ref>`,
+uncommitted and untracked work included, deleted paths left out. So
+`audit --since HEAD` sees the change about to be staged, and a write mode's
+`--since HEAD~1` includes uncommitted work too. A path plus `--since` is the
 intersection of that list and the validated path. For the default and
 `--since`-only scopes, the mode maps resolved paths to targets:
 
@@ -250,10 +253,9 @@ selected by the resolved scope. An explicit path selects exactly one target.
 dependencies" match the real names; sections omitted for missing information
 are flagged in the report.
 
-Link and supported heading-fragment resolution, marker integrity, owned index
-surfaces, ADR index titles, README-rooted reachability, and workspace README
-presence are **not** to be verified by hand: `pnpm check:drift` checks them in
-CI. If it fails, the link must be fixed or removed — never added to an
+Nothing listed under "What it checks" in the header of
+`tools/scripts/check-docs-integrity.ts` is to be verified by hand:
+`pnpm check:drift` checks it in CI. If it fails, the link must be fixed or removed — never added to an
 exceptions list, or the checker becomes furniture.
 
 ---
@@ -307,10 +309,8 @@ or repository structure changed in a way documentation must reflect.
 
 **Phase 2 — Compare semantics:** verify claims in the affected documentation
 against repository evidence. Report stale, contradictory, missing, or
-misclassified current guidance with specific evidence. Do not duplicate
-mechanical link, supported heading-fragment, marker, README-rooted reachability,
-workspace README presence, owned-index-surface, or ADR-index completeness/title
-checks already owned by
+misclassified current guidance with specific evidence. Do not duplicate the
+mechanical checks listed under "What it checks" in the header of
 `tools/scripts/check-docs-integrity.ts`, and do not judge whether code complies
 with `CLAUDE.md` or an ADR — that belongs to `/luke-audit`.
 

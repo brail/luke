@@ -19,7 +19,9 @@
  *    `docs/decisions/README.md`, every index entry points to an existing ADR,
  *    and no number is duplicated.
  * 4. **Reachability**: every tracked Markdown document outside `.claude/` is
- *    reachable by relative links from the repository `README.md`.
+ *    reachable by relative links from the repository `README.md` — links in
+ *    prose only: one inside a fenced example or an HTML comment is not
+ *    navigation.
  * 5. **Fragments** in inline Markdown links: same-file and tracked Markdown
  *    targets, including directory README indexes, resolve to heading anchors.
  * 6. **Owned indexes**: the docs hub links the ADR index once, without ADR
@@ -27,6 +29,9 @@
  * 7. **Workspace READMEs**: every workspace `pnpm-workspace.yaml` declares — a
  *    directory matched by its `packages:` globs that holds a tracked
  *    `package.json` — has a tracked `README.md`.
+ * 8. **ADR citations**: every `ADR-NNN` a tracked file cites names an ADR in
+ *    the corpus (`CHANGELOG.md` and this checker's own tests and fixtures
+ *    excepted).
  *
  * ## No exception list
  *
@@ -233,7 +238,7 @@ export function checkReachability(
     const currentFile = byRelativePath.get(currentPath);
     if (currentFile === undefined) continue;
 
-    const lines = readFileSync(currentFile, 'utf8').split('\n');
+    const lines = proseLines(readFileSync(currentFile, 'utf8'));
     for (const line of lines) {
       for (const match of line.matchAll(MARKDOWN_LINK_RE)) {
         const pathPart = relativePathPart(match[1]);
@@ -443,6 +448,24 @@ export function checkWorkspaceReadmes(
 }
 
 /**
+ * The ADR file names (`NNN-slug.md`) **tracked and present**: the same rule as
+ * `trackedMarkdown`. An ADR deleted without staging stayed in `git ls-files` and
+ * was counted as present, so the index row citing it did not read as dangling —
+ * the check confirmed an index pointing at a file that could no longer be read.
+ */
+function adrFileNames(root: string): string[] {
+  return execFileSync('git', ['ls-files', 'docs/decisions/*.md'], {
+    cwd: root,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter(Boolean)
+    .filter(path => existsSync(join(root, path)))
+    .map(path => path.split('/').pop() ?? '')
+    .filter(name => /^\d+-/.test(name));
+}
+
+/**
  * ADR index completeness.
  *
  * ADRs 013 and 014 existed and were Accepted, but the generated index stopped
@@ -464,22 +487,7 @@ export function checkWorkspaceReadmes(
 export function checkAdrIndex(root: string, problems: Problem[]): number {
   const indexPath = 'docs/decisions/README.md';
   const absoluteIndex = join(root, indexPath);
-
-  const tracked = execFileSync('git', ['ls-files', 'docs/decisions/*.md'], {
-    cwd: root,
-    encoding: 'utf8',
-  })
-    .split('\n')
-    .filter(Boolean);
-
-  // Same rule as `trackedMarkdown`: tracked **and** present. An ADR deleted
-  // without staging stayed in `git ls-files` and was counted as present, so the
-  // index row citing it did not read as dangling — the check confirmed an index
-  // pointing at a file that could no longer be read.
-  const adrFiles = tracked
-    .filter(path => existsSync(join(root, path)))
-    .map(path => path.split('/').pop() ?? '')
-    .filter(name => /^\d+-/.test(name));
+  const adrFiles = adrFileNames(root);
 
   if (!existsSync(absoluteIndex)) {
     // Two different states, not one, and the ADR corpus is what separates them.
@@ -561,6 +569,67 @@ export function checkAdrIndex(root: string, problems: Problem[]): number {
   return byNumber.size;
 }
 
+/**
+ * ADR citations. An `ADR-NNN` in any tracked file — documentation, skills,
+ * source comments — must name an ADR in the corpus: a citation of a number that
+ * was never written, or of a file deleted since, sends the reader to nothing,
+ * and nothing else notices. Three digits, so the `ADR-NNN` placeholder of a
+ * template never matches.
+ *
+ * Excluded: `CHANGELOG.md`, generated from commit subjects that are history;
+ * this checker's own tests and fixtures, which cite numbers on purpose. Fenced
+ * examples count: a citation is a citation wherever it is written. Reads the
+ * working-tree content of tracked files (`git grep`), as the rest of the file
+ * does.
+ */
+export function checkAdrCitations(root: string, problems: Problem[]): number {
+  const numbers = new Set(adrFileNames(root).map(name => name.split('-')[0]));
+
+  let output: string;
+  try {
+    output = execFileSync(
+      'git',
+      [
+        'grep',
+        '-z',
+        '-n',
+        '-I',
+        '-E',
+        'ADR-[0-9]{3}',
+        '--',
+        '.',
+        ':(exclude)CHANGELOG.md',
+        ':(exclude)tools/scripts/check-docs-integrity.test.ts',
+        ':(exclude)tools/scripts/__fixtures__/docs/**',
+      ],
+      { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+    );
+  } catch (err) {
+    // `git grep` exits 1 for "no match"; anything else is a real failure.
+    if ((err as { status?: number }).status === 1) return 0;
+    throw err;
+  }
+
+  let cited = 0;
+  for (const record of output.split('\n')) {
+    if (record === '') continue;
+    const [file, line, text = ''] = record.split('\0');
+    for (const match of text.matchAll(/ADR-(\d{3})/g)) {
+      cited++;
+      if (!numbers.has(match[1])) {
+        problems.push({
+          file,
+          line: Number(line),
+          message:
+            `\`${match[0]}\` names no ADR in \`docs/decisions/\`: the number was ` +
+            'never written, or its file is gone. Cite an existing ADR.',
+        });
+      }
+    }
+  }
+  return cited;
+}
+
 /** Hide fenced examples and HTML comments while preserving source line numbers. */
 function proseLines(text: string): string[] {
   let fence = '';
@@ -621,7 +690,11 @@ export function headingAnchors(text: string): Set<string> {
   const anchors = new Set<string>();
   lines.forEach((line, index) => {
     const atx = line.match(/^ {0,3}#{1,6}[ \t]+(.+)$/);
-    const setext = /^ {0,3}(?:=+|-+)\s*$/.test(lines[index + 1] ?? '');
+    // Only a paragraph line takes a Setext underline: a list item, a quote, a
+    // table row or an underline-looking line followed by `---` is not a heading.
+    const setext =
+      /^ {0,3}(?:=+|-+)\s*$/.test(lines[index + 1] ?? '') &&
+      !/^ {0,3}(?:[-*+](?:\s|$)|\d+[.)](?:\s|$)|>|\||(?:=+|-+)\s*$)/.test(line);
     const heading =
       atx?.[1].replace(/[ \t]+#+[ \t]*$/, '') ??
       (setext && line.trim() ? line.trim() : null);
@@ -866,6 +939,13 @@ function main(): void {
     );
   }
   checkOwnedIndexSurfaces(REPO_ROOT, problems);
+  const citationsChecked = checkAdrCitations(REPO_ROOT, problems);
+  if (citationsChecked === 0 && adrsChecked > 0) {
+    throw new Error(
+      '[docs-integrity] zero ADR citations found while ADRs exist; the citation ' +
+        'pattern no longer matches anything.'
+    );
+  }
   const titlesChecked = checkAdrTitleMatch(REPO_ROOT, files, problems);
   if (titlesChecked === 0 && adrsChecked > 0) {
     throw new Error(
@@ -897,7 +977,8 @@ function main(): void {
     `[docs-integrity] ok — ${files.length} files, ${linksChecked} links, ` +
       `${markersSeen} markers, ${reachableFiles} reachable, ` +
       `${workspaceReadmes} workspace READMEs, and ${adrsChecked} ` +
-      `indexed ADRs verified; ${fragmentsChecked} fragments and ${titlesChecked} ADR titles checked.`
+      `indexed ADRs verified; ${fragmentsChecked} fragments, ${titlesChecked} ADR titles and ` +
+      `${citationsChecked} ADR citations checked.`
   );
 }
 

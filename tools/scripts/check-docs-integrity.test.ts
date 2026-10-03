@@ -45,6 +45,7 @@ import {
   type RepoFiles,
 } from './__fixtures__/docs/adrRepo';
 import {
+  checkAdrCitations,
   checkAdrIndex,
   checkAdrTitleMatch,
   checkAnchors,
@@ -106,6 +107,30 @@ test('heading anchors follow GitHub section rules without collapsing spaces', ()
       'same-2',
       'setext-heading',
     ]
+  );
+});
+
+test('only a paragraph line takes a Setext underline', () => {
+  assert.deepEqual(
+    [
+      ...headingAnchors(
+        [
+          '- a list item',
+          '---',
+          '1. an ordered item',
+          '---',
+          '> a quote',
+          '---',
+          '| a table row |',
+          '---',
+          '---',
+          '---',
+          'A real heading',
+          '---',
+        ].join('\n')
+      ),
+    ],
+    ['a-real-heading']
   );
 });
 
@@ -341,6 +366,33 @@ function problemsFor(files: RepoFiles): Problem[] {
   return problems;
 }
 
+test('every ADR citation must name an ADR in the corpus', () => {
+  const dir = repo({
+    'docs/decisions/001-first.md': '# ADR-001: First\n',
+    'README.md': 'See ADR-001 and ADR-002. The template says ADR-NNN.\n',
+    'apps/api/src/thing.ts': '// Rationale: ADR-003.\nexport const x = 1;\n',
+    // Generated from commit history: never judged.
+    'CHANGELOG.md': '- supersede ADR-009\n',
+  });
+  const problems: Problem[] = [];
+
+  // The ADR's own H1 is a citation too, and a valid one.
+  assert.equal(checkAdrCitations(dir, problems), 4);
+  assert.deepEqual(
+    problems.map(p => [p.file, p.line, p.message.slice(0, 10)]),
+    [
+      ['README.md', 1, '`ADR-002` '],
+      ['apps/api/src/thing.ts', 1, '`ADR-003` '],
+    ]
+  );
+});
+
+test('a repository that cites no ADR reports nothing and counts zero', () => {
+  const problems: Problem[] = [];
+  assert.equal(checkAdrCitations(repo({ 'README.md': '# Root\n' }), problems), 0);
+  assert.deepEqual(problems, []);
+});
+
 test('a complete, consistent index reports nothing', () => {
   assert.deepEqual(problemsFor(VALID_ADR_REPO), []);
 });
@@ -496,6 +548,33 @@ test('a directory link reaches only its tracked README index', () => {
         'appropriate documentation index; do not add reachability exceptions.',
     },
   ]);
+});
+
+test('a link inside a fenced example or an HTML comment is not navigation', () => {
+  const dir = repo({
+    'README.md': [
+      '# Root',
+      '',
+      '[Guide](docs/guide.md)',
+      '',
+      '```md',
+      '[Example](docs/fenced.md)',
+      '```',
+      '',
+      '<!-- [Hidden](docs/commented.md) -->',
+      '',
+    ].join('\n'),
+    'docs/guide.md': '# Guide\n',
+    'docs/fenced.md': '# Fenced\n',
+    'docs/commented.md': '# Commented\n',
+  });
+  const problems: Problem[] = [];
+
+  assert.equal(checkReachability(dir, trackedMarkdown(dir), problems), 2);
+  assert.deepEqual(
+    problems.map(p => p.file).sort(),
+    ['docs/commented.md', 'docs/fenced.md']
+  );
 });
 
 test('reachability fails closed when no link produces a graph edge', () => {
