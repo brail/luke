@@ -23,7 +23,7 @@ import { router, protectedProcedure, adminProcedure, selfProcedure } from '../li
 import {
   setOverride,
   listOverridesForUser,
-  isAdminRecoverySection,
+  ADMIN_RECOVERY_SECTION,
   countRecoveryCapableAdmins,
   countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
@@ -117,11 +117,11 @@ export const sectionAccessRouter = router({
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       await ctx.prisma.$transaction(async tx => {
-        // Safety check: prevent a config that removes settings access from
-        // ALL admins — unlike `set` (which touches one user at a
+        // Safety check: prevent a config that removes user administration
+        // from ALL admins — unlike `set` (which touches one user at a
         // time), here the write is on the role defaults: without a guard, a
-        // single admin could lock the entire system out of Settings,
-        // the only place reachable to undo the change.
+        // single admin could lock the entire system out of user
+        // administration, the only place reachable to undo the change.
         await acquireLastAdminLock(tx);
         const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
         // Counted against the map the reader will build from this input, not the input itself:
@@ -136,7 +136,7 @@ export const sectionAccessRouter = router({
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message:
-              "Questa configurazione toglierebbe l'accesso ai settings a tutti gli amministratori.",
+              "Questa configurazione toglierebbe a tutti gli amministratori l'accesso alla gestione utenti.",
           });
         }
 
@@ -197,10 +197,11 @@ export const sectionAccessRouter = router({
         // PROMOTION of the same `userId` (viewer/editor → admin): that
         // path doesn't acquire this lock, so a narrow, known window
         // remains, not closed by this reordering.
-        // A recovery section (`settings.users`): removing it from the
-        // last admin locks them out of user administration. `settings`
-        // never reaches here — a parent is refused above.
-        if (isAdminRecoverySection(section) && enabled !== true) {
+        // The recovery section (`ADMIN_RECOVERY_SECTION`, `settings.users`):
+        // removing it from the last admin locks them out of user
+        // administration. `settings` never reaches here — a parent is
+        // refused above.
+        if (section === ADMIN_RECOVERY_SECTION && enabled !== true) {
           await acquireLastAdminLock(tx);
           const target = await tx.user.findUnique({
             where: { id: userId },

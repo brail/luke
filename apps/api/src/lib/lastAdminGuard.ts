@@ -36,8 +36,8 @@ export async function assertNotLastAdmin(
 }
 
 /**
- * Same as `assertNotLastAdmin`, but also checks effective access to every
- * section in `ADMIN_RECOVERY_SECTIONS` (kill switch + role defaults + personal
+ * Same as `assertNotLastAdmin`, but also checks effective access to
+ * `ADMIN_RECOVERY_SECTION` (kill switch + role defaults + personal
  * overrides), not just role count. Demoting/deactivating/deleting `userId` must
  * never leave zero admins able to administer users — the only in-app path to
  * undo an RBAC misconfiguration (see the guards `set`/`setRoleDefaults` in

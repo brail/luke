@@ -104,35 +104,18 @@ export async function listOverridesForUser(
 }
 
 /**
- * Sections without which an administrator can no longer bring system
+ * The section without which an administrator can no longer bring system
  * administration back to life.
  *
  * `settings.users` is the Users menu entry (`apps/web/src/hooks/useMenuAccess.ts`)
  * and maps to `users:read`: an admin who loses it can no longer create or
  * promote anyone. The first version of this guard looked at `settings` instead
  * and let exactly that through — found by testing by hand on RC. `settings`
- * itself needs no entry: it is derived from its children, so an effective
+ * itself needs no check: it is derived from its children, so an effective
  * `settings.users` already makes it effective, and a kill switch on `settings`
  * turns `settings.users` off with it (ADR-027).
- *
- * Kept as a list, read as a **conjunction**: only whoever has every entry
- * effectively enabled counts as a way out.
  */
-export const ADMIN_RECOVERY_SECTIONS = [
-  'settings.users',
-] as const satisfies readonly Section[];
-
-/**
- * `true` if removing this section could lock administration out.
- *
- * A predicate instead of `ADMIN_RECOVERY_SECTIONS.includes(section)` at the
- * call site: the tuple is `as const` to preserve the literals in `every()`,
- * and on a tuple `includes` only accepts its own members — an arbitrary
- * `Section` doesn't compile. The widening lives here, in one place only.
- */
-export function isAdminRecoverySection(section: Section): boolean {
-  return (ADMIN_RECOVERY_SECTIONS as readonly Section[]).includes(section);
-}
+export const ADMIN_RECOVERY_SECTION = 'settings.users' satisfies Section;
 
 type SectionAccessDefaults = Record<
   string,
@@ -141,35 +124,33 @@ type SectionAccessDefaults = Record<
 
 /**
  * A user's per-section overrides, in the shape `effectiveSectionAccess` accepts. Only the
- * recovery sections are loaded: no other row can change whether they are effective.
+ * recovery section's row is loaded: no other row can change whether it is effective.
  */
 type OverrideBySection = Map<string, boolean>;
 
-function hasEveryRecoverySection(
+function canRecover(
   overrides: OverrideBySection,
   sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): boolean {
-  return ADMIN_RECOVERY_SECTIONS.every(section =>
-    effectiveSectionAccess({
-      role: 'admin',
-      sectionAccessDefaults,
-      userOverrides: overrides,
-      section,
-      disabledSections,
-    })
-  );
+  return effectiveSectionAccess({
+    role: 'admin',
+    sectionAccessDefaults,
+    userOverrides: overrides,
+    section: ADMIN_RECOVERY_SECTION,
+    disabledSections,
+  });
 }
 
-/** An active admin and their overrides on the recovery sections. */
+/** An active admin and their override on the recovery section, if any. */
 export interface AdminRecoveryOverrides {
   id: string;
   overrides: OverrideBySection;
 }
 
 /**
- * The one read every recovery count works from: active admins with their overrides on the
- * recovery sections. A caller that counts twice (before and after a change) loads once, so both
+ * The one read every recovery count works from: active admins with their override on the
+ * recovery section. A caller that counts twice (before and after a change) loads once, so both
  * counts see the same rows.
  */
 export async function loadAdminRecoveryOverrides(
@@ -180,7 +161,7 @@ export async function loadAdminRecoveryOverrides(
     select: {
       id: true,
       sectionAccess: {
-        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
+        where: { section: ADMIN_RECOVERY_SECTION },
         select: { section: true, enabled: true },
       },
     },
@@ -194,8 +175,8 @@ export async function loadAdminRecoveryOverrides(
 /**
  * How many of `admins` can still recover the system under the given
  * `sectionAccessDefaults`/`disabledSections` — same 4-layer evaluation as
- * `effectiveSectionAccess`, not just "has role admin", and across every
- * section in `ADMIN_RECOVERY_SECTIONS`.
+ * `effectiveSectionAccess`, not just "has role admin", on
+ * `ADMIN_RECOVERY_SECTION`.
  */
 export function countRecoveryCapable(
   admins: readonly AdminRecoveryOverrides[],
@@ -203,11 +184,7 @@ export function countRecoveryCapable(
   disabledSections: string[]
 ): number {
   return admins.filter(admin =>
-    hasEveryRecoverySection(
-      admin.overrides,
-      sectionAccessDefaults,
-      disabledSections
-    )
+    canRecover(admin.overrides, sectionAccessDefaults, disabledSections)
   ).length;
 }
 
@@ -249,25 +226,19 @@ export async function countRecoveryCapableAdminsAfterChange(
   sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): Promise<number> {
-  const admins = await loadAdminRecoveryOverrides(prisma);
-
-  return admins.filter(admin => {
-    if (admin.id === userId && changedSection === null) return false;
-
+  // The admins as they would be after the change: `userId` gone, or carrying the
+  // hypothetical override; everyone else as loaded.
+  const after = (await loadAdminRecoveryOverrides(prisma)).flatMap(admin => {
+    if (admin.id !== userId) return [admin];
+    if (changedSection === null) return [];
     const overrides: OverrideBySection = new Map(admin.overrides);
-
-    if (admin.id === userId && changedSection !== null) {
-      if (hypotheticalEnabled === null) {
-        overrides.delete(changedSection);
-      } else {
-        overrides.set(changedSection, hypotheticalEnabled);
-      }
+    if (hypotheticalEnabled === null) {
+      overrides.delete(changedSection);
+    } else {
+      overrides.set(changedSection, hypotheticalEnabled);
     }
+    return [{ ...admin, overrides }];
+  });
 
-    return hasEveryRecoverySection(
-      overrides,
-      sectionAccessDefaults,
-      disabledSections
-    );
-  }).length;
+  return countRecoveryCapable(after, sectionAccessDefaults, disabledSections);
 }
