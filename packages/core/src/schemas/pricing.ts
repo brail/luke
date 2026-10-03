@@ -42,9 +42,12 @@ export const PricingParameterSetInputSchema = z.object({
   tools: z
     .number({ error: 'Campo obbligatorio' })
     .min(0, 'I costi stampi non possono essere negativi'),
+  // To the cent, like the company multiplier the engine derives. Zod's `multipleOf` compares
+  // decimals float-safely: 0.07 and 4.35 pass although 0.07 × 100 = 7.000000000000001.
   retailMultiplier: z
     .number({ error: 'Campo obbligatorio' })
-    .positive('Il moltiplicatore retail deve essere positivo'),
+    .positive('Il moltiplicatore retail deve essere positivo')
+    .multipleOf(0.01, { error: 'Il moltiplicatore retail ammette al massimo due decimali' }),
   optimalMargin: z
     .number({ error: 'Campo obbligatorio' })
     .min(0, 'Il margine ottimale non può essere negativo')
