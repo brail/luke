@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyMargin, landedCostBreakdown, retailMargin } from '../pricing.js';
+import { calcMaxSupplierCost, classifyMargin, landedCostBreakdown, retailMargin } from '../pricing.js';
 
 /** Hand-computable: 10 + 5 % QC + 1 tools = 11.5; + 2 = 13.5; + 10 % duty = 14.85; ÷ 1.1 + 1.5 = 15. */
 const PS = {
@@ -49,6 +49,20 @@ describe('landedCostBreakdown', () => {
       const multiplicative = (withTransport * (1 + ps.duty / 100)) / ps.exchangeRate + ps.italyAccessoryCosts;
       const additive = landedCostBreakdown(price, ps).landedCost;
       expect(Math.abs(additive - multiplicative) / multiplicative).toBeLessThan(1e-12);
+    }
+  });
+});
+
+describe('calcMaxSupplierCost', () => {
+  it('walks the landed-cost chain backwards: tools out, then QC', () => {
+    // The retail price a purchase price reaches at the target margin, exact multiplier; the
+    // inverse must give the purchase price back (floored to 0.1). Undoing QC before tools — as
+    // if QC were charged on tools too — came back short by tools × qc / (1 + qc).
+    const ps = { ...PS, optimalMargin: 52 };
+    // One cent above a tenth, so the floor cannot absorb a gap of a few cents.
+    for (const purchase of [10.01, 37.41, 128.91]) {
+      const retail = (landedCostBreakdown(purchase, ps).landedCost / (1 - 0.52)) * ps.retailMultiplier;
+      expect(calcMaxSupplierCost(retail, ps)).toBe(Math.floor(purchase * 10) / 10);
     }
   });
 });

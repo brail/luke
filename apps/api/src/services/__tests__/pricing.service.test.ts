@@ -87,7 +87,10 @@ describe('calculateInverse', () => {
     // commercial rounding.
     const back = calculateInverse(forward.retailPriceRaw, PARAMS);
 
-    expect(back.purchasePriceRaw).toBeCloseTo(purchasePrice, 1);
+    // To within what `retailPriceRaw`'s own 2-decimal rounding leaves (≈ 0.001 here). One
+    // decimal hid a real gap: the inverse undid QC before tools, as if QC were charged on
+    // tools too, and came back short by tools × qc / (1 + qc) ≈ 0.02.
+    expect(back.purchasePriceRaw).toBeCloseTo(purchasePrice, 2);
   });
 
   it('rebuilds the same intermediate values as forward', () => {
@@ -97,6 +100,8 @@ describe('calculateInverse', () => {
     expect(back.wholesalePrice).toBeCloseTo(forward.wholesalePrice, 1);
     expect(back.landedCost).toBeCloseTo(forward.landedCost, 1);
     expect(back.companyMargin).toBeCloseTo(forward.companyMargin, 3);
+    // QC is charged on the purchase price alone, tools excluded.
+    expect(back.qualityControlCost).toBeCloseTo(forward.qualityControlCost, 2);
   });
 
   it('rounds the purchase price down', () => {

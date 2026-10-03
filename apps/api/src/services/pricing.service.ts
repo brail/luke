@@ -177,11 +177,11 @@ export function calculateInverse(
   const priceWithoutTransport =
     priceWithoutDuty * exchangeRate - transportInsuranceCost;
 
-  // Step 7–8: Remove QC and tools
-  const purchasePriceBeforeTools =
-    priceWithoutTransport / (1 + qualityControlPercent / 100);
-  const qualityControlCost = priceWithoutTransport - purchasePriceBeforeTools;
-  const purchasePriceRaw = purchasePriceBeforeTools - tools;
+  // Step 7–8: Remove tools, then QC — a percentage of the purchase price alone, as forward
+  // charges it (landedCostBreakdown), so tools must be out before it is divided away.
+  const purchasePriceRaw =
+    (priceWithoutTransport - tools) / (1 + qualityControlPercent / 100);
+  const qualityControlCost = purchasePriceRaw * (qualityControlPercent / 100);
 
   // Step 9: Round down (floor), 1 decimal
   const purchasePrice = Math.floor(purchasePriceRaw * 10) / 10;

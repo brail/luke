@@ -100,7 +100,8 @@ export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams):
   const withoutAcc = landed - ps.italyAccessoryCosts;
   const withoutDuty = withoutAcc / (1 + ps.duty / 100);
   const withoutTransport = withoutDuty * ps.exchangeRate - ps.transportInsuranceCost;
-  const raw = withoutTransport / (1 + ps.qualityControlPercent / 100) - ps.tools;
+  // Tools out before QC: QC is a percentage of the purchase price alone (landedCostBreakdown).
+  const raw = (withoutTransport - ps.tools) / (1 + ps.qualityControlPercent / 100);
   return Math.floor(raw * 10) / 10;
 }
 
