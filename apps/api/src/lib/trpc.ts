@@ -169,7 +169,7 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   if (!hasPermission(ctx.session.user as { role: Role }, 'maintenance:update')) {
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: 'Accesso negato: richiesto ruolo admin',
+      message: 'Accesso negato',
     });
   }
 

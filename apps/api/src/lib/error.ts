@@ -172,7 +172,7 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
 /**
  * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus an optional
  * `retryAfterSeconds` on `data`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`)
- * so clients can render an accurate `Retry-After` without recomputing the rate-limit window.
+ * so clients can render an upper-bound `Retry-After` (the whole window) without recomputing it.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
   data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number };

@@ -150,7 +150,8 @@ export function requirePermission<TInput = never>(
 
       throw new TRPCError({
         code: 'FORBIDDEN',
-        message: `Accesso negato: richieste permissions ${permissionArray.join(' o ')}`,
+        // The permission names stay in the log line above: a 4xx reaches every client.
+        message: 'Accesso negato',
       });
     }
 

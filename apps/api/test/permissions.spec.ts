@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import {
   hasPermission,
@@ -15,7 +15,7 @@ import {
 } from '@luke/core';
 
 import { requirePermission, can } from '../src/lib/permissions';
-import { router, publicProcedure } from '../src/lib/trpc';
+import { adminMiddleware, router, publicProcedure } from '../src/lib/trpc';
 
 import { createSilentLogger } from './helpers/logger';
 
@@ -204,6 +204,7 @@ describe('requirePermission middleware', () => {
 
   it('should deny access when user has none of the required permissions', async () => {
     const ctx = createMockContext('viewer');
+    const warn = vi.spyOn(ctx.logger!, 'warn');
 
     await expect(
       callProbe(['brands:create', 'users:delete'], ctx)
@@ -213,6 +214,12 @@ describe('requirePermission middleware', () => {
       ctx
     ).catch(e => e);
     expect(error.code).toBe('FORBIDDEN');
+    // The permission names go to the log, never to the client.
+    expect(error.message).toBe('Accesso negato');
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedPermissions: ['brands:create', 'users:delete'] }),
+      'Permission denied'
+    );
   });
 
   it('should cache permission checks', async () => {
@@ -226,6 +233,20 @@ describe('requirePermission middleware', () => {
 
     // Second call: served from cache, same outcome
     await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
+  });
+});
+
+describe('adminMiddleware', () => {
+  // The middleware alone: `adminProcedure` also chains `authMiddleware`, which reads the
+  // database this mock context does not have.
+  it('refuses a user without maintenance:update with a message that names no role', async () => {
+    const caller = router({
+      probe: publicProcedure.use(adminMiddleware).query(() => 'success'),
+    }).createCaller(createMockContext('viewer'));
+
+    const error = await caller.probe().catch(e => e);
+    expect(error.code).toBe('FORBIDDEN');
+    expect(error.message).toBe('Accesso negato');
   });
 });
 

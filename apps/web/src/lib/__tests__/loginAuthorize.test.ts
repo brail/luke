@@ -93,7 +93,7 @@ describe('authorizeLogin', () => {
   });
 
   it('a throttled login is a plain refusal that marks the request for the route wrapper', async () => {
-    apiAnswers(429, trpcError('TOO_MANY_REQUESTS', 'Rate limit exceeded', { retryAfterSeconds: 42 }));
+    apiAnswers(429, trpcError('TOO_MANY_REQUESTS', 'Troppe richieste. Riprova più tardi.', { retryAfterSeconds: 42 }));
     const state: LoginThrottleState = {};
 
     const result = await loginThrottleContext.run(state, () => authorizeLogin(credentials, request));

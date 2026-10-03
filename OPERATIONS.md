@@ -172,10 +172,19 @@ never on the message text:
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 
-Rate-limit errors also carry `error.data.retryAfterSeconds`; the idempotency 429
-does not. Their message, for
-example `Rate limit exceeded for login. Max 5 requests per 1 minute(s).`, names
-the rate-limit bucket: it is meant for the logs, not for display.
+Rate-limit errors also carry `error.data.retryAfterSeconds` — the bucket's whole
+window, not the time left; the idempotency 429 does not. Their message is a
+generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so
+the bucket and its limit are logged instead (`Rate limit exceeded`, with
+`routeName`, `max`, `windowMs`). A `requirePermission` refusal likewise reads
+`Accesso negato`, the requested permissions going to the `Permission denied` log
+line; an `adminProcedure` refusal reads the same and logs nothing (ADR-026,
+observed gaps).
+
+A second, global limiter runs before tRPC (`@fastify/rate-limit` in
+`apps/api/src/server.ts`: 100 requests per minute per IP in production, not
+configurable through the `rateLimit` key). Its 429 has its own body —
+`{ statusCode, error, message, retryAfter }` — and no `error.data.code`.
 
 ---
 

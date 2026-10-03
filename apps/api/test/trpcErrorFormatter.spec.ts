@@ -56,7 +56,7 @@ async function loadRouter(nodeEnv: 'production' | 'development'): Promise<AnyTRP
     unavailable: failWith(
       new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'Sistema in manutenzione. Riprova più tardi.' })
     ),
-    rateLimited: failWith(buildRateLimitExceededError('login', { max: 5, windowMs: 60_000 })),
+    rateLimited: failWith(buildRateLimitExceededError(60_000)),
     explicitWithZodCause: failWith(
       new TRPCError({
         code: 'BAD_REQUEST',
@@ -155,6 +155,8 @@ describe('trpcErrorFormatter in production', () => {
 
     expect(error.data.code).toBe('TOO_MANY_REQUESTS');
     expect(error.data.retryAfterSeconds).toBe(60);
+    // Neither the route nor the budget reaches the client.
+    expect(error.message).toBe('Troppe richieste. Riprova più tardi.');
   });
 
   it('sends no stack', async () => {

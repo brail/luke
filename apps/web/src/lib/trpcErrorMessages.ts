@@ -15,7 +15,6 @@ const HTTP_STATUS_TO_CODE: Record<number, string> = {
 const DEFAULT_MESSAGES: Record<string, string> = {
   FORBIDDEN: 'Non hai i permessi per eseguire questa operazione',
   UNAUTHORIZED: 'Sessione scaduta, rieffettua il login',
-  // The server's text names the rate-limit bucket: it is written for the logs.
   TOO_MANY_REQUESTS: 'Troppe richieste. Riprova tra qualche istante.',
   // A 5xx, so production masks the server's text; in the browser only maintenance mode sends it.
   SERVICE_UNAVAILABLE: 'Sistema in manutenzione. Riprova più tardi.',
@@ -36,9 +35,9 @@ interface TrpcErrorLike {
  * @param entityMessages - Optional per-code overrides, e.g. `{ CONFLICT: 'Already exists' }`.
  *   Pass `true` instead of a string to show the server's own `error.message` for that code
  *   instead of the shared default — use only where the endpoint's throw sites are known to
- *   produce user-facing text for that code (e.g. `lastAdminGuard`'s FORBIDDEN messages),
- *   since the shared FORBIDDEN default exists specifically to hide `requirePermission()`'s
- *   internal message (`"Accesso negato: richieste permissions ..."`).
+ *   produce user-facing text for that code (e.g. `lastAdminGuard`'s FORBIDDEN messages);
+ *   elsewhere the shared FORBIDDEN default reads better than `requirePermission()`'s bare
+ *   `"Accesso negato"`.
  * @returns A human-readable string ready to display in a toast or form error.
  */
 export function getTrpcErrorMessage(

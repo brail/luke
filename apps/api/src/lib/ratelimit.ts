@@ -333,7 +333,9 @@ export function enforceRateLimit(
   config: { max: number; windowMs: number }
 ): void {
   if (rateLimitStore.isLimited(routeName, key, config)) {
-    throw buildRateLimitExceededError(routeName, config);
+    // What the client's message no longer says, for the operator.
+    logger.warn({ routeName, max: config.max, windowMs: config.windowMs }, 'Rate limit exceeded');
+    throw buildRateLimitExceededError(config.windowMs);
   }
   // Record BEFORE the caller proceeds so concurrent requests see the updated count.
   rateLimitStore.record(routeName, key, config);
