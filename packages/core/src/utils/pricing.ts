@@ -13,6 +13,71 @@ export interface InverseCalcParams {
   tools: number;
 }
 
+/** The parameter set fields the forward landed-cost chain reads. */
+export type LandedCostParams = Pick<
+  InverseCalcParams,
+  'qualityControlPercent' | 'tools' | 'transportInsuranceCost' | 'duty' | 'exchangeRate' | 'italyAccessoryCosts'
+>;
+
+/** Every step of the forward landed-cost chain, in the currency each step is in. */
+export interface LandedCostBreakdown {
+  qualityControlCost: number;
+  priceWithQC: number;
+  priceWithTransport: number;
+  dutyCost: number;
+  priceWithDuty: number;
+  /** In the selling currency, Italy accessory costs included. */
+  landedCost: number;
+}
+
+/**
+ * The landed cost of a purchase price, step by step: quality control (a percentage of the
+ * price) and tools, then transport and insurance, then duty (a percentage of that), then the
+ * conversion to the selling currency (÷ exchange rate) plus the Italy accessory costs.
+ *
+ * The one spelling of the chain: forward mode returns these steps, every margin reads
+ * `landedCost`.
+ */
+export function landedCostBreakdown(purchasePrice: number, ps: LandedCostParams): LandedCostBreakdown {
+  const qualityControlCost = purchasePrice * (ps.qualityControlPercent / 100);
+  const priceWithQC = purchasePrice + qualityControlCost + ps.tools;
+  const priceWithTransport = priceWithQC + ps.transportInsuranceCost;
+  const dutyCost = priceWithTransport * (ps.duty / 100);
+  const priceWithDuty = priceWithTransport + dutyCost;
+  const landedCost = priceWithDuty / ps.exchangeRate + ps.italyAccessoryCosts;
+  return { qualityControlCost, priceWithQC, priceWithTransport, dutyCost, priceWithDuty, landedCost };
+}
+
+/**
+ * The company margin a retail price leaves over a purchase price, as a fraction: wholesale
+ * (retail ÷ retail multiplier) less the landed cost, over wholesale.
+ *
+ * Not forward mode's margin, whose wholesale is landed cost × company multiplier. No guards:
+ * callers decide what a missing or non-positive price means, and a zero wholesale is theirs to
+ * rule out.
+ */
+export function retailMargin(
+  purchasePrice: number,
+  retailPrice: number,
+  ps: LandedCostParams & Pick<InverseCalcParams, 'retailMultiplier'>
+): number {
+  const wholesale = retailPrice / ps.retailMultiplier;
+  return (wholesale - landedCostBreakdown(purchasePrice, ps).landedCost) / wholesale;
+}
+
+/** How a margin compares with its target. */
+export type MarginStatus = 'green' | 'yellow' | 'red';
+
+/**
+ * Classifies a margin percentage against the target one: at or above it green, within three
+ * points below it yellow, red under that. Both are 0–100 numbers, compared unrounded.
+ */
+export function classifyMargin(marginPct: number, optimalMargin: number): MarginStatus {
+  if (marginPct >= optimalMargin) return 'green';
+  if (marginPct >= optimalMargin - 3) return 'yellow';
+  return 'red';
+}
+
 /**
  * Derives the company multiplier from the target margin percentage.
  *
