@@ -196,11 +196,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       value: '14400', // 4h in seconds
       encrypt: false,
     },
-    {
-      key: 'security.cors.developmentOrigins',
-      value: 'http://localhost:3000,http://localhost:5173',
-      encrypt: false,
-    },
     // Rate Limiting (single JSON object)
     {
       key: 'rateLimit',

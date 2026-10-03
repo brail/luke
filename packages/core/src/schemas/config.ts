@@ -104,7 +104,6 @@ export const AppConfigRegistry = {
   'security.tokenVersionCacheTTL':         z.coerce.number().int().min(10_000).max(600_000),
   'security.session.maxAge':               z.coerce.number().int().min(60),
   'security.session.updateAge':            z.coerce.number().int().min(60),
-  'security.cors.developmentOrigins':      z.string(),
 
   // ── Storage ──────────────────────────────────────────────────────────────
   'storage.type':                z.enum(['local', 's3']),

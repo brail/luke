@@ -113,6 +113,12 @@ describe('the registry is consulted on the write path, not only on the read path
     expect(isAppConfigKey('app.version')).toBe(false);
   });
 
+  it('does not carry security.cors.developmentOrigins, which nothing ever read', () => {
+    // CORS comes from the LUKE_CORS_ALLOWED_ORIGINS bootstrap variable. A stored row stays inert
+    // and deletable (prefix-gated, see below), as app.version's did.
+    expect(isAppConfigKey('security.cors.developmentOrigins')).toBe(false);
+  });
+
   it('does not mistake inherited Object properties for registered keys', () => {
     // `key in registry` would answer true for every one of these, and `saveConfig` would then
     // hand `AppConfigRegistry['toString']` to `safeParse`.
