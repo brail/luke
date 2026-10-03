@@ -60,5 +60,14 @@
     }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // Unit tests live beside the code but are not the server: excluded here as in
+  // packages/core and packages/calendar, so `dist` — and the image — carries no
+  // compiled test requiring vitest. `tsconfig.test.json` still typechecks them.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
 }
