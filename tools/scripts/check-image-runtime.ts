@@ -255,7 +255,7 @@ export function pngWidth(bytes: Uint8Array): number | null {
 }
 
 /** The native addons the production install rebuilt, run rather than loaded. */
-async function apiProbes(root: string): Promise<string[]> {
+export async function apiProbes(root: string): Promise<string[]> {
   const problems: string[] = [];
   const api = join(root, 'apps', 'api');
   const load = createRequire(join(api, 'package.json'));
@@ -343,7 +343,7 @@ const SMOKE_BOOT_TIMEOUT_MS = 60_000;
  * included, so a server bound to the container address instead of every
  * interface fails here — and probes it on loopback. No probe needs the API.
  */
-async function webSmoke(root: string): Promise<string[]> {
+export async function webSmoke(root: string): Promise<string[]> {
   const problems: string[] = [];
   const base = `http://127.0.0.1:${SMOKE_PORT}`;
   const server = spawn(process.execPath, [join(root, WEB_APP, 'server.js')], {

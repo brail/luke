@@ -64,8 +64,17 @@ RUN pnpm --filter @luke/calendar build
 # deleting this line and watching the image build fail.
 RUN pnpm --filter @luke/api build
 
-# Build Next.js app
+# Build Next.js app. `output: 'standalone'` (next.config.js) writes the server
+# and only the files its traces name to `.next/standalone`.
 RUN pnpm --filter @luke/web build
+
+# What the runtime stage is entitled to contain, at its final paths: the
+# standalone tree, `.next/static` and `public`. The runner carries the list
+# outside the tree it describes, and tools/scripts/check-image-runtime.ts — run
+# by CI's `images` job and by the release before each push — fails on any entry
+# under /app that is not on it.
+RUN node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON \
+    tools/scripts/check-image-runtime.ts web-inventory > /runtime-files.txt
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM base AS runner
@@ -73,40 +82,30 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Workspace manifests
-COPY --from=builder /app/package.json /app/pnpm-workspace.yaml ./
+# The standalone server: `apps/web/server.js` plus only the files Next traced —
+# the server bundles, the packages they still require at runtime, and
+# `apps/web/package.json`. No workspace `node_modules`, no `next` binary, and no
+# `next.config.js`: the build embedded it. `@luke/core` is compiled into the
+# bundles (`transpilePackages`), so it has no runtime copy either.
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /runtime-files.txt /runtime-files.txt
 
-# Root node_modules
-COPY --from=builder /app/node_modules ./node_modules
+# Neither @luke/api nor @luke/nav is in the image, and that is the point. Every
+# apps/web import of @luke/api is `import type`, erased at build time, so no
+# server bundle requires it and Next's traces never name it (measured: the
+# standalone tree's only package link is `next`). The runner used to copy both,
+# so that Next could type-check `apps/api/src` — a build-time dependency shipped
+# into a runtime image. `checkWebRuntimeHasNoApiSource`
+# (tools/scripts/check-platform-integrity.ts) still refuses a runner that copies
+# API source.
 
-# @luke/core — dist only
-COPY --from=builder /app/packages/core/package.json ./packages/core/package.json
-COPY --from=builder /app/packages/core/dist          ./packages/core/dist
-COPY --from=builder /app/packages/core/node_modules  ./packages/core/node_modules
-
-# Neither @luke/api nor @luke/nav is copied here, and that is the point.
-#
-# Both used to be, so that Next could type-check `apps/api/src` — @luke/api
-# pointed `main`/`types` at its own TypeScript sources, and @luke/nav came along
-# because those sources import it. Every one of apps/web's @luke/api imports is
-# `import type`, so all of it is erased at build time: the emitted bundle
-# contains no `require("@luke/api")` at all, and the runner never loaded a byte
-# of it. The copies were a build-time dependency shipped into a runtime image.
-#
-# Verified rather than assumed: this image runs with `apps/api` absent from the
-# filesystem — apps/web/node_modules/@luke/api is a dangling symlink — serving
-# SSR pages, the NextAuth route handlers, and tRPC calls proxied to the API
-# container. Type inference is a compile-time activity; there are no runtime
-# imports to satisfy.
-
-# Next.js app — built output + public assets
-COPY --from=builder /app/apps/web/package.json  ./apps/web/package.json
-COPY --from=builder /app/apps/web/.next         ./apps/web/.next
-COPY --from=builder /app/apps/web/public        ./apps/web/public
-COPY --from=builder /app/apps/web/node_modules  ./apps/web/node_modules
-COPY --from=builder /app/apps/web/next.config.js ./apps/web/next.config.js
-
-WORKDIR /app/apps/web
+# The standalone server binds to HOSTNAME. Docker sets it to the container id,
+# which resolves to the container address alone, so a probe on 127.0.0.1 would
+# find nothing; an image-defined value is not overridden.
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
 EXPOSE 3000
 
-CMD ["./node_modules/.bin/next", "start"]
+CMD ["node", "apps/web/server.js"]

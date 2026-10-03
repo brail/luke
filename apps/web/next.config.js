@@ -1,5 +1,16 @@
+/**
+ * The repository root: where Turbopack resolves the workspace from, and where
+ * standalone tracing starts. Next warns when the two differ, so they share it.
+ */
+const REPOSITORY_ROOT = require('path').resolve(__dirname, '../..');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // The runtime image ships `.next/standalone`: the server and only the files
+  // its traces name, instead of the workspace's whole node_modules
+  // (apps/web/Dockerfile, tools/scripts/check-image-runtime.ts).
+  output: 'standalone',
+  outputFileTracingRoot: REPOSITORY_ROOT,
   transpilePackages: ['@luke/core'],
   typedRoutes: true,
   experimental: {
@@ -7,7 +18,7 @@ const nextConfig = {
     proxyTimeout: 360_000, // 6 min: portfolio queries take ~3–4 min, plus 2 min of headroom
   },
   turbopack: {
-    root: require('path').resolve(__dirname, '../..'),
+    root: REPOSITORY_ROOT,
   },
   webpack: config => {
     config.resolve.alias = {
