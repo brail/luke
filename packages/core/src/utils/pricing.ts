@@ -157,21 +157,11 @@ export function calculateCompanyMultiplier(optimalMargin: number): number {
 }
 
 /**
- * Calculates the maximum acceptable FOB supplier cost for a given retail target price.
- * Applies the full cost chain in reverse: retail → wholesale → landed → FOB.
- *
- * @returns Maximum FOB cost, floored to one decimal place
+ * The maximum acceptable FOB supplier cost (the BT) for a retail target price: inverse mode's
+ * purchase price, floored to one decimal — paying more would erode the margin.
  */
 export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams): number {
-  const cm = 1 / (1 - ps.optimalMargin / 100);
-  const wholesale = retailPrice / ps.retailMultiplier;
-  const landed = wholesale / cm;
-  const withoutAcc = landed - ps.italyAccessoryCosts;
-  const withoutDuty = withoutAcc / (1 + ps.duty / 100);
-  const withoutTransport = withoutDuty * ps.exchangeRate - ps.transportInsuranceCost;
-  // Tools out before QC: QC is a percentage of the purchase price alone (landedCostBreakdown).
-  const raw = (withoutTransport - ps.tools) / (1 + ps.qualityControlPercent / 100);
-  return Math.floor(raw * 10) / 10;
+  return Math.floor(priceInverse(retailPrice, ps).purchasePriceRaw * 10) / 10;
 }
 
 /**

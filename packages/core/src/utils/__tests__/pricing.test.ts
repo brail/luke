@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calcMaxSupplierCost,
   classifyMargin,
+  generateRetailPriceRange,
   landedCostBreakdown,
   priceForward,
   priceInverse,
@@ -96,14 +97,33 @@ describe('priceForward and priceInverse', () => {
 
 describe('calcMaxSupplierCost', () => {
   it('walks the landed-cost chain backwards: tools out, then QC', () => {
-    // The retail price a purchase price reaches at the target margin, exact multiplier; the
-    // inverse must give the purchase price back (floored to 0.1). Undoing QC before tools — as
-    // if QC were charged on tools too — came back short by tools × qc / (1 + qc).
+    // The retail price a purchase price reaches at the target margin; the inverse must give the
+    // purchase price back (floored to 0.1). Undoing QC before tools — as if QC were charged on
+    // tools too — came back short by tools × qc / (1 + qc).
     const ps = { ...PS, optimalMargin: 52 };
     // One cent above a tenth, so the floor cannot absorb a gap of a few cents.
     for (const purchase of [10.01, 37.41, 128.91]) {
-      const retail = (landedCostBreakdown(purchase, ps).landedCost / (1 - 0.52)) * ps.retailMultiplier;
+      const retail = priceForward(purchase, ps).retailPriceRaw;
       expect(calcMaxSupplierCost(retail, ps)).toBe(Math.floor(purchase * 10) / 10);
+    }
+  });
+
+  it('is the pricing page\'s inverse, floored: the multiplier the prices are made with', () => {
+    // The BT used the exact multiplier 1 / (1 − m) (52 %: 2.0833…) while forward and the inverse
+    // mode use it rounded (2.08): the same retail price gave two maximum costs.
+    const ps = {
+      qualityControlPercent: 2,
+      tools: 1,
+      transportInsuranceCost: 3,
+      duty: 8,
+      exchangeRate: 1.08,
+      italyAccessoryCosts: 2,
+      retailMultiplier: 2.6,
+      optimalMargin: 52,
+    };
+    expect(calcMaxSupplierCost(79.9, ps)).toBe(8.6);
+    for (const retail of generateRetailPriceRange()) {
+      expect(calcMaxSupplierCost(retail, ps)).toBe(Math.floor(priceInverse(retail, ps).purchasePriceRaw * 10) / 10);
     }
   });
 });
