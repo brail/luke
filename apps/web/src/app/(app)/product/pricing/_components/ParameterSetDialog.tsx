@@ -90,10 +90,11 @@ export function ParameterSetDialog({
     }
   }, [open, initialData, form]);
 
-  // Compute companyMultiplier live; 0 while the margin being typed is out of range.
+  // Compute companyMultiplier live, over the range the schema accepts (0 included, as the panel
+  // shows it); 0 only while the margin being typed is outside it.
   const optimalMargin = form.watch('optimalMargin');
   const companyMultiplier =
-    optimalMargin !== undefined && optimalMargin > 0 && optimalMargin < 100
+    optimalMargin !== undefined && optimalMargin >= 0 && optimalMargin < 100
       ? calculateCompanyMultiplier(optimalMargin)
       : 0;
 

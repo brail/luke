@@ -48,21 +48,58 @@ export function landedCostBreakdown(purchasePrice: number, ps: LandedCostParams)
   return { qualityControlCost, priceWithQC, priceWithTransport, dutyCost, priceWithDuty, landedCost };
 }
 
+/** Margin mode's values, unrounded. */
+export interface MarginBreakdown {
+  /** Forward from the purchase price. */
+  landedCost: number;
+  /** Backward from the retail price: retail ÷ retail multiplier. */
+  wholesalePrice: number;
+  /** (wholesale − landed) / wholesale, a fraction. */
+  companyMargin: number;
+}
+
 /**
- * The company margin a retail price leaves over a purchase price, as a fraction: wholesale
- * (retail ÷ retail multiplier) less the landed cost, over wholesale.
+ * The company margin a retail price leaves over a purchase price (margin mode): the landed cost
+ * forward from one, the wholesale backward from the other, and the margin between them.
  *
  * Not forward mode's margin, whose wholesale is landed cost × company multiplier. No guards:
  * callers decide what a missing or non-positive price means, and a zero wholesale is theirs to
  * rule out.
  */
+export function priceMargin(
+  purchasePrice: number,
+  retailPrice: number,
+  ps: LandedCostParams & Pick<InverseCalcParams, 'retailMultiplier'>
+): MarginBreakdown {
+  const { landedCost } = landedCostBreakdown(purchasePrice, ps);
+  const wholesalePrice = retailPrice / ps.retailMultiplier;
+  return { landedCost, wholesalePrice, companyMargin: (wholesalePrice - landedCost) / wholesalePrice };
+}
+
+/** `priceMargin`'s margin alone, for the callers that only average it. */
 export function retailMargin(
   purchasePrice: number,
   retailPrice: number,
   ps: LandedCostParams & Pick<InverseCalcParams, 'retailMultiplier'>
 ): number {
-  const wholesale = retailPrice / ps.retailMultiplier;
-  return (wholesale - landedCostBreakdown(purchasePrice, ps).landedCost) / wholesale;
+  return priceMargin(purchasePrice, retailPrice, ps).companyMargin;
+}
+
+/** The margin target of a view that has no parameter set to read one from. */
+export const DEFAULT_OPTIMAL_MARGIN = 52;
+
+/**
+ * The mean of `value`, weighted by SKU over the items whose SKU is positive; the arithmetic mean
+ * when none is. How a row's quotations combine into one margin or one retail price, on screen and
+ * in the exports alike. `items` must not be empty.
+ */
+export function skuWeightedAverage(items: ReadonlyArray<{ value: number; sku: number | null }>): number {
+  const withSku = items.filter(i => i.sku !== null && i.sku > 0);
+  if (withSku.length > 0) {
+    const totalSku = withSku.reduce((s, i) => s + (i.sku ?? 0), 0);
+    return withSku.reduce((s, i) => s + i.value * (i.sku ?? 0), 0) / totalSku;
+  }
+  return items.reduce((s, i) => s + i.value, 0) / items.length;
 }
 
 /** Every value of forward mode, unrounded: the landed-cost chain, then the two multipliers. */

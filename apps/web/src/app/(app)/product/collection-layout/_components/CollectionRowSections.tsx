@@ -8,8 +8,7 @@ import {
   calcMaxSupplierCost,
   classifyMargin,
   formatPhaseLabel,
-  landedCostBreakdown,
-  retailMargin,
+  priceMargin,
   type CollectionLayoutRowInput,
 } from '@luke/core';
 
@@ -135,14 +134,14 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
     return { bt, lc: null, ws: null, marginPct: null, marginStatus: null, targetMargin: ps.optimalMargin };
   }
 
-  const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
-  const ws = q.retailPrice / ps.retailMultiplier;
-  const marginPct = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  // One call: the landed cost and wholesale shown are the margin's own inputs.
+  const m = priceMargin(q.supplierQuotation, q.retailPrice, ps);
+  const marginPct = m.companyMargin * 100;
   const marginStatus = classifyMargin(marginPct, ps.optimalMargin);
   return {
     bt,
-    lc: Math.round(lc * 100) / 100,
-    ws: Math.round(ws * 100) / 100,
+    lc: Math.round(m.landedCost * 100) / 100,
+    ws: Math.round(m.wholesalePrice * 100) / 100,
     marginPct: Math.round(marginPct * 10) / 10,
     marginStatus,
     targetMargin: ps.optimalMargin,

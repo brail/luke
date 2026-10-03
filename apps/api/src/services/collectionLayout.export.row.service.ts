@@ -12,7 +12,7 @@ import {
   classifyMargin,
   formatDateTimeWithTimezone,
   landedCostBreakdown,
-  retailMargin,
+  priceMargin,
 } from '@luke/core';
 import type { PrismaClient,
   Brand,
@@ -80,20 +80,20 @@ function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
     return { ...empty, bt, targetMargin };
   }
 
-  const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
-
   if (!q.retailPrice || q.retailPrice <= 0) {
+    const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
     return { ...empty, bt, lc: Math.round(lc * 100) / 100, targetMargin };
   }
 
-  const ws     = q.retailPrice / ps.retailMultiplier;
-  const margin = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  // One call: the landed cost and wholesale shown are the margin's own inputs.
+  const m      = priceMargin(q.supplierQuotation, q.retailPrice, ps);
+  const margin = m.companyMargin * 100;
   const status = classifyMargin(margin, ps.optimalMargin);
 
   return {
     bt:          Math.round(bt! * 100) / 100,
-    lc:          Math.round(lc * 100) / 100,
-    ws:          Math.round(ws * 100) / 100,
+    lc:          Math.round(m.landedCost * 100) / 100,
+    ws:          Math.round(m.wholesalePrice * 100) / 100,
     margin:      Math.round(margin * 100) / 100,
     targetMargin,
     status,

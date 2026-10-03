@@ -7,10 +7,9 @@ import { TRPCError } from '@trpc/server';
 
 import {
   calculateCompanyMultiplier,
-  landedCostBreakdown,
   priceForward,
   priceInverse,
-  retailMargin,
+  priceMargin,
   roundRetailPrice,
   type PricingParameterSetInput,
 } from '@luke/core';
@@ -161,13 +160,15 @@ export function calculateMarginOnly(
   retailPrice: number,
   params: CalcParams
 ): MarginResult {
+  const m = priceMargin(purchasePrice, retailPrice, params);
+
   return {
     mode: 'margin',
     purchasePrice,
     retailPrice,
-    landedCost: round2(landedCostBreakdown(purchasePrice, params).landedCost),
-    wholesalePrice: round2(priceInverse(retailPrice, params).wholesalePrice),
-    companyMargin: round4(retailMargin(purchasePrice, retailPrice, params)),
+    landedCost: round2(m.landedCost),
+    wholesalePrice: round2(m.wholesalePrice),
+    companyMargin: round4(m.companyMargin),
     companyMultiplier: calculateCompanyMultiplier(params.optimalMargin),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,

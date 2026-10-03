@@ -1,7 +1,12 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
-import { classifyMargin, retailMargin } from '@luke/core';
+import {
+  DEFAULT_OPTIMAL_MARGIN,
+  classifyMargin,
+  retailMargin,
+  skuWeightedAverage,
+} from '@luke/core';
 
 /** Pricing parameter set as returned by the router. */
 export type PricingParameterSet =
@@ -17,20 +22,6 @@ export interface MarginComputeInput {
   }>;
   qtyForecast: number | null;
 }
-
-/** SKU-weighted average of `value` across items that have a positive `sku`; arithmetic mean
- * fallback otherwise. Shared by computeRowMargin (margin) and computeRowRetailPrice (retailPrice)
- * — same weighting rule, only the field being averaged differs. */
-function skuWeightedAverage(items: Array<{ value: number; sku: number | null }>): number {
-  const withSku = items.filter(i => i.sku !== null && i.sku > 0);
-  if (withSku.length > 0) {
-    const totalSku = withSku.reduce((s, i) => s + i.sku!, 0);
-    return withSku.reduce((s, i) => s + i.value * i.sku!, 0) / totalSku;
-  }
-  return items.reduce((s, i) => s + i.value, 0) / items.length;
-}
-
-const DEFAULT_OPTIMAL_MARGIN = 52;
 
 /** The parameter set used as the margin-target reference for aggregate (non-row) views — the
  * season's default variant, falling back to the first one, falling back to a generic default

@@ -7,7 +7,9 @@ import {
   landedCostBreakdown,
   priceForward,
   priceInverse,
+  priceMargin,
   retailMargin,
+  skuWeightedAverage,
 } from '../pricing.js';
 
 /** Hand-computable: 10 + 5 % QC + 1 tools = 11.5; + 2 = 13.5; + 10 % duty = 14.85; ÷ 1.1 + 1.5 = 15. */
@@ -125,6 +127,28 @@ describe('calcMaxSupplierCost', () => {
     for (const retail of generateRetailPriceRange()) {
       expect(calcMaxSupplierCost(retail, ps)).toBe(Math.floor(priceInverse(retail, ps).purchasePriceRaw * 10) / 10);
     }
+  });
+});
+
+describe('priceMargin', () => {
+  it('returns the margin with the landed cost and wholesale it was made of', () => {
+    expect(priceMargin(10, 100, PS)).toEqual({
+      landedCost: landedCostBreakdown(10, PS).landedCost,
+      wholesalePrice: 40,
+      companyMargin: retailMargin(10, 100, PS),
+    });
+  });
+});
+
+describe('skuWeightedAverage', () => {
+  it('weights by SKU over the items that have one, ignoring the others', () => {
+    // (80 × 1 + 20 × 3) / 4 = 35; the item with no SKU does not count.
+    expect(skuWeightedAverage([{ value: 80, sku: 1 }, { value: 20, sku: 3 }, { value: 99, sku: null }])).toBe(35);
+    expect(skuWeightedAverage([{ value: 80, sku: 1 }, { value: 20, sku: 3 }, { value: 99, sku: 0 }])).toBe(35);
+  });
+
+  it('falls back to the arithmetic mean when no item has a SKU', () => {
+    expect(skuWeightedAverage([{ value: 80, sku: null }, { value: 20, sku: 0 }])).toBe(50);
   });
 });
 

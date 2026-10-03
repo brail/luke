@@ -1,5 +1,11 @@
 
-import { classifyMargin, formatDateTimeWithTimezone, retailMargin } from '@luke/core';
+import {
+  DEFAULT_OPTIMAL_MARGIN,
+  classifyMargin,
+  formatDateTimeWithTimezone,
+  retailMargin,
+  skuWeightedAverage,
+} from '@luke/core';
 import type { StorageBucket } from '@luke/core';
 import type { PrismaClient,
   Brand,
@@ -101,28 +107,25 @@ const IMAGE_WIDTH  = 44;
 const IMAGE_HEIGHT = 20;
 
 // ─── Margin computation ───────────────────────────────────────────────────────
-// The margin and its status are core's (`retailMargin`, `classifyMargin`); the averaging is the
-// web's `computeRowMargin` (apps/web/src/app/(app)/product/_shared/pricingCalc.ts), so a row shows
-// the same margin and status on screen and in the PDF.
+// Margin, status, SKU weighting and default target are all core's, as the web's `computeRowMargin`
+// (apps/web/src/app/(app)/product/_shared/pricingCalc.ts) uses them: a row shows the same margin
+// and status on screen and in the PDF.
 
 /** SKU-weighted mean margin when any quotation has SKU > 0, arithmetic mean otherwise. */
 export function computeMarginResult(
   quotations: QuotationWithParamSet[],
 ): { pct: number; isAboveTarget: boolean; isWarning: boolean } | null {
-  const margins: Array<{ value: number; sku: number }> = [];
-  let refOptimal = 52;
+  const margins: Array<{ value: number; sku: number | null }> = [];
+  let refOptimal = DEFAULT_OPTIMAL_MARGIN;
   for (const q of quotations) {
     const ps = q.pricingParameterSet;
     if (!ps || !q.supplierQuotation || !q.retailPrice) continue;
     if (q.supplierQuotation <= 0 || q.retailPrice <= 0) continue;
-    margins.push({ value: retailMargin(q.supplierQuotation, q.retailPrice, ps), sku: q.sku ?? 0 });
+    margins.push({ value: retailMargin(q.supplierQuotation, q.retailPrice, ps), sku: q.sku ?? null });
     refOptimal = ps.optimalMargin;
   }
   if (margins.length === 0) return null;
-  const withSku = margins.filter(m => m.sku > 0);
-  const avg = withSku.length > 0
-    ? withSku.reduce((s, m) => s + m.value * m.sku, 0) / withSku.reduce((s, m) => s + m.sku, 0)
-    : margins.reduce((s, m) => s + m.value, 0) / margins.length;
+  const avg = skuWeightedAverage(margins);
   const status = classifyMargin(avg * 100, refOptimal);
   return {
     pct: Math.round(avg * 10000) / 100,
