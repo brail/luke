@@ -24,6 +24,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -310,6 +311,23 @@ test('a directory named CHANGELOG.md is not the CHANGELOG, in either tree', () =
     omit: ['CHANGELOG.md'],
     extra: { 'CHANGELOG.md/notes.md': changelog('2.2.0') },
   });
+  assert.match(rejectsRev(repo, '2.2.0').message, /CHANGELOG\.md is not in/);
+  assert.throws(
+    () => checkReleaseTree({ tree: worktreeTree(repo), version: '2.2.0' }),
+    reason(/CHANGELOG\.md is not in/)
+  );
+});
+
+test('a symlink named CHANGELOG.md is not the CHANGELOG, in either tree', () => {
+  const repo = repoWith({
+    version: '2.2.0',
+    omit: ['CHANGELOG.md'],
+    extra: { 'notes.md': changelog('2.2.0') },
+  });
+  symlinkSync('notes.md', join(repo, 'CHANGELOG.md'));
+  git(repo, 'add', 'CHANGELOG.md');
+  git(repo, 'commit', '-q', '-m', 'chore: link the notes');
+
   assert.match(rejectsRev(repo, '2.2.0').message, /CHANGELOG\.md is not in/);
   assert.throws(
     () => checkReleaseTree({ tree: worktreeTree(repo), version: '2.2.0' }),

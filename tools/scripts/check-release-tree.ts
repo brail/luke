@@ -122,19 +122,31 @@ export interface ReleaseTree {
   /** What was read, for the summary line and the rejection messages. */
   readonly describe: string;
   /**
-   * Whether `path`, repository-root relative, is a tracked file of the tree. A
-   * directory of that name is not: its listing names only its children.
+   * Whether `path`, repository-root relative, is a tracked regular file of the
+   * tree. A directory, a symlink or a submodule of that name is not: `read`
+   * would answer with something other than the file's own text.
    */
   has(path: string): boolean;
   /** Contents of a path `has` answers true for. Throws for anything else. */
   read(path: string): string;
 }
 
-/** Whether a NUL-delimited git listing, narrowed to `path`, names `path` itself. */
-function lists(repo: string, args: string[], path: string): boolean {
+/**
+ * Whether a NUL-delimited git listing with modes (`ls-tree -r`, `ls-files -s`),
+ * narrowed to `path`, names `path` itself as a regular file. A directory lists
+ * only its children; a symlink (120000) and a submodule (160000) carry their own
+ * modes.
+ */
+function listsRegularFile(repo: string, args: string[], path: string): boolean {
   return git(repo, [...args, '--', path])
     .split('\0')
-    .includes(path);
+    .some(entry => {
+      const tab = entry.indexOf('\t');
+      return (
+        entry.slice(tab + 1) === path &&
+        /^100(644|755) /.test(entry.slice(0, tab))
+      );
+    });
 }
 
 /**
@@ -174,8 +186,7 @@ export function revTree(repo: string, rev: string): ReleaseTree {
 
   return {
     describe: `${rev} (tree ${tree.slice(0, 12)})`,
-    has: path =>
-      lists(repo, ['ls-tree', '-r', '--name-only', '-z', tree], path),
+    has: path => listsRegularFile(repo, ['ls-tree', '-r', '-z', tree], path),
     read(path) {
       // `<tree>:<path>` always starts with the resolved SHA, so a path that
       // begins with `-` can never be read as an option.
@@ -193,7 +204,8 @@ export function worktreeTree(repo: string): ReleaseTree {
     describe: `the working tree of ${repo}`,
     // Listed from the index and read from disk: "tracked" is the index's
     // answer, and the content is whatever the writers have just produced.
-    has: path => lists(repo, ['ls-files', '-z', '--full-name'], path),
+    has: path =>
+      listsRegularFile(repo, ['ls-files', '-s', '-z', '--full-name'], path),
     read(path) {
       const full = join(repo, path);
       if (!existsSync(full)) {

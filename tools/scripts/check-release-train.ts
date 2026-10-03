@@ -83,7 +83,11 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 
 import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
-import { ReleaseTreeError, checkGraduation } from './check-release-tree';
+import {
+  ReleaseTreeError,
+  checkGraduation,
+  revTree,
+} from './check-release-tree';
 import { REPO_ROOT } from './lib/report';
 
 /**
@@ -446,13 +450,12 @@ export interface TargetValidation {
  * candidate for its stable version — the same rule `changelogSection` uses.
  */
 function assertNoNotesYet(repo: string, version: string): void {
-  if (
-    git(repo, ['ls-tree', '--name-only', 'HEAD', '--', 'CHANGELOG.md']) === ''
-  ) {
-    return;
-  }
+  // The tree checker's own reader: a CHANGELOG.md that is not a regular file
+  // carries no notes here, and the tree check refuses it later in its own words.
+  const head = revTree(repo, 'HEAD');
+  if (!head.has('CHANGELOG.md')) return;
   const heading = `## [${version}]`;
-  const notes = git(repo, ['cat-file', 'blob', 'HEAD:CHANGELOG.md']);
+  const notes = head.read('CHANGELOG.md');
   if (notes.split(/\r?\n/).some(line => line.startsWith(heading))) {
     throw new ReleaseTrainError(
       `HEAD already carries release notes for ${version} ("${heading}" in ` +
