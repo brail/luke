@@ -18,7 +18,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
 
-import { IMAGE_BUCKETS, isDevelopment, isProduction } from '@luke/core';
+import { IMAGE_BUCKETS, isDevelopment, isProduction, type StorageBucket } from '@luke/core';
 import {
   deriveSecret,
   HKDF_INFO_COOKIE,
@@ -413,7 +413,8 @@ function setupTempFileCleanup() {
             for (const derivative of derivativesByParent.get(file.id) ?? []) {
               try {
                 await provider.delete({
-                  bucket: derivative.bucket as 'brand-logos' | 'company-assets' | 'collection-row-pictures' | 'merchandising-specsheet-images',
+                  // A FileObject's bucket is written only through IStorageProvider, which takes a StorageBucket.
+                  bucket: derivative.bucket as StorageBucket,
                   key: derivative.key,
                 });
               } catch (err) {
@@ -433,7 +434,8 @@ function setupTempFileCleanup() {
             if (derivativeDeleteFailed) continue;
 
             await provider.delete({
-              bucket: file.bucket as 'brand-logos' | 'company-assets' | 'collection-row-pictures' | 'merchandising-specsheet-images',
+              // Queried on IMAGE_BUCKETS above: every value here is a StorageBucket.
+              bucket: file.bucket as StorageBucket,
               key: file.key,
             });
             succeededIds.push(file.id);
