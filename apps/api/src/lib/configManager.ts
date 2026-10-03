@@ -845,7 +845,9 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
 
 /**
  * Reads the LDAP resilience configuration (circuit breaker, retries, timeouts) from AppConfig.
- * Each key is read independently; missing keys fall back to the LdapResilienceSchema defaults.
+ * Each key is read independently: an absent one reads its `APP_CONFIG_DEFAULTS` entry, an invalid
+ * one the same with a warning, and a database failure throws — as `getLdapConfig`, read beside it
+ * on the login path, already does.
  *
  * @returns Validated `LdapResilienceConfig` object.
  */
@@ -854,12 +856,12 @@ export async function getLdapResilienceConfig(
 ): Promise<LdapResilienceConfig> {
   const [timeoutMs, maxRetries, baseDelayMs, breakerFailureThreshold, breakerCooldownMs, halfOpenMaxAttempts] =
     await Promise.all([
-      getTypedConfig(prisma, 'auth.ldap.resilience.timeoutMs').catch(() => 3000),
-      getTypedConfig(prisma, 'auth.ldap.resilience.maxRetries').catch(() => 2),
-      getTypedConfig(prisma, 'auth.ldap.resilience.baseDelayMs').catch(() => 200),
-      getTypedConfig(prisma, 'auth.ldap.resilience.breakerFailureThreshold').catch(() => 5),
-      getTypedConfig(prisma, 'auth.ldap.resilience.breakerCooldownMs').catch(() => 10000),
-      getTypedConfig(prisma, 'auth.ldap.resilience.halfOpenMaxAttempts').catch(() => 1),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.timeoutMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.maxRetries'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.baseDelayMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.breakerFailureThreshold'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.breakerCooldownMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.halfOpenMaxAttempts'),
     ]);
 
   return LdapResilienceSchema.parse({

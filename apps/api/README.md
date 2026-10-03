@@ -22,7 +22,7 @@ The circuit breaker guards one step: the service-account bind that opens every
 login. That bind carries nothing about the person logging in, so nothing a
 caller types can move the breaker; the search, the user's own bind and the group
 lookup are never counted, in either direction. With the defaults in
-`packages/core/src/schemas/appConfig.ts` it opens after five consecutive service
+`APP_CONFIG_DEFAULTS` (`packages/core/src/schemas/config.ts`) it opens after five consecutive service
 binds without a usable answer, and a service bind the directory answers — a
 refusal included — zeroes the count. While it is open a login is refused before
 any connection. After the ten-second cooldown it is half-open: one login at a

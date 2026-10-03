@@ -48,21 +48,22 @@ export const RateLimitConfigSchema = z.object({
 
 /**
  * LDAP connection resilience settings — timeouts, retries, and circuit-breaker parameters.
- * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`.
+ * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`, whose
+ * defaults live in `APP_CONFIG_DEFAULTS` (`config.ts`), once.
  */
 export const LdapResilienceSchema = z.object({
   /** Timeout for LDAP operation in milliseconds */
-  timeoutMs: z.number().int().positive().default(3000),
+  timeoutMs: z.number().int().positive(),
   /** Maximum number of retries for failed operations */
-  maxRetries: z.number().int().min(0).default(2),
+  maxRetries: z.number().int().min(0),
   /** Base delay for exponential backoff in milliseconds */
-  baseDelayMs: z.number().int().min(10).default(200),
+  baseDelayMs: z.number().int().min(10),
   /** Failure threshold to open circuit breaker */
-  breakerFailureThreshold: z.number().int().min(1).default(5),
+  breakerFailureThreshold: z.number().int().min(1),
   /** Circuit breaker cooldown in milliseconds */
-  breakerCooldownMs: z.number().int().min(500).default(10000),
+  breakerCooldownMs: z.number().int().min(500),
   /** Probes the directory must answer, one at a time, to close the breaker from half-open */
-  halfOpenMaxAttempts: z.number().int().min(1).default(1),
+  halfOpenMaxAttempts: z.number().int().min(1),
 });
 
 /**

@@ -288,6 +288,13 @@ export const APP_CONFIG_DEFAULTS = {
   'storage.s3.presignedGetTtl': '3600',
 
   'storage.derivatives.enabled': 'true',
+
+  'auth.ldap.resilience.timeoutMs':               '3000',
+  'auth.ldap.resilience.maxRetries':              '2',
+  'auth.ldap.resilience.baseDelayMs':             '200',
+  'auth.ldap.resilience.breakerFailureThreshold': '5',
+  'auth.ldap.resilience.breakerCooldownMs':       '10000',
+  'auth.ldap.resilience.halfOpenMaxAttempts':     '1',
 } as const satisfies Partial<Record<AppConfigKey, string>>;
 
 /** A key that has a declared fallback, so reading it can be total. */
