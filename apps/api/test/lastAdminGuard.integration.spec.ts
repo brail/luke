@@ -63,11 +63,9 @@ describe('lastAdminGuard — real enforcement', () => {
   /**
    * Regression: the first version of the guard only checked the `settings`
    * section, and removing `settings.users` from the last admin passed without
-   * any obstacle. The Users menu entry is gated on
-   * `settings && settings['settings.users']` (`useMenuAccess.ts`) and that
-   * section maps to `users:read`: whoever loses it can no longer create or
-   * promote anyone, so it's the same lockout as `settings`, through another
-   * door. Found by testing manually on RC, not by a test.
+   * any obstacle. The Users menu entry reads `settings.users` (`useMenuAccess.ts`)
+   * and that section maps to `users:read`: whoever loses it can no longer create
+   * or promote anyone. Found by testing manually on RC, not by a test.
    *
    * Only `settings.users` is exercised: `settings` is derived from its children (ADR-025), so
    * `set` refuses to switch it at all, and the way to take it from a user is to take its

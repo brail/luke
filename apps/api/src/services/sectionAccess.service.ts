@@ -107,18 +107,18 @@ export async function listOverridesForUser(
  * Sections without which an administrator can no longer bring system
  * administration back to life.
  *
- * `settings` alone isn't enough, and that's the hole the first version of this
- * guard left open: the Users menu entry is gated on
- * `settings && settings['settings.users']` (`apps/web/src/hooks/useMenuAccess.ts`),
- * and `settings.users` maps to `users:read`. An admin who keeps `settings` but
- * loses `settings.users` can no longer create or promote anyone — the same
- * lockout, through a different door. Found by testing by hand on RC.
+ * `settings.users` is the Users menu entry (`apps/web/src/hooks/useMenuAccess.ts`)
+ * and maps to `users:read`: an admin who loses it can no longer create or
+ * promote anyone. The first version of this guard looked at `settings` instead
+ * and let exactly that through — found by testing by hand on RC. `settings`
+ * itself needs no entry: it is derived from its children, so an effective
+ * `settings.users` already makes it effective, and a kill switch on `settings`
+ * turns `settings.users` off with it (ADR-027).
  *
- * The recovery surface is therefore a **conjunction**: only whoever has all of
- * them effectively enabled counts as a way out.
+ * Kept as a list, read as a **conjunction**: only whoever has every entry
+ * effectively enabled counts as a way out.
  */
 export const ADMIN_RECOVERY_SECTIONS = [
-  'settings',
   'settings.users',
 ] as const satisfies readonly Section[];
 
@@ -141,8 +141,7 @@ type SectionAccessDefaults = Record<
 
 /**
  * A user's per-section overrides, in the shape `effectiveSectionAccess` accepts. Only the
- * recovery sections are loaded: `settings` is derived from its children (ADR-025), and an
- * effective `settings.users` already makes it effective, so the conjunction needs no other row.
+ * recovery sections are loaded: no other row can change whether they are effective.
  */
 type OverrideBySection = Map<string, boolean>;
 

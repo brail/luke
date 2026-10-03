@@ -164,7 +164,8 @@ export const sectionAccessRouter = router({
     }),
 
   /**
-   * Sets a section access override for a user; blocks removal of settings access from the last admin.
+   * Sets a section access override for a user; refuses to take `settings.users` (user administration)
+   * from the last administrator able to recover the system.
    * A parent section is derived from its children, so it takes no override at all, `null` included:
    * the overrides stored on parents before that rule were removed by migration (ADR-027).
    *
@@ -186,7 +187,7 @@ export const sectionAccessRouter = router({
       }
 
       const result = await ctx.prisma.$transaction(async tx => {
-        // Safety check: prevent removing settings access from the last
+        // Safety check: prevent removing user administration from the last
         // admin — only if the target is an admin: revoking an override for a
         // viewer/editor doesn't touch the invariant at all. Lock acquired
         // before reading the role, like every other point that evaluates
@@ -196,9 +197,9 @@ export const sectionAccessRouter = router({
         // PROMOTION of the same `userId` (viewer/editor → admin): that
         // path doesn't acquire this lock, so a narrow, known window
         // remains, not closed by this reordering.
-        // Every recovery section, not just `settings`: removing
-        // `settings.users` from the last admin locks them out of
-        // user administration exactly as removing `settings` would.
+        // A recovery section (`settings.users`): removing it from the
+        // last admin locks them out of user administration. `settings`
+        // never reaches here — a parent is refused above.
         if (isAdminRecoverySection(section) && enabled !== true) {
           await acquireLastAdminLock(tx);
           const target = await tx.user.findUnique({

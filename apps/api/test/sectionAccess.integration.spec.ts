@@ -527,6 +527,17 @@ describe('sectionAccess — parent sections are derived from their children (ADR
       });
     });
 
+    it('refuses a list that switches off the settings parent alone', async () => {
+      // `settings` is not a recovery section of its own (it is derived), but the kill switch on a
+      // parent turns its children off, `settings.users` included, and that is what the guard counts.
+      const { session } = await createTestUser('admin');
+      await expect(
+        writeKillSwitch(session, ['settings'])
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+    });
+
     it('closes the storage settings when settings.storage alone is disabled', async () => {
       const { session } = await createTestUser('admin');
       await writeKillSwitch(session, ['settings.storage']);
