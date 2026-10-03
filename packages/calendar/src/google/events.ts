@@ -1,3 +1,5 @@
+import { dayAfter } from '../allDay.js';
+
 import { getClient } from './client.js';
 
 import type { calendar_v3 } from 'googleapis';
@@ -15,15 +17,9 @@ export interface EventInput {
   status: 'confirmed' | 'cancelled';
 }
 
-/**
- * The day after an all-day value, as a date string. Google's `end.date` (like iCalendar's DTEND)
- * is exclusive, while Luke's `endAt` is the last day of the event: sending it as is showed every
- * multi-day event one day short.
- */
+/** Google's exclusive `end.date` for an all-day event's last day (see `dayAfter`). */
 export function exclusiveEndDate(lastDay: Date): string {
-  return new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate() + 1))
-    .toISOString()
-    .slice(0, 10);
+  return dayAfter(lastDay).toISOString().slice(0, 10);
 }
 
 function buildEventBody(input: EventInput): calendar_v3.Schema$Event {

@@ -1,5 +1,7 @@
 import ical, { ICalEventStatus } from 'ical-generator';
 
+import { dayAfter } from '../allDay.js';
+
 /**
  * Minimal milestone data required to generate an iCal event.
  */
@@ -40,9 +42,7 @@ export function generateIcal(
   for (const m of milestones) {
     const lastDay = m.endAt ?? m.startAt;
     // DTEND;VALUE=DATE is exclusive: an all-day event ends the day after its last day.
-    const end = m.allDay
-      ? new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate() + 1))
-      : lastDay;
+    const end = m.allDay ? dayAfter(lastDay) : lastDay;
     cal.createEvent({
       id: `luke-milestone-${m.id}@luke.app`,
       summary: m.allDay ? m.title : `[${m.brandCode}] ${m.title}`,
