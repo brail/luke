@@ -6,10 +6,11 @@ import { useSectionAccess } from './useSectionAccess';
 
 /**
  * Returns the sidebar visibility map for the current user, derived from
- * `useSectionAccess`. A sub-item is visible when its own sub-section is enabled;
- * the `parent &&` term below is redundant but harmless, since a parent section is
- * derived from its children (ADR-025). A parent dropdown is shown when at least
- * one of its sub-items is visible.
+ * `useSectionAccess`. A sub-item reads its own sub-section alone: the server
+ * resolves a parent as on iff one of its children is, and a parent in the kill
+ * switch turns its children off (ADR-027), so a child that is on implies its
+ * parent. A parent dropdown is shown when at least one of its sub-items is
+ * visible.
  *
  * @returns Object with boolean flags for each sidebar entry and grouped
  *   sub-item maps (`settingsItems`, `maintenanceItems`, `adminItems`, `productItems`,
@@ -19,45 +20,45 @@ export function useMenuAccess() {
   const s = useSectionAccess();
 
   return useMemo(() => {
-    // Settings: every sub-item requires parent + subsection
+    // Settings
     const settingsItems = {
-      users: s.settings && s['settings.users'],
-      company: s.settings && s['settings.company'],
-      storage: s.settings && s['settings.storage'],
-      mail: s.settings && s['settings.mail'],
-      ldap: s.settings && s['settings.ldap'],
-      nav: s.settings && s['settings.nav'],
-      nav_sync: s.settings && s['settings.nav_sync'],
-      google: s.settings && s['settings.google'],
-      collectionControl: s.settings && s['settings.collection_control'],
+      users: s['settings.users'],
+      company: s['settings.company'],
+      storage: s['settings.storage'],
+      mail: s['settings.mail'],
+      ldap: s['settings.ldap'],
+      nav: s['settings.nav'],
+      nav_sync: s['settings.nav_sync'],
+      google: s['settings.google'],
+      collectionControl: s['settings.collection_control'],
     };
     const showSettings = Object.values(settingsItems).some(Boolean);
 
-    // Maintenance: every sub-item requires parent + subsection
+    // Maintenance
     const maintenanceItems = {
-      config: s.maintenance && s['maintenance.config'],
-      import_export: s.maintenance && s['maintenance.import_export'],
-      backup: s.maintenance && s['maintenance.backup'],
-      mode: s.maintenance && s['maintenance.mode'],
-      auditLog: s.maintenance && s['maintenance.audit_log'],
+      config: s['maintenance.config'],
+      import_export: s['maintenance.import_export'],
+      backup: s['maintenance.backup'],
+      mode: s['maintenance.mode'],
+      auditLog: s['maintenance.audit_log'],
     };
     const showMaintenance = Object.values(maintenanceItems).some(Boolean);
 
-    // Admin: every sub-item requires parent + subsection
+    // Admin
     const adminItems = {
-      brands: s.admin && s['admin.brands'],
-      seasons: s.admin && s['admin.seasons'],
-      vendors: s.admin && s['admin.vendors'],
-      collectionLayoutConfiguration: s.admin && s['admin.collection_layout_configuration'],
-      calendarConfiguration: s.admin && s['admin.calendar_configuration'],
-      phaseCatalog: s.admin && s['admin.phase_catalog'],
+      brands: s['admin.brands'],
+      seasons: s['admin.seasons'],
+      vendors: s['admin.vendors'],
+      collectionLayoutConfiguration: s['admin.collection_layout_configuration'],
+      calendarConfiguration: s['admin.calendar_configuration'],
+      phaseCatalog: s['admin.phase_catalog'],
     };
     const showAdmin = Object.values(adminItems).some(Boolean);
 
-    // Prodotto: sub-items
+    // Product
     const productItems = {
-      merchandisingPlan: s.product && s['product.merchandising_plan'],
-      control: s.product && s['product.control'],
+      merchandisingPlan: s['product.merchandising_plan'],
+      control: s['product.control'],
     };
 
     const showCalendar = s['planning'];
@@ -85,7 +86,7 @@ export function useMenuAccess() {
       // Sales with sub-items
       sales: s.sales,
       salesItems: {
-        statistics: s.sales && s['sales.statistics'],
+        statistics: s['sales.statistics'],
       },
 
       // Calendar (cross-cutting: on when any planning.* section is on)
