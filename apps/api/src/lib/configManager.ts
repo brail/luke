@@ -28,7 +28,10 @@ import {
 import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
 import type { BackupScope, Prisma, PrismaClient } from '@luke/db';
 
-import { countRecoveryCapableAdmins } from '../services/sectionAccess.service';
+import {
+  countRecoveryCapable,
+  loadAdminRecoveryOverrides,
+} from '../services/sectionAccess.service';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
@@ -155,8 +158,11 @@ async function saveSectionsDisabledGuarded(
     const { sectionAccessDefaults, disabledSections: current } = await getRbacConfig(tx, {
       bypassCache: true,
     });
-    const before = await countRecoveryCapableAdmins(tx, sectionAccessDefaults, current);
-    const after = await countRecoveryCapableAdmins(tx, sectionAccessDefaults, disabled);
+    // One read under the lock, both counts from it: the list before and after differ, the
+    // administrators do not.
+    const admins = await loadAdminRecoveryOverrides(tx);
+    const before = countRecoveryCapable(admins, sectionAccessDefaults, current);
+    const after = countRecoveryCapable(admins, sectionAccessDefaults, disabled);
     if (before > 0 && after === 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',

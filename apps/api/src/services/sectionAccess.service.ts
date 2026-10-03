@@ -161,11 +161,59 @@ function hasEveryRecoverySection(
   );
 }
 
+/** An active admin and their overrides on the recovery sections. */
+export interface AdminRecoveryOverrides {
+  id: string;
+  overrides: OverrideBySection;
+}
+
 /**
- * Counts active admins who can still recover the system under the given
+ * The one read every recovery count works from: active admins with their overrides on the
+ * recovery sections. A caller that counts twice (before and after a change) loads once, so both
+ * counts see the same rows.
+ */
+export async function loadAdminRecoveryOverrides(
+  prisma: PrismaLike
+): Promise<AdminRecoveryOverrides[]> {
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', isActive: true },
+    select: {
+      id: true,
+      sectionAccess: {
+        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
+        select: { section: true, enabled: true },
+      },
+    },
+  });
+  return admins.map(admin => ({
+    id: admin.id,
+    overrides: new Map(admin.sectionAccess.map(a => [a.section, a.enabled])),
+  }));
+}
+
+/**
+ * How many of `admins` can still recover the system under the given
  * `sectionAccessDefaults`/`disabledSections` — same 4-layer evaluation as
  * `effectiveSectionAccess`, not just "has role admin", and across every
  * section in `ADMIN_RECOVERY_SECTIONS`.
+ */
+export function countRecoveryCapable(
+  admins: readonly AdminRecoveryOverrides[],
+  sectionAccessDefaults: SectionAccessDefaults,
+  disabledSections: string[]
+): number {
+  return admins.filter(admin =>
+    hasEveryRecoverySection(
+      admin.overrides,
+      sectionAccessDefaults,
+      disabledSections
+    )
+  ).length;
+}
+
+/**
+ * Counts active admins who can still recover the system: `countRecoveryCapable` over a fresh
+ * `loadAdminRecoveryOverrides`.
  *
  * Pass the currently committed config to check the status quo (used by `set`),
  * or a proposed config to check a hypothetical change before committing it
@@ -176,23 +224,11 @@ export async function countRecoveryCapableAdmins(
   sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): Promise<number> {
-  const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true },
-    select: {
-      sectionAccess: {
-        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
-        select: { section: true, enabled: true },
-      },
-    },
-  });
-
-  return admins.filter(admin =>
-    hasEveryRecoverySection(
-      new Map(admin.sectionAccess.map(a => [a.section, a.enabled])),
-      sectionAccessDefaults,
-      disabledSections
-    )
-  ).length;
+  return countRecoveryCapable(
+    await loadAdminRecoveryOverrides(prisma),
+    sectionAccessDefaults,
+    disabledSections
+  );
 }
 
 /**
@@ -213,23 +249,12 @@ export async function countRecoveryCapableAdminsAfterChange(
   sectionAccessDefaults: SectionAccessDefaults,
   disabledSections: string[]
 ): Promise<number> {
-  const admins = await prisma.user.findMany({
-    where: { role: 'admin', isActive: true },
-    select: {
-      id: true,
-      sectionAccess: {
-        where: { section: { in: [...ADMIN_RECOVERY_SECTIONS] } },
-        select: { section: true, enabled: true },
-      },
-    },
-  });
+  const admins = await loadAdminRecoveryOverrides(prisma);
 
   return admins.filter(admin => {
     if (admin.id === userId && changedSection === null) return false;
 
-    const overrides: OverrideBySection = new Map(
-      admin.sectionAccess.map(a => [a.section, a.enabled])
-    );
+    const overrides: OverrideBySection = new Map(admin.overrides);
 
     if (admin.id === userId && changedSection !== null) {
       if (hypotheticalEnabled === null) {
