@@ -150,7 +150,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Calendar (cross-cutting — OR over planning.*) */}
+          {/* Calendar: the `planning` section */}
           {menuAccess.calendar && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
@@ -215,28 +215,32 @@ export default function AppSidebar() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/product/pricing')}
-                      >
-                        <Link href="/product/pricing">
-                          <TrendingUp size={16} />
-                          <span>Costi e Prezzi</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/product/collection-layout')}
-                      >
-                        <Link href="/product/collection-layout">
-                          <LayoutGrid size={16} />
-                          <span>Collection Layout</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
+                    {menuAccess.productItems.pricing && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/pricing')}
+                        >
+                          <Link href="/product/pricing">
+                            <TrendingUp size={16} />
+                            <span>Costi e Prezzi</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
+                    {menuAccess.productItems.collectionLayout && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/collection-layout')}
+                        >
+                          <Link href="/product/collection-layout">
+                            <LayoutGrid size={16} />
+                            <span>Collection Layout</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
                     {menuAccess.productItems?.merchandisingPlan && (
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton

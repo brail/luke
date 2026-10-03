@@ -6,9 +6,10 @@ import { useMenuAccess } from '../useMenuAccess';
 /**
  * The sidebar map `useMenuAccess` derives from the effective section access. Mocks only
  * `useSectionAccess` — the server's answer, already resolved by `effectiveSectionAccess`, where a
- * parent is on iff one of its children is (ADR-027). Each item reads its own section, so the
- * parent never needs reading: these cases pin that, including the one a parent term would decide
- * (child off while the parent is on through a sibling).
+ * parent is on iff one of its children is (ADR-027). Each item reads its own section: these cases
+ * pin which section decides which item, and that a child stays off while a sibling keeps the
+ * parent on — the case that once showed the pricing and collection layout links to users whose
+ * sections were off.
  */
 
 const { fakeAccess } = vi.hoisted(() => ({
@@ -56,6 +57,18 @@ describe('useMenuAccess', () => {
     expect(menu.adminItems.brands).toBe(true);
     expect(menu.productItems.merchandisingPlan).toBe(false);
     expect(menu.productItems.control).toBe(true);
+    expect(menu.productItems.pricing).toBeFalsy();
+    expect(menu.productItems.collectionLayout).toBeFalsy();
+  });
+
+  test('pricing and collection layout follow their own sections', async () => {
+    const menu = await menuFor({
+      product: true,
+      'product.pricing': true,
+      'product.collection_layout': false,
+    });
+    expect(menu.productItems.pricing).toBe(true);
+    expect(menu.productItems.collectionLayout).toBe(false);
   });
 
   test('a group shows iff one of its items does', async () => {

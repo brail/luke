@@ -57,6 +57,8 @@ export function useMenuAccess() {
 
     // Product
     const productItems = {
+      pricing: s['product.pricing'],
+      collectionLayout: s['product.collection_layout'],
       merchandisingPlan: s['product.merchandising_plan'],
       control: s['product.control'],
     };
@@ -89,7 +91,7 @@ export function useMenuAccess() {
         statistics: s['sales.statistics'],
       },
 
-      // Calendar (cross-cutting: on when any planning.* section is on)
+      // Calendar: the `planning` section
       calendar: showCalendar,
 
       // Menu groups
