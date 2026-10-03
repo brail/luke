@@ -28,9 +28,12 @@ import { after, test } from 'node:test';
 import {
   auditClosure,
   auditInventory,
+  foreignEntries,
   listEntries,
   pngWidth,
+  unresolvedRequires,
   webInventory,
+  workspaceDirs,
 } from './check-image-runtime';
 
 const created: string[] = [];
@@ -326,4 +329,46 @@ test('pngWidth reads IHDR and refuses what is not a PNG', () => {
   header.writeUInt32BE(64, 16);
   assert.equal(pngWidth(header), 64);
   assert.equal(pngWidth(Buffer.from('GIF89a-not-a-png-at-all!')), null);
+});
+
+test('an exclusion glob is refused rather than read as a path', () => {
+  const root = tree();
+  write(
+    root,
+    'pnpm-workspace.yaml',
+    "packages:\n  - apps/*\n  - '!apps/legacy'\n"
+  );
+  assert.throws(() => workspaceDirs(root), /Unsupported workspace exclusion/);
+});
+
+test('a compiled require the manifests forgot is reported; builtins and relatives are not', () => {
+  const { root } = cleanClosure();
+  write(
+    root,
+    'apps/a/dist/index.js',
+    [
+      'const x = require("x");',
+      'const fs = require("fs");',
+      'const path = require("node:path");',
+      'const local = require("./local");',
+      'const ghost = require("ghost/sub/path");',
+      'const scoped = require("@scope/gone/deep");',
+    ].join('\n')
+  );
+  assert.deepEqual(unresolvedRequires(root), [
+    'apps/a/dist/index.js → @scope/gone',
+    'apps/a/dist/index.js → ghost',
+  ]);
+});
+
+test('the web image holds nothing outside apps/web and node_modules', () => {
+  assert.deepEqual(
+    foreignEntries([
+      'f apps/web/server.js',
+      'l node_modules/.pnpm/next@1.0.0/node_modules/next',
+      'f apps/api/dist/index.js',
+      'f packages/core/dist/index.js',
+    ]),
+    ['f apps/api/dist/index.js', 'f packages/core/dist/index.js']
+  );
 });

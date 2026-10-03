@@ -122,6 +122,7 @@ jobs:
     name: Build API image
     needs: [provenance, verify]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -183,8 +184,10 @@ jobs:
 
       # The version tag first, so a push that fails part-way never leaves a
       # moving alias (series, latest, rc-latest) on an image whose own version
-      # is missing. `bash -e` stops at the first failure; pushes are not atomic.
+      # is missing. `shell: bash` runs with `-e`, so it stops at the first failure;
+      # pushes are not atomic (ADR-028).
       - name: Push
+        shell: bash
         env:
           VERSION_TAG: ${{ env.API_IMAGE }}:${{ needs.provenance.outputs.version }}
           TAGS: ${{ steps.meta.outputs.tags }}
@@ -197,6 +200,7 @@ jobs:
     name: Build Web image
     needs: [provenance, verify]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -263,8 +267,10 @@ jobs:
 
       # The version tag first, so a push that fails part-way never leaves a
       # moving alias (series, latest, rc-latest) on an image whose own version
-      # is missing. `bash -e` stops at the first failure; pushes are not atomic.
+      # is missing. `shell: bash` runs with `-e`, so it stops at the first failure;
+      # pushes are not atomic (ADR-028).
       - name: Push
+        shell: bash
         env:
           VERSION_TAG: ${{ env.WEB_IMAGE }}:${{ needs.provenance.outputs.version }}
           TAGS: ${{ steps.meta.outputs.tags }}

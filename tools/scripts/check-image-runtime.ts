@@ -37,7 +37,7 @@ import {
   readFileSync,
   realpathSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
+import { builtinModules, createRequire } from 'node:module';
 import { basename, dirname, join, relative, sep } from 'node:path';
 
 import { sequence } from './lib/pnpmWorkspace.ts';
@@ -82,6 +82,11 @@ export function workspaceDirs(root: string): string[] {
 
   const dirs = [root];
   for (const glob of globs) {
+    if (glob.startsWith('!')) {
+      throw new Error(
+        `Unsupported workspace exclusion \`${glob}\`: only \`dir/*\` and plain paths.`
+      );
+    }
     if (glob.endsWith('/*') && !glob.slice(0, -2).includes('*')) {
       const parent = join(root, glob.slice(0, -2));
       if (!existsSync(parent)) continue;
@@ -198,6 +203,46 @@ export function auditClosure(rootDir: string): ClosureReport {
   };
 }
 
+/** `require("x")` with a bare specifier, in compiled CommonJS. */
+const BARE_REQUIRE = /\brequire\(\s*["']([^"'./#][^"']*)["']\s*\)/g;
+
+/** The package a bare specifier names: `@scope/name` or `name`, without a subpath. */
+function packageName(specifier: string): string {
+  const parts = specifier.split('/');
+  return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
+}
+
+/**
+ * `<file> → <package>` for every bare `require` in the workspace packages'
+ * compiled output that does not resolve from the requiring file. The closure
+ * walk follows manifests; this catches the import a manifest forgot — a
+ * package the full tree used to supply by accident and a production install
+ * no longer does.
+ */
+export function unresolvedRequires(rootDir: string): string[] {
+  const root = realpathSync(rootDir);
+  const builtins = new Set(builtinModules);
+  const missing = new Set<string>();
+  for (const workspace of workspaceDirs(root)) {
+    for (const out of ['dist', 'dist-scripts']) {
+      const tree = join(workspace, out);
+      if (!existsSync(tree)) continue;
+      for (const line of listEntries(tree)) {
+        if (!line.startsWith('f ') || !line.endsWith('.js')) continue;
+        const file = join(tree, line.slice(2));
+        for (const match of readFileSync(file, 'utf8').matchAll(BARE_REQUIRE)) {
+          const name = packageName(match[1]);
+          if (builtins.has(name) || name.startsWith('node:')) continue;
+          if (resolvePackage(dirname(file), name) === null) {
+            missing.add(`${relative(root, file)} → ${name}`);
+          }
+        }
+      }
+    }
+  }
+  return [...missing].sort();
+}
+
 /**
  * Every entry under `dir` as `f <path>` or `l <path>`, `lstat` only: a symlink
  * is listed as a link and never followed, so pnpm's links inside the standalone
@@ -231,6 +276,20 @@ export function webInventory(repoRoot: string): string[] {
     ...listEntries(join(web, '.next', 'static'), `${WEB_APP}/.next/static/`),
     ...listEntries(join(web, 'public'), `${WEB_APP}/public/`),
   ].sort();
+}
+
+/**
+ * The only top-level places the web image may hold anything: the web app and
+ * the traced packages. Another workspace's files there — API code reached by a
+ * value import Next then traced — are refused even when the list names them.
+ */
+const WEB_IMAGE_ROOTS = [`${WEB_APP}/`, 'node_modules/'];
+
+/** Entries of another workspace, or of none, in the web image. */
+export function foreignEntries(entries: string[]): string[] {
+  return entries.filter(
+    line => !WEB_IMAGE_ROOTS.some(prefix => line.slice(2).startsWith(prefix))
+  );
 }
 
 /** Entries in the tree and not on the list, and the reverse. */
@@ -305,38 +364,74 @@ export async function apiProbes(root: string): Promise<string[]> {
     problems.push(`sharp: ${String(err)}`);
   }
 
-  try {
-    load('@luke/db');
-  } catch (err) {
-    problems.push(`@luke/db: ${String(err)}`);
+  // Loaded, not only resolved: a package that resolves can still fail to
+  // evaluate (an ESM-only dependency under require, a native binding).
+  for (const name of [
+    '@luke/db',
+    '@luke/core',
+    '@luke/nav',
+    '@luke/calendar',
+  ]) {
+    try {
+      load(name);
+    } catch (err) {
+      problems.push(`${name}: ${String(err)}`);
+    }
   }
 
-  // What `entrypoint.sh` runs at boot, short of a database: the CLI starts, loads
-  // `prisma.config.ts` and parses the schema directory.
+  // What `entrypoint.sh` runs at boot, short of a database: `validate` loads
+  // `prisma.config.ts` and parses the schema directory (with the WASM parser);
+  // `version` runs the native schema engine `migrate deploy` needs, which the
+  // engines' install script downloads.
   const db = join(root, 'packages', 'db');
-  const prisma = spawnSync(
-    join(db, 'node_modules', '.bin', 'prisma'),
-    ['validate'],
-    {
-      cwd: db,
-      encoding: 'utf8',
-      env: {
-        // nosemgrep: luke-no-direct-env -- the child inherits the image's environment (PATH); the only value set is a fixed test URL, nothing is read
-        ...process.env,
-        DATABASE_URL: 'postgresql://image-check@127.0.0.1:1/image-check',
-      },
-    }
-  );
-  if (prisma.status !== 0) {
-    problems.push(
-      `prisma validate exited ${prisma.status}: ${(prisma.stderr || prisma.stdout).trim()}`
+  for (const command of ['validate', 'version']) {
+    const run = spawnSync(
+      join(db, 'node_modules', '.bin', 'prisma'),
+      [command],
+      {
+        cwd: db,
+        encoding: 'utf8',
+        env: {
+          // nosemgrep: luke-no-direct-env -- the child inherits the image's environment (PATH); the only value set is a fixed test URL, nothing is read
+          ...process.env,
+          DATABASE_URL: 'postgresql://image-check@127.0.0.1:1/image-check',
+        },
+      }
     );
+    if (run.status !== 0) {
+      const detail =
+        run.error?.message ?? (run.stderr || run.stdout || '').trim();
+      problems.push(`prisma ${command} exited ${run.status}: ${detail}`);
+    }
   }
   return problems;
 }
 
 const SMOKE_PORT = 3000;
 const SMOKE_BOOT_TIMEOUT_MS = 60_000;
+/** One request: a server that accepts and never answers must not hang the job. */
+const SMOKE_REQUEST_TIMEOUT_MS = 15_000;
+/** The optimizer width probed; one of Next's default `imageSizes`. */
+const SMOKE_IMAGE_WIDTH = 64;
+
+/** The widest PNG under `public`, as a URL path, or null when none is wider than the probe. */
+function probeImage(root: string): { path: string; width: number } | null {
+  const pub = join(root, WEB_APP, 'public');
+  if (!existsSync(pub)) return null;
+  let best: { path: string; width: number } | null = null;
+  for (const line of listEntries(pub)) {
+    if (!line.startsWith('f ') || !line.endsWith('.png')) continue;
+    const width = pngWidth(readFileSync(join(pub, line.slice(2))));
+    if (
+      width !== null &&
+      width > SMOKE_IMAGE_WIDTH &&
+      (best === null || width > best.width)
+    ) {
+      best = { path: `/${line.slice(2)}`, width };
+    }
+  }
+  return best;
+}
 
 /**
  * Boots the standalone server with the image's own environment — `HOSTNAME`
@@ -363,7 +458,12 @@ export async function webSmoke(root: string): Promise<string[]> {
   const get = (
     path: string,
     headers: Record<string, string> = {}
-  ): Promise<Response> => fetch(base + path, { headers, redirect: 'manual' });
+  ): Promise<Response> =>
+    fetch(base + path, {
+      headers,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(SMOKE_REQUEST_TIMEOUT_MS),
+    });
 
   try {
     const deadline = Date.now() + SMOKE_BOOT_TIMEOUT_MS;
@@ -377,9 +477,11 @@ export async function webSmoke(root: string): Promise<string[]> {
       if (login === null) await new Promise(done => setTimeout(done, 500));
     }
     if (login === null) {
-      return [
-        `server did not answer on ${base} within ${SMOKE_BOOT_TIMEOUT_MS / 1000}s:\n${output.trim()}`,
-      ];
+      const why =
+        server.exitCode !== null
+          ? `server exited with code ${server.exitCode}`
+          : `server did not answer on ${base} within ${SMOKE_BOOT_TIMEOUT_MS / 1000}s`;
+      return [`${why}:\n${output.trim()}`];
     }
     if (login.status !== 200)
       problems.push(`/login answered ${login.status}, expected 200.`);
@@ -387,7 +489,8 @@ export async function webSmoke(root: string): Promise<string[]> {
     const csrf = await get('/api/auth/csrf');
     const token: unknown =
       csrf.status === 200
-        ? ((await csrf.json()) as { csrfToken?: unknown }).csrfToken
+        ? // NextAuth's documented body; `unknown` because the shape is what is checked.
+          ((await csrf.json()) as { csrfToken?: unknown }).csrfToken
         : null;
     if (typeof token !== 'string' || token === '') {
       problems.push(
@@ -401,17 +504,28 @@ export async function webSmoke(root: string): Promise<string[]> {
     if (dashboard.status !== 200)
       problems.push(`/dashboard answered ${dashboard.status}, expected 200.`);
 
-    const image = await get('/_next/image?url=%2Fauthor.png&w=64&q=75', {
-      accept: 'image/png',
-    });
-    const width =
-      image.status === 200
-        ? pngWidth(new Uint8Array(await image.arrayBuffer()))
-        : null;
-    if (width !== 64) {
+    // The widest PNG the app ships, so the probe follows the assets rather than
+    // naming one. Without `sharp` the optimizer answers 200 with the original,
+    // which is why the width, not the status, is the assertion.
+    const source = probeImage(root);
+    if (source === null) {
       problems.push(
-        `/_next/image answered ${image.status} with width ${width}, expected a 64 px PNG.`
+        `no PNG wider than ${SMOKE_IMAGE_WIDTH} px in ${WEB_APP}/public to exercise the image optimizer.`
       );
+    } else {
+      const image = await get(
+        `/_next/image?url=${encodeURIComponent(source.path)}&w=${SMOKE_IMAGE_WIDTH}&q=75`,
+        { accept: 'image/png' }
+      );
+      const width =
+        image.status === 200
+          ? pngWidth(new Uint8Array(await image.arrayBuffer()))
+          : null;
+      if (width !== SMOKE_IMAGE_WIDTH) {
+        problems.push(
+          `/_next/image for ${source.path} (${source.width} px) answered ${image.status} with width ${width}, expected a ${SMOKE_IMAGE_WIDTH} px PNG.`
+        );
+      }
     }
   } finally {
     server.kill();
@@ -454,12 +568,15 @@ async function main(): Promise<void> {
           ]
         : []),
       ...closure.unresolved.map(edge => `unresolved dependency: ${edge}`),
+      ...unresolvedRequires(IMAGE_ROOT).map(
+        edge => `require of an undeclared package: ${edge}`
+      ),
       ...(await apiProbes(IMAGE_ROOT)),
     ];
     report(
       'api',
       problems,
-      `${closure.storeEntries} store entries, all reachable; argon2, sharp, @luke/db and the prisma CLI run.`
+      `${closure.storeEntries} store entries, all reachable; every compiled require resolves; argon2, sharp, the workspace packages and the prisma CLI and schema engine run.`
     );
     return;
   }
@@ -479,7 +596,13 @@ async function main(): Promise<void> {
       IMAGE_ROOT,
       readFileSync(WEB_INVENTORY_FILE, 'utf8')
     );
+    const foreign = foreignEntries(listEntries(IMAGE_ROOT));
     const problems = [
+      ...(foreign.length > 0
+        ? [
+            `${foreign.length} entries outside ${WEB_IMAGE_ROOTS.join(' and ')}: ${sample(foreign)}`,
+          ]
+        : []),
       ...(extra.length > 0
         ? [`${extra.length} entries not built by Next: ${sample(extra)}`]
         : []),
