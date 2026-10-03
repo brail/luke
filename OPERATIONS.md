@@ -172,6 +172,10 @@ never on the message text:
 | Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
 | Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 
+A `BAD_REQUEST` from a failed input parse also carries `error.data.zodError` —
+`formErrors` and `fieldErrors` by key, every issue, where the message keeps only
+the first; a 5xx never carries it.
+
 Rate-limit errors also carry `error.data.retryAfterSeconds` — the bucket's whole
 window, not the time left; the idempotency 429 does not. Their message is a
 generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so

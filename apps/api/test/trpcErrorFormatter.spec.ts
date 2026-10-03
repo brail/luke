@@ -137,6 +137,25 @@ describe('trpcErrorFormatter in production', () => {
     expect(error.message).toBe('Codice obbligatorio');
   });
 
+  it('tells which field each issue of a failed input parse belongs to', async () => {
+    const error = await callError(await loadRouter('production'), 'coreSchema', { code: '', name: '' });
+
+    expect(error.data.zodError).toEqual({
+      formErrors: [],
+      fieldErrors: {
+        code: ['Codice obbligatorio', 'Solo lettere, numeri, _ e -'],
+        name: ['Nome obbligatorio'],
+      },
+    });
+  });
+
+  it('carries no zodError on a 5xx with a Zod cause, nor on a 4xx without one', async () => {
+    const router = await loadRouter('production');
+
+    expect((await callError(router, 'invalidOutput')).data.zodError).toBeUndefined();
+    expect((await callError(router, 'CONFLICT')).data.zodError).toBeUndefined();
+  });
+
   it('keeps an explicit message even when the cause is a ZodError', async () => {
     const error = await callError(await loadRouter('production'), 'explicitWithZodCause');
 

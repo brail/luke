@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 
 import { isProduction } from '@luke/core';
 import { Prisma } from '@luke/db';
@@ -169,13 +169,21 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
   });
 }
 
+/** A failed input parse, issue by issue: `formErrors` for the root, `fieldErrors` by key. */
+export interface ZodErrorData {
+  formErrors: string[];
+  fieldErrors: Record<string, string[] | undefined>;
+}
+
 /**
- * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus an optional
- * `retryAfterSeconds` on `data`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`)
- * so clients can render an upper-bound `Retry-After` (the whole window) without recomputing it.
+ * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
+ * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
+ *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it;
+ * - `zodError`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
+ *   and this keeps which field each issue belongs to.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
-  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number };
+  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number; zodError?: ZodErrorData };
 }
 
 /**
@@ -202,6 +210,12 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
   const retryAfterSeconds = isRateLimitExceededCause(error.cause)
     ? error.cause.retryAfterSeconds
     : undefined;
+  // A 4xx only: an output that breaks its schema is a 500 with a ZodError cause too, and its
+  // paths describe the server's schema, not anything the caller sent.
+  const zodError: ZodErrorData | undefined =
+    shape.data.httpStatus < 500 && error.cause instanceof ZodError
+      ? z.flattenError(error.cause)
+      : undefined;
 
   return {
     ...shape,
@@ -209,6 +223,7 @@ export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = (
     data: {
       ...shape.data,
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
+      ...(zodError !== undefined && { zodError }),
     },
   };
 };
