@@ -17,6 +17,7 @@ import { createHash } from 'crypto';
 import type { StorageBucket } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { logAudit } from '../lib/auditLog.js';
 import { copyToImmutableBucket, getStorageProvider, readObjectBuffer } from '../storage/index.js';
 
 const LIVE: StorageBucket = 'collection-row-pictures';
@@ -135,23 +136,26 @@ export async function repairAutoRevisionPhotos(
         if (count !== keyRows.length) {
           throw new Error(`conflict: ${keyRows.length - count} row(s) changed by a concurrent run`);
         }
-        await tx.auditLog.createMany({
-          data: revisionIds.map(revisionId => ({
-            actorId: null,
-            action: PHOTO_REPAIR_AUDIT_ACTION,
-            targetType: 'CollectionLayoutRevision',
-            targetId: revisionId,
-            result: 'SUCCESS',
-            metadata: {
-              runId,
-              reason: 'auto-revision-live-key',
-              rowRevisionIds: keyRows.filter(r => r.revisionId === revisionId).map(r => r.id),
-              oldKey: key,
-              newKey,
-              checksumSha256: checksum,
+        for (const revisionId of revisionIds) {
+          await logAudit(
+            { prisma: tx },
+            {
+              action: PHOTO_REPAIR_AUDIT_ACTION,
+              targetType: 'CollectionLayoutRevision',
+              targetId: revisionId,
+              metadata: {
+                runId,
+                reason: 'auto-revision-live-key',
+                rowRevisionIds: keyRows.filter(r => r.revisionId === revisionId).map(r => r.id),
+                oldKey: key,
+                newKey,
+                checksumSha256: checksum,
+              },
             },
-          })),
-        });
+            // A repointed row must not outlive its audit row: the failure rolls the key back.
+            { required: true },
+          );
+        }
       });
       keys.push({ key, outcome: 'repaired', newKey, revisionIds });
     } catch (err) {

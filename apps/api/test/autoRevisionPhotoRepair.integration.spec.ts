@@ -157,7 +157,17 @@ describe('repairAutoRevisionPhotos', () => {
     expect(await prisma.fileObject.count({ where: { bucket: 'collection-row-pictures-revisions', key: newKey } })).toBe(1);
     const audits = await auditRows();
     expect(audits.map(a => a.targetId).sort()).toEqual([first, second].sort());
-    expect(audits[0]?.metadata).toMatchObject({ runId: 'run-1', oldKey: key, newKey });
+    // Through the sanitizer, and nothing redacted: every key is allowlisted.
+    expect(audits[0]?.metadata).toMatchObject({
+      runId: 'run-1',
+      reason: 'auto-revision-live-key',
+      oldKey: key,
+      newKey,
+      checksumSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      rowRevisionIds: [expect.any(String)],
+    });
+    expect(JSON.stringify(audits.map(a => a.metadata))).not.toContain('[REDACTED]');
+    expect(audits.every(a => a.actorId === null && a.traceId === null && a.result === 'SUCCESS')).toBe(true);
 
     const rerun = await repairAutoRevisionPhotos(prisma, { apply: true, runId: 'run-2' });
     expect(rerun.keys).toEqual([{ key: newKey, outcome: 'immutable' }]);
@@ -195,7 +205,7 @@ describe('repairAutoRevisionPhotos', () => {
         fn(new Proxy(tx, {
           get: (target, prop) =>
             prop === 'auditLog'
-              ? { createMany: async () => { throw new Error('audit unavailable'); } }
+              ? { create: async () => { throw new Error('audit unavailable'); } }
               : Reflect.get(target, prop),
         })),
       )) as never);

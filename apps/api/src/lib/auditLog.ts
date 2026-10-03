@@ -269,6 +269,15 @@ const SAFE_KEY_LIST = [
   'resetTokensRevoked',
   'authMode',
 
+  // One-shot repair of automatic revision photos (`autoRevisionPhotoRepair.service.ts`): storage
+  // keys, a content checksum and ids — no secret, no personal data. `oldKey`/`newKey` shadow the
+  // sensitive-key blacklist on purpose: they are object paths, not credentials.
+  'runId',
+  'rowRevisionIds',
+  'oldKey',
+  'newKey',
+  'checksumSha256',
+
   // Config / RBAC
   'valueRedacted',
   'includeValues',
