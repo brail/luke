@@ -158,18 +158,39 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
+      # Built once and loaded, checked from inside, then pushed: the image that
+      # reaches ghcr is the one the check passed, not a second build. Same check
+      # as ci.yml's `images` job (tools/scripts/check-image-runtime.ts).
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
+
+      - name: Check runtime contents
+        env:
+          IMAGE: ${{ env.API_IMAGE }}:${{ needs.provenance.outputs.version }}
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          "$IMAGE" /check/check-image-runtime.ts api
+
+      # The version tag first, so a push that fails part-way never leaves a
+      # moving alias (series, latest, rc-latest) on an image whose own version
+      # is missing. `bash -e` stops at the first failure; pushes are not atomic.
+      - name: Push
+        env:
+          VERSION_TAG: ${{ env.API_IMAGE }}:${{ needs.provenance.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker push "$VERSION_TAG"
+          for tag in $TAGS; do [ "$tag" = "$VERSION_TAG" ] || docker push "$tag"; done
 
   # ── Build & push Web image ───────────────────────────────────────────────────
   build-web:
@@ -214,12 +235,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
+      # Built once and loaded, checked from inside, then pushed: the image that
+      # reaches ghcr is the one the check passed, not a second build. Same check
+      # as ci.yml's `images` job (tools/scripts/check-image-runtime.ts).
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # PUBLIC_HOSTNAME → prod, RC_PUBLIC_HOSTNAME → rc (both set as GitHub repo variables)
@@ -229,3 +253,21 @@ jobs:
             APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
+
+      - name: Check runtime contents
+        env:
+          IMAGE: ${{ env.WEB_IMAGE }}:${{ needs.provenance.outputs.version }}
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          "$IMAGE" /check/check-image-runtime.ts web
+
+      # The version tag first, so a push that fails part-way never leaves a
+      # moving alias (series, latest, rc-latest) on an image whose own version
+      # is missing. `bash -e` stops at the first failure; pushes are not atomic.
+      - name: Push
+        env:
+          VERSION_TAG: ${{ env.WEB_IMAGE }}:${{ needs.provenance.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker push "$VERSION_TAG"
+          for tag in $TAGS; do [ "$tag" = "$VERSION_TAG" ] || docker push "$tag"; done
