@@ -95,10 +95,11 @@ import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
 export class ReleaseTreeError extends Error {}
 
 /**
- * A cap, not an allocation. `ls-tree -r` over this repository is ~47 KB today,
- * comfortably inside the 1 MiB default — but the default's failure mode is an
- * ENOBUFS raised from a release gate, whose message would say nothing about
- * size, so the headroom is deliberate.
+ * A cap, not an allocation. Every output read here — a `CHANGELOG.md`, a
+ * listing narrowed to one path, a graduation's changed paths — sits well inside
+ * the 1 MiB default, but the default's failure mode is an ENOBUFS raised from a
+ * release gate, whose message would say nothing about size, so the headroom is
+ * deliberate.
  */
 const MAX_BUFFER = 64 * 1024 * 1024;
 
@@ -120,19 +121,20 @@ function git(repo: string, args: string[]): string {
 export interface ReleaseTree {
   /** What was read, for the summary line and the rejection messages. */
   readonly describe: string;
-  /** Every tracked path in the tree, repository-root relative. */
-  readonly paths: ReadonlySet<string>;
-  /** Contents of a path that `paths` lists. Throws for anything else. */
+  /**
+   * Whether `path`, repository-root relative, is a tracked file of the tree. A
+   * directory of that name is not: its listing names only its children.
+   */
+  has(path: string): boolean;
+  /** Contents of a path `has` answers true for. Throws for anything else. */
   read(path: string): string;
 }
 
-/** The NUL-delimited listing both trees enumerate themselves with. */
-function trackedPaths(repo: string, args: string[]): ReadonlySet<string> {
-  return new Set(
-    git(repo, args)
-      .split('\0')
-      .filter(path => path !== '')
-  );
+/** Whether a NUL-delimited git listing, narrowed to `path`, names `path` itself. */
+function lists(repo: string, args: string[], path: string): boolean {
+  return git(repo, [...args, '--', path])
+    .split('\0')
+    .includes(path);
 }
 
 /**
@@ -172,7 +174,8 @@ export function revTree(repo: string, rev: string): ReleaseTree {
 
   return {
     describe: `${rev} (tree ${tree.slice(0, 12)})`,
-    paths: trackedPaths(repo, ['ls-tree', '-r', '--name-only', '-z', tree]),
+    has: path =>
+      lists(repo, ['ls-tree', '-r', '--name-only', '-z', tree], path),
     read(path) {
       // `<tree>:<path>` always starts with the resolved SHA, so a path that
       // begins with `-` can never be read as an option.
@@ -190,7 +193,7 @@ export function worktreeTree(repo: string): ReleaseTree {
     describe: `the working tree of ${repo}`,
     // Listed from the index and read from disk: "tracked" is the index's
     // answer, and the content is whatever the writers have just produced.
-    paths: trackedPaths(repo, ['ls-files', '-z', '--full-name']),
+    has: path => lists(repo, ['ls-files', '-z', '--full-name'], path),
     read(path) {
       const full = join(repo, path);
       if (!existsSync(full)) {
@@ -324,8 +327,7 @@ export interface ReleaseTreeResult {
 export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
   const { tree, version } = input;
 
-  const paths = tree.paths;
-  if (!paths.has(CHANGELOG)) {
+  if (!tree.has(CHANGELOG)) {
     throw new ReleaseTreeError(`${CHANGELOG} is not in ${tree.describe}.`);
   }
   const entries = changelogSection(tree.read(CHANGELOG), version);
