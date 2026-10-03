@@ -2,6 +2,7 @@ import { HardDrive, Lock, Plug, Settings, Shield, type LucideIcon } from 'lucide
 
 import type { ConfigRouterPrefix } from '@luke/core';
 
+import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 
 interface ConfigKeyBadgeProps {
@@ -25,15 +26,12 @@ const FALLBACK_STYLE = { icon: Settings, className: 'bg-gray-100 text-gray-800' 
  *
  * An unknown category (a key outside the router's prefixes) gets the neutral `app` look.
  */
-export function ConfigKeyBadge({
-  category,
-  className = '',
-}: ConfigKeyBadgeProps) {
+export function ConfigKeyBadge({ category, className }: ConfigKeyBadgeProps) {
   const styles: Partial<Record<string, { icon: LucideIcon; className: string }>> = CATEGORY_STYLES;
   const { icon: IconComponent, className: colorClass } = styles[category] ?? FALLBACK_STYLE;
 
   return (
-    <Badge variant="outline" className={`${colorClass} ${className}`}>
+    <Badge variant="outline" className={cn(colorClass, className)}>
       <IconComponent className="w-3 h-3 mr-1" />
       {category}
     </Badge>
