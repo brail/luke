@@ -11,21 +11,6 @@ RUN corepack enable
 FROM base AS builder
 WORKDIR /app
 
-# NEXT_PUBLIC_API_URL is baked into the client JS bundle at build time.
-ARG NEXT_PUBLIC_API_URL=http://luke.febos.local
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
-# INTERNAL_API_URL is used by next.config.js rewrites() which runs at build time.
-# The value must be the Docker service name — overridable via --build-arg.
-ARG INTERNAL_API_URL=http://api:3001
-ENV INTERNAL_API_URL=$INTERNAL_API_URL
-
-# APP_VERSION is injected at build time by release.yml from the provenance gate's normalized tag
-# (e.g. 3.0.0-rc.1). Falls back to the "dev" display sentinel when building without it, as CI's web
-# build does; the web only labels the UI with it.
-ARG APP_VERSION=dev
-ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
-
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
@@ -63,6 +48,24 @@ RUN pnpm --filter @luke/calendar build
 # fails with TS2307 and the Next build stops at its type-check phase. Proven by
 # deleting this line and watching the image build fail.
 RUN pnpm --filter @luke/api build
+
+# The per-channel arguments, declared only now: an argument invalidates every
+# layer after it, so the install and the package builds above stay shared
+# between CI's default build and the release's channel builds.
+# NEXT_PUBLIC_API_URL is baked into the client JS bundle at build time.
+ARG NEXT_PUBLIC_API_URL=http://luke.febos.local
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# INTERNAL_API_URL is used by next.config.js rewrites() which runs at build time.
+# The value must be the Docker service name — overridable via --build-arg.
+ARG INTERNAL_API_URL=http://api:3001
+ENV INTERNAL_API_URL=$INTERNAL_API_URL
+
+# APP_VERSION is injected at build time by release.yml from the provenance gate's normalized tag
+# (e.g. 3.0.0-rc.1). Falls back to the "dev" display sentinel when building without it, as CI's web
+# build does; the web only labels the UI with it.
+ARG APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 
 # Build Next.js app. `output: 'standalone'` (next.config.js) writes the server
 # and only the files its traces name to `.next/standalone`.
