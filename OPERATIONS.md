@@ -180,7 +180,7 @@ Rate-limit errors also carry `error.data.retryAfterSeconds` — the bucket's who
 window, not the time left; the idempotency 429 does not. Their message is a
 generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so
 the bucket and its limit are logged instead (`Rate limit exceeded`, with
-`routeName`, `max`, `windowMs`). A `requirePermission` refusal likewise reads
+`routeName`, `key` — the client IP or the account —, `max`, `windowMs`). A `requirePermission` refusal likewise reads
 `Accesso negato`, the requested permissions going to the `Permission denied` log
 line; an `adminProcedure` refusal reads the same and logs nothing (ADR-026,
 observed gaps).
