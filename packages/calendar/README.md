@@ -6,7 +6,7 @@ Google Calendar integration for Luke's season calendars: the authenticated Googl
 Google Cloud project, service account and Workspace configuration: [`docs/google-calendar-setup.md`](../../docs/google-calendar-setup.md).
 <!-- luke-docs:end:overview -->
 
-## Utilizzato da
+## Used By
 
 <!-- luke-docs:start:dependents -->
 - `@luke/api` (`apps/api`) — the `integrations.google.*` router (connection test and OAuth authorization flow), `services/googleCalendarSync.service.ts` (which builds the `SyncContext` over Prisma and is called from the `seasonCalendar.*` router), the `GET /download/season-calendar/ical` export route, and the `harden-google-calendar-acl` maintenance script
@@ -14,7 +14,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 `apps/web` does not depend on this package: it reaches the same functionality through tRPC and the download route.
 <!-- luke-docs:end:dependents -->
 
-## Export principali
+## Main Exports
 
 <!-- luke-docs:start:exports -->
 ### Client and OAuth
@@ -72,7 +72,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 | `ICalMilestone` | type | The narrower milestone shape the iCal generator consumes |
 <!-- luke-docs:end:exports -->
 
-## Concetti chiave
+## Key Concepts
 
 <!-- luke-docs:start:concepts -->
 - **Nothing is imported from `apps/api`, and nothing from Prisma.** The only workspace dependency is `@luke/core`; the runtime dependencies are `googleapis` and `ical-generator`. Every database read and write the sync engine needs arrives as a callback on `SyncContext`, which is what keeps the engine pure and unit-testable without a database.
@@ -83,7 +83,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 - **Retries are bounded and skip client errors.** Every Google call inside `syncMilestone` runs through three attempts with exponential back-off (500 ms, 1 s), and a 4xx other than 429 is rethrown immediately rather than retried — a rejected request will not become valid by being sent again.
 <!-- luke-docs:end:concepts -->
 
-## Esempio d'uso
+## Usage Example
 
 <!-- luke-docs:start:example -->
 ```typescript

@@ -6,7 +6,7 @@ Internal ESLint plugin that turns constraints written in `CLAUDE.md` and paid fo
 The plugin is enforcement only: the normative statement of each rule lives in `CLAUDE.md`, the lesson that produced it in `lessons.md`, and the file globs each rule runs on in the root `eslint.config.mjs`.
 <!-- luke-docs:end:overview -->
 
-## Utilizzato da
+## Used By
 
 <!-- luke-docs:start:dependents -->
 - The root `eslint.config.mjs`, which is the only consumer. It is declared as `eslint-plugin-luke: workspace:*` under the repository root's `devDependencies` and registered under the `@luke` plugin namespace, so every rule is spelled `@luke/<rule>`.
@@ -14,7 +14,7 @@ The plugin is enforcement only: the normative statement of each rule lives in `C
 No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/scripts/check-platform-integrity.ts` classifies both the repository root and this package as `tooling`, a kind that may name a workspace only under `devDependencies`. The rules still reach every workspace, because the root config applies them to `apps/web`, `apps/api`, `packages/*`, `tools/`, `scripts/` and this package's own JavaScript.
 <!-- luke-docs:end:dependents -->
 
-## Export principali
+## Main Exports
 
 <!-- luke-docs:start:exports -->
 `index.js` has a single default export — `{ rules: { … } }` — holding the eleven rules below. A rule file that is not listed there is not loaded by anything.
@@ -56,7 +56,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 | `@luke/no-bare-client-random-uuid` | Refuses a bare `crypto.randomUUID()` in a file carrying the `'use client'` directive: outside a secure context the method is undefined, so a page served over plain HTTP crashes. Requires the optional-call fallback used in `apps/web/src/lib/trpc.tsx` |
 <!-- luke-docs:end:exports -->
 
-## Concetti chiave
+## Key Concepts
 
 <!-- luke-docs:start:concepts -->
 - **The rules enforce; they do not decide.** Each one restates a constraint whose authority is elsewhere — `CLAUDE.md` for the development patterns, `lessons.md` for the regressions already paid for, `WORKSPACE_POLICY` for the dependency graph. That is the point of writing them: a finding an agent has to rediscover is a level-4 control, and a rule that runs on every push is a level-2 one.
@@ -68,7 +68,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 - **The rules have their own tests, and not all of them are covered.** `pnpm --filter eslint-plugin-luke test` runs `node --test` over `rules/__tests__/*.test.js` — the shared module-reference visitor, `no-restricted-module-references`, `no-undeclared-workspace-import`, `audit-metadata-object-literal`, `no-unreachable-disabled-tooltip` and `no-detached-jsdoc`. The other six rules are exercised only by the repository's own lint run.
 <!-- luke-docs:end:concepts -->
 
-## Esempio d'uso
+## Usage Example
 
 <!-- luke-docs:start:example -->
 ```javascript

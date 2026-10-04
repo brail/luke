@@ -4,7 +4,7 @@
 Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their inferred types, role and section-access rules, AppConfig keys and defaults, pricing and date utilities, storage contracts, asset metadata, and URL builders. The package is safe for browser consumers through its main entry point; cryptographic and database-backed RBAC helpers live behind the separate `@luke/core/server` entry point.
 <!-- luke-docs:end:overview -->
 
-## Utilizzato da
+## Used By
 
 <!-- luke-docs:start:dependents -->
 - `@luke/web` (`apps/web`) — form schemas, shared types, permission evaluation, storage contracts and API URL builders
@@ -12,7 +12,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 - `@luke/calendar` (`packages/calendar`) — the `initials` text helper that prefixes synchronized Google event titles and participates in their content hashes
 <!-- luke-docs:end:dependents -->
 
-## Export principali
+## Main Exports
 
 <!-- luke-docs:start:exports -->
 ### Schemas and configuration
@@ -52,7 +52,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 - `@luke/core/utils/date` exposes the `Intl` date formatters (`formatDate`, `formatDateWithTimezone`, …) as a narrow subpath for consumers that do not need the full main barrel; the calendar-date and working-day helpers (`CalendarDate`, `calendarDateIn`, `formatCalendarDate`, …) are main-entry only.
 <!-- luke-docs:end:exports -->
 
-## Concetti chiave
+## Key Concepts
 
 <!-- luke-docs:start:concepts -->
 - **One schema, shared by every caller.** A contract is defined here once and imported by the API and web workspaces; request handlers and forms must not maintain parallel Zod definitions.
@@ -63,7 +63,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 - **Dependency direction stays downward.** The package has no dependency on an application workspace or on Prisma; callers inject runtime infrastructure where a shared contract needs it.
 <!-- luke-docs:end:concepts -->
 
-## Esempio d'uso
+## Usage Example
 
 <!-- luke-docs:start:example -->
 ```typescript
