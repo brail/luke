@@ -855,3 +855,17 @@ first review round, by reading `getRbacConfig`'s per-role spread next to the pla
 function from the old reader's code, branch by branch (which key is absent, which value is invalid,
 which flag it ignores), and use that single function everywhere the migration needs the old value.
 Test each absence separately, including the one where the containing object itself is missing.
+
+## A browser test that fails only on its first local run fails every CI run (2026-10-04)
+
+**What happened.** The first `VendorCombobox` browser test (`5203f1b4`) failed on its first local
+run with an invalid hook call inside Popover and passed on the rerun; I took it for the known flake
+and pushed. CI starts every run from a cold `.vite` cache, so for CI the first run is the only one:
+`Browser Component Tests` failed on `d281b9d2` (run 37194351818). `vitest.browser.config.mts`
+already named the cause above five earlier entries — a dependency the optimizer discovers mid-run
+reloads Vite and leaves the mounted components on a discarded React.
+
+**Rule.** A browser-test failure that disappears on rerun is that reload until proven otherwise. A
+test that mounts a library no earlier browser test mounted lists it in `optimizeDeps.include` before
+the push, and the suite runs once with `apps/web/node_modules/.vite` moved aside, which is what CI
+sees.

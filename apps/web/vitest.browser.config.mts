@@ -77,6 +77,10 @@ export default defineConfig({
       // to mount a Switch and a Select: listed up front for the same cold-cache reason.
       '@radix-ui/react-switch',
       '@radix-ui/react-select',
+      // Added for VendorCombobox.browser.test.tsx, the first to mount a Popover and a Command:
+      // the same cold-cache reload, which failed CI on its first push (run 37194351818).
+      '@radix-ui/react-popover',
+      'cmdk',
     ],
   },
   oxc: {
