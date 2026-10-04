@@ -25,8 +25,8 @@ earlier that month.
   that already exists (the row's vendor, the company profile) and is never typed
   in. The per-event `relevantCountries` field and the what-if dependency solver
   (`packages/calendar/src/solver/`) were removed on 2026-07-01 because they
-  demanded a lot of configuration for little use; see
-  [what-if-calendar-solver.md](archive/what-if-calendar-solver.md). This feature
+  demanded a lot of configuration for little use; their design record is listed
+  under [Retired records](archive/README.md#retired-records) in the archive index. This feature
   brings back none of it: no dependency graph between milestones and no
   drag-preview simulation. It is a single three-value enum.
 - **No new AppConfig key.** The company's country is the existing
@@ -88,10 +88,10 @@ The resolution reads the following data, all of it pre-existing:
 
 | Value | UI label | A day counts when it is… |
 | --- | --- | --- |
-| `null` | "— Nessuna (giorni di calendario) —" | any day (plain calendar days) |
-| `COMPANY` | "Calendario aziendale" | a weekday that is not a holiday in the company's country |
-| `VENDOR` | "Calendario fornitore" | a weekday that is not a holiday in the row vendor's country |
-| `BOTH` | "Entrambi" | a weekday that is a holiday in neither country |
+| `null` | `— Nessuna (giorni di calendario) —` | any day (plain calendar days) |
+| `COMPANY` | `Calendario aziendale` | a weekday that is not a holiday in the company's country |
+| `VENDOR` | `Calendario fornitore` | a weekday that is not a holiday in the row vendor's country |
+| `BOTH` | `Entrambi` | a weekday that is a holiday in neither country |
 
 ## Country resolution
 
@@ -164,17 +164,17 @@ When a reached deadline still counts 0 — a timed deadline passed earlier today
 or a Sunday deadline seen on Monday in working mode — the row takes the band a
 count of −1 would take, but the count it returns stays 0. The payload carries
 `reached` (`late` for a concluded row, measured at `completedAt`), and the UI
-says "Scaduta" / "oltre la scadenza" instead of inventing a day of delay.
+says `Scaduta` / `oltre la scadenza` instead of inventing a day of delay.
 
 Consequences for an opted-in event:
 
-- An all-day deadline on the current date scores 0 ("Scade oggi") all day, and
+- An all-day deadline on the current date scores 0 (`Scade oggi`) all day, and
   a row concluded at any time on that date scores as on time, in both modes. A
   timed deadline is late from its instant on.
 - A Friday deadline seen on Saturday is −1 in both modes.
 - A deadline on a non-working day counts only the working days around it: a
   Sunday deadline seen on Friday is 0, and seen on Monday it is still 0 (−1 in
-  calendar mode) but reached, so late ("Scaduta"). The freeze-time warning
+  calendar mode) but reached, so late (`Scaduta`). The freeze-time warning
   catches this only when the event's `startAt` is the non-working day; see
   [Freeze-time warning](#freeze-time-warning).
 
@@ -231,9 +231,9 @@ which does not depend on the count.
 
 The calendar milestone notifications in `milestoneDeadlineScheduler.ts`
 (`milestoneNotice`) do not use the working-day count. They are measured on the
-deadline (`endAt ?? startAt`) in the business zone: "in scadenza" while it is
-not reached and its day is at most two calendar days away ("oggi", "domani",
-"tra 2 giorni"), "scaduta" for three days after it is reached.
+deadline (`endAt ?? startAt`) in the business zone: `in scadenza` while it is
+not reached and its day is at most two calendar days away (`oggi`, `domani`,
+`tra 2 giorni`), `scaduta` for three days after it is reached.
 
 ## Holiday sources
 
@@ -258,46 +258,48 @@ not reached and its day is at most two calendar days away ("oggi", "domani",
 
 The only control is `CalendarDaysRelevanceSelect` (`apps/web/src/components/`).
 Both `CalendarEventDialog` (calendar) and `TemplateItemDialog` (milestone
-template configuration) use it, as a field labelled "Conteggio giorni scadenza"
-placed below "Fase". It defaults to "— Nessuna (giorni di calendario) —"; the
-other options are "Calendario aziendale", "Calendario fornitore" and "Entrambi".
-The template dialog adds "Propagato all'evento generato quando il template viene
-applicato al calendario."
+template configuration) use it, as a field labelled `Conteggio giorni scadenza`
+placed below `Fase`. It defaults to `— Nessuna (giorni di calendario) —`; the
+other options are `Calendario aziendale`, `Calendario fornitore` and `Entrambi`.
+The template dialog adds
+`Propagato all'evento generato quando il template viene applicato al calendario.`
 
 Read-only helper text under the select says where the country comes from. The
 country itself is never editable:
 
 | Selection | Helper text |
 | --- | --- |
-| `COMPANY` | "Paese: IT": the company profile's ISO code, or "— non impostato in Impostazioni azienda —". |
-| `VENDOR` | "Risolto dal fornitore assegnato a ciascuna riga collezione." Shows no country, because the country differs per row. |
-| `BOTH` | "Giorno lavorativo solo se aperto sia in azienda (IT) sia presso il fornitore di ciascuna riga." |
+| `COMPANY` | `Paese: IT`: the company profile's ISO code, or `— non impostato in Impostazioni azienda —`. |
+| `VENDOR` | `Risolto dal fornitore assegnato a ciascuna riga collezione.` Shows no country, because the country differs per row. |
+| `BOTH` | `Giorno lavorativo solo se aperto sia in azienda (IT) sia presso il fornitore di ciascuna riga.` |
 
 The select stays enabled on events whose dates are locked after freeze. The
-read-only event view shows the choice as a badge: "gg lavorativi (azienda)",
-"gg lavorativi (fornitore)" or "gg lavorativi (entrambi)".
+read-only event view shows the choice as a badge: `gg lavorativi (azienda)`,
+`gg lavorativi (fornitore)` or `gg lavorativi (entrambi)`.
 
 ### Stating the unit
 
 Criticality tooltips state the unit of the number they show. The formatting is
-in `CriticalityBadge.tsx`, shared by the row drawer's "Situazione" block and the
+in `CriticalityBadge.tsx`, shared by the row drawer's `Situazione` block and the
 collection-layout table cell.
 
 | `daysMode` | Unit label |
 | --- | --- |
-| `calendar` | "gg di calendario" |
-| `working`, countries resolved | "gg lavorativi (IT+CN)", codes joined by "+" |
-| `working`, weekends only | "gg lavorativi" |
+| `calendar` | `gg di calendario` |
+| `working`, countries resolved | `gg lavorativi (IT+CN)`, codes joined by "+" |
+| `working`, weekends only | `gg lavorativi` |
 
-For example: "12 gg lavorativi (IT+CN) alla scadenza — «title»: date".
-Concluded rows use the same unit in "… di anticipo" / "… di ritardo". Because
+For example: `12 gg lavorativi (IT+CN) alla scadenza — «title»: date`.
+Concluded rows use the same unit in `… di anticipo` / `… di ritardo`. Because
 the code list is not de-duplicated, an Italian vendor under an Italian company
-reads "IT+IT" in `BOTH` mode.
+reads `IT+IT` in `BOTH` mode.
 
-Only the tooltip states the unit. The detail line next to the badge ("tra 12
-giorni", "5 giorni di ritardo", "scaduta" for a reached deadline that counts 0,
-"Prossima fase: … · tra N giorni") prints the number as "giorni" in either mode. The next-phase figure also uses the next
-event's relevance, which may differ from the badge's.
+Only the tooltip states the unit. The detail line next to the badge
+(`tra 12 giorni`, `5 giorni di ritardo`, `scaduta` for a reached deadline that
+counts 0, `Prossima fase: … · tra N giorni`) prints the number as `giorni` in
+either mode.
+The next-phase figure also uses the next event's relevance, which may differ from
+the badge's.
 
 ### Freeze-time warning
 
@@ -311,12 +313,12 @@ the countdown, with these rules:
 - It checks the date of the event's `startAt` (an all-day value's own date, a
   timed one read in the business zone), not its deadline.
 - An event on a weekend is reported once, as "weekend".
-- Otherwise, it is flagged "festività azienda" if the day is a company holiday
+- Otherwise, it is flagged `festività azienda` if the day is a company holiday
   (`COMPANY` / `BOTH`).
-- It is also flagged "chiusura fornitore «name»" once for each distinct vendor
+- It is also flagged `chiusura fornitore «name»` once for each distinct vendor
   country among the group's rows where the day is a holiday (`VENDOR` / `BOTH`).
 
-That vendor label says "chiusura", but the data comes from the `Holiday` table,
+That vendor label says `chiusura`, but the data comes from the `Holiday` table,
 not from `VendorClosurePeriod`.
 
 ## Changes since the original design
@@ -339,11 +341,11 @@ The code differs from the design as first written in these points:
   the concluded-row outcome (`1d7ad8b9`, 2026-08-02) came later and use the same
   rule.
 - **Freeze-time warning.** Not in the original design; added in `e7d5cc6c`.
-- **Helper text.** Planned to show the resolved country name ("Fornitore:
-  Cina", "Azienda: Italia"). It shows the company's ISO code instead, and no
+- **Helper text.** Planned to show the resolved country name
+  (`Fornitore: Cina`, `Azienda: Italia`). It shows the company's ISO code instead, and no
   country at all for `VENDOR`.
-- **Tooltip wording.** Planned as "N gg lavorativi (calendario fornitore CN)";
-  implemented as "N gg lavorativi (CN)", with codes joined by "+" for `BOTH`.
+- **Tooltip wording.** Planned as `N gg lavorativi (calendario fornitore CN)`;
+  implemented as `N gg lavorativi (CN)`, with codes joined by "+" for `BOTH`.
 - **Notifications.** Planned to stay in wall-clock windows on `startAt`, and did
   until 2026-09-28; they are now measured on the deadline in the business zone
   (see [Downstream effects](#downstream-effects)). The row-phase-overdue
