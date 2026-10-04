@@ -108,6 +108,7 @@ pnpm dev
 | `pnpm test:tools` | Tests for the control-plane scripts in `tools/scripts/` |
 | `pnpm check:drift` | Runs the blocking skill, documentation, platform, tsconfig, and workflow checks; see the [drift-check contracts](tools/README.md#drift-checks). |
 | `pnpm security` | SAST (semgrep) + secrets (gitleaks) + dependencies (osv-scanner) |
+| `pnpm backup:open <file.lukebak> [out.tar]` | Decrypts a backup export offline into a plain tar, with no server or database; prompts for the export passphrase |
 | `pnpm release:prepare <tag>` | The only release entry point: validates the tag and writes the `CHANGELOG.md` section |
 | `pnpm changelog` | Prints the git-cliff output to **stdout** with no range and no version: a generic preview, **not** the notes `release:prepare` will produce |
 

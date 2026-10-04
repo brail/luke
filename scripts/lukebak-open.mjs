@@ -1,7 +1,10 @@
 /**
  * Offline reader for a Luke `.lukebak` backup export package.
  *
- *   pnpm backup:open <file.lukebak> <passphrase> [out.tar]
+ *   pnpm backup:open <file.lukebak> [out.tar]
+ *
+ * Prompts for the passphrase without echoing it, or reads the first line of stdin when stdin is
+ * not a terminal. Never as an argument: it would be kept in the shell history and shown by `ps`.
  *
  * Decrypts an export package to a plain tar containing `db.dump` (pg_dump custom format) and,
  * for a DB_AND_FILES backup, `files/<bucket>/<key>`. Inspect with `tar tvf`, then `pg_restore`.
@@ -27,9 +30,55 @@ import { createGunzip } from 'zlib';
 const apiDir = process.env.LUKE_API_DIR ?? join(import.meta.dirname, '..', 'apps', 'api');
 const argon2 = createRequire(`${apiDir}/package.json`)('argon2');
 
-const [file, passphrase, out = 'backup.tar'] = process.argv.slice(2);
-if (!file || !passphrase) {
-  console.error('usage: pnpm backup:open <file.lukebak> <passphrase> [out.tar]');
+const args = process.argv.slice(2);
+const [file, out = 'backup.tar'] = args;
+// The output must end in `.tar`: under the old `<file> <passphrase>` form the passphrase would
+// otherwise be taken for the output name, and the tar written to a file named after it.
+if (!file || args.length > 2 || (args.length === 2 && !out.endsWith('.tar'))) {
+  console.error('usage: pnpm backup:open <file.lukebak> [out.tar]');
+  console.error('The passphrase is prompted for, never passed as an argument.');
+  process.exit(1);
+}
+
+/** Reads a line from the terminal without echoing it. Ctrl-C aborts. */
+function promptHidden(prompt) {
+  const { stdin, stderr } = process;
+  return new Promise(resolve => {
+    let value = '';
+    const finish = () => {
+      stdin.off('data', onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      stderr.write('\n');
+    };
+    const onData = chunk => {
+      for (const ch of chunk) {
+        if (ch === '\r' || ch === '\n') {
+          finish();
+          resolve(value);
+          return;
+        }
+        if (ch === '\u0003') {
+          finish();
+          process.exit(130);
+        }
+        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+        else value += ch;
+      }
+    };
+    stderr.write(prompt);
+    stdin.setEncoding('utf8');
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.on('data', onData);
+  });
+}
+
+const passphrase = process.stdin.isTTY
+  ? await promptHidden('Passphrase: ')
+  : readFileSync(0, 'utf8').split(/\r?\n/)[0];
+if (!passphrase) {
+  console.error('No passphrase given.');
   process.exit(1);
 }
 
