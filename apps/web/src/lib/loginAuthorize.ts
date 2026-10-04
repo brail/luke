@@ -32,6 +32,14 @@ export class LoginUnavailable extends CredentialsSignin {
 }
 
 /**
+ * The password is right and the email is still to verify, under `auth.requireEmailVerification`.
+ * Like `LoginPending`, answered only after the password is proven.
+ */
+export class LoginEmailUnverified extends CredentialsSignin {
+  code = 'email_unverified';
+}
+
+/**
  * The password is right and the account awaits approval: `pending`, or `pending_email` when its
  * directory entry has no address and the page should ask for one. The API answers this only after
  * proving the password, so the code tells nothing to someone who does not have it.
@@ -47,8 +55,9 @@ const PENDING_MESSAGES = new Set(['ACCOUNT_PENDING_APPROVAL', 'ACCOUNT_PENDING_A
 
 /**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data, a
- * `{ pendingApproval, needsEmail }` object for accounts awaiting approval, or `{ unavailable }`
- * when the API answers `SERVICE_UNAVAILABLE`. Returns `null` on any other error or non-OK response.
+ * `{ pendingApproval, needsEmail }` object for accounts awaiting approval, `{ emailUnverified }`
+ * for an email still to verify, or `{ unavailable }` when the API answers `SERVICE_UNAVAILABLE`.
+ * Returns `null` on any other error or non-OK response.
  *
  * It returns the unavailable case instead of throwing it: the `catch` below is for a failed fetch,
  * and would swallow it.
@@ -85,6 +94,9 @@ async function callTRPCAuth(
       if (response.status === 403 && code === 'FORBIDDEN' && PENDING_MESSAGES.has(message)) {
         return { pendingApproval: true, needsEmail: message === 'ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL' };
       }
+      if (response.status === 403 && code === 'FORBIDDEN' && message === 'EMAIL_NOT_VERIFIED') {
+        return { emailUnverified: true };
+      }
       // Read from the code, never the message: production replaces the message of every 5xx.
       if (code === 'SERVICE_UNAVAILABLE') {
         return { unavailable: true };
@@ -116,6 +128,7 @@ async function callTRPCAuth(
  * @returns The user to open a session for, or `null` for a login that was refused.
  * @throws {LoginUnavailable} When the login service is unavailable.
  * @throws {LoginPending} When the password is right and the account awaits approval.
+ * @throws {LoginEmailUnverified} When the password is right and the email is still to verify.
  */
 export async function authorizeLogin(
   credentials: Partial<Record<'username' | 'password', unknown>> | undefined,
@@ -139,6 +152,9 @@ export async function authorizeLogin(
     }
     if (authResult?.pendingApproval) {
       throw new LoginPending(authResult.needsEmail);
+    }
+    if (authResult?.emailUnverified) {
+      throw new LoginEmailUnverified();
     }
 
     if (!authResult?.user) {

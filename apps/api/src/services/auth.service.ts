@@ -359,11 +359,8 @@ export async function authenticateUser(
       },
     });
 
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message:
-        'Email non verificata. Controlla la tua casella di posta per il link di verifica.',
-    });
+    // A marker the web turns into its own message, as `ACCOUNT_PENDING_APPROVAL` above.
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'EMAIL_NOT_VERIFIED' });
   }
 
   // Block logins that cannot bypass maintenance while it is active

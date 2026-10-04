@@ -71,8 +71,8 @@ export default function LoginPage() {
           return;
         }
 
-        // Specific handling for unverified email
-        if (result.error.includes('Email non verificata')) {
+        // Like the pending codes, sent only for a proven password (`LoginEmailUnverified`).
+        if (result.code === 'email_unverified') {
           setError(
             'Email non verificata. Controlla la tua casella di posta per il link di verifica.'
           );

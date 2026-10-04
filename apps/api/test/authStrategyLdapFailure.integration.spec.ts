@@ -142,7 +142,11 @@ describe('ldap-first, LDAP failing', () => {
       const { user } = await createTestUser('editor');
       await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: null } });
 
-      await expect(login(user.username).result).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      // A marker, not a sentence: the web reads it to tell the user why (`loginAuthorize.ts`).
+      await expect(login(user.username).result).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'EMAIL_NOT_VERIFIED',
+      });
       expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({
         reason: 'email_not_verified',
       });

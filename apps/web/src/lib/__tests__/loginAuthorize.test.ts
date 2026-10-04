@@ -10,7 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { authorizeLogin, LoginPending, LoginUnavailable } from '../loginAuthorize';
+import { authorizeLogin, LoginEmailUnverified, LoginPending, LoginUnavailable } from '../loginAuthorize';
 import { loginThrottleContext } from '../loginThrottleContext';
 
 import type { LoginThrottleState } from '../loginThrottleContext';
@@ -91,8 +91,19 @@ describe('authorizeLogin', () => {
     expect(error.code).toBe(code);
   });
 
+  it('an email still to verify, answered after the password is proven, leaves as code email_unverified', async () => {
+    apiAnswers(403, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED'));
+
+    const error = await authorizeLogin(credentials, request).catch(e => e);
+
+    expect(error).toBeInstanceOf(LoginEmailUnverified);
+    expect(error.code).toBe('email_unverified');
+  });
+
   it.each([
     ['wrong credentials', 401, trpcError('UNAUTHORIZED', 'Credenziali non valide')],
+    ['an unverified answer on anything but a 403', 401, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED')],
+    ['a 403 whose message only starts like an unverified one', 403, trpcError('FORBIDDEN', 'EMAIL_NOT_VERIFIED_X')],
     ['a pending answer on anything but a 403', 401, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL')],
     ['a 403 whose message only starts like a pending one', 403, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL_X')],
     ['an answer that is not JSON', 502, undefined],

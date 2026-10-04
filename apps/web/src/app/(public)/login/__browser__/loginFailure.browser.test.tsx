@@ -82,6 +82,14 @@ describe('a sign-in that did not go through', () => {
     await expect.element(screen.getByText('Troppi tentativi. Riprova tra qualche minuto.')).toBeVisible();
   });
 
+  test('an email still to verify is said so, once the password is proven', async () => {
+    const screen = await signInRefusedWith('email_unverified');
+
+    await expect
+      .element(screen.getByText('Email non verificata. Controlla la tua casella di posta per il link di verifica.'))
+      .toBeVisible();
+  });
+
   test('refused credentials read as such, and nothing about the account is asked or offered', async () => {
     const screen = await signInRefusedWith('credentials');
 
