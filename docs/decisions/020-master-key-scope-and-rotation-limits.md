@@ -63,3 +63,12 @@ These deviations exist when this record is accepted. They are recorded as follow
 - Current operational documentation still contradicts this record. `API_SETUP.md` and `APP_CONFIG.md` present deleting or moving the key as a routine operation, the latter on a ninety-day schedule whose backup step preserves nothing; `README.md` states that regenerating it invalidates every token; and `OPERATIONS.md` describes the startup check as a fail-fast guarantee that a lost key would trip. Correcting them is the immediate follow-up to this record.
 - The comment at the head of `apps/api/src/lib/backup/crypto.ts` says the master key can be rotated without re-encrypting historical backups. That is true of the blob and false of the wrapped DEK the blob depends on.
 - `auth.nextAuthSecret` is stored encrypted under the master key although nothing reads it (ADR-018).
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Decision, the rows written encrypted today.** The SMB and Drive blobs have no writer since `integrations.storage.saveConfig` was removed in `54bf6a65`; rows written before then stay encrypted.
+- **2026-10-05 — Rotation, "`me.revokeAllSessions` and `auth.logoutAll` revoke the caller's own".** `auth.logoutAll` was removed in `a3a7a9a2`; `me.revokeAllSessions` remains.
+- **2026-10-05 — Observed gaps, operational documentation.** `API_SETUP.md` and `APP_CONFIG.md` were retired (`e15cf989`, `17e854ed`); the root `README.md` now says to keep the key and cites this record.
+- **2026-10-05 — Observed gaps, the `backup/crypto.ts` header.** Corrected in `0ade9421`; it now distinguishes the blob from the wrapped data key and cites this record.

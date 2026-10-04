@@ -72,3 +72,11 @@ These deviations exist when this record is accepted. They are recorded as follow
 - Invalidation can be undone by a verification already in flight. On a cache miss, `verifyTokenVersion` reads the user row and then stores the result. If a revoking write commits and calls `invalidateTokenVersionCache` or `clearTokenVersionCache` while that read is in progress, the verification completes afterwards and stores the pre-revocation `tokenVersion` and `isActive` back into the cache. The revoked token is then accepted until that stale entry reaches the configured TTL. Invalidation only deletes entries; there is no generation, epoch or other guard against stale repopulation.
 - Code from earlier designs remains. `useSessionInvalidation` has no importers and opens an `EventSource` on `/api/session-events`, and `apps/web/next.config.js` still rewrites `/session-events`, although the API serves no such route.
 - Comments have drifted from the mechanism: `SessionVerification` says the hook polls every 30 seconds, although it polls every 10; the comment on `verifyTokenVersion` gives the JWT lifetime as 7 days; and `apps/api/src/lib/jwt.ts` keeps a `'7d'` default that is unused, because `createToken`, its only caller, supplies 8 hours.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Revocation triggers, self revoke.** `auth.logoutAll` was removed in `a3a7a9a2`; `me.revokeAllSessions` is the self-revoke path.
+- **2026-10-05 — Observed gaps, code from earlier designs.** `useSessionInvalidation` and the `/session-events` rewrite were removed in `ec0955a0`.
+- **2026-10-05 — Observed gaps, drifted comments.** The `SessionVerification` comment says 10 seconds since `60e857ec`. The 7-day comment on `verifyTokenVersion` and the `'7d'` default it describes are unchanged.

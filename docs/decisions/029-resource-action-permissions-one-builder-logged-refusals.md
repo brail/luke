@@ -84,3 +84,9 @@ Recorded as follow-ups; this record does not endorse them.
 
 - Brand scope has no decision record of its own.
 - The rule that every permission refusal logs is kept by convention for a manual check. No rule fails a `FORBIDDEN` thrown after `can()` or `hasPermission()` without `logAccessDenied`.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — The section-visibility layer cites ADR-025.** ADR-025 was superseded by [ADR-027](027-section-access-leaf-overrides-and-validated-defaults.md) before this record was accepted; ADR-027 is the current record for that layer and keeps the hierarchy ADR-025 described.
