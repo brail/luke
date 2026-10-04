@@ -20,8 +20,16 @@
 - Any future Italian documentation is derived from canonical English, never an
   independently maintained source. Do not invent a translation layout or
   pipeline before a real derived translation is authorized.
-- Preserve the existing language of frozen historical bodies. Write any new
-  material appended to them in English.
+- Historical records are English too: an Italian historical body is translated
+  meaning-preservingly or retired, an owner decision per document. A retired
+  record keeps an English entry in the index that listed it, with its last path
+  and the commit that holds it.
+- Product UI text quoted in documentation is a code span (`` `Salva` ``).
+- An Accepted ADR's Context, Decision and Consequences are never edited; its
+  Status changes only for an authorized supersession or deprecation. A statement
+  of fact about the repository it no longer matches is corrected by a dated entry
+  in a final `## Errata` section; anything that changes what it decides, requires
+  or rejects needs a new ADR.
 - Before staging or requesting commit approval for any code change, report
   `Documentation impact: none` with supporting evidence, or
   `Documentation impact: update required` with the affected material and why.
@@ -30,8 +38,9 @@
   structure, invoke `/luke-docs audit` automatically.
   The audit is read-only; documentation writes remain separately reviewed.
 
-Rationale, rejected alternatives, and the one-time pre-ADR-015 translation
-exception: `docs/decisions/015-documentation-architecture-and-canonical-language.md`.
+Rationale and rejected alternatives:
+`docs/decisions/030-documentation-architecture-canonical-language-and-historical-records.md`
+(supersedes ADR-015).
 
 Operational learning is maintained in [current lessons](lessons.md); entries
 retired after deterministic enforcement remain available in the
@@ -158,7 +167,7 @@ does not cover, run the script yourself.
    and silently eats it. Pre-session flows (login, email verification, password reset)
    legitimately write `actorId: null` — they must still set `targetId` to the
    `User.id`, which is what lets the read path attribute the event to a person
-   instead of rendering an anonymous "Sistema"
+   instead of rendering an anonymous `Sistema`
 5. **`requirePermission()` on every protected endpoint** — READ → `entity:read`,
    CREATE → `entity:create`, etc. Never `update` for a read-only query.
    An endpoint that works only on the caller's own data uses `selfProcedure`
@@ -207,8 +216,8 @@ does not cover, run the script yourself.
     Enforced in `apps/web/src` by `.semgrep/rules/server-api-call-forwarded-for.yml`:
     `forwardedFor()` from `lib/clientIp.ts`, inline in the call's headers.
 14. **Code comments always in English** — `//`, `/** */`, Prisma `///`:
-    always English, everywhere, **including domain terms** (stagione → season,
-    campionario → collection/catalog, reso → return, etc.) — no exception for
+    always English, everywhere, **including domain terms** (`stagione` → season,
+    `campionario` → collection/catalog, `reso` → return, etc.) — no exception for
     Italian vocabulary. With i18n coming on develop-2.2, Italian gets no
     privileged treatment in the source code. Merge logic on existing comments
     (leave untouched if accurate, extend if incomplete, rewrite if drifted):

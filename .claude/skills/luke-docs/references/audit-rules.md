@@ -5,7 +5,7 @@ documentation drift; it never edits a file, creates a report artifact, stages
 work, or suggests that a write happened.
 
 The canonical language and documentation-impact rules are in `CLAUDE.md`.
-ADR-015 records their rationale. This reference defines how to inspect and
+ADR-030 records their rationale. This reference defines how to inspect and
 report; it does not create a second policy.
 
 ## Boundary with other owners
@@ -89,16 +89,18 @@ For documentation affected by the resolved scope, check:
    required.
 5. **Lifecycle** — current guidance is maintained; work items and frozen
    evidence are not presented as current reference material.
-6. **Language** — new or mutable technical prose follows `CLAUDE.md`. Existing
-   frozen bodies retain their language; new appended material is English.
+6. **Language** — technical prose follows `CLAUDE.md`, historical bodies
+   included; appended material is English and quoted product UI text is a code
+   span.
 7. **Reader path** — the relevant journey remains understandable from the
    repository README and its maintained indexes without inventing an unrelated
    link solely to satisfy reachability.
 
-Do not rewrite or recommend translating a frozen historical body merely for
-uniformity. Frozen status relaxes only the language expectation for the existing
-body; it does not relax link, marker, index, or navigation integrity, and no
-document can opt into the boundary with an inline marker. Do not design a
+Check frozen documents like any other: link, marker, index, navigation and
+language integrity all apply, and no inline marker opts a document out. Report
+an Italian historical body for translation or retirement, and a stale statement
+in an Accepted ADR as a candidate erratum — or as `ADR/CODE CONFLICT` when
+correcting it could change what the ADR decides. Policy: `CLAUDE.md`, ADR-030. Do not design a
 derived-translation layout before a real translated consumer is authorized.
 
 ## Finding standard

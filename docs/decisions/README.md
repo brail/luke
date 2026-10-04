@@ -17,7 +17,7 @@
 | [012](012-generic-s3-storage-provider.md) | Generic S3 Storage Provider (Renamed from MinIO) + Swap to SeaweedFS | Accepted |
 | [013](013-asset-derivative-pipeline.md) | Automatic Asset Derivative Pipeline (Thumb/Card/Export) | Accepted |
 | [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Accepted |
-| [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Accepted |
+| [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Superseded by [030](030-documentation-architecture-canonical-language-and-historical-records.md) |
 | [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Superseded by [026](026-resource-action-permissions-enforced.md) |
 | [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Accepted |
 | [018](018-runtime-configuration-and-bootstrap-environment.md) | Database-Backed Runtime Configuration and Bootstrap-Only Environment | Accepted |
@@ -32,6 +32,7 @@
 | [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
 | [028](028-runtime-images-carry-runtime-dependencies-only.md) | Runtime Images Carry Runtime Dependencies Only, and Prove It | Accepted |
 | [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Accepted |
+| [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Accepted |
 
 _Last updated: 2026-10-04_
 <!-- luke-docs:end:adr-index -->

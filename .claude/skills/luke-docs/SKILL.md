@@ -164,7 +164,7 @@ the table above is where that is written, and every other statement points here.
 
 All generated or updated technical prose is English. The canonical rule,
 including the temporary product-UI exception and the treatment of frozen
-historical material, is in `CLAUDE.md`; its rationale is ADR-015. This skill
+historical material, is in `CLAUDE.md`; its rationale is ADR-030. This skill
 implements that policy and does not restate or extend it.
 
 ---

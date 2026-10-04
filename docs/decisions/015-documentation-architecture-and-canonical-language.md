@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [030 — Documentation Architecture, Canonical Language and Historical Records](030-documentation-architecture-canonical-language-and-historical-records.md)
 
 ## Context
 

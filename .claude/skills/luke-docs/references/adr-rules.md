@@ -1,8 +1,8 @@
 # luke-docs — ADR rules (`adr` mode)
 
 Directory: `docs/decisions/` (MADR format). All new or updated technical prose
-is English under the canonical language policy in `CLAUDE.md`; ADR-015 records
-the rationale and the one-time migration exception for earlier ADRs.
+is English under the canonical language policy in `CLAUDE.md`; ADR-030 records
+the rationale, including the errata rule below.
 
 **An Accepted ADR is normative architecture, not documentation** — it outranks
 the implementation until a human supersedes it
@@ -34,6 +34,11 @@ What was chosen and why.
 
 Trade-offs, architectural constraints, and effects on other components.
 ```
+
+An Accepted ADR may end with an `## Errata` section: dated English entries, each
+locating a statement of fact about the repository the ADR no longer matches,
+saying what is true now and citing the change that made it so (ADR-030). The
+section is appended by hand; this mode never writes one.
 
 **Numbering is three digits**, zero-padded, matching the tracked corpus. Derive
 the next number from the ADR files; never store the current highest number in
@@ -93,7 +98,8 @@ ADR/CODE CONFLICT — <NNN Title>
   Decision says: <the statement, quoted>
   Code shows:    <file:line and what it does>
   Not resolved here. Options: restore the implementation · supersede the ADR ·
-  accept a new ADR.
+  accept a new ADR · append an erratum (only when the statement is a fact about
+  the repository and correcting it changes nothing the ADR decides).
 ```
 
 Only after the user chooses may `Status` be edited, and only to what they chose.
