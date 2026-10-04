@@ -1259,12 +1259,30 @@ test('P15 refuses an override with no advisory id, or only part of one', () => {
   expectFailure(withOverrides("  valibot: '>=1.4.2' # GHSA-aaaa-bbbb-cccc"), /`valibot` names no advisory/);
 });
 
-test('P15 refuses a value that is not a version range', () => {
+test('P15 refuses a value that is not a version range, and keeps a wildcard range', () => {
+  for (const value of ["'npm:lodash-es@^4'", 'latest', "'-'", "'$lodash'"]) {
+    expectFailure(
+      withOverrides(`  # GHSA-ggr8-5vv4-36mx\n  lodash: ${value}`),
+      /`lodash`: `.*` is not a version range/
+    );
+  }
+  expectClean(withOverrides("  # GHSA-ggr8-5vv4-36mx\n  lodash: 'x.x'"));
+});
+
+test('P15 reads `#` as a comment only after whitespace, as YAML does', () => {
+  expectFailure(withOverrides('  lodash: >=4#GHSA-ggr8-5vv4-36mx'), /`overrides` has a line .* cannot read|names no advisory/);
+  expectFailure(withOverrides("  lodash: x#GHSA-ggr8-5vv4-36mx"), /`lodash` names no advisory/);
+});
+
+test('P15 refuses overrides declared in the root manifest, where the checks do not look', () => {
   expectFailure(
-    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  lodash: 'npm:lodash-es@^4'"),
-    /`lodash` is an alias/
+    withRootManifest(json => { Object.assign(json, { resolutions: { lodash: '>=4' } }); }),
+    /`resolutions` overrides dependencies outside/
   );
-  expectFailure(withOverrides('  # GHSA-ggr8-5vv4-36mx\n  lodash: latest'), /`lodash` names a dist-tag/);
+  expectFailure(
+    withRootManifest(json => { Object.assign(json, { pnpm: { overrides: { lodash: '>=4' } } }); }),
+    /`pnpm\.overrides` overrides dependencies outside/
+  );
 });
 
 test('P15 reads a file written with CRLF line endings', () => {

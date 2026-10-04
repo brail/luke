@@ -23,12 +23,16 @@ interface Installed {
   bundleDependencies?: string[];
   /** In the store but not in the lockfile: a leftover of an older install. */
   stale?: boolean;
+  /** What the lockfile resolved each dependency to, as `snapshots:` writes it. */
+  resolved?: Record<string, string>;
 }
 
 interface Fixture {
   overrides: Record<string, string>;
   installed?: Installed[];
   devDependencies?: Record<string, string>;
+  /** What the lockfile resolved the root workspace's devDependencies to (`importers:`). */
+  rootResolved?: Record<string, string>;
   /** `missing`: no virtual store at all; `stale`: its lock copy differs from pnpm-lock.yaml. */
   store?: 'ok' | 'missing' | 'stale';
 }
@@ -43,7 +47,7 @@ function write(root: string, path: string, contents: string): void {
   writeFileSync(join(root, path), contents);
 }
 
-function repo({ overrides, installed = [], devDependencies = {}, store = 'ok' }: Fixture): string {
+function repo({ overrides, installed = [], devDependencies = {}, rootResolved = {}, store = 'ok' }: Fixture): string {
   const root = mkdtempSync(join(tmpdir(), 'luke-overrides-'));
   created.push(root);
 
@@ -53,13 +57,23 @@ function repo({ overrides, installed = [], devDependencies = {}, store = 'ok' }:
       .map(([key, value]) => `  # GHSA-ggr8-5vv4-36mx\n  '${key}': '${value}'`)
       .join('\n') +
     '\n';
+  const locked = installed.filter(p => !p.stale);
+  const importer = Object.entries(rootResolved)
+    .map(([dep, version]) => `      ${dep}:\n        specifier: ${devDependencies[dep] ?? '*'}\n        version: ${version}\n`)
+    .join('');
   const lock =
-    "lockfileVersion: '9.0'\n\npackages:\n\n" +
-    installed
-      .filter(p => !p.stale)
-      .map(p => `  '${p.name}@${p.version}':\n    resolution: {integrity: sha512-x}\n`)
-      .join('\n') +
-    '\nsnapshots: {}\n';
+    "lockfileVersion: '9.0'\n\nimporters:\n\n  .:\n" +
+    (importer ? `    devDependencies:\n${importer}` : '') +
+    '\npackages:\n\n' +
+    locked.map(p => `  '${p.name}@${p.version}':\n    resolution: {integrity: sha512-x}\n`).join('\n') +
+    '\nsnapshots:\n\n' +
+    locked
+      .map(p => {
+        const deps = Object.entries(p.resolved ?? {});
+        const body = deps.length ? `\n    dependencies:\n${deps.map(([d, v]) => `      '${d}': ${v}\n`).join('')}` : ' {}\n';
+        return `  '${p.name}@${p.version}':${body}`;
+      })
+      .join('\n');
 
   write(root, '.gitignore', 'node_modules/\n');
   write(root, 'package.json', JSON.stringify({ name: 'root', private: true, devDependencies }, null, 2));
@@ -280,4 +294,65 @@ test('checks every installed version of a consumer, and names the one held below
   ).map(p => p.message);
   assert.equal(problems.length, 1);
   assert.match(problems[0] ?? '', /fast-json-stringify@7\.0\.1/);
+});
+
+test('refuses a cap that admits the declared range in theory but installs below it', () => {
+  // Every version the cap allows inside `^3.5.2` is unpublished, so pnpm installs 3.5.1.
+  expectRefused(
+    {
+      overrides: { 'fast-uri': '>=3.1.6 <3.6' },
+      installed: [{ ...stringify('7.0.1', { 'fast-uri': '^3.5.2' }), resolved: { 'fast-uri': '3.5.1' } }],
+    },
+    /installs fast-uri 3\.5\.1 for fast-json-stringify@7\.0\.1, below what it declares \(`\^3\.5\.2`\)/
+  );
+});
+
+test('reads a peer suffix off the installed version', () => {
+  expectRefused(
+    {
+      overrides: { 'fast-uri': '>=3.1.6 <3.6' },
+      installed: [{ ...stringify('7.0.1', { 'fast-uri': '^3.5.2' }), resolved: { 'fast-uri': '3.5.1(ajv@8.20.0)' } }],
+    },
+    /installs fast-uri 3\.5\.1 for/
+  );
+});
+
+test('reads what a workspace importer installed', () => {
+  expectRefused(
+    { overrides: { 'fast-uri': '>=3.1.6 <4.1' }, devDependencies: { 'fast-uri': '^4.0.0' }, rootResolved: { 'fast-uri': '3.9.0' } },
+    /installs fast-uri 3\.9\.0 for root \(package\.json\)/
+  );
+});
+
+test('accepts an install above the declared range: the upward unlock', () => {
+  expectClean({
+    overrides: { 'deepmerge-ts': '>=8.0.2' },
+    installed: [
+      { name: '@prisma/config', version: '7.10.0', dependencies: { 'deepmerge-ts': '7.1.5' }, resolved: { 'deepmerge-ts': '8.0.2' } },
+    ],
+  });
+});
+
+test('reports one problem once, however many fields declare it', () => {
+  const problems = checkOverrideConsumers(
+    repo({
+      overrides: { 'fast-uri': '>=3.1.6 <4' },
+      installed: [
+        { name: 'dual', version: '1.0.0', dependencies: { 'fast-uri': '^4.0.0' }, optionalDependencies: { 'fast-uri': '^4.0.0' } },
+      ],
+    })
+  );
+  assert.equal(problems.length, 1);
+});
+
+test('skips registry-less specifiers by their shape', () => {
+  expectClean({
+    overrides: { 'fast-uri': '>=3.1.6 <4' },
+    installed: [
+      stringify('7.0.1', { 'fast-uri': 'jsr:@std/fast-uri@^4' }),
+      stringify('7.0.2', { 'fast-uri': 'user/fast-uri#v4' }),
+      stringify('7.0.3', { 'fast-uri': 'gitlab:user/fast-uri' }),
+      stringify('7.0.4', { 'fast-uri': './vendor/fast-uri.tgz' }),
+    ],
+  });
 });

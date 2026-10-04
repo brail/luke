@@ -7,9 +7,15 @@
  * before resolving, so the lockfile only ever shows the rewritten one, and `pnpm peers check` sees
  * peers alone.
  *
- * Only the downward case is refused. An override that lifts a consumer above its own range is how a
- * fix reaches a package pinned to a vulnerable version; that is a decision its GHSA/CVE comment
- * justifies (P15 in `check-platform-integrity`), not an accident.
+ * Two questions, both downward only:
+ * - does the override admit nothing the consumer accepts (its target is entirely below the least
+ *   version the consumer declares)?
+ * - is the version actually installed for the consumer below that least version? A cap can admit the
+ *   consumer's range in theory and still install below it, when the versions it would need are not
+ *   published, or still in the release-age quarantine.
+ * An override that lifts a consumer above its own range is how a fix reaches a package pinned to a
+ * vulnerable version; that is a decision its GHSA/CVE comment justifies (P15 in
+ * `check-platform-integrity`), not an accident.
  *
  * A post-install check, and on purpose the exception to "a checker reads tracked state only"
  * (lessons.md): the declared ranges exist only in each installed package's own `package.json`. It
@@ -17,18 +23,19 @@
  * lockfile resolves, so a leftover store directory changes nothing.
  *
  * Limits: a consumer's bundled tree and platform-specific packages not installed on this machine are
- * not inspected. Green means no installed consumer is held below its range, not that no possible one
- * could be.
+ * not inspected, and a peer is judged by its declared range only (the lockfile records a resolved peer
+ * in the snapshot key, not as an edge). Green means no installed consumer is held below its range,
+ * not that no possible one could be.
  */
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
-import { Range, gtr, intersects, minVersion, validRange, type SemVer } from 'semver';
+import { Range, gtr, intersects, lt, minVersion, valid, validRange, type SemVer } from 'semver';
 
-import { lockfilePackages } from './lib/pnpmLockfile';
-import { mapping } from './lib/pnpmWorkspace';
+import { lockfilePackages, lockfileResolutions } from './lib/pnpmLockfile';
+import { mapping, splitSelector } from './lib/pnpmWorkspace';
 import { REPO_ROOT, formatProblems, type Problem } from './lib/report';
 
 interface Manifest {
@@ -44,8 +51,10 @@ interface Manifest {
 }
 
 interface Consumer {
-  /** `name@version` for an installed package, the manifest path for a workspace one. */
+  /** How a problem names it: `name@version`, or `name (path/package.json)` for a workspace one. */
   label: string;
+  /** Its key in `lockfileResolutions`: `name@version`, or `importer:<path>`. */
+  resolutionKey: string;
   manifest: Manifest;
   /** Workspace manifests: pnpm applies overrides to their devDependencies too. */
   workspace: boolean;
@@ -53,13 +62,11 @@ interface Consumer {
 
 /** One declared edge towards the overridden package. */
 interface Edge {
-  consumer: string;
+  consumer: Consumer;
   declared: string;
+  peer: boolean;
   optionalPeer: boolean;
 }
-
-/** Specifiers that name no registry version range: the override question does not arise. */
-const NOT_A_RANGE = /^(?:workspace|link|file|portal|catalog|git|git\+[a-z]+|github|https?):/;
 
 /** A range's comparator sets, each as a range of its own (`*` is the empty string). */
 const sets = (range: string): string[] =>
@@ -85,11 +92,15 @@ function floor(range: string): SemVer | 'unknown' | null {
   return least;
 }
 
-/** A package's declared range for `name`, unwrapping an `npm:` alias, or null when it names none. */
+/**
+ * A declared specifier's version range, unwrapping an `npm:` alias; null for one that names no
+ * registry version at all (a protocol, a URL, a path, a `user/repo` shorthand). A bare word that is
+ * not a range (`latest`) comes back as it is, for the caller to report.
+ */
 function declaredRange(spec: string): string | null {
-  if (NOT_A_RANGE.test(spec)) return null;
   const alias = spec.match(/^npm:(?:@[^/@]+\/)?[^@]+@(.*)$/);
-  return alias ? alias[1] : spec;
+  if (alias) return alias[1] ?? null;
+  return validRange(spec) === null && /[:/]/.test(spec) ? null : spec;
 }
 
 /** Whether the consumer ships `name` inside its own tarball: a bundle covers dependencies, never peers. */
@@ -101,7 +112,8 @@ function bundles(manifest: Manifest, name: string): boolean {
 /** Every edge from a consumer to `name`, in the fields pnpm rewrites for that consumer. */
 function edgesTo(name: string, consumers: Consumer[]): Edge[] {
   const edges: Edge[] = [];
-  for (const { label, manifest, workspace } of consumers) {
+  for (const consumer of consumers) {
+    const { manifest, workspace } = consumer;
     const bundled = bundles(manifest, name);
     const fields = [
       bundled ? undefined : manifest.dependencies,
@@ -110,25 +122,26 @@ function edgesTo(name: string, consumers: Consumer[]): Edge[] {
     ];
     for (const field of fields) {
       const spec = field?.[name];
-      if (spec !== undefined) edges.push({ consumer: label, declared: spec, optionalPeer: false });
+      if (spec !== undefined) edges.push({ consumer, declared: spec, peer: false, optionalPeer: false });
     }
     const peer = manifest.peerDependencies?.[name];
     if (peer !== undefined) {
       const optionalPeer = manifest.peerDependenciesMeta?.[name]?.optional === true;
-      edges.push({ consumer: label, declared: peer, optionalPeer });
+      edges.push({ consumer, declared: peer, peer: true, optionalPeer });
     }
   }
   return edges;
 }
 
 function readJson(path: string): Manifest {
+  // `JSON.parse` answers `any`; `Manifest` names only the fields read here, every one optional.
   return JSON.parse(readFileSync(path, 'utf8')) as Manifest;
 }
 
 /** The packages the virtual store holds and the current lockfile resolves, every version of each. */
 function installedConsumers(root: string, locked: Map<string, Set<string>>): Consumer[] {
   const store = join(root, 'node_modules', '.pnpm');
-  const consumers: Consumer[] = [];
+  const consumers = new Map<string, Consumer>();
   for (const entry of readdirSync(store)) {
     const modules = join(store, entry, 'node_modules');
     if (entry === 'node_modules' || !existsSync(modules)) continue;
@@ -143,10 +156,12 @@ function installedConsumers(root: string, locked: Map<string, Set<string>>): Con
       const manifest = readJson(join(dir, 'package.json'));
       const { name, version } = manifest;
       if (name === undefined || version === undefined || !locked.get(name)?.has(version)) continue;
-      consumers.push({ label: `${name}@${version}`, manifest, workspace: false });
+      // Peer variants of one version share a manifest: one consumer, not one per variant.
+      const label = `${name}@${version}`;
+      consumers.set(label, { label, resolutionKey: label, manifest, workspace: false });
     }
   }
-  return consumers;
+  return [...consumers.values()];
 }
 
 function workspaceConsumers(root: string): Consumer[] {
@@ -158,14 +173,13 @@ function workspaceConsumers(root: string): Consumer[] {
     .filter(Boolean);
   return [...new Set(files)].map(file => {
     const manifest = readJson(join(root, file));
-    return { label: `${manifest.name ?? 'workspace'} (${file})`, manifest, workspace: true };
+    return {
+      label: `${manifest.name ?? 'workspace'} (${file})`,
+      resolutionKey: `importer:${dirname(file)}`,
+      manifest,
+      workspace: true,
+    };
   });
-}
-
-/** `name@selector` → name and selector; a scoped name keeps its leading `@`. */
-function splitKey(key: string): { name: string; selector: string | null } {
-  const at = key.indexOf('@', 1);
-  return at === -1 ? { name: key, selector: null } : { name: key.slice(0, at), selector: key.slice(at + 1) };
 }
 
 /** Every override that holds an installed or workspace consumer below its declared range. */
@@ -191,46 +205,63 @@ export function checkOverrideConsumers(root: string): Problem[] {
   }
 
   const consumers = [...installedConsumers(root, lockfilePackages(lock)), ...workspaceConsumers(root)];
-  const problems: Problem[] = [];
+  const resolutions = lockfileResolutions(lock);
+  const problems = new Map<string, Problem>();
+  const report = (line: number, message: string): void => {
+    problems.set(`${line}\0${message}`, { file, line, message });
+  };
 
   for (const { key, value, line } of entries) {
-    const { name, selector } = splitKey(key);
+    const { pattern: name, version: selector } = splitSelector(key);
+    if (validRange(value) === null) {
+      report(line, `\`${key}\`: its target \`${value}\` is not a version range the override checks model (P15 refuses it).`);
+      continue;
+    }
     // A dead branch is refused rather than dropped: `gtr` reads one as below everything.
-    if (validRange(value) === null || !sets(value).every(admitsAVersion)) {
-      problems.push({ file, line, message: `\`${key}\`: its target \`${value}\` has a branch that admits no version.` });
+    if (!sets(value).every(admitsAVersion)) {
+      report(line, `\`${key}\`: its target \`${value}\` has a branch that admits no version.`);
       continue;
     }
 
-    for (const { consumer, declared, optionalPeer } of edgesTo(name, consumers)) {
+    for (const { consumer, declared, peer, optionalPeer } of edgesTo(name, consumers)) {
       // pnpm matches a selector against the declared specifier as written, so an alias or a tag
       // never meets one: that override does not reach the edge at all.
-      if (selector !== null && (validRange(declared) === null || !intersects(declared, selector))) continue;
+      if (selector !== undefined && (validRange(declared) === null || !intersects(declared, selector))) continue;
       const range = declaredRange(declared);
       if (range === null) continue;
       const least = validRange(range) === null ? null : floor(range);
       if (least === null || least === 'unknown') {
-        problems.push({
-          file,
+        report(
           line,
-          message:
-            `\`${key}\`: cannot evaluate what ${consumer} declares (\`${declared}\`), so it cannot ` +
-            'tell whether the override holds it below its range. Check it by hand with `pnpm why -r`.',
-        });
+          `\`${key}\`: cannot evaluate what ${consumer.label} declares (\`${declared}\`), so it cannot ` +
+            'tell whether the override holds it below its range. Check it by hand with `pnpm why -r`.'
+        );
         continue;
       }
+      const role = optionalPeer ? ', an optional peer' : '';
       if (gtr(least, value)) {
-        problems.push({
-          file,
+        report(
           line,
-          message:
-            `\`${key}\` (\`${value}\`) is entirely below what ${consumer} declares ` +
-            `(\`${declared}\`${optionalPeer ? ', an optional peer' : ''}): the override forces it off its ` +
-            'own range. Raise or drop the cap, after `pnpm why -r` (luke-deps §6).',
-        });
+          `\`${key}\` (\`${value}\`) is entirely below what ${consumer.label} declares ` +
+            `(\`${declared}\`${role}): the override forces it off its own range. Raise or drop the cap, ` +
+            'after `pnpm why -r` (luke-deps §6).'
+        );
+        continue;
+      }
+      if (peer) continue;
+      for (const installed of resolutions.get(consumer.resolutionKey)?.get(name) ?? []) {
+        if (valid(installed) !== null && lt(installed, least)) {
+          report(
+            line,
+            `\`${key}\` (\`${value}\`) installs ${name} ${installed} for ${consumer.label}, below what it ` +
+              `declares (\`${declared}\`): the versions the cap would allow above that are not ` +
+              'installable. Raise or drop the cap (luke-deps §6).'
+          );
+        }
       }
     }
   }
-  return problems;
+  return [...problems.values()];
 }
 
 function main(): void {

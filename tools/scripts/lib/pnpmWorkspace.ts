@@ -95,11 +95,34 @@ export interface MappingEntry {
 }
 
 const QUOTED = String.raw`'[^']*'|"[^"]*"`;
-/** `  key: value  # comment`, keys and values plain or quoted; anything else is not read. */
-const MAPPING_ENTRY = new RegExp(
-  String.raw`^[ \t]+(${QUOTED}|[^\s'"#&*!{\[][^:#]*?):[ \t]+(${QUOTED}|[^\s'"#&*!{\[|>][^#]*?)[ \t]*(?:#(.*))?$`
-);
+/** `  key: rest`, the key plain or quoted; the rest is read by `valueAndComment`. */
+const MAPPING_ENTRY = new RegExp(String.raw`^[ \t]+(${QUOTED}|[^\s'"#&*!{\[][^:#]*?):[ \t]+(.*)$`);
+const QUOTED_VALUE = new RegExp(String.raw`^(${QUOTED})(?:[ \t]+#(.*))?[ \t]*$`);
 const unquote = (text: string): string => text.replace(/^(['"])(.*)\1$/, '$2');
+
+/**
+ * A scalar value and its inline comment, or null for anything that is not a plain or quoted scalar
+ * (a flow collection, an anchor, an alias, a tag, a block scalar, a nested mapping). As in YAML, a
+ * `#` starts a comment only after whitespace: `a#b` is a value.
+ */
+function valueAndComment(rest: string): { value: string; comment: string } | null {
+  const quoted = rest.match(QUOTED_VALUE);
+  if (quoted) return { value: unquote(quoted[1] ?? ''), comment: quoted[2]?.trim() ?? '' };
+  if (/^[\s'"#&*!{[|>]/.test(rest)) return null;
+  const hash = rest.search(/[ \t]#/);
+  const value = (hash === -1 ? rest : rest.slice(0, hash)).trim();
+  if (value === '' || /:[ \t]/.test(value)) return null;
+  return { value, comment: hash === -1 ? '' : rest.slice(hash).replace(/^[ \t]+#/, '').trim() };
+}
+
+/** `name@selector` → name and selector; a scoped name keeps its leading `@`. */
+export function splitSelector(selector: string): { pattern: string; version?: string } {
+  const at = selector.lastIndexOf('@');
+  if (at > 0) {
+    return { pattern: selector.slice(0, at), version: selector.slice(at + 1) };
+  }
+  return { pattern: selector };
+}
 
 /**
  * The entries of a top-level block mapping of plain `key: value` lines, or
@@ -151,20 +174,20 @@ export function mapping(yaml: string, key: string): MappingEntry[] | null {
       break;
     }
     const entry = line.match(MAPPING_ENTRY);
-    // An unquoted `: ` inside the value is a nested mapping YAML would refuse, not a value.
-    if (!entry || (!/^['"]/.test(entry[2]) && /:[ \t]/.test(entry[2]))) {
+    const scalar = entry ? valueAndComment(entry[2] ?? '') : null;
+    if (!entry || !scalar) {
       throw new Error(`\`${key}\` has a line the checks cannot read: \`${line.trim()}\`.`);
     }
-    const name = unquote(entry[1].trim());
+    const name = unquote((entry[1] ?? '').trim());
     if (seen.has(name)) {
       throw new Error(`\`${key}\` declares \`${name}\` more than once.`);
     }
     seen.add(name);
     entries.push({
       key: name,
-      value: unquote(entry[2].trim()),
+      value: scalar.value,
       line: i + 1,
-      comment: [...comment, entry[3]?.trim() ?? ''].join(' ').trim(),
+      comment: [...comment, scalar.comment].join(' ').trim(),
     });
     comment = [];
   }

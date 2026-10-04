@@ -31,8 +31,10 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+import { validRange } from 'semver';
+
 import { lockfilePackages as parseLockfilePackages } from './lib/pnpmLockfile';
-import { mapping, scalar, sequence } from './lib/pnpmWorkspace';
+import { mapping, scalar, sequence, splitSelector } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 // ---------------------------------------------------------------------------
@@ -369,14 +371,6 @@ function major(spec: string): string | null {
 // ---------------------------------------------------------------------------
 
 /** Split an exclusion selector into its package pattern and optional version. */
-function splitSelector(selector: string): { pattern: string; version?: string } {
-  const at = selector.lastIndexOf('@');
-  if (at > 0) {
-    return { pattern: selector.slice(0, at), version: selector.slice(at + 1) };
-  }
-  return { pattern: selector };
-}
-
 function patternMatches(pattern: string, name: string): boolean {
   if (!pattern.includes('*')) return pattern === name;
   const source = pattern
@@ -1583,9 +1577,6 @@ const ADVISORY_ID = /\bGHSA(?:-[23456789cfghjmpqrvwx]{4}){3}\b|\bCVE-\d{4}-\d{4,
 /** An exact version, in any spelling pnpm accepts as one. */
 const EXACT_VERSION = /^=?v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
-/** A dist-tag (`latest`, `next`): a name, where a range would hold a version. `x` is a range. */
-const DIST_TAG = /^(?![xX]$)[A-Za-z][\w.-]*$/;
-
 /**
  * P15 — no pnpm override pins an exact version, and each names the advisory it
  * answers (luke-deps §6). An exact pin keeps forcing its version after the next
@@ -1593,11 +1584,33 @@ const DIST_TAG = /^(?![xX]$)[A-Za-z][\w.-]*$/;
  * advisory id is one nobody can tell when to retire. The id shows what an entry
  * was written for, not that lifting a consumer past its own range was right —
  * that stays a reviewer's call. A form the reader does not understand is refused
- * rather than read as fewer overrides; so are a parent selector (`a>b`), an alias
- * (`npm:…`), a dist-tag, and two overrides of one package (pnpm applies only one
- * to a consumer), which the override checks do not model.
+ * rather than read as fewer overrides; so are a parent selector (`a>b`), a value
+ * that is not a version range (an alias, a dist-tag, a removal, a reference), two
+ * overrides of one package (pnpm applies only one to a consumer), and overrides
+ * declared in the root manifest, none of which the override checks model.
  */
-function checkOverrides(root: string, problems: Problem[]): void {
+function checkOverrides(root: string, all: Manifest[], problems: Problem[]): void {
+  const rootManifest = all.find(m => m.file === 'package.json')?.json;
+  const pnpmField = rootManifest?.pnpm;
+  const elsewhere = {
+    resolutions: rootManifest?.resolutions,
+    'pnpm.overrides':
+      typeof pnpmField === 'object' && pnpmField !== null && 'overrides' in pnpmField
+        ? pnpmField.overrides
+        : undefined,
+  };
+  for (const [field, declared] of Object.entries(elsewhere)) {
+    if (declared !== undefined) {
+      problems.push({
+        file: 'package.json',
+        line: 1,
+        message:
+          `\`${field}\` overrides dependencies outside \`pnpm-workspace.yaml\`, where the override ` +
+          'checks do not look: move them into its `overrides` block.',
+      });
+    }
+  }
+
   const yaml = read(root, 'pnpm-workspace.yaml');
   if (yaml === null) return; // P4 already reports the missing file.
 
@@ -1605,7 +1618,8 @@ function checkOverrides(root: string, problems: Problem[]): void {
   try {
     entries = mapping(yaml, 'overrides');
   } catch (error) {
-    problems.push({ file: 'pnpm-workspace.yaml', line: 1, message: (error as Error).message });
+    const message = error instanceof Error ? error.message : String(error);
+    problems.push({ file: 'pnpm-workspace.yaml', line: 1, message });
     return;
   }
 
@@ -1631,23 +1645,14 @@ function checkOverrides(root: string, problems: Problem[]): void {
           'override the package itself.',
       });
     }
-    if (value.startsWith('npm:')) {
+    if (validRange(value) === null) {
       problems.push({
         ...at,
         message:
-          `\`${key}\` is an alias (\`${value}\`), which the override checks do not model: ` +
-          'override the package with a version range.',
+          `\`${key}\`: \`${value}\` is not a version range (an alias, a dist-tag, a removal or a ` +
+          'reference), which the override checks do not model. Write a range from the fixed version.',
       });
-    }
-    if (DIST_TAG.test(value)) {
-      problems.push({
-        ...at,
-        message:
-          `\`${key}\` names a dist-tag (\`${value}\`): it floats with every publish. ` +
-          'Write a version range from the fixed version.',
-      });
-    }
-    if (EXACT_VERSION.test(value)) {
+    } else if (EXACT_VERSION.test(value)) {
       problems.push({
         ...at,
         message:
@@ -1684,7 +1689,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkNodePins(root, problems);
   checkPackageManager(root, problems);
   checkReleaseAgePolicy(root, problems);
-  checkOverrides(root, problems);
+  checkOverrides(root, all, problems);
   checkDependencyFamilies(all, problems);
   checkSecurityRunnerCanonicalForm(root, problems);
   checkPublishedContracts(all, problems);
