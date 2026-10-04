@@ -53,6 +53,16 @@ export const ConfirmEmailVerificationSchema = z.object({
     ),
 });
 
+/**
+ * Input schema for an LDAP user awaiting approval to register a real email. The password is the
+ * proof of identity, verified exactly as a login's.
+ */
+export const SubmitPendingEmailSchema = z.object({
+  username: z.string().min(1, 'Username richiesto'),
+  password: z.string().min(1, 'Password richiesta'),
+  email: z.string().trim().toLowerCase().email('Email non valida'),
+});
+
 /** Input schema for an admin to trigger email verification for a user by userId. */
 export const RequestEmailVerificationAdminSchema = z.object({
   userId: z.string().uuid('ID utente non valido'),

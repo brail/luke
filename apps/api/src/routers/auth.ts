@@ -14,7 +14,9 @@ import {
   RequestEmailVerificationSchema,
   ConfirmEmailVerificationSchema,
   RequestEmailVerificationAdminSchema,
+  SubmitPendingEmailSchema,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
@@ -35,17 +37,8 @@ import {
   confirmPasswordReset,
   requestEmailVerification,
   confirmEmailVerification,
+  verifyCredentials,
 } from '../services/auth.service';
-
-/**
- * Masks an email address for exposure from an unauthenticated public endpoint
- * (e.g. `a***@luke.com`), keeping the domain visible for recognizability.
- */
-function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
-  return `${local[0]}***@${domain}`;
-}
 
 /**
  * Login schema
@@ -178,88 +171,60 @@ export const authRouter = router({
     }),
 
   /**
-   * Checks whether a username belongs to an LDAP user awaiting admin approval.
+   * Saves a real email for an LDAP user awaiting approval whose directory entry has none, and sends
+   * the verification email to it. The caller proves the password first, exactly as a login does
+   * (`verifyCredentials`: strategy, the per-account bucket shared with login, the failure audit).
    *
-   * @auth {public}
-   * @input {{ username: string }} — username to check.
-   * @output {{ isPending: boolean, needsEmail: boolean, maskedEmail: string | null }} — pending status,
-   *   whether a real email is needed, and (if not) the masked address the verification mail was sent to.
-   */
-  getPendingStatus: publicProcedure
-    .use(withRateLimit('pendingEmail'))
-    .input(z.object({ username: z.string().min(1) }))
-    .query(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username: input.username,
-          isActive: true,
-          pendingApproval: true,
-        },
-        select: { email: true },
-      });
-
-      if (!user) return { isPending: false, needsEmail: false, maskedEmail: null };
-
-      const needsEmail = isSyntheticLdapEmail(user.email);
-
-      return {
-        isPending: true,
-        needsEmail,
-        maskedEmail: needsEmail ? null : maskEmail(user.email),
-      };
-    }),
-
-  /**
-   * Saves a real email for an LDAP pending user and sends the verification email.
+   * Every refusal reads like a wrong password but one: an address another account holds is a
+   * CONFLICT, which tells someone who has just proved the password of a pending account that the
+   * address is registered.
    *
-   * @auth {public}
-   * @input {{ username: string, email: string }} — LDAP username and the email to register.
+   * @auth {public — password-verified}
+   * @input {SubmitPendingEmailSchema} — username, password and the email to register.
    * @output {{ success: true }}
+   * @throws {TRPCError} BAD_REQUEST for a synthetic new address, before any credential check;
+   *   UNAUTHORIZED for wrong credentials, or an account that is not (or stopped being, before the
+   *   write) an active pending LDAP one with a synthetic address; CONFLICT for a taken address;
+   *   whatever else `verifyCredentials` throws.
    */
   submitPendingEmail: publicProcedure
     .use(withRateLimit('pendingEmail'))
-    .input(
-      z.object({
-        username: z.string().min(1),
-        email: z.string().email('Email non valida').toLowerCase().trim(),
-      })
-    )
+    .input(SubmitPendingEmailSchema)
     .mutation(async ({ input, ctx }) => {
       const { username, email } = input;
-
-      // Find LDAP user pending approval
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username,
-          isActive: true,
-          pendingApproval: true,
-        },
-        include: {
-          identities: { where: { provider: 'LDAP' } },
-        },
-      });
-
-      if (!user || user.identities.length === 0) {
-        // Generic response to prevent enumeration
-        return { success: true };
+      // A synthetic address is not one to be contacted at, and saving one would leave the account
+      // as eligible as before, so the flow could run again.
+      if (isSyntheticLdapEmail(email)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email non valida' });
       }
+      const { user } = await verifyCredentials(ctx, input);
 
-      // Check email uniqueness (excludes the user itself)
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email, id: { not: user.id } },
-      });
+      const refused = new TRPCError({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
+      if (!isSyntheticLdapEmail(user.email)) throw refused;
 
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Email già in uso da un altro account',
+      // Conditional write (rule 3), which is also the eligibility check: an account that is not
+      // active, pending and LDAP — or stopped being one, or got an address from another submit,
+      // since the user above was read — matches nothing. The address's uniqueness is the
+      // database's constraint, not a read before the write.
+      let written: { count: number };
+      try {
+        written = await ctx.prisma.user.updateMany({
+          where: {
+            id: user.id,
+            isActive: true,
+            pendingApproval: true,
+            email: user.email,
+            identities: { some: { provider: 'LDAP' } },
+          },
+          data: { email, emailVerifiedAt: null },
         });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso da un altro account' });
+        }
+        throw err;
       }
-
-      await ctx.prisma.user.update({
-        where: { id: user.id },
-        data: { email },
-      });
+      if (written.count === 0) throw refused;
 
       await logAudit(ctx, {
         action: 'PENDING_USER_EMAIL_SUBMITTED',

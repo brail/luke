@@ -7,7 +7,7 @@
  *
  * - the `code` of a `CredentialsSignin` subclass thrown from `authorize()`, which `signIn()` returns
  *   to the page — used here when the login service itself is unavailable, so that the page does
- *   not tell the user their password is wrong;
+ *   not tell the user their password is wrong, and for an account awaiting approval;
  * - a mark left in `loginThrottleContext`, which the route wrapper
  *   (`app/api/auth/[...nextauth]/route.ts`) turns into a real `429`.
  *
@@ -30,6 +30,20 @@ import { markLoginThrottled } from './loginThrottleContext';
 export class LoginUnavailable extends CredentialsSignin {
   code = 'unavailable';
 }
+
+/**
+ * The password is right and the account awaits approval: `pending`, or `pending_email` when its
+ * directory entry has no address and the page should ask for one. The API answers this only after
+ * proving the password, so the code tells nothing to someone who does not have it.
+ */
+export class LoginPending extends CredentialsSignin {
+  constructor(needsEmail: boolean) {
+    super();
+    this.code = needsEmail ? 'pending_email' : 'pending';
+  }
+}
+
+const PENDING_MESSAGES = new Set(['ACCOUNT_PENDING_APPROVAL', 'ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL']);
 
 /**
  * Calls the `auth.login` tRPC endpoint and returns the raw API response data, a
@@ -66,10 +80,11 @@ async function callTRPCAuth(
       // Propagate specific errors so the frontend can handle them
       const errorData = await response.json().catch(() => null);
       const message: string = errorData?.error?.message || '';
-      if (message.startsWith('ACCOUNT_PENDING_APPROVAL')) {
-        return { pendingApproval: true, needsEmail: message.includes('NEEDS_EMAIL') };
-      }
       const code: unknown = errorData?.error?.data?.code;
+      // The two exact messages `authenticateUser` throws, once the password is proven.
+      if (response.status === 403 && code === 'FORBIDDEN' && PENDING_MESSAGES.has(message)) {
+        return { pendingApproval: true, needsEmail: message === 'ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL' };
+      }
       // Read from the code, never the message: production replaces the message of every 5xx.
       if (code === 'SERVICE_UNAVAILABLE') {
         return { unavailable: true };
@@ -100,6 +115,7 @@ async function callTRPCAuth(
  *
  * @returns The user to open a session for, or `null` for a login that was refused.
  * @throws {LoginUnavailable} When the login service is unavailable.
+ * @throws {LoginPending} When the password is right and the account awaits approval.
  */
 export async function authorizeLogin(
   credentials: Partial<Record<'username' | 'password', unknown>> | undefined,
@@ -121,9 +137,10 @@ export async function authorizeLogin(
     if (authResult?.unavailable) {
       throw new LoginUnavailable();
     }
+    if (authResult?.pendingApproval) {
+      throw new LoginPending(authResult.needsEmail);
+    }
 
-    // LDAP user awaiting approval: returned as a plain refusal. The login page detects pending
-    // with a separate call.
     if (!authResult?.user) {
       return null;
     }

@@ -456,7 +456,7 @@ async function createOrUpdateUser(
     });
 
     // Real email already provided by LDAP: send the verification right away,
-    // no need to wait for the user to enter it manually in /auth/pending.
+    // no need to wait for the user to enter it on the login page.
     // Fire-and-forget: don't block the login response on the SMTP send.
     if (!isSyntheticLdapEmail(ldapEmail)) {
       sendVerificationEmail(prisma, {

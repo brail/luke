@@ -10,16 +10,20 @@ import type { ReactNode } from 'react';
  *
  * Auth.js gives the page one `error` for every refused login; `code` is the only thing that tells
  * them apart. Two codes say nothing about the account — the login service is unavailable, or the
- * login is throttled — and used to read "Credenziali non valide" like everything else. They are
- * answered before the page asks the API whether the account is pending approval: that request
- * carries the username, and there is nothing to ask when the login was never judged.
+ * login is throttled — and used to read "Credenziali non valide" like everything else.
+ *
+ * Two more say the account awaits approval, and the API sends them only after the password is
+ * proven. The page used to ask a public endpoint whether the username was pending after every
+ * failed login, which told anyone which usernames were. It now learns it from the login itself,
+ * shows the notice in place, and holds the password only while the email form needs it for
+ * `auth.submitPendingEmail`.
  */
 
 // Hoisted and stable: a fresh object per render would re-run every effect that depends on it.
-const { signIn, router, utils } = vi.hoisted(() => ({
+const { signIn, router, submitPendingEmail } = vi.hoisted(() => ({
   signIn: vi.fn(),
   router: { push: vi.fn() },
-  utils: { auth: { getPendingStatus: { fetch: vi.fn() } } },
+  submitPendingEmail: vi.fn(),
 }));
 
 vi.mock('next-auth/react', () => ({ signIn }));
@@ -30,7 +34,11 @@ vi.mock('next/link', () => ({
   __esModule: true,
   default: ({ href, children }: { href: string; children: ReactNode }) => <a href={href}>{children}</a>,
 }));
-vi.mock('../../../../lib/trpc', () => ({ trpc: { useUtils: () => utils } }));
+// The vanilla client and nothing else: a mutation hook would keep the password in TanStack's cache
+// after the call settles, so the page must not use one — and against this mock it cannot.
+vi.mock('../../../../lib/trpc', () => ({
+  trpc: { useUtils: () => ({ client: { auth: { submitPendingEmail: { mutate: submitPendingEmail } } } }) },
+}));
 // Page furniture with requests and images of its own, irrelevant to the form.
 vi.mock('../../../../components/AppVersionLabel', () => ({ AppVersionLabel: () => null }));
 vi.mock('../../../../components/BackendStatus', () => ({ BackendStatus: () => null }));
@@ -46,41 +54,86 @@ async function signInRefusedWith(code: string) {
   return screen;
 }
 
+/** Back to the form: the username stays, the password must not. */
+async function backToLogin(screen: Awaited<ReturnType<typeof render>>) {
+  await screen.getByRole('button', { name: 'Torna al login' }).click();
+  await expect.element(screen.getByLabelText('Username')).toHaveValue('alice');
+  await expect.element(screen.getByLabelText('Password')).toHaveValue('');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  utils.auth.getPendingStatus.fetch.mockResolvedValue({ isPending: false, needsEmail: false });
+  submitPendingEmail.mockResolvedValue({ success: true });
 });
 
 describe('a sign-in that did not go through', () => {
-  test('an unavailable login service is said to be unavailable, and the account is not looked up', async () => {
+  test('an unavailable login service is said to be unavailable', async () => {
     const screen = await signInRefusedWith('unavailable');
 
     await expect
       .element(screen.getByText('Servizio di autenticazione non disponibile. Riprova più tardi.'))
       .toBeVisible();
-    expect(utils.auth.getPendingStatus.fetch).not.toHaveBeenCalled();
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  test('a throttled login is said to be throttled, and the account is not looked up', async () => {
+  test('a throttled login is said to be throttled', async () => {
     const screen = await signInRefusedWith('throttled');
 
     await expect.element(screen.getByText('Troppi tentativi. Riprova tra qualche minuto.')).toBeVisible();
-    expect(utils.auth.getPendingStatus.fetch).not.toHaveBeenCalled();
   });
 
-  test('refused credentials still read as such, after checking for a pending account', async () => {
+  test('refused credentials read as such, and nothing about the account is asked or offered', async () => {
     const screen = await signInRefusedWith('credentials');
 
     await expect.element(screen.getByText('Credenziali non valide')).toBeVisible();
-    expect(utils.auth.getPendingStatus.fetch).toHaveBeenCalledWith({ username: 'alice' });
+    expect(screen.getByLabelText('Indirizzo email').query()).toBeNull();
+    expect(submitPendingEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe('an account pending approval', () => {
+  test('is told so in place, with nothing to fill in; going back drops the password', async () => {
+    const screen = await signInRefusedWith('pending');
+
+    await expect.element(screen.getByText('Il tuo accesso è in attesa di approvazione')).toBeVisible();
+    expect(screen.getByLabelText('Indirizzo email').query()).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
+    await backToLogin(screen);
   });
 
-  test('an account pending approval is sent to the pending page', async () => {
-    utils.auth.getPendingStatus.fetch.mockResolvedValue({ isPending: true, needsEmail: true });
+  test('without an address, saves the one it is given with the password just proven; going back drops it', async () => {
+    const screen = await signInRefusedWith('pending_email');
 
-    await signInRefusedWith('credentials');
+    await screen.getByLabelText('Indirizzo email').fill('alice@example.com');
+    await screen.getByRole('button', { name: 'Salva email' }).click();
 
-    await vi.waitFor(() => expect(router.push).toHaveBeenCalledWith('/auth/pending?u=alice&se=1'));
+    expect(submitPendingEmail).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'her-password',
+      email: 'alice@example.com',
+    });
+    await expect.element(screen.getByText(/Email salvata/)).toBeVisible();
+    await backToLogin(screen);
+  });
+
+  test('without an address, a refused save says why and keeps the form', async () => {
+    submitPendingEmail.mockRejectedValue(
+      Object.assign(new Error('Email già in uso da un altro account'), { data: { code: 'CONFLICT' } }),
+    );
+    const screen = await signInRefusedWith('pending_email');
+
+    await screen.getByLabelText('Indirizzo email').fill('taken@example.com');
+    await screen.getByRole('button', { name: 'Salva email' }).click();
+
+    await expect.element(screen.getByText('Email già in uso da un altro account')).toBeVisible();
+    await expect.element(screen.getByLabelText('Indirizzo email')).toHaveValue('taken@example.com');
+  });
+
+  test('without an address, leaving the form drops the password and saves nothing', async () => {
+    const screen = await signInRefusedWith('pending_email');
+
+    await expect.element(screen.getByLabelText('Indirizzo email')).toBeVisible();
+    await backToLogin(screen);
+    expect(submitPendingEmail).not.toHaveBeenCalled();
   });
 });

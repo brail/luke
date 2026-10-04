@@ -48,10 +48,10 @@ Authenticated group `(app)/`:
 
 Public group `(public)/`:
 
-- `/login` — login page (local / LDAP)
+- `/login` — login page (local / LDAP); an LDAP account awaiting approval gets its notice, and
+  the form for a missing email, in place
 - `/auth/reset` — password reset through an emailed token
 - `/auth/verify` — email address verification
-- `/auth/pending` — waiting screen after verification
 
 Route handlers `api/`:
 

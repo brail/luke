@@ -88,7 +88,9 @@ Code defaults at the time of writing; the source of truth is
 
 `auth.login` applies two buckets to the same attempt: `login` by IP and
 `loginByUsername` by the submitted username, so a password spray spread across
-many addresses is still limited per account.
+many addresses is still limited per account. `auth.submitPendingEmail`, which
+also takes a password, pairs `pendingEmail` by IP with the same
+`loginByUsername` bucket: its attempts count against the account's login limit.
 
 ### Store
 

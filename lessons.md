@@ -140,9 +140,10 @@ spray distributed across many IPs against a single account. Login (and
 every credential-verification endpoint) must **always** have a second
 `keyBy` bucket on identity (username/account) in addition to the IP one.
 Pattern: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts` —
-the second bucket is checked directly inside `authenticateUser()`
-(`auth.service.ts`), not via `withRateLimit()`, because the key (username)
-lives in the procedure's input, not in `ctx`.
+the second bucket is checked inside `verifyCredentials()` (`auth.service.ts`),
+which every public endpoint taking a password calls (`authenticateUser`,
+`auth.submitPendingEmail`), not via `withRateLimit()`, because the key
+(username) lives in the procedure's input, not in `ctx`.
 
 ## Pentest / External Security
 

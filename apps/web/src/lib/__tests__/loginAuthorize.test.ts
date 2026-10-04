@@ -1,15 +1,16 @@
 /**
  * `authorizeLogin`: what each answer of `auth.login` becomes on the way to the login page.
  *
- * Auth.js gives the page one result for every refused login, so two answers have to leave this
- * function by other routes, and each has a way of getting lost. "Unavailable" travels as the `code`
- * of a thrown `CredentialsSignin` subclass, past two `catch` blocks that turn every other error
- * into a plain refusal. "Throttled" travels as a mark in `loginThrottleContext`.
+ * Auth.js gives the page one result for every refused login, so some answers have to leave this
+ * function by other routes, and each has a way of getting lost. "Unavailable" and "pending
+ * approval" travel as the `code` of a thrown `CredentialsSignin` subclass, past two `catch` blocks
+ * that turn every other error into a plain refusal. "Throttled" travels as a mark in
+ * `loginThrottleContext`.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { authorizeLogin, LoginUnavailable } from '../loginAuthorize';
+import { authorizeLogin, LoginPending, LoginUnavailable } from '../loginAuthorize';
 import { loginThrottleContext } from '../loginThrottleContext';
 
 import type { LoginThrottleState } from '../loginThrottleContext';
@@ -76,9 +77,24 @@ describe('authorizeLogin', () => {
     expect(error.code).toBe('unavailable');
   });
 
+  // The API answers pending approval only after the password is proven: the page may show the
+  // pending notice, and keep the password for `auth.submitPendingEmail`, on this code alone.
+  it.each([
+    ['ACCOUNT_PENDING_APPROVAL', 'pending'],
+    ['ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL', 'pending_email'],
+  ])('an account pending approval (%s) leaves as code %s', async (message, code) => {
+    apiAnswers(403, trpcError('FORBIDDEN', message));
+
+    const error = await authorizeLogin(credentials, request).catch(e => e);
+
+    expect(error).toBeInstanceOf(LoginPending);
+    expect(error.code).toBe(code);
+  });
+
   it.each([
     ['wrong credentials', 401, trpcError('UNAUTHORIZED', 'Credenziali non valide')],
-    ['an account pending approval', 403, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL:NEEDS_EMAIL')],
+    ['a pending answer on anything but a 403', 401, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL')],
+    ['a 403 whose message only starts like a pending one', 403, trpcError('FORBIDDEN', 'ACCOUNT_PENDING_APPROVAL_X')],
     ['an answer that is not JSON', 502, undefined],
   ])('%s is a plain refusal', async (_name, status, body) => {
     apiAnswers(status, body);

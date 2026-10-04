@@ -14,7 +14,7 @@ import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
-import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
+import { authenticateViaLdap, isSyntheticLdapEmail, type LdapRefusal } from '../lib/ldapAuth';
 import {
   sendPasswordResetEmail,
   sendEmailVerificationEmail,
@@ -111,18 +111,25 @@ export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<numbe
 }
 
 /**
- * Authenticates a user using the configured auth strategy (local-first, ldap-first,
- * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ * Verifies a username and password with the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only), as a login does, and nothing more: no pending-approval,
+ * email-verification or maintenance check, no token. Every public endpoint that takes a user's
+ * password (`auth.login`, `auth.submitPendingEmail`) goes through it, so they share the per-account
+ * `loginByUsername` bucket and none adds guesses.
  *
- * @returns User profile, signed JWT token, and the auth method used.
- * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email
- *   unverified, SERVICE_UNAVAILABLE if nobody was authenticated and LDAP could not complete the login for
- *   a reason that has nothing to do with the username.
+ * A failure writes the `AUTH_LOGIN_FAILED` audit row and throws the answer a login gets. A success
+ * has the strategy's own side effects before any eligibility check: an LDAP bind provisions the
+ * user at first login, or syncs their name (`authenticateViaLdap`).
+ *
+ * @returns The authenticated user, the method that authenticated them, and the strategy in force.
+ * @throws {TRPCError} TOO_MANY_REQUESTS if the account's bucket is full, UNAUTHORIZED if nobody was
+ *   authenticated, SERVICE_UNAVAILABLE if nobody was authenticated and LDAP could not complete the
+ *   login for a reason that has nothing to do with the username.
  */
-export async function authenticateUser(
+export async function verifyCredentials(
   ctx: Context,
   input: { username: string; password: string }
-) {
+): Promise<{ user: User; authMethod: 'local' | 'ldap'; strategy: string }> {
   const { username, password } = input;
 
   // Bucket separate from the per-IP rate limit of `withRateLimit('login')` (router auth.ts):
@@ -289,9 +296,28 @@ export async function authenticateUser(
     });
   }
 
+  return { user: authenticatedUser, authMethod, strategy };
+}
+
+/**
+ * Authenticates a user using the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ *
+ * @returns User profile, signed JWT token, and the auth method used.
+ * @throws {TRPCError} What `verifyCredentials` throws; FORBIDDEN if the account is pending or the
+ *   email unverified — only once the password is proven, so neither tells anything to a caller
+ *   without it.
+ */
+export async function authenticateUser(
+  ctx: Context,
+  input: { username: string; password: string }
+) {
+  const { username } = input;
+  const { user: authenticatedUser, authMethod, strategy } = await verifyCredentials(ctx, input);
+
   // Block login if the LDAP user is pending admin approval
   if (authenticatedUser.pendingApproval) {
-    const hasSyntheticEmail = authenticatedUser.email.endsWith('@ldap.local');
+    const hasSyntheticEmail = isSyntheticLdapEmail(authenticatedUser.email);
 
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
