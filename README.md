@@ -135,7 +135,7 @@ Relevant architectural decisions are documented in [`docs/decisions/`](docs/deci
   ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-limits.md)),
   runtime configuration
   ([ADR-018](docs/decisions/018-runtime-configuration-and-bootstrap-environment.md)),
-  storage ([ADR-017](docs/decisions/017-key-based-storage-and-two-phase-upload.md))
+  storage ([ADR-031](docs/decisions/031-key-based-storage-two-phase-upload-and-presigned-buckets.md))
 
 ## Troubleshooting
 

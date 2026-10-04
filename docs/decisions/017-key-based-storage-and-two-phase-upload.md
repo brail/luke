@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [031 — Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets](031-key-based-storage-two-phase-upload-and-presigned-buckets.md)
 
 ## Context
 
