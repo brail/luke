@@ -8,7 +8,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 <!-- luke-docs:end:overview -->
 
-## Utilizzato da
+## Used By
 
 <!-- luke-docs:start:dependents -->
 
@@ -16,7 +16,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 <!-- luke-docs:end:dependents -->
 
-## Export principali
+## Main Exports
 
 <!-- luke-docs:start:exports -->
 
@@ -26,7 +26,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 |--------|------|-------------|
 | `getNavDbConfig(prisma, getConfig)` | function | Reads the `integrations.nav.*` keys from AppConfig — password decrypted, everything else plain — into a `NavDbConfig`; throws when a required key is missing |
 | `sanitizeCompany(company)` | function | Validates the NAV company name and bracket-escapes it before it is interpolated into a `[COMPANY$Table]` identifier |
-| `getPool(config)` / `closePool()` | function | Per-process mssql pool singleton: reconnects when the connection parameters change, and shares one in-flight connect between concurrent callers |
+| `getPool(config)` / `closePool()` | function | Per-process mssql pool singleton: reconnects when host, port, database, user or password change — a `readOnly` change alone keeps the existing pool — and shares one in-flight connect between concurrent callers |
 | `testNavConnection(config)` | function | Three-step diagnostic on a throwaway pool — SQL Server authentication, `SELECT 1`, existence of at least one `[COMPANY$…]` table — used by the NAV settings UI |
 | `createSyncRequest(pool, timeoutMs?)` | function | An mssql request carrying an explicit timeout (default 60 s) instead of the driver default |
 
@@ -43,8 +43,8 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 |--------|------|-------------|
 | `syncPortafoglioNow(pool, company, prisma, logger)` | function | Refreshes the `nav_pf_*` order-portfolio replica: rowversion-incremental tables, active-season scoping on the sales documents, full refresh for the small lookups |
 | `syncKimoNow(pool, company, prisma, logger)` | function | Refreshes the `nav_kimo_*` KIMO-FASHION replica with the same rowversion pattern and sync-state table |
-| `queryPortafoglioOrdini(pool, company, params, logger?)` | function | Builds the complete order-portfolio dataset straight from NAV over mssql, for the on-demand Excel export |
-| `queryPortafoglioFromPg(prisma, params)` | function | Same output shape, read from the local `nav_pf_*` replica |
+| `queryPortafoglioOrdini(pool, company, params, logger?)` | function | Builds the order-portfolio dataset straight from NAV over mssql — the Excel export's fallback when the replica holds no row for the season and brand |
+| `queryPortafoglioFromPg(prisma, params)` | function | Same output shape, read from the local `nav_pf_*` replica — the Excel export's first choice |
 | `queryKimoFromPg(prisma, params)` | function | Sales-order and basket union report, read from `nav_pf_*` and `nav_kimo_*` |
 
 ### Types
@@ -61,20 +61,20 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 <!-- luke-docs:end:exports -->
 
-## Concetti chiave
+## Key Concepts
 
 <!-- luke-docs:start:concepts -->
 
 - **Nothing is imported from `apps/api`.** Configuration arrives through `GetConfigFn`, and the Prisma client is passed in by the caller. `@luke/db` supplies Prisma types; `@luke/core` is not a dependency. The direction is enforced by two checks, not by convention: `tools/scripts/check-platform-integrity.ts` holds declared dependencies to the layer policy, and `@luke/no-undeclared-workspace-import` holds imports to what is declared.
 - **Dual entity, and a soft delete the sync cannot undo.** Every synced entity has a `nav_*` replica faithful to NAV plus an enriched local master (`vendors`, `brands`, `seasons`). The sync writes only the fields that come from NAV — never `isActive`, never the enriched columns — so an entity deactivated by an administrator is never reactivated by a later run.
-- **Table names are composed, never parameterized.** SQL Server cannot bind an identifier, so every table is built as `[${sanitizeCompany(config.company)}$TableName]` and `sanitizeCompany` rejects anything outside `[A-Za-z0-9 _\-.]` before escaping `]`. Raw SQL is confined to this package by `CLAUDE.md`; the one `$executeRawUnsafe` call, in `bulkUpsert`, takes its identifiers from the caller and always parameterizes values.
+- **Table names are composed, never parameterized.** SQL Server cannot bind an identifier, so every table is built as `[${sanitizeCompany(config.company)}$TableName]` and `sanitizeCompany` rejects anything outside `[A-Za-z0-9 _\-.]` before escaping `]`. `CLAUDE.md` places NAV SQL in this package, yet `apps/api` still queries NAV directly in two places, both through `createSyncRequest`: the salesperson fallback in `routers/sales.ts` and the live previews in `routers/integrations.nav.router.ts`. Raw PostgreSQL here takes three unsafe calls, all with bound values: `$executeRawUnsafe` in `bulkUpsert`, whose identifiers come from the caller, and `$queryRawUnsafe` in `queryPortafoglioFromPg` and `queryKimoFromPg`, whose values travel through `PgParams`.
 - **Two watermark strategies, for two kinds of table.** Vendor sync runs differentially on `[Last Date Modified]`, with an `OR [Last Date Modified] IS NULL` predicate because SQL Server drops NULLs from `>` comparisons — and whitelist mode deliberately ignores the watermark, so a vendor added to the list is picked up even if it was synced before. Brand and season always run a full sync because those NAV tables expose no modification date. The analytics replicas page on the SQL Server `rowversion` in chunks of 3 000 rows and persist their position in `nav_pf_sync_state`.
-- **Batched writes, isolated failures.** Master upserts run in batches of 100 with the `nav_*` replica row and the local master row in a single `prisma.$transaction`; replica rows are bulk-upserted 500 at a time. Each entity has its own try/catch at every level, so one failing row or one failing entity never aborts the run — it is counted and logged.
-- **Two read paths for the same statistics.** `queryPortafoglioOrdini` interrogates NAV directly over mssql for the full export, while `queryPortafoglioFromPg` and `queryKimoFromPg` read the local replicas and return the same shape. The dashboard therefore keeps working — on data as fresh as the last sync cycle — when NAV is unreachable.
+- **Batched writes; failures isolated per row only in the master sync.** Master upserts run in batches of 100, each row with its `nav_*` replica row and local master row in one `prisma.$transaction` and its own try/catch, and each entity in its own try/catch in `runNavSync`: one failing row or entity is counted and logged, never fatal to the run. The analytics replicas are coarser. `bulkUpsert` writes 500 rows per statement, so one bad row fails its chunk and that table's run. KIMO has one try around header and lines, so a header failure skips the lines. The portfolio sync ends the cycle when the sales header fails; after it, the dependent and lookup tables run under `Promise.allSettled`, each failure logged on its own.
+- **Two read paths for the portfolio.** The Excel export reads the local replica through `queryPortafoglioFromPg` and calls `queryPortafoglioOrdini` against NAV only when the replica holds no row for the season and brand (`apps/api/src/routers/sales.ts`). `queryKimoFromPg` reads the replicas too but returns its own `KimoRow` shape. Statistics therefore keep working — on data as fresh as the last sync cycle — while NAV is unreachable.
 
 <!-- luke-docs:end:concepts -->
 
-## Esempio d'uso
+## Usage Example
 
 <!-- luke-docs:start:example -->
 

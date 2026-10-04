@@ -116,6 +116,16 @@ Sync orchestrator (`runNavSync`):
   their NAV tables expose no modification date
 - Returns a `NavSyncReport` with execution times, counters and the filter mode
 
+### Brand and season link guard
+
+`sync/brands.ts` and `sync/seasons.ts` upsert the `nav_brands` / `nav_seasons`
+replica row, then the local master. Before creating a local brand or season they
+look for a local row with the same `code` and no NAV link (`navBrandId` /
+`navSeasonId` null). If one exists, the sync logs a warning
+(`skip auto-create`) and creates nothing: an administrator links the existing
+row to its NAV code by hand. On linked rows only `name` is updated — never
+`isActive`, the logo or any other enriched field.
+
 ---
 
 ## AppConfig — NAV keys
@@ -258,7 +268,7 @@ Migration: `20260324100000_add_vendors_table`
 ## Sync filters
 
 Each entity supports three filter modes, configurable from the UI in
-**Impostazioni › Sincronizzazione NAV**:
+`Impostazioni › Sincronizzazione NAV`:
 
 | Mode | Behavior |
 |------|----------|
@@ -278,36 +288,38 @@ after the records have been fetched. An entity with no filter row, with
 
 | Permission | Use |
 |------------|-----|
-| `config:read` | Read the NAV configuration, run the live preview |
+| `config:read` | Read the NAV configuration and sync status, run the live preview, test the connection |
 | `config:update` | Save the configuration, save filters and the sync schedule, run a manual sync |
-| `vendors:read` | Read the vendor list for the combobox in Collection Layout |
+| `vendors:read` | List the vendors of the local NAV replica (`integrations.nav.vendors.list`) |
+| `brands:read` | List the replica's NAV brands not yet linked to a local brand, for the link picker (`integrations.nav.brands.list`) |
+| `seasons:read` | List the replica's NAV seasons not yet linked to a local season, for the link picker (`integrations.nav.seasons.list`) |
 
 RBAC sections:
 
 | Section | Group | Default admin | Default editor/viewer |
 |---------|-------|---------------|-----------------------|
-| `admin.brands` | Amministrazione | ✓ | ✗ |
-| `admin.seasons` | Amministrazione | ✓ | ✗ |
-| `settings.nav_sync` | Impostazioni | ✓ | ✗ |
-| `settings.nav` | Impostazioni | ✓ | ✗ |
+| `admin.brands` | `Amministrazione` | ✓ | ✗ |
+| `admin.seasons` | `Amministrazione` | ✓ | ✗ |
+| `settings.nav_sync` | `Impostazioni` | ✓ | ✗ |
+| `settings.nav` | `Impostazioni` | ✓ | ✗ |
 
 ---
 
 ## UI
 
-### Impostazioni › Microsoft NAV (`/settings/nav`)
+### NAV connection page (`/settings/nav`)
 
-SQL Server connection configuration: host, port, database, user, password,
+Menu entry `Impostazioni › Microsoft NAV`. SQL Server connection configuration: host, port, database, user, password,
 company, and the `readOnly` and `syncEnabled` flags.
 
-### Impostazioni › Sincronizzazione NAV (`/settings/nav-sync`)
+### NAV sync page (`/settings/nav-sync`)
 
-One tab per entity (`Fornitori`, `Brand`, `Stagioni`), each with:
+Menu entry `Impostazioni › Sincronizzazione NAV`. One tab per entity (`Fornitori`, `Brand`, `Stagioni`), each with:
 
-- **Sync criterion** ("Criterio di sincronizzazione"): mode selection
+- **Sync criterion** (`Criterio di sincronizzazione`): mode selection
   (all/whitelist/exclude), interactive whitelist/blacklist, and the automatic
   sync schedule (on/off and interval)
-- **Run sync** ("Esegui sync"): starts an on-demand manual sync, with feedback
+- **Run sync** (`Esegui sync`): starts an on-demand manual sync, with feedback
   on records synchronized and duration; disabled until a criterion has been
   saved
 - **NAV preview**: live query against the NAV SQL Server, with text search and
@@ -318,9 +330,9 @@ analytics replicas, which this document does not cover.
 
 ### Collection Layout — vendor combobox
 
-In the row create/edit drawer, the "Fornitore" field is a combobox that loads
+In the row create/edit drawer, the `Fornitore` field is a combobox that loads
 the active vendors of the local vendor registry (`trpc.vendors.list`), not the
-NAV replica. It displays `nickname ?? name`, with a "— Nessuno —" option to
+NAV replica. It displays `nickname ?? name`, with a `— Nessuno —` option to
 clear the selection. The saved value is `vendorId` (FK → `vendors.id`).
 
 ---
@@ -331,13 +343,13 @@ To test without a real NAV:
 - Leave `syncEnabled = false` in AppConfig
 - The vendor dropdown shows only the vendors already in the local registry
   (`vendors`); no seed populates it, so create them by hand in
-  **Amministrazione › Fornitori**
+  `Amministrazione › Fornitori`
 
 To test with a real NAV:
-1. Configure and save the connection in **Impostazioni › Microsoft NAV**
-2. Check the connection with the "Test Connessione" button: it verifies SQL
+1. Configure and save the connection in `Impostazioni › Microsoft NAV`
+2. Check the connection with the `Test Connessione` button: it verifies SQL
    Server authentication, database access and that at least one
    `[Company$...]` table exists
 3. Enable `syncEnabled` and save (needed only for scheduled runs)
-4. In **Impostazioni › Sincronizzazione NAV**, save a sync criterion for the
+4. In `Impostazioni › Sincronizzazione NAV`, save a sync criterion for the
    entity, then run a manual sync
