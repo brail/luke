@@ -44,7 +44,15 @@ import {
   type PricingParameterSet,
   type QuotationState,
 } from './CollectionRowSections';
-import { buildRowFormValues, resolveDefaultGender, resolveDefaultGroupId, useRowDrawerForm } from './useRowDrawerForm';
+import {
+  buildRowFormValues,
+  enabledParameterSetIdsFor,
+  resolveDefaultGender,
+  resolveDefaultGroupId,
+  useRowDrawerForm,
+} from './useRowDrawerForm';
+
+import type { VendorListItem } from './VendorCombobox';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,7 +128,7 @@ export function CollectionRowDrawer({
   const [changePhaseOpen, setChangePhaseOpen] = useState(false);
   const { data: session } = useSession();
 
-  const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const [pickedVendor, setPickedVendor] = useState<VendorListItem | null>(null);
   const { data: planningGroups = [], isLoading: planningGroupsLoading } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
     { enabled: open }
@@ -154,8 +162,8 @@ export function CollectionRowDrawer({
   const currentVendorId = form.watch('vendorId');
   const currentPhaseId = form.watch('phaseId');
   const enabledParameterSetIds = useMemo(
-    () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
-    [currentVendorId, vendorsList?.items]
+    () => enabledParameterSetIdsFor(currentVendorId, [pickedVendor, row?.vendor]),
+    [currentVendorId, pickedVendor, row?.vendor]
   );
 
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
@@ -330,6 +338,7 @@ export function CollectionRowDrawer({
                     control={form.control}
                     canUpdate={canUpdate}
                     vendor={row?.vendor ?? null}
+                    onVendorPicked={setPickedVendor}
                   />
                   <div>
                     <SectionHeader title="Forecast" />

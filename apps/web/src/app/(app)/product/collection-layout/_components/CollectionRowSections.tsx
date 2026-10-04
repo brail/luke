@@ -41,7 +41,7 @@ import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
 import { RowCompletionToggle } from './RowCompletionToggle';
-import { VendorCombobox } from './VendorCombobox';
+import { VendorCombobox, type VendorListItem } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { Control } from 'react-hook-form';
@@ -583,12 +583,14 @@ interface VendorSectionProps {
   canUpdate: boolean;
   /** The row's current vendor, for its label; null when creating or when the row has none. */
   vendor: CollectionRow['vendor'] | null;
+  /** Called with the vendor the user picks, or null when they clear it. */
+  onVendorPicked: (vendor: VendorListItem | null) => void;
 }
 
 /**
  * Form section for selecting the vendor of a collection row via `VendorCombobox`.
  */
-export function VendorSection({ control, canUpdate, vendor }: VendorSectionProps) {
+export function VendorSection({ control, canUpdate, vendor, onVendorPicked }: VendorSectionProps) {
   return (
     <FormField
       control={control}
@@ -600,7 +602,10 @@ export function VendorSection({ control, canUpdate, vendor }: VendorSectionProps
             <VendorCombobox
               value={field.value ?? null}
               selectedVendor={vendor}
-              onChange={field.onChange}
+              onChange={(vendorId, picked) => {
+                field.onChange(vendorId);
+                onVendorPicked(picked);
+              }}
               disabled={!canUpdate}
             />
           </FormControl>

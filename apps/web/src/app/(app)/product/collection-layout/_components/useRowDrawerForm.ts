@@ -104,6 +104,18 @@ export function buildRowFormValues(
   return buildDefaultValues(resolvedGroupId, resolvedGender, defaultPlanningGroupId);
 }
 
+/**
+ * The parameter sets enabled for the selected vendor, read from whichever known vendor it is: the
+ * one picked in this session (a search reaches vendors no fixed page of the list holds) or the
+ * row's own. `?.` on the sets: a row from the revisions page carries its vendor without them.
+ */
+export function enabledParameterSetIdsFor(
+  vendorId: string | null | undefined,
+  candidates: ReadonlyArray<{ id: string; enabledParameterSets?: { id: string }[] } | null | undefined>,
+): string[] {
+  return candidates.find(v => v?.id === vendorId)?.enabledParameterSets?.map(p => p.id) ?? [];
+}
+
 /** The picture preview a freshly mounted session should start with — `row`'s current picture in
  * edit mode, none in create mode. Exported (alongside `initialQuotations`) so the "correct on the
  * very first render, before any effect" claim is a plain, deterministic function call to test,

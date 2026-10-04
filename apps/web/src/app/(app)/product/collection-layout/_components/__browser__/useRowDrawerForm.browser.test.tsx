@@ -7,6 +7,7 @@ import type { CollectionLayoutRowInput } from '@luke/core';
 import {
   buildDefaultValues,
   buildRowFormValues,
+  enabledParameterSetIdsFor,
   initialPreviewPictureUrl,
   initialQuotations,
   resolveDefaultGender,
@@ -336,5 +337,24 @@ describe('buildRowFormValues / initialPreviewPictureUrl / initialQuotations — 
   test('initialPreviewPictureUrl/initialQuotations start blank in create mode — nothing leaks from a previous row', () => {
     expect(initialPreviewPictureUrl('create', undefined)).toBeNull();
     expect(initialQuotations('create', undefined)).toEqual([]);
+  });
+});
+
+describe('enabledParameterSetIdsFor', () => {
+  const picked = { id: 'v-far', enabledParameterSets: [{ id: 'ps-1' }] };
+  const rowVendor = { id: 'v-row', enabledParameterSets: [{ id: 'ps-2' }] };
+
+  test('reads the vendor picked in this session, wherever the search found it', () => {
+    expect(enabledParameterSetIdsFor('v-far', [picked, rowVendor])).toEqual(['ps-1']);
+  });
+
+  test('reads the row vendor until another one is picked', () => {
+    expect(enabledParameterSetIdsFor('v-row', [null, rowVendor])).toEqual(['ps-2']);
+    expect(enabledParameterSetIdsFor('v-row', [picked, rowVendor])).toEqual(['ps-2']);
+  });
+
+  test('answers no sets for no vendor, or for a revision row vendor without them', () => {
+    expect(enabledParameterSetIdsFor(null, [picked, rowVendor])).toEqual([]);
+    expect(enabledParameterSetIdsFor('v-old', [null, { id: 'v-old' }])).toEqual([]);
   });
 });

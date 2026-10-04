@@ -3,6 +3,7 @@
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import type { RouterOutputs } from '@luke/api';
 import type { Vendor } from '@luke/core';
 
 import { Button } from '../../../../../components/ui/button';
@@ -22,13 +23,17 @@ import {
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 
+/** A vendor as the search returns it, with the parameter sets its quotations may use. */
+export type VendorListItem = RouterOutputs['vendors']['list']['items'][number];
+
 type VendorOption = Pick<Vendor, 'id' | 'name' | 'nickname'>;
 
 interface VendorComboboxProps {
   value: string | null;
   /** The vendor the row already has, labelled whatever the search returns. */
   selectedVendor?: VendorOption | null;
-  onChange: (vendorId: string | null) => void;
+  /** Called with the new vendor ID and the vendor as the search returned it (null on clear). */
+  onChange: (vendorId: string | null, vendor: VendorListItem | null) => void;
   disabled?: boolean;
 }
 
@@ -46,7 +51,7 @@ const labelOf = (vendor: VendorOption) => vendor.nickname ?? vendor.name;
  *
  * @param value - Currently selected vendor ID, or null when empty.
  * @param selectedVendor - The row's current vendor, for its label.
- * @param onChange - Called with the new vendor ID or null on clear.
+ * @param onChange - Called with the new vendor ID and vendor, or nulls on clear.
  */
 export function VendorCombobox({ value, selectedVendor, onChange, disabled }: VendorComboboxProps) {
   const [open, setOpen] = useState(false);
@@ -59,11 +64,14 @@ export function VendorCombobox({ value, selectedVendor, onChange, disabled }: Ve
     return () => clearTimeout(timer);
   }, [search]);
 
-  const { data, isFetching } = trpc.vendors.list.useQuery(
-    { search: debouncedSearch || undefined },
+  const { data, isPlaceholderData } = trpc.vendors.list.useQuery(
+    debouncedSearch ? { search: debouncedSearch } : undefined,
     { enabled: open, staleTime: 5 * 60 * 1000, placeholderData: previous => previous },
   );
-  const vendors = data?.items ?? [];
+  // Results are listed only once they answer what is typed: a page left over from an earlier
+  // search would let Enter pick a vendor that does not match it.
+  const settled = data !== undefined && !isPlaceholderData && debouncedSearch === search.trim();
+  const vendors = settled ? data.items : [];
 
   const selected = [picked, selectedVendor, ...vendors].find(v => v?.id === value);
   const displayLabel = selected ? labelOf(selected) : null;
@@ -94,16 +102,14 @@ export function VendorCombobox({ value, selectedVendor, onChange, disabled }: Ve
         <Command shouldFilter={false}>
           <CommandInput placeholder="Cerca fornitore…" value={search} onValueChange={setSearch} />
           <CommandList className="max-h-60">
-            <CommandEmpty>
-              {isFetching ? 'Caricamento…' : 'Nessun fornitore trovato.'}
-            </CommandEmpty>
+            {settled && <CommandEmpty>Nessun fornitore trovato.</CommandEmpty>}
             <CommandGroup>
               {/* Only on the unfiltered list, so that a search with no match reaches `CommandEmpty`. */}
               {!search && (
                 <CommandItem
                   value="__none__"
                   onSelect={() => {
-                    onChange(null);
+                    onChange(null, null);
                     handleOpenChange(false);
                   }}
                 >
@@ -117,7 +123,7 @@ export function VendorCombobox({ value, selectedVendor, onChange, disabled }: Ve
                   value={v.id}
                   onSelect={() => {
                     setPicked(v);
-                    onChange(v.id);
+                    onChange(v.id, v);
                     handleOpenChange(false);
                   }}
                 >
@@ -126,7 +132,10 @@ export function VendorCombobox({ value, selectedVendor, onChange, disabled }: Ve
                 </CommandItem>
               ))}
             </CommandGroup>
-            {data?.hasMore && (
+            {!settled && (
+              <p className="py-6 text-center text-sm text-muted-foreground">Caricamento…</p>
+            )}
+            {settled && data.hasMore && (
               <p className="px-2 py-1.5 text-xs text-muted-foreground">
                 Mostrati i primi {vendors.length}: affina la ricerca.
               </p>

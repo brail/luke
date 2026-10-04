@@ -10,18 +10,24 @@ import { VendorCombobox } from '../VendorCombobox';
  * page showed the placeholder instead of its vendor (X26).
  */
 
+type Item = { id: string; name: string; nickname: string | null };
+
 const h = vi.hoisted(() => ({
   inputs: [] as unknown[],
-  items: [] as { id: string; name: string; nickname: string | null }[],
+  /** The server's answer for each search; `''` is the unfiltered list. */
+  pages: {} as Record<string, Item[]>,
+  loading: false,
 }));
 
 vi.mock('../../../../../../lib/trpc', () => ({
   trpc: {
     vendors: {
       list: {
-        useQuery: (input: unknown) => {
+        useQuery: (input: { search?: string } | undefined) => {
           h.inputs.push(input);
-          return { data: { items: h.items, nextCursor: null, hasMore: false }, isFetching: false };
+          if (h.loading) return { data: undefined, isPlaceholderData: false };
+          const items = h.pages[input?.search ?? ''] ?? [];
+          return { data: { items, nextCursor: null, hasMore: false }, isPlaceholderData: false };
         },
       },
     },
@@ -30,7 +36,8 @@ vi.mock('../../../../../../lib/trpc', () => ({
 
 afterEach(() => {
   h.inputs.length = 0;
-  h.items = [];
+  h.pages = {};
+  h.loading = false;
 });
 
 const lastSearch = () => (h.inputs.at(-1) as { search?: string } | undefined)?.search;
@@ -55,13 +62,31 @@ test('sends what the user types to the server', async () => {
 
 test('lists what the server returned, without filtering it again by label', async () => {
   // The server matches the name; the item is labelled with the nickname.
-  h.items = [{ id: 'v-1', name: 'Beta Srl', nickname: 'Alfa' }];
+  h.pages = { beta: [{ id: 'v-1', name: 'Beta Srl', nickname: 'Alfa' }] };
   const onChange = vi.fn();
   const screen = await render(<VendorCombobox value={null} onChange={onChange} />);
   await screen.getByRole('combobox').click();
   await userEvent.type(screen.getByPlaceholder('Cerca fornitore…'), 'beta');
   await screen.getByRole('option', { name: 'Alfa' }).click();
-  expect(onChange).toHaveBeenCalledWith('v-1');
+  expect(onChange).toHaveBeenCalledWith('v-1', expect.objectContaining({ id: 'v-1' }));
+});
+
+test('does not let Enter pick from results that predate the search', async () => {
+  h.pages = { '': [{ id: 'v-acme', name: 'Acme', nickname: null }], zeta: [{ id: 'v-zeta', name: 'Zeta', nickname: null }] };
+  const onChange = vi.fn();
+  const screen = await render(<VendorCombobox value={null} onChange={onChange} />);
+  await screen.getByRole('combobox').click();
+  await expect.element(screen.getByRole('option', { name: 'Acme' })).toBeVisible();
+  await userEvent.type(screen.getByPlaceholder('Cerca fornitore…'), 'zeta{Enter}');
+  expect(onChange).not.toHaveBeenCalledWith('v-acme', expect.anything());
+  await expect.element(screen.getByRole('option', { name: 'Zeta' })).toBeVisible();
+});
+
+test('shows that the list is loading on the first open', async () => {
+  h.loading = true;
+  const screen = await render(<VendorCombobox value={null} onChange={() => undefined} />);
+  await screen.getByRole('combobox').click();
+  await expect.element(screen.getByText('Caricamento…')).toBeVisible();
 });
 
 test('says so when a search matches nothing', async () => {
