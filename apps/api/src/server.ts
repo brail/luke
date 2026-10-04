@@ -46,10 +46,7 @@ import { rateLimitStore } from './lib/ratelimit';
 import { registerRetentionScheduler } from './lib/retentionScheduler';
 import { createContext } from './lib/trpc';
 import { createTrustProxy } from './lib/trustProxy';
-import {
-  pinoTraceMiddleware,
-  // pinoSerializers,
-} from './observability/pinoTrace';
+import { pinoTraceMiddleware } from './observability/pinoTrace';
 import { checkBootstrapDependencies, runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storageUpload';
 import { appRouter } from './routers';

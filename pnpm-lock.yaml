@@ -188,9 +188,6 @@ importers:
       pino-pretty:
         specifier: ^13.0.0
         version: 13.1.3
-      pino-std-serializers:
-        specifier: ^7.0.0
-        version: 7.1.0
       sharp:
         specifier: 0.35.4
         version: 0.35.4(@types/node@24.13.2)

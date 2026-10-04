@@ -77,7 +77,6 @@
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "pino-pretty": "^13.0.0",
-    "pino-std-serializers": "^7.0.0",
     "sharp": "0.35.4",
     "tar-stream": "3.2.0",
     "zod": "^4.4.3"
