@@ -1,8 +1,10 @@
 # Luke - Operational Tuning
 
-Operational reference for three runtime protections of the API whose behavior is
-configurable, or differs from what their names suggest: the password policy,
-rate limiting and idempotency. Security headers and the health and readiness
+Operational reference for the API's runtime protections whose behavior is
+configurable, or differs from what their names suggest — the password policy,
+rate limiting, idempotency and error responses — and for three operator tasks:
+signing in when LDAP is unreachable, email deliverability and the release
+build's repository variables. Security headers and the health and readiness
 probes are documented in the [API documentation](apps/api/README.md); session
 revocation is decided in [ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
 
@@ -12,6 +14,9 @@ revocation is decided in [ADR-019](docs/decisions/019-tokenversion-session-revoc
 - [Rate limiting](#rate-limiting)
 - [Idempotency](#idempotency)
 - [Error responses](#error-responses)
+- [Signing in when LDAP is unreachable](#signing-in-when-ldap-is-unreachable)
+- [Email deliverability](#email-deliverability)
+- [Release build variables](#release-build-variables)
 - [Related documentation](#related-documentation)
 
 ---
@@ -52,14 +57,20 @@ first source that yields a valid one:
 Consequences of that resolution:
 
 - **The AppConfig value is validated as a whole.** If any entry fails the schema —
-  a non-positive `max`, an unknown `keyBy` — no bucket takes its AppConfig
-  override, and every bucket falls through to its default. A
-  JSON syntax error has the same effect. The syntax error is logged as a warning;
-  the schema failure is not. A time window with an invalid format affects only its
-  own bucket, and is logged.
-- **Omitting `keyBy` keys the bucket by IP.** For `loginByUsername`, which exists
-  to limit attempts per account across many addresses, that silently removes the
-  protection it is there for.
+  a non-positive `max`, an unknown `keyBy`, a `timeWindow` shorter than two
+  characters — no bucket takes its AppConfig override, and every bucket falls
+  through to its default. A JSON syntax error has the same effect. The syntax
+  error is logged as a warning; the schema failure is not. A `timeWindow` of two
+  or more characters that does not parse (`1x`, `0m`) affects only its own
+  bucket, which keeps its default, and is logged.
+- **`keyBy` must suit the endpoint.** Omitted, it means `ip`. `userId` on a
+  bucket whose endpoint has no session (`login`, `passwordReset`,
+  `pendingEmail`), or `username` on any bucket but `loginByUsername`, leaves the
+  bucket unable to derive its key: every request through it fails with
+  `INTERNAL_SERVER_ERROR` (`Rate limit check failed`).
+- **`loginByUsername` is always keyed by the submitted username**, lower-cased,
+  whatever its `keyBy` says: an override changes only its `max` and
+  `timeWindow`.
 - **There is no environment tier.** `LUKE_RATE_LIMIT_<BUCKET>_*` variables were
   read until 2026-09-27 without validation (a non-numeric maximum disabled the
   limit) and sat outside the bootstrap-only environment policy in `CLAUDE.md`;
@@ -96,16 +107,28 @@ limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
 
 ### Store
 
-- In memory and per process: one map per bucket, holding at most 1,000 keys.
+- In memory and per process: one map per bucket, holding at most 999 keys —
+  the insert that brings a map to 1,000 evicts its earliest key.
 - A **fixed** window starts at a key's first request and restarts once it has
   elapsed. It does not slide.
 - When a map is full, the key inserted earliest is evicted, whether or not it is
-  still active: eviction follows insertion order, not recent use. With more than 1,000 distinct keys on one bucket, a counter can be
-  dropped before its window ends.
+  still active: eviction follows insertion order, not recent use. With 1,000 or
+  more distinct keys on one bucket within a window, a counter can be dropped
+  before its window ends.
 - Expired entries are removed every 60 seconds.
 - Counters are not shared between processes, which is one of the reasons
   [ADR-011](docs/decisions/011-single-instance-scaling-constraint.md) keeps the
   API single-instance.
+
+### Global limiter
+
+A second limiter runs before tRPC on every route: `@fastify/rate-limit` in
+`apps/api/src/server.ts`, 100 requests per minute per IP — 2,000 in
+development, where the loopback addresses (`127.0.0.1`, `::1`,
+`::ffff:127.0.0.1`) are exempt. It is not configurable through the `rateLimit`
+key, and `skipOnError` lets requests through when the limiter itself fails. Its
+429 has its own body — `{ statusCode, error, message, retryAfter }` — and no
+`error.data.code`.
 
 ---
 
@@ -192,10 +215,66 @@ denied` warning, with `traceId`, `userId`, `userRole` and either
 `requestedPermissions`/`deniedPermissions` or `section`. Brand-scope, ownership and
 last-admin refusals do not write it.
 
-A second, global limiter runs before tRPC (`@fastify/rate-limit` in
-`apps/api/src/server.ts`: 100 requests per minute per IP in production, not
-configurable through the `rateLimit` key). Its 429 has its own body —
-`{ statusCode, error, message, retryAfter }` — and no `error.data.code`.
+The [global limiter](#global-limiter)'s 429 has its own body and no
+`error.data.code`.
+
+---
+
+## Signing in when LDAP is unreachable
+
+Under `ldap-only`, a directory outage refuses every login that has no local
+path. In order:
+
+1. **An administrator with a LOCAL credential signs in with it.** Under
+   `ldap-only` that path is always open to administrators (the break-glass rule in
+   the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback));
+   the login is audited as `provider: 'local'` and notifies the administrators.
+   That administrator can then switch `auth.strategy` to `local-first` from the
+   LDAP settings page, which saves the whole LDAP form with it, until the
+   directory is back.
+2. **No administrator knows a local password.** From a shell in the API
+   container, `node dist-scripts/scripts/grant-local-access.js --username
+   <administrator>` issues a single-use reset link;
+   [Recovering administrator access](apps/api/README.md#recovering-administrator-access)
+   explains its checks and why the printed link is a credential.
+3. **Nobody can sign in to change the strategy.** `auth.strategy` is read on
+   every login, so changing the row restores the local fallback to every user
+   with a LOCAL credential; it gives nobody a password:
+
+   ```sql
+   UPDATE app_configs SET value = 'local-first' WHERE key = 'auth.strategy';
+   ```
+
+Users who exist only in the directory wait for it either way. Prevention is the
+setup requirement in the API documentation: before choosing `ldap-only`, make
+sure at least one administrator can log in locally.
+
+---
+
+## Email deliverability
+
+Password-reset and verification links leave through the SMTP server set on the
+mail settings page ([Transactional email](apps/api/README.md#transactional-email)).
+In production the domain of `smtp.from` needs:
+
+- an **SPF** record that authorizes that SMTP server to send for it;
+- **DKIM** signing, configured on the SMTP service;
+- a **DMARC** policy — optional, recommended against spoofing.
+
+Without them the links tend to land in spam or be rejected. The test email on
+the mail settings page checks delivery end to end.
+
+---
+
+## Release build variables
+
+`release.yml` builds the web image with
+`NEXT_PUBLIC_API_URL=http://<hostname>`, baked into the client bundle, which
+builds its API URLs from it. The hostname comes from a GitHub repository
+variable: `PUBLIC_HOSTNAME` for a stable tag, `RC_PUBLIC_HOSTNAME` for an rc tag.
+Set both under the repository's Actions variables before tagging. An unset or
+empty variable does not fail the build — it bakes `http://` — and a new hostname
+needs a new image. The scheme is fixed to `http://` in the workflow.
 
 ---
 
@@ -204,4 +283,4 @@ configurable through the `rateLimit` key). Its 429 has its own body —
 - [README.md](README.md) - Main project documentation
 - [API documentation](apps/api/README.md) - API reference, security headers, health and readiness checks, LDAP resilience, [recovering administrator access](apps/api/README.md#recovering-administrator-access) when nobody can sign in, and local tracing
 - [Frontend documentation](apps/web/README.md) - Includes the client data-refresh standard after mutations
-- [Archived setup snapshot](docs/archive/SETUP_STATUS.md) - Historical setup and roadmap; not current operating guidance
+- [NAV integration](docs/nav-integration.md) - Master-data sync, the order-portfolio and KIMO replicas, and their schedules

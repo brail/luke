@@ -326,7 +326,30 @@ Menu entry `Impostazioni › Sincronizzazione NAV`. One tab per entity (`Fornito
   checkboxes to manage the selection; shown only in whitelist/exclude mode
 
 The page also has `Portafoglio Vendite` and `KIMO-FASHION` tabs for the
-analytics replicas, which this document does not cover.
+analytics replicas, described below.
+
+### Order-portfolio and KIMO replicas
+
+- **What they hold.** `nav_pf_*` is the order portfolio that sales statistics
+  and the Excel export read; `nav_kimo_*` holds the KIMO-FASHION baskets behind
+  the KIMO report. `syncPortafoglioNow` and `syncKimoNow` in `@luke/nav` refresh
+  them.
+- **Schedule.** Each has a `NavSyncFilter` row (`entity` `portafoglio` or
+  `kimo`), created by the schedule switch on its tab
+  (`integrations.nav.saveSyncSchedule`). Its scheduler reads `autoSyncEnabled`
+  and `intervalMinutes` on every tick and runs under a scheduler lock; `mode` and
+  `navNos` do not apply. The tab's manual sync calls
+  `sales.statistics.portafoglio.triggerSync` or `sales.statistics.kimo.triggerSync`.
+- **Scope.** The portfolio sync reads the sales documents of the active seasons
+  only, and skips the run when no season is active. KIMO has no season filter.
+- **Position.** Each table's last SQL Server rowversion is kept in
+  `nav_pf_sync_state`, keyed by the PostgreSQL table name (`nav_pf_*` or
+  `nav_kimo_*`); the portfolio's small lookup tables are re-read in full. Deleting a table's
+  row there makes the next run read that table from the start; the rows already
+  replicated stay, since every write is an upsert.
+- **Reads.** Statistics and the KIMO report read only the replicas. The
+  portfolio Excel export and the salesperson filter fall back to NAV when the
+  replica holds no row for the season and brand (`apps/api/src/routers/sales.ts`).
 
 ### Collection Layout — vendor combobox
 
