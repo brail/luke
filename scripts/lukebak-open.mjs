@@ -40,7 +40,7 @@ if (!file || args.length > 2 || (args.length === 2 && !out.endsWith('.tar'))) {
   process.exit(1);
 }
 
-/** Reads a line from the terminal without echoing it. Ctrl-C aborts. */
+/** Reads a line from the terminal without echoing it. Ctrl-U clears it, Ctrl-C aborts. */
 function promptHidden(prompt) {
   const { stdin, stderr } = process;
   return new Promise(resolve => {
@@ -62,8 +62,12 @@ function promptHidden(prompt) {
           finish();
           process.exit(130);
         }
-        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
-        else value += ch;
+        // An escape sequence (an arrow or function key) arrives whole in one chunk, and none of it
+        // is part of the passphrase. With nothing echoed, a stray key must not change it silently.
+        if (ch === '\u001b') break;
+        if (ch === '\u0015') value = '';
+        else if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
+        else if (ch >= ' ') value += ch;
       }
     };
     stderr.write(prompt);
@@ -74,15 +78,22 @@ function promptHidden(prompt) {
   });
 }
 
-const passphrase = process.stdin.isTTY
-  ? await promptHidden('Passphrase: ')
-  : readFileSync(0, 'utf8').split(/\r?\n/)[0];
+/** The first line of piped stdin. */
+async function readPipedLine() {
+  let text = '';
+  process.stdin.setEncoding('utf8');
+  for await (const chunk of process.stdin) text += chunk;
+  return text.split(/\r?\n/)[0];
+}
+
+// The file first: a wrong path should not cost the operator a passphrase.
+const buf = readFileSync(file);
+
+const passphrase = process.stdin.isTTY ? await promptHidden('Passphrase: ') : await readPipedLine();
 if (!passphrase) {
   console.error('No passphrase given.');
   process.exit(1);
 }
-
-const buf = readFileSync(file);
 const headerLength = buf.readUInt32BE(0);
 const header = JSON.parse(buf.subarray(4, 4 + headerLength).toString('utf8'));
 const body = buf.subarray(4 + headerLength);
