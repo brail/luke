@@ -37,7 +37,7 @@ async function bootstrap() {
   // 2. Reset the database
   console.log('🗑️  Reset database...');
   try {
-    execSync('pnpm prisma migrate reset --force --skip-seed', {
+    execSync('pnpm prisma migrate reset --force', {
       cwd: PRISMA_PACKAGE_ROOT,
       stdio: 'inherit',
     });
@@ -49,11 +49,11 @@ async function bootstrap() {
     console.error('   2. Database in use by other processes');
     console.error('\n🔧 Solutions:');
     console.error(
-      '   - Run manually: cd packages/db && pnpm prisma migrate reset --force --skip-seed'
+      '   - Run manually from packages/db, with apps/api/.env loaded: pnpm prisma migrate reset --force'
     );
     console.error('   - Or stop all processes and retry');
     console.error(
-      '   - To bypass the AI check: PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="yes" pnpm prisma migrate reset --force --skip-seed'
+      '   - To bypass the AI check: PRISMA_USER_CONSENT_FOR_DANGEROUS_AI_ACTION="yes" pnpm prisma migrate reset --force'
     );
     throw error;
   }

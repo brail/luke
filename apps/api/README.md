@@ -460,7 +460,7 @@ PostgreSQL through Prisma. The schema, the migrations and the generated client a
 ```bash
 pnpm --filter @luke/db prisma:studio    # Open Prisma Studio in the browser
 pnpm --filter @luke/api db:seed         # Initial seed (first boot)
-pnpm --filter @luke/api db:bootstrap    # Development bootstrap with sample data
+pnpm --filter @luke/api db:bootstrap    # Development only: reset the database, then seed admin and base config
 ```
 
 Creating a migration is a workflow of its own, not a single command: see [`docs/prisma-migration-workflow.md`](../../docs/prisma-migration-workflow.md). Run any `prisma` CLI command from `packages/db/`, the only directory that resolves config, schema and migrations together. In production `entrypoint.sh` runs `prisma migrate deploy` before the server starts; the migrations are version-controlled in `packages/db/prisma/migrations/`.

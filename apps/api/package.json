@@ -29,7 +29,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "db:seed": "tsx prisma/seed.ts",
-    "db:bootstrap": "tsx scripts/dev-bootstrap.ts",
+    "db:bootstrap": "tsx --env-file=.env scripts/dev-bootstrap.ts",
     "db:nav-reset": "tsx scripts/nav-reset.ts",
     "db:harden-google-acl": "tsx --env-file=.env scripts/harden-google-calendar-acl.ts",
     "db:complete-stranded-rows": "tsx --env-file=.env scripts/complete-stranded-rows.ts",
