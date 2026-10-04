@@ -118,17 +118,3 @@ export function generateExportFileName(): string {
   const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
   return `luke-config-export-${timestamp}.json`;
 }
-
-/**
- * Formats a date as `dd/MM/yyyy, HH:mm` using the `it-IT` locale.
- */
-export function formatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('it-IT', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}

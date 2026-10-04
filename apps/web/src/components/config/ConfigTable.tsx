@@ -14,10 +14,8 @@ import {
 import { isConfigRouterKey, isUndeletableConfigKey } from '@luke/core';
 
 import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
-import {
-  formatValue,
-  formatDate,
-} from '../../lib/configHelpers';
+import { useFormatDate } from '../../hooks/useFormatDate';
+import { formatValue } from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -93,6 +91,7 @@ export function ConfigTable({
   canUpdate = true,
 }: ConfigTableProps) {
   const { copy } = useCopyToClipboard();
+  const { dateTime } = useFormatDate();
   const handleCopyKey = (key: string) =>
     copy(key, { successMessage: 'Chiave copiata negli appunti', errorMessage: COPY_ERROR_MESSAGE });
 
@@ -220,7 +219,7 @@ export function ConfigTable({
 
               <TableCell>
                 <span className="text-sm text-muted-foreground">
-                  {formatDate(config.updatedAt)}
+                  {dateTime(config.updatedAt)}
                 </span>
               </TableCell>
 
