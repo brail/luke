@@ -183,6 +183,30 @@ export const authRouter = router({
     }),
 
   /**
+   * Sends a new verification link to an account that login refuses until its email is verified
+   * (`auth.requireEmailVerification`), the one way back that needs no session. It proves the
+   * password first, as a login does (`verifyCredentials`: strategy, the per-account bucket shared
+   * with login, the failure audit), so it tells a caller without it nothing about the account.
+   *
+   * @auth {public — password-verified}
+   * @input {LoginSchema} — username and password.
+   * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} UNAUTHORIZED for wrong credentials; PRECONDITION_FAILED for an address
+   *   already verified; whatever `verifyCredentials` and `sendVerificationLink` throw.
+   */
+  resendVerification: publicProcedure
+    .use(withRateLimit('passwordReset'))
+    .input(LoginSchema)
+    .mutation(async ({ input, ctx }) => {
+      const { user } = await verifyCredentials(ctx, input);
+      if (user.emailVerifiedAt) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Email già verificata: puoi accedere.' });
+      }
+      // Pre-session: no actor; the helper's audit row carries the account as its target.
+      return sendVerificationLink(ctx, { userId: user.id, reason: 'user_requested' });
+    }),
+
+  /**
    * Validates the email-verification token and marks the address as verified.
    *
    * @auth {public}

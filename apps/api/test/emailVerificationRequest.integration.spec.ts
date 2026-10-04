@@ -19,7 +19,7 @@ import * as emailHelpers from '../src/lib/emailHelpers';
 import { rateLimitStore } from '../src/lib/ratelimit';
 import { appRouter } from '../src/routers/index';
 
-import { createTestContext, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createTestContext, createTestUser, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -134,5 +134,72 @@ describe('sendVerificationEmail, whoever calls it', () => {
       code: 'BAD_REQUEST',
     });
     expect(await prisma.userToken.count({ where: { userId: user.id, type: 'VERIFY' } })).toBe(0);
+  });
+});
+
+/**
+ * `auth.resendVerification`: the way back for a local account that login refuses until its email is
+ * verified (`auth.requireEmailVerification`). It needs no session — that is the point — so it proves
+ * the password first, as a login does, and answers nothing about the account to a caller without it.
+ */
+describe('auth.resendVerification', () => {
+  const anonymous = () => appRouter.createCaller(createTestContext(null)).auth;
+
+  it('sends a new link to the account whose password was proven', async () => {
+    const send = vi
+      .spyOn(emailHelpers, 'sendVerificationEmail')
+      .mockResolvedValue({ success: true, message: 'stubbed' });
+    const { user } = await unverifiedUser();
+
+    await expect(anonymous().resendVerification({ username: user.username, password: TEST_USER_PASSWORD })).resolves.toMatchObject({
+      success: true,
+    });
+    // A pre-session flow: no actor, the target is the account (CLAUDE.md rule 4).
+    expect(send).toHaveBeenCalledWith(expect.anything(), { userId: user.id, reason: 'user_requested' }, expect.anything());
+  });
+
+  it('answers a wrong password and an unknown username alike, and sends nothing', async () => {
+    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
+    const { user } = await unverifiedUser();
+
+    const wrong = await anonymous().resendVerification({ username: user.username, password: 'Not-the-passw0rd!' }).catch(e => e);
+    const unknown = await anonymous().resendVerification({ username: 'nobody-here', password: 'Not-the-passw0rd!' }).catch(e => e);
+
+    expect(wrong).toMatchObject({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
+    expect({ code: unknown.code, message: unknown.message }).toEqual({ code: wrong.code, message: wrong.message });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('tells a proven caller whose address is already verified to log in', async () => {
+    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
+    const { user } = await createTestUser('viewer');
+
+    await expect(anonymous().resendVerification({ username: user.username, password: TEST_USER_PASSWORD })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('refuses an account still on its synthetic LDAP address, creating no token', async () => {
+    const { user } = await unverifiedUser();
+    await prisma.user.update({ where: { id: user.id }, data: { email: `${user.username}@ldap.local` } });
+
+    await expect(anonymous().resendVerification({ username: user.username, password: TEST_USER_PASSWORD })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(await prisma.userToken.count({ where: { userId: user.id, type: 'VERIFY' } })).toBe(0);
+  });
+
+  it('counts against the per-account bucket login uses', async () => {
+    const { user } = await unverifiedUser();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const ctx = createTestContext(null);
+      Object.assign(ctx.req, { ip: `10.22.0.${attempt + 1}` });
+      await appRouter.createCaller(ctx).auth.login({ username: user.username, password: 'wrong' }).catch(() => undefined);
+    }
+
+    await expect(anonymous().resendVerification({ username: user.username, password: TEST_USER_PASSWORD })).rejects.toMatchObject({
+      code: 'TOO_MANY_REQUESTS',
+    });
   });
 });

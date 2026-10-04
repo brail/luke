@@ -191,7 +191,10 @@ table names another emitter:
 | `USER_LOCAL_ACCESS_FORCED` | A reset link issued to give an account local access. Written by `users.forceLocalAccess` (success and failure), and by `db:grant-local-access` (`source: 'cli'`) only for a link it issued: a refusal, a dry run or a rolled-back attempt writes no row |
 
 These names do not imply success: inspect the audit row's `result` and available
-metadata, such as `reason`. Failure paths also use these actions. A generic
+metadata, such as `reason`. Failure paths also use these actions, with two
+exceptions: a wrong password on `auth.resendVerification` is recorded as
+`AUTH_LOGIN_FAILED`, like a failed login, and its refusal of an address already
+verified writes no row. A generic
 success response to a password-reset request does not prove that an email was
 sent; the service deliberately avoids disclosing whether the account exists.
 

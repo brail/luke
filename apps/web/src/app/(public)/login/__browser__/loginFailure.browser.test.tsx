@@ -20,10 +20,11 @@ import type { ReactNode } from 'react';
  */
 
 // Hoisted and stable: a fresh object per render would re-run every effect that depends on it.
-const { signIn, router, submitPendingEmail } = vi.hoisted(() => ({
+const { signIn, router, submitPendingEmail, resendVerification } = vi.hoisted(() => ({
   signIn: vi.fn(),
   router: { push: vi.fn() },
   submitPendingEmail: vi.fn(),
+  resendVerification: vi.fn(),
 }));
 
 vi.mock('next-auth/react', () => ({ signIn }));
@@ -37,7 +38,16 @@ vi.mock('next/link', () => ({
 // The vanilla client and nothing else: a mutation hook would keep the password in TanStack's cache
 // after the call settles, so the page must not use one — and against this mock it cannot.
 vi.mock('../../../../lib/trpc', () => ({
-  trpc: { useUtils: () => ({ client: { auth: { submitPendingEmail: { mutate: submitPendingEmail } } } }) },
+  trpc: {
+    useUtils: () => ({
+      client: {
+        auth: {
+          submitPendingEmail: { mutate: submitPendingEmail },
+          resendVerification: { mutate: resendVerification },
+        },
+      },
+    }),
+  },
 }));
 // Page furniture with requests and images of its own, irrelevant to the form.
 vi.mock('../../../../components/AppVersionLabel', () => ({ AppVersionLabel: () => null }));
@@ -64,6 +74,7 @@ async function backToLogin(screen: Awaited<ReturnType<typeof render>>) {
 beforeEach(() => {
   vi.clearAllMocks();
   submitPendingEmail.mockResolvedValue({ success: true });
+  resendVerification.mockResolvedValue({ success: true });
 });
 
 describe('a sign-in that did not go through', () => {
@@ -88,6 +99,23 @@ describe('a sign-in that did not go through', () => {
     await expect
       .element(screen.getByText('Email non verificata. Controlla la tua casella di posta per il link di verifica.'))
       .toBeVisible();
+  });
+
+  test('an email still to verify can ask for a new link, with the credentials just proven', async () => {
+    const screen = await signInRefusedWith('email_unverified');
+
+    await screen.getByRole('button', { name: 'Invia di nuovo il link di verifica' }).click();
+
+    expect(resendVerification).toHaveBeenCalledWith({ username: 'alice', password: 'her-password' });
+    await expect.element(screen.getByText('Ti abbiamo inviato un nuovo link di verifica.')).toBeVisible();
+    expect(screen.getByText(/Email non verificata/).query()).toBeNull();
+  });
+
+  test('refused credentials offer no new link', async () => {
+    const screen = await signInRefusedWith('credentials');
+
+    await expect.element(screen.getByText('Credenziali non valide')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Invia di nuovo il link di verifica' }).query()).toBeNull();
   });
 
   test('refused credentials read as such, and nothing about the account is asked or offered', async () => {

@@ -141,8 +141,8 @@ every credential-verification endpoint) must **always** have a second
 `keyBy` bucket on identity (username/account) in addition to the IP one.
 Pattern: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts` —
 the second bucket is checked inside `verifyCredentials()` (`auth.service.ts`),
-which every public endpoint taking a password calls (`authenticateUser`,
-`auth.submitPendingEmail`), not via `withRateLimit()`, because the key
+which every public endpoint verifying the account's current password calls (`authenticateUser`,
+`auth.submitPendingEmail`, `auth.resendVerification`), not via `withRateLimit()`, because the key
 (username) lives in the procedure's input, not in `ctx`.
 
 ## Pentest / External Security

@@ -49,7 +49,8 @@ Authenticated group `(app)/`:
 Public group `(public)/`:
 
 - `/login` — login page (local / LDAP); an LDAP account awaiting approval gets its notice, and
-  the form for a missing email, in place
+  the form for a missing email, in place; a login refused for an unverified email can ask for a
+  new verification link
 - `/auth/reset` — password reset through an emailed token
 - `/auth/verify` — email address verification
 

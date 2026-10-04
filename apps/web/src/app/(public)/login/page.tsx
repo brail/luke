@@ -18,6 +18,8 @@ import {
 } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
+import { trpc } from '../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
 import { PendingApproval } from './_components/PendingApproval';
 
@@ -31,16 +33,33 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [pending, setPending] = useState<{ needsEmail: boolean } | null>(null);
+  /** The login was refused for an unverified email: the page offers a new link. */
+  const [unverified, setUnverified] = useState<'offered' | 'sending' | 'sent' | null>(null);
   const router = useRouter();
+  const { client } = trpc.useUtils();
 
   const leavePending = () => {
     setPending(null);
     setPassword('');
   };
 
+  // Through the vanilla client, not a mutation hook, which would keep the password in its cache.
+  const resendVerification = async () => {
+    setUnverified('sending');
+    try {
+      await client.auth.resendVerification.mutate({ username, password });
+      setError('');
+      setUnverified('sent');
+    } catch (err) {
+      setError(getTrpcErrorMessage(err, { UNAUTHORIZED: true, PRECONDITION_FAILED: true }));
+      setUnverified('offered');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setUnverified(null);
     setIsLoading(true);
 
     try {
@@ -76,6 +95,7 @@ export default function LoginPage() {
           setError(
             'Email non verificata. Controlla la tua casella di posta per il link di verifica.'
           );
+          setUnverified('offered');
         } else {
           setError('Credenziali non valide');
         }
@@ -150,6 +170,22 @@ export default function LoginPage() {
                   <div className="text-sm text-destructive text-center">
                     {error}
                   </div>
+                )}
+                {unverified === 'sent' && (
+                  <div className="text-sm text-muted-foreground text-center">
+                    Ti abbiamo inviato un nuovo link di verifica.
+                  </div>
+                )}
+                {(unverified === 'offered' || unverified === 'sending') && (
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="w-full"
+                    onClick={resendVerification}
+                    disabled={unverified === 'sending'}
+                  >
+                    {unverified === 'sending' ? 'Invio...' : 'Invia di nuovo il link di verifica'}
+                  </Button>
                 )}
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? 'Accesso...' : 'Accedi'}

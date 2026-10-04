@@ -238,7 +238,8 @@ Luke supporta email transazionali per funzionalità di sicurezza essenziali:
 
 2. **Verifica Email**
    - Any active account with a real, unverified address can get a link: signed-in users request
-     one for their own address from the profile page, administrators send one to any user
+     one for their own address from the profile page, administrators send one to any user, and a
+     login refused for an unverified email offers a new one with the password just entered
    - Token monouso valido 24 ore, hash SHA-256 salvato in DB
    - Link: `{baseUrl}/auth/verify?token={token}`
    - Configurabile come obbligatoria per login (`auth.requireEmailVerification`)
@@ -268,9 +269,10 @@ app.baseUrl; // URL base per link nelle email
 - **Solo hash SHA-256 salvato in DB**, mai in chiaro
 - **Token usa-e-getta**: eliminato dopo uso o scadenza
 - **Rate limiting**: password-reset requests and confirmations, and email-verification
-  confirmations, use the per-IP `passwordReset` bucket; requesting a verification link, by the
-  user or by an administrator, uses the per-user `userMutations` bucket (limits in
-  [OPERATIONS.md](OPERATIONS.md#buckets))
+  confirmations, use the per-IP `passwordReset` bucket; a signed-in user or an administrator
+  requesting a verification link uses the per-user `userMutations` bucket; a new link asked from
+  the login page with the password uses `passwordReset` plus the per-account login bucket (limits
+  in [OPERATIONS.md](OPERATIONS.md#buckets))
 - **Nessun segreto in AuditLog**: logging sicuro senza PII
 
 #### DNS & Deliverability
