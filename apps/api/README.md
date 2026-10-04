@@ -229,7 +229,9 @@ version built in `mailer.ts`.
 
 SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte
 when `true`, STARTTLS otherwise), `smtp.user`, `smtp.pass` (stored encrypted)
-and `smtp.from`; every link starts with `app.baseUrl`. They are set on the mail
+and `smtp.from`; every link starts with `app.baseUrl`, whose default — and
+seeded value — is `http://localhost:3000`, so set the public origin before
+relying on email links. They are set on the mail
 settings page (`integrations.mail.*`), which can also send a test email — to
 the address given, or to `smtp.from` when none is. Rate limits on these flows
 are in [OPERATIONS.md — Buckets](../../OPERATIONS.md#buckets). Deliverability
@@ -332,7 +334,8 @@ The process exits with code 1 when any of these fails at startup:
    (see the environment table below);
 3. `checkBootstrapDependencies` — `prisma.$connect()`, `validateMasterKey()` and
    `deriveSecret('api.jwt')`;
-4. `validateCriticalConfig` — a key in `CRITICAL_CONFIG_KEYS` missing or invalid.
+4. `validateCriticalConfig` — in production, a key in `CRITICAL_CONFIG_KEYS`
+   missing or invalid (elsewhere it logs a warning).
 
 **Known limit — this is not a guarantee that the master key is the expected one.**
 `validateMasterKey()` only checks that the key file is 32 bytes, and when the
@@ -395,12 +398,12 @@ values in the environment table below, and no configuration file is read. Ration
 | `config.*` | AppConfig keys — centralized runtime configuration |
 | `context.*` | Current user context (active brand/season) |
 | `dashboard.*` | Dashboard widgets — KPI data, season progress, weekly sales |
-| `editLock.*` | Planning wizard session lock (acquire/release/assert) |
+| `editLock.*` | Planning wizard session lock (acquireMany/renew/release) |
 | `feedback.*` | Internal feedback system |
 | `holidays.*` | National holidays and vendor closure periods |
 | `integrations.auth.*` | LDAP configuration and connection test |
 | `integrations.google.*` | Google Calendar OAuth 2.0 — authorization flow and binding |
-| `integrations.importExport.*` | Data import and export |
+| `integrations.importExport.*` | Placeholder for data import and export: both procedures are stubs, not implemented |
 | `integrations.mail.*` | SMTP configuration and test email delivery |
 | `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
 | `maintenance.backup.*` | Backup and restore of the application database |
@@ -417,7 +420,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `sales.*` | Order portfolio statistics and the KIMO sales+returns report (NAV replicas `nav_pf_*` / `nav_kimo_*`) |
 | `season.*` | Season management (CRUD, soft delete) |
 | `seasonCalendar.*` | Seasonal milestone calendar, planning groups, templates and Google sync |
-| `sectionAccess.*` | Per-user RBAC section visibility (user-level override) |
+| `sectionAccess.*` | RBAC section visibility: per-user overrides and per-role defaults |
 | `storage.*` | Upload slots and FileObject confirmation (presigned S3 uploads), S3 connection test, storage configuration |
 | `system.*` | Manual calendar digest trigger (sends the caller their own digest) |
 | `users.*` | User management — merge of `core` (CRUD), `admin` (pending LDAP user approval, session revocation, email-verification override, local-access bypass) and `preferences.*` |
@@ -442,7 +445,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `PORT` | number | `3001` | Server listen port |
 | `HOST` | address | `0.0.0.0` | Server bind address |
 | `NODE_ENV` | enum | unset | Runtime mode: `development` or `production`. Any other value, or none, runs as neither — see [Running the API locally](#running-the-api-locally); `test` also registers a test-only error route |
-| `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Origins CORS accepts in production |
+| `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Allowed CORS origins, in any environment. Unset, `localhost:3000` and `:5173` are allowed outside production and no origin in production |
 | `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |
 | `OTEL_ENABLED` | boolean | `true` | Set to `false` to disable tracing even with an endpoint configured (`src/instrument.ts`) |
@@ -483,7 +486,7 @@ PostgreSQL through Prisma. The schema, the migrations and the generated client a
 
 ```bash
 pnpm --filter @luke/db prisma:studio    # Open Prisma Studio in the browser
-pnpm --filter @luke/api db:seed         # Initial seed (first boot)
+pnpm --filter @luke/api db:seed         # Initial seed; reads DATABASE_URL from the shell, not apps/api/.env
 pnpm --filter @luke/api db:bootstrap    # Development only: reset the database, then seed admin and base config
 ```
 
@@ -538,7 +541,8 @@ database) and deploy again.
 ### Operational scripts
 
 The `db:*` scripts in `scripts/` run in development through pnpm, with their
-arguments after `--`; all but `db:nav-reset` read `apps/api/.env`, and that
+arguments right after the script name — pnpm passes a literal `--` through, and
+`db:grant-local-access` rejects it; all but `db:nav-reset` read `apps/api/.env`, and that
 one takes the environment of the shell. The image compiles them to
 `dist-scripts/`, so in the API container — the database publishes no port — the
 same script runs as `node dist-scripts/scripts/<file>.js`. Never run `db:bootstrap`
@@ -568,7 +572,7 @@ The pattern is a **one-way NAV → Luke sync**. Each entity has a `nav_*` replic
 
 Synchronized entities: **Vendor** (watermark differential), **Brand** (full sync), **Season** (full sync), **order portfolio** (`nav_pf_*` replica behind sales statistics), **KIMO** (`nav_kimo_*` replica behind the sales+returns report). Each entity is synced inside its own try/catch, so one failure does not block the others.
 
-Triggers: manually from `/settings/nav-sync` in the frontend — `integrations.nav.run` for Vendor/Brand/Season, `sales.statistics.portafoglio.triggerSync` for the order portfolio, `sales.statistics.kimo.triggerSync` for KIMO — and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
+Triggers: manually from `/settings/nav-sync` in the frontend — `integrations.nav.sync.run` for Vendor/Brand/Season, `sales.statistics.portafoglio.triggerSync` for the order portfolio, `sales.statistics.kimo.triggerSync` for KIMO — and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
 
 Table naming, NAV-side details and the decisions behind them: [`docs/nav-integration.md`](../../docs/nav-integration.md).
 <!-- luke-docs:end:nav -->

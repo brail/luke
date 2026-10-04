@@ -12,8 +12,8 @@ The code lives in the dedicated `@luke/nav` package (`packages/nav/`).
 
 The same package also maintains the `nav_pf_*` (order portfolio) and
 `nav_kimo_*` (KIMO-FASHION) analytics replicas, driven by
-`portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts` in `apps/api/src/lib/`.
-This document does not cover them.
+`portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts` in `apps/api/src/lib/`;
+see [Order-portfolio and KIMO replicas](#order-portfolio-and-kimo-replicas).
 
 ---
 
@@ -145,7 +145,9 @@ All keys live under the `integrations.nav.*` namespace:
 | `integrations.nav.syncEnabled` | boolean | false | Global switch for the scheduled vendor/brand/season sync; does not gate the manual sync |
 
 The two defaults are the values `apps/api/prisma/seed.ts` writes; none of these
-keys has an entry in `APP_CONFIG_DEFAULTS`. With its row absent, `readOnly`
+keys has an entry in `APP_CONFIG_DEFAULTS`. The development seed also writes
+placeholder connection values (host `192.168.1.32`, database `NAV_DATABASE`,
+and so on); production does not run the seed. With its row absent, `readOnly`
 reads as `true`, and the scheduler treats `syncEnabled` as enabled: it stops
 only on an explicit `false`. There is no interval key: the sync interval is
 stored per entity in `NavSyncFilter` (see Scheduler).
@@ -173,7 +175,9 @@ therefore overlap a scheduled run.
 
 If `integrations.nav.host` is not configured, the scheduler skips the tick
 silently, without logging errors (expected behavior on a fresh install). It
-also skips the tick when `integrations.nav.syncEnabled` is `false`.
+also skips the tick when `integrations.nav.syncEnabled` is `false`. A seeded
+development database carries the placeholder host, so there only `syncEnabled`
+stops the scheduler.
 
 ---
 
@@ -290,7 +294,7 @@ after the records have been fetched. An entity with no filter row, with
 | Permission | Use |
 |------------|-----|
 | `config:read` | Read the NAV configuration and sync status, run the live preview, test the connection |
-| `config:update` | Save the configuration, save filters and the sync schedule, run a manual master-data sync (`integrations.nav.run`) |
+| `config:update` | Save the configuration, save filters and the sync schedule, run a manual master-data sync (`integrations.nav.sync.run`) |
 | `sales:read` | Start a manual order-portfolio or KIMO replica sync (`sales.statistics.portafoglio.triggerSync`, `sales.statistics.kimo.triggerSync`) |
 | `vendors:read` | List the vendors of the local NAV replica (`integrations.nav.vendors.list`) |
 | `brands:read` | List the replica's NAV brands not yet linked to a local brand, for the link picker (`integrations.nav.brands.list`) |
@@ -338,7 +342,7 @@ analytics replicas, described below.
   them.
 - **Schedule.** Each has a `NavSyncFilter` row (`entity` `portafoglio` or
   `kimo`), created by the schedule switch on its tab
-  (`integrations.nav.saveSyncSchedule`). Its scheduler reads `autoSyncEnabled`
+  (`integrations.nav.sync.saveSyncSchedule`). Its scheduler reads `autoSyncEnabled`
   and `intervalMinutes` on every tick and runs under a scheduler lock; `mode` and
   `navNos` do not apply. The tab's manual sync calls
   `sales.statistics.portafoglio.triggerSync` or `sales.statistics.kimo.triggerSync`.

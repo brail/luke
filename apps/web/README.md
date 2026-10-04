@@ -42,7 +42,7 @@ Authenticated group `(app)/`:
 - `/maintenance/audit-log` — audit trail browsing and export
 - `/maintenance/backup` — encrypted database backup and restore
 - `/maintenance/mode` — maintenance mode (write lock, user banner)
-- `/maintenance/import-export` — data import/export in JSON, CSV or XLSX
+- `/maintenance/import-export` — placeholder page for data import/export; the API procedures behind it are not implemented
 - `/profile` — user profile, preferences and security settings
 - `/notifications` — full notification history
 
@@ -83,6 +83,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 | `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |
 | `COOKIE_SECURE` | In production, set to `false` when serving plain HTTP; any other value keeps the session cookie `Secure`. Outside production the cookie is never `Secure` | No |
 | `NEXT_PUBLIC_APP_VERSION` | Build-time version metadata injected from the git tag; absent under `pnpm dev`, where the UI shows a development marker instead | No |
+| `NEXT_PUBLIC_LUKE_DEBUG_UI` | Build-time flag: `true` turns on `debugLog`/`debugWarn`/`debugError` output (`src/lib/debug.ts`) in a production build; outside production they always log. Not on the `CLAUDE.md` list (ADR-018 records it) | No |
 
 Everything else — SMTP, LDAP, storage, NAV, Google — lives in AppConfig in the database, never in environment variables.
 <!-- luke-docs:end:env -->
