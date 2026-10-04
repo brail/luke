@@ -54,6 +54,13 @@ first source that yields a valid one:
 2. **Defaults** — `RATE_LIMIT_POLICY_DEFAULTS` in
    [`apps/api/src/lib/rateLimitPolicy.ts`](apps/api/src/lib/rateLimitPolicy.ts).
 
+The seed (`db:seed`, and `db:bootstrap` through it) writes a `rateLimit` row with
+production values for `login`, `passwordChange`, `passwordReset`,
+`configMutations` (20) and `userMutations` (10), so on a seeded database those
+buckets hold those values in development too. No settings page edits the row,
+and the generic `config.*` writers refuse its prefix: it is changed in the
+database.
+
 Consequences of that resolution:
 
 - **The AppConfig value is validated as a whole.** If any entry fails the schema —

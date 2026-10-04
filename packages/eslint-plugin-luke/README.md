@@ -1,7 +1,7 @@
 # eslint-plugin-luke
 
 <!-- luke-docs:start:overview -->
-Internal ESLint plugin that turns constraints written in `CLAUDE.md` and paid for in `lessons.md` into rules the build refuses to pass, instead of conventions a reviewer has to remember. Eleven rules, covering TypeScript strictness, doc-comment placement, Zod partials, workspace dependency declarations, module boundaries, audit metadata and four `apps/web` UI patterns.
+Internal ESLint plugin that turns constraints written in `CLAUDE.md` and paid for in `lessons.md` into rules the build refuses to pass, instead of conventions a reviewer has to remember. Eleven rules, covering TypeScript strictness, doc-comment placement, Zod partials, workspace dependency declarations, module boundaries, audit metadata and five `apps/web` rules — four UI patterns and a secure-context guard.
 
 The plugin is enforcement only: the normative statement of each rule lives in `CLAUDE.md`, the lesson that produced it in `lessons.md`, and the file globs each rule runs on in the root `eslint.config.mjs`.
 <!-- luke-docs:end:overview -->

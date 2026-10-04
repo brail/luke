@@ -75,13 +75,13 @@ backups unreadable ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-l
 |--------|-------------|
 | `pnpm dev` | Starts every workspace in development mode (via Turbo) |
 | `pnpm build` | Full build of every workspace |
-| `pnpm lint` | Lints every TypeScript file |
+| `pnpm lint` | Lints every workspace; `pnpm lint:tools` covers `tools/` and `scripts/` |
 | `pnpm typecheck` | Type checks every workspace |
 | `pnpm db:seed` | Seeds the database (`apps/api/prisma/seed.ts`); reads `DATABASE_URL` from the shell, not from `apps/api/.env` |
 | `pnpm test` | Runs every workspace's tests (via Turbo) |
 | `pnpm test:integration:local` | Brings the test database up and runs the integration suite |
 | `pnpm test:tools` | Tests for the control-plane scripts in `tools/scripts/` |
-| `pnpm check:drift` | Runs the blocking skill, documentation, platform, tsconfig, and workflow checks; see the [drift-check contracts](tools/README.md#drift-checks). |
+| `pnpm check:drift` | Runs the blocking skill, documentation, platform, override-consumer, tsconfig, and workflow checks; see the [drift-check contracts](tools/README.md#drift-checks). |
 | `pnpm security` | SAST (semgrep) + secrets (gitleaks) + dependencies (osv-scanner) |
 | `pnpm backup:open <file.lukebak> [out.tar]` | Decrypts a backup export offline into a plain tar, with no server or database; prompts for the export passphrase |
 | `pnpm release:prepare <tag>` | The only release entry point: validates the tag and writes the `CHANGELOG.md` section |
@@ -89,7 +89,7 @@ backups unreadable ([ADR-020](docs/decisions/020-master-key-scope-and-rotation-l
 
 While `pnpm dev` runs in a worktree, the scripts that rebuild a workspace `dist` (`build`, `typecheck`, `test` and their variants) refuse to start there (`scripts/assert-no-dev.sh`): stop dev, or run them from a second worktree (`git worktree add`).
 
-Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`
+Workspace-specific commands: `pnpm --filter @luke/web dev` · `pnpm --filter @luke/api dev` · `pnpm --filter @luke/core build`. A filtered build is not guarded: stop dev first, or run `sh scripts/assert-no-dev.sh`.
 <!-- luke-docs:end:scripts -->
 
 ## Deployment
@@ -143,8 +143,8 @@ Relevant architectural decisions are documented in [`docs/decisions/`](docs/deci
 - **Sporadic 429s, or the backend reported unreachable, in local development** —
   `NODE_ENV=development` is missing from `apps/api/.env`; see
   [Running the API locally](apps/api/README.md#running-the-api-locally).
-- **`Cannot find module @luke/core/dist`** — Turbo's cache can be stale: run
-  `pnpm --filter @luke/core build`.
+- **`Cannot find module @luke/core/dist`** — Turbo's cache can be stale: stop
+  `pnpm dev`, then run `pnpm --filter @luke/core build`.
 - **Clean reinstall** — `rm -rf node_modules apps/*/node_modules packages/*/node_modules && pnpm install`.
   Keep `pnpm-lock.yaml`: it pins every dependency.
 
