@@ -78,7 +78,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 |----------|-------------|----------|
 | `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base that SSR section guards and route handlers call directly; unset in local development, where the rewrites are skipped | In containers |
 | `NEXT_PUBLIC_API_URL` | Public API URL, inlined into the client bundle at build time; falls back to `http://localhost:3001` | For production builds |
-| `NEXT_PUBLIC_FRONTEND_URL` | Initial value of the application base URL field (`app.baseUrl`) on the mail settings page, replaced by the stored value as soon as the configuration loads; nothing else reads it | No |
+| `NEXT_PUBLIC_FRONTEND_URL` | Initial value of the application base URL field (`app.baseUrl`) on the mail settings page, shown only until the configuration loads: the form is then reset to the stored value, or emptied when none is stored. Nothing else reads it | No |
 | `NEXTAUTH_URL` | Canonical frontend URL used by NextAuth for callbacks | In containers |
 | `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |
 | `COOKIE_SECURE` | In production, set to `false` when serving plain HTTP; any other value keeps the session cookie `Secure`. Outside production the cookie is never `Secure` | No |

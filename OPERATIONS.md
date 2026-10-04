@@ -242,8 +242,12 @@ path. In order:
    with a LOCAL credential; it gives nobody a password:
 
    ```sql
-   UPDATE app_configs SET value = 'local-first' WHERE key = 'auth.strategy';
+   UPDATE app_configs SET value = 'local-first', "updatedAt" = now() WHERE key = 'auth.strategy';
    ```
+
+   The statement writes no audit row. Record it in the incident notes, and once
+   an administrator can sign in, save the strategy again from the LDAP settings
+   page so that the audit log carries the strategy in force.
 
 Users who exist only in the directory wait for it either way. Prevention is the
 setup requirement in the API documentation: before choosing `ldap-only`, make

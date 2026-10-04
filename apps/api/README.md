@@ -446,7 +446,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |
 | `OTEL_ENABLED` | boolean | `true` | Set to `false` to disable tracing even with an endpoint configured (`src/instrument.ts`) |
-| `LOG_LEVEL` | enum | `info` | Pino level of the tracing bootstrap logger (`src/instrument.ts`) and the LDAP logger (`src/lib/ldapAuth.ts`) only; the server logger is `warn` in production and `info` otherwise |
+| `LOG_LEVEL` | enum | `info` | Pino level of the tracing bootstrap logger (`src/instrument.ts`) and the LDAP logger (`src/lib/ldapAuth.ts`) only. The Fastify server logger is `warn` in production and `info` otherwise; most module loggers are fixed at `info` |
 | `APP_VERSION` | string | absent | Release identity injected at build time as a Docker `ARG`/`ENV` from the git tag in CI. Not a secret, and never read from AppConfig so a running image cannot disagree with itself about which release it is. Absent means "no release identity"; display surfaces fall back to `dev` (`src/lib/appVersion.ts`) |
 
 At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
@@ -541,7 +541,9 @@ The `db:*` scripts in `scripts/` run in development through pnpm, with their
 arguments after `--`; all but `db:nav-reset` read `apps/api/.env`, and that
 one takes the environment of the shell. The image compiles them to
 `dist-scripts/`, so in the API container — the database publishes no port — the
-same script runs as `node dist-scripts/scripts/<file>.js`.
+same script runs as `node dist-scripts/scripts/<file>.js`. Never run `db:bootstrap`
+there: the image contains it, and it resets the database with no production
+guard (`db:nav-reset` refuses to run in production).
 
 | pnpm script | File | Purpose |
 |---|---|---|

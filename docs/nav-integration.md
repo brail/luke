@@ -124,7 +124,8 @@ look for a local row with the same `code` and no NAV link (`navBrandId` /
 `navSeasonId` null). If one exists, the sync logs a warning
 (`skip auto-create`) and creates nothing: an administrator links the existing
 row to its NAV code by hand. On linked rows only `name` is updated — never
-`isActive`, the logo or any other enriched field.
+`isActive`, the logo or any other enriched field. Only that warning reveals a
+skipped row: the run report still counts it as synchronized.
 
 ---
 
@@ -289,7 +290,8 @@ after the records have been fetched. An entity with no filter row, with
 | Permission | Use |
 |------------|-----|
 | `config:read` | Read the NAV configuration and sync status, run the live preview, test the connection |
-| `config:update` | Save the configuration, save filters and the sync schedule, run a manual sync |
+| `config:update` | Save the configuration, save filters and the sync schedule, run a manual master-data sync (`integrations.nav.run`) |
+| `sales:read` | Start a manual order-portfolio or KIMO replica sync (`sales.statistics.portafoglio.triggerSync`, `sales.statistics.kimo.triggerSync`) |
 | `vendors:read` | List the vendors of the local NAV replica (`integrations.nav.vendors.list`) |
 | `brands:read` | List the replica's NAV brands not yet linked to a local brand, for the link picker (`integrations.nav.brands.list`) |
 | `seasons:read` | List the replica's NAV seasons not yet linked to a local season, for the link picker (`integrations.nav.seasons.list`) |
