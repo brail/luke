@@ -18,9 +18,10 @@ RC volume so that encrypted `AppConfig` values stay readable. Rejected because:
 
 `scripts/refresh-rc-db.sh` takes a variant of that route (see the comment at the
 top of the file): with both stacks on the same Docker host, it streams `pg_dump`
-from prod into RC and copies prod's master key into the RC API container. It is
-kept only as a fallback until the flow below has been used successfully in a real
-release, and is then to be retired.
+from prod into RC and copies prod's master key into the RC API container. As of
+2026-10-05 the flow below has not yet been used in a real release, so the script
+stays as the fallback; it is retired after the first release that uses this flow
+successfully.
 
 ## The alternative: the existing backup, export and import system
 
@@ -89,19 +90,22 @@ history.
 
 ## Known limitations
 
-- Sensitive `AppConfig` values (LDAP and SMTP passwords) remain encrypted at column
-  level with **prod's** master key — encryption independent of the backup's DEK;
+- Every encrypted `AppConfig` value — LDAP connection settings and bind password,
+  SMTP password, NAV password, Google service key and OAuth secrets, S3 access and
+  secret keys — remains encrypted at column level with **prod's** master key —
+  encryption independent of the backup's DEK;
   see `apps/api/src/lib/configManager.ts`. After the restore, reading them on RC
   throws at runtime at the point of use, not at boot. This is intended: RC can
   never silently reuse real production credentials against external systems.
-  Reset them by hand with RC-appropriate values if RC needs working LDAP or SMTP.
+  Reset them by hand with RC-appropriate values for each integration RC needs;
+  until then S3 storage, NAV sync and Google sync fail on RC as well.
 - The `.lukebak` package is buffered entirely in memory during upload (no
   streaming multipart client in scope). Acceptable for `DB`-only backups; to be
   revisited if the flow is ever extended to `DB_AND_FILES`.
 
 ## Relationship with `refresh-rc-db.sh`
 
-The two scripts coexist for now. `refresh-rc-db.sh` remains the operational
-fallback until this flow has been used successfully in at least one real release.
+The two scripts coexist. As of 2026-10-05 this flow has not been used in a real
+release, so `refresh-rc-db.sh` remains the operational fallback until it has.
 Deprecating or removing `refresh-rc-db.sh` is a separate decision, to be taken
 only after that validation.

@@ -5,8 +5,9 @@ configured in AppConfig from the **Google Workspace** settings page
 (`/settings/google`) by a user with `config:update`; no environment variable
 configures it. It supports two authentication modes: a **service account**,
 optionally impersonating a Workspace user through domain-wide delegation, or an
-**OAuth user** account connected from the settings page. UI labels below are
-quoted as they currently appear in the product, which is in Italian.
+**OAuth user** account connected from the settings page. Luke's own UI labels
+below are quoted as code, as they appear in the product, which is in Italian;
+Google's are in bold.
 
 ## Prerequisites
 
@@ -45,10 +46,10 @@ account itself — that is, when you set an email to impersonate in step 4.
 
 ### 4. Configure Luke
 
-On the **Google Workspace** page, choose the **Service Account** mode and paste
+On the **Google Workspace** page, choose the `Service Account (tecnico)` mode and paste
 the JSON key file: the page extracts `client_email` and `private_key` from it.
 Enter the Workspace domain and, optionally, the user to impersonate; turn on
-**Sincronizzazione Google Calendar**; then click **Salva Configurazione**. The
+`Sincronizzazione Google Calendar`; then click `Salva Configurazione`. The
 private key is stored encrypted in AppConfig.
 
 ## Option B — OAuth user
@@ -57,16 +58,16 @@ private key is stored encrypted in AppConfig.
    ID of type **Web application**.
 2. Add the authorized redirect URI `<web origin>/api/google/oauth/callback`. The
    settings page displays the exact value for the current origin.
-3. On the **Google Workspace** page, choose the **OAuth 2.0 — Account utente** mode,
+3. On the **Google Workspace** page, choose the `Account utente OAuth (collega virtuale)` mode,
    enter the client ID, the client secret and the Workspace domain, turn on
-   **Sincronizzazione Google Calendar**, and click **Salva Configurazione**.
-4. Click **Connetti account Google** and complete Google's consent screen. Luke
+   `Sincronizzazione Google Calendar`, and click `Salva Configurazione`.
+4. Click `Connetti account Google` and complete Google's consent screen. Luke
    requests offline access and stores the resulting refresh token, encrypted,
-   together with the connected account's email. **Disconnetti** removes the token.
+   together with the connected account's email. `Disconnetti` removes the token.
 
 ## Verify
 
-Click **Test Connessione** on the settings page (`integrations.google.testConnection`,
+Click `Test Connessione` on the settings page (`integrations.google.testConnection`,
 which requires `config:read`). It uses the stored credentials to list one
 calendar, and reports either success or what is missing: the domain, the
 service-account credentials, or the OAuth connection.
@@ -81,11 +82,14 @@ the sync is skipped without an error. A sync can be started by hand with
 
 ## Architecture
 
-- **Push-only**: Luke writes to Google and never reads events back. The only read
-  is the connection test's calendar listing.
+- **Push-only for events**: Luke writes events to Google and never reads them
+  back. It does read calendar permissions: the sync lists each calendar's access
+  rules to keep its readers in step, and reads the domain rule to restrict it.
 - **Calendar ownership** follows the identity Luke authenticates as: the service
-  account, the impersonated user, or the connected OAuth account. Luke users are
-  added to the calendars as `reader`.
+  account, the impersonated user, or the connected OAuth account. Readers are the
+  members of the calendar's company function plus the administrators, added as
+  `reader`; a domain-wide rule is downgraded to `freeBusyReader`.
+  `db:harden-google-acl` reapplies both to calendars created before these rules.
 - **One calendar** per brand × season × section, named
   `Luke • {brandCode} • {seasonCode} • {sectionLabel}`.
 - **Idempotent sync**: a content hash comparison prevents redundant API calls.

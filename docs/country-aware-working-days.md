@@ -125,7 +125,7 @@ built on `isWorkingDate`. Both work on calendar dates (`CalendarDate`,
   (`startDate` to `endDate`, inclusive) whose `countryCode` is in the list.
   Holidays are `@db.Date` columns, read as the dates they are.
 - "Today" is the date of now in the business time zone
-  (`app.defaultTimezone`, Settings → Azienda). The deadline's date is
+  (`app.defaultTimezone`, `Impostazioni › Azienda`). The deadline's date is
   `deadlineDay` (`packages/core/src/utils/calendarEventLock.ts`): an all-day
   deadline is its own date, a timed one is the date of its instant in the
   business zone. The zone the API process runs in plays no part.
