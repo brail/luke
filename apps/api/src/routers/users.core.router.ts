@@ -18,7 +18,7 @@ import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { createNotification } from '../lib/notifications';
 import { hashPassword } from '../lib/password';
-import { requirePermission } from '../lib/permissions';
+import { logAccessDenied, requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
@@ -349,6 +349,7 @@ export const usersCoreRouter = router({
         password !== undefined &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
+        logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Solo un amministratore può reimpostare la password di un utente',
@@ -386,6 +387,7 @@ export const usersCoreRouter = router({
         attemptedPrivilegedFields.length > 0 &&
         !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
       ) {
+        logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: `Solo un amministratore può modificare: ${attemptedPrivilegedFields.join(', ')}`,
@@ -456,6 +458,7 @@ export const usersCoreRouter = router({
             updateData.role !== current?.role &&
             !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
           ) {
+            logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: 'Solo un amministratore può modificare il ruolo di un utente',

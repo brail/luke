@@ -23,7 +23,7 @@ import {
   deleteConfig,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { can, requirePermission } from '../lib/permissions';
+import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
@@ -288,6 +288,7 @@ export const configRouter = router({
     .query(async ({ input, ctx }) => {
       // A raw value is shown in the clear: it takes at least what writing it takes.
       if (input.mode === 'raw' && !can(ctx, 'config:update')) {
+        logAccessDenied(ctx, { deniedPermissions: ['config:update'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message:
@@ -458,6 +459,7 @@ export const configRouter = router({
     .query(async ({ input, ctx }) => {
       // Decrypting takes at least what writing the value takes.
       if (input.decrypt && !can(ctx, 'config:update')) {
+        logAccessDenied(ctx, { deniedPermissions: ['config:update'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Accesso negato: serve il permesso di modificare la configurazione per decrittare valori',

@@ -11,6 +11,7 @@ import {
   type Permission,
   type PermissionDeclaration,
   type Role,
+  type Section,
 } from '@luke/core';
 
 import { t } from './t';
@@ -29,6 +30,33 @@ declare module './context' {
   interface Context {
     _permissionsCache?: PermissionsCache;
   }
+}
+
+/**
+ * The one log line for a refused Resource:Action permission or section, wherever the check sits:
+ * `requirePermission`, a manual `can()`/`hasPermission()` guard, `withSectionAccess`, or a raw
+ * Fastify route (given that request's logger). The FORBIDDEN the client gets stays short on
+ * purpose — a 4xx reaches every client — so this is where the permission or section is named.
+ * Brand scope, ownership and data rules (the last admin) are other refusals and do not come here.
+ *
+ * `requestedPermissions` defaults to the denied ones; it is wider only for an AND check that the
+ * caller partly passed.
+ */
+export function logAccessDenied(
+  ctx: Partial<Pick<Context, 'logger' | 'traceId'>> & Pick<Context, 'session'>,
+  denied: { deniedPermissions: Permission[]; requestedPermissions?: Permission[] } | { section: Section }
+): void {
+  const what =
+    'section' in denied
+      ? denied
+      : {
+          requestedPermissions: denied.requestedPermissions ?? denied.deniedPermissions,
+          deniedPermissions: denied.deniedPermissions,
+        };
+  ctx.logger?.warn(
+    { traceId: ctx.traceId, userId: ctx.session?.user.id, userRole: ctx.session?.user.role, ...what },
+    'Permission denied'
+  );
 }
 
 /**
@@ -136,17 +164,7 @@ export function requirePermission<TInput = never>(
     }
 
     if (!hasAnyPermission) {
-      // Structured log for audit (no PII)
-      const logData = {
-        traceId: ctx.traceId,
-        userId: user.id,
-        userRole: user.role,
-        requestedPermissions: permissionArray,
-        deniedPermissions,
-        timestamp: new Date().toISOString(),
-      };
-
-      ctx.logger?.warn(logData, 'Permission denied');
+      logAccessDenied(ctx, { requestedPermissions: permissionArray, deniedPermissions });
 
       throw new TRPCError({
         code: 'FORBIDDEN',

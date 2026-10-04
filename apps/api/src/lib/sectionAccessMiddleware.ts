@@ -14,6 +14,7 @@ import {
 } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 
+import { logAccessDenied } from './permissions';
 import { t } from './t';
 
 /**
@@ -63,6 +64,7 @@ export function withSectionAccess(section: Section) {
     });
 
     if (!allowed) {
+      logAccessDenied(ctx, { section });
       throw new TRPCError({
         code: 'FORBIDDEN',
         message: `Accesso negato alla sezione ${section}`,

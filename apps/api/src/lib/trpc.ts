@@ -13,6 +13,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest } from './auth';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
+import { logAccessDenied } from './permissions';
 import { t } from './t';
 import { verifyTokenVersion } from './tokenVersionCache';
 
@@ -167,6 +168,7 @@ export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
   }
 
   if (!hasPermission(ctx.session.user as { role: Role }, 'maintenance:update')) {
+    logAccessDenied(ctx, { deniedPermissions: ['maintenance:update'] });
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: 'Accesso negato',

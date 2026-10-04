@@ -183,9 +183,12 @@ window, not the time left; the idempotency 429 does not. Their message is a
 generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so
 the bucket and its limit are logged instead (`Rate limit exceeded`, with
 `routeName`, `key` — the client IP or the account —, `max`, `windowMs`). A `requirePermission` refusal likewise reads
-`Accesso negato`, the requested permissions going to the `Permission denied` log
-line; an `adminProcedure` refusal reads the same and logs nothing (ADR-026,
-observed gaps).
+`Accesso negato`. Every Resource:Action or section refusal — `requirePermission`,
+`adminProcedure`, `withSectionAccess`, a manual `can()`/`hasPermission()` guard,
+`requireSessionWithPermission` on a raw route — writes the same `Permission
+denied` warning, with `traceId`, `userId`, `userRole` and either
+`requestedPermissions`/`deniedPermissions` or `section`. Brand-scope, ownership and
+last-admin refusals do not write it.
 
 A second, global limiter runs before tRPC (`@fastify/rate-limit` in
 `apps/api/src/server.ts`: 100 requests per minute per IP in production, not

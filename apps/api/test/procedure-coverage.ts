@@ -77,8 +77,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   config: {
     reason:
-      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; the multi-key reads, setMultiple and update remain',
-    uncovered: 3,
+      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; the getMultiple decrypt refusal by the access-denied logging spec; setMultiple and update remain',
+    uncovered: 2,
   },
   users: {
     reason:
@@ -177,8 +177,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 2,
   },
   editLock: {
-    reason: 'no tests written on the session lock of the planning wizard',
-    uncovered: 3,
+    reason: "acquireMany's permission refusal covered by the access-denied logging spec; release, renew and the lock itself, the planning wizard's session lock, have no tests",
+    uncovered: 2,
   },
   catalog: {
     reason:

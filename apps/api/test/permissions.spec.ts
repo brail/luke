@@ -217,7 +217,12 @@ describe('requirePermission middleware', () => {
     // The permission names go to the log, never to the client.
     expect(error.message).toBe('Accesso negato');
     expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ requestedPermissions: ['brands:create', 'users:delete'] }),
+      expect.objectContaining({
+        userId: ctx.session!.user.id,
+        userRole: 'viewer',
+        requestedPermissions: ['brands:create', 'users:delete'],
+        deniedPermissions: ['brands:create', 'users:delete'],
+      }),
       'Permission denied'
     );
   });
@@ -240,13 +245,19 @@ describe('adminMiddleware', () => {
   // The middleware alone: `adminProcedure` also chains `authMiddleware`, which reads the
   // database this mock context does not have.
   it('refuses a user without maintenance:update with a message that names no role', async () => {
+    const ctx = createMockContext('viewer');
+    const warn = vi.spyOn(ctx.logger!, 'warn');
     const caller = router({
       probe: publicProcedure.use(adminMiddleware).query(() => 'success'),
-    }).createCaller(createMockContext('viewer'));
+    }).createCaller(ctx);
 
     const error = await caller.probe().catch(e => e);
     expect(error.code).toBe('FORBIDDEN');
     expect(error.message).toBe('Accesso negato');
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ userRole: 'viewer', deniedPermissions: ['maintenance:update'] }),
+      'Permission denied'
+    );
   });
 });
 

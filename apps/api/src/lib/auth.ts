@@ -7,7 +7,9 @@
 import { hasPermission, type Permission, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
+import { getTraceId } from './error';
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
+import { logAccessDenied } from './permissions';
 import { verifyTokenVersion } from './tokenVersionCache';
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
@@ -192,6 +194,10 @@ export async function requireSessionWithPermission(
     return null;
   }
   if (!hasPermission({ role: session.user.role as Role }, permission)) {
+    logAccessDenied(
+      { logger: request.log, traceId: getTraceId(request), session },
+      { deniedPermissions: [permission] }
+    );
     reply.code(403).send({ error: 'Forbidden' });
     return null;
   }

@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type { Permission } from '@luke/core';
 import type { LockEntityType } from '@luke/db';
 
-import { can } from '../lib/permissions';
+import { can, logAccessDenied } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.service';
@@ -47,8 +47,11 @@ function permissionFor(entityType: LockEntityType): Permission {
  */
 function assertLockPermissions(ctx: Context, entities: { entityType: z.infer<typeof LockEntityTypeSchema> }[]) {
   const requiredPermissions = [...new Set(entities.map(e => permissionFor(e.entityType)))];
-  const missing = requiredPermissions.some(p => !can(ctx, p));
-  if (missing) throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
+  const missing = requiredPermissions.filter(p => !can(ctx, p));
+  if (missing.length > 0) {
+    logAccessDenied(ctx, { requestedPermissions: requiredPermissions, deniedPermissions: missing });
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
+  }
 }
 
 export const editLockRouter = router({
