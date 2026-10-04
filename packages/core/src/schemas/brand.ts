@@ -97,18 +97,17 @@ export const BrandListInputSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
 });
 
-/** Input schema for partially updating a brand. Relaxes code/name regex to allow NAV codes with spaces. */
+/** Input schema for partially updating a brand. Relaxes the code regex to allow NAV codes with spaces. */
 export const BrandUpdateInputSchema = z.object({
   /** UUID of the brand to update */
   id: z.string().uuid('ID brand non valido'),
 
-  /** Partial data for update — code/name without regex: NAV codes can contain spaces */
+  /** Partial data for update — code without regex: NAV codes can contain spaces */
   data: partialWithoutDefaults(
     BrandInputSchema
-      .omit({ code: true, name: true })
+      .omit({ code: true })
       .extend({
         code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
-        name: z.string().trim().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
       })
   ),
 });
