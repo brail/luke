@@ -78,7 +78,8 @@ static analysis   Semgrep, Gitleaks, OSV
   Dockerfiles actually run.
 - **Overrides** — debt with an expiry. Range, capped where an uncapped range
   would drag transitive consumers onto a new major, commented with the GHSA or
-  CVE id (P15 refuses an exact pin and a missing id).
+  CVE id (P15 refuses an exact pin and a missing id; `check-override-consumers`
+  refuses a cap below an installed consumer's declared range).
   Reviewed on every run: an override whose upstream has published a clean
   version in the natural range is dead weight.
 - **Release age** — quarantine is either on or off. An exclusion list without a

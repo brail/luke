@@ -335,6 +335,14 @@ Corollary: before declaring a new check green, ask *what files am I reading
 that a clean clone wouldn't have* — and then actually try it on a clean
 clone, instead of answering from memory.
 
+**The one deliberate exception (2026-10-04):** `check-override-consumers.ts`
+reads the installed packages under `node_modules/.pnpm`, because the ranges pnpm
+overrides exist nowhere else. It is a post-install check and says so: it refuses
+an install whose store copy of the lockfile differs from `pnpm-lock.yaml`, and
+reads only the packages that lockfile resolves, so a missing or stale install
+fails it instead of passing it. A package absent from an otherwise matching store
+goes unseen; the check runs after an install completes, never during one.
+
 ---
 
 ### A new lint rule must be probed on a bait file, not on the repo

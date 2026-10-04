@@ -39,6 +39,9 @@ importers:
       '@types/node':
         specifier: ^24.7.2
         version: 24.13.2
+      '@types/semver':
+        specifier: ^7.8.0
+        version: 7.8.0
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.68.0
         version: 8.68.0(@typescript-eslint/parser@8.68.0(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3))(eslint@10.9.1(jiti@2.7.0))(typescript@6.0.3)
@@ -69,6 +72,9 @@ importers:
       prettier:
         specifier: ^3.9.6
         version: 3.9.6
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       tsx:
         specifier: ^4.23.12
         version: 4.23.12
@@ -2967,6 +2973,9 @@ packages:
 
   '@types/readable-stream@4.0.23':
     resolution: {integrity: sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig==}
+
+  '@types/semver@7.8.0':
+    resolution: {integrity: sha512-1mAINjtQCXXeLkJ9ehXkwOcBpqtLxiVtKhpUf83DdRNdQKV0iXZpaHYqRr7nj+wvxuJzoAmAwXI+sCNMv1CzLQ==}
 
   '@types/superagent@8.1.10':
     resolution: {integrity: sha512-nbt4IWXABhW0jGmmpRzCFNlbmwCTzZ2gTUsNIr+X+ItdqPms+PAJZbWsNzpS2USqXjcoNLQcO6nXo60zcPQiIg==}
@@ -9156,6 +9165,8 @@ snapshots:
   '@types/readable-stream@4.0.23':
     dependencies:
       '@types/node': 24.13.2
+
+  '@types/semver@7.8.0': {}
 
   '@types/superagent@8.1.10':
     dependencies:

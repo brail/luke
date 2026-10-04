@@ -1306,4 +1306,12 @@ test('P15 refuses a form it does not read instead of seeing fewer overrides', ()
     withOverrides("  # GHSA-ggr8-5vv4-36mx\n  parent>child: '>=1'"),
     /`parent>child` uses a parent selector/
   );
+  expectFailure(
+    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  fast-uri: '>=3 <4'\n  # GHSA-ggr8-5vv4-36mx\n  fast-uri@^4: '>=4 <5'"),
+    /`fast-uri@\^4` overrides `fast-uri` again \(after `fast-uri`\)/
+  );
+  expectFailure(
+    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  '@s/p@<2': '>=2'\n  # GHSA-ggr8-5vv4-36mx\n  '@s/p': '>=3'"),
+    /overrides `@s\/p` again/
+  );
 });

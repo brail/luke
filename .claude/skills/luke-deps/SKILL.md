@@ -160,7 +160,7 @@ table gets levels 0–2 and, if it is a runtime dependency of `apps/api`, level 
 
 | L   | Command                                                | Catches                                              |
 | --- | ------------------------------------------------------ | ---------------------------------------------------- |
-| 0   | `pnpm install`                                         | resolution failures, peer-range conflicts            |
+| 0   | `pnpm install` · `pnpm check:overrides`               | resolution failures, peer-range conflicts, an override cap below a consumer's range |
 | 1   | `pnpm lint` · `pnpm typecheck` · `pnpm typecheck:test` | changed API shape (argon2 `Options` → `HashOptions`) |
 | 2   | `pnpm test`                                            | unit-visible regressions                             |
 | 3   | `pnpm test:integration:local`                          | wire-level regressions (multipart teardown)          |
@@ -260,7 +260,9 @@ when an uncapped one would drag transitive consumers onto a new major
 (`js-yaml: '>=4.3.2 <5'`) — but first check with `pnpm why -r <pkg>` that no
 consumer already declares that major: a cap below a declared range forces the
 consumer off it, which is how `fast-json-stringify@7` (`fast-uri ^4`) ran on
-fast-uri 3.x for a month behind a `<4` cap written before it existed. Every
+fast-uri 3.x for a month behind a `<4` cap written before it existed;
+`check-override-consumers` (in `check:drift`) now refuses such a cap against the
+installed consumers. Every
 override carries a comment with its GHSA or CVE id and its reason. P15 in
 `check-platform-integrity` refuses an exact pin and an entry whose own comment
 names no advisory; whether a cap or an upward unlock is right, and whether an

@@ -31,6 +31,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
+import { lockfilePackages as parseLockfilePackages } from './lib/pnpmLockfile';
 import { mapping, scalar, sequence } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
@@ -351,25 +352,7 @@ function declaredDependencies(
 /** Resolved packages in the lockfile, as `name -> versions`. */
 function lockfilePackages(root: string): Map<string, Set<string>> {
   const text = read(root, 'pnpm-lock.yaml');
-  const resolved = new Map<string, Set<string>>();
-  if (text === null) return resolved;
-
-  let inPackages = false;
-  for (const line of text.split('\n')) {
-    if (/^packages:\s*$/.test(line)) {
-      inPackages = true;
-      continue;
-    }
-    if (inPackages && /^\S/.test(line)) break;
-    if (!inPackages) continue;
-
-    const key = line.match(/^ {2}'?((?:@[^/'\s]+\/)?[^@'\s]+)@([^'\s:]+)'?:/);
-    if (!key) continue;
-    const [, name, version] = key;
-    resolved.set(name, (resolved.get(name) ?? new Set()).add(version));
-  }
-
-  return resolved;
+  return text === null ? new Map() : parseLockfilePackages(text);
 }
 
 /** The major of a semver range, ignoring the range operator. */
@@ -1611,7 +1594,8 @@ const DIST_TAG = /^(?![xX]$)[A-Za-z][\w.-]*$/;
  * was written for, not that lifting a consumer past its own range was right —
  * that stays a reviewer's call. A form the reader does not understand is refused
  * rather than read as fewer overrides; so are a parent selector (`a>b`), an alias
- * (`npm:…`) and a dist-tag, which the override checks do not model.
+ * (`npm:…`), a dist-tag, and two overrides of one package (pnpm applies only one
+ * to a consumer), which the override checks do not model.
  */
 function checkOverrides(root: string, problems: Problem[]): void {
   const yaml = read(root, 'pnpm-workspace.yaml');
@@ -1625,8 +1609,20 @@ function checkOverrides(root: string, problems: Problem[]): void {
     return;
   }
 
+  const firstOverride = new Map<string, string>();
   for (const { key, value, line, comment } of entries ?? []) {
     const at = { file: 'pnpm-workspace.yaml', line };
+    const pkg = splitSelector(key).pattern;
+    const earlier = firstOverride.get(pkg);
+    if (earlier !== undefined) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` overrides \`${pkg}\` again (after \`${earlier}\`): pnpm applies one of them ` +
+          'to each consumer, which the override checks do not model. Merge them into one entry.',
+      });
+    }
+    firstOverride.set(pkg, earlier ?? key);
     if (key.includes('>')) {
       problems.push({
         ...at,
