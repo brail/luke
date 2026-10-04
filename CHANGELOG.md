@@ -97,9 +97,9 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **api**: Seed retention sweep AppConfig keys with their default values
 - **core**: Add quotations/phaseChangeNote draft fields to collection layout row schema
 - **api**: Buffer row-drawer phase/planning-group/quotation edits into one Save transaction ⚠️ **BREAKING**
-- **web**: Buffer row-drawer edits until Save and redesign the phase/situazione header
-- **merch**: Revisioni automatiche su milestone, non forgiabili a mano ⚠️ **BREAKING**
-- **merch**: Intensità delle bande alert e conclusione esplicita delle righe
+- **web**: Buffer row-drawer edits until Save and redesign the phase/`Situazione` header
+- **merch**: Automatic revisions on milestones, which cannot be forged by hand ⚠️ **BREAKING**
+- **merch**: Alert band intensity and explicit row conclusion
 - **nav**: Persist the outcome of each scheduled sync
 - **rbac**: Guard against locking everyone out of the admin functions
 
@@ -157,7 +157,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - Add ADR-008/009/010 and update adr validation [luke-docs]
 - **claude**: Add dependabot target-branch reminder on develop branch change
 - Add genoma collezione pianificazione notes
-- Findings skippati dai simplify per genoma collezione
+- Findings skipped by the simplify passes for the collection genome
 - Refresh README/ADR index and mark storage refactor ADR stale
 - **lessons**: Document prisma migrate deploy drift with db push workflow
 - **calendar**: Add JSDoc to Google Calendar client accessors
@@ -245,10 +245,10 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **api**: Derive phase catalog code from order instead of independent input
 - **api**: Satisfy tsconfig.test.json in retention sweep specs
 - **api**: Skip deactivated phases when resolving next phase
-- **web**: Aggiorna il semaforo backend della login con un poll
-- **web**: Il tooltip dei bottoni senza permesso non compariva mai
-- **api**: Rilascia il lock dello scheduler cancellando la riga
-- **auth**: Risolvi bypass rate-limit su login (pentest Strix RC)
+- **web**: Poll to keep the login page's backend status light current
+- **web**: The tooltip on buttons without permission never appeared
+- **api**: Release the scheduler lock by deleting its row
+- **auth**: Fix a login rate-limit bypass (Strix pentest on RC)
 - **test**: Narrow the specs left behind by the `any` sweep
 - **deps**: Unpin fast-uri and js-yaml, resolve 4 known vulnerabilities
 - **rbac**: Close the lockout path through settings.users
@@ -335,9 +335,9 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **api**: Seed retention sweep AppConfig keys with their default values
 - **core**: Add quotations/phaseChangeNote draft fields to collection layout row schema
 - **api**: Buffer row-drawer phase/planning-group/quotation edits into one Save transaction ⚠️ **BREAKING**
-- **web**: Buffer row-drawer edits until Save and redesign the phase/situazione header
-- **merch**: Revisioni automatiche su milestone, non forgiabili a mano ⚠️ **BREAKING**
-- **merch**: Intensità delle bande alert e conclusione esplicita delle righe
+- **web**: Buffer row-drawer edits until Save and redesign the phase/`Situazione` header
+- **merch**: Automatic revisions on milestones, which cannot be forged by hand ⚠️ **BREAKING**
+- **merch**: Alert band intensity and explicit row conclusion
 - **nav**: Persist the outcome of each scheduled sync
 - **rbac**: Guard against locking everyone out of the admin functions
 
@@ -408,10 +408,10 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **api**: Derive phase catalog code from order instead of independent input
 - **api**: Satisfy tsconfig.test.json in retention sweep specs
 - **api**: Skip deactivated phases when resolving next phase
-- **web**: Aggiorna il semaforo backend della login con un poll
-- **web**: Il tooltip dei bottoni senza permesso non compariva mai
-- **api**: Rilascia il lock dello scheduler cancellando la riga
-- **auth**: Risolvi bypass rate-limit su login (pentest Strix RC)
+- **web**: Poll to keep the login page's backend status light current
+- **web**: The tooltip on buttons without permission never appeared
+- **api**: Release the scheduler lock by deleting its row
+- **auth**: Fix a login rate-limit bypass (Strix pentest on RC)
 - **test**: Narrow the specs left behind by the `any` sweep
 - **deps**: Unpin fast-uri and js-yaml, resolve 4 known vulnerabilities
 - **rbac**: Close the lockout path through settings.users
@@ -606,7 +606,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - Add ADR-008/009/010 and update adr validation [luke-docs]
 - **claude**: Add dependabot target-branch reminder on develop branch change
 - Add genoma collezione pianificazione notes
-- Findings skippati dai simplify per genoma collezione
+- Findings skipped by the simplify passes for the collection genome
 - Refresh README/ADR index and mark storage refactor ADR stale
 - **lessons**: Document prisma migrate deploy drift with db push workflow
 - **calendar**: Add JSDoc to Google Calendar client accessors
@@ -683,7 +683,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **rbac**: Opt-in brand access via team scopes, drop UserSeasonAccess
 - **notifications**: In-app notification system with SSE real-time delivery
 - **collection**: Collection layout versioning + progress catalog refactor
-- **calendar**: Vista mese default, numerazione settimane, gantt avanzato, drag-and-drop milestones
+- **calendar**: Month view by default, week numbers, advanced Gantt, drag-and-drop milestones
 - **calendar**: Day-click to create milestone, bulk delete, per-brand edit guard
 - **calendar**: Rename CalendarMilestone→CalendarEvent + configurable event types catalog
 - **calendar**: Day view, brand colors, filter strip, UX overhaul
