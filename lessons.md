@@ -431,6 +431,15 @@ return to root immediately after. Every verification check that follows a
 assumed cwd — especially before declaring a piece of work "complete" to the
 user.
 
+**Recurrence (2026-10-04).** The rule above was in this file and was still
+broken four times in one session (`cd apps/web/src && …`, `cd apps/api/src &&
+…`, `cd apps/api && …`, a leading `cd <root>;`). The harness keeps the shell's
+cwd between calls, so each one silently moved every later relative path;
+nothing went wrong only because the commands after it happened to use absolute
+paths. Knowing the rule is not enough: never type `cd` at all — use absolute
+paths, `git -C <root>`, `pnpm -C <root>` or `--filter`, or a `( … )` subshell.
+A PreToolUse hook refusing a top-level `cd` would make it mechanical.
+
 ---
 
 ## Release / Docker
@@ -883,3 +892,16 @@ reloads Vite and leaves the mounted components on a discarded React.
 test that mounts a library no earlier browser test mounted lists it in `optimizeDeps.include` before
 the push, and the suite runs once with `apps/web/node_modules/.vite` moved aside, which is what CI
 sees.
+
+---
+
+## A long local suite runs under `caffeinate -i` (2026-10-04)
+
+**What happened.** During block D an integration run froze from 18:45 to 18:49:
+the Mac went into idle sleep (`pmset -g log` shows it), Node stopped mid-suite,
+and the hooks reported timeouts that read like failing tests.
+
+**Rule.** Wrap every long local suite — integration, browser, a push whose
+pre-push hook runs the tests — in `caffeinate -i` (`caffeinate -i pnpm
+test:integration:local`, `caffeinate -i git push`). A burst of timeouts after a
+pause is a sleep until `pmset -g log` says otherwise.
