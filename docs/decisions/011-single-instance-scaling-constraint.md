@@ -47,3 +47,10 @@ Until one of these is true and measured (not hypothesised), do not introduce Red
 2. The single container's CPU is saturated, measured under real load
 3. A real job queue is needed (retry/backoff/dead-letter/observability) — today the schedulers are fire-and-forget with log-and-continue
 4. Node in cluster mode (multi-worker) on the same VM
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Context, the process-local state inventory, the calendar notification buffer row.** `dedupLastSentAt` no longer exists: since `bffc50e7` notification dedup is persisted in the `NotificationDedupKey` table. Only `calendarBuffer` is still held in memory.
+- **2026-10-05 — Context, the scale-out-safe list.** `EditLock` and `SchedulerLock` are declared in `packages/db/prisma/platform.prisma` since the schema split (`301b3c10`); `schema.prisma` holds only the generator and datasource blocks.

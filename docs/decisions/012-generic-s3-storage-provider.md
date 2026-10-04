@@ -37,3 +37,10 @@ SeaweedFS has no direct equivalent of `mc`; since none of the three functions is
 
 - `docs/decisions/007-storage-layer-refactor.md` was not rewritten: it is a historical record of what was decided at that time (already marked "Potentially stale — review needed"), not a living document.
 - Object Lock/WORM retention on SeaweedFS is not verified in this project — see [docs/storage-immutable-bucket.md](../storage-immutable-bucket.md).
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Decision §2, "All 4 `docker-compose.*.yml` files".** The root `docker-compose.yml` was removed in `3bb364e4`. The SeaweedFS service is in `docker-compose.dev.yml`, `docker-compose.prod.yml` and `docker-compose.rc.yml`; `docker-compose.test.yml` runs PostgreSQL only.
+- **2026-10-05 — Not Done, ADR-007 "already marked Potentially stale".** ADR-007's status became Superseded by ADR-017 in `92250e96`, and ADR-017 is in turn superseded by ADR-031.

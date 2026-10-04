@@ -56,3 +56,9 @@ Separately, four upload paths (`collectionRowPicture.service.ts`, `brandLogo.ser
 
 - **AppConfig-level caching for the kill switch.** Deliberately skipped — caching would delay an incident-time toggle from taking effect, which defeats the point of having one.
 - **In-flight de-duplication for `enqueueDerivatives`.** Two near-simultaneous triggers for the same master (e.g. upload + a read-side enqueue) both queue a `processMaster` run. Judged low real-world risk relative to the complexity of adding it: the unique constraint on `(parentId, variant, pipelineVersion)` already makes the losing writer's attempt a no-op, not a correctness bug.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Decision §4, derivative cleanup "added to both `deleteObject`/`deleteObjectByKey`".** `deleteObject` was removed in `55de500b`; `deleteObjectByKey` and the orphan-file reaper carry the derivative cleanup.
