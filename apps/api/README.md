@@ -441,7 +441,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `DATABASE_URL` | connection URL | — | PostgreSQL connection string. Required. |
 | `PORT` | number | `3001` | Server listen port |
 | `HOST` | address | `0.0.0.0` | Server bind address |
-| `NODE_ENV` | enum | unset | Runtime mode: `development` or `production`. Any other value, or none, runs as neither — see [Running the API locally](#running-the-api-locally) |
+| `NODE_ENV` | enum | unset | Runtime mode: `development` or `production`. Any other value, or none, runs as neither — see [Running the API locally](#running-the-api-locally); `test` also registers a test-only error route |
 | `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Origins CORS accepts in production |
 | `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |

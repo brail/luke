@@ -55,7 +55,14 @@ configuration are the live sources.}
 
 <!-- luke-docs:start:quickstart -->
 
-{Bash block: clone, pnpm install, cp .env.example .env, pnpm dev}
+{Bash block: pnpm install; `docker compose -f docker-compose.dev.yml up -d`
+(development PostgreSQL and S3 storage); create `apps/api/.env` with
+`DATABASE_URL` and `NODE_ENV=development` — there is no `.env.example` to copy;
+`pnpm --filter "@luke/api..." build` — a full `pnpm build` also builds the web
+for production, which needs `NEXTAUTH_SECRET`; `pnpm --filter @luke/api
+db:bootstrap` (reset, migrations, administrator and base configuration);
+`pnpm db:seed` with `DATABASE_URL` in the shell (reference data — it does not
+read `apps/api/.env`); pnpm dev.}
 
 <!-- luke-docs:end:quickstart -->
 
@@ -63,7 +70,8 @@ configuration are the live sources.}
 
 <!-- luke-docs:start:scripts -->
 
-{Table of relevant root-level scripts: dev, build, lint, typecheck, test, db:migrate}
+{Table of relevant root-level scripts: dev, build, lint, typecheck, test, db:seed.
+Only scripts a root or workspace `package.json` defines.}
 
 <!-- luke-docs:end:scripts -->
 
@@ -186,6 +194,10 @@ Format: `namespace.*` — short description}
 
 {Table: Variable | Type | Default | Description.
 Sources: `.env.production.example` + env policy in CLAUDE.md.
+`NODE_ENV` has no default: only `development` and `production` change the
+runtime posture, and any other value or none runs as neither
+(`isDevelopment()` in `packages/core/src/runtime/env.ts`); `test` additionally
+registers a test-only route in `apps/api/src/server.ts`.
 Mention `assertEnvPolicy()` in `apps/api/src/server.ts` (production enforcement).}
 
 <!-- luke-docs:end:env -->
@@ -211,8 +223,9 @@ NAV config read from AppConfig, not from env.}
 
 <!-- luke-docs:start:storage -->
 
-{IStorageProvider provider. Valid buckets: read `isValidBucket()` in
-`packages/core/src/storage/config.ts` — don't hardcode the list.
+{IStorageProvider provider. Valid buckets: point to `APP_STORAGE_BUCKETS` in
+`packages/core/src/storage/types.ts`, the only list (`isValidBucket()` derives
+from it and also admits the internal `backups` bucket) — don't hardcode it.
 Content-addressed SHA256 key for revision photos.}
 
 <!-- luke-docs:end:storage -->
