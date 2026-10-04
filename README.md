@@ -237,7 +237,8 @@ Luke supporta email transazionali per funzionalità di sicurezza essenziali:
    - Invalidazione automatica sessioni attive dopo reset
 
 2. **Verifica Email**
-   - Verifica indirizzo email per utenti LOCAL
+   - Any active account with a real, unverified address can get a link: signed-in users request
+     one for their own address from the profile page, administrators send one to any user
    - Token monouso valido 24 ore, hash SHA-256 salvato in DB
    - Link: `{baseUrl}/auth/verify?token={token}`
    - Configurabile come obbligatoria per login (`auth.requireEmailVerification`)

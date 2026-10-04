@@ -254,9 +254,7 @@ export default function ProfilePage() {
                     variant="outline"
                     onClick={async () => {
                       try {
-                        await requestVerifyMutation.mutateAsync({
-                          email: user.email,
-                        });
+                        await requestVerifyMutation.mutateAsync();
                         toast.success('Email di verifica inviata');
                       } catch (err: unknown) {
                         toast.error(

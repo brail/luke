@@ -11,7 +11,6 @@ import { z } from 'zod';
 import {
   RequestPasswordResetSchema,
   ConfirmPasswordResetSchema,
-  RequestEmailVerificationSchema,
   ConfirmEmailVerificationSchema,
   RequestEmailVerificationAdminSchema,
   SubmitPendingEmailSchema,
@@ -35,7 +34,6 @@ import {
   authenticateUser,
   requestPasswordReset,
   confirmPasswordReset,
-  requestEmailVerification,
   confirmEmailVerification,
   verifyCredentials,
 } from '../services/auth.service';
@@ -143,17 +141,46 @@ export const authRouter = router({
     }),
 
   /**
-   * Generates an email-verification token and sends the verification link.
+   * Sends the caller a link to verify their own email address.
    *
-   * @auth {public}
-   * @input {RequestEmailVerificationSchema} — email address to verify.
-   * @output {Success confirmation.}
+   * Takes no address. It used to take one from anyone, and its answers told an unknown address from
+   * a verified one, a sent mail or a failed send. On the caller's own account the real outcome,
+   * a failed send included, is the answer.
+   *
+   * @auth {authenticated — own account}
+   * @input {none}
+   * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} BAD_REQUEST for an LDAP account still on its synthetic address, which
+   *   reaches nobody; INTERNAL_SERVER_ERROR if the email cannot be sent.
    */
-  requestEmailVerification: publicProcedure
+  requestEmailVerification: selfProcedure
     .use(withRateLimit('passwordReset')) // Uses the same policy
-    .input(RequestEmailVerificationSchema)
-    .mutation(async ({ input, ctx }) => {
-      return await requestEmailVerification(ctx, input.email);
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      const { email } = await ctx.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { email: true },
+      });
+      if (isSyntheticLdapEmail(email)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Nessun indirizzo email reale da verificare.',
+        });
+      }
+      try {
+        return await sendVerificationEmail(
+          ctx.prisma,
+          { userId, reason: 'user_requested', actorId: userId },
+          ctx
+        );
+      } catch (error) {
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Impossibile inviare email.',
+          cause: error,
+        });
+      }
     }),
 
   /**

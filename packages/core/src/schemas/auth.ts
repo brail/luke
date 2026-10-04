@@ -31,16 +31,6 @@ export const ConfirmPasswordResetSchema = z.object({
   newPassword: z.string().min(1, 'Password richiesta'),
 });
 
-/** Input schema for requesting an email verification link. */
-export const RequestEmailVerificationSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email richiesta')
-    .email('Email non valida')
-    .toLowerCase()
-    .trim(),
-});
-
 /** Input schema for confirming email verification with a 64-character hex token. */
 export const ConfirmEmailVerificationSchema = z.object({
   token: z
@@ -74,9 +64,6 @@ export type RequestPasswordResetInput = z.infer<
 >;
 export type ConfirmPasswordResetInput = z.infer<
   typeof ConfirmPasswordResetSchema
->;
-export type RequestEmailVerificationInput = z.infer<
-  typeof RequestEmailVerificationSchema
 >;
 export type ConfirmEmailVerificationInput = z.infer<
   typeof ConfirmEmailVerificationSchema

@@ -1,0 +1,87 @@
+/**
+ * `auth.requestEmailVerification`: a signed-in user asks for a link to verify their own address.
+ *
+ * It used to be public and take an address, and it answered an unknown address, a verified one, a
+ * sent mail and a failed send each differently — a way to learn which addresses have accounts. Its
+ * one caller is the profile page of a signed-in user, for their own address, so it now takes no
+ * address at all and works on the session's account: nothing to probe, and the real outcome,
+ * a failed send included, is the answer.
+ *
+ * No SMTP server exists in this environment (`usersLocalAccess.integration.spec.ts`): the real send
+ * always fails, which is the failure path asserted below; the success path spies the helper.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { PrismaClient } from '@luke/db';
+
+import * as emailHelpers from '../src/lib/emailHelpers';
+import { rateLimitStore } from '../src/lib/ratelimit';
+import { appRouter } from '../src/routers/index';
+
+import { createTestContext, createTestUser, setupTestDb } from './helpers';
+
+let prisma: PrismaClient;
+
+beforeEach(async () => {
+  prisma = await setupTestDb();
+  rateLimitStore.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+async function unverifiedUser() {
+  const { user, session } = await createTestUser('viewer');
+  await prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: null } });
+  return { user, auth: appRouter.createCaller(createTestContext(session)).auth };
+}
+
+describe('auth.requestEmailVerification', () => {
+  it("sends the link for the signed-in user's own account", async () => {
+    const send = vi
+      .spyOn(emailHelpers, 'sendVerificationEmail')
+      .mockResolvedValue({ success: true, message: 'stubbed' });
+    const { user, auth } = await unverifiedUser();
+
+    await expect(auth.requestEmailVerification()).resolves.toEqual({ success: true, message: 'stubbed' });
+    expect(send).toHaveBeenCalledWith(
+      expect.anything(),
+      { userId: user.id, reason: 'user_requested', actorId: user.id },
+      expect.anything(),
+    );
+  });
+
+  it('refuses a caller with no session: there is no address to ask about', async () => {
+    const auth = appRouter.createCaller(createTestContext(null)).auth;
+
+    await expect(auth.requestEmailVerification()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+
+  it('says so when the mail could not be sent, and leaves the failure in the audit trail', async () => {
+    const { user, auth } = await unverifiedUser();
+
+    await expect(auth.requestEmailVerification()).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'EMAIL_VERIFICATION_SENT', targetId: user.id } });
+    // Inside a session the row names who acted, not an anonymous system.
+    expect(audit).toMatchObject({ result: 'FAILURE', actorId: user.id });
+  });
+
+  it('refuses an LDAP account still on its synthetic address: a mail there reaches nobody', async () => {
+    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
+    const { user, auth } = await unverifiedUser();
+    await prisma.user.update({ where: { id: user.id }, data: { email: `${user.username}@ldap.local` } });
+
+    await expect(auth.requestEmailVerification()).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing for an address already verified', async () => {
+    const { session } = await createTestUser('viewer');
+    const auth = appRouter.createCaller(createTestContext(session)).auth;
+
+    await expect(auth.requestEmailVerification()).resolves.toMatchObject({ success: true, message: 'Email già verificata.' });
+    expect(await prisma.userToken.count({ where: { userId: session.user.id, type: 'VERIFY' } })).toBe(0);
+  });
+});

@@ -186,7 +186,7 @@ table names another emitter:
 |--------|------|
 | `PASSWORD_RESET_REQUESTED` | Password-reset requests |
 | `PASSWORD_CHANGED` | Password-reset confirmation |
-| `EMAIL_VERIFICATION_SENT` | Email-verification requests; also emitted by `src/lib/emailHelpers.ts` |
+| `EMAIL_VERIFICATION_SENT` | Email-verification requests; emitted by `src/lib/emailHelpers.ts` |
 | `EMAIL_VERIFIED` | Email-verification confirmation |
 | `USER_LOCAL_ACCESS_FORCED` | A reset link issued to give an account local access. Written by `users.forceLocalAccess` (success and failure), and by `db:grant-local-access` (`source: 'cli'`) only for a link it issued: a refusal, a dry run or a rolled-back attempt writes no row |
 

@@ -2,7 +2,7 @@
  * Authentication service — handles login, password reset, email verification, and logout.
  */
 
-import { randomBytes, createHash } from 'crypto';
+import { createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
@@ -15,10 +15,7 @@ import { getConfig, getConfigOrDefault } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, isSyntheticLdapEmail, type LdapRefusal } from '../lib/ldapAuth';
-import {
-  sendPasswordResetEmail,
-  sendEmailVerificationEmail,
-} from '../lib/mailer';
+import { sendPasswordResetEmail } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { notifyAdmins } from '../lib/notifications';
 import { hashPassword, verifyPassword } from '../lib/password';
@@ -640,110 +637,6 @@ export async function confirmPasswordReset(
     success: true,
     message: 'Password reimpostata con successo.',
   };
-}
-
-/**
- * Sends an email verification link. Returns a generic success response to prevent
- * enumeration. No-ops silently if the email is already verified.
- *
- * @param email - Email address to verify.
- * @throws {TRPCError} INTERNAL_SERVER_ERROR if the email cannot be sent.
- */
-export async function requestEmailVerification(ctx: Context, email: string) {
-  const normalizedEmail = email.toLowerCase();
-
-  const user = await ctx.prisma.user.findFirst({
-    where: {
-      email: normalizedEmail,
-      isActive: true,
-    },
-    include: {
-      identities: {
-        where: { provider: 'LOCAL' },
-      },
-    },
-  });
-
-  if (!user || user.identities.length === 0) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      result: 'FAILURE',
-      metadata: { reason: 'user_not_found' },
-    });
-    return {
-      success: true,
-      message: "Se l'email esiste nel sistema, riceverai un link di verifica.",
-    };
-  }
-
-  if (user.emailVerifiedAt) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'FAILURE',
-      metadata: { reason: 'already_verified' },
-    });
-    return {
-      success: true,
-      message: 'Email già verificata.',
-    };
-  }
-
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  await ctx.prisma.userToken.create({
-    data: {
-      userId: user.id,
-      type: 'VERIFY',
-      tokenHash,
-      expiresAt,
-    },
-  });
-
-  const baseUrl =
-    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
-
-  try {
-    await sendEmailVerificationEmail(
-      ctx.prisma,
-      normalizedEmail,
-      token,
-      baseUrl
-    );
-
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'SUCCESS',
-      metadata: { expiresAt: expiresAt.toISOString() },
-    });
-
-    return {
-      success: true,
-      message: 'Email inviata.',
-    };
-  } catch (error) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SEND_FAILED',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'FAILURE',
-      metadata: {
-        reason: 'email_send_failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-    });
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Impossibile inviare email.',
-      cause: error,
-    });
-  }
 }
 
 /**
