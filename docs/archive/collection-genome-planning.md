@@ -1,8 +1,18 @@
 # Collection Genome — Adoption in LUKE
 
-**Ref.** "Genoma della Collezione: Algoritmo di Alert e Sistema di Monitoraggio
-Avanzamento" (Collection Genome: Alert Algorithm and Progress Monitoring System;
-Rev. 1, A. Zordan, 1 July 2026)
+> **Archived design analysis — implemented, not current guidance.** Written on
+> 2026-07-01 as a feasibility analysis, before the work it describes. What it
+> plans — the unified `Phase` catalog, `PlanningGroup`, the planning wizard,
+> phase history and the saturation, bottleneck and stagnation views — has since
+> been implemented, and the code is the current reference. The implementation
+> plan it mentions was never committed, and the source PDF it cites was removed
+> in `7e86fc13`. Moved here from `docs/genoma-collezione-pianificazione.md` on
+> 2026-10-05. For current documentation, start at the
+> [repository README](../../README.md) and the [documentation index](../README.md).
+
+**Ref.** `Genoma della Collezione: Algoritmo di Alert e Sistema di Monitoraggio Avanzamento`
+(Collection Genome: Alert Algorithm and Progress Monitoring System; Rev. 1,
+A. Zordan, 1 July 2026)
 **Status**: feasibility analysis and mapping onto the existing architecture. The
 implementation plan (tasks, migrations, estimates) is a separate document,
 downstream of this one.

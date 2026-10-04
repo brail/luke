@@ -16,7 +16,6 @@ preserved evidence.
 | [Collection Layout versioning](collection-layout-versioning.md) | Revision model for Collection Layout snapshots, history, immutable storage, and access control. |
 | [Immutable revision storage](storage-immutable-bucket.md) | Content-addressed storage and retention contract for Collection Layout revision images. |
 | [Microsoft Dynamics NAV integration](nav-integration.md) | One-way NAV-to-Luke synchronization architecture, data ownership, and operational boundaries. |
-| [Collection Genome planning](genoma-collezione-pianificazione.md) | Feasibility analysis mapping the Collection Genome model onto Luke's existing calendar and collection domains. |
 | [Country-aware working days](country-aware-working-days.md) | Design and resolution rules for counting working days by vendor or company country in milestone deadlines and criticality. |
 
 ## How-to and runbooks

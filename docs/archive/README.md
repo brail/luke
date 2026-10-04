@@ -7,6 +7,7 @@ history. Records retired from the tree are listed at the end.
 
 | Document | Historical scope |
 |----------|------------------|
+| [Collection Genome planning](collection-genome-planning.md) | Feasibility analysis that mapped the Collection Genome model onto the calendar and collection domains, written before the work and since implemented. |
 | [TARIC classifier proposal](luke-taric-classifier.md) | Proposed customs classification module (CN/TARIC code and duty lookup for NAV products), never implemented; preserved as a project proposal whose future is undecided. |
 
 ## Retired records
