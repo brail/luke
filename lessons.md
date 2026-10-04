@@ -504,7 +504,7 @@ Versioning & Release for the steps.
 
 ## Audit log: a silent allowlist drift (2026-08-27)
 
-Two bugs reported on the audit log page — empty `metadata`, and "Sistema" as
+Two bugs reported on the audit log page — empty `metadata`, and `Sistema` as
 the author with no email on logins and password changes. Both were real; the
 instructive part is *why neither ever surfaced*.
 
@@ -547,7 +547,7 @@ inner would have kept. One filter, one place.
 **Second bug — a null FK is not a missing identity.** `logAudit` reads the
 actor from `ctx.session`, which does not exist during login / email
 verification / password reset, so those rows store `actorId: null` and the page
-printed "Sistema". The identity was in the row all along: `targetId` pointed at
+printed `Sistema`. The identity was in the row all along: `targetId` pointed at
 the `User.id` on 427 of the 436 actor-less rows. Before concluding data is lost
 at write time, check the other columns — this was fixable entirely on the read
 path, retroactively over the whole history, with no migration. Keep the two

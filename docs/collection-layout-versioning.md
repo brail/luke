@@ -4,7 +4,7 @@
   revisions
 - **Release**: v1.9.0; reworked in v2.0.0 (whole-layout snapshots, automatic
   milestone revisions)
-- **Reference**: PI 8.3-01 rev5 "Progettazione"
+- **Reference**: PI 8.3-01 rev5 `Progettazione`
 
 ---
 
@@ -47,19 +47,19 @@ CollectionLayout
 ## Revision Types (ISO 9001:2015)
 
 Configured in the admin catalog (`/admin/collection-layout-configuration`,
-"Tipo revisione" tab).
+`Tipo revisione` tab).
 
 The seed `apps/api/prisma/seeds/collectionCatalog.ts` creates 6 default
 entries:
 
 | Value | Label | ISO categories |
 |-------|-------|----------------|
-| `REVISIONE_PROGETTUALE` | Revisione Progettuale | PIANIFICAZIONE, RIESAME |
-| `REVISIONE_COSTRUTTIVA` | Revisione Costruttiva | VERIFICA |
-| `REVISIONE_MODELLERIA` | Revisione Modelleria | VERIFICA |
-| `REVISIONE_PROTOTIPO` | Revisione Prototipo | VERIFICA, VALIDAZIONE |
-| `APPROVAZIONE_CAMPIONARIO` | Approvazione Campionario | VALIDAZIONE |
-| `REVISIONE_FINALE` | Revisione Finale | RIESAME, NORMALE |
+| `REVISIONE_PROGETTUALE` | `Revisione Progettuale` | `PIANIFICAZIONE`, `RIESAME` |
+| `REVISIONE_COSTRUTTIVA` | `Revisione Costruttiva` | `VERIFICA` |
+| `REVISIONE_MODELLERIA` | `Revisione Modelleria` | `VERIFICA` |
+| `REVISIONE_PROTOTIPO` | `Revisione Prototipo` | `VERIFICA`, `VALIDAZIONE` |
+| `APPROVAZIONE_CAMPIONARIO` | `Approvazione Campionario` | `VALIDAZIONE` |
+| `REVISIONE_FINALE` | `Revisione Finale` | `RIESAME`, `NORMALE` |
 
 ---
 
@@ -67,7 +67,7 @@ entries:
 
 ### Creating a revision
 
-1. The PM opens the CL and clicks "Crea revisione"
+1. The PM opens the CL and clicks `Crea revisione`
 2. Selects the revision type (its ISO categories are shown)
 3. Optionally adds a note. There is no row selection: every revision
    snapshots every row of the layout
@@ -156,8 +156,8 @@ caveat about verifying it against the actual backend.
 
 ## Adding a New Revision Type
 
-1. Go to `/admin/collection-layout-configuration`, "Tipo revisione" tab
-2. Click "Aggiungi opzione"
+1. Go to `/admin/collection-layout-configuration`, `Tipo revisione` tab
+2. Click `Aggiungi opzione`
 3. Enter the value (unique key) and the label, and select the ISO categories
 
 ---
