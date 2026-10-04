@@ -1,8 +1,8 @@
 /**
  * Deterministic gate for the Luke platform: the invariants that hold the
  * approved technology stack together, plus the Prisma relation invariants of
- * CLAUDE.md rules 6 and 8 (P13) and the Turbo own-build rule for emitting
- * watch tasks (P14).
+ * CLAUDE.md rules 6 and 8 (P13), the Turbo own-build rule for emitting watch
+ * tasks (P14), and the pnpm override hygiene of luke-deps §6 (P15).
  *
  * ## Why it exists
  *
@@ -31,7 +31,7 @@ import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
-import { scalar, sequence } from './lib/pnpmWorkspace';
+import { mapping, scalar, sequence } from './lib/pnpmWorkspace';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
 // ---------------------------------------------------------------------------
@@ -1594,6 +1594,83 @@ function checkWorkspaceDependencyDirection(all: Manifest[], problems: Problem[])
   }
 }
 
+/** A complete advisory id: a GitHub one, or a CVE. */
+const ADVISORY_ID = /\bGHSA(?:-[23456789cfghjmpqrvwx]{4}){3}\b|\bCVE-\d{4}-\d{4,}\b/;
+
+/** An exact version, in any spelling pnpm accepts as one. */
+const EXACT_VERSION = /^=?v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+/** A dist-tag (`latest`, `next`): a name, where a range would hold a version. `x` is a range. */
+const DIST_TAG = /^(?![xX]$)[A-Za-z][\w.-]*$/;
+
+/**
+ * P15 — no pnpm override pins an exact version, and each names the advisory it
+ * answers (luke-deps §6). An exact pin keeps forcing its version after the next
+ * patch ships, and `pnpm update` cannot outrank it; an override without an
+ * advisory id is one nobody can tell when to retire. The id shows what an entry
+ * was written for, not that lifting a consumer past its own range was right —
+ * that stays a reviewer's call. A form the reader does not understand is refused
+ * rather than read as fewer overrides; so are a parent selector (`a>b`), an alias
+ * (`npm:…`) and a dist-tag, which the override checks do not model.
+ */
+function checkOverrides(root: string, problems: Problem[]): void {
+  const yaml = read(root, 'pnpm-workspace.yaml');
+  if (yaml === null) return; // P4 already reports the missing file.
+
+  let entries;
+  try {
+    entries = mapping(yaml, 'overrides');
+  } catch (error) {
+    problems.push({ file: 'pnpm-workspace.yaml', line: 1, message: (error as Error).message });
+    return;
+  }
+
+  for (const { key, value, line, comment } of entries ?? []) {
+    const at = { file: 'pnpm-workspace.yaml', line };
+    if (key.includes('>')) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` uses a parent selector, which the override checks do not model: ` +
+          'override the package itself.',
+      });
+    }
+    if (value.startsWith('npm:')) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` is an alias (\`${value}\`), which the override checks do not model: ` +
+          'override the package with a version range.',
+      });
+    }
+    if (DIST_TAG.test(value)) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` names a dist-tag (\`${value}\`): it floats with every publish. ` +
+          'Write a version range from the fixed version.',
+      });
+    }
+    if (EXACT_VERSION.test(value)) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` pins an exact version (\`${value}\`): a pin keeps forcing it after the next ` +
+          'patch ships and `pnpm update` cannot outrank it. Write a range from the fixed version; ' +
+          'cap it only as luke-deps §6 describes.',
+      });
+    }
+    if (!ADVISORY_ID.test(comment)) {
+      problems.push({
+        ...at,
+        message:
+          `\`${key}\` names no advisory: its own comment (the lines right above it, or inline) ` +
+          'must carry the GHSA or CVE id it answers, or nobody can tell when to retire it.',
+      });
+    }
+  }
+}
+
 /** Every platform invariant, against a repository root. */
 export function checkPlatformIntegrity(root: string): Problem[] {
   const problems: Problem[] = [];
@@ -1611,6 +1688,7 @@ export function checkPlatformIntegrity(root: string): Problem[] {
   checkNodePins(root, problems);
   checkPackageManager(root, problems);
   checkReleaseAgePolicy(root, problems);
+  checkOverrides(root, problems);
   checkDependencyFamilies(all, problems);
   checkSecurityRunnerCanonicalForm(root, problems);
   checkPublishedContracts(all, problems);

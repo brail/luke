@@ -1218,3 +1218,92 @@ test('P14 zero-discovery: no emitting watch script reports it rather than passin
     /No Turbo task runs a `tsc --watch` that emits/
   );
 });
+
+// ---------------------------------------------------------------------------
+// P15 — every pnpm override is a range and names the advisory it answers
+// ---------------------------------------------------------------------------
+
+/** The baseline workspace file with an `overrides` block appended. */
+const withOverrides = (block: string): RepoFiles =>
+  withFile('pnpm-workspace.yaml', `${VALID_REPO['pnpm-workspace.yaml']}\noverrides:\n${block}\n`);
+
+test('P15 accepts commented ranges, version selectors, scoped keys and inline ids', () => {
+  expectClean(
+    withOverrides(
+      [
+        '  # GHSA-w5hq-g745-h8pq: fixed in 11.1.1, the consumer is lifted past ^8 on purpose.',
+        "  uuid@<11.1.1: '>=11.1.1'",
+        "  nanoid: '>=3.3.17 <4' # GHSA-2v37-7h3g-55p8, transitive via postcss",
+        '  # A general note about ranges, then the advisory:',
+        '  # CVE-2026-59877, fixed in 7.6.5.',
+        "  '@scope/pkg': '>=7.6.5 <8'",
+      ].join('\n')
+    )
+  );
+});
+
+for (const exact of ["'7.6.5'", '7.6.5', "'=7.6.5'", "'v7.6.5'", "'=v7.6.5'", "'1.0.0-rc.1'", "'1.0.0+build.5'"]) {
+  test(`P15 refuses the exact pin ${exact}`, () => {
+    expectFailure(
+      withOverrides(`  # GHSA-j3f2-48v5-ccww\n  protobufjs: ${exact}`),
+      /`protobufjs` pins an exact version/
+    );
+  });
+}
+
+test('P15 refuses an override with no advisory id, or only part of one', () => {
+  expectFailure(withOverrides("  # pinned for safety\n  valibot: '>=1.4.2'"), /`valibot` names no advisory/);
+  expectFailure(withOverrides("  # see the GHSA- advisory\n  valibot: '>=1.4.2'"), /`valibot` names no advisory/);
+  expectFailure(withOverrides("  valibot: '>=1.4.2' # CVE-2026"), /`valibot` names no advisory/);
+  expectFailure(withOverrides("  valibot: '>=1.4.2' # CVE-2026-123"), /`valibot` names no advisory/);
+  expectFailure(withOverrides("  valibot: '>=1.4.2' # GHSA-aaaa-bbbb-cccc"), /`valibot` names no advisory/);
+});
+
+test('P15 refuses a value that is not a version range', () => {
+  expectFailure(
+    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  lodash: 'npm:lodash-es@^4'"),
+    /`lodash` is an alias/
+  );
+  expectFailure(withOverrides('  # GHSA-ggr8-5vv4-36mx\n  lodash: latest'), /`lodash` names a dist-tag/);
+});
+
+test('P15 reads a file written with CRLF line endings', () => {
+  const policy = VALID_REPO['pnpm-workspace.yaml'];
+  const crlf = `${policy}\noverrides:\n  # GHSA-ggr8-5vv4-36mx\n  deepmerge-ts: '>=8.0.2'\n`.replace(/\n/g, '\r\n');
+  expectClean(withFile('pnpm-workspace.yaml', crlf));
+});
+
+test("P15 does not lend one entry's comment to the next", () => {
+  expectFailure(
+    withOverrides(["  # GHSA-ggr8-5vv4-36mx", "  deepmerge-ts: '>=8.0.2'", "  valibot: '>=1.4.2'"].join('\n')),
+    /`valibot` names no advisory/
+  );
+});
+
+test('P15 ends a comment block at a blank line', () => {
+  expectFailure(
+    withOverrides(['  # GHSA-ggr8-5vv4-36mx', '', "  valibot: '>=1.4.2'"].join('\n')),
+    /`valibot` names no advisory/
+  );
+});
+
+test('P15 refuses a form it does not read instead of seeing fewer overrides', () => {
+  const policy = VALID_REPO['pnpm-workspace.yaml'];
+  expectFailure(
+    withFile('pnpm-workspace.yaml', `${policy}\noverrides: { valibot: '>=1.4.2' }\n`),
+    /`overrides` is not a block mapping/
+  );
+  expectFailure(
+    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  a: '>=1'\n  # GHSA-ggr8-5vv4-36mx\n  a: '>=2'"),
+    /`overrides` declares `a` more than once/
+  );
+  expectFailure(withOverrides('  # GHSA-ggr8-5vv4-36mx\n  a: *anchor'), /`overrides` has a line .* cannot read/);
+  expectFailure(withOverrides('  # GHSA-ggr8-5vv4-36mx\n  a: &anchor 1'), /`overrides` has a line .* cannot read/);
+  expectFailure(withOverrides("  # GHSA-ggr8-5vv4-36mx\n  a: >-\n    '>=1'"), /`overrides` has a line .* cannot read/);
+  expectFailure(withOverrides('  # GHSA-ggr8-5vv4-36mx\n  a: b: c'), /`overrides` has a line .* cannot read/);
+  expectFailure(withOverrides("  nested:\n    child: '>=1'"), /`overrides` has a line .* cannot read/);
+  expectFailure(
+    withOverrides("  # GHSA-ggr8-5vv4-36mx\n  parent>child: '>=1'"),
+    /`parent>child` uses a parent selector/
+  );
+});

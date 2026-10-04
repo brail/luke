@@ -242,6 +242,11 @@ fix only in 5.0.8) the override kept forcing the vulnerable version, and
 expiry date. If you pin, pin a range (`'>=x.y.z'`) and review the overrides
 on every `pnpm security:deps` finding.
 
+**Enforced since 2026-10-04** for the exact-pin half: P15 in
+`tools/scripts/check-platform-integrity.ts` refuses an exact override and one
+whose own comment names no GHSA or CVE id. Reviewing the block on every finding
+stays manual.
+
 ### Negations in `.gitignore` don't reach inside an excluded directory
 
 `.gitignore` contained `.claude/`. Adding `!.claude/skills/**` below that

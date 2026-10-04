@@ -38,7 +38,7 @@ does.
 | Node execution pins       | `.nvmrc`, `apps/api/Dockerfile`, `apps/web/Dockerfile`, `.github/actions/setup-workspace/action.yml` | every pin site on the same approved major     |
 | Dependency versions       | workspace manifests + `pnpm-lock.yaml`                                         | one version per external package across the workspace                 |
 | Dependency families       | the same manifests                                                             | families move in lockstep; see the family rule in the matrix          |
-| Supply chain              | `pnpm-workspace.yaml` (`overrides`, `allowBuilds`, release age), `.github/dependabot.yml` | no inert or expired policy; every override commented with its GHSA id |
+| Supply chain              | `pnpm-workspace.yaml` (`overrides`, `allowBuilds`, release age), `.github/dependabot.yml` | no inert or expired policy; every override commented with its GHSA or CVE id (P15) |
 | Build graph               | `turbo.json`                                                                   | a task edge must reflect a real artifact dependency                   |
 | TypeScript configuration  | root `tsconfig.json` + per-workspace `tsconfig*.json`                          | runtime boundaries explicit; test corpora reachable by a typecheck    |
 | Lint                      | `eslint.config.mjs` + `packages/eslint-plugin-luke/`                           | official framework rules and project rules both actually active       |
@@ -77,7 +77,8 @@ static analysis   Semgrep, Gitleaks, OSV
   correct integrity hash. Keep `engines.pnpm` consistent with what CI and the
   Dockerfiles actually run.
 - **Overrides** — debt with an expiry. Range, capped where an uncapped range
-  would drag transitive consumers onto a new major, commented with the GHSA id.
+  would drag transitive consumers onto a new major, commented with the GHSA or
+  CVE id (P15 refuses an exact pin and a missing id).
   Reviewed on every run: an override whose upstream has published a clean
   version in the natural range is dead weight.
 - **Release age** — quarantine is either on or off. An exclusion list without a

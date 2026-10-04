@@ -261,7 +261,10 @@ when an uncapped one would drag transitive consumers onto a new major
 consumer already declares that major: a cap below a declared range forces the
 consumer off it, which is how `fast-json-stringify@7` (`fast-uri ^4`) ran on
 fast-uri 3.x for a month behind a `<4` cap written before it existed. Every
-override carries a comment with its GHSA id and its reason.
+override carries a comment with its GHSA or CVE id and its reason. P15 in
+`check-platform-integrity` refuses an exact pin and an entry whose own comment
+names no advisory; whether a cap or an upward unlock is right, and whether an
+override has expired, stays this review.
 
 On every run, review the whole `overrides` block: an override whose upstream has
 since published a clean version in the natural range is dead weight — propose
@@ -365,7 +368,7 @@ the finding.
 3. Direct → bump it. Transitive → `pnpm update -r <pkg>` when its consumers'
    ranges already admit the fix and the lockfile diff touches only that
    package; otherwise an `overrides` range in `pnpm-workspace.yaml` with the
-   GHSA id and reason in a comment (§6 rules apply). No fixed version and
+   GHSA or CVE id and reason in a comment (§6 rules apply). No fixed version and
    `pnpm why -r <pkg> --prod` empty → a time-limited entry in
    `osv-scanner.toml`, as its header requires. No fixed version and code
    that runs in production → the owner decides; never an ignore.
@@ -514,6 +517,6 @@ that gets re-argued from scratch next quarter.
   bump (protocol §7.4).
 - NEVER add a second library for a job an installed one already does
   (`lessons.md`, "Don't duplicate libraries for the same purpose").
-- NEVER add an exact-version override. Range, capped, commented, with its GHSA id.
+- NEVER add an exact-version override. A range, capped where §6 requires, commented with its GHSA or CVE id (P15 enforces the pin and the id).
 - NEVER drop a held package silently — reason and unblock condition, or it will
   be re-evaluated from scratch next quarter.

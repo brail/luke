@@ -3,7 +3,8 @@
  *
  * Not a YAML library: no workspace declares one as a direct dependency, and
  * reaching for a transitive copy would be a dependency this repo has not
- * agreed to. Only top-level scalars and block sequences are understood.
+ * agreed to. Only top-level scalars, block sequences and a flat block mapping
+ * (`overrides`) are understood.
  *
  * Shared because two checkers read the same file — `check-platform-integrity`
  * for the supply-chain policy keys, `check-docs-integrity` for the workspace
@@ -79,4 +80,93 @@ export function sequence(
     items.push(item[1].replace(/^['"]|['"]$/g, ''));
   }
   return items;
+}
+
+/** One entry of a top-level block mapping, with the comment written for it. */
+export interface MappingEntry {
+  /** The key, unquoted (`uuid@<11.1.1`, `@scope/pkg`). */
+  key: string;
+  /** The value, unquoted. */
+  value: string;
+  /** 1-based line of the entry. */
+  line: number;
+  /** The full-line comments right above the entry and its inline comment, joined. */
+  comment: string;
+}
+
+const QUOTED = String.raw`'[^']*'|"[^"]*"`;
+/** `  key: value  # comment`, keys and values plain or quoted; anything else is not read. */
+const MAPPING_ENTRY = new RegExp(
+  String.raw`^[ \t]+(${QUOTED}|[^\s'"#&*!{\[][^:#]*?):[ \t]+(${QUOTED}|[^\s'"#&*!{\[|>][^#]*?)[ \t]*(?:#(.*))?$`
+);
+const unquote = (text: string): string => text.replace(/^(['"])(.*)\1$/, '$2');
+
+/**
+ * The entries of a top-level block mapping of plain `key: value` lines, or
+ * `null` when the key is absent. Strict, because its callers judge every
+ * entry: a flow mapping, a repeated key, a nested mapping, an anchor or alias,
+ * or any line it does not recognise throws, so a form it cannot read is never
+ * taken for fewer entries.
+ *
+ * A comment block belongs to the entry right below it: it ends at a blank line
+ * or at another entry, so a note written for one override is not lent to the
+ * next.
+ */
+export function mapping(yaml: string, key: string): MappingEntry[] | null {
+  const [declaration, ...more] = yaml.match(new RegExp(`^${key}:.*$`, 'gm')) ?? [];
+  if (declaration === undefined) return null;
+  if (more.length > 0) {
+    throw new Error(`\`${key}\` is declared more than once: reading one would ignore the others.`);
+  }
+  if (!new RegExp(`^${key}:[ \\t]*(?:#.*)?$`).test(declaration)) {
+    throw new Error(`\`${key}\` is not a block mapping: \`${declaration.trim()}\`.`);
+  }
+
+  // `\r?\n`: on a CRLF file the matched declaration has no `\r`, and a split on `\n` alone would
+  // keep one on every line, so the block would never be found.
+  const lines = yaml.split(/\r?\n/);
+  const start = lines.findIndex(line => line === declaration);
+  if (start === -1) {
+    throw new Error(`\`${key}\`: its declaration could not be located line by line.`);
+  }
+  const entries: MappingEntry[] = [];
+  const seen = new Set<string>();
+  let comment: string[] = [];
+
+  for (let i = start + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      comment = [];
+      continue;
+    }
+    const note = line.match(/^[ \t]*#(.*)$/);
+    if (note) {
+      comment.push(note[1].trim());
+      continue;
+    }
+    if (/^\S/.test(line)) {
+      if (!TOP_LEVEL_KEY.test(line)) {
+        throw new Error(`\`${key}\` is followed by a line that is not a top-level key: \`${line.trim()}\`.`);
+      }
+      break;
+    }
+    const entry = line.match(MAPPING_ENTRY);
+    // An unquoted `: ` inside the value is a nested mapping YAML would refuse, not a value.
+    if (!entry || (!/^['"]/.test(entry[2]) && /:[ \t]/.test(entry[2]))) {
+      throw new Error(`\`${key}\` has a line the checks cannot read: \`${line.trim()}\`.`);
+    }
+    const name = unquote(entry[1].trim());
+    if (seen.has(name)) {
+      throw new Error(`\`${key}\` declares \`${name}\` more than once.`);
+    }
+    seen.add(name);
+    entries.push({
+      key: name,
+      value: unquote(entry[2].trim()),
+      line: i + 1,
+      comment: [...comment, entry[3]?.trim() ?? ''].join(' ').trim(),
+    });
+    comment = [];
+  }
+  return entries;
 }
