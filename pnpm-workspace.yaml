@@ -24,8 +24,13 @@ minimumReleaseAgeExclude:
   - electron-to-chromium
 
 overrides:
+  # GHSA-w5hq-g745-h8pq (CVE-2026-41907): missing buffer bounds check in v3/v5/v6, fixed in 11.1.1
+  # (and 12.0.1, 13.0.1 on lines no consumer uses). exceljs declares uuid ^8.3.0, a line with no
+  # fixed release, so it is lifted past it on purpose.
   uuid@<11.1.1: '>=11.1.1'
-  postcss@<8.5.18: '>=8.5.18'
+  # GHSA-r28c-9q8g-f849 (path traversal in source-map auto-loading, fixed in 8.5.18) and
+  # GHSA-fxqj-rqcc-2cmp (its incomplete fix, fixed in 8.5.23).
+  postcss@<8.5.23: '>=8.5.23'
   # Range capped to the 3.x line — nanoid 4+ is ESM-only and postcss requires CJS.
   nanoid: '>=3.3.17 <4' # GHSA-2v37-7h3g-55p8, transitive via postcss
   # GHSA-45rx-2jwx-cxfr: JaegerPropagator throws on a malformed header (DoS),
@@ -59,9 +64,9 @@ overrides:
   # (@commitlint/cli -> @commitlint/load -> cosmiconfig), never by application
   # runtime code.
   js-yaml: '>=4.3.2 <5'
-  protobufjs: '7.6.5'
-  sharp: '0.35.4'
-  valibot: '>=1.4.2'
+  # GHSA-j3f2-48v5-ccww (CVE-2026-59877): DoS via an infinite loop in .proto option parsing, fixed in
+  # 7.6.5 (8.6.6 on the 8 line). Its only consumer, @grpc/proto-loader, declares ^7.5.5.
+  protobufjs: '>=7.6.5 <8'
   # Transitive via prisma (the CLI package bundles mysql2 as a regular
   # dependency, even though this workspace's only schema.prisma declares
   # provider = "postgresql", and @prisma/client's own runtime code never
