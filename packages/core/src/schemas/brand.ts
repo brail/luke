@@ -21,9 +21,9 @@ export const BrandInputSchema = z.object({
   /** Brand name (max 128 characters) */
   name: z
     .string()
+    .trim()
     .min(1, 'Nome obbligatorio')
-    .max(128, 'Max 128 caratteri')
-    .trim(),
+    .max(128, 'Max 128 caratteri'),
 
   /**
    * Logo removal. `null` is the only accepted value, and means "remove".
@@ -108,7 +108,7 @@ export const BrandUpdateInputSchema = z.object({
       .omit({ code: true, name: true })
       .extend({
         code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
-        name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
+        name: z.string().trim().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
       })
   ),
 });

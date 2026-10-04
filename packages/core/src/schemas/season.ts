@@ -28,9 +28,9 @@ export const SeasonInputSchema = z.object({
 
   name: z
     .string()
+    .trim()
     .min(1, 'Nome obbligatorio')
-    .max(128, 'Max 128 caratteri')
-    .trim(),
+    .max(128, 'Max 128 caratteri'),
 
   /** Linked NAV code (optional) */
   navSeasonId: z.string().max(10).optional().nullable(),

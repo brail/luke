@@ -11,7 +11,7 @@ import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({
-  name: z.string().min(1, 'Nome obbligatorio').max(255).trim(),
+  name: z.string().trim().min(1, 'Nome obbligatorio').max(255),
   countryCode: z.string().max(10).trim().optional().nullable(),
   nickname: z.string().max(64).trim().optional().nullable(),
   referente: z.string().max(128).trim().optional().nullable(),
