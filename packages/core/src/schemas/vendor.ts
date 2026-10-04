@@ -13,7 +13,9 @@ import { HardDeleteConfirmSchema } from './confirmation.js';
 export const VendorInputSchema = z.object({
   name: z.string().trim().min(1, 'Nome obbligatorio').max(255),
   countryCode: z.string().max(10).trim().optional().nullable(),
-  nickname: z.string().max(64).trim().optional().nullable(),
+  // A cleared field arrives as '' and would be stored as the label: everything shows
+  // `nickname ?? name`. No nickname is null.
+  nickname: z.string().trim().max(64).transform(nickname => nickname || null).optional().nullable(),
   referente: z.string().max(128).trim().optional().nullable(),
   email: z
     .union([z.string().email('Email non valida'), z.null(), z.undefined()])

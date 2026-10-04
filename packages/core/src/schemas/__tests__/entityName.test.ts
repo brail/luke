@@ -32,3 +32,16 @@ describe.each(Object.entries(nameOf))('%s name', (_, parse) => {
     expect(data.name ?? data.data?.name).toBe('Acme');
   });
 });
+
+describe('vendor nickname', () => {
+  // The label everywhere is `nickname ?? name`: a nickname stored as '' would replace the name
+  // with an empty label.
+  it.each(['', '   '])('stores %j as no nickname', nickname => {
+    expect(VendorInputSchema.parse({ name: 'Acme', nickname }).nickname).toBeNull();
+    expect(VendorUpdateInputSchema.parse({ id: ID, data: { nickname } }).data.nickname).toBeNull();
+  });
+
+  it('stores a nickname trimmed', () => {
+    expect(VendorInputSchema.parse({ name: 'Acme', nickname: '  Ac  ' }).nickname).toBe('Ac');
+  });
+});
