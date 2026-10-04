@@ -114,8 +114,8 @@ model PricingParameterSet {
 /// Sync filter configuration for a NAV entity type. One record per entity. Controls which NAV No_ are included in synchronization.
 model NavSyncFilter {
   id              String   @id @default(cuid())
-  /// Entity type discriminator: "vendor", "brand", or "season".
-  entity          String // "vendor" | "brand" | "season"
+  /// Entity type discriminator: "vendor", "brand" or "season" (master-data sync: mode and navNos apply), or "portafoglio" or "kimo" (analytics replicas: only the schedule fields apply).
+  entity          String // "vendor" | "brand" | "season" | "portafoglio" | "kimo"
   /// Sync scope: "all" (sync everything), "whitelist" (only listed navNos), "exclude" (all except listed navNos).
   mode            String // "all" | "whitelist" | "exclude"
   /// NAV No_ values used when mode is "whitelist" or "exclude".
