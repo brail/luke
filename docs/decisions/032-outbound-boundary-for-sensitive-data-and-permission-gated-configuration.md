@@ -59,4 +59,4 @@ An explicit `select` narrows a query to what the caller needs and makes review c
 These deviations exist when this record is accepted. They are recorded as follow-ups; this record does not endorse them.
 
 - **A secret stored with `isEncrypted: false` is read back in plaintext** by any holder of `config:read`, because masking is driven by that flag and encryption is chosen by the caller rather than declared by the registry ([ADR-018](018-runtime-configuration-and-bootstrap-environment.md)). It is a property of how values are written, not of the outbound boundary.
-- Several write paths return an unprojected row: `sectionAccess.set` through an `upsert`, and `company.get` and `company.update` through a `create` and an `upsert` on `CompanyProfile`. No guarded field is involved in any of them.
+- Several write paths return an unprojected row: `sectionAccess.set` through an `upsert`, and `company.profile.get` and `company.profile.update` through a `create` and an `upsert` on `CompanyProfile`. No guarded field is involved in any of them.
