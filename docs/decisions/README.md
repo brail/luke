@@ -28,9 +28,10 @@
 | [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
 | [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
 | [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Superseded by [027](027-section-access-leaf-overrides-and-validated-defaults.md) |
-| [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Accepted |
+| [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Superseded by [029](029-resource-action-permissions-one-builder-logged-refusals.md) |
 | [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
 | [028](028-runtime-images-carry-runtime-dependencies-only.md) | Runtime Images Carry Runtime Dependencies Only, and Prove It | Accepted |
+| [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Accepted |
 
-_Last updated: 2026-10-03_
+_Last updated: 2026-10-04_
 <!-- luke-docs:end:adr-index -->

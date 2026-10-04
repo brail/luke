@@ -1,7 +1,7 @@
 /**
  * tRPC middleware for Resource:Action permission enforcement.
  * Implements granular access control with a per-request cache for performance.
- * Supports wildcard matching and backward compatibility with legacy roles.
+ * Wildcards (`*:*`, `resource:*`) are resolved by `hasPermission` in `@luke/core`.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -75,8 +75,8 @@ function normalizeDeclaration(
 }
 
 /**
- * Factory for middleware that requires one or more permissions
- * Supports both role-based and user-granted permissions
+ * Factory for middleware that requires one or more permissions, read from the session's role
+ * (`ROLE_PERMISSIONS`).
  *
  * @param permission - A single permission, an array of permissions, a PermissionDeclaration, or a
  *   `(input) => Permission` function for cases where the permission depends on the parsed input
@@ -96,7 +96,6 @@ function normalizeDeclaration(
  * requirePermission({
  *   required: 'brands:delete',
  *   description: 'Delete brand',
- *   context: { checkOwnership: true }
  * })
  *
  * // Input-dependent (requires .use() after .input())

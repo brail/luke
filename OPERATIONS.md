@@ -184,7 +184,7 @@ generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so
 the bucket and its limit are logged instead (`Rate limit exceeded`, with
 `routeName`, `key` — the client IP or the account —, `max`, `windowMs`). A `requirePermission` refusal likewise reads
 `Accesso negato`. Every Resource:Action or section refusal — `requirePermission`,
-`adminProcedure`, `withSectionAccess`, a manual `can()`/`hasPermission()` guard,
+`withSectionAccess`, a manual `can()`/`hasPermission()` guard,
 `requireSessionWithPermission` on a raw route — writes the same `Permission
 denied` warning, with `traceId`, `userId`, `userRole` and either
 `requestedPermissions`/`deniedPermissions` or `section`. Brand-scope, ownership and

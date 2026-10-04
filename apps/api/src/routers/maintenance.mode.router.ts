@@ -3,8 +3,9 @@
  *
  * `getStatus` is public by design: it must be readable even pre-login (login screen,
  * "maintenance in progress" banner) — no sensitive data in the state, only status/time/message.
- * All other mutations are `adminProcedure` (permission `maintenance:update`, same schema
- * as the other `maintenance` domain endpoints).
+ * Every mutation requires `maintenance:mode_manage` on `protectedProcedure`, so the maintenance
+ * guard runs first: while maintenance is active only whoever bypasses it (`maintenance:update`)
+ * reaches them — the admin who has to end it.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -20,7 +21,8 @@ import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
 import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
-import { adminProcedure, publicProcedure, router } from '../lib/trpc';
+import { requirePermission } from '../lib/permissions';
+import { protectedProcedure, publicProcedure, router } from '../lib/trpc';
 import { groupByTimeZone } from '../lib/userTimeZone';
 
 import type { MaintenanceModeState } from '../lib/maintenanceMode';
@@ -73,11 +75,12 @@ export const maintenanceModeRouter = router({
    * (in-app notification + SSE push) at each `warningLeadMinutes` threshold beforehand.
    * Can be called again while already `SCHEDULED` to reschedule.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input `{ scheduledAt, message?, forceLogout, warningLeadMinutes, notifyByEmail }`
    * @output The updated `MaintenanceModeState` (status `SCHEDULED`).
    */
-  schedule: adminProcedure
+  schedule: protectedProcedure
+    .use(requirePermission('maintenance:mode_manage'))
     .input(MaintenanceModeScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
       // A threshold farther out than the total time available can never fire as a real
@@ -151,11 +154,12 @@ export const maintenanceModeRouter = router({
    * Activates maintenance mode immediately (no warning ladder — this is already a deliberate,
    * immediate action, e.g. right before a restore).
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input `{ message?, forceLogout }`
    * @output The updated `MaintenanceModeState` (status `ACTIVE`).
    */
-  activateNow: adminProcedure
+  activateNow: protectedProcedure
+    .use(requirePermission('maintenance:mode_manage'))
     .input(MaintenanceModeActivateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const state = await writeMaintenanceState(ctx.prisma, {
@@ -187,12 +191,12 @@ export const maintenanceModeRouter = router({
   /**
    * Cancels a pending schedule, returning to `INACTIVE`. Only valid while `SCHEDULED`.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input None
    * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if nothing
    * is scheduled.
    */
-  cancelScheduled: adminProcedure.mutation(async ({ ctx }) => {
+  cancelScheduled: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
     if (current.status !== 'SCHEDULED') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessuna manutenzione pianificata da annullare' });
@@ -215,12 +219,12 @@ export const maintenanceModeRouter = router({
    * explicitly, after verifying the system is healthy again. Emails the "concluded" notice to
    * everyone if the admin opted into email notifications when this window was scheduled/activated.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input None
    * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if
    * maintenance mode isn't active.
    */
-  end: adminProcedure.mutation(async ({ ctx }) => {
+  end: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
     if (current.status !== 'ACTIVE') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'La modalità manutenzione non è attiva' });

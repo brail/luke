@@ -26,9 +26,10 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
+  protectedProcedure,
   publicProcedure,
   selfProcedure,
-  adminProcedure,
+  type Context,
 } from '../lib/trpc';
 import {
   authenticateUser,
@@ -37,6 +38,38 @@ import {
   confirmEmailVerification,
   verifyCredentials,
 } from '../services/auth.service';
+
+/**
+ * Sends a verification link through the shared helper, refusing first an LDAP account still on its
+ * synthetic address, which reaches nobody. An unknown or inactive user stays the helper's
+ * NOT_FOUND, which the caller should read, not a masked 500; a failed send becomes an
+ * INTERNAL_SERVER_ERROR carrying its cause.
+ */
+async function sendVerificationLink(
+  ctx: Context,
+  options: Parameters<typeof sendVerificationEmail>[1]
+) {
+  const target = await ctx.prisma.user.findUnique({
+    where: { id: options.userId },
+    select: { email: true },
+  });
+  if (target && isSyntheticLdapEmail(target.email)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Nessun indirizzo email reale da verificare.',
+    });
+  }
+  try {
+    return await sendVerificationEmail(ctx.prisma, options, ctx);
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: error instanceof Error ? error.message : 'Errore invio email',
+      cause: error,
+    });
+  }
+}
 
 /**
  * Login schema
@@ -157,30 +190,7 @@ export const authRouter = router({
     .use(withRateLimit('passwordReset')) // Uses the same policy
     .mutation(async ({ ctx }) => {
       const userId = ctx.session.user.id;
-      const { email } = await ctx.prisma.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { email: true },
-      });
-      if (isSyntheticLdapEmail(email)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Nessun indirizzo email reale da verificare.',
-        });
-      }
-      try {
-        return await sendVerificationEmail(
-          ctx.prisma,
-          { userId, reason: 'user_requested', actorId: userId },
-          ctx
-        );
-      } catch (error) {
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Impossibile inviare email.',
-          cause: error,
-        });
-      }
+      return sendVerificationLink(ctx, { userId, reason: 'user_requested', actorId: userId });
     }),
 
   /**
@@ -277,40 +287,25 @@ export const authRouter = router({
     }),
 
   /**
-   * Admin-triggered email verification for a specific user by userId.
+   * Sends a user a link to verify their email address, on behalf of whoever manages users. It
+   * mails the address the account already has, changes nothing on it and returns no token, which is
+   * why `users:update` is enough.
    *
-   * @auth {users:update (admin)}
+   * @auth {users:update}
    * @input {RequestEmailVerificationAdminSchema} — userId of the target user.
    * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} NOT_FOUND for an unknown or inactive user, BAD_REQUEST for a synthetic
+   *   LDAP address, INTERNAL_SERVER_ERROR if the email cannot be sent.
    */
-  requestEmailVerificationAdmin: adminProcedure
+  requestEmailVerificationAdmin: protectedProcedure
     .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .input(RequestEmailVerificationAdminSchema)
     .mutation(async ({ input, ctx }) => {
-      const { userId } = input;
-
-      try {
-        const result = await sendVerificationEmail(
-          ctx.prisma,
-          {
-            userId,
-            reason: 'admin_initiated',
-            actorId: ctx.session.user.id,
-          },
-          ctx
-        );
-
-        return result;
-      } catch (error) {
-        // An unknown or inactive user is a NOT_FOUND the admin should read, not a masked 500.
-        if (error instanceof TRPCError) throw error;
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Errore invio email',
-          cause: error,
-        });
-      }
+      return sendVerificationLink(ctx, {
+        userId: input.userId,
+        reason: 'admin_initiated',
+        actorId: ctx.session.user.id,
+      });
     }),
 });

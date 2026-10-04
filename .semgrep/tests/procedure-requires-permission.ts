@@ -11,7 +11,6 @@ interface Builder {
 declare const protectedProcedure: Builder;
 declare const selfProcedure: Builder;
 declare const publicProcedure: Builder;
-declare const adminProcedure: Builder;
 declare const BrandInputSchema: unknown;
 type TargetInput = { targetType: string };
 
@@ -72,9 +71,6 @@ export const router = {
 
   // ok: luke-procedure-requires-permission
   login: publicProcedure.input(BrandInputSchema).mutation(async () => null),
-
-  // ok: luke-procedure-requires-permission
-  schedule: adminProcedure.mutation(async () => null),
 };
 
 // The root anchor cannot see through a named builder, so none may exist.

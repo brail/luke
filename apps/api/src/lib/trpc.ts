@@ -7,13 +7,10 @@ import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-
-import { hasPermission, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest } from './auth';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
-import { logAccessDenied } from './permissions';
 import { t } from './t';
 import { verifyTokenVersion } from './tokenVersionCache';
 
@@ -131,11 +128,11 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware that blocks traffic while Maintenance Mode is `ACTIVE`, except from whoever can manage
- * maintenance (`bypassesMaintenance`, `maintenance:update`).
+ * Middleware that blocks traffic while Maintenance Mode is `ACTIVE`, except from whoever bypasses
+ * it (`bypassesMaintenance`, `maintenance:update`).
  * Must be chained after `authMiddleware` (already done in `protectedProcedure`) so
- * `ctx.session` is guaranteed. Those are never blocked — they need `adminProcedure`
- * (e.g. `maintenance.mode.end`) to keep working during the very maintenance they're managing.
+ * `ctx.session` is guaranteed. Those are never blocked: they must keep working during the very
+ * maintenance they're managing (`maintenance.mode.end`, which also takes `maintenance:mode_manage`).
  */
 export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -146,34 +143,6 @@ export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
   }
 
   await assertNotBlockedByMaintenance(ctx.prisma, ctx.session.user.role);
-
-  return next({
-    ctx: {
-      ...ctx,
-      session: ctx.session, // Type-safe: session is no longer null
-    },
-  });
-});
-
-/**
- * Middleware that restricts access to users holding `maintenance:update` (today only `admin`).
- * Must be chained after `authMiddleware` (already done in `adminProcedure`).
- */
-export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.session) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Devi essere autenticato per accedere a questa risorsa',
-    });
-  }
-
-  if (!hasPermission(ctx.session.user as { role: Role }, 'maintenance:update')) {
-    logAccessDenied(ctx, { deniedPermissions: ['maintenance:update'] });
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Accesso negato',
-    });
-  }
 
   return next({
     ctx: {
@@ -202,15 +171,6 @@ export const protectedProcedure = publicProcedure
  * review: nothing verifies that a handler keeps it.
  */
 export const selfProcedure = protectedProcedure;
-
-/**
- * Procedure that requires admin role.
- * Chains `authMiddleware` so tokenVersion is verified before the role check.
- */
-export const adminProcedure = publicProcedure
-  .use(loggingMiddleware)
-  .use(authMiddleware)
-  .use(adminMiddleware);
 
 /** Re-exported so routers and services import `Context` from the same module as the procedure builders. */
 export type { Context };

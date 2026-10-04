@@ -34,7 +34,7 @@ function minDateTimeLocal(): string {
 
 export default function MaintenanceModePage() {
   const { can } = usePermission();
-  const canManage = can('maintenance:update');
+  const canManage = can('maintenance:mode_manage');
   const utils = trpc.useUtils();
 
   const { data: state, isLoading } = trpc.maintenance.mode.getStatus.useQuery(undefined, {

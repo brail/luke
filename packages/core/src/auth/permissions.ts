@@ -206,7 +206,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  *
  * @param user - User object with role
  * @param permission - Permission to verify (e.g. 'brands:create')
- * @param context - Optional context for ABAC (future)
  * @returns true if the user has the permission, false otherwise
  *
  * @example

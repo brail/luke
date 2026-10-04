@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [029 — Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals](029-resource-action-permissions-one-builder-logged-refusals.md)
 
 ## Context
 

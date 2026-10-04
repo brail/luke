@@ -66,8 +66,9 @@ export async function isMaintenanceActive(prisma: PrismaClient): Promise<boolean
 }
 
 /**
- * Whoever can end maintenance keeps working through it: the permission `adminProcedure` checks to
- * manage the mode. A role string that is not a known role holds no permission, so it is blocked.
+ * Whoever bypasses maintenance keeps working through it: `maintenance:update`. Ending it takes
+ * `maintenance:mode_manage` as well; today both are `admin`'s alone. A role string that is not a
+ * known role holds no permission, so it is blocked.
  */
 export function bypassesMaintenance(role: string): boolean {
   // `role` comes from the session or the user row as a plain string; hasPermission answers false

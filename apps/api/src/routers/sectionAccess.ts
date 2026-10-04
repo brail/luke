@@ -19,7 +19,7 @@ import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure, adminProcedure, selfProcedure } from '../lib/trpc';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
@@ -57,13 +57,14 @@ export const sectionAccessRouter = router({
     }),
 
   /**
-   * Returns section access overrides for a specific user (admin only).
+   * Returns section access overrides for a specific user (`*:*`).
    *
-   * @auth {admin}
+   * @auth {*:*}
    * @input {{ userId: string }}
    * @output {{ section: Section, enabled: boolean }[]}
    */
-  getByUser: adminProcedure
+  getByUser: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(z.object({ userId: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
       const rows = await listOverridesForUser(ctx.prisma, input.userId);
@@ -108,11 +109,12 @@ export const sectionAccessRouter = router({
    * the generic config.set/update endpoints don't allow the `rbac` key prefix. The map replaces
    * the stored one; a role or section it omits keeps its static default (ADR-027).
    *
-   * @auth {admin}
+   * @auth {*:*}
    * @input {{ sectionAccessDefaults: Partial<Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>>> }}
    * @output {{ success: true }}
    */
-  setRoleDefaults: adminProcedure
+  setRoleDefaults: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(setRoleDefaultsInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
@@ -169,11 +171,12 @@ export const sectionAccessRouter = router({
    * A parent section is derived from its children, so it takes no override at all, `null` included:
    * the overrides stored on parents before that rule were removed by migration (ADR-027).
    *
-   * @auth {admin}
+   * @auth {*:*}
    * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
    * @output {UserSectionAccess | null} — null if override was removed (auto mode).
    */
-  set: adminProcedure
+  set: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(setInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {

@@ -81,6 +81,8 @@ export default defineConfig({
       // the same cold-cache reload, which failed CI on its first push (run 37194351818).
       '@radix-ui/react-popover',
       'cmdk',
+      // Added for UserActionsMenu.browser.test.tsx, the first to mount a DropdownMenu: same reason.
+      '@radix-ui/react-dropdown-menu',
     ],
   },
   oxc: {

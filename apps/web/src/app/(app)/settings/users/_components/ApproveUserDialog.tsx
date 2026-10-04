@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../../components/ui/select';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 
 import { SectionAccessList } from './SectionAccessList';
@@ -37,6 +38,9 @@ interface ApproveUserDialogProps {
 
 /**
  * Dialog that forces an admin to configure role and section access before approving a pending user.
+ * Whoever else may approve (`users:update`) approves the account as it stands: role and section
+ * overrides take `*:*` on the server, so for them the dialog shows the role read-only, reads no
+ * section overrides and edits neither — only the team is chosen.
  *
  * An attempt is the role (only if the administrator changed it), the override edits, then the
  * approval; every control is disabled for its whole length. After any failure the dialog re-reads
@@ -52,7 +56,9 @@ export function ApproveUserDialog({
   onApproved,
 }: ApproveUserDialogProps) {
   const utils = trpc.useUtils();
-  const editor = useSectionOverridesEditor({ userId: user.id, open });
+  const { can } = usePermission();
+  const configures = can('*:*');
+  const editor = useSectionOverridesEditor({ userId: user.id, open: open && configures });
 
   /** The role stored for the account, from the last read; `null` until the first one answers. */
   const [storedRole, setStoredRole] = useState<Role | null>(null);
@@ -116,7 +122,7 @@ export function ApproveUserDialog({
 
   const shownRole = roleEdit ?? storedRole;
   const stale = editor.stale || roleReadFailed;
-  const ready = shownRole !== null && editor.defaults !== undefined && !stale;
+  const ready = shownRole !== null && (!configures || editor.defaults !== undefined) && !stale;
 
   const chooseRole = (role: Role) => {
     setRoleEdit(role === storedRole ? null : role);
@@ -126,11 +132,13 @@ export function ApproveUserDialog({
   const handleSaveAndApprove = async () => {
     setIsSaving(true);
     try {
-      if (roleEdit) {
-        await updateUserMutation.mutateAsync({ id: user.id, role: roleEdit });
+      if (configures) {
+        if (roleEdit) {
+          await updateUserMutation.mutateAsync({ id: user.id, role: roleEdit });
+        }
+        const failures = await editor.save();
+        if (failures > 0) throw new Error(`${failures} sezione/i non aggiornata/e`);
       }
-      const failures = await editor.save();
-      if (failures > 0) throw new Error(`${failures} sezione/i non aggiornata/e`);
 
       await approveMutation.mutateAsync({ id: user.id, teamId: selectedTeamId });
 
@@ -138,7 +146,7 @@ export function ApproveUserDialog({
       onApproved();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Errore durante l'approvazione");
-      await editor.reconcile();
+      if (configures) await editor.reconcile();
       try {
         const stored = await readPending();
         if (!stored) {
@@ -188,7 +196,7 @@ export function ApproveUserDialog({
               value={shownRole ?? ''}
               // The items below are exactly the three roles, so the value is one of them.
               onValueChange={v => chooseRole(v as Role)}
-              disabled={!ready || isSaving}
+              disabled={!configures || !ready || isSaving}
             >
               <SelectTrigger className="w-40">
                 <SelectValue />
@@ -203,7 +211,13 @@ export function ApproveUserDialog({
 
           <div>
             <h3 className="text-sm font-semibold mb-3">Visibilità sezioni</h3>
-            {!stale && (
+            {!configures && (
+              <p className="text-sm text-muted-foreground">
+                Ruolo e visibilità sezioni restano quelli dell&apos;account: solo un amministratore
+                può cambiarli.
+              </p>
+            )}
+            {configures && !stale && (
               <SectionAccessList
                 role={shownRole ?? user.role}
                 defaults={ready ? editor.defaults : undefined}

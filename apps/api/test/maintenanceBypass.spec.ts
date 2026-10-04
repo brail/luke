@@ -1,7 +1,7 @@
 /**
- * Who keeps working through maintenance mode. The bypass follows the permission that manages the
- * mode (`maintenance:update`, the one `adminProcedure` checks), not the role name, and a role
- * outside `Roles` holds nothing, so it stays blocked.
+ * Who keeps working through maintenance mode. The bypass follows a permission
+ * (`maintenance:update`), not the role name, and a role outside `Roles` holds nothing, so it stays
+ * blocked.
  */
 
 import { describe, expect, it } from 'vitest';

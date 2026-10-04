@@ -15,7 +15,7 @@ import {
 } from '@luke/core';
 
 import { requirePermission, can } from '../src/lib/permissions';
-import { adminMiddleware, router, publicProcedure } from '../src/lib/trpc';
+import { router, publicProcedure } from '../src/lib/trpc';
 
 import { createSilentLogger } from './helpers/logger';
 
@@ -238,26 +238,6 @@ describe('requirePermission middleware', () => {
 
     // Second call: served from cache, same outcome
     await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
-  });
-});
-
-describe('adminMiddleware', () => {
-  // The middleware alone: `adminProcedure` also chains `authMiddleware`, which reads the
-  // database this mock context does not have.
-  it('refuses a user without maintenance:update with a message that names no role', async () => {
-    const ctx = createMockContext('viewer');
-    const warn = vi.spyOn(ctx.logger!, 'warn');
-    const caller = router({
-      probe: publicProcedure.use(adminMiddleware).query(() => 'success'),
-    }).createCaller(ctx);
-
-    const error = await caller.probe().catch(e => e);
-    expect(error.code).toBe('FORBIDDEN');
-    expect(error.message).toBe('Accesso negato');
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ userRole: 'viewer', deniedPermissions: ['maintenance:update'] }),
-      'Permission denied'
-    );
   });
 });
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { ApproveUserDialog } from '../ApproveUserDialog';
@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
   setMutate: vi.fn(),
   updateMutate: vi.fn(),
   approveMutate: vi.fn(),
+  /** `*:*` held or not: whether the dialog configures role and sections, or only approves. */
+  admin: { value: true },
   // The real `useUtils()` is one object for the component's lifetime (see UserAccessDialog's test).
   utils: {} as object,
 }));
@@ -48,6 +50,10 @@ vi.mock('../../../../../../lib/trpc', () => ({
   },
 }));
 
+vi.mock('../../../../../../hooks/usePermission', () => ({
+  usePermission: () => ({ can: (permission: string) => permission !== '*:*' || h.admin.value }),
+}));
+
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 const pendingViewer = { id: 'u-p', username: 'newbie', firstName: 'New', lastName: 'Bie', role: 'viewer' as const };
@@ -74,6 +80,7 @@ function dialog(onApproved = vi.fn()) {
 }
 
 beforeEach(() => {
+  h.admin.value = true;
   h.defaults.data = defaultsWith();
   h.fetchByUser.mockResolvedValue([]);
   h.fetchPending.mockResolvedValue(pendingAs('viewer'));
@@ -200,4 +207,40 @@ test('a failing fresh read at opening shows no switch and allows no attempt', as
   await expect.element(screen.getByText(/chiudi e riapri/)).toBeInTheDocument();
   expect(screen.getByRole('switch').elements()).toHaveLength(0);
   await expect.element(approveButton(screen)).toBeDisabled();
+});
+
+describe('without *:*, as an editor who may approve', () => {
+  beforeEach(() => {
+    h.admin.value = false;
+  });
+
+  test('approves the account as it stands: no role, no overrides, not even read', async () => {
+    const onApproved = vi.fn();
+    const screen = await render(dialog(onApproved));
+
+    await expect.element(screen.getByText(/solo un amministratore può cambiarli/)).toBeVisible();
+    await expect.element(screen.getByRole('combobox').nth(0)).toBeDisabled();
+    expect(screen.getByRole('switch').elements()).toHaveLength(0);
+
+    await chooseTeam(screen);
+    await approveButton(screen).click();
+
+    await vi.waitFor(() => expect(onApproved).toHaveBeenCalled());
+    expect(h.approveMutate).toHaveBeenCalledWith({ id: pendingViewer.id, teamId: 't1' });
+    expect(h.fetchByUser).not.toHaveBeenCalled();
+    expect(h.setMutate).not.toHaveBeenCalled();
+    expect(h.updateMutate).not.toHaveBeenCalled();
+  });
+
+  test('after a failed approval, re-reads the pending account and still never the overrides', async () => {
+    h.approveMutate.mockRejectedValueOnce(new Error('network'));
+    const screen = await render(dialog());
+
+    await chooseTeam(screen);
+    await approveButton(screen).click();
+
+    await vi.waitFor(() => expect(h.fetchPending).toHaveBeenCalledTimes(2));
+    await expect.element(approveButton(screen)).toBeEnabled();
+    expect(h.fetchByUser).not.toHaveBeenCalled();
+  });
 });

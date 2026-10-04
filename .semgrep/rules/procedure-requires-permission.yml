@@ -19,8 +19,7 @@ rules:
               - pattern: '$P. ... .mutation($H)'
               - pattern: '$P. ... .subscription($H)'
           # Only chains rooted at protectedProcedure: publicProcedure is
-          # pre-session, adminProcedure checks maintenance:update in its
-          # middleware, selfProcedure is the declared own-data exemption.
+          # pre-session, selfProcedure is the declared own-data exemption.
           - metavariable-regex:
               metavariable: $P
               regex: '^protectedProcedure$'

@@ -32,7 +32,7 @@ import { MaintenanceLockScreen } from './MaintenanceLockScreen';
 export function MaintenanceGate() {
   const { state } = useMaintenanceStatus();
   const { can } = usePermission();
-  // Whoever can manage maintenance keeps working through it — the server's rule (`bypassesMaintenance`).
+  // Whoever bypasses maintenance keeps working through it — the server's rule (`bypassesMaintenance`).
   const bypasses = can('maintenance:update');
 
   const isScheduled = state?.status === 'SCHEDULED';
@@ -75,7 +75,12 @@ export function MaintenanceGate() {
   return (
     <>
       {state.status !== 'INACTIVE' && (
-        <MaintenanceBanner state={state} isAdmin={bypasses} msRemaining={msRemaining} />
+        <MaintenanceBanner
+          state={state}
+          isAdmin={bypasses}
+          canEnd={can('maintenance:mode_manage')}
+          msRemaining={msRemaining}
+        />
       )}
       {state.status === 'ACTIVE' && !bypasses && <MaintenanceLockScreen message={state.message} />}
 

@@ -85,3 +85,32 @@ describe('auth.requestEmailVerification', () => {
     expect(await prisma.userToken.count({ where: { userId: session.user.id, type: 'VERIFY' } })).toBe(0);
   });
 });
+
+describe('auth.requestEmailVerificationAdmin', () => {
+  it('lets an editor, who manages users, send the link to an account', async () => {
+    const send = vi
+      .spyOn(emailHelpers, 'sendVerificationEmail')
+      .mockResolvedValue({ success: true, message: 'stubbed' });
+    const { session } = await createTestUser('editor');
+    const { user: target } = await createTestUser('viewer');
+    const auth = appRouter.createCaller(createTestContext(session)).auth;
+
+    await expect(auth.requestEmailVerificationAdmin({ userId: target.id })).resolves.toMatchObject({ success: true });
+    expect(send).toHaveBeenCalledWith(
+      expect.anything(),
+      { userId: target.id, reason: 'admin_initiated', actorId: session.user.id },
+      expect.anything(),
+    );
+  });
+
+  it('refuses an account still on its synthetic LDAP address', async () => {
+    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
+    const { session } = await createTestUser('admin');
+    const { user: target } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: target.id }, data: { email: `${target.username}@ldap.local` } });
+    const auth = appRouter.createCaller(createTestContext(session)).auth;
+
+    await expect(auth.requestEmailVerificationAdmin({ userId: target.id })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(send).not.toHaveBeenCalled();
+  });
+});

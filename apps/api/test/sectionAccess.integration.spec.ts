@@ -13,14 +13,16 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { SECTION_ACCESS_DEFAULTS, childSectionsOf } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
-import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { appRouter } from '../src/routers/index';
+
+import { createCallerWithSession, createTestContext, createTestUser, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -91,6 +93,21 @@ describe('sectionAccess — procedure permissions', () => {
         caller.setRoleDefaults({ sectionAccessDefaults: healthyDefaults() })
       ).rejects.toMatchObject({ code: 'FORBIDDEN' });
     }
+  });
+
+  it('the permission an editor lacks for them is *:*, and the refusal says so', async () => {
+    const { user: target } = await createTestUser('viewer');
+    const { user, session } = await createTestUser('editor');
+    const ctx = createTestContext(session);
+    const warn = vi.spyOn(ctx.logger, 'warn');
+
+    await expect(appRouter.createCaller(ctx).sectionAccess.getByUser({ userId: target.id })).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: user.id, deniedPermissions: ['*:*'] }),
+      'Permission denied',
+    );
   });
 
   it('self reads are open to every authenticated role', async () => {

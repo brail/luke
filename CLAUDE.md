@@ -297,8 +297,9 @@ Two distinct layers that must stay in sync.
 - Every protected tRPC endpoint: `requirePermission('entity:action')` mandatory,
   except own-data endpoints on `selfProcedure` (rule 5)
 - An admin-only operation on a resource `editor` holds through `resource:*` (e.g. a
-  hard delete) requires `*:*`. Rationale:
-  `docs/decisions/026-resource-action-permissions-enforced.md`
+  hard delete), or one that acts on authorization itself (section access management),
+  requires `*:*`. Rationale:
+  `docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 

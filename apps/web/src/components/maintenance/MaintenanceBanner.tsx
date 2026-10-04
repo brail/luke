@@ -41,6 +41,8 @@ const TIER_ICON: Record<MaintenanceUrgencyTier, typeof Info> = {
 interface MaintenanceBannerProps {
   state: MaintenanceModeState;
   isAdmin: boolean;
+  /** Holds `maintenance:mode_manage`, which `maintenance.mode.end` requires. */
+  canEnd: boolean;
   msRemaining: number | null;
 }
 
@@ -53,7 +55,7 @@ interface MaintenanceBannerProps {
  * shared with the scheduler's own tick cadence) — a maintenance window scheduled days out shouldn't
  * look as alarming as one about to start.
  */
-export function MaintenanceBanner({ state, isAdmin, msRemaining }: MaintenanceBannerProps) {
+export function MaintenanceBanner({ state, isAdmin, canEnd, msRemaining }: MaintenanceBannerProps) {
   const utils = trpc.useUtils();
   const endMutation = trpc.maintenance.mode.end.useMutation({
     onSuccess: () => {
@@ -81,14 +83,16 @@ export function MaintenanceBanner({ state, isAdmin, msRemaining }: MaintenanceBa
       <div className="flex items-center justify-center gap-3 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100">
         <Wrench className="h-4 w-4 shrink-0" />
         <span>Modalità manutenzione attiva (visibile solo a te come admin)</span>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => endMutation.mutate()}
-          disabled={endMutation.isPending}
-        >
-          {endMutation.isPending ? 'Termino...' : 'Termina manutenzione'}
-        </Button>
+        {canEnd && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => endMutation.mutate()}
+            disabled={endMutation.isPending}
+          >
+            {endMutation.isPending ? 'Termino...' : 'Termina manutenzione'}
+          </Button>
+        )}
       </div>
     );
   }

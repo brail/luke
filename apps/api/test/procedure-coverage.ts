@@ -114,8 +114,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   maintenance: {
     reason:
-      'backup/restore and maintenance mode are destructive by construction: turning them on inside the suite would block the specs that follow; backup.updateScheduleConfig, which only writes AppConfig, is covered',
-    uncovered: 13,
+      'backup/restore are destructive by construction; mode.getStatus, a public read, has no test yet; backup.updateScheduleConfig, which only writes AppConfig, is covered, and the four mode mutations by maintenanceModeAccess.integration.spec.ts, which restores the inactive state after each test',
+    uncovered: 9,
   },
   system: {
     reason:

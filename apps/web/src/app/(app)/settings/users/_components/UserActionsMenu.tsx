@@ -54,6 +54,8 @@ export function UserActionsMenu({
 
   const canUpdate = can('users:update');
   const canDelete = can('users:delete');
+  // Section overrides are an administrator's alone (`sectionAccess.set` requires `*:*`).
+  const canManageAccess = can('*:*');
 
   // Mutation tRPC
   const sendVerifyMutation =
@@ -143,7 +145,7 @@ export function UserActionsMenu({
             Modifica
           </DropdownMenuItem>
         )}
-        {canUpdate && (
+        {canManageAccess && (
           <DropdownMenuItem onClick={() => handlers.onManageAccess(user)}>
             <Settings2 className="mr-2 h-4 w-4" />
             Gestisci accesso
