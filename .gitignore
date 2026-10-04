@@ -35,6 +35,10 @@ node_modules/
 
 # Build outputs
 .next/
+# Written by `next dev` when it detects an AI coding agent; agent instructions live in the root
+# AGENTS.md and CLAUDE.md.
+apps/web/AGENTS.md
+apps/web/CLAUDE.md
 dist/
 dist-scripts/
 build/
