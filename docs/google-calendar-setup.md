@@ -1,7 +1,7 @@
 # Google Calendar Integration Setup
 
 Luke pushes season-calendar milestones to Google Calendar. The integration is
-configured in AppConfig from the **Google Workspace** settings page
+configured in AppConfig from the `Google Workspace` settings page
 (`/settings/google`) by a user with `config:update`; no environment variable
 configures it. It supports two authentication modes: a **service account**,
 optionally impersonating a Workspace user through domain-wide delegation, or an
@@ -46,7 +46,7 @@ account itself — that is, when you set an email to impersonate in step 4.
 
 ### 4. Configure Luke
 
-On the **Google Workspace** page, choose the `Service Account (tecnico)` mode and paste
+On the `Google Workspace` page, choose the `Service Account (tecnico)` mode and paste
 the JSON key file: the page extracts `client_email` and `private_key` from it.
 Enter the Workspace domain and, optionally, the user to impersonate; turn on
 `Sincronizzazione Google Calendar`; then click `Salva Configurazione`. The
@@ -58,7 +58,7 @@ private key is stored encrypted in AppConfig.
    ID of type **Web application**.
 2. Add the authorized redirect URI `<web origin>/api/google/oauth/callback`. The
    settings page displays the exact value for the current origin.
-3. On the **Google Workspace** page, choose the `Account utente OAuth (collega virtuale)` mode,
+3. On the `Google Workspace` page, choose the `Account utente OAuth (collega virtuale)` mode,
    enter the client ID, the client secret and the Workspace domain, turn on
    `Sincronizzazione Google Calendar`, and click `Salva Configurazione`.
 4. Click `Connetti account Google` and complete Google's consent screen. Luke
@@ -90,8 +90,8 @@ the sync is skipped without an error. A sync can be started by hand with
   members of the calendar's company function plus the administrators, added as
   `reader`; a domain-wide rule is downgraded to `freeBusyReader`.
   `db:harden-google-acl` reapplies both to calendars created before these rules.
-- **One calendar** per brand × season × section, named
-  `Luke • {brandCode} • {seasonCode} • {sectionLabel}`.
+- **One calendar** per season calendar (brand × season) and company function,
+  named `Luke • {brandCode} • {seasonCode} • {function name}`.
 - **Idempotent sync**: a content hash comparison prevents redundant API calls.
 - **Retry**: up to three attempts with exponential backoff (500 ms, then 1 s) on
   429 and 5xx responses; other 4xx responses are not retried.
@@ -101,4 +101,4 @@ the sync is skipped without an error. A sync can be started by hand with
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `403 forbidden` on calendar ops | Google Calendar API not enabled | Enable Google Calendar API in Cloud Console |
-| `401 unauthorized` | Invalid private key or client email, or a revoked OAuth token | Paste the JSON key again on the **Google Workspace** page, or reconnect the OAuth account |
+| `401 unauthorized` | Invalid private key or client email, or a revoked OAuth token | Paste the JSON key again on the `Google Workspace` page, or reconnect the OAuth account |

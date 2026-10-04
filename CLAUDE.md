@@ -73,7 +73,8 @@ A version repeated here is a second source of truth, and it drifts: this block
 said "Next.js 15" for months while `apps/web` was on 16.
 
 Dev: `pnpm dev` starts everything via Turbo.
-If the API fails with "Cannot find module @luke/core/dist": `pnpm --filter @luke/core build`.
+If the API fails with "Cannot find module @luke/core/dist": stop `pnpm dev`, then
+`pnpm --filter @luke/core build` (a filtered build is not guarded).
 Turbo cache can be stale — if the dist files are missing, build manually.
 `apps/web` resolves `@luke/api` through the package's `exports` map to `dist`,
 not to `src`. While `pnpm dev` runs, the API's `dev:types` watch re-emits those

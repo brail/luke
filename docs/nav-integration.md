@@ -147,7 +147,8 @@ All keys live under the `integrations.nav.*` namespace:
 The two defaults are the values `apps/api/prisma/seed.ts` writes; none of these
 keys has an entry in `APP_CONFIG_DEFAULTS`. The development seed also writes
 placeholder connection values (host `192.168.1.32`, database `NAV_DATABASE`,
-and so on); production does not run the seed. With its row absent, `readOnly`
+and so on). `entrypoint.sh` never runs the seed; on a database seeded by hand,
+replace them or keep `syncEnabled` off. With its row absent, `readOnly`
 reads as `true`, and the scheduler treats `syncEnabled` as enabled: it stops
 only on an explicit `false`. There is no interval key: the sync interval is
 stored per entity in `NavSyncFilter` (see Scheduler).
@@ -176,8 +177,8 @@ therefore overlap a scheduled run.
 If `integrations.nav.host` is not configured, the scheduler skips the tick
 silently, without logging errors (expected behavior on a fresh install). It
 also skips the tick when `integrations.nav.syncEnabled` is `false`. A seeded
-development database carries the placeholder host, so there only `syncEnabled`
-stops the scheduler.
+database carries the placeholder host, so there only `syncEnabled` stops the
+scheduler.
 
 ---
 

@@ -98,7 +98,8 @@ history.
   throws at runtime at the point of use, not at boot. This is intended: RC can
   never silently reuse real production credentials against external systems.
   Reset them by hand with RC-appropriate values for each integration RC needs;
-  until then S3 storage, NAV sync and Google sync fail on RC as well.
+  until then LDAP login, mail delivery, S3 storage, NAV sync and Google sync
+  fail on RC.
 - The `.lukebak` package is buffered entirely in memory during upload (no
   streaming multipart client in scope). Acceptable for `DB`-only backups; to be
   revisited if the flow is ever extended to `DB_AND_FILES`.

@@ -312,7 +312,7 @@ the countdown, with these rules:
   a relevance set.
 - It checks the date of the event's `startAt` (an all-day value's own date, a
   timed one read in the business zone), not its deadline.
-- An event on a weekend is reported once, as "weekend".
+- An event on a weekend is reported once, as `weekend`.
 - Otherwise, it is flagged `festività azienda` if the day is a company holiday
   (`COMPANY` / `BOTH`).
 - It is also flagged `chiusura fornitore «name»` once for each distinct vendor

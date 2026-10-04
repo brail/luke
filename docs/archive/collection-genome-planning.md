@@ -5,8 +5,8 @@
 > plans — the unified `Phase` catalog, `PlanningGroup`, the planning wizard,
 > phase history and the saturation, bottleneck and stagnation views — has since
 > been implemented, and the code is the current reference. The implementation
-> plan it mentions was never committed, and the source PDF it cites was removed
-> in `7e86fc13`. Moved here from `docs/genoma-collezione-pianificazione.md` on
+> plan it mentions was never committed, and neither was the source document it
+> cites; a PDF export of this analysis was removed in `7e86fc13`. Moved here from `docs/genoma-collezione-pianificazione.md` on
 > 2026-10-05. For current documentation, start at the
 > [repository README](../../README.md) and the [documentation index](../README.md).
 

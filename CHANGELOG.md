@@ -156,7 +156,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - Update readme tree, inline comments and adr validation [luke-docs]
 - Add ADR-008/009/010 and update adr validation [luke-docs]
 - **claude**: Add dependabot target-branch reminder on develop branch change
-- Add genoma collezione pianificazione notes
+- Add Collection Genome planning notes
 - Findings skipped by the simplify passes for the collection genome
 - Refresh README/ADR index and mark storage refactor ADR stale
 - **lessons**: Document prisma migrate deploy drift with db push workflow
@@ -289,7 +289,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - **web,api,nav**: Normalize filenames to camelCase, translate Italian names to English
 
 ### Other
-- Script per le migration Prisma 7 e tier unit per apps/web
+- Scripts for the Prisma 7 migrations and a unit tier for apps/web
 
 ### Tests
 - **api**: Revive the test tier and split unit from integration
@@ -430,7 +430,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - Bump version to 1.10.0-rc.12
 
 ### Other
-- Script per le migration Prisma 7 e tier unit per apps/web
+- Scripts for the Prisma 7 migrations and a unit tier for apps/web
 
 ### Tests
 - **api**: Revive the test tier and split unit from integration
@@ -605,7 +605,7 @@ fix(deps): patch mysql2 and browserslist on the stable line
 - Update readme tree, inline comments and adr validation [luke-docs]
 - Add ADR-008/009/010 and update adr validation [luke-docs]
 - **claude**: Add dependabot target-branch reminder on develop branch change
-- Add genoma collezione pianificazione notes
+- Add Collection Genome planning notes
 - Findings skipped by the simplify passes for the collection genome
 - Refresh README/ADR index and mark storage refactor ADR stale
 - **lessons**: Document prisma migrate deploy drift with db push workflow
