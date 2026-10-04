@@ -1,8 +1,9 @@
 # Documentation Archive
 
-The documents in this directory are frozen historical records. Their original
-language and contents are preserved; the English descriptions below provide
-navigation without turning the archived material into current guidance.
+The documents in this directory are frozen historical records, kept for
+reference and not current guidance. Their contents are preserved; a body written
+in Italian was translated into English under ADR-030, with the original in git
+history. Records retired from the tree are listed at the end.
 
 | Document | Historical scope |
 |----------|------------------|
