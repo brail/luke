@@ -57,7 +57,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
   } = useForm<UserProfileInput>({
     resolver: zodResolver(UserProfileSchema),
     defaultValues: {
-      email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       locale: user.locale,

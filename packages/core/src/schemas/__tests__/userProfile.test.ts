@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 
 import { UpdateTimezoneSchema, UserProfileSchema } from '../userProfile.js';
 
-const PROFILE = { email: 'mario@example.com', firstName: 'Mario', lastName: 'Rossi', locale: 'it-IT' };
+const PROFILE = { firstName: 'Mario', lastName: 'Rossi', locale: 'it-IT' };
 
 describe('User.timezone on write', () => {
   it.each(['Europe/Rome', 'America/Los_Angeles', 'Asia/Kolkata', 'Asia/Calcutta', 'UTC'])('accepts %s', timezone => {

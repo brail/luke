@@ -192,9 +192,8 @@ export const protectedProcedure = publicProcedure
 /**
  * `protectedProcedure` for an endpoint that works on the caller's own data. It writes only rows the
  * caller owns and takes no target user id; its reads are the caller's rows plus the lookups needed to
- * compute the caller's own view (configuration, public or static content). Declared exceptions:
- * `me.changeEmail` and `me.updateProfile` both write a unique email, so each reveals whether an
- * address is already taken.
+ * compute the caller's own view (configuration, public or static content). Declared exception:
+ * `me.changeEmail` writes a unique email, so it reveals whether an address is already taken.
  *
  * It carries no permission by design, and it is the only authenticated builder that
  * `luke-procedure-requires-permission` accepts without `requirePermission`. It is a declaration for

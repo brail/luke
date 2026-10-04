@@ -11,6 +11,7 @@ import {
   ChangePasswordSchema,
   UpdateTimezoneSchema,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { sendVerificationEmail } from '../lib/emailHelpers';
@@ -107,7 +108,8 @@ export const meRouter = router({
    * Updates the current user's editable profile fields; blocks sync-locked fields for LDAP/OIDC users.
    *
    * @auth {authenticated}
-   * @input {UserProfileSchema} — email, firstName, lastName, locale, timezone.
+   * @input {UserProfileSchema} — firstName, lastName, locale, timezone. The email changes only
+   *   through `me.changeEmail`.
    * @output {Partial User with updated fields.}
    */
   updateProfile: selfProcedure
@@ -118,7 +120,6 @@ export const meRouter = router({
         where: { id: ctx.session.user.id },
         select: {
           id: true,
-          email: true,
           identities: {
             select: {
               provider: true,
@@ -164,17 +165,13 @@ export const meRouter = router({
       }
 
       // Update the allowed fields
-      const emailChanged = input.email !== userWithProvider.email;
       const updated = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
         data: {
-          email: input.email,
           firstName: input.firstName,
           lastName: input.lastName,
           locale: input.locale,
           timezone: input.timezone,
-          // Reset email verification when address changes
-          ...(emailChanged ? { emailVerifiedAt: null } : {}),
         },
         select: {
           id: true,
@@ -193,9 +190,6 @@ export const meRouter = router({
         targetType: 'User',
         targetId: ctx.session.user.id,
         result: 'SUCCESS',
-        metadata: {
-          emailChanged,
-        },
       });
 
       return updated;
@@ -207,6 +201,8 @@ export const meRouter = router({
    * @auth {authenticated}
    * @input {{ newEmail: string }} — the new email address (must be unique).
    * @output {{ success: true, message: string }}
+   * @throws {TRPCError} CONFLICT if another account holds the address — the unique constraint's
+   *   answer at the write, with no read before it.
    */
   changeEmail: selfProcedure
     .use(withRateLimit('userMutations'))
@@ -219,18 +215,17 @@ export const meRouter = router({
       const { newEmail } = input;
       const userId = ctx.session.user.id;
 
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email: newEmail, id: { not: userId } },
-      });
-
-      if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
+      try {
+        await ctx.prisma.user.update({
+          where: { id: userId },
+          data: { email: newEmail, emailVerifiedAt: null },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
+        }
+        throw err;
       }
-
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: { email: newEmail, emailVerifiedAt: null },
-      });
 
       await logAudit(ctx, {
         action: 'EMAIL_CHANGED',

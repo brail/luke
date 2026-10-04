@@ -41,10 +41,10 @@ describe('User.timezone on write', () => {
   });
 
   it('updateProfile refuses a non-IANA zone', async () => {
-    const { user, session } = await createTestUser('viewer');
+    const { session } = await createTestUser('viewer');
     await expect(
       createCallerWithSession(session).me.updateProfile({
-        email: user.email, firstName: 'Mario', lastName: 'Rossi', locale: 'it-IT', timezone: 'Mars/Olympus',
+        firstName: 'Mario', lastName: 'Rossi', locale: 'it-IT', timezone: 'Mars/Olympus',
       }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
@@ -66,7 +66,7 @@ describe('me.get with a legacy invalid zone', () => {
 
       // The profile form sends back what `me.get` gave it; with the raw value this save would fail.
       await caller.me.updateProfile({
-        email: profile.email, firstName: 'Mario', lastName: 'Rossi', locale: profile.locale, timezone: profile.timezone,
+        firstName: 'Mario', lastName: 'Rossi', locale: profile.locale, timezone: profile.timezone,
       });
       expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).timezone).toBe('Asia/Tokyo');
     } finally {

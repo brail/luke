@@ -80,11 +80,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; the multi-key reads, setMultiple and update remain',
     uncovered: 3,
   },
-  me: {
-    reason:
-      'changePassword, get and revokeAllSessions covered by the session specs; profile, timezone and the daily greeting by meTimeZone.integration.spec.ts; changeEmail is not',
-    uncovered: 1,
-  },
   users: {
     reason:
       'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); heartbeat and the menu preferences are not',

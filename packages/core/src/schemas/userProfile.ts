@@ -13,16 +13,11 @@ const userTimeZoneSchema = z
   .refine(isValidTimeZone, 'Fuso orario non valido')
   .transform(canonicalTimeZone);
 
-/** Input schema for updating the authenticated user's profile (all editable fields). */
+/**
+ * Input schema for updating the authenticated user's profile. No email: it changes only through
+ * `me.changeEmail`, which marks the new address unverified and mails a verification link to it.
+ */
 export const UserProfileSchema = z.object({
-  /** User email */
-  email: z
-    .string()
-    .email('Email non valida')
-    .trim()
-    .min(1, 'Email obbligatoria')
-    .max(255, 'Email troppo lunga'),
-
   /** User first name */
   firstName: z
     .string()

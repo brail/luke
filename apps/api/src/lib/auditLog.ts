@@ -217,7 +217,6 @@ const SAFE_KEY_LIST = [
   'deletedEmail',
   'deletedRole',
   'resetBy',
-  'emailChanged',
   'sessionsInvalidated',
 
   // Counters and outcomes of batch operations
