@@ -38,7 +38,6 @@ Authenticated group `(app)/`:
 - `/settings/google` — Google Workspace integration (service account or OAuth 2.0) and per-product toggles
 - `/settings/company` — company profile, business time zone and organizational structure
 - `/settings/collection-control` — calendar and phase alert thresholds
-- `/maintenance` — maintenance and diagnostics index
 - `/maintenance/config` — AppConfig keys, the centralized runtime configuration
 - `/maintenance/audit-log` — audit trail browsing and export
 - `/maintenance/backup` — encrypted database backup and restore

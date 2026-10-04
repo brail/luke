@@ -39,7 +39,6 @@ const UNCOVERED_ROUTES: Record<string, string> = {
   '/admin/collection-layout-configuration': 'admin config, little traffic',
   '/admin/phase-catalog': 'admin config, little traffic',
   '/admin/vendors': 'same CRUD pattern as /admin/brands, already covered',
-  '/maintenance': 'index, links only',
   '/maintenance/backup': 'destructive operations, unfit for a smoke test',
   '/maintenance/config': 'destructive operations, unfit for a smoke test',
   '/maintenance/import-export': 'destructive operations, unfit for a smoke test',
