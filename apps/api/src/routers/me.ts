@@ -14,7 +14,7 @@ import {
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { getTimeBasedGreeting, GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
@@ -201,23 +201,29 @@ export const meRouter = router({
    * @auth {authenticated}
    * @input {{ newEmail: string }} — the new email address (must be unique).
    * @output {{ success: true, message: string }}
-   * @throws {TRPCError} CONFLICT if another account holds the address — the unique constraint's
-   *   answer at the write, with no read before it.
+   * @throws {TRPCError} BAD_REQUEST for the address the account already has (which would only
+   *   unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address — the
+   *   unique constraint's answer at the write, with no read before it.
    */
   changeEmail: selfProcedure
     .use(withRateLimit('userMutations'))
     .input(
       z.object({
-        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
+        newEmail: z.string().trim().toLowerCase().email('Email non valida').max(255, 'Email troppo lunga'),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const { newEmail } = input;
       const userId = ctx.session.user.id;
+      if (isSyntheticLdapEmail(newEmail)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email non valida' });
+      }
 
+      // The current address is excluded in the write itself: re-submitting it would only unverify it.
+      let written: { count: number };
       try {
-        await ctx.prisma.user.update({
-          where: { id: userId },
+        written = await ctx.prisma.user.updateMany({
+          where: { id: userId, email: { not: newEmail } },
           data: { email: newEmail, emailVerifiedAt: null },
         });
       } catch (err) {
@@ -225,6 +231,9 @@ export const meRouter = router({
           throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
         }
         throw err;
+      }
+      if (written.count === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'È già il tuo indirizzo email' });
       }
 
       await logAudit(ctx, {

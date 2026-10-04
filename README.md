@@ -267,7 +267,10 @@ app.baseUrl; // URL base per link nelle email
 - **Token 32 byte random** (64 caratteri hex)
 - **Solo hash SHA-256 salvato in DB**, mai in chiaro
 - **Token usa-e-getta**: eliminato dopo uso o scadenza
-- **Rate limiting**: max 3 richieste ogni 15 minuti per IP
+- **Rate limiting**: password-reset requests and confirmations, and email-verification
+  confirmations, use the per-IP `passwordReset` bucket; requesting a verification link, by the
+  user or by an administrator, uses the per-user `userMutations` bucket (limits in
+  [OPERATIONS.md](OPERATIONS.md#buckets))
 - **Nessun segreto in AuditLog**: logging sicuro senza PII
 
 #### DNS & Deliverability

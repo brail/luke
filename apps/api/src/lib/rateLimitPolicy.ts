@@ -77,7 +77,7 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
 /**
  * In-memory, per-process cache of the raw AppConfig `rateLimit` value. `auth.login`
  * resolves two buckets in the same attempt (`login` via `withRateLimit`, `loginByUsername`
- * in `authenticateUser()`) — without this cache every login attempt makes TWO
+ * in `verifyCredentials()`) — without this cache every login attempt makes TWO
  * identical queries on the same row. Short TTL: a config change via the admin UI takes at
  * most this long to propagate, acceptable for a rate-limit number (unlike a binary
  * security value such as a permission).

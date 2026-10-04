@@ -47,7 +47,7 @@ export function PendingApproval({
       setStatus('saved');
       onSaved();
     } catch (err) {
-      setError(getTrpcErrorMessage(err, { UNAUTHORIZED: true, CONFLICT: true }));
+      setError(getTrpcErrorMessage(err, { UNAUTHORIZED: true, CONFLICT: true, PRECONDITION_FAILED: true }));
       setStatus('idle');
     }
   };
@@ -61,8 +61,7 @@ export function PendingApproval({
         </p>
         {!needsEmail && (
           <p className="mt-2">
-            Ti abbiamo inviato un&apos;email per verificare il tuo indirizzo: confermalo, sarai
-            contattato lì quando il tuo account sarà attivato.
+            Sarai contattato all&apos;indirizzo registrato quando il tuo account sarà attivato.
           </p>
         )}
       </div>
@@ -95,8 +94,8 @@ export function PendingApproval({
 
       {status === 'saved' && (
         <div className="rounded-lg border p-3 text-sm">
-          Email salvata. Ti abbiamo inviato un&apos;email per verificarla: sarai contattato a
-          quell&apos;indirizzo quando il tuo account sarà attivato.
+          Email salvata: sarai contattato a quell&apos;indirizzo quando il tuo account sarà
+          attivato.
         </div>
       )}
 

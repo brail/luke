@@ -16,6 +16,15 @@ import { sendEmailVerificationEmail } from './mailer';
 import type { Context } from './context';
 
 /**
+ * True if the email is the synthetic one generated for an LDAP user with no `mail` value set. It
+ * reaches nobody. Lives here rather than in `ldapAuth.ts` because `sendVerificationEmail` refuses
+ * it, and `ldapAuth.ts` already imports this module.
+ */
+export function isSyntheticLdapEmail(email: string): boolean {
+  return email.endsWith('@ldap.local');
+}
+
+/**
  * Options for sending a verification email to a user.
  */
 export interface SendVerificationEmailOptions {
@@ -40,7 +49,9 @@ export interface SendVerificationEmailOptions {
  * @param options - Target user, reason, and optional actor for audit logging.
  * @param ctx - Optional tRPC-like context for request correlation in the audit log.
  * @returns Success flag and a human-readable message.
- * @throws {Error} If the user is not found or the email send fails after retries.
+ * @throws {TRPCError} NOT_FOUND if the user is not found or inactive; BAD_REQUEST for a synthetic
+ *   LDAP address, refused before any token is created.
+ * @throws {Error} If the email send fails after retries.
  */
 export async function sendVerificationEmail(
   prisma: PrismaClient,
@@ -57,6 +68,10 @@ export async function sendVerificationEmail(
 
   if (!user) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+  }
+
+  if (isSyntheticLdapEmail(user.email)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessun indirizzo email reale da verificare.' });
   }
 
   // Skip if already verified (except on email change)

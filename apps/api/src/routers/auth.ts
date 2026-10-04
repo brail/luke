@@ -19,9 +19,8 @@ import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
@@ -40,25 +39,14 @@ import {
 } from '../services/auth.service';
 
 /**
- * Sends a verification link through the shared helper, refusing first an LDAP account still on its
- * synthetic address, which reaches nobody. An unknown or inactive user stays the helper's
- * NOT_FOUND, which the caller should read, not a masked 500; a failed send becomes an
- * INTERNAL_SERVER_ERROR carrying its cause.
+ * Sends a verification link through the shared helper. Its refusals — an unknown or inactive user
+ * (NOT_FOUND), a synthetic LDAP address (BAD_REQUEST) — reach the caller as they are, not as a
+ * masked 500; a failed send becomes an INTERNAL_SERVER_ERROR carrying its cause.
  */
 async function sendVerificationLink(
   ctx: Context,
   options: Parameters<typeof sendVerificationEmail>[1]
 ) {
-  const target = await ctx.prisma.user.findUnique({
-    where: { id: options.userId },
-    select: { email: true },
-  });
-  if (target && isSyntheticLdapEmail(target.email)) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Nessun indirizzo email reale da verificare.',
-    });
-  }
   try {
     return await sendVerificationEmail(ctx.prisma, options, ctx);
   } catch (error) {
@@ -187,7 +175,8 @@ export const authRouter = router({
    *   reaches nobody; INTERNAL_SERVER_ERROR if the email cannot be sent.
    */
   requestEmailVerification: selfProcedure
-    .use(withRateLimit('passwordReset')) // Uses the same policy
+    // Per user: every caller is signed in, and a shared office IP must not throttle colleagues.
+    .use(withRateLimit('userMutations'))
     .mutation(async ({ ctx }) => {
       const userId = ctx.session.user.id;
       return sendVerificationLink(ctx, { userId, reason: 'user_requested', actorId: userId });
@@ -212,17 +201,18 @@ export const authRouter = router({
    * the verification email to it. The caller proves the password first, exactly as a login does
    * (`verifyCredentials`: strategy, the per-account bucket shared with login, the failure audit).
    *
-   * Every refusal reads like a wrong password but one: an address another account holds is a
-   * CONFLICT, which tells someone who has just proved the password of a pending account that the
-   * address is registered.
+   * Before the password is proven, every refusal that depends on the account reads like a wrong
+   * password. After it, a refusal says what it is and is audited: an account whose address cannot
+   * be set here is a PRECONDITION_FAILED (an address already set is changed by an administrator),
+   * and an address another account holds is a CONFLICT.
    *
    * @auth {public — password-verified}
    * @input {SubmitPendingEmailSchema} — username, password and the email to register.
    * @output {{ success: true }}
    * @throws {TRPCError} BAD_REQUEST for a synthetic new address, before any credential check;
-   *   UNAUTHORIZED for wrong credentials, or an account that is not (or stopped being, before the
-   *   write) an active pending LDAP one with a synthetic address; CONFLICT for a taken address;
-   *   whatever else `verifyCredentials` throws.
+   *   UNAUTHORIZED for wrong credentials; PRECONDITION_FAILED for an account that is not (or
+   *   stopped being, before the write) an active pending LDAP one with a synthetic address;
+   *   CONFLICT for a taken address; whatever else `verifyCredentials` throws.
    */
   submitPendingEmail: publicProcedure
     .use(withRateLimit('pendingEmail'))
@@ -236,8 +226,23 @@ export const authRouter = router({
       }
       const { user } = await verifyCredentials(ctx, input);
 
-      const refused = new TRPCError({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
-      if (!isSyntheticLdapEmail(user.email)) throw refused;
+      // The password is proven from here on: a refusal can say what it is, and leaves a row.
+      const notSettable = async (reason: 'address_already_set' | 'account_changed', message: string) => {
+        await logAudit(ctx, {
+          action: 'PENDING_USER_EMAIL_SUBMITTED',
+          targetType: 'User',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: { username, reason },
+        });
+        return new TRPCError({ code: 'PRECONDITION_FAILED', message });
+      };
+      if (!isSyntheticLdapEmail(user.email)) {
+        throw await notSettable(
+          'address_already_set',
+          'Indirizzo email già registrato: per cambiarlo contatta un amministratore.'
+        );
+      }
 
       // Conditional write (rule 3), which is also the eligibility check: an account that is not
       // active, pending and LDAP — or stopped being one, or got an address from another submit,
@@ -261,7 +266,9 @@ export const authRouter = router({
         }
         throw err;
       }
-      if (written.count === 0) throw refused;
+      if (written.count === 0) {
+        throw await notSettable('account_changed', "L'account è cambiato nel frattempo: accedi di nuovo.");
+      }
 
       await logAudit(ctx, {
         action: 'PENDING_USER_EMAIL_SUBMITTED',

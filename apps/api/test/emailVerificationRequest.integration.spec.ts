@@ -69,12 +69,20 @@ describe('auth.requestEmailVerification', () => {
   });
 
   it('refuses an LDAP account still on its synthetic address: a mail there reaches nobody', async () => {
-    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
     const { user, auth } = await unverifiedUser();
     await prisma.user.update({ where: { id: user.id }, data: { email: `${user.username}@ldap.local` } });
 
     await expect(auth.requestEmailVerification()).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(send).not.toHaveBeenCalled();
+    expect(await prisma.userToken.count({ where: { userId: user.id, type: 'VERIFY' } })).toBe(0);
+  });
+
+  it('is limited per user, not per address: colleagues behind one IP each get their link', async () => {
+    vi.spyOn(emailHelpers, 'sendVerificationEmail').mockResolvedValue({ success: true, message: 'stubbed' });
+    // Every test context shares one IP; the old per-IP bucket allowed three requests from it.
+    for (let colleague = 0; colleague < 4; colleague++) {
+      const { auth } = await unverifiedUser();
+      await expect(auth.requestEmailVerification()).resolves.toMatchObject({ success: true });
+    }
   });
 
   it('sends nothing for an address already verified', async () => {
@@ -104,13 +112,27 @@ describe('auth.requestEmailVerificationAdmin', () => {
   });
 
   it('refuses an account still on its synthetic LDAP address', async () => {
-    const send = vi.spyOn(emailHelpers, 'sendVerificationEmail');
     const { session } = await createTestUser('admin');
     const { user: target } = await createTestUser('viewer');
     await prisma.user.update({ where: { id: target.id }, data: { email: `${target.username}@ldap.local` } });
     const auth = appRouter.createCaller(createTestContext(session)).auth;
 
     await expect(auth.requestEmailVerificationAdmin({ userId: target.id })).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    expect(send).not.toHaveBeenCalled();
+    expect(await prisma.userToken.count({ where: { userId: target.id, type: 'VERIFY' } })).toBe(0);
+  });
+});
+
+describe('sendVerificationEmail, whoever calls it', () => {
+  it('refuses a synthetic LDAP address before creating a token', async () => {
+    const { user } = await createTestUser('viewer');
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { email: `${user.username}@ldap.local`, emailVerifiedAt: null },
+    });
+
+    await expect(emailHelpers.sendVerificationEmail(prisma, { userId: user.id })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(await prisma.userToken.count({ where: { userId: user.id, type: 'VERIFY' } })).toBe(0);
   });
 });

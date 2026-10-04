@@ -30,7 +30,7 @@ export const RATE_LIMIT_CONFIG = {
   },
   // Separate bucket, keyed by username (not IP): stops a password-spray distributed
   // across many IPs against a single account, which the 'login' bucket (keyBy: 'ip') doesn't cover.
-  // Applied directly in authenticateUser() with the normalized username as an
+  // Applied directly in verifyCredentials() with the normalized username as an
   // explicit key — it doesn't go through withRateLimit()/extractRateLimitKey (which
   // doesn't derive 'username' from ctx, since login is an unauthenticated public endpoint).
   loginByUsername: {
@@ -321,7 +321,7 @@ export function extractRateLimitKey(
 /**
  * Checks a key against `rateLimitStore` and either records the hit or throws
  * `TOO_MANY_REQUESTS`. Shared by `withRateLimit()` (ctx-derived key) and by call sites that
- * already have an explicit key, e.g. `loginByUsername` in `authenticateUser()`
+ * already have an explicit key, e.g. `loginByUsername` in `verifyCredentials()`
  * (`apps/api/src/services/auth.service.ts`) — username lives in the procedure input, not
  * `ctx`, so it can't go through `extractRateLimitKey()`.
  *
@@ -363,7 +363,7 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
 
       if (config.keyBy === 'username') {
         // No route currently wired to withRateLimit() uses keyBy 'username' (only
-        // loginByUsername, checked directly in authenticateUser()) — if it ever
+        // loginByUsername, checked directly in verifyCredentials()) — if it ever
         // did (e.g. a malformed AppConfig override on another route), fail
         // loudly instead of silently deriving the wrong key.
         throw new Error(

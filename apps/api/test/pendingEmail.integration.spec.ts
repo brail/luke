@@ -34,8 +34,10 @@ const ALICE_PASSWORD = 'her-password';
 /** No `mail`: provisioning gives her the synthetic `alice@ldap.local`. */
 const ALICE = { dn: ALICE_DN, cn: 'Alice Rossi' };
 
-/** What every refusal before the write reads like: a wrong password. */
+/** What every refusal before the password is proven reads like: a wrong password. */
 const REFUSED = { code: 'UNAUTHORIZED', message: 'Credenziali non valide' };
+/** After it: the account is not one whose address can be set here, said plainly. */
+const NOT_SETTABLE = { code: 'PRECONDITION_FAILED' };
 
 let prisma: PrismaClient;
 let ip = 0;
@@ -168,8 +170,13 @@ describe('auth.submitPendingEmail', () => {
     const alice = await provisionAlice();
     await prisma.user.update({ where: { id: alice.id }, data: { email: 'alice@directory.example' } });
 
-    await expect(submit('elsewhere@example.com')).rejects.toMatchObject(REFUSED);
+    await expect(submit('elsewhere@example.com')).rejects.toMatchObject({
+      ...NOT_SETTABLE,
+      message: expect.stringMatching(/contatta un amministratore/),
+    });
     expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe('alice@directory.example');
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'PENDING_USER_EMAIL_SUBMITTED', targetId: alice.id } });
+    expect(audit).toMatchObject({ result: 'FAILURE' });
   });
 
   it.each(['alice@ldap.local', 'someone@ldap.local'])('refuses a synthetic address as the new one (%s)', async address => {
@@ -186,7 +193,7 @@ describe('auth.submitPendingEmail', () => {
     const alice = await provisionAlice();
     await prisma.user.update({ where: { id: alice.id }, data: { pendingApproval: false } });
 
-    await expect(submit('alice@example.com')).rejects.toMatchObject(REFUSED);
+    await expect(submit('alice@example.com')).rejects.toMatchObject(NOT_SETTABLE);
   });
 
   it('answers an address another account holds with CONFLICT, from the write itself', async () => {
@@ -202,7 +209,7 @@ describe('auth.submitPendingEmail', () => {
       const alice = await provisionAlice();
       afterAuthentication(() => prisma.user.update({ where: { id: alice.id }, data: { pendingApproval: false } }));
 
-      await expect(submit('alice@example.com')).rejects.toMatchObject(REFUSED);
+      await expect(submit('alice@example.com')).rejects.toMatchObject(NOT_SETTABLE);
       expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe('alice@ldap.local');
     });
 
@@ -210,7 +217,7 @@ describe('auth.submitPendingEmail', () => {
       const alice = await provisionAlice();
       afterAuthentication(() => prisma.user.update({ where: { id: alice.id }, data: { isActive: false } }));
 
-      await expect(submit('alice@example.com')).rejects.toMatchObject(REFUSED);
+      await expect(submit('alice@example.com')).rejects.toMatchObject(NOT_SETTABLE);
       expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe('alice@ldap.local');
     });
 
@@ -218,7 +225,7 @@ describe('auth.submitPendingEmail', () => {
       const alice = await provisionAlice();
       afterAuthentication(() => prisma.user.update({ where: { id: alice.id }, data: { email: 'first@example.com' } }));
 
-      await expect(submit('second@example.com')).rejects.toMatchObject(REFUSED);
+      await expect(submit('second@example.com')).rejects.toMatchObject(NOT_SETTABLE);
       expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe('first@example.com');
     });
 
@@ -237,10 +244,10 @@ describe('auth.submitPendingEmail', () => {
 
       expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
       const loser = results.find(r => r.status === 'rejected');
-      expect(loser?.status === 'rejected' && loser.reason).toMatchObject(REFUSED);
+      expect(loser?.status === 'rejected' && loser.reason).toMatchObject(NOT_SETTABLE);
       const winner = results[0].status === 'fulfilled' ? 'one@example.com' : 'two@example.com';
       expect((await prisma.user.findUniqueOrThrow({ where: { id: alice.id } })).email).toBe(winner);
-      expect(await prisma.auditLog.count({ where: { action: 'PENDING_USER_EMAIL_SUBMITTED' } })).toBe(1);
+      expect(await prisma.auditLog.count({ where: { action: 'PENDING_USER_EMAIL_SUBMITTED', result: 'SUCCESS' } })).toBe(1);
       expect(sendVerification).toHaveBeenCalledTimes(1);
     });
   });
@@ -255,7 +262,7 @@ describe('auth.submitPendingEmail, a pending account without an LDAP identity', 
       data: { pendingApproval: true, email: `${user.username}@ldap.local` },
     });
 
-    await expect(submit('local@example.com', TEST_USER_PASSWORD, user.username)).rejects.toMatchObject(REFUSED);
+    await expect(submit('local@example.com', TEST_USER_PASSWORD, user.username)).rejects.toMatchObject(NOT_SETTABLE);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).email).toBe(`${user.username}@ldap.local`);
   });
 });

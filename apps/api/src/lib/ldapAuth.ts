@@ -15,7 +15,7 @@ import {
   getLdapResilienceConfig,
   type LdapConfig,
 } from './configManager';
-import { sendVerificationEmail } from './emailHelpers';
+import { isSyntheticLdapEmail, sendVerificationEmail } from './emailHelpers';
 import { toErrorCode, toErrorMessage } from './error';
 import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
 
@@ -29,13 +29,6 @@ function getAttr(entry: Entry, key: string): string[] {
   if (!v) return [];
   if (Array.isArray(v)) return (v as (Buffer | string)[]).filter((x): x is string => typeof x === 'string');
   return typeof v === 'string' ? [v] : [];
-}
-
-/**
- * True if the email is the synthetic one generated for an LDAP user with no `mail` value set.
- */
-export function isSyntheticLdapEmail(email: string): boolean {
-  return email.endsWith('@ldap.local');
 }
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });

@@ -69,6 +69,22 @@ describe('me.changeEmail', () => {
     });
   });
 
+  it.each([
+    ['the address it already has', (user: { email: string }) => user.email],
+    ['a synthetic LDAP address', () => 'someone@ldap.local'],
+    ['an address over 255 characters', () => `${'a'.repeat(250)}@example.com`],
+  ])('refuses %s, and the verification stays as it was', async (_name, address) => {
+    const { user, session } = await createTestUser('viewer');
+
+    await expect(createCallerWithSession(session).me.changeEmail({ newEmail: address(user) })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({
+      email: user.email,
+      emailVerifiedAt: user.emailVerifiedAt,
+    });
+  });
+
   it('answers an address another account holds with CONFLICT, from the write itself', async () => {
     const { user, session } = await createTestUser('viewer');
     const { user: other } = await createTestUser('viewer');
