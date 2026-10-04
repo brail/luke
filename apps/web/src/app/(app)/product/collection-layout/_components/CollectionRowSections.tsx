@@ -581,12 +581,14 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, is
 interface VendorSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
+  /** The row's current vendor, for its label; null when creating or when the row has none. */
+  vendor: CollectionRow['vendor'] | null;
 }
 
 /**
  * Form section for selecting the vendor of a collection row via `VendorCombobox`.
  */
-export function VendorSection({ control, canUpdate }: VendorSectionProps) {
+export function VendorSection({ control, canUpdate, vendor }: VendorSectionProps) {
   return (
     <FormField
       control={control}
@@ -595,7 +597,12 @@ export function VendorSection({ control, canUpdate }: VendorSectionProps) {
         <FormItem>
           <FormLabel>Fornitore</FormLabel>
           <FormControl>
-            <VendorCombobox value={field.value ?? null} onChange={field.onChange} disabled={!canUpdate} />
+            <VendorCombobox
+              value={field.value ?? null}
+              selectedVendor={vendor}
+              onChange={field.onChange}
+              disabled={!canUpdate}
+            />
           </FormControl>
           <FormMessage />
         </FormItem>

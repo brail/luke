@@ -329,6 +329,7 @@ export function CollectionRowDrawer({
                   <VendorSection
                     control={form.control}
                     canUpdate={canUpdate}
+                    vendor={row?.vendor ?? null}
                   />
                   <div>
                     <SectionHeader title="Forecast" />
