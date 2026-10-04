@@ -76,7 +76,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 <!-- luke-docs:start:env -->
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base SSR and middleware call directly; unset in local development, where the rewrites are skipped | In containers |
+| `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base that SSR section guards and route handlers call directly; unset in local development, where the rewrites are skipped | In containers |
 | `NEXT_PUBLIC_API_URL` | Public API URL, inlined into the client bundle at build time; falls back to `http://localhost:3001` | For production builds |
 | `NEXT_PUBLIC_FRONTEND_URL` | Public frontend URL used to build outbound links, such as the base URL sent with the SMTP test email; when unset, that test email is sent with an empty base URL | No |
 | `NEXTAUTH_URL` | Canonical frontend URL used by NextAuth for callbacks | In containers |

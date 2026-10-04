@@ -14,18 +14,10 @@ const nextConfig = {
   transpilePackages: ['@luke/core'],
   typedRoutes: true,
   experimental: {
-    externalDir: true,
     proxyTimeout: 360_000, // 6 min: portfolio queries take ~3–4 min, plus 2 min of headroom
   },
   turbopack: {
     root: REPOSITORY_ROOT,
-  },
-  webpack: config => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': require('path').resolve(__dirname, 'src'),
-    };
-    return config;
   },
 
   /**

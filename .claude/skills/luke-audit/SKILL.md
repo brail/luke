@@ -89,7 +89,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 **AppConfig system:**
 
 - `process.env.*` in `apps/` or `packages/core/` outside these allowed files:
-  `packages/core/src/runtime/env.ts`, `apps/*/next.config.*`, `apps/*/src/middleware.*`
+  `packages/core/src/runtime/env.ts`, `apps/*/next.config.*`
 - AppConfig keys used in `prisma.appConfig.findUnique/upsert` that are NOT in `AppConfigRegistry`
 - Sensitive keys (`password`, `pass`, `secret`, `token`) read with `decrypt: false`
 

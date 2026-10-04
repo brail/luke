@@ -31,7 +31,7 @@ A session is revoked on the server, by changing what the API compares each token
 
 - The NextAuth `jwt` callback in `apps/web/src/auth.ts` delegates the check to `auth.refreshToken`, which re-reads the user, rejects an inactive or missing user, and re-mints the API token. An `UNAUTHORIZED` answer ends the NextAuth session. The callback caches a successful check for 30 seconds per user.
 - `useSessionVerification` calls `me.get` on mount, every 10 seconds, and on focus or visibility change; `HeartbeatTicker` calls `users.heartbeat` every 60 seconds. Both sign the user out on `UNAUTHORIZED`.
-- There is no Next.js middleware check. `apps/web/src/proxy.ts` is a passthrough, because a middleware check raced the token refresh and forced false logouts (`a0346fd`).
+- There is no Next.js middleware or proxy check, and no proxy entry point: a middleware check raced the token refresh and forced false logouts (`a0346fd`), and the passthrough left behind was later removed.
 
 ### Latency
 

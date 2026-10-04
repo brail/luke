@@ -317,15 +317,6 @@ const WEB_NODE_ONLY_FILES = [
   'apps/web/src/auth.ts',
   'apps/web/src/auth.shared.ts',
   'apps/web/src/lib/authz/**/*.ts',
-  // Next's proxy entry point (`PROXY_FILENAME` in `next/dist/lib/constants.js`).
-  // On Next 16 this is not Edge middleware: `next/dist/build/analysis/
-  // get-page-static-info.js` rejects a route-segment config in it with "Proxy
-  // always runs on Node.js runtime", so its ambient set is Node's. Until this
-  // entry it carried `globals.worker` plus `process` on the Edge premise of the
-  // pre-16 middleware. Proven by bait: `Buffer` here lints clean, `window` is
-  // `no-undef`. Node globals only — it is deliberately not in
-  // `WEB_SERVER_ENTRYPOINT_IMPORTERS`.
-  'apps/web/src/proxy.ts',
   // Node-tier unit tests — `vitest.config.mts`'s own `environment: 'node'`,
   // matched here against its exact `include` glob so the two cannot drift.
   'apps/web/src/lib/**/*.test.ts',
@@ -373,8 +364,7 @@ const NODE_ONLY_FILES = [
  *   it, and it would create one on a CI runner;
  * - `app/api/**\/route.{ts,js}` is Node by default, but a route may export
  *   `runtime = 'edge'` and nothing here would notice. None needs the
- *   entrypoint; enrol a file here, by name, when one genuinely does;
- * - `proxy.ts` is Node (see `WEB_NODE_ONLY_FILES`) and has no such need.
+ *   entrypoint; enrol a file here, by name, when one genuinely does.
  * The transitive case — a client module reaching an enrolled file — is not a
  * specifier question and is not modelled here: Turbopack refuses a Node
  * builtin in the browser layer, so `next build` fails on it, and CI runs that
@@ -577,8 +567,7 @@ export default [
     // Excluded (`ignores`), each already covered by a narrower block above —
     // a file must get its globals from exactly one place:
     // - `NODE_ONLY_FILES`'s web slice (route handlers, `auth.ts`,
-    //   `auth.shared.ts`, `lib/authz/**`, `proxy.ts` — Node on Next 16, see
-    //   its entry there — and the Node-tier unit tests);
+    //   `auth.shared.ts`, `lib/authz/**` and the Node-tier unit tests);
     // - `WEB_BROWSER_ONLY_FILES` (the vitest-browser tier).
     //
     // This block itself remains the acknowledged open edge of P0-02b (Cycle
