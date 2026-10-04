@@ -136,7 +136,7 @@ WHERE sh."sellingSeasonCode" = $1
 
 UNION ALL
 
--- ── Step 1: KIMO-FASHION Basket (ordini non ancora assegnati) ─────────────────
+-- ── Step 1: KIMO-FASHION Basket (orders not yet assigned) ─────────────────
 SELECT
   'BASKET'                                             AS "docType",
   kh."trademarkCode"                                   AS "trademarkCode",

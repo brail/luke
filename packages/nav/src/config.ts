@@ -39,7 +39,7 @@ export function sanitizeCompany(company: string): string {
       `Invalid NAV company name: "${company}". Only letters, digits, spaces and the characters _ - . are allowed.`,
     );
   }
-  // Bracket-escaping: ] → ]] per evitare injection via SQL Server quoted identifiers
+  // Bracket-escaping: ] → ]] to prevent injection through SQL Server quoted identifiers
   return company.replace(/\]/g, ']]');
 }
 

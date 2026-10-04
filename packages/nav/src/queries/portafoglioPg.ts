@@ -35,8 +35,8 @@ export async function queryPortafoglioFromPg(
   const sql = `
 WITH
 
--- CTE 0: attributi articolo per modello — 1 riga per modelItemNo
--- nav_pf_item contiene solo rel=3 (barcode/SKU); modelItemNo punta al codice usato nelle sales line
+-- CTE 0: item attributes per model — 1 row per modelItemNo
+-- nav_pf_item holds only rel=3 (barcode/SKU); modelItemNo points to the code used in the sales lines
 item_attrs AS (
   SELECT DISTINCT ON (i."modelItemNo")
     i."modelItemNo"                    AS no_,
@@ -65,7 +65,7 @@ item_attrs AS (
   ORDER BY i."modelItemNo"
 ),
 
--- CTE 1: landed cost medio per modello (SKU con standard_cost > 0)
+-- CTE 1: average landed cost per model (SKUs with standard_cost > 0)
 landed_cost AS (
   SELECT
     i."modelItemNo"                       AS no_,
@@ -76,7 +76,7 @@ landed_cost AS (
   GROUP BY i."modelItemNo"
 ),
 
--- CTE 2: carry over / SMU / sold out — 1 riga per (modello, colore)
+-- CTE 2: carry over / SMU / sold out — 1 row per (model, color)
 carry_over AS (
   SELECT DISTINCT ON (i."modelItemNo", i."variableCode01")
     i."modelItemNo"                       AS "Model Item No_",
@@ -95,7 +95,7 @@ carry_over AS (
   ORDER BY i."modelItemNo", i."variableCode01"
 ),
 
--- CTE 3: must buy per modello/colore — 1 riga per (modello, colore)
+-- CTE 3: must buy per model/color — 1 row per (model, color)
 must_buy AS (
   SELECT DISTINCT ON (i."modelItemNo", i."variableCode01")
     i."mustBuy"        AS "Must Buy",
@@ -106,7 +106,7 @@ must_buy AS (
   ORDER BY i."modelItemNo", i."variableCode01"
 ),
 
--- CTE 4: righe ordine base
+-- CTE 4: base order lines
 base_lines AS (
   SELECT
     CASE sl."documentType" WHEN 1 THEN 'SALES' WHEN 5 THEN 'RETURNS' ELSE '' END AS "DocumentType",
@@ -377,7 +377,7 @@ base_lines AS (
     ${custFilter}
 ),
 
--- CTE 5: aggregazione + arricchimento cliente/ship-to
+-- CTE 5: aggregation + customer/ship-to enrichment
 agg_lines AS (
   SELECT
     bl."Document No_", bl."Line No_", bl."Customer Order Ref_", bl."Reference",

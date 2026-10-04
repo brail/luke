@@ -529,7 +529,7 @@ export async function syncPortafoglioNow(
 
   if (!seasonCodes.length) {
     log.warn('No active season — portfolio sync skipped');
-    return { stats: [], totalDurationMs: 0, seasonCodes: [], error: 'Nessuna stagione attiva' };
+    return { stats: [], totalDurationMs: 0, seasonCodes: [], error: 'No active season' };
   }
 
   log.info({ seasonCodes }, 'nav-pf sync start');
