@@ -284,7 +284,7 @@ async function registerSeasonCalendarExportRoutes() {
  * Registers health and readiness probe routes:
  *  - GET /livez   — liveness (always 200 if the process is running)
  *  - GET /readyz  — readiness (runs all registered checks, 503 if any fail)
- *  - GET /healthz — legacy health endpoint for Portainer and Docker healthcheck
+ *  - GET /healthz — target of the API container healthcheck in the compose files (Docker, Portainer)
  *  - GET /api/health — detailed health info including uptime and version
  *  - GET /         — root discovery endpoint listing available endpoints
  */
@@ -311,7 +311,7 @@ async function registerHealthRoute() {
     };
   });
 
-  // Legacy route for backward compatibility
+  // Container healthcheck target (docker-compose.*.yml): the API's reported health depends on it
   fastify.get('/healthz', async (_request, _reply) => {
     return {
       status: 'ok',
@@ -664,7 +664,7 @@ const start = async () => {
     await registerCompanyLogoRoutes(); // Company logo upload routes
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
-    await registerSeasonCalendarExportRoutes(); // iCal + CSV export
+    await registerSeasonCalendarExportRoutes(); // iCal, PDF and XLSX export
     await registerSseRoute(fastify, corsAllowedOrigins); // SSE real-time push
     await registerHealthRoute();
 

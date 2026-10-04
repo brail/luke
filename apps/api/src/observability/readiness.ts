@@ -108,8 +108,8 @@ export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
     { name: 'database', check: () => checkDatabase(prisma) },
     { name: 'secrets', check: () => checkSecrets() },
     { name: 'ldap', check: () => checkLdap(prisma) },
-    // Futuro: { name: 'sap', check: () => checkSap(prisma) }
-    // Futuro: { name: 'external-api', check: () => checkExternalApi(prisma) }
+    // Future: { name: 'sap', check: () => checkSap(prisma) }
+    // Future: { name: 'external-api', check: () => checkExternalApi(prisma) }
   ];
 }
 

@@ -1,4 +1,4 @@
-# Luke API
+# apps/api — Luke Backend
 
 <!-- luke-docs:start:overview -->
 Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC procedure behind the dashboard — collection layout, pricing, milestone calendar, NAV sales statistics, user and company management — on the `/trpc` endpoint, plus the plain HTTP health and readiness probes documented below. It also owns the cross-cutting controls: granular `Resource:Action` RBAC, an audit log on every mutation, local/LDAP authentication selected by `auth.strategy` in AppConfig, and the security baseline (Helmet headers, per-IP and per-account rate limiting, HKDF-SHA256 derived secrets, multi-layer `tokenVersion` session revocation).
@@ -198,98 +198,122 @@ verified writes no row. A generic
 success response to a password-reset request does not prove that an email was
 sent; the service deliberately avoids disclosing whether the account exists.
 
-## Security Headers
+## Transactional email
 
-L'API implementa una baseline completa di HTTP security headers tramite Helmet, configurata centralmente in `src/lib/helmet.ts`.
+`src/lib/mailer.ts` sends three kinds of mail with the SMTP settings in
+AppConfig: a password-reset link, an email-verification link and the approval
+notice of a pending LDAP account. Each body is a plain-text template in
+`src/templates/` (`reset.txt`, `verify.txt`, `approved.txt`) plus a branded HTML
+version built in `mailer.ts`.
 
-### Configurazione per Ambiente
+- **Password reset** — for an active account with a LOCAL identity.
+  `auth.requestPasswordReset` answers the same generic message whether or not
+  the address exists. The link `{app.baseUrl}/auth/reset?token=…` works once,
+  for 30 minutes; using it sets the password and signs out every session.
+- **Email verification** — any active account with a real, unverified address
+  can get a link: a signed-in user for their own address
+  (`auth.requestEmailVerification`), an administrator for any user
+  (`auth.requestEmailVerificationAdmin`), and a login refused for an unverified
+  email, with the password just entered (`auth.resendVerification`). The link
+  `{app.baseUrl}/auth/verify?token=…` works once, for 24 hours, and issuing one
+  deletes the account's earlier verification links. A link is also mailed
+  automatically after `me.changeEmail` and `auth.submitPendingEmail`, and on a
+  first LDAP sign-in whose directory entry carries a real address. An
+  administrator creating a user sends nothing.
+- **Tokens** — 32 random bytes, mailed as 64 hex characters; only their SHA-256
+  hash is stored (`UserToken`). A used token is deleted; an expired one is
+  refused but stays in the table.
+- **Required verification** — with `auth.requireEmailVerification` set to
+  `true`, a local login with an unverified address is refused and the login
+  page offers a new link. LDAP logins are not subject to it.
 
-| Header                      | Valore                                                        | Dev | Test | Prod |
-| --------------------------- | ------------------------------------------------------------- | --- | ---- | ---- |
-| `X-Content-Type-Options`    | `nosniff`                                                     | ✅  | ✅   | ✅   |
-| `Referrer-Policy`           | `no-referrer`                                                 | ✅  | ✅   | ✅   |
-| `X-DNS-Prefetch-Control`    | `off`                                                         | ✅  | ✅   | ✅   |
-| `X-Frame-Options`           | `DENY`                                                        | ✅  | ✅   | ✅   |
-| `Content-Security-Policy`   | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | ❌  | ✅   | ✅   |
-| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains`                         | ❌  | ❌   | ✅   |
+SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte
+when `true`, STARTTLS otherwise), `smtp.user`, `smtp.pass` (stored encrypted)
+and `smtp.from`; every link starts with `app.baseUrl`. They are set on the mail
+settings page (`integrations.mail.*`), which can also send a test email — to
+the address given, or to `smtp.from` when none is. Rate limits on these flows
+are in [OPERATIONS.md — Buckets](../../OPERATIONS.md#buckets). Deliverability
+depends on the sending domain's SPF, DKIM and DMARC records, an operator task.
 
-### Policy di Sicurezza
+## User provisioning and administrator protections
 
-- **CSP**: Configurazione minimale per API JSON-only, disabilitata in development
-- **HSTS**: Solo in produzione con 180 giorni di durata
-- **Frame Protection**: Blocco completo embedding in iframe
-- **Content Type**: Prevenzione MIME sniffing
-- **Referrer**: Nessuna informazione referrer esposta
-- **DNS Prefetch**: Disabilitato per prevenire leak DNS
+An LDAP login creates the Luke user on first sign-in and, on every later one,
+updates only `firstName` and `lastName` from the directory
+(`src/lib/ldapAuth.ts`); the email and the role are never overwritten after
+creation. For an LDAP account `users.update` refuses changes to the fields the
+directory owns — username, first and last name, password (`getLockedFields` in
+`src/services/users.service.ts`). There is no separate sync job.
 
-### Test di Verifica
+`users.*` refuses, for the caller's own account: deactivating it (update or
+soft delete), changing its role, setting its password through the admin path
+(`me.changePassword` is the route, and it asks for the current password) and
+deleting it permanently. Demoting, deactivating or deleting an administrator is
+refused when it would leave no active administrator able to reach user
+management (`assertNotLastAdminWithSettingsAccess` in `src/lib/lastAdminGuard.ts`,
+serialized by an advisory lock).
 
-I security headers sono verificati automaticamente tramite test end-to-end:
+## Security headers
+
+`src/lib/helmet.ts` is the single Helmet configuration; `server.ts` applies it
+with the environment name derived from `NODE_ENV` (`development`, `production`,
+anything else `test`).
+
+| Header | Value | Development | Test | Production |
+| --- | --- | --- | --- | --- |
+| `X-Content-Type-Options` | `nosniff` | ✅ | ✅ | ✅ |
+| `Referrer-Policy` | `no-referrer` | ✅ | ✅ | ✅ |
+| `X-DNS-Prefetch-Control` | `off` | ✅ | ✅ | ✅ |
+| `X-Frame-Options` | `DENY` | ✅ | ✅ | ✅ |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | ❌ | ✅ | ✅ |
+| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains` (180 days) | ❌ | ❌ | ✅ |
+
+The CSP is the minimal one for a JSON-only API. `test/security.headers.spec.ts`
+pins the test-environment set — the base headers, the CSP, no HSTS — and a
+snapshot of the configuration. It builds its own Fastify instance with
+`buildHelmetConfig('test')` (`test/helpers.ts`), so it proves that configuration,
+not the development or production one, and not its wiring in `server.ts`:
 
 ```bash
-pnpm -F @luke/api test security.headers.spec.ts
+pnpm --filter @luke/api test security.headers.spec.ts
 ```
 
-I test verificano:
-
-- Presenza di tutti gli header base
-- Configurazione CSP corretta per ambiente
-- Assenza HSTS in test/development
-- Snapshot invariabile della configurazione
-
-## Sviluppo
+## Running the API locally
 
 ```bash
-# Installazione dipendenze
-pnpm install
-
-# Avvio in development
-pnpm -F @luke/api dev
-
-# Test
-pnpm -F @luke/api test
-
-# Build
-pnpm -F @luke/api build
+pnpm --filter @luke/api dev     # tsx watch, reads apps/api/.env
+pnpm --filter @luke/api test    # unit tests
+pnpm --filter @luke/api build   # dist/ and dist-scripts/ (never while pnpm dev runs)
 ```
 
-## Health & Readiness Checks
+**Set `NODE_ENV=development` in `apps/api/.env` yourself.** The `dev` script is
+`tsx watch --env-file=.env`; nothing sets the variable for you, `apps/api/.env`
+is gitignored, and `isDevelopment()` compares with `'development'` exactly. Left
+unset, the local API runs as neither development nor production: CSP on, `info`
+logs without pino-pretty, and the global rate limit at 100 requests per minute
+with no loopback exemption. The symptom is not a clear error but sporadic 429s,
+which the browser shows as an unreachable backend and the end-to-end suite as
+failed logins.
 
-L'API implementa un sistema completo di health checks per Kubernetes e monitoring.
+## Health and readiness
 
-### Endpoints Disponibili
+| Endpoint | Answers | Used by |
+| --- | --- | --- |
+| `/healthz` | `200` with `{ status, timestamp }`; checks nothing | the API container healthcheck in `docker-compose.prod.yml` and `docker-compose.rc.yml`, the health Docker and Portainer report — keep it |
+| `/livez` | `200` while the process runs | liveness, for an orchestrator that wants one |
+| `/readyz` | `200` when every readiness check passes, `503` otherwise | readiness |
+| `/api/health` | `200` with uptime, version and environment | manual checks |
+| `/` | discovery payload listing the endpoints | — |
 
-| Endpoint      | Scopo           | Status Code | Descrizione                                              |
-| ------------- | --------------- | ----------- | -------------------------------------------------------- |
-| `/livez`      | Liveness Probe  | 200         | Verifica che il processo sia attivo                      |
-| `/readyz`     | Readiness Probe | 200/503     | Verifica che il sistema sia pronto per servire richieste |
-| `/healthz`    | Legacy Health   | 200         | Endpoint di compatibilità                                |
-| `/api/health` | Detailed Health | 200         | Status dettagliato con uptime e versione                 |
-
-### Comportamento Readiness (`/readyz`)
-
-Il sistema esegue verifiche modulari in parallelo:
-
-- **Database**: Connessione e query di test
-- **Secrets**: Verifica derivazione segreti JWT
-- **LDAP**: Connessione LDAP (se abilitato)
-
-**Status Codes:**
-
-- `200`: Tutti i check passano → sistema pronto
-- `503`: Almeno un check fallisce → sistema non pronto
-
-**Payload di Risposta:**
+`/readyz` runs its checks in parallel (`src/observability/readiness.ts`):
+`database` (a `SELECT 1`), `secrets` (derives `api.jwt`) and `ldap` (a
+connection when LDAP is enabled, skipped otherwise). The response carries each
+check's status:
 
 ```json
 {
-  "status": "ready|unready",
-  "timestamp": "2024-01-01T00:00:00.000Z",
-  "checks": {
-    "database": "ok",
-    "secrets": "ok",
-    "ldap": "ok"
-  }
+  "status": "ready",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "checks": { "database": "ok", "secrets": "ok", "ldap": "ok" }
 }
 ```
 
@@ -298,15 +322,17 @@ a missing or replaced master key: `getMasterKey` creates a new key when the file
 is absent, and the probe derives `api.jwt` without being able to tell one key
 from another. See [ADR-020](../../docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
-### Bootstrap Fail-Fast
+### Bootstrap fail-fast
 
-Durante l'avvio, il server esegue verifiche critiche che devono passare:
+The process exits with code 1 when any of these fails at startup:
 
-1. **Database Connection**: `prisma.$connect()`
-2. **Master Key**: `validateMasterKey()`
-3. **Secret Derivation**: `deriveSecret('api.jwt')`
-
-Se qualsiasi verifica fallisce, il processo termina con `process.exit(1)` per garantire che il server non si avvii in uno stato inconsistente.
+1. `createTrustProxy` while the Fastify instance is built — in production,
+   `LUKE_TRUSTED_PROXY_CIDR` missing or invalid;
+2. `assertEnvPolicy()` — in production, a forbidden variable in the environment
+   (see the environment table below);
+3. `checkBootstrapDependencies` — `prisma.$connect()`, `validateMasterKey()` and
+   `deriveSecret('api.jwt')`;
+4. `validateCriticalConfig` — a key in `CRITICAL_CONFIG_KEYS` missing or invalid.
 
 **Known limit — this is not a guarantee that the master key is the expected one.**
 `validateMasterKey()` only checks that the key file is 32 bytes, and when the
@@ -317,31 +343,26 @@ decryption failures at the point of use, or at boot only when a key listed in
 reads those through the decrypting reader. See
 [ADR-020](../../docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
-### Configurazione Kubernetes
+## Raw HTTP routes
 
-```yaml
-livenessProbe:
-  httpGet:
-    path: /livez
-    port: 3001
-  initialDelaySeconds: 10
-  periodSeconds: 10
+Besides `/trpc` and the probes, the API registers plain Fastify routes for
+streamed bodies. Every browser-facing one lives under `/upload/` (POST) or
+`/download/` (GET), the two prefixes the web forwards wholesale — except
+`/api/sse`, which the web forwards by name. `test/rawRouteProxy.spec.ts` fails
+the build on a route registered outside them that is not on its short list of
+exempt paths (the probes, `/`, `/api/sse`, `/uploads/:bucket/*`). They use three
+authentication models:
 
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: 3001
-  initialDelaySeconds: 5
-  periodSeconds: 5
-  failureThreshold: 3
-```
+| Route | Authentication |
+| --- | --- |
+| `POST /upload/brand-logo/temp`, `/upload/brand-logo/:brandId`, `/upload/company-logo`, `/upload/collection-row-picture/temp`, `/upload/collection-row-picture/:rowId`, `/upload/specsheet-image/:specsheetId`, `/upload/backup-import` | Bearer API token plus the route's permission (`requireSessionWithPermission` in `src/lib/auth.ts`) |
+| `GET /download/season-calendar/{ical,pdf,xlsx}` | Bearer API token (`authenticateRequest`), then the caller's brand and function scope |
+| `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header |
+| `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, consumed when the stream opens |
 
-## Endpoints
-
-- **Health**: `/api/health` - Status dell'API
-- **Liveness**: `/livez` - Kubernetes liveness probe
-- **Readiness**: `/readyz` - Kubernetes readiness probe
-- **tRPC**: `/trpc` - Endpoint principale tRPC
+`GET /uploads/:bucket/*` (`src/plugins/storageUpload.ts`) checks no session: it
+is reached only by the web's authenticated `/api/uploads/[...path]` proxy over
+the internal network.
 
 ## Configuration
 
@@ -353,18 +374,18 @@ values in the environment table below, and no configuration file is read. Ration
 
 ### Hardening & Shutdown semantics
 
-- Error handling globale: Fastify `setErrorHandler` e hook `onError` loggano in modo strutturato con `traceId` da header `x-luke-trace-id`. In produzione i messaggi sono generici (niente stack in response).
+- Global error handling: Fastify's `setErrorHandler` and the `onError` hook log in a structured way, with the `traceId` from the `x-luke-trace-id` header. In production the messages are generic, and no stack reaches a response.
 - tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs the path, the code, the original message and the cause's message, unredacted.
-- Process guards: `SIGTERM`/`SIGINT` eseguono graceful shutdown con timeout; `uncaughtException`/`unhandledRejection` loggano a livello `fatal`, tentano `app.close()` best-effort, poi `process.exit(1)`.
-- Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi.
+- Process guards: `SIGTERM`/`SIGINT` run a graceful shutdown with a timeout; `uncaughtException`/`unhandledRejection` log at `fatal`, attempt `app.close()` best-effort, then `process.exit(1)`.
+- Timeouts: `requestTimeout` is 6 minutes, aligned with the Next.js proxy timeout and the NAV pool, and `connectionTimeout` is disabled. The LDAP client relies on its own operation timeouts; it does not abort a request in flight.
 
-## Router tRPC
+## tRPC Routers
 
 <!-- luke-docs:start:trpc-routers -->
 | Namespace | Description |
 |-----------|-------------|
 | `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
-| `auth.*` | Login, API token refresh, password reset, email verification, LDAP pending-approval email flow |
+| `auth.*` | Login, API token refresh, password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
 | `brand.*` | Brand management (CRUD, soft delete, logo upload) |
 | `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
 | `collectionCatalog.*` | Collection catalog items |
@@ -384,7 +405,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
 | `maintenance.backup.*` | Backup and restore of the application database |
 | `maintenance.mode.*` | Maintenance mode (write lock, user-facing banner) |
-| `me.*` | Current user profile, active sessions, session revocation |
+| `me.*` | Current user: profile, self-service email change, password change, time zone, login history, session revocation, daily greeting |
 | `merchandisingPlan.*` | Merchandising plan — specsheets, components, images |
 | `notifications.*` | User notifications and notification preferences |
 | `phase.*` | Unified Phase catalog (row production status + calendar) |
@@ -403,16 +424,16 @@ values in the environment table below, and no configuration file is read. Ration
 | `vendors.*` | Vendor management (CRUD, soft delete, closure periods) |
 <!-- luke-docs:end:trpc-routers -->
 
-## Packages interni utilizzati
+## Internal Packages
 
 <!-- luke-docs:start:internal-deps -->
-- `@luke/core` — Zod schemas, RBAC (`requirePermission`), `AppConfigRegistry`, `getConfigValue`, URL and storage utilities, server-only crypto (`@luke/core/server`)
+- `@luke/core` — Zod schemas, RBAC permissions and section access (`hasPermission`; the `requirePermission` middleware itself lives in `src/lib/permissions.ts`), `AppConfigRegistry` and `APP_CONFIG_DEFAULTS`, URL and storage utilities, server-only crypto (`@luke/core/server`)
 - `@luke/db` — Prisma schema, migrations, generated client and `createPrismaClient`; every Prisma type is imported from here, never from `@prisma/client`
 - `@luke/nav` — NAV sync layer: `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`, plus the dedicated Portafoglio and KIMO sync/query entry points (`syncPortafoglioNow`, `syncKimoNow`, `queryPortafoglioFromPg`, `queryKimoFromPg`)
 - `@luke/calendar` — Google Calendar sync and iCal feed generation
 <!-- luke-docs:end:internal-deps -->
 
-## Variabili d'ambiente
+## Environment Variables
 
 <!-- luke-docs:start:env -->
 | Variable | Type | Default | Description |
@@ -420,12 +441,12 @@ values in the environment table below, and no configuration file is read. Ration
 | `DATABASE_URL` | connection URL | — | PostgreSQL connection string. Required. |
 | `PORT` | number | `3001` | Server listen port |
 | `HOST` | address | `0.0.0.0` | Server bind address |
-| `NODE_ENV` | enum | `development` | Runtime mode (`development` / `production` / `test`) |
+| `NODE_ENV` | enum | unset | Runtime mode: `development` or `production`. Any other value, or none, runs as neither — see [Running the API locally](#running-the-api-locally) |
 | `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Origins CORS accepts in production |
 | `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |
 | `OTEL_ENABLED` | boolean | `true` | Set to `false` to disable tracing even with an endpoint configured (`src/instrument.ts`) |
-| `LOG_LEVEL` | enum | `info` | Pino log level (`trace` / `debug` / `info` / `warn` / `error`) |
+| `LOG_LEVEL` | enum | `info` | Pino level of the tracing bootstrap logger (`src/instrument.ts`) and the LDAP logger (`src/lib/ldapAuth.ts`) only; the server logger is `warn` in production and `info` otherwise |
 | `APP_VERSION` | string | absent | Release identity injected at build time as a Docker `ARG`/`ENV` from the git tag in CI. Not a secret, and never read from AppConfig so a running image cannot disagree with itself about which release it is. Absent means "no release identity"; display surfaces fall back to `dev` (`src/lib/appVersion.ts`) |
 
 At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
@@ -514,16 +535,38 @@ migration has already failed, correct the rows, mark it rolled back with `prisma
 --rolled-back 20260929224334_calendar_dates_in_supported_years` (from `packages/db/`, against that
 database) and deploy again.
 
+### Operational scripts
+
+The `db:*` scripts in `scripts/` run in development through pnpm, with their
+arguments after `--`; all but `db:nav-reset` read `apps/api/.env`, and that
+one takes the environment of the shell. The image compiles them to
+`dist-scripts/`, so in the API container — the database publishes no port — the
+same script runs as `node dist-scripts/scripts/<file>.js`.
+
+| pnpm script | File | Purpose |
+|---|---|---|
+| `db:check-config-rows` | `check-config-rows.ts` | Read-only report: AppConfig rows the registry no longer declares, and whether `app.baseUrl` is stored |
+| `db:grant-local-access` | `grant-local-access.ts` | Single-use reset link for an administrator — see [Recovering administrator access](#recovering-administrator-access) |
+| `db:repair-auto-revision-photos` | `repair-auto-revision-photos.ts` | One-shot repair of automatic-revision photos; dry run first, then `--apply` |
+| `db:fix-allday-dates` | `fix-allday-event-dates.ts` | Moves all-day events to UTC midnight — see [All-day event dates](#all-day-event-dates) |
+| `db:migrate-storage` | `migrate-storage.ts` | Copies every file from one storage provider to another, keeping bucket and key; dry run unless `--apply` |
+| `db:backfill-asset-derivatives` | `backfill-asset-derivatives.ts` | Generates the thumb/card/export derivatives of image masters uploaded before the asset pipeline |
+| `db:complete-stranded-rows` | `complete-stranded-rows.ts` | Closes collection rows left open on a deactivated phase |
+| `db:harden-google-acl` | `harden-google-calendar-acl.ts` | Reapplies the per-function reader list and the read-only domain rule to every provisioned Google calendar |
+| `db:migrate-rbac-section-key` | `migrate-rbac-controllo-to-control.ts` | Renames the stored section key `product.controllo` to `product.control` |
+| `db:bootstrap` | `dev-bootstrap.ts` | Development only: resets the database, then seeds the administrator and the base configuration |
+| `db:nav-reset` | `nav-reset.ts` | Development only: restores the "NAV connection just configured" state |
+
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->
-NAV sync runs through `packages/nav`, which talks to SQL Server directly via `mssql`. Its configuration (server, database, company, credentials) is stored encrypted in AppConfig — no environment variable, and `packages/nav` never imports from `apps/api`: the config arrives injected as a `GetConfigFn`.
+NAV sync runs through `packages/nav`, which talks to SQL Server directly via `mssql`. Its configuration lives in AppConfig under `integrations.nav.*`, with the password stored encrypted — no environment variable, and `packages/nav` never imports from `apps/api`: the config arrives injected as a `GetConfigFn`.
 
 The pattern is a **one-way NAV → Luke sync**. Each entity has a `nav_*` replica table faithful to NAV and an enriched local table (`vendors`, `brands`, `seasons`). The sync never writes back to NAV, never touches `isActive`, and never reactivates an entity that was disabled by hand.
 
 Synchronized entities: **Vendor** (watermark differential), **Brand** (full sync), **Season** (full sync), **order portfolio** (`nav_pf_*` replica behind sales statistics), **KIMO** (`nav_kimo_*` replica behind the sales+returns report). Each entity is synced inside its own try/catch, so one failure does not block the others.
 
-Triggers: manually from `/settings/nav-sync` in the frontend (Vendor/Brand/Season) or via `sales.statistics.kimo.triggerSync` (KIMO), and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
+Triggers: manually from `/settings/nav-sync` in the frontend — `integrations.nav.run` for Vendor/Brand/Season, `sales.statistics.portafoglio.triggerSync` for the order portfolio, `sales.statistics.kimo.triggerSync` for KIMO — and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
 
 Table naming, NAV-side details and the decisions behind them: [`docs/nav-integration.md`](../../docs/nav-integration.md).
 <!-- luke-docs:end:nav -->
