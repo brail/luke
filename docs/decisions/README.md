@@ -25,7 +25,7 @@
 | [020](020-master-key-scope-and-rotation-limits.md) | Master Key Scope and Rotation Limits | Accepted |
 | [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Superseded by [025](025-section-access-resolution-derived-parents.md) |
 | [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Accepted |
-| [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Accepted |
+| [023](023-sensitive-data-outbound-boundary.md) | Outbound Boundary for Sensitive Data | Superseded by [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) |
 | [024](024-shared-schemas-and-message-audience.md) | Shared Validation Schemas and Message Audience | Accepted |
 | [025](025-section-access-resolution-derived-parents.md) | Section Access Resolution: Derived Parents over a Static Base | Superseded by [027](027-section-access-leaf-overrides-and-validated-defaults.md) |
 | [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Superseded by [029](029-resource-action-permissions-one-builder-logged-refusals.md) |
@@ -34,6 +34,7 @@
 | [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Accepted |
 | [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Accepted |
 | [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) | Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets | Accepted |
+| [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Accepted |
 
 _Last updated: 2026-10-05_
 <!-- luke-docs:end:adr-index -->

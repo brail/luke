@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [032 — Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md)
 
 ## Context
 
