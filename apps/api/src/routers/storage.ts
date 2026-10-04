@@ -14,6 +14,7 @@ import { z } from 'zod';
 
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
+import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
@@ -322,10 +323,13 @@ export const storageRouter = router({
           { key: 'storage.local.enableProxy', value: String(input.enableProxy) },
         ]);
       } else {
-        // A blank secret keeps the stored one, since the page is never sent it; with none stored,
-        // saving would switch to an S3 provider that cannot connect.
-        const secretKey = input.secretKey || null;
-        if (!secretKey && !(await getConfig(ctx.prisma, 'storage.s3.secretKey', false))) {
+        // A blank secret keeps the stored one, which the page is never sent. It is read here and
+        // written back in the same batch, so the write does not rest on a check that could go stale
+        // before it (CLAUDE.md rule 3). With none stored, saving would switch to an S3 provider that
+        // cannot connect.
+        const secretKey =
+          input.secretKey || (await getConfig(ctx.prisma, 'storage.s3.secretKey', true));
+        if (!secretKey) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
         }
         await saveConfigs(ctx.prisma, [
@@ -334,7 +338,7 @@ export const storageRouter = router({
           { key: 'storage.s3.port', value: input.port.toString() },
           { key: 'storage.s3.useSSL', value: String(input.useSSL) },
           { key: 'storage.s3.accessKey', value: input.accessKey, encrypt: true },
-          ...(secretKey ? [{ key: 'storage.s3.secretKey' as const, value: secretKey, encrypt: true }] : []),
+          { key: 'storage.s3.secretKey', value: secretKey, encrypt: true },
           { key: 'storage.s3.region', value: input.region },
           // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
           // two read paths in this router all treat a falsy value as "derive the URL from the
@@ -345,6 +349,16 @@ export const storageRouter = router({
           { key: 'storage.s3.presignedGetTtl', value: input.presignedGetTtl.toString() },
         ]);
       }
+
+      await logAudit(ctx, {
+        action: 'CONFIG_STORAGE_UPDATE',
+        targetType: 'Config',
+        result: 'SUCCESS',
+        metadata: {
+          type: input.type,
+          secretKeyUpdated: input.type === 's3' ? !!input.secretKey : undefined,
+        },
+      });
 
       resetStorageProvider();
       return { success: true };

@@ -5,8 +5,9 @@
  * refused instead of saving an S3 configuration that cannot connect.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import * as configManager from '../src/lib/configManager';
 import { getConfig } from '../src/lib/configManager';
 
 import { setupTestDb, createCallerAs } from './helpers';
@@ -32,6 +33,8 @@ describe('storage S3 secret key', () => {
     vi.spyOn(await import('../src/storage'), 'resetStorageProvider').mockImplementation(() => undefined);
   });
 
+  afterEach(() => vi.restoreAllMocks());
+
   it('reports whether a secret is stored, never the secret', async () => {
     const caller = await createCallerAs('admin');
     expect((await caller.storage.getConfig()).s3).toMatchObject({ hasSecretKey: false });
@@ -46,6 +49,7 @@ describe('storage S3 secret key', () => {
 
   it.each([
     ['left blank', { secretKey: '' }],
+    ['only spaces', { secretKey: '   ' }],
     ['left out', {}],
   ])('keeps the stored secret when the field is %s', async (_, secret) => {
     const caller = await createCallerAs('admin');
@@ -55,6 +59,36 @@ describe('storage S3 secret key', () => {
 
     expect(await getConfig(testPrisma, 'storage.s3.secretKey', true)).toBe('sk-stored');
     expect((await caller.storage.getConfig()).s3.region).toBe('us');
+  });
+
+  it('writes a kept secret back in the same batch, so no check can go stale before the write', async () => {
+    const caller = await createCallerAs('admin');
+    await caller.storage.saveConfig({ ...S3, secretKey: 'sk-stored' });
+    const batches = vi.spyOn(configManager, 'saveConfigs');
+
+    await caller.storage.saveConfig({ ...S3, secretKey: '' });
+
+    expect(batches.mock.calls[0]![1]).toContainEqual({
+      key: 'storage.s3.secretKey',
+      value: 'sk-stored',
+      encrypt: true,
+    });
+  });
+
+  it('audits every save, saying whether the secret changed and never what it is', async () => {
+    const caller = await createCallerAs('admin');
+    await caller.storage.saveConfig({ ...S3, secretKey: 'sk-stored' });
+    await caller.storage.saveConfig({ ...S3, secretKey: '' });
+
+    const rows = await testPrisma.auditLog.findMany({
+      where: { action: 'CONFIG_STORAGE_UPDATE' },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(rows.map(r => r.metadata)).toEqual([
+      { type: 's3', secretKeyUpdated: true },
+      { type: 's3', secretKeyUpdated: false },
+    ]);
+    expect(JSON.stringify(rows)).not.toContain('sk-stored');
   });
 
   it('replaces the stored secret with a new one', async () => {

@@ -259,10 +259,11 @@ const SAFE_KEY_LIST = [
   'autoSyncEnabled',
   'calendarSyncEnabled',
   'intervalMinutes',
-  // Both of these shadow the sensitive-key blacklist below and are allowlisted on purpose:
-  // `passwordUpdated` is a boolean "was it rotated", `authMode` is a strategy name
-  // ('oauth' | 'service_account'). Neither ever carries the secret itself.
+  // These shadow the sensitive-key blacklist below and are allowlisted on purpose:
+  // `passwordUpdated` and `secretKeyUpdated` are booleans "was it rotated", `authMode` is a
+  // strategy name ('oauth' | 'service_account'). None ever carries the secret itself.
   'passwordUpdated',
+  'secretKeyUpdated',
   // `db:grant-local-access`: how a recovery link was issued (no secret in any of them).
   'identityCreated',
   'readinessBypassed',

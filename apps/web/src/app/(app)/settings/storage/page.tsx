@@ -57,6 +57,16 @@ export default function StoragePage() {
     onErrorMessage: 'Errore durante il salvataggio',
   });
 
+  // The page is never sent the secret, so a blank field means "keep it" — and with none stored
+  // there is nothing to keep: say so on the field instead of after a round trip.
+  const submit = (data: StorageForm) => {
+    if (data.type === 's3' && !data.secretKey?.trim() && !config?.s3.hasSecretKey) {
+      form.setError('secretKey', { message: 'Secret key richiesta' });
+      return;
+    }
+    saveConfig(data);
+  };
+
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; presignedUrlBase?: string; publicBaseUrlConfigured?: boolean } | null>(null);
   const testMutation = trpc.storage.testS3Connection.useMutation();
   const handleTestConnection = async () => {
@@ -122,7 +132,7 @@ export default function StoragePage() {
 
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit(saveConfig)}
+          onSubmit={form.handleSubmit(submit)}
           className="space-y-6"
         >
 
@@ -353,7 +363,7 @@ export default function StoragePage() {
                     name="secretKey"
                     render={({ field }) => (
                       <SensitiveField
-                        label="Secret Key"
+                        label={<>Secret Key {!config?.s3.hasSecretKey && <span className="text-red-500">*</span>}</>}
                         hasValue={config?.s3.hasSecretKey ?? false}
                         description={
                           config?.s3.hasSecretKey
