@@ -47,13 +47,12 @@ trap - EXIT
 
 # The development DB is aligned with `db push`, not `migrate deploy`: its history in
 # `_prisma_migrations` does not reflect the versioned migrations (see the troubleshooting section
-# in docs/prisma-migration-workflow.md). `.env` has to be loaded by hand — Prisma 7 no longer does.
+# in docs/prisma-migration-workflow.md). `prisma:push` loads `.env` itself — Prisma 7 no longer does.
 #
 # The `.env` is `apps/api`'s: `DATABASE_URL` is infrastructure bootstrap for the
 # deployment (Env Policy in CLAUDE.md), not a configuration file of this
 # package. There is one database, so one place where it is declared.
 echo "🚀 Applying the schema to the development database…"
-set -a && . ../../apps/api/.env && set +a
-npx prisma db push
+pnpm prisma:push
 
 echo "✅ Done. Commit the file in prisma/migrations/ together with the modified .prisma file(s)."

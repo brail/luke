@@ -70,7 +70,7 @@ function requireTestDatabaseUrl(): string {
   const url = getTestDatabaseUrl();
   if (!url) {
     throw new Error(
-      'TEST_DATABASE_URL is not set. Start the test database with `pnpm test:db:up`.'
+      'TEST_DATABASE_URL is not set. From the repository root, `pnpm test:integration:local` starts the test database and sets it.'
     );
   }
   return url;

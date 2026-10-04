@@ -102,7 +102,6 @@ pnpm dev
 | `pnpm build` | Full build of every workspace |
 | `pnpm lint` | Lints every TypeScript file |
 | `pnpm typecheck` | Type checks every workspace |
-| `pnpm format` | Formats the code with Prettier |
 | `pnpm db:seed` | Seeds the database (`apps/api/prisma/seed.ts`) |
 | `pnpm test` | Runs every workspace's tests (via Turbo) |
 | `pnpm test:integration:local` | Brings the test database up and runs the integration suite |
@@ -384,7 +383,7 @@ Il sistema include protezioni robuste per la gestione degli utenti:
 
 - **TypeScript**: Strict mode abilitato
 - **Validation**: Zod per runtime type checking
-- **Linting**: ESLint (blocking in `.husky/pre-push` and CI); Prettier via `pnpm format`
+- **Linting**: ESLint (blocking in `.husky/pre-push` and CI); `.prettierrc` serves editor formatting only
 - **Security**: helmet, cors, rate limiting
 - **Logging**: Pino per structured logging
 - **Monitoring**: Audit log per compliance

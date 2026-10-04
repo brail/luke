@@ -19,12 +19,9 @@
     "dev": "tsc --watch --preserveWatchOutput",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "prisma:generate": "prisma generate",
     "prisma:studio": "set -a && . ../../apps/api/.env && set +a && prisma studio",
     "prisma:push": "set -a && . ../../apps/api/.env && set +a && prisma db push",
-    "db:migrate:new": "bash scripts/new-migration.sh",
-    "db:migrate:deploy": "set -a && . ../../apps/api/.env && set +a && prisma migrate deploy",
-    "db:reset": "set -a && . ../../apps/api/.env && set +a && prisma migrate reset --force"
+    "db:migrate:new": "bash scripts/new-migration.sh"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

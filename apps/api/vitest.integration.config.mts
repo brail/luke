@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Integration project: requires a dedicated PostgreSQL in `TEST_DATABASE_URL`.
- * Local: `pnpm test:db:up` then `pnpm test:integration`.
+ * Local: `pnpm test:integration:local` from the repository root.
  * CI: service container in the `test` job.
  *
  * Files run in sequence (`fileParallelism: false`) because they share the

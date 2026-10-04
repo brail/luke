@@ -69,8 +69,7 @@ written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
   which is not. Ordinary backfills stay `db:*` scripts in `@luke/api`.
 
 Check a hand-written migration from `packages/db/` on a throwaway database, as the CI
-`migrations` job does — never with `db:migrate:deploy`, which loads `apps/api/.env` and targets
-the development database:
+`migrations` job does — never against the development database that `apps/api/.env` names:
 
 ```bash
 docker run --rm -d --name luke-pg-migrate -p 5433:5432 \
@@ -90,8 +89,7 @@ luke -v ON_ERROR_STOP=1 < prisma/migrations/<timestamp>_<name>/migration.sql`) �
 nothing, so a data rewrite that is not safe to run twice must not be applied again by hand. The
 integration test database gets it on its own when it is created (`ensureTestSchema` runs `migrate
 deploy` only while it has no `_prisma_migrations` table), so the persistent local one, on port 5434,
-needs it by hand — from `packages/db/`, never through `db:migrate:deploy`, which targets the
-development database:
+needs it by hand — from `packages/db/`, with its `DATABASE_URL` spelled out:
 `DATABASE_URL=postgresql://luke:luke_test@localhost:5434/luke_test pnpm exec prisma migrate deploy`.
 
 ## Production

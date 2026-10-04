@@ -23,7 +23,6 @@
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "backup:open": "node scripts/lukebak-open.mjs",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:seed": "pnpm --filter @luke/api db:seed",
     "check:platform": "tsx tools/scripts/check-platform-integrity.ts",
     "check:tsconfig": "tsx tools/scripts/check-tsconfig-integrity.ts",
