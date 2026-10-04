@@ -2,11 +2,11 @@
 
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 import { formatDate } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
-import { useToast } from '../../../../../hooks/useToast';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -32,7 +32,6 @@ interface Props {
  * row is skipping — the list feeds the warning and, if the user proceeds, `force`.
  */
 export function RowCompletionToggle({ rowId, completedAt, canUpdate, onChanged }: Props) {
-  const toast = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const isCompleted = completedAt !== null;
 

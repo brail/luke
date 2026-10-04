@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
 import { navConfigSchema, type NavConfigInput } from '@luke/core';
 
@@ -25,12 +26,10 @@ import {
 import { Input } from '../../../../components/ui/input';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function NavSettingsPage() {
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
   const [hasPassword, setHasPassword] = useState(false);

@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import {
   CollectionAlertThresholdsSchema,
@@ -33,7 +34,6 @@ import {
   TableRow,
 } from '../../../../components/ui/table';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { bandBadgeStyle, isHexColor } from '../../../../lib/alertBandStyle';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
@@ -399,7 +399,6 @@ function OutcomeBandsTable({
 }
 
 export default function CollectionControlPage() {
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 

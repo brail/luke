@@ -2,6 +2,7 @@
 
 import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
@@ -31,7 +32,6 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
-import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -72,7 +72,6 @@ const ENTITY_TABS: { id: EntityId; label: string }[] = [
 // ── Portafoglio Vendite tab ────────────────────────────────────────────────────
 
 function PortafoglioSyncTab() {
-  const toast = useToast();
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
@@ -237,7 +236,6 @@ function PortafoglioSyncTab() {
 // ── Kimo Sync tab ─────────────────────────────────────────────────────────────
 
 function KimoSyncTab() {
-  const toast = useToast();
 
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
@@ -436,7 +434,6 @@ function NavSyncTab({
   entity: EntityId;
   entityLabel: string;
 }) {
-  const toast = useToast();
 
   // ── Filter query ───────────────────────────────────────────────────────────
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(

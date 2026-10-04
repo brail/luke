@@ -26,9 +26,9 @@ interface ToastLike {
  * - React Strict Mode (dev only) mounts, unmounts and remounts every component once, running this
  *   effect twice on the same first render — without the guard, a present `code` would be
  *   exchanged twice and the "Autorizzazione negata" toast would fire twice;
- * - `exchangeMutation` and `toast` are both new objects on every render they come from (a
- *   `useMutation()` result changes identity on every `isPending`/`data` transition; `toast` is
- *   `useToast()`'s unmemoized return value) — with a complete dependency array, that alone would
+ * - `exchangeMutation` is a new object on every render it comes from (a `useMutation()` result
+ *   changes identity on every `isPending`/`data` transition), and nothing makes a caller's `toast`
+ *   stable either — with a complete dependency array, that alone would
  *   re-run this effect right as the mutation settles, and again on whatever render follows it,
  *   for reasons that have nothing to do with a new `code` having arrived.
  * Both facts would otherwise force excluding those dependencies outright (and losing real

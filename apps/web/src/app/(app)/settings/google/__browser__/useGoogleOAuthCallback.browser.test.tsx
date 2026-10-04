@@ -51,7 +51,7 @@ function freshMutation(isPending: boolean, mutate: (input: { code: string; redir
 }
 
 function freshToast(error: (message: string) => void) {
-  // A NEW object every call — matches useToast()'s unmemoized return value.
+  // A NEW object every call: the hook must not rely on the caller passing a stable `toast`.
   return { error };
 }
 

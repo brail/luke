@@ -5,6 +5,7 @@ import { CheckCircle, FileJson, LogOut, Unplug } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
+import { toast } from 'sonner';
 
 import { googleWorkspaceConfigSchema, type GoogleWorkspaceConfig } from '@luke/core';
 
@@ -35,7 +36,6 @@ import {
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 
 import { useGoogleOAuthCallback } from './useGoogleOAuthCallback';
@@ -49,7 +49,6 @@ interface ServiceAccountJson {
 }
 
 export default function GoogleWorkspacePage() {
-  const toast = useToast();
   const utils = trpc.useUtils();
   const { can } = usePermission();
   const canUpdate = can('config:update');

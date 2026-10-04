@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { ldapConfigSchema, ldapSearchTestSchema, type LdapConfigInput } from '@luke/core';
@@ -42,14 +43,12 @@ import {
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function LdapSettingsPage() {
   const { data: _session, status } = useSession();
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
