@@ -38,8 +38,8 @@ preserved evidence.
 
 | Resource | Purpose |
 |----------|---------|
-| [Brand management architecture audit](audit-report-brand-management.md) | Historical audit and remediation record for Brand management. |
+| Brand management architecture audit (retired) | Italian audit and remediation record for Brand management (2025-01-26), retired from the tree under ADR-030. Last path `docs/audit-report-brand-management.md`; read it with `git show fbf7e61a:docs/audit-report-brand-management.md`. |
 | [Agent engineering and platform governance audit](LUKE_AGENT_PLATFORM_GOVERNANCE_AUDIT_2026-08-30_v3.md) | Frozen assessment of agent, platform, skill, and control-plane governance. |
 | [Monorepo audit and closure appendices](LUKE_MONOREPO_AUDIT_2026-08-30.md) | Append-only evidence ledger for the monorepo remediation program. |
-| [Documentation archive](archive/README.md) | Index of retired designs and other frozen historical documents. |
+| [Documentation archive](archive/README.md) | Index of archived designs and other frozen historical documents, and of the records retired from it. |
 <!-- luke-docs:end:index -->
