@@ -11,9 +11,15 @@
  * AppConfig is a different question, covered in `passwordPolicy.integration.spec.ts`.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { hashPassword, validatePassword, verifyPassword, type PasswordPolicy } from '../src/lib/password';
+import {
+  dummyPasswordHash,
+  hashPassword,
+  validatePassword,
+  verifyPassword,
+  type PasswordPolicy,
+} from '../src/lib/password';
 
 /** Every requirement on: the `getPasswordPolicy` default when nothing is configured. */
 const STRICT: PasswordPolicy = {
@@ -125,5 +131,33 @@ describe('verifyPassword — a hash argon2 cannot read', () => {
     const hash = await hashPassword('TestPassw0rd!23');
     await expect(verifyPassword('TestPassw0rd!23', hash)).resolves.toBe(true);
     await expect(verifyPassword('sbagliata', hash)).resolves.toBe(false);
+  });
+});
+
+/**
+ * The hash `authenticateLocal` verifies against when there is no stored one. It is only worth
+ * anything if verifying against it costs what verifying a real credential costs: the same
+ * algorithm and the same parameters as `hashPassword`.
+ */
+describe('dummyPasswordHash', () => {
+  it('is an argon2id hash with the parameters real credentials use, computed once', async () => {
+    const [first, second] = await Promise.all([dummyPasswordHash(), dummyPasswordHash()]);
+    const real = await hashPassword('TestPassw0rd!23');
+
+    const params = (hash: string) => hash.split('$').slice(1, 4).join('$');
+    expect(params(first)).toBe(params(real));
+    expect(params(first)).toBe('argon2id$v=19$m=65536,p=1,t=3');
+    expect(second).toBe(first);
+  });
+
+  it('does not keep a failed hash: the next call tries again', async () => {
+    // A fresh module, so nothing is memoized yet.
+    vi.resetModules();
+    const argon2 = (await import('argon2')).default;
+    const fresh = await import('../src/lib/password');
+    vi.spyOn(argon2, 'hash').mockRejectedValueOnce(new Error('out of memory'));
+
+    await expect(fresh.dummyPasswordHash()).rejects.toThrow('out of memory');
+    await expect(fresh.dummyPasswordHash()).resolves.toMatch(/^\$argon2id\$/);
   });
 });

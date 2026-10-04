@@ -3,6 +3,8 @@
  * Provides hashing, verification, and policy validation.
  */
 
+import { randomBytes } from 'crypto';
+
 import argon2 from 'argon2';
 
 import { checkPassword, type PasswordPolicy } from '@luke/core';
@@ -55,6 +57,26 @@ export async function verifyPassword(
     // On error (malformed hash, etc.), consider the password invalid
     return false;
   }
+}
+
+let dummyHash: Promise<string> | null = null;
+
+/**
+ * A hash of a random secret nobody knows, with the same parameters as a real credential, for a
+ * login to verify against when there is no stored hash. An unknown username then costs the same
+ * argon2 run as a known one instead of answering at once.
+ *
+ * It removes the argon2 skip, not every timing difference: the user lookup, the LDAP path, a
+ * malformed stored hash (which argon2 may refuse without hashing) and hashes stored with older costs still
+ * differ. Memoized as the promise, so concurrent first calls share one hash; a failed hash is not
+ * kept, so the next call tries again.
+ */
+export function dummyPasswordHash(): Promise<string> {
+  dummyHash ??= hashPassword(randomBytes(32).toString('hex')).catch(error => {
+    dummyHash = null;
+    throw error;
+  });
+  return dummyHash;
 }
 
 export type { PasswordPolicy };

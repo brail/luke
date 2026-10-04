@@ -18,7 +18,7 @@ import { authenticateViaLdap, isSyntheticLdapEmail, type LdapRefusal } from '../
 import { sendPasswordResetEmail } from '../lib/mailer';
 import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
 import { notifyAdmins } from '../lib/notifications';
-import { hashPassword, verifyPassword } from '../lib/password';
+import { dummyPasswordHash, hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
@@ -56,19 +56,18 @@ export async function authenticateLocal(
     },
   });
 
-  if (!user || !user.identities[0]?.localCredential) {
-    return null;
-  }
-
+  // Verified even with no credential to check: an unknown, inactive or password-less account then
+  // costs the same argon2 run as a real one (`dummyPasswordHash`), which never matches.
   // Via `verifyPassword` rather than argon2 directly: it treats a malformed stored hash as a failed
   // verification instead of throwing, so a corrupted credential row answers "wrong password"
   // instead of turning a login attempt into a 500.
+  const credential = user?.identities[0]?.localCredential;
   const isValidPassword = await verifyPassword(
     password,
-    user.identities[0].localCredential.passwordHash
+    credential?.passwordHash ?? (await dummyPasswordHash())
   );
 
-  if (!isValidPassword) {
+  if (!user || !credential || !isValidPassword) {
     return null;
   }
 
