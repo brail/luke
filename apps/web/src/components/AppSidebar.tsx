@@ -356,8 +356,7 @@ export default function AppSidebar() {
                   <DropdownMenuGroup>
                     {menuAccess.settingsItems.company && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
-                        <Link href={"/settings/company" as any} className="flex items-center gap-2">
+                        <Link href="/settings/company" className="flex items-center gap-2">
                           <Building2 size={16} />
                           <span>Azienda</span>
                         </Link>
@@ -421,8 +420,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.settingsItems.collectionControl && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/company above) */}
-                        <Link href={"/settings/collection-control" as any} className="flex items-center gap-2">
+                        <Link href="/settings/collection-control" className="flex items-center gap-2">
                           <AlertTriangle size={16} />
                           <span>Alert Calendario/Fasi</span>
                         </Link>
@@ -462,8 +460,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.backup && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/backup" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/backup" className="flex items-center gap-2">
                           <Archive size={16} />
                           <span>Backup & Restore</span>
                         </Link>
@@ -471,8 +468,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.mode && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/mode" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/mode" className="flex items-center gap-2">
                           <ShieldAlert size={16} />
                           <span>Modalità Manutenzione</span>
                         </Link>
@@ -480,8 +476,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.auditLog && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/audit-log" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/audit-log" className="flex items-center gap-2">
                           <ScrollText size={16} />
                           <span>Audit Log</span>
                         </Link>
@@ -533,8 +528,7 @@ export default function AppSidebar() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
-              <Link href={"/about" as any}>
+              <Link href="/about">
                 <Info className="mr-2 h-4 w-4" />
                 <span>Info su Luke</span>
               </Link>

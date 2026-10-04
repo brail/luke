@@ -20,18 +20,18 @@ every push shouldn't also cost tokens on every audit.
 
 ## TypeScript & Next.js
 
-### `as any` forbidden — use `as Route` for redirects with typedRoutes
+### Typed routes: refresh the local route types, never cast a route that exists
 
-With `typedRoutes: true` in `next.config.js`, `redirect()` requires a `Route`
-type. For paths valid at runtime but not in the static manifest (e.g. route
-group `(app)`), use:
-
-```typescript
-import type { Route } from 'next';
-redirect('/app/dashboard' as Route);
-```
-
-Never `as any` — violates strict mode. Pattern already used in `NotificationDropdown.tsx`.
+With `typedRoutes: true`, `Link`, `redirect()` and the router accept only routes
+in the generated manifest (`.next/types`). CI's `tsc` never sees it — `next
+build` enforces it (`ci.yml`, "Build (web)"). Locally, `tsc` reads whatever the
+last build or `next typegen` wrote: a page added since is unknown, a deleted one
+still resolves. Run `pnpm --filter @luke/web exec next typegen` and restore
+`apps/web/next-env.d.ts` (it rewrites the import paths; never commit that)
+instead of casting. Six `as any` casts on sidebar links existed only to dodge a
+stale manifest, and would have let a misspelt route through (removed
+2026-10-04). `as Route` stays for a string no manifest can know, such as a path
+built at runtime; `as any` never.
 
 ### Bare `crypto.randomUUID()` in a client component — enforced by ESLint `@luke/no-bare-client-random-uuid` (error, `apps/web/src/**`). See `lessons-archive.md`.
 
