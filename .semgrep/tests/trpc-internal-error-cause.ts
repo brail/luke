@@ -12,6 +12,15 @@ export async function lostCause() {
   }
 }
 
+export async function bareCatch() {
+  try {
+    await work();
+    // ruleid: luke-trpc-internal-error-cause
+  } catch {
+    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed' });
+  }
+}
+
 export async function keptCause() {
   try {
     await work();
