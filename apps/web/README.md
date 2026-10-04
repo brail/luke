@@ -1,10 +1,10 @@
-# apps/web — Frontend Luke
+# apps/web — Luke Frontend
 
 <!-- luke-docs:start:overview -->
-Luke's web interface: Next.js with the App Router, shadcn/ui components on Tailwind CSS, and NextAuth sessions. It renders the whole management platform — collection plan, pricing, seasonal calendar, sales statistics, administration and maintenance — behind section-level RBAC, with light/dark theming and a Playwright end-to-end suite. Every backend call goes through tRPC with types imported from `@luke/api`; in a containerized deployment the browser reaches only Next.js, which forwards `/trpc`, `/upload`, `/download` and the SSE endpoints to `apps/api` through the rewrites in `next.config.js`.
+Luke's web interface: Next.js with the App Router, shadcn/ui components on Tailwind CSS, and NextAuth sessions. It renders the whole management platform — collection plan, pricing, seasonal calendar, sales statistics, administration and maintenance — behind section-level RBAC, with light/dark theming and a Playwright end-to-end suite. Every backend call goes through tRPC with types imported from `@luke/api`; in a containerized deployment the browser reaches only Next.js, which forwards `/trpc`, `/upload`, `/download` and the SSE endpoint (`/api/sse`) to `apps/api` through the rewrites in `next.config.js`.
 <!-- luke-docs:end:overview -->
 
-## Route principali
+## Main Routes
 
 <!-- luke-docs:start:routes -->
 Entry point:
@@ -64,21 +64,21 @@ Route handlers `api/`:
 Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to `apps/api` by the rewrites in `next.config.js`, which are active only when `INTERNAL_API_URL` is set.
 <!-- luke-docs:end:routes -->
 
-## Dipendenze interne
+## Internal Dependencies
 
 <!-- luke-docs:start:internal-deps -->
 - `@luke/core` — runtime dependency: Zod schemas, shared types, RBAC helpers, URL builders and storage contracts. Listed in `transpilePackages` in `next.config.js`
 - `@luke/api` — type-only devDependency: `AppRouter` plus the inferred `RouterOutputs` / `RouterInputs` types that give the tRPC client end-to-end typing. Resolved through the package's `exports` map to its emitted declarations, so nothing from it is bundled at runtime
 <!-- luke-docs:end:internal-deps -->
 
-## Variabili d'ambiente
+## Environment Variables
 
 <!-- luke-docs:start:env -->
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base that SSR section guards and route handlers call directly; unset in local development, where the rewrites are skipped | In containers |
 | `NEXT_PUBLIC_API_URL` | Public API URL, inlined into the client bundle at build time; falls back to `http://localhost:3001` | For production builds |
-| `NEXT_PUBLIC_FRONTEND_URL` | Public frontend URL used to build outbound links, such as the base URL sent with the SMTP test email; when unset, that test email is sent with an empty base URL | No |
+| `NEXT_PUBLIC_FRONTEND_URL` | Initial value of the application base URL field (`app.baseUrl`) on the mail settings page, replaced by the stored value as soon as the configuration loads; nothing else reads it | No |
 | `NEXTAUTH_URL` | Canonical frontend URL used by NextAuth for callbacks | In containers |
 | `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |
 | `COOKIE_SECURE` | In production, set to `false` when serving plain HTTP; any other value keeps the session cookie `Secure`. Outside production the cookie is never `Secure` | No |
@@ -87,7 +87,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 Everything else — SMTP, LDAP, storage, NAV, Google — lives in AppConfig in the database, never in environment variables.
 <!-- luke-docs:end:env -->
 
-## Sviluppo locale
+## Local Development
 
 <!-- luke-docs:start:dev -->
 ```bash
@@ -146,3 +146,63 @@ invalidations. The React Query client in [`src/lib/trpc.tsx`](src/lib/trpc.tsx)
 sets queries to a 60-second `staleTime`, one retry and no refetch on window
 focus, and mutations to no retry, so a failed mutation is never resubmitted
 automatically.
+
+## Error pages and components
+
+- `src/app/not-found.tsx` (404), `src/app/error.tsx` (segment errors, with
+  `reset`) and `src/app/global-error.tsx` (root fallback) cover every route, so a
+  new route inherits them without code. Signed-in users can report the problem
+  from the 404 and error pages through `ReportIssueButton`, which opens
+  `FeedbackDialog` and renders nothing without a session (`feedback.submit` is a
+  protected procedure).
+- `src/components/system/` holds the reusable pieces: `ErrorState` (structured
+  error display with customizable slots), `RetryButton`, `ReportIssueButton` and
+  `ErrorBoundary`, a class component that wraps a critical section — currently
+  `settings/users` and `maintenance/config`.
+- Production never shows a stack trace: the API masks internal errors (see
+  [error responses](../../OPERATIONS.md#error-responses)) and these components
+  show neutral messages.
+
+## Settings page components
+
+Configuration pages under `settings/` share the components in
+`src/components/settings/`; their JSDoc documents the props:
+
+| Component | Role |
+|---|---|
+| `SettingsFormShell` | Page wrapper with loading and error states |
+| `SettingsActions` | Save button and optional test button, with pending states |
+| `SensitiveField` | Credential input with a show/hide toggle that never displays the stored value |
+| `TestStatusBanner` | Connection-test result (`idle`, `success`, `error`), announced through `role="status"` |
+| `KeyValueGrid` | Responsive two- or three-column grid for form fields |
+
+Forms use React Hook Form with the shared Zod schema from `@luke/core`.
+`settings/mail/page.tsx` is the reference page. A secret never travels back to
+the browser: the API answers with a flag such as `hasPassword` or
+`hasSecretKey`, `SensitiveField` shows a masked placeholder, and leaving the
+field blank keeps the stored value.
+
+## Dashboard widgets
+
+`/dashboard` renders per-user widget cards; each user enables, orders and — for
+configurable widgets — sets up their widgets in the customize sheet, saved
+through `dashboard.saveConfig`.
+
+| ID | Data source | Configurable |
+|---|---|---|
+| `kpi-stats` | Prisma counts: active brands, seasons and users; collection rows | No |
+| `season-progress` | Collection layout KPIs | No |
+| `clocks` | `Intl.DateTimeFormat`, no API | Yes — IANA time zones |
+| `forex` | `api.frankfurter.app` (ECB rates, no API key) | Yes — currency pairs |
+| `weekly-sales` | NAV replica (`nav_pf_sales_header`) | No |
+| `tasks` | `DashboardTask` | No |
+
+To add a widget:
+
+1. Add its ID to `WIDGET_IDS` in `packages/core/src/schemas/dashboard.ts`; a
+   configurable widget also gets a settings schema there, beside
+   `ClocksSettingsSchema` and `ForexSettingsSchema`.
+2. Create `src/components/dashboard/widgets/<Name>Widget.tsx`.
+3. Register a `WidgetDefinition` in `src/components/dashboard/widgetRegistry.ts`;
+   a configurable widget also needs its editor in `DashboardCustomizeSheet.tsx`.
+4. If it needs data, add a procedure to `apps/api/src/routers/dashboard.ts`.

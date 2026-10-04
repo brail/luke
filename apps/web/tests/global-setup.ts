@@ -20,8 +20,8 @@ const API_URL = process.env.E2E_API_URL ?? getApiBaseUrl();
 async function probe(label: string, url: string): Promise<void> {
   const response = await fetch(url).catch((error: unknown) => {
     throw new Error(
-      `${label} non raggiungibile su ${url}: ${String(error)}. ` +
-        'Avvia lo stack con `pnpm dev`.'
+      `${label} unreachable at ${url}: ${String(error)}. ` +
+        'Start the stack with `pnpm dev`.'
     );
   });
 
@@ -34,7 +34,7 @@ async function probe(label: string, url: string): Promise<void> {
   }
 
   if (!response.ok) {
-    throw new Error(`${label} ha risposto HTTP ${response.status} su ${url}.`);
+    throw new Error(`${label} answered HTTP ${response.status} at ${url}.`);
   }
 }
 
