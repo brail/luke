@@ -4865,3 +4865,60 @@ Left open, and explicitly **not** closed by this appendix:
   would be silently ungated, and the required context would report success over
   work it never waited for. The gates are enforced on `main`; they are not yet
   pinned there.
+
+# Appendix Y — two backlog items closed by the repository cleanup (2026-10-04)
+
+## Y.1 Scope and disposition
+
+This appendix records two items that earlier appendices left open and that the
+2026-09/10 repository cleanup closed in code. It appends to Appendices A–X. No
+byte of any earlier appendix is modified, and no finding, measurement or
+evidence record in them is withdrawn; what changes is only the open status of
+these two items.
+
+| Item | Recorded open at | State |
+| --- | --- | --- |
+| `packages/nav → @luke/core`, declared and unused | the dependency diagram, §H.5, §M.5 | **CLOSED** by `4fc6da34` |
+| The dead `webpack:` block in `apps/web/next.config.js` | §H.11, backlog observations | **CLOSED** by `851f3b05` |
+| Every other open item recorded in Appendices A–X | — | untouched here |
+
+## Y.2 `packages/nav` no longer declares `@luke/core`
+
+§H.5 found that `packages/nav` consumed no `@luke/core` symbol and left the
+unused dependency for the hygiene batch; §M.5 restated it as hygiene, a
+permitted capability rather than a forbidden edge. Appendix R closed the
+hygiene batch without it.
+
+`4fc6da34` (`chore(deps): drop unused dependencies and inert overrides`,
+2026-09-26) removed `"@luke/core": "workspace:*"` from
+`packages/nav/package.json`. The package's direction is held mechanically, not
+by convention: `tools/scripts/check-platform-integrity.ts` holds declared
+dependencies to the layer policy, and `@luke/no-undeclared-workspace-import`
+holds imports to what is declared, so a later import of `@luke/core` from
+`packages/nav` fails until the dependency is declared again. The
+`@luke/nav ──► @luke/core` edge in the dependency diagram near the top of this
+document therefore describes the manifests as supplied on 2026-08-30, not the
+current tree.
+
+Evidence: CI `36226643954`, security `36226643932` and Docs `36226643879`, all
+`success`, on `4fc6da34` itself.
+
+## Y.3 The `webpack:` block is gone
+
+§H.11 recorded the dead `webpack:` block in `next.config.js` as a backlog
+observation, deliberately not addressed in Cycle 6. `851f3b05`
+(`refactor(web): drop the Next config nothing uses`, 2026-10-04) removed it
+together with the other configuration no build used; `apps/web/next.config.js`
+no longer mentions `webpack`.
+
+Evidence: CI `37206085827`, security `37206085829` and Docs `37206085799`, all
+`success`, on `660468f7`, the tip of the push that carried `851f3b05`.
+
+## Y.4 Final state
+
+- Both items are **closed**. Nothing else recorded open in Appendices A–X
+  changes status here.
+- The other §H.11 backlog observations — `sideEffects: false` and barrel
+  tree-shaking, `next build` coverage in CI, dist-staleness ergonomics and the
+  `zod` pre-bundle coupling in the browser test config — are not assessed by
+  this appendix and keep the status §H.11 gave them.
