@@ -243,7 +243,8 @@ export const storageRouter = router({
     }),
 
   /**
-   * Returns the current storage configuration (local or S3), with sensitive credentials decrypted.
+   * Returns the current storage configuration (local or S3): the S3 access key decrypted, and of the
+   * secret key only whether one is stored, closing the case ADR-023 records under Observed gaps.
    *
    * @auth {config:read}
    * @input {none}
@@ -270,7 +271,7 @@ export const storageRouter = router({
         getConfigOrDefault(ctx.prisma, 'storage.s3.port'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.useSSL'),
         getConfig(ctx.prisma, 'storage.s3.accessKey', true),
-        getConfig(ctx.prisma, 'storage.s3.secretKey', true),
+        getConfig(ctx.prisma, 'storage.s3.secretKey', false),
         getConfigOrDefault(ctx.prisma, 'storage.s3.region'),
         getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false),
         getConfigOrDefault(ctx.prisma, 'storage.s3.presignedPutTtl'),
@@ -291,7 +292,7 @@ export const storageRouter = router({
           // Blank, not the provider's dev fallback: this feeds a settings form, and offering a
           // credential the database does not hold invites an admin to save it as if it were real.
           accessKey: s3AccessKey || '',
-          secretKey: s3SecretKey || '',
+          hasSecretKey: !!s3SecretKey,
           region,
           publicBaseUrl: s3PublicBaseUrl || '',
           presignedPutTtl,
@@ -321,13 +322,19 @@ export const storageRouter = router({
           { key: 'storage.local.enableProxy', value: String(input.enableProxy) },
         ]);
       } else {
+        // A blank secret keeps the stored one, since the page is never sent it; with none stored,
+        // saving would switch to an S3 provider that cannot connect.
+        const secretKey = input.secretKey || null;
+        if (!secretKey && !(await getConfig(ctx.prisma, 'storage.s3.secretKey', false))) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
+        }
         await saveConfigs(ctx.prisma, [
           { key: 'storage.type', value: 's3' },
           { key: 'storage.s3.endpoint', value: input.endpoint },
           { key: 'storage.s3.port', value: input.port.toString() },
           { key: 'storage.s3.useSSL', value: String(input.useSSL) },
           { key: 'storage.s3.accessKey', value: input.accessKey, encrypt: true },
-          { key: 'storage.s3.secretKey', value: input.secretKey, encrypt: true },
+          ...(secretKey ? [{ key: 'storage.s3.secretKey' as const, value: secretKey, encrypt: true }] : []),
           { key: 'storage.s3.region', value: input.region },
           // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
           // two read paths in this router all treat a falsy value as "derive the URL from the

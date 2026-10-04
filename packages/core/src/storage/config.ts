@@ -85,7 +85,9 @@ export const s3StorageSaveConfigSchema = z.object({
   port: z.number().int().min(1).max(65535),
   useSSL: z.boolean(),
   accessKey: z.string().min(1, 'Access key richiesta'),
-  secretKey: z.string().min(1, 'Secret key richiesta'),
+  // Blank keeps the stored secret: the settings page is never sent it (`storage.getConfig` reports
+  // `hasSecretKey`), so it can only send a new one. `saveConfig` refuses blank when none is stored.
+  secretKey: z.string().optional(),
   region: z.string().min(1, 'Region richiesta'),
   publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
   presignedPutTtl: z.number().int().min(60).max(86400),

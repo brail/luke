@@ -49,7 +49,7 @@ describe('AppConfig defaults', () => {
     const config = await caller.storage.getConfig();
 
     expect(config.s3.accessKey).toBe('');
-    expect(config.s3.secretKey).toBe('');
+    expect(config.s3.hasSecretKey).toBe(false);
   });
 
   it('prefers the stored value over the default', async () => {

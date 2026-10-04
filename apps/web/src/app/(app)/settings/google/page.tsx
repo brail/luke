@@ -11,6 +11,7 @@ import { googleWorkspaceConfigSchema, type GoogleWorkspaceConfig } from '@luke/c
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
+import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
@@ -399,21 +400,18 @@ export default function GoogleWorkspacePage() {
                   control={form.control}
                   name="oauthClientSecret"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={hasOauthClientSecret ? '•••••••• (già configurato)' : 'GOCSPX-...'}
-                          disabled={!canUpdate}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {hasOauthClientSecret ? 'Già configurato e cifrato.' : 'Client secret dell\'app OAuth.'}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
+                    <SensitiveField
+                      label={<>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</>}
+                      hasValue={hasOauthClientSecret}
+                      placeholder={hasOauthClientSecret ? undefined : 'GOCSPX-...'}
+                      description={
+                        hasOauthClientSecret
+                          ? 'Già configurato e cifrato. Lascia vuoto per mantenerlo invariato.'
+                          : 'Client secret dell\'app OAuth.'
+                      }
+                      disabled={!canUpdate}
+                      field={field}
+                    />
                   )}
                 />
 

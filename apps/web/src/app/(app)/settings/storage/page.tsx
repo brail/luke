@@ -9,6 +9,7 @@ import { storageSaveConfigSchema, type StorageSaveConfig } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -90,7 +91,7 @@ export default function StoragePage() {
         port: config.s3.port,
         useSSL: config.s3.useSSL,
         accessKey: config.s3.accessKey,
-        secretKey: config.s3.secretKey,
+        secretKey: '',
         region: config.s3.region,
         publicBaseUrl: config.s3.publicBaseUrl || '',
         presignedPutTtl: config.s3.presignedPutTtl,
@@ -151,7 +152,7 @@ export default function StoragePage() {
                               port: config?.s3.port ?? 8333,
                               useSSL: config?.s3.useSSL ?? false,
                               accessKey: config?.s3.accessKey || '',
-                              secretKey: config?.s3.secretKey || '',
+                              secretKey: '',
                               region: config?.s3.region || 'us-east-1',
                               publicBaseUrl: config?.s3.publicBaseUrl || '',
                               presignedPutTtl: config?.s3.presignedPutTtl ?? 3600,
@@ -351,13 +352,17 @@ export default function StoragePage() {
                     control={form.control}
                     name="secretKey"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Secret Key</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="password" autoComplete="new-password" disabled={disabled} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      <SensitiveField
+                        label="Secret Key"
+                        hasValue={config?.s3.hasSecretKey ?? false}
+                        description={
+                          config?.s3.hasSecretKey
+                            ? 'Già salvata e cifrata. Lascia vuoto per mantenerla invariata.'
+                            : undefined
+                        }
+                        disabled={disabled}
+                        field={field}
+                      />
                     )}
                   />
                 </div>
