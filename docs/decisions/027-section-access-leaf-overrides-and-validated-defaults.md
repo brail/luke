@@ -119,3 +119,9 @@ These are still open when this record is accepted. They are not endorsed here.
 
 - **Child sections are not route boundaries in the web.** Only the top-level layouts check a section. The storage settings page is reachable by URL with `settings.storage` off: its form loads nothing and its save is refused.
 - **No UI for role defaults.** `setRoleDefaults` is reachable only as tRPC surface.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Decision, API section guards, the ADR-023 gap on `storage.getConfig`.** Since `5eba4dbf` the procedure no longer returns the S3 secret key, only whether one is stored; it still returns the access key decrypted. ADR-023 is superseded by [ADR-032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md), which records the access key as returned by choice.

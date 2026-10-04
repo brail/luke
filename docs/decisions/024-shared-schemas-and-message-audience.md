@@ -51,3 +51,13 @@ These deviations exist when this record is accepted. They are recorded as follow
 - The shared-schema catalogue in `CLAUDE.md` names ten identifiers that no module exports: seven are casing errors for exports that exist as `UserSchema`, `BrandSchema`, `SeasonSchema`, `VendorSchema`, `PricingParameterSetInputSchema`, `CollectionLayoutRowInputSchema` and `AppConfigSchema`, and `rbacSchema`, `authSchemas` and `mailSchema` exist in no casing. An author following that list would write the drift this record is meant to prevent. Correcting it is outside this record's scope.
 - Nothing mechanically prevents a new schema message from being written in the wrong language for its audience. The canonical-language guard is recorded as pending in `.claude/skills/luke-shared/governance-map.md`, so enforcement here is review.
 - `adminOrEditorProcedure`, which ADR-005's examples use, survives only in `apps/api/RBAC_COVERAGE.md`. That document is stale on this point and is not corrected by this record.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Context and the language section, "the rule in ADR-015".** ADR-015 is superseded by ADR-030 (`fbf7e61a`), which restates the same audience rule.
+- **2026-10-05 — Decision, the SMB and Drive messages.** `integrations.storage.router.ts` was deleted in `54bf6a65`. The messages still reach a user: `storage.smb` and `storage.drive` remain registered with those schemas, and the generic `config.*` writers, which accept the `storage` prefix, raise a `BAD_REQUEST` carrying them. The conclusion that no non-UI exception is established is unchanged.
+- **2026-10-05 — Consequences and Observed gaps, `docs/TASK_router_schemas_to_core.md`.** The document was deleted in `e4c2cc32`; read it with `git show e4c2cc32^:docs/TASK_router_schemas_to_core.md`. The two call sites it recorded are `CollectionRowDrawer.tsx`, which attaches `quotations` and `phaseChangeNote` to the payload after `form.handleSubmit` has run, and `ChangePhaseDialog.tsx`, which collects its note with no schema. The criterion it held, translated from its Italian: not every schema moves — a list filter used by one endpoint stays where it is; a schema goes to core when the web rewrites the same rule by hand; and a schema reused by more than one endpoint deserves a name even when the web does not touch it.
+- **2026-10-05 — Observed gaps, the inline-schema count.** The same count (`.input(z.object(…))` under `apps/api/src/routers`) is 99 across 19 routers on this date.
+- **2026-10-05 — Observed gaps, `adminOrEditorProcedure`.** `apps/api/RBAC_COVERAGE.md` was deleted in `9daad4ac`; the symbol survives nowhere in the tree.

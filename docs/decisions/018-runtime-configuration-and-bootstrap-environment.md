@@ -78,3 +78,15 @@ These deviations exist when this record is accepted. They are recorded as follow
 ### Scope
 
 Variables read only by test runners, CI and one-off scripts, such as `CI`, `PLAYWRIGHT_BASE_URL`, `E2E_*` and `SHADOW_DATABASE_URL`, are outside this record; `luke-no-direct-env` excludes the files that read them.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-05 — Decision, the `luke-no-direct-env` bullet.** Since `9fbac83c` the rule rejects every use of `process.env` except a dot read of a `NEXT_PUBLIC_*`, `NODE_ENV` or `APP_VERSION` name — bracket access, destructuring, aliasing, spreading and `import { env }` included — and a single read can be exempted in place with a reasoned `// nosemgrep: luke-no-direct-env`. Whole-file exclusions remain for the test and script trees and for a few modules. `apps/api/src/lib/storageUrl.ts`, named there as reading a permitted variable, has had no `process.env` read since `c2c3268a`; it is still on the exclusion list.
+- **2026-10-05 — Decision, the write paths that are not audited, and the matching gap ("Two write paths are not audited").** `integrations.storage.saveConfig` no longer exists (`54bf6a65`), and `storage.saveConfig` writes through `saveConfigs` and records an audit row since `660468f7`. Of the paths listed, only the maintenance scheduler's state changes remain unaudited.
+- **2026-10-05 — Observed gaps, "Two write paths bypass registry validation".** `integrations.auth.saveLdapConfig` validates every value against its registry schema before writing since `8cb397c9`; it still upserts through `tx.appConfig.upsert`. `setRbacSectionDefaultsTx` is addressed by [ADR-027](027-section-access-leaf-overrides-and-validated-defaults.md).
+- **2026-10-05 — Observed gaps, empty LDAP values.** An empty mapped value now removes the setting (`8cb397c9`), and a blank Bind DN or bind password keeps the stored one (`aead62d3`); saving the page no longer replaces a stored Bind DN with an empty value.
+- **2026-10-05 — Observed gaps, the environment reads outside the `CLAUDE.md` list.** The `LUKE_RATE_LIMIT_<ROUTE>_*` fallback was removed in `805f4102`: `rateLimitPolicy.ts` has no environment tier, and `OPERATIONS.md` says so. The `NEXT_PUBLIC_LUKE_DEBUG_UI` read is unchanged.
+- **2026-10-05 — Observed gaps, the drifted descriptions of the startup guard.** The comment above `FORBIDDEN_ENV_PATTERNS` lists `LUKE_TRUSTED_PROXY_CIDR` and `APP_VERSION` since `516209f3`. The `CLAUDE.md` pattern list still omits `NEXTAUTH_*`.
+- **2026-10-05 — Observed gaps, the root `README.md` copy of the permitted variables.** That section was removed in `28caac69`; the README links here instead.
