@@ -339,288 +339,74 @@ production.
 ## Versioning & Release
 
 Rationale: `docs/decisions/033-release-identity-versioning-contract-and-release-trains.md`.
+Procedure: `README.md` (Release), `tools/README.md`; mechanics: `tools/scripts/check-release-*.ts`.
 
-**SemVer**: `patch` = fix/refactor/chore/migration without a feature;
-`minor` = new visible functionality; `major` = breaking change to a supported
-compatibility contract.
+**SemVer**: `patch` = fix/refactor/chore/migration without a feature; `minor` = new visible
+functionality; `major` = breaking change to a supported compatibility contract.
 
-**`!` / `BREAKING CHANGE` is reserved for a contract Luke actually supports
-across an upgrade**, which is one of:
+**`!` / `BREAKING CHANGE` only for a contract supported across an upgrade**: the external API
+surface; persisted data and migration compatibility; supported configuration (AppConfig keys and
+their values, `.env` bootstrap); the deployment/upgrade contract (image tags, volumes, entrypoint
+behaviour). A change whose callers all live in this repo and move in the same commit is `feat` or
+`fix` — `apps/web` is not an outside client.
 
-- the external/public API surface — anything called from outside this repo;
-- persisted data and migration compatibility;
-- supported configuration — AppConfig keys and the values they accept, `.env`
-  bootstrap;
-- the deployment/upgrade contract — image tags, volumes, entrypoint behaviour.
+**Cutting a release**: `pnpm release:prepare <tag>` is the only entry point. You name the version;
+one below the minimum bump the commits since the base require is refused, with no override. It
+writes only `CHANGELOG.md`.
 
-A coordinated internal change is **not** breaking merely because a function
-signature or a tRPC input shape changed. If every caller lives in this monorepo
-and moves in the same commit, nothing an operator or a client can observe
-broke, and the release is `feat` or `fix`. The test is whether somebody outside
-this repository — an operator upgrading, a stored row, a client we support —
-has to do something. `apps/web` is not that somebody; a standalone client on
-the API would be.
-
-The label is expensive in both directions: it spends a major version, and
-mid-train it kills the running train, so the major ships as a new one — see the
-frozen-target note below.
-
-**Release workflow** (`pnpm release:prepare`, wraps `scripts/release-prepare.sh`):
-
-1. `pnpm release:prepare <tag>` — the supported entry point, and the only one.
-   **You name the release.** The script refreshes the tags and `origin/main` itself and fails
-   closed if it cannot, then `check-release-train.ts --validate` proves the name
-   (below) before anything is written. It then updates `CHANGELOG.md` over the
-   validated range (`--prepend`, never `--bump -o`: overwrites hand-curated
-   sections like the `[2.0.0]` rollup), and proves the result with
-   `check-release-tree.ts --worktree`. **`CHANGELOG.md` is the only file it
-   writes**: the git tag is the release identity, and no manifest carries a
-   version to keep in step with it
+1. `pnpm release:prepare <tag>`
 2. `git diff` — review the CHANGELOG section
-3. `git commit -am "chore(release): notes for X.Y.Z"`
-4. `git tag vX.Y.Z && git push origin vX.Y.Z` — one named tag, never
-   `--tags` (`.husky/pre-push` refuses more than one release tag per push).
-   The hook runs the same tree checker on the object being
-   pushed; it is **early feedback, not enforcement** (`--no-verify` skips it,
-   another clone may not have it). `release.yml` is authoritative
+3. `git commit -am "chore(release): notes for X.Y.Z"` (after approval)
+4. `git tag <tag> && git push origin <tag>` — one tag per push, never `--tags`
 
-**The version is named, and the commits set its floor.** The number is not
-inferred: `tools/scripts/check-release-train.ts --validate <tag>` proves the one
-you typed. The base is the highest stable tag **reachable from HEAD**, and the
-notes cover `base..HEAD` — a set difference on the commit graph, never a walk in
-date order. That distinction is the reason the checker exists:
-`git-cliff --bumped-version` takes no range and closes a release wherever its
-date-ordered walk meets a tagged commit, so once a stable hotfix is merged into
-the train every train commit dated before it lands on the published side of that
-line — breaking changes included — and the computed bump comes back too small.
-A routine main-to-train synchronisation is enough to cause it, and one did.
+Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; `release.yml` decides.
 
-The validator refuses a tag that exists anywhere, notes for it already committed
-at HEAD (a preparation committed and never tagged), a base that is not
-reachable, a stable tag on another line that outranks that base (merge the
-hotfix first), a target that is not the live train's frozen one, an rc counter
-that skips, a range with nothing releasable in it, a graduation whose tree is
-not its last candidate's (`CHANGELOG.md` aside), and — the SemVer rule above
-made mechanical — **any version below the minimum bump** git-cliff computes for
-the commits since the base, a running train's next candidate included. Equal to
-the minimum or higher passes; there is no override flag, because a gate that can
-be waived on the day it is inconvenient is not a gate. Nothing is written until
-every one of those has passed.
+**Release trains**:
 
-**RC trains**: a release train produces several candidates for **one** stable
-target — `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z` — never a new stable version
-per candidate. Name the candidate (`pnpm release:prepare v3.0.0-rc.2`) and the
-validator checks it against the train it can see: the target must be the one
-already cut, and the counter must advance by exactly one.
+- One target per train: `vX.Y.Z-rc.1`, `rc.2`, … then `vX.Y.Z`. The target is frozen at rc.1 and the
+  counter advances by exactly one
+- A breaking change that raises the minimum bump above the frozen target ends the train: no further
+  candidate, no graduation. Its rc tags stay; the next train starts at the higher version
+- A graduation publishes the last candidate's tree unchanged (`CHANGELOG.md` aside). A later change
+  ships as another candidate first, in a commit that produces release notes — not only a default
+  `Merge …`, a `style:` or a `chore(release)`
+- Merge the train into `main` with a merge commit (never squash), then graduate. A change that
+  reaches `main` before the stable tag goes back through the train: `git merge --no-ff main`, cut
+  the next candidate, merge again
 
-The target is **frozen when rc.1 is cut**: while the train is live, the
-candidate after `v2.2.0-rc.1` is `v2.2.0-rc.2`, never `v3.0.0-rc.1` — a train
-has one target. A train is **live** while its target is above the base and not
-below the minimum bump. A `feat!` landing mid-train raises that minimum to
-major, and the train **dies at once**: `v2.2.0` can never be published, so its
-next candidate and its graduation are both refused. Its rc tags stay as
-history — none needs deleting — and the breaking change is
-released by starting a new train at the higher version: `v3.0.0-rc.1` is an
-ordinary first candidate, its notes covering everything since the base.
+**Release flow**: push or PR → CI (`CI gate`; images built, never published); tag → provenance gate
+→ tagged-tree check → CI → images → `ghcr.io` (`rc-latest` from the train, `latest` + `X.Y` from
+`main`) → Portainer pull & redeploy. The repository variables `PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME`
+must be set (`OPERATIONS.md`). Runtime images carry runtime dependencies only (ADR-028). `main` does not carry
+these release gates yet: Appendix Z of `docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`. **NEVER delete the
+`luke_api_data` volume** — the master key lives there.
 
-**A graduation publishes its last candidate unchanged.** `vX.Y.Z` is prepared
-only when HEAD's tree is the tree of the live train's latest candidate,
-`CHANGELOG.md` aside: the stable images are rebuilt from the tag, so anything
-else changed after that candidate would reach `latest` without ever having
-shipped in one. It is proved at prepare time on HEAD, and again on the tagged
-commit at push and in `release.yml` — the notes commit is the only difference
-the stable tag may carry. One function, `checkGraduation` in
-`check-release-tree.ts`, answers all three. After the last candidate the train
-is frozen until it graduates; a later change to anything but `CHANGELOG.md` — a
-documentation fix, a hotfix merged from `main` — ships by cutting the next
-candidate first, and it has to reach the train in a releasable commit: a change
-carried only by commits `.cliff.toml` skips (a conflict resolution inside a
-`Merge …`, a `style:`, a `chore(release)`) cannot be cut as a candidate either.
-Graduate right after merging the train into `main`, with a merge commit — a
-squash merge leaves the candidates unreachable and is refused. Until the stable
-tag exists the train is still live: a change that reached `main` in between goes
-back through it — `git merge --no-ff main` into the train (a fast-forward would
-put the train's tip on `main`, where no candidate can be cut), cut the next
-candidate, merge again.
+**A `develop-X.Y` branch dies when its stable tag is cut**, not at the merge: never reactivate it or
+backport onto it; the next cycle opens a new branch cut from `main`.
 
-**Release flow**: push to `main` → CI only (lint + typecheck);
-tag `vX.Y.Z` → provenance gate → Docker build → `ghcr.io` → Portainer pull &
-redeploy. RC artifacts come from the active release train and publish
-`rc-latest`; stable artifacts come from `main` and publish `latest` + `X.Y`.
-A tag on the wrong line, or a tag name outside those two shapes, fails before
-any image is built (`tools/scripts/check-release-provenance.ts`).
-**NEVER delete the `luke_api_data` volume** — the master key lives there.
+**When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`): update the `branches` list
+in `.github/workflows/ci.yml` (`push` and `pull_request`) and `env.RELEASE_TRAIN_BRANCH` in both
+`.github/workflows/security.yml` and `.github/workflows/release.yml` — `pnpm check:workflows`
+(inside `pnpm check:drift`) fails on a miss; security.yml's `push` pattern and `dependabot.yml` need
+no edit. Delete the old branch locally. The owner deletes it from the remote right after its stable
+tag is cut — ruleset 22082018 forbids deleting `develop-*` until the owner lifts that rule — so the
+provenance gate stops accepting candidates from it.
 
-**A runtime image carries runtime dependencies only.** The API image takes its
-`node_modules` from a `--prod` install of `@luke/api`'s closure (stage
-`deps-prod`), the web image is Next's standalone output; neither copies the
-builder's tree. `tools/scripts/check-image-runtime.ts` proves it from inside
-each image — CI's `images` job on every push and pull request, and
-`release.yml` on the exact image before it pushes. Rationale:
-`docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md`.
+**CI workflows**:
 
-**The tagged tree must claim its own tag.** Immediately after the provenance
-gate, the same job runs `tools/scripts/check-release-tree.ts` on the exact
-commit the gate resolved (`steps.gate.outputs.sha`, passed through `env`), and
-a failure skips `verify` and both image jobs. It proves, against **that tree**
-and never the working tree, that `CHANGELOG.md` has exactly one
-`## [<version>]` heading for `parseReleaseTag(tag).version` — optionally dated —
-with at least one `- ` entry under it. A duplicate heading, an entry that
-actually belongs to the next section or to the historical footer, and any
-`## [Unreleased]` heading are all rejections. For a stable tag that graduates a
-train it also proves the tree is the highest candidate of that version
-unchanged, `CHANGELOG.md` aside; the job fetches the release tags explicitly so
-a candidate the remote holds cannot read as "no graduation". The same checker is
-what `release:prepare` and `.husky/pre-push` run, so one contract has one
-implementation — the hook predicts the workflow's verdict, it does not replace
-it.
-
-**Say plainly what this gate is and is not.** It used to also require every
-governed `package.json` to declare the tag's version; no manifest carries a
-version any more, so that half is gone rather than weakened — there is no second
-identity left to compare, and none to drift. What remains is narrow on purpose:
-a `## [X.Y.Z]` heading with one bullet is something a person could type, so the
-tree gate does not prove a release was prepared, and it never did — the manifest
-half was written by a script too. The **number** is proved by
-`check-release-train.ts --validate` at prepare time, and the **line** by the
-provenance gate. This checker proves the tagged tree ships notes for its tag
-and, for a graduation, that it is its last candidate unchanged.
-
-**The `tools/*` prerequisite for porting this checker to `main` is gone.** It
-used to be that no part of `check-release-tree.ts` could be ported until
-`main`'s `pnpm-workspace.yaml` lost its inert `tools/*` glob: the checker read
-that file to decide which manifests it governed, and the per-glob zero-discovery
-guard refused every tree cut from a line declaring a glob with no manifest under
-it — `v2.1.4` was rejected on exactly that ground. The checker no longer reads
-`pnpm-workspace.yaml` at all, so the glob is once again nothing but dead
-configuration, and the checker, its liveness test, the `.husky/pre-push` caller
-and the `release.yml` caller can be ported whenever a hotfix wants them. The
-port itself is still work nobody has done.
-
-**Merge commits are excluded from generated release notes.** `.cliff.toml`
-skips commit *subjects* beginning `Merge `, which is the shape git writes by
-default (`Merge pull request …`, `Merge branch …`). It is deliberately a subject
-rule and not "is this a merge commit": a conventional `feat(x): merge …` or
-`chore: merge …` is an ordinary commit and stays, and `[1.9.0]`'s
-`chore:`-typed `Merge develop-2.0 into main` is the precedent. The cost of that
-choice is that a merge given a custom subject (`git merge -m "sync train"`) is
-still rendered. Consequence to expect: a candidate whose only new commits are
-default-message merges — syncing `main` into the train, say — is **refused at
-prepare time**, by the validator: the range it would render carries no
-releasable commit, so it stops before either writer runs and nothing is written.
-That is correct, a candidate with no changes should not exist, but it is a
-behaviour change. The empty-section rejection in `check-release-tree.ts` is not
-what refuses it — it is the backstop for an empty section that reaches the
-release tree by another route. Existing `CHANGELOG.md` sections are not
-rewritten.
-
-**A `develop-X.Y` branch dies when its train graduates** — when the stable tag
-is cut from its merge into `main`, not at the merge itself: until that tag
-exists the graduation rule above may still send a change back through it. Once
-graduated it is not reactivated, never backport onto it: the next feature
-cycle opens a new `develop-(X+1).0`/`develop-X.(Y+1)` cut from `main`.
-`dependabot.yml` doesn't target any `develop-*` (no `target-branch`, defaults
-to the default branch `main`) — no update needed when the branch changes.
-
-**When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`):
-update the branch name in three places — the `branches` list in
-`.github/workflows/ci.yml` (`push` and `pull_request`), and
-`env.RELEASE_TRAIN_BRANCH` in both `.github/workflows/security.yml` and
-`.github/workflows/release.yml`. Miss ci.yml and CI silently stops running on
-PRs targeting the new branch; miss release.yml and every RC tag is rejected by
-the provenance gate; miss security.yml and the weekly OSV job goes red on a
-branch that no longer exists — which is the intended reminder, not a bug.
-`pnpm check:workflows` (inside `pnpm check:drift`) fails on all three, so this
-is a checklist the build enforces rather than one to remember.
-security.yml's `push` filter is **not** on the list: it matches `develop-*` and
-`release/*` by pattern precisely so it never needs the edit. Then delete the
-previous branch locally: it's stale as soon as it has graduated, and keeping
-it around invites bad backports. The owner deletes it from the remote right
-after its stable tag is cut — ruleset 22082018 forbids deleting `develop-*`
-until the owner lifts that rule — so the provenance gate stops accepting
-candidates from it.
-
-**Documentation-only pushes skip CI by design — on `develop-2.2`.** A push
-whose complete changed-path set falls inside the documentation ownership
-allowlist (`push.paths-ignore` in that branch's `ci.yml`) intentionally gets no
-full CI run; `.github/workflows/docs.yml` observes that same push and runs
-`pnpm check:drift` instead, while `security.yml` stays path-blind and still
-runs on every covered branch push. Because the documentation-only commit
-carries forward the same runtime tree as the code-bearing commit before it,
-the applicable runtime-gate evidence for that tree is the last code-bearing
-push's CI run — not a CI run for the documentation-only SHA, which never
-exists and should never be sought.
-
-`main` has neither half of that mechanism: no `paths-ignore` on its `push`
-trigger and no `docs.yml`. A documentation-only push to `main` therefore runs
-**full CI**, and the drift check is not lost — `main`'s `checks` job carries
-its own `Docs & skills drift` step running `pnpm check:drift`. So the
-documentation routing is a `develop-2.2` property, not a repository-wide one,
-and porting it to `main` is an open residual (Appendix X §X.10). The allowlist
-is fail-closed and pinned by `tools/scripts/check-workflow-paths.ts`, which
-likewise exists only on `develop-2.2`: change the checker and the workflows
-together, never one without the other, and never widen CI's `paths-ignore`
-with a global pattern like `**.md`. `CHANGELOG.md`, workflow files, Markdown
-inside a source tree and test inputs/fixtures are not documentation-owned —
-they must keep triggering full CI, so a test fixture belongs under its own
-test tree, never under `docs/`. Never add a path filter to CI's
-`pull_request` trigger, and never make the path-filtered `Documentation
-drift` job a required check on `main` — either would leave a required check
-Pending on every documentation PR.
-
-**The two aggregate gates `main` requires.** `ci.yml` and `security.yml`
-each declare one job whose only work is to fail unless every scan or check it
-`needs` succeeded: `CI gate` and `Security gate`. `Security gate` stands for
-every **PR-relevant** scan job — currently semgrep, gitleaks and OSV, not every
-scan job in the file — and reports on every trigger but the weekly `schedule`;
-what is new is that this now includes pull requests targeting `main`, with no
-path filter on any trigger for the same reason given just above. Its
-`pull_request` targets `main` only, so it is not part of the cycle-switch
-checklist; it is required **only on `main`**, never by a `develop-*` or
-`release/*` ruleset — that would leave a required context behind on a branch
-that dies at the end of the cycle.
-
-**Both** gated workflows pin the same `pull_request` activity set — `opened`,
-`synchronize`, `reopened`, `edited`. GitHub's default omits `edited`, which is
-what retargeting a pull request fires: without the pin, moving a PR onto a
-protected target produces no new run and leaves the required checks Pending on
-a head SHA nothing judged. The weekly OSV jobs and the
-failure notifier are deliberately outside it — they answer a disclosure landing
-on unchanged code, and a push/schedule failure, neither of which a pull request
-can report.
-
-Both gates **on `develop-2.2`** are pinned by
-`tools/scripts/check-workflow-paths.ts`, which derives each `needs` list from
-the workflow's own jobs, so a scan job added later is a build failure rather
-than a silently ungated one. It also refuses `continue-on-error:` anywhere in
-either gated workflow: that key turns a failure into the literal `success`,
-which is the one result an aggregate gate accepts, so a tolerated job would be
-green through the gate. That checker does not exist on `main`. The gates there
-are enforced by the ruleset but their dependency lists are **not** mechanically
-checked: a job added to `main`'s `ci.yml`, or a scan added to its
-`security.yml`, without the matching `needs` entry would be silently ungated,
-and the required context would report success over work it never waited for.
-Porting the checker to `main` is an open residual, tracked separately from the
-`check-release-tree.ts` port described in the release section above.
-
-The main-side implementation and the required-context transition — the two
-halves this section recorded as outstanding — are both done. `main` carries
-both aggregate-gate implementations as of `388ff776`, and the `main review gate` ruleset requires exactly `CI gate`
-and `Security gate` — strict, active, no bypass actors — in place of the
-individual job names it used to list. `main`'s `CI gate` needs `checks`,
-`integration`, `migrations` and `web-image`, the jobs that branch actually has;
-the `develop-2.2` version needs `checks`, `browser`, `integration`,
-`migrations` and `images`, and the two lists are meant to differ. `CI gate` reports on pull requests targeting `main` or the train;
-`Security gate` on pull requests targeting `main`. Because the workflows a pull
-request is judged by are the ones on its own branch, a change to either gate
-has to land on `main` itself before `main`'s ruleset can depend on the new
-shape. The port, the transition and their evidence are recorded in
-`docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`, Appendix X.
-
-Note also what this design does not buy: it protects against accidental
-regressions and ordinary vulnerable changes, but it is not tamper-resistant — a
-pull request that edits the workflow, the checker and the gate in the same diff
-is judged by the version it is itself proposing.
+- On `develop-2.2` a push confined to the documentation allowlist (`push.paths-ignore` in `ci.yml`)
+  runs no CI; `docs.yml` runs `pnpm check:drift` instead, and the runtime evidence for that commit
+  is the CI run of the last push outside the allowlist. `main` has no such routing
+- Change the allowlist and `tools/scripts/check-workflow-paths.ts` together; never a global pattern
+  like `**.md`, never a path filter on `pull_request`. `CHANGELOG.md`, workflows, Markdown inside a
+  source tree and test fixtures are not documentation: a fixture lives in its test tree, never under
+  `docs/`
+- `main` requires exactly `CI gate` and `Security gate`; never require them, or the path-filtered
+  `Documentation drift`, on `develop-*` or `release/*`. A new CI job or PR-relevant scan goes in its
+  gate's `needs`, and never `continue-on-error:` in `ci.yml` or `security.yml` —
+  `check-workflow-paths.ts` checks both on the train, nothing does on `main`. A gate change lands on
+  `main` before `main`'s ruleset may depend on it
+- Both gated workflows pin `pull_request` types to `opened`, `synchronize`, `reopened`, `edited`
 
 ## Security Testing / Pentest
 

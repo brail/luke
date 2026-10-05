@@ -225,7 +225,8 @@ echo
 # git-cliff's default path is `cliff.toml`, so a stray file by that name would
 # silently replace this repository's configuration — and the notes must be
 # rendered under the very configuration the range and the minimum were computed
-# under.
+# under. `--prepend`, never `--bump -o`: `-o` rewrites the whole file and would
+# drop the hand-curated sections, such as the `[2.0.0]` rollup.
 pnpm exec git-cliff "$RANGE" \
   --config "$CONFIG" \
   --ignore-tags "$IGNORE" \
