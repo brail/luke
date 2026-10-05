@@ -422,7 +422,7 @@ never `globalThis.confirm()`.
 
 **Permission hooks**:
 
-- `usePermission`: `can()`, `canAll()`, `canAny()`, `isAuthenticated()` — YES parentheses.
+- `usePermission`: `can()`, `isAuthenticated()` — YES parentheses.
   There is no role helper on purpose: check a permission, never a role name
 - `useBrandPermissions`: boolean props `canList`, `canCreate`, `canUpdate`, `canDelete`,
   `isAuthenticated` — NO parentheses; methods `canEdit()`, `isReadOnly()`

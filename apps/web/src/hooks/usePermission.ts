@@ -9,13 +9,12 @@ import { hasPermission, type Permission, type Role } from '@luke/core';
  * Returns permission-check helpers derived from the current session's role,
  * following the Resource:Action pattern defined in `@luke/core`.
  *
- * @returns `{ can, canAll, canAny, isAuthenticated, session }`
+ * @returns `{ can, isAuthenticated, session }`
  *
  * @example
  * ```typescript
- * const { can, canAll } = usePermission();
+ * const { can } = usePermission();
  * if (can('brands:create')) { ... }
- * if (canAll(['brands:create', 'brands:update'])) { ... }
  * ```
  */
 export function usePermission() {
@@ -38,44 +37,6 @@ export function usePermission() {
   );
 
   /**
-   * Returns `true` if the current user holds every permission in the array.
-   *
-   * @param permissions - All permissions that must be granted.
-   */
-  const canAll = useCallback(
-    (permissions: Permission[]): boolean => {
-      if (!session?.user?.role) {
-        return false;
-      }
-
-      const userRole = session.user.role as Role;
-      return permissions.every(permission =>
-        hasPermission({ role: userRole }, permission)
-      );
-    },
-    [session?.user?.role]
-  );
-
-  /**
-   * Returns `true` if the current user holds at least one permission in the array.
-   *
-   * @param permissions - At least one of these must be granted.
-   */
-  const canAny = useCallback(
-    (permissions: Permission[]): boolean => {
-      if (!session?.user?.role) {
-        return false;
-      }
-
-      const userRole = session.user.role as Role;
-      return permissions.some(permission =>
-        hasPermission({ role: userRole }, permission)
-      );
-    },
-    [session?.user?.role]
-  );
-
-  /**
    * Returns `true` if the user is currently authenticated (session user is present).
    */
   const isAuthenticated = useCallback((): boolean => {
@@ -85,8 +46,6 @@ export function usePermission() {
   return {
     // Core permission checking
     can,
-    canAll,
-    canAny,
 
     // User info
     isAuthenticated,

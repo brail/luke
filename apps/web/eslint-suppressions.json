@@ -206,7 +206,7 @@
   },
   "src/hooks/usePermission.ts": {
     "react-hooks/preserve-manual-memoization": {
-      "count": 3
+      "count": 1
     }
   },
   "src/lib/trpc.tsx": {
