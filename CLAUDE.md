@@ -695,8 +695,11 @@ branch that no longer exists — which is the intended reminder, not a bug.
 is a checklist the build enforces rather than one to remember.
 security.yml's `push` filter is **not** on the list: it matches `develop-*` and
 `release/*` by pattern precisely so it never needs the edit. Then delete the
-previous branch (local + remote): it's stale as soon as it has graduated,
-keeping it around invites bad backports.
+previous branch locally: it's stale as soon as it has graduated, and keeping
+it around invites bad backports. The owner deletes it from the remote right
+after its stable tag is cut — ruleset 22082018 forbids deleting `develop-*`
+until the owner lifts that rule — so the provenance gate stops accepting
+candidates from it.
 
 **Documentation-only pushes skip CI by design — on `develop-2.2`.** A push
 whose complete changed-path set falls inside the documentation ownership
@@ -766,9 +769,9 @@ halves this section recorded as outstanding — are both done. `main` carries
 both aggregate-gate implementations as of `388ff776`, and the `main review gate` ruleset requires exactly `CI gate`
 and `Security gate` — strict, active, no bypass actors — in place of the
 individual job names it used to list. `main`'s `CI gate` needs `checks`,
-`integration` and `migrations`, the jobs that branch actually has; the
-`develop-2.2` version additionally needs `browser` and `images`, and the two
-lists are meant to differ. `CI gate` reports on pull requests targeting `main` or the train;
+`integration`, `migrations` and `web-image`, the jobs that branch actually has;
+the `develop-2.2` version needs `checks`, `browser`, `integration`,
+`migrations` and `images`, and the two lists are meant to differ. `CI gate` reports on pull requests targeting `main` or the train;
 `Security gate` on pull requests targeting `main`. Because the workflows a pull
 request is judged by are the ones on its own branch, a change to either gate
 has to land on `main` itself before `main`'s ruleset can depend on the new

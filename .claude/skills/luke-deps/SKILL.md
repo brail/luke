@@ -382,7 +382,7 @@ the finding.
    `603662a` was a hotfix, and it still needed proof.
 
 Note the branch rule: `.github/dependabot.yml` targets the default branch only,
-and a merged `develop-X.Y` is dead — never backport an advisory fix onto one
+and a graduated `develop-X.Y` is dead — never backport an advisory fix onto one
 (`lessons.md`, "Branch management"). A fix on the train does not reach the
 `latest` images: when the advisory reaches production, ask the owner whether
 `main` gets a hotfix too (precedent `603662a`), and record the answer.

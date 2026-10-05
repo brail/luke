@@ -469,7 +469,7 @@ draft pull request and read that job.
 
 ## Branch management
 
-### A `develop-X.Y` merged into `main` is dead — never reactivate it
+### A graduated `develop-X.Y` is dead — never reactivate it
 
 During the `deepmerge-ts` hotfix (GHSA-ggr8-5vv4-36mx) I had proposed also
 porting the fix to `develop-2.1`, treating it as an active integration
@@ -488,17 +488,17 @@ Before citing specific commits in a lesson, verify their branch membership
 with `--contains`, don't trust reconstructing it from memory of the graph.
 
 **General rule — `develop-X.Y` lifecycle**: born cut from `main`, receives
-the cycle's features, dies the moment it's merged into `main` (release).
-From there it's single-use: it's not reopened, not backported onto, not
+the cycle's features, dies when its stable tag is cut — not at the merge
+into `main` (ADR-033).
+From then on it's single-use: it's not reopened, not backported onto, not
 treated as "still in development" just because the branch still exists in
 `git branch -a`. The next cycle opens a new `develop-(X+1)`, cut from an
 updated `main` — never from the same `develop-X.Y` resurrected. Before
 proposing a backport onto a `develop-*` branch, check with
 `git log --oneline develop-X..main` (and vice versa) whether it's still
-aligned or abandoned after merge: a branch stuck at an old merge commit is
-stale by default, not the other way around. The dead branch should then be
-deleted (local + remote) as soon as its successor is cut — see CLAUDE.md §
-Versioning & Release for the steps.
+aligned or has graduated: a branch whose stable tag exists is dead, not the
+other way around. Delete the dead branch locally; deleting it from the remote
+is an owner operation — see CLAUDE.md § Versioning & Release.
 
 ---
 
