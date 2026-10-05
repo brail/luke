@@ -75,7 +75,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 **Stack constraints:**
 
 - Raw SQL inconsistent with the raw-SQL policy in `CLAUDE.md` (Stack
-  Constraints → ORM). **CONSTRAINT** against that policy, which is the
+  Constraints → Raw SQL). **CONSTRAINT** against that policy, which is the
   normative source and carries its own exception classes — read it, do not
   restate it here. Raw SQL that the policy permits is not a finding; raw SQL
   whose justification is absent or contradicted is. Unusual-but-permitted SQL
@@ -95,8 +95,9 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **Env policy:**
 
-- `.env` or `.env.*` variables outside the permitted lists, or matching a forbidden pattern, in
-  CLAUDE.md "Env Policy" — the API patterns are `FORBIDDEN_ENV_PATTERNS` in `apps/api/src/server.ts`
+- An app's `.env` or `.env.*` variables outside that app's permitted list in CLAUDE.md "Env Policy",
+  or an API variable matching `FORBIDDEN_ENV_PATTERNS` (`apps/api/src/server.ts`); the web list may
+  hold `NEXTAUTH_*`, and compose interpolation variables are out of scope
 
 **Dev patterns:**
 
@@ -116,7 +117,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **RBAC:**
 
-- Any AppConfig write to RBAC keys NOT followed by `invalidateRbacCache()`
+- A write to RBAC keys that bypasses `saveConfig`/`saveConfigs`/`deleteConfig` and is NOT followed by
+  `invalidateRbacCache()` after it commits
 - `requirePermission` presence is enforced by `.semgrep/rules/procedure-requires-permission.yml`;
   review what it cannot see: a `selfProcedure` handler that breaks its contract in
   `apps/api/src/lib/trpc.ts`, a `nosemgrep: luke-procedure-requires-permission` whose reason does
@@ -159,9 +161,11 @@ Check:
 
 **Collection Layout:**
 
-- `COLLECTION_PROGRESS` values as free strings instead of imported constant
-- `COLLECTION_STRATEGY`, `COLLECTION_STATUS`, `COLLECTION_GENDER` as free strings
-- Column visibility allowing more than 7 visible columns
+- Collection progress as a hardcoded value or ordering instead of the catalog-backed `phaseId`
+- Gender values as free strings instead of `COLLECTION_GENDER`; strategy or line-status options built
+  from the default constants instead of the `CollectionCatalogItem` catalog
+- Column visibility allowing more toggleable columns than `COLLECTION_COLUMNS_MAX_VISIBLE` outside
+  fullscreen
 - `skuBudget` on a Row or `skuForecast` on a Group (inverted)
 - Collection row picture URLs constructed manually instead of `buildCollectionRowPictureUploadUrl()`
 
@@ -176,7 +180,7 @@ Check:
 
 - NAV table names built without `sanitizeCompany()`
 - Any import from `apps/api` inside `packages/nav`
-- mssql requests missing `request.timeout = 60_000`
+- NAV sync requests built with `pool.request()` instead of `createSyncRequest()`
 - NAV + local upsert NOT in `prisma.$transaction()`
 - Sync touching `isActive` or enriched fields on local entities
 
@@ -189,7 +193,6 @@ Check:
 - Tailwind arbitrary values without justifying comment
 - Hardcoded `localhost:3001` or absolute API URLs
 - `globalThis.confirm(` or `window.confirm(` instead of `<ConfirmDialog>`
-- `canCreate()`, `canUpdate()`, `canDelete()` called with parentheses (booleans, not functions)
 
 ---
 

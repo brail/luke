@@ -66,7 +66,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 - Check-then-act where nothing keeps the checked condition true until the write commits (`findUnique/findFirst` followed by `create/update/upsert`): the criteria — constraint, conditional write, lock; a `$transaction` alone may not hold — are `CLAUDE.md` Development Patterns rule 3
 - `pauseNavScheduler()` / `resumeNavScheduler()` not called symmetrically — if exception thrown between pause and resume, scheduler stays paused forever
-- RBAC cache: any write to RBAC AppConfig keys without `invalidateRbacCache()` immediately after
+- RBAC cache: a write to RBAC AppConfig keys that bypasses `saveConfig`/`saveConfigs`/`deleteConfig`
+  without `invalidateRbacCache()` after its transaction commits
 - `prisma.$transaction([...])` array syntax where operations depend on each other (should use callback syntax)
 
 **Async/await bugs:**
