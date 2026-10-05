@@ -10,8 +10,8 @@ RC stacks, a read-only Postgres role on prod, and prod's master key copied to th
 RC volume so that encrypted `AppConfig` values stay readable. Rejected because:
 
 - prod's master key (`~/.luke/secret.key`) must never leave its volume. It is the
-  root of trust of the whole application: it derives `nextauth.secret`, `api.jwt`
-  and `cookie.secret`, and decrypts every secret in `AppConfig`. Copying it to RC
+  root of trust of the whole application: it is the root of every HKDF-derived
+  secret (ADR-020 lists them) and decrypts every secret in `AppConfig`. Copying it to RC
   means that compromising RC includes compromising prod;
 - it needs a Docker network shared between two otherwise isolated stacks;
 - it needs a prod Postgres credential stored in RC's configuration.

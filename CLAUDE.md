@@ -263,12 +263,12 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
 
 ## Auth & Crypto — DO NOT TOUCH without an explicit request
 
-- Master key: `~/.luke/secret.key` (32 bytes, mode 0600) — auto-generated on first boot
-- Secrets derived via HKDF-SHA256: `nextauth.secret`, `api.jwt`, `cookie.secret`
-- Crypto utilities are **server-only** — import from `@luke/core/server`, never from
-  `@luke/core` (throws in the browser)
-- `packages/core/src/crypto/secrets.server.ts` — don't modify without a comment
-  explaining the security intent
+- Master key: `~/.luke/secret.key` (32 bytes, mode 0600), auto-generated on first boot. Its scope,
+  derived secrets and rotation limits: ADR-020
+- Crypto utilities are **server-only** — import from `@luke/core/server`, never from `@luke/core`
+  (throws in the browser)
+- `packages/core/src/crypto/secrets.server.ts` — don't modify without a comment explaining the
+  security intent
 
 ## RBAC & Section Access
 

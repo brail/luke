@@ -72,3 +72,4 @@ Appended under [ADR-030](030-documentation-architecture-canonical-language-and-h
 - **2026-10-05 — Rotation, "`me.revokeAllSessions` and `auth.logoutAll` revoke the caller's own".** `auth.logoutAll` was removed in `a3a7a9a2`; `me.revokeAllSessions` remains.
 - **2026-10-05 — Observed gaps, operational documentation.** `API_SETUP.md` and `APP_CONFIG.md` were retired (`e15cf989`, `17e854ed`); the root `README.md` now says to keep the key and cites this record.
 - **2026-10-05 — Observed gaps, the `backup/crypto.ts` header.** Corrected in `0ade9421`; it now distinguishes the blob from the wrapped data key and cites this record.
+- **2026-10-05 — Decision and Observed gaps, the `luke:download-token` derivation.** `CLAUDE.md` no longer repeats a list of derived-secret info constants: since the commit that adds this entry it points to this record. The disagreement between the constants in `secrets.server.ts` and the `luke:download-token` derivation is unchanged.
