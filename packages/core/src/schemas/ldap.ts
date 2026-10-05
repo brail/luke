@@ -66,23 +66,6 @@ export const ldapConfigSchema = z.object({
   }
 });
 
-/**
- * Response shape for `getLdapConfig`. Sensitive fields (`bindDN`, `bindPassword`) are replaced
- * with boolean presence flags.
- */
-export const ldapConfigResponseSchema = z.object({
-  enabled: z.boolean(),
-  url: z.string(),
-  hasBindDN: z.boolean(),
-  hasBindPassword: z.boolean(),
-  searchBase: z.string(),
-  searchFilter: z.string(),
-  groupSearchBase: z.string(),
-  groupSearchFilter: z.string(),
-  roleMapping: z.string(), // JSON string
-  strategy: z.enum(LDAP_STRATEGIES),
-});
-
 /** Input schema for testing LDAP user search by username. */
 export const ldapSearchTestSchema = z.object({
   // Bounds the filter string sent to the directory; nothing else does.
@@ -123,7 +106,6 @@ export const ldapOperationResponseSchema = z.object({
 
 // Types inferred from the schemas
 export type LdapConfigInput = z.infer<typeof ldapConfigSchema>;
-export type LdapConfigResponse = z.infer<typeof ldapConfigResponseSchema>;
 export type LdapSearchTestInput = z.infer<typeof ldapSearchTestSchema>;
 export type LdapSearchTestResponse = z.infer<
   typeof ldapSearchTestResponseSchema

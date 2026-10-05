@@ -121,14 +121,8 @@ does not cover, run the script yourself.
   `json_agg ... FILTER`) — always use the `Prisma.sql` tagged template, never
   `$queryRawUnsafe`/`$executeRawUnsafe` for these.
 - **API layer**: tRPC for all dashboard/UI routes; direct Prisma for AI agent queries
-- **Validation**: Zod schemas from `@luke/core` — never redefine inline.
-  Catalog in `packages/core/src/schemas/` — always check there before creating a new one.
-  Main ones: `userSchema`, `ldapConfigSchema`/`navConfigSchema` (+ `*ResponseSchema`
-  without password), `brandSchema`/`seasonSchema`/`vendorSchema`,
-  `pricingParameterSetInputSchema`, `collectionLayoutRowInputSchema`,
-  `appConfigSchema`/`AppConfigRegistry`, `sectionEnum`/`SECTION_TO_PERMISSION`/
-  `SECTION_ACCESS_DEFAULTS`, `rbacSchema`, `authSchemas`, `mailSchema`,
-  `RateLimitConfigSchema`/`LdapResilienceSchema`
+- **Validation**: Zod schemas from `@luke/core` — never redefine inline. The
+  catalog is `packages/core/src/schemas/`: check there before creating a new one.
 - **TypeScript**: strict mode — no `any`, no type assertion without an explanatory comment
 - **URLs in frontend**: never hardcode `localhost:3001` in `apps/web/src` — use
   `buildApiUrl()`, `buildTrpcUrl()` from `@luke/core`. They are declared in

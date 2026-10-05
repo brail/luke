@@ -19,19 +19,5 @@ export const navConfigSchema = z.object({
   syncEnabled: z.boolean(),
 });
 
-/**
- * Response shape for `getNavConfig`. The password is omitted and replaced with `hasPassword`.
- */
-export const navConfigResponseSchema = z.object({
-  host: z.string(),
-  port: z.number(),
-  database: z.string(),
-  user: z.string(),
-  hasPassword: z.boolean(),
-  company: z.string(),
-  readOnly: z.boolean(),
-});
-
 // Types inferred from the schemas
 export type NavConfigInput = z.infer<typeof navConfigSchema>;
-export type NavConfigResponse = z.infer<typeof navConfigResponseSchema>;

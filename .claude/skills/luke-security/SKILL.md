@@ -100,7 +100,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 **Sensitive data exposure:**
 
 1. tRPC responses including encrypted config values or password fields:
-   - `getNavConfig` must return `hasPassword: boolean`, not the password
+   - `config.list` must return `valuePreview: null` for every encrypted entry
+     (the NAV password included), never the stored value
    - `getLdapConfig` must return `hasBindPassword: boolean`, not the credential
    - User queries must not return password hash
 2. TRPCError messages including SQL error details, file paths, stack traces, or internal IDs sent to frontend
