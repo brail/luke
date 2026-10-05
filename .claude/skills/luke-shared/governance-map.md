@@ -189,6 +189,7 @@ invariant is still semantic, the row says so — "moved" is not the same claim a
 | supported Markdown heading-fragment resolution | `luke-docs` | `check-docs-integrity` | **deterministic** — inline links to same-file or tracked Markdown headings, including directory indexes; parser limits and custom-HTML-anchor gap documented in `tools/README.md` |
 | tRPC procedure without `requirePermission` | `luke-audit` | `.semgrep/rules/procedure-requires-permission.yml` | **deterministic** for presence (ERROR, fixtures, three gates); **semantic** for the `selfProcedure` contract, `nosemgrep` reasons and the choice of permission, which stay in `luke-audit` |
 | missing `onDelete` / FK index on a Prisma relation | `luke-audit` | platform checker P13 (`luke-deps`) | **deterministic** for `onDelete` presence and an index the FK columns lead; **semantic** for the `Cascade` justification comment and filtered-column indexes, which stay in `luke-audit` |
+| canonical-language regression detection | `luke-docs` | `check-docs-integrity` | **deterministic** for a closed list of Italian tokens, elisions and stressed endings on every prose line of every tracked document outside `.claude/**`, archived paths included; **semantic** for Italian made of other words, for skill prose, and for whether quoted text is product UI, which stay with review and `luke-docs audit` |
 | one README for every workspace | `luke-docs` | `check-docs-integrity` | **deterministic** — every directory matched by the `packages:` globs in `pnpm-workspace.yaml` that holds a tracked `package.json` has a tracked `README.md`; discovery fails closed on a missing, unparseable or unsupported glob list and on zero discovered workspaces |
 
 The `requirePermission` + unheld-check write case stayed in `luke-bugs` rather
@@ -197,9 +198,7 @@ not being held until the write (`CLAUDE.md` rule 3), not an attacker primitive.
 
 ### Pending
 
-| Item                                              | Owner  | State                                                        |
-| ------------------------------------------------- | ------ | ------------------------------------------------------------ |
-| canonical-language regression detection           | `luke-docs` | approved as an explicitly incomplete deterministic guard; remains semantic until the mutable corpus is migrated and the guard ships green |
+None.
 
 ### Known limit
 

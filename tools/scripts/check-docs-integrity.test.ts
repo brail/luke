@@ -49,12 +49,14 @@ import {
   checkAdrIndex,
   checkAdrTitleMatch,
   checkAnchors,
+  checkCanonicalLanguage,
   checkLinks,
   checkMarkers,
   checkReachability,
   checkOwnedIndexSurfaces,
   checkWorkspaceReadmes,
   headingAnchors,
+  italianTokens,
   trackedMarkdown,
 } from './check-docs-integrity';
 import { sequence } from './lib/pnpmWorkspace';
@@ -974,4 +976,122 @@ test('a repository with no index and no ADRs is still skipped silently', () => {
 
   assert.equal(count, 0);
   assert.deepEqual(problems, []);
+});
+
+function languageProblems(files: RepoFiles): { problems: Problem[]; lines: number } {
+  const dir = repo(files);
+  const problems: Problem[] = [];
+  const lines = checkCanonicalLanguage(dir, trackedMarkdown(dir), problems);
+  return { problems, lines };
+}
+
+const ENGLISH_PAGE = Array.from(
+  { length: 40 },
+  (_, i) => `Paragraph ${i} explains how the service resolves its configuration.`
+).join('\n');
+
+test('an Italian sentence inside a long English document fails, naming the line and tokens', () => {
+  const { problems } = languageProblems({
+    'README.md': `${ENGLISH_PAGE}\nQuesto modulo è stato rimosso dalla build.\n${ENGLISH_PAGE}\n`,
+  });
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0].file, 'README.md');
+  assert.equal(problems[0].line, 41);
+  assert.match(problems[0].message, /questo/);
+  assert.match(problems[0].message, /dalla/);
+});
+
+test('a one-word Italian heading fails: one token is enough', () => {
+  const { problems } = languageProblems({ 'README.md': '# Package\n\n## Utilizzato da\n' });
+  assert.deepEqual(
+    problems.map(p => p.line),
+    [3]
+  );
+});
+
+test('an Italian table cell fails', () => {
+  const { problems } = languageProblems({
+    'README.md': '| Key | Meaning |\n|---|---|\n| `mode` | Calendario aziendale |\n',
+  });
+  assert.deepEqual(
+    problems.map(p => p.line),
+    [3]
+  );
+});
+
+test('Italian prose in a former frozen path fails: there is no historical exemption', () => {
+  const { problems } = languageProblems({
+    'README.md': '# Home\n',
+    'docs/archive/old-plan.md': '# Old plan\n\nIl piano descrive una nuova struttura.\n',
+  });
+  assert.deepEqual(
+    problems.map(p => `${p.file}:${p.line}`),
+    ['docs/archive/old-plan.md:3']
+  );
+});
+
+test('an elision or a stressed final vowel alone is Italian', () => {
+  assert.deepEqual(italianTokens("Propagato all'evento"), ["all'e"]);
+  assert.deepEqual(italianTokens('La funzione più usata'), ['più']);
+});
+
+test('code, link destinations, URLs and comments are not prose', () => {
+  const { problems, lines } = languageProblems({
+    'README.md': [
+      '# Labels',
+      '',
+      'Click `Salva configurazione` to store it.',
+      'See the [guide](https://example.it/della/configurazione) for details.',
+      'Raw link: https://example.it/questo/modulo',
+      '<!-- questo commento resta invisibile -->',
+      '```text',
+      'Questo blocco di esempio è in italiano.',
+      '```',
+      '',
+    ].join('\n'),
+  });
+  assert.deepEqual(problems, []);
+  assert.ok(lines > 0, 'prose lines must be counted');
+});
+
+test('English homographs of Italian words pass', () => {
+  const sentences = [
+    'The state machine serves every request.',
+    'A solo run, per user, with a con artist and a la carte menu.',
+    'Push C’s own run and Push C\'s report.',
+    'The non-zero exit code is sui generis; del is an operator.',
+    'data file note come via era media area idea prima facie dove',
+  ];
+  for (const sentence of sentences) assert.deepEqual(italianTokens(sentence), [], sentence);
+  const { problems } = languageProblems({ 'README.md': `# Short\n\n${sentences.join('\n')}\n` });
+  assert.deepEqual(problems, []);
+});
+
+test('a typographic apostrophe is an elision too', () => {
+  assert.deepEqual(italianTokens('Propagato dell’evento'), ['dell’e']);
+});
+
+test('names and loanwords that look Italian pass', () => {
+  for (const sentence of [
+    'Order à la carte.',
+    "D'oh! d'Artagnan bought shares of l'Oréal.",
+    'Map it to a POCO class; play Tutti Frutti.',
+  ]) {
+    assert.deepEqual(italianTokens(sentence), [], sentence);
+  }
+});
+
+test('a multi-backtick code span is not prose', () => {
+  assert.deepEqual(italianTokens('Use ``a `b` Salva configurazione`` here.'), []);
+});
+
+test('prose lines are counted exactly and keep their source line numbers', () => {
+  const { problems, lines } = languageProblems({
+    'README.md': '# Title\n\n<!-- nota -->\nQuesta riga è italiana.\n```\nesempio\n```\n',
+  });
+  assert.equal(lines, 2);
+  assert.deepEqual(
+    problems.map(p => p.line),
+    [4]
+  );
 });

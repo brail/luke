@@ -32,6 +32,14 @@
  * 8. **ADR citations**: every `ADR-NNN` a tracked file cites names an ADR in
  *    the corpus (`CHANGELOG.md` and this checker's own tests and fixtures
  *    excepted).
+ * 9. **Canonical language**: no prose line of a tracked document outside
+ *    `.claude/` carries an Italian token (see `ITALIAN_TOKENS`). What the rule
+ *    is lives in `CLAUDE.md` and ADR-030; this check is a regression guard,
+ *    incomplete by construction: it misses Italian made only of words outside
+ *    its list, so review and `/luke-docs audit` keep the semantic residue.
+ *    Product UI text quoted in a document is a code span, which the check does
+ *    not read — on one line: the check reads line by line, so a span wrapped
+ *    across a line break is read as prose.
  *
  * ## No exception list
  *
@@ -888,6 +896,116 @@ export function checkAdrTitleMatch(
   return checked;
 }
 
+/**
+ * Italian words with no common English homograph: function words, the verb
+ * forms Italian commit subjects and docs used, and the domain nouns that
+ * recurred in the corpus before it was translated.
+ *
+ * A word is left out when English uses it too — `state`, `serve`, `solo`,
+ * `per`, `con`, `non`, `la`, `le`, `il`, `del`, `sui`, `data`, `note`, `come`,
+ * `via`, `era`, `prima`, `dove`, `poco` (a POCO class), `tutti` — so the list
+ * stays quiet on English prose. Known false positive: `voilà`.
+ * One token is enough to fail a line: a heading such as `## Utilizzato da`
+ * carries exactly one, which is also why a document-level density signal
+ * would add nothing — it could only fire on a file that already fails here.
+ */
+const ITALIAN_TOKENS: ReadonlySet<string> = new Set([
+  'della', 'delle', 'dello', 'degli', 'nella', 'nelle', 'nello', 'negli',
+  'dalla', 'dalle', 'dallo', 'dagli', 'alla', 'alle', 'allo', 'agli',
+  'sulla', 'sulle', 'sullo', 'sugli', 'nei', 'dei', 'gli', 'che', 'una',
+  'sono', 'essere', 'viene', 'vengono', 'stato', 'stata', 'stati', 'hanno',
+  'abbiamo', 'questo', 'questa', 'questi', 'queste', 'quello', 'quella',
+  'quelli', 'quelle', 'perché', 'perche', 'anche', 'oppure', 'quando',
+  'sempre', 'ogni', 'tutte', 'tutto', 'senza', 'dopo', 'quindi',
+  'invece', 'mentre', 'ancora', 'molto', 'bisogna', 'però', 'inoltre', 'cioè',
+  'ovvero', 'nel', 'sul', 'tuttavia', 'poiché', 'affinché', 'soltanto',
+  'quale', 'quali', 'nome', 'elenco', 'correttamente',
+  'aggiorna', 'aggiungi', 'aggiungere', 'rimuovi', 'risolvi', 'correggi',
+  'rilascia', 'modifica', 'modificare', 'elimina', 'eliminare', 'salva',
+  'salvare', 'crea', 'creare', 'esegui', 'eseguire', 'verifica', 'controlla',
+  'gestisce', 'restituisce', 'fallisce', 'risponde',
+  'utilizzato', 'utilizzata', 'principali', 'concetti', 'esempio',
+  'struttura', 'tecnologie', 'variabili', 'ambiente', 'sviluppo',
+  'dipendenze', 'interne', 'utente', 'utenti', 'stagione', 'stagioni',
+  'campionario', 'configurazione', 'impostazioni', 'cartella', 'errore',
+  'errori', 'nuovo', 'nuova', 'nuovi', 'nuove', 'gestione', 'accesso',
+  'attivo', 'attiva', 'abilitato', 'abilitata', 'disabilitato', 'richiesta',
+  'risposta', 'chiave', 'valore', 'valori', 'tabella', 'pagina', 'pulsante',
+  'bottone', 'sezione', 'livello', 'permessi', 'ruolo', 'ruoli', 'regola',
+  'regole', 'sicurezza', 'aggiornamento', 'obbligatorio', 'obbligatoria',
+  'predefinito', 'predefinita', 'disponibile', 'disponibili', 'seguente',
+  'seguenti', 'giorni', 'giorno', 'settimana', 'settimane', 'mese',
+  'fornitore', 'fornitori', 'azienda', 'calendario', 'scadenza',
+]);
+
+/**
+ * `dell'`, `un'` … before a letter, with a straight or typographic apostrophe:
+ * an elision English does not write. `l'` counts only before a lowercase letter
+ * (`l'Oréal` is a name); a bare `d'` is left out (`d'Artagnan`, `D'oh`).
+ */
+const ITALIAN_ELISION_RE =
+  /(?<![\p{L}'’])(?:[lL]['’](?=\p{Ll})|(?:[uU]n|[dD]ell|[nN]ell|[aA]ll|[dD]all|[sS]ull|[qQ]uest|[qQ]uell)['’])\p{L}/gu;
+/**
+ * A word ending in a stressed vowel with a grave accent — `è`, `più`, `città`.
+ * Only `è` stands alone in Italian, so `à` alone (`à la carte`) is not counted.
+ */
+const ITALIAN_STRESSED_ENDING_RE =
+  /(?<!\p{L})(?:\p{L}*[èÈ]|\p{L}+[àìòùÀÌÒÙ])(?!\p{L})/gu;
+
+/**
+ * The Italian tokens of one prose line, lower-cased, sorted and unique. Code
+ * spans, link destinations, URLs and HTML tags are removed first: quoted
+ * product UI text is written as code and is not prose.
+ */
+export function italianTokens(line: string): string[] {
+  const prose = line
+    .replace(/(`+)(.*?)\1/g, ' ')
+    .replace(/\]\([^)]*\)/g, ']')
+    .replace(/<https?:\/\/[^>]*>/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/<\/?[A-Za-z][^>]*>/g, ' ');
+  const found = new Set<string>();
+  for (const word of prose.match(/\p{L}+/gu) ?? []) {
+    if (ITALIAN_TOKENS.has(word.toLowerCase())) found.add(word.toLowerCase());
+  }
+  for (const match of prose.matchAll(ITALIAN_ELISION_RE)) {
+    found.add(match[0].toLowerCase());
+  }
+  for (const match of prose.matchAll(ITALIAN_STRESSED_ENDING_RE)) {
+    found.add(match[0].toLowerCase());
+  }
+  return [...found].sort();
+}
+
+/**
+ * Reports every prose line that carries an Italian token, in every tracked
+ * document: a historical or archived path is no exemption (ADR-030). Returns the
+ * number of prose lines read, for the zero-discovery guard.
+ */
+export function checkCanonicalLanguage(
+  root: string,
+  files: string[],
+  problems: Problem[]
+): number {
+  let scanned = 0;
+  for (const file of files) {
+    const relPath = relative(root, file);
+    proseLines(readFileSync(file, 'utf8')).forEach((line, index) => {
+      if (!line.trim()) return;
+      scanned++;
+      const tokens = italianTokens(line);
+      if (tokens.length > 0) {
+        problems.push({
+          file: relPath,
+          line: index + 1,
+          message: `Italian tokens: ${tokens.join(', ')}. Technical prose is English (CLAUDE.md); quote product UI text as code.`,
+        });
+      }
+    });
+  }
+  return scanned;
+}
+
 function main(): void {
   const files = trackedMarkdown(REPO_ROOT);
 
@@ -953,6 +1071,13 @@ function main(): void {
     );
   }
 
+  const proseLinesScanned = checkCanonicalLanguage(REPO_ROOT, files, problems);
+  if (proseLinesScanned === 0) {
+    throw new Error(
+      '[docs-integrity] zero prose lines scanned for the canonical language; the check read nothing.'
+    );
+  }
+
   // Same zero-discovery guard as the rest of the file: if ADR discovery stops
   // finding them, the completeness check would pass without verifying anything.
   if (
@@ -978,7 +1103,7 @@ function main(): void {
       `${markersSeen} markers, ${reachableFiles} reachable, ` +
       `${workspaceReadmes} workspace READMEs, and ${adrsChecked} ` +
       `indexed ADRs verified; ${fragmentsChecked} fragments, ${titlesChecked} ADR titles and ` +
-      `${citationsChecked} ADR citations checked.`
+      `${citationsChecked} ADR citations checked; ${proseLinesScanned} prose lines are English.`
   );
 }
 
