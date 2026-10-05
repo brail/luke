@@ -239,48 +239,27 @@ does not cover, run the script yourself.
 
 ## AppConfig System
 
-All runtime configuration lives in the `AppConfig` table (Postgres KV).
-`AppConfigRegistry` in `packages/core/src/schemas/config.ts` is the **single source of truth**.
+All runtime configuration lives in the `AppConfig` table (Postgres KV), and `AppConfigRegistry` in
+`packages/core/src/schemas/config.ts` is the **single source of truth**. Rationale: ADR-018.
 
-- **Never `process.env.*` in application code** — read AppConfig with `getConfig`,
-  `getTypedConfig` or `getConfigOrDefault` (`apps/api/src/lib/configManager.ts`)
-  or the tRPC config router. Env vars only for bootstrap (URL, NODE_ENV)
-- **Every new config key must be added to `AppConfigRegistry`** with its Zod schema —
-  not a convention: `saveConfig(prisma, key: AppConfigKey, ...)` won't compile
-  without it, and it validates the value against that schema before writing
-  (on the plaintext, before `encryptValue`). Never widen a schema to accommodate
-  a write: a key that means "not configured" is *absent*, so the write path removes
-  it (a `null` entry in a `saveConfigs` batch, or `deleteConfig` for a single key),
-  never `saveConfig(key, '')` — `getConfig` already returns `null` for an absent
-  key, and `''` would be a second spelling of the same state
-- **A form that writes several keys calls `saveConfigs` once** — every value
-  validated before anything is written, all of them in one transaction, so a
-  failure leaves the stored form as it was. One `saveConfig` per key leaves it
-  half-written. Pinned per form by `apps/api/test/configFormAtomicity.integration.spec.ts`
-- Values in the DB are always strings — `z.coerce.*` for numbers/booleans,
-  **`jsonConfigSchema(Inner)`** for JSON blobs, never
-  `.transform(s => Inner.parse(JSON.parse(s)))`: a `parse` (or a `JSON.parse`
-  `SyntaxError`) inside a bare `transform` **throws through `safeParse`** instead of
-  populating `result.error`, so every caller would have to know to wrap that key.
-  Pinned by a test over the whole registry, not a sample
-- **Defaults live in `APP_CONFIG_DEFAULTS`**, once, in the string form AppConfig
-  stores — never spelled at the call site. Read such a key with
-  `getConfigOrDefault(prisma, key)`, which returns the parsed value and never
-  null, so no caller writes a fallback or a coercion. The seed reads the same
-  declaration. They had drifted: `storage.s3.endpoint` fell back to `seaweedfs`
-  in the settings router and `localhost` in the provider that opens the
-  connection. Credentials are deliberately absent — a default credential is a
-  dev seed, not a default, and the reader refuses to start rather than
-  substituting one (`loadS3Provider`, mirroring `getSmtpConfig`)
-- **Numeric bounds belong on the registry schema**, not on the reader. Seven
-  `max` values used to live only in `configManager`'s numeric getters, so
-  `saveConfig` accepted an out-of-range write, stored it, and the reader
-  silently returned the default instead
-- Sensitive values read with `decrypt: true` in `getConfig()`. `getConfig`
-  remains correct for a plain string with no default (a URL, a credential); it
-  is the manual `parseInt`/`=== 'true'` on its result that does not
-- `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add only if its absence must
-  block boot
+- **Never `process.env.*` in application code** — read AppConfig with `getConfig`, `getTypedConfig`
+  or `getConfigOrDefault` (`apps/api/src/lib/configManager.ts`) or the tRPC config router. Env vars
+  only for bootstrap
+- **Every new config key goes in `AppConfigRegistry`** with its Zod schema, numeric bounds included
+  — `saveConfig` validates against it before writing. Never widen a schema to accommodate a write:
+  "not configured" is an absent key (a `null` entry in a `saveConfigs` batch, or `deleteConfig`),
+  never `''`
+- **A form that writes several keys calls `saveConfigs` once**, so a failure leaves the stored form
+  as it was (`apps/api/test/configFormAtomicity.integration.spec.ts`)
+- Stored values are strings: `z.coerce.*` for numbers, `booleanConfigSchema` for booleans,
+  `jsonConfigSchema(Inner)` for JSON — never a bare `.transform(s => Inner.parse(JSON.parse(s)))`,
+  which throws through `safeParse`
+- **Defaults live once in `APP_CONFIG_DEFAULTS`**, in the stored string form; read such a key with
+  `getConfigOrDefault`, never with a call-site fallback or coercion. Credentials have no default:
+  their readers refuse to start (`loadS3Provider`, `getSmtpConfig`)
+- `getConfig` decrypts encrypted rows by default; for numbers and booleans use the typed readers,
+  never `parseInt`/`=== 'true'` on its result
+- `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add a key only if its absence must block boot
 
 ## Auth & Crypto — DO NOT TOUCH without an explicit request
 
@@ -450,32 +429,20 @@ import { cn } from '../../../../lib/utils';
 
 `.env` allows ONLY infrastructural bootstrap. Everything else goes in AppConfig.
 
-**Allowed in API `.env`**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`,
-`LUKE_CORS_ALLOWED_ORIGINS`, `LUKE_TRUSTED_PROXY_CIDR`, `OTEL_*`, `LOG_LEVEL`,
-`APP_VERSION`
+**Allowed in API `.env`**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`, `LUKE_CORS_ALLOWED_ORIGINS`,
+`LUKE_TRUSTED_PROXY_CIDR`, `OTEL_*`, `LOG_LEVEL`, `APP_VERSION`. Missing or invalid
+`LUKE_TRUSTED_PROXY_CIDR` stops apps/api at boot in production (`apps/api/src/lib/trustProxy.ts`).
 
-`LUKE_TRUSTED_PROXY_CIDR` is infrastructural for the same reason
-`LUKE_CORS_ALLOWED_ORIGINS` is: it describes the network boundary, and
-`trustProxy` is read once when the Fastify instance is constructed — before any
-database connection exists, so AppConfig cannot supply it. The compose files
-set it from the same interpolation that creates the `edge` network, so the
-subnet Docker builds and the range apps/api trusts have one source. Missing or
-invalid in production, apps/api refuses to start
-(`apps/api/src/lib/trustProxy.ts`).
-(build-time metadata injected as a Docker `ARG`/`ENV` from the git tag in CI —
-not a secret, never read from AppConfig to avoid drift from the running image)
+**Allowed in Web `.env`** (framework exceptions): `INTERNAL_API_URL`, `NEXT_PUBLIC_API_URL`,
+`NEXT_PUBLIC_FRONTEND_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `COOKIE_SECURE`,
+`NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_LUKE_DEBUG_UI`.
 
-**Allowed in Web `.env`** (framework exceptions): `INTERNAL_API_URL`,
-`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_FRONTEND_URL`, `NEXTAUTH_URL`,
-`NEXTAUTH_SECRET`, `COOKIE_SECURE`, `NEXT_PUBLIC_APP_VERSION` (same build-time pattern)
+`APP_VERSION` and `NEXT_PUBLIC_APP_VERSION` are build-time metadata injected as a Docker `ARG`/`ENV`
+from the git tag in CI — never read from AppConfig.
 
 **Forbidden in `.env`**: SMTP, LDAP, storage credentials, tokens, application passwords.
-
-Enforcement: `assertEnvPolicy()` in `apps/api/src/server.ts` blocks boot in
-production if it finds forbidden patterns (`SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`,
-`*_PASSWORD`, `*_API_KEY`, `*_TOKEN`).
-
----
+`assertEnvPolicy()` in `apps/api/src/server.ts` blocks apps/api's boot in production on `SMTP_*`,
+`LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`.
 
 ## Prisma Migration Workflow
 

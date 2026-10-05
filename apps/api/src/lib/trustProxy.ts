@@ -36,12 +36,15 @@ import type { FastifyServerOptions } from 'fastify';
  * - **address inside the trusted range** — the peer must be the proxy we
  *   actually deployed, not merely the first thing to open a socket.
  *
- * The range arrives as `LUKE_TRUSTED_PROXY_CIDR`, which the compose files set
- * from the same interpolation that creates the `edge` network, so the subnet
- * Docker builds and the value this trusts cannot drift apart. `edge` carries
- * apps/web and apps/api and nothing else; postgres and seaweedfs sit on an
- * `internal: true` `data` network they cannot leave. That is what makes "only
- * apps/web can be hop 0" a property of the topology rather than a comment.
+ * The range arrives as `LUKE_TRUSTED_PROXY_CIDR`, an environment variable rather
+ * than an AppConfig key because fastify reads `trustProxy` once, when the
+ * instance is constructed — before any database connection exists. The compose
+ * files set it from the same interpolation that creates the `edge` network, so
+ * the subnet Docker builds and the value this trusts cannot drift apart.
+ * `edge` carries apps/web and apps/api and nothing else; postgres and seaweedfs
+ * sit on an `internal: true` `data` network they cannot leave. That is what
+ * makes "only apps/web can be hop 0" a property of the topology rather than a
+ * comment.
  *
  * Parsing and matching are `@fastify/proxy-addr`'s — the same library fastify
  * compiles `trustProxy` with — declared directly in `apps/api/package.json`

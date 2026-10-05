@@ -83,7 +83,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 | `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |
 | `COOKIE_SECURE` | In production, set to `false` when serving plain HTTP; any other value keeps the session cookie `Secure`. Outside production the cookie is never `Secure` | No |
 | `NEXT_PUBLIC_APP_VERSION` | Build-time version metadata injected from the git tag; absent under `pnpm dev`, where the UI shows a development marker instead | No |
-| `NEXT_PUBLIC_LUKE_DEBUG_UI` | Build-time flag: `true` turns on `debugLog`/`debugWarn`/`debugError` output (`src/lib/debug.ts`) in a production build; outside production they always log. Not on the `CLAUDE.md` list (ADR-018 records it) | No |
+| `NEXT_PUBLIC_LUKE_DEBUG_UI` | Build-time flag: `true` turns on `debugLog`/`debugWarn`/`debugError` output (`src/lib/debug.ts`) in a production build; outside production they always log | No |
 
 Everything else — SMTP, LDAP, storage, NAV, Google — lives in AppConfig in the database, never in environment variables.
 <!-- luke-docs:end:env -->

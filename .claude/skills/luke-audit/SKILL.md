@@ -95,8 +95,8 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **Env policy:**
 
-- `.env` or `.env.*` files containing forbidden patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`
-  Allowed exceptions: `NEXTAUTH_SECRET`, `COOKIE_SECURE`
+- `.env` or `.env.*` variables outside the permitted lists, or matching a forbidden pattern, in
+  CLAUDE.md "Env Policy" — the API patterns are `FORBIDDEN_ENV_PATTERNS` in `apps/api/src/server.ts`
 
 **Dev patterns:**
 
