@@ -2,7 +2,6 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { UploadCloud } from 'lucide-react';
-import { useSession } from 'next-auth/react';
 import React, { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -41,7 +40,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
-import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
@@ -71,8 +70,8 @@ interface BrandDialogWithPermissionsProps {
 /**
  * Permission-aware dialog for creating and editing a Brand.
  *
- * Disables all fields and the submit button for read-only users, and shows
- * contextual tooltips explaining why. NAV-linked fields are locked regardless
+ * Disables the fields and hides the submit button for a user who can neither
+ * create nor update brands, and shows contextual tooltips explaining why. NAV-linked fields are locked regardless
  * of the user's role. Logo upload is gated by `brands:update`.
  *
  * @param brand - Existing brand to edit; omit for create mode.
@@ -93,9 +92,11 @@ export function BrandDialogWithPermissions({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [codePreview, setCodePreview] = useState<string>('');
 
-  // Permission hook
-  const brandPerms = useBrandPermissions();
-  const { data: session } = useSession();
+  const { can, session } = usePermission();
+  const canUpdate = can('brands:update');
+  const canEdit = can('brands:create') || canUpdate;
+  // Reads brands but cannot create them: the viewer's case.
+  const isReadOnly = can('brands:read') && !can('brands:create');
 
   // Synced NAV brands (for linking)
   const { data: navBrands = [] } = trpc.integrations.nav.brands.list.useQuery(
@@ -106,31 +107,31 @@ export function BrandDialogWithPermissions({
   // Determine the dialog label from the permissions
   const dialogTitle = useMemo(() => {
     if (brand) {
-      return brandPerms.isReadOnly() ? 'Visualizza Brand' : 'Modifica Brand';
+      return isReadOnly ? 'Visualizza Brand' : 'Modifica Brand';
     }
     return 'Nuovo Brand';
-  }, [brand, brandPerms]);
+  }, [brand, isReadOnly]);
 
   const dialogDescription = useMemo(() => {
     if (brand) {
-      if (brandPerms.isReadOnly()) {
+      if (isReadOnly) {
         return 'Visualizzazione del brand (accesso sola lettura)';
       }
       return 'Modifica le informazioni del brand selezionato.';
     }
     return 'Crea un nuovo brand nel sistema.';
-  }, [brand, brandPerms]);
+  }, [brand, isReadOnly]);
 
   // Message for disabled fields
   const disabledFieldTooltip = useMemo(() => {
-    if (brandPerms.isReadOnly()) {
+    if (isReadOnly) {
       return 'Accesso sola lettura - non puoi modificare i brand';
     }
-    if (!brandPerms.canEdit()) {
+    if (!canEdit) {
       return 'Non hai i permessi necessari per modificare i brand';
     }
     return '';
-  }, [brandPerms]);
+  }, [isReadOnly, canEdit]);
 
   const form = useForm<BrandFormData>({
     resolver: zodResolver(BrandFormSchema),
@@ -176,7 +177,7 @@ export function BrandDialogWithPermissions({
 
   // Auto-focus code field when dialog opens
   React.useEffect(() => {
-    if (open && brandPerms.canEdit()) {
+    if (open && canEdit) {
       const timer = setTimeout(() => {
         const codeInput = document.querySelector(
           'input[placeholder="es. nike-2024"]'
@@ -193,14 +194,12 @@ export function BrandDialogWithPermissions({
       setCodePreview('');
       setUploadProgress(0);
     }
-    // `brandPerms` deliberately excluded: useBrandPermissions() returns a fresh object literal
-    // on every render (only its leaf fields are memoized), so depending on it would re-run this
-    // effect — re-arming the focus timer, and re-resetting the form while closed — on every
-    // render instead of only on `open` transitions.
+    // `canEdit` deliberately excluded: this effect runs on `open` transitions only, so a session
+    // that resolves while the dialog is open does not re-arm the focus timer.
   }, [open, form]);
 
   const handleLogoUpload = (file: File) => {
-    if (!brandPerms.canUpdate) {
+    if (!canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
       return;
     }
@@ -255,7 +254,7 @@ export function BrandDialogWithPermissions({
   };
 
   const handleLogoRemove = () => {
-    if (!brandPerms.canUpdate) {
+    if (!canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
       return;
     }
@@ -267,7 +266,7 @@ export function BrandDialogWithPermissions({
 
   // Form submit handler
   const handleSubmit = async (data: BrandFormData) => {
-    if (!brandPerms.canEdit()) {
+    if (!canEdit) {
       toast.error('Non hai i permessi per modificare i brand');
       return;
     }
@@ -292,7 +291,7 @@ export function BrandDialogWithPermissions({
     }
   };
 
-  const isFormDisabled = !brandPerms.canEdit();
+  const isFormDisabled = !canEdit;
   // Fields from NAV are read-only if brand is already linked
   const isNavLinked = !!brand?.navBrandId;
   const isNavFieldReadOnly = isNavLinked || isFormDisabled;
@@ -331,7 +330,7 @@ export function BrandDialogWithPermissions({
             <div className="space-y-2">
               <FormLabel>Logo</FormLabel>
               <PermissionTooltip
-                hasPermission={brandPerms.canUpdate || !disabledFieldTooltip}
+                hasPermission={canUpdate || !disabledFieldTooltip}
                 tooltip={disabledFieldTooltip}
                 className="flex w-full cursor-not-allowed"
               >
@@ -339,10 +338,10 @@ export function BrandDialogWithPermissions({
                   onFile={handleLogoUpload}
                   accept={['image/png', 'image/jpeg', 'image/webp']}
                   maxSizeMB={2}
-                  disabled={isUploading || isLoading || !brandPerms.canUpdate}
+                  disabled={isUploading || isLoading || !canUpdate}
                   className={cn(
                     'rounded-lg border-2 border-dashed p-4',
-                    brandPerms.canUpdate && !isUploading
+                    canUpdate && !isUploading
                       ? 'cursor-pointer border-muted hover:border-primary/40 hover:bg-muted/30'
                       : 'border-muted opacity-50 cursor-not-allowed'
                   )}
@@ -355,7 +354,7 @@ export function BrandDialogWithPermissions({
                           alt="Logo brand"
                           className="h-16 w-16 rounded-lg object-cover border"
                         />
-                        {brandPerms.canUpdate && (
+                        {canUpdate && (
                           <Button
                             type="button"
                             variant="destructive"
@@ -382,7 +381,7 @@ export function BrandDialogWithPermissions({
                         </>
                       ) : (
                         <p className="text-sm text-muted-foreground">
-                          {brandPerms.canUpdate
+                          {canUpdate
                             ? 'Trascina qui o clicca per caricare'
                             : 'Sola lettura'}
                         </p>
@@ -554,7 +553,7 @@ export function BrandDialogWithPermissions({
             />
 
             {/* Read-Only Banner */}
-            {brandPerms.isReadOnly() && (
+            {isReadOnly && (
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
                 <p className="text-sm text-blue-800">
                   Hai accesso sola lettura. Per modificare i brand, contatta un
@@ -570,9 +569,9 @@ export function BrandDialogWithPermissions({
                 onClick={() => onOpenChange(false)}
                 disabled={isLoading || isUploading}
               >
-                {brandPerms.isReadOnly() ? 'Chiudi' : 'Annulla'}
+                {isReadOnly ? 'Chiudi' : 'Annulla'}
               </Button>
-              {brandPerms.canEdit() && (
+              {canEdit && (
                 <Button type="submit" disabled={isLoading || isUploading}>
                   {isLoading ? 'Salvataggio...' : brand ? 'Aggiorna' : 'Crea'}
                 </Button>
