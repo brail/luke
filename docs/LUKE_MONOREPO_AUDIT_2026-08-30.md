@@ -4922,3 +4922,135 @@ Evidence: CI `37206085827`, security `37206085829` and Docs `37206085799`, all
   tree-shaking, `next build` coverage in CI, dist-staleness ergonomics and the
   `zod` pre-bundle coupling in the browser test config — are not assessed by
   this appendix and keep the status §H.11 gave them.
+
+# Appendix Z — cycle closure: instruction files, release rationale and open work (2026-10-05)
+
+## Z.1 Scope and disposition
+
+This appendix closes the audit cycle this document opened on 2026-08-30. The
+owner's closing order of 2026-10-04 ran the repository cleanup, its tails and
+documentation phases 11, 11b and 12, and ends with this appendix: `CLAUDE.md`
+slimmed to its rules, `AGENTS.md` completed, and this one closing record. Z.1–Z.4
+are written before that work; Z.5 records it and Z.6 states the final state.
+
+It appends to Appendices A–Y. No byte of any earlier appendix is modified, and
+no finding, measurement or evidence record in them is withdrawn. Z.1–Z.4 come
+first so that every statement leaving `CLAUDE.md` has a home before it leaves.
+
+| Item | State |
+| --- | --- |
+| Release and CI rationale held only in `CLAUDE.md` and checker headers | **RECORDED** in [ADR-033](decisions/033-release-identity-versioning-contract-and-release-trains.md); it leaves `CLAUDE.md` in the slimming (Z.5) |
+| Release gates, workflow checkers and documentation routing absent from `main` | **open** — restated in full in Z.2 |
+| Code, dependency and operations work found during the cleanup | **open** — Z.3 |
+| ADR-011 trigger 3 and X25's digest delivery record | **not met** — Z.4, with an ADR-011 erratum |
+| `CLAUDE.md` slimming and `AGENTS.md` completion | recorded in Z.5; final state in Z.6 |
+| Every other open item recorded in Appendices A–Y | untouched here |
+
+What it supersedes, all in Z.2: §X.10's pointer saying the residual of porting
+`tools/scripts/check-release-tree.ts` and its callers to `main` is tracked by
+"the release section of `CLAUDE.md`" — Z.2 tracks it from now on, and the
+slimming drops it from `CLAUDE.md`; the scope of that residual, which Z.2
+widens to every release gate; and §X.2's list of the jobs `main`'s `CI gate`
+needs.
+
+## Z.2 Release gates `main` does not carry yet
+
+Verified on `origin/main` at `55a1daf8`, the v2.1.6 merge, on 2026-10-05:
+
+- **No release gate.** `tools/scripts/check-release-provenance.ts`,
+  `check-release-tree.ts`, `check-release-train.ts` and `check-image-runtime.ts`
+  are absent. `main`'s `release.yml` still decides by
+  `contains(github.ref_name, '-rc')` the registry tags of both images (lines
+  54–56 and 110–112) and the web image's `INTERNAL_API_URL` (line 128), and
+  runs no provenance,
+  tagged-tree or image check, so a hotfix tag cut from `main` before the train
+  graduates publishes without any of them. This widens the residual §X.10
+  names, which covered the tree checker alone.
+- **No workflow checker and no documentation routing.**
+  `check-workflow-branches.ts`, `check-workflow-paths.ts`, `docs.yml` and the
+  `ci.yml` `push.paths-ignore` allowlist are absent; §X.10's blockers stand, and
+  `main`'s gate dependency lists remain unpinned.
+- **`tools/*`.** `main`'s `pnpm-workspace.yaml` still declares the inert glob.
+  It no longer blocks the release-tree port, because the checker stopped
+  reading that file (§V.4).
+- **Correction to §X.2.** Since `8c514c13` (2026-09-12, shipped in v2.1.6)
+  `main`'s `CI gate` needs `[checks, integration, migrations, web-image]`, not
+  the three jobs §X.2 lists, which were accurate at `388ff776`. The train's
+  gate needs `[checks, browser, integration, migrations, images]`; neither list
+  contains the other. §X.10's statement that both gates are enforced on `main`
+  stays true.
+
+How it closes: v3.0.0 graduates by merging the train into `main` with a merge
+commit, as ADR-033 requires, and that merge brings every one of these with it,
+so the residual closes there without a separate port. Only a hotfix released
+from `main` before then would need them ported by hand.
+
+On the train itself, three release items stay open:
+
+- **`main` has to be merged into the train before the first candidate.** v2.1.5
+  and v2.1.6 are not reachable from the train, and `check-release-train.ts`
+  refuses any candidate while a stable tag on another line outranks the base,
+  so `v3.0.0-rc.1` waits for `git merge --no-ff main`. That merge also has to
+  reconcile `main`'s `web-image` job with the train's `images` job.
+
+- **An empty hostname fails open.** `release.yml` writes
+  `vars.RC_PUBLIC_HOSTNAME` or `vars.PUBLIC_HOSTNAME` to a step output without
+  checking it (lines 223–225) and builds
+  `NEXT_PUBLIC_API_URL=http://<value>` from it (line 255). An empty variable
+  builds `http://` with every step green. `OPERATIONS.md` documents the
+  behaviour; nothing refuses it.
+- **ADR-028's release half has not run yet.** The image check runs in CI's
+  `images` job on every push, but `release.yml`'s build-check-push sequence
+  runs first on a real tag, at the first candidate. The remote branch
+  `img-runtime-deps`, which carried that work, still exists.
+
+## Z.3 Open work found during the cleanup
+
+Open at `1d55afef`. Each item names where it goes next; none is closed here.
+
+| Item | Where next |
+| --- | --- |
+| Portfolio and KIMO sync errors are returned as values: the page shows a success toast and no administrator is alerted | bug unit |
+| The permission on the sales-statistics sync triggers does not match a mutation | RBAC plan |
+| `dev-bootstrap` ships in the production API image without a production guard, and its header says it fails fast on a missing master key, while `getMasterKey` creates one | unit |
+| The mail settings page discards `NEXT_PUBLIC_FRONTEND_URL` | unit |
+| `getPool` in `@luke/nav` does not rebuild the pool when only `readOnly` changes: `configChanged` omits it | unit |
+| Sync link-guard skips are counted as upserts | unit |
+| `NavSyncFilter.entity` is a plain string whose permitted values live in a comment and an inline `z.enum`, not in an `as const` list (rule 15) | unit |
+| Six inline unique-violation checks in routers, plus two private helpers that repeat the test (`derivativeWorker.ts`, `collectionLayoutAutoRevision.service.ts`); one `isUniqueViolation` beside `isForeignKeyViolation` | unit |
+| `LoginSchema` is defined inside a router (rule 7) | move to `@luke/core` |
+| Logging the refusals of manual permission checks is a convention only (ADR-029) | rule candidate |
+| Stored emails with legacy mixed case; the unique index is case-sensitive | data and unit |
+| The denial log of the role guard in `users.update` is reachable only in a race and untested | test |
+| The seeded `rateLimit` configuration row has no writer; `integrations.importExport` is a placeholder | owner decision |
+| Source and test comments still cite the superseded ADR-025 (`effectiveAccess.ts`, `sectionHierarchy.ts`, `schemas/rbac.ts`, `sectionAccessMiddleware.ts`, `sectionAccess.service.ts`, `configManager.ts`, `sectionHierarchy.test.ts`, `sectionAccess.spec.ts`, `sectionAccess.integration.spec.ts`, `lastAdminGuard.integration.spec.ts`) | comment unit |
+| The Prisma `///` comments on `CollectionLayoutRevision.revisionNumber` (says 1-based) and the `revisionTypeValue` example | comment unit |
+| `db:seed` runs without `--env-file` | unit |
+| The local-storage cleanup job reads the filesystem outside `IStorageProvider`, as ADR-031's Consequences record; the `CLAUDE.md` rule is unchanged | owner decision |
+| ADR-019's revocation scope is not yet assessed for every authenticated channel | `/luke-security` |
+| The `uuid` override lifts `exceljs` to the ESM-only uuid 14; a `<12` cap would keep CommonJS uuid 11 after an XLSX export check. `postcss` is uncapped against a future 9 | next `/luke-deps` review |
+| The osv-scanner ignore for `braces` (GHSA-vfj7-8cjw-p6xm) expires on 2026-11-03 and must survive the graduation | before 2026-11-03 |
+| Before the v3.0.0 deploy, count production vendors with a blank nickname (`btrim(nickname) = ''`) | pre-deploy |
+| The one-shot `db:*` data scripts are deleted only after the v3.0.0 deploy, which needs three of them; `refresh-rc-db.sh` stays until `rc:clone` is proven on a real release | post-deploy |
+
+`main` awaits an owner decision on a targeted v2.1.7: the photo-revision fix
+`502185c3`, the `busboy` advisory, fixes from the 2026-10-04 security block,
+and the Dependabot alerts open on `main`.
+
+## Z.4 Governance notes
+
+- **ADR-011 trigger 3.** X25 (`83e0e5d7`) added `CalendarDigestDelivery`
+  (`packages/db/prisma/calendar.prisma`): a per-recipient claim with a lease,
+  at most three attempts with a backoff, and a logged terminal `ABANDONED`
+  state, for the calendar digest alone. It is a delivery record inside the
+  existing scheduler, not a job queue: no other job uses it, and nothing
+  retries, inspects or replays abandoned work. ADR-011's third trigger, "a
+  real job queue is needed", is therefore not met, and ADR-011 is not
+  superseded. Its phrase "today the schedulers are fire-and-forget" no longer
+  describes this one scheduler, which ADR-011's Errata now records. A second
+  job that needs the same machinery is the point to reassess.
+- **The §A.6 items.** The "ADR 006–009 status disposition" is settled in the
+  record itself: the ADR index lists 006, 007, 008 and 009 as superseded by
+  016, 017, 018 and 019. "CLAUDE.md rule 8 breadth" is unchanged by the
+  slimming: rule 8 keeps its number and its scope. Both remain what §A.6 says
+  they are — items of the governance audit, not of this program.
