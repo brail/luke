@@ -499,6 +499,8 @@ Never `prisma migrate reset` in production.
 
 ## Versioning & Release
 
+Rationale: `docs/decisions/033-release-identity-versioning-contract-and-release-trains.md`.
+
 **SemVer**: `patch` = fix/refactor/chore/migration without a feature;
 `minor` = new visible functionality; `major` = breaking change to a supported
 compatibility contract.

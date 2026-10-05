@@ -165,7 +165,7 @@ The project uses [Conventional Commits](https://www.conventionalcommits.org/) to
 
 Tag naming: `vX.Y.Z` (stable) or `vX.Y.Z-rc.N` (release candidate) — SemVer criteria: `patch` for a fix or refactor, `minor` for new functionality, `major` for a breaking change to a supported compatibility contract.
 
-**The git tag is the release identity.** No manifest declares a version: there is no second number to keep aligned with the tag, and none to drift.
+**The git tag is the release identity.** No manifest declares a version: there is no second number to keep aligned with the tag, and none to drift. The reasons for this contract — identity, versioning, release trains and the gates `main` requires — are recorded in [ADR-033](docs/decisions/033-release-identity-versioning-contract-and-release-trains.md).
 
 **`pnpm release:prepare <tag>` is the only supported entry point**: you name the version. The script refreshes the tags and `origin/main` itself and stops if it cannot, then `tools/scripts/check-release-train.ts --validate` proves the tag **before anything is written**; only afterwards does it generate the CHANGELOG section over the validated range and re-check the result with `check-release-tree.ts --worktree`. **`CHANGELOG.md` is the only file it writes.**
 
@@ -188,5 +188,5 @@ This check is deliberately narrow: it proves that the tagged tree ships notes fo
 
 Push the one tag by name — `git push origin vX.Y.Z`, never `--tags`: `.husky/pre-push` refuses more than one release tag per push, and runs the same checker against the object being pushed. It is **early feedback, not enforcement** — `--no-verify` skips it, and another clone may not have it.
 
-Notes are generated only from Conventional Commits: merge commits (`Merge pull request …`, `Merge branch …`) are excluded. A candidate whose only new commits are merges is therefore rejected by the validator during preparation — the range contains nothing releasable — before any write starts. The empty-section rejection in `check-release-tree.ts` is not what stops it; that remains a backstop for an empty section reaching the release tree by another route. This is the intended behaviour.
+Notes are generated from commit subjects, grouped by Conventional Commit type (anything else lands under Other). Subjects beginning with `Merge ` — git's default `Merge pull request …` and `Merge branch …` — are skipped, whatever follows; a merge given any other subject is rendered. A candidate whose only new commits are such merges is therefore rejected by the validator during preparation — the range contains nothing releasable — before any write starts. The empty-section rejection in `check-release-tree.ts` is not what stops it; that remains a backstop for an empty section reaching the release tree by another route. This is the intended behaviour.
 <!-- luke-docs:end:release -->
