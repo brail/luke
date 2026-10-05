@@ -248,7 +248,8 @@ does not cover, run the script yourself.
 All runtime configuration lives in the `AppConfig` table (Postgres KV).
 `AppConfigRegistry` in `packages/core/src/schemas/config.ts` is the **single source of truth**.
 
-- **Never `process.env.*` in application code** — use `getConfigValue(prisma, key)`
+- **Never `process.env.*` in application code** — read AppConfig with `getConfig`,
+  `getTypedConfig` or `getConfigOrDefault` (`apps/api/src/lib/configManager.ts`)
   or the tRPC config router. Env vars only for bootstrap (URL, NODE_ENV)
 - **Every new config key must be added to `AppConfigRegistry`** with its Zod schema —
   not a convention: `saveConfig(prisma, key: AppConfigKey, ...)` won't compile

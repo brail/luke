@@ -80,7 +80,6 @@ export * from './storage/assets.js';
 export {
   isDevelopment,
   isProduction,
-  getConfigValue,
 } from './runtime/env.js';
 
 // Re-export network URL utilities

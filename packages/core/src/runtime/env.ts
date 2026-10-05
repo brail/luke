@@ -1,8 +1,8 @@
 /**
- * @luke/core/runtime - Configuration management
+ * @luke/core/runtime - Runtime environment helpers
  *
- * Centralized configuration management using AppConfig system.
- * Provides typed configuration access for both client and server contexts.
+ * The API base URL, the environment mode, and the minimal AppConfig client
+ * type the server-side readers in `@luke/core/server` accept.
  *
  * @version 0.2.0
  * @author Luke Team
@@ -60,31 +60,4 @@ export function isDevelopment(): boolean {
  */
 export function isProduction(): boolean {
   return process.env.NODE_ENV === 'production';
-}
-
-/**
- * Gets configuration value from AppConfig (server-side only)
- *
- * This function is intended for server-side use where Prisma is available.
- * For client-side configuration, use environment variables or tRPC calls.
- *
- * @param prisma - Prisma client instance
- * @param key - Configuration key (e.g., 'app.urls.apiBase')
- * @param defaultValue - Default value if not found
- * @returns Configuration value or default
- */
-export async function getConfigValue(
-  prisma: IPrismaConfigClient,
-  key: string,
-  defaultValue?: string
-): Promise<string | undefined> {
-  try {
-    const config = await prisma.appConfig.findUnique({
-      where: { key },
-    });
-
-    return config?.value ?? defaultValue;
-  } catch {
-    return defaultValue;
-  }
 }

@@ -3,7 +3,8 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Runtime config comes from the AppConfig KV store (getConfigValue / the
+      Runtime config comes from the AppConfig KV store (getConfig,
+      getTypedConfig or getConfigOrDefault in apps/api's configManager, or the
       tRPC config router), not from process.env directly. Exceptions:
       infrastructure bootstrap (see CLAUDE.md Env Policy), and
       NEXT_PUBLIC_*/NODE_ENV/APP_VERSION (build-time metadata, not a secret)
