@@ -5054,3 +5054,85 @@ and the Dependabot alerts open on `main`.
   016, 017, 018 and 019. "CLAUDE.md rule 8 breadth" is unchanged by the
   slimming: rule 8 keeps its number and its scope. Both remain what §A.6 says
   they are — items of the governance audit, not of this program.
+
+## Z.5 Instruction changes, evidence and residuals
+
+The slimming started from `fc467d00`; the text it removed is `git show fc467d00:CLAUDE.md`.
+`CLAUDE.md` went from 820 to 468 lines and `AGENTS.md` from 40 to 43. The numbered rules —
+Rules of engagement 1–3 and Development Patterns 1–15 — keep their numbers and meaning, and every
+section name another file cites survives.
+
+**Where the removed text went.**
+
+| Removed from `CLAUDE.md` | Now |
+| --- | --- |
+| Release and CI rationale | [ADR-033](decisions/033-release-identity-versioning-contract-and-release-trains.md) |
+| Release procedure and gate mechanics | the root `README.md` release section, `tools/README.md`, the headers of `tools/scripts/check-release-*.ts` and `check-workflow-*.ts` |
+| Gates `main` lacks, the docs-routing port, `main`'s gate job list | Z.2 |
+| AppConfig mechanics and their history | comments in `packages/core/src/schemas/config.ts`, ADR-018 |
+| Why `LUKE_TRUSTED_PROXY_CIDR` is an environment variable | the header of `apps/api/src/lib/trustProxy.ts` |
+| The derived-secret list | ADR-020 |
+| The shared-schema catalogue | `packages/core/src/schemas/` itself |
+| Why release notes use `--prepend` | a comment beside the call in `scripts/release-prepare.sh` |
+| The reasons behind rules 4, 5, 12, 13 and 15 and the disabled-tooltip wrapper | the enforcers' messages, the `auditLog.ts` JSDoc and `lessons.md` |
+| Pure history ("they had drifted", "Next.js 15", "Cycle 11", `388ff776`, "what is new") | git only |
+
+Statements the census found false were corrected rather than moved, among them: the ten schema
+names that do not exist, `getConfigValue`, `COLLECTION_PROGRESS` and its ordering, the hidden-column
+list, `withAuditLog`'s file, `decrypt: true`, the HKDF list, "local/samba/gdrive", `NEXTAUTH_*`
+missing from the env patterns, the import-order groups, the `feat(api)!` example and "push to
+`main` → CI only". `CLAUDE.md` also gained one section, "Collaboration with Codex": Claude Code's
+side of the review contract, whose Codex side is `AGENTS.md`.
+
+**Budget exception.** 468 lines is above the closing order's target of about 400 lines. It is an
+explicit exception: no rule was removed to meet a line count, and the new collaboration section is 31 of
+those lines.
+
+**Commits**, each approved by the owner after its gates and an independent review:
+`d1fb637e` ADR-033 · `ae4eed19` Z.1–Z.4 and the ADR-011 erratum · `8a7d1fbe` the train branch's
+lifecycle · `2971c3dc` `getConfigValue` removed · `1380cf0c` the LDAP and NAV response schemas
+removed · `05b3b1cc` `canAll`/`canAny` removed · `e7676021` `useBrandPermissions` replaced by
+`can()` · `fcdfe908` AppConfig and env sections · `ce2c8b66` derived secrets point to ADR-020 ·
+`60129ddf` the remaining sections · `1b5e2325` the release section · `fceca555` the collaboration
+split · the commit that adds Z.5 and Z.6.
+
+**Evidence.**
+
+- CI on the pushed blocks, all `success`: Docs `37299332076` and security `37299332151` on
+  `8a7d1fbe` (documentation only, so no CI run); CI `37327506252`, security `37327506226` and Docs
+  `37327505980` on `e7676021`; CI `37342674391`, security `37342674601` and Docs `37342674328` on
+  `1b5e2325`.
+- The removals: lint, typecheck and tests of every touched workspace (`@luke/core` 789/789, web
+  125/125), `test:module-contract`, semgrep and its rule tests, `pnpm check:drift`.
+- `e7676021`: the dialog's permission answers are statically the same formulas as the hook's. A
+  browser test pins seven permission sets; it passed on the code before the refactor and after it,
+  and two mutations — read-only keyed on update, the logo keyed on edit — each failed two cases.
+  It does not exercise every session transition or a real upload.
+- Reviews: Codex on the plan, on ADR-033, on the aggregate and twice on the collaboration split;
+  an independent Claude agent on every unit touching `CLAUDE.md`; `/luke-docs audit` on every unit;
+  `/code-review` on every block before its push. No new checker was added.
+
+**Residuals found during this work**, open:
+
+| Residual | Where next |
+| --- | --- |
+| `createSyncRequest` (`packages/nav/src/sync/utils.ts`) sets `request.timeout`, which mssql 12 does not read, so NAV sync requests run under the pool's 300 s request timeout; a real 60 s default would break the portfolio query, which takes minutes. `CLAUDE.md`'s NAV rule, the helper's JSDoc and the luke-deps verification matrix all assume the timeout and follow that decision | a per-query decision, then a unit |
+| `CollectionGroupSection.tsx` builds its strategy and status filters from the default constants, so a value added to the catalog cannot be filtered | unit |
+| The brand dialog mixes create and update in its permission answers — the logo needs update while its upload route needs create, and the read-only branches are unreachable from the page; kept equivalent by plan. Candidate: one `canSave` per mode | owner decision |
+| `usePermission().isAuthenticated` has no caller; `sales.test.ts` mocks helpers its context never defines; `CreateActionButton`'s JSDoc names a prop `usePermission` does not have | cleanup unit |
+| `isValidBucket()` has no caller, while the luke-audit skill still calls it the authoritative bucket list | cleanup unit |
+| `IPrismaConfigClient` lives in the browser-bundled `runtime/env.ts` although only the server RBAC reader uses it | cleanup unit |
+| `apps/web/README.md` keeps a second copy of the permitted web variables beside `CLAUDE.md`'s list | docs |
+| Dependency advisories published 2026-09-28 to 2026-09-30 are open on `main` as of 2026-10-05; the train already carries the fixed versions | the v2.1.7 decision (Z.3) |
+
+## Z.6 Final state
+
+- The closing order's cycle-closure step is complete: `CLAUDE.md` holds the rules and nothing else
+  it can delegate, `AGENTS.md` holds Codex's side of the collaboration, ADR-033 holds the release
+  reasons, the symbols `CLAUDE.md` prescribed and nothing used are gone — except
+  `usePermission().isAuthenticated`, which it still names and Z.5 leaves to a cleanup unit — and
+  this appendix is the one closing record.
+- Every residual in Z.2, Z.3 and Z.5 keeps the disposition stated there. The §A.6 items stay with
+  the governance audit (Z.4).
+- This record neither executes nor authorizes the order's next step: synchronizing `main` into the
+  train and cutting `v3.0.0-rc.1` remain the owner's decisions.
