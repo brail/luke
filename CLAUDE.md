@@ -9,6 +9,37 @@
 3. **Never `git commit` without explicit approval** — show the diff, ask for confirmation, wait for
    the go-ahead, then commit
 
+## Collaboration with Codex
+
+Codex reviews and Claude Code implements, unless the owner explicitly assigns implementation to
+Codex; Codex's side of this contract is `AGENTS.md`.
+
+- Propose a Codex round for plans touching RBAC and section access, `AppConfigRegistry` and
+  persisted configuration, pricing, the Prisma schema and migrations, the release workflow, crypto
+  or auth; for security fixes, behavior changes visible to users, and design choices with several
+  viable options. Not for mechanical units the compiler or tests prove, translations, or
+  documentation fixes outside the two instruction files.
+- State in every plan whether Codex reviews it and why. At most one Codex round per unit of work,
+  on its plan, in a fresh session; reviewing the implementation needs an owner request. After
+  CHANGES REQUIRED, apply the findings and have an independent agent verify them; if that
+  verification fails, the findings stay open until corrected and verified again — the round limit
+  implies no approval. A second Codex round only when the findings changed the design, or the
+  owner asks.
+- Before a round, check that the latest rate-limit snapshot (`rate_limits` in the newest rollout
+  under `~/.codex/sessions`) is current and sufficient for the scoped review, and state the basis.
+  If it is not, or is unknown, or the review does not need a second model family, use an
+  independent read-only Claude agent instead: Sonnet for fact-checks and focused unit reviews, Opus
+  or Fable for judgment-heavy reviews. If the owner explicitly asked for Codex, report the
+  limitation before substituting.
+- Run Codex through the plugin's rescue task (`codex:codex-rescue`, read-only) on the model in
+  `~/.codex/config.toml`; for plan, security and governance reviews raise the reasoning effort to
+  `high` (`--effort high`, which `task` accepts and `/codex:review` does not).
+- Hand off by reference — the brief, paths, `git diff --stat`, the gates already run, the acceptance
+  criteria — never a pasted transcript or full diff.
+- Codex plans changes to `CLAUDE.md`; Claude Code checks the plan against the repository, then
+  implements it. Claude Code drafts changes to `AGENTS.md` and Codex reviews them. When Codex is
+  unavailable, Claude Code plans the `CLAUDE.md` change and an independent Claude agent reviews it.
+
 ## Canonical Language and Documentation Impact
 
 - Write all technical prose — documentation, repository instructions, source comments,
@@ -244,8 +275,7 @@ Two-level model: **Groups** contain **Rows**, independent ordering.
 ## Storage Layer
 
 - Never handle files outside an `IStorageProvider` implementation
-- Valid buckets: `APP_STORAGE_BUCKETS` in `packages/core/src/storage/types.ts` is the only list —
-  `isValidBucket()` derives from it
+- Valid buckets: `APP_STORAGE_BUCKETS` in `packages/core/src/storage/types.ts` is the only list
 - Always use the URL builders in `@luke/core` — never construct `/upload/...` paths by hand
 - `storage.local.enableProxy`: read from config, never hardcoded
 
@@ -285,7 +315,8 @@ NAV table details and sync decisions: `docs/nav-integration.md`
   don't have permission to [action] [resource]". Always `<PermissionButton>`, or
   `<PermissionTooltip>` when the control is not a `Button` — never a hand-rolled wrapper
   (`@luke/no-unreachable-disabled-tooltip`)
-- One tooltip per control; group only controls that share the exact same message
+- One tooltip per control; group only controls that share the exact same message — a group tooltip
+  carries one message and changes the tab order
 - `TooltipProvider` is mounted once, in `components/Providers.tsx` — never add another: a local one
   makes neighbouring tooltips re-wait the full delay
 - Config pages (mail, storage, LDAP): save button gated on `can('config:update')`

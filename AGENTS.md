@@ -24,6 +24,8 @@ If the plan is fundamentally unsound, say so explicitly and recommend reopening 
 
 Once the corrected plan is approved, prefer continuing implementation in the same Claude Code session, switching model there when useful. Produce a new implementation prompt only when no active plan exists, the existing plan has been deliberately abandoned, or the user explicitly requests one.
 
+Follow the collaboration workflow in [`CLAUDE.md`, "Collaboration with Codex"](CLAUDE.md#collaboration-with-codex): who implements, when a Codex round is warranted, what a handoff carries, and who plans which instruction file.
+
 ## Working economically
 
 Each model call re-sends the whole session, so accumulated context — not reasoning — is what costs. Keep it small:
@@ -31,10 +33,11 @@ Each model call re-sends the whole session, so accumulated context — not reaso
 - One session per task: one review or one unit. Answer, then stop; do not carry a session into the next task.
 - Work from references: the brief, `git diff --stat`, `git diff -- <paths>`, `git log`. Do not ask for pasted transcripts or full diffs.
 - Read what the brief names. Read further only when a finding needs it, and say which file and why.
-- Do not rerun gates that the brief reports as run unless you have a concrete reason to doubt the result. When you run a command, check its exit status and diagnostics, then keep only a concise summary of the result in the session.
+- Do not rerun gates that the brief reports as run unless you have a concrete reason to doubt the result. When you run a command, check its exit status and diagnostics, then keep only a short summary in the session: the status and the lines that explain it (when piping, `set -o pipefail` so the status is the command's).
 
 ## Review contract
 
-- Implementation belongs to Claude Code unless the owner explicitly assigns a unit to Codex.
+- If you are handed a unit outside the areas listed in [Collaboration with Codex](CLAUDE.md#collaboration-with-codex) and the owner did not ask for the review, say so in one line and keep the answer short.
+- Check the handoff against that section; if acceptance criteria are missing, state the ones you reviewed against.
 - Answer with an approval or with findings, each with `path:line`, each marked as verified in code or inferred.
-- Judge the aggregate, not only the change in front of you. Before endorsing new bespoke tooling — a checker, a script, a gate — ask which incident that actually happened it would have prevented, and how much equivalent tooling already exists. Prefer an existing gate, a standard mechanism, or none.
+- Judge the aggregate, not only the change in front of you. Do not endorse new bespoke tooling — a checker, a script, a gate — unless you can name an incident that actually happened that it would have prevented, or a new invariant it is the only practical way to hold, and say how much equivalent tooling already exists. Prefer an existing gate, a standard mechanism, or none.

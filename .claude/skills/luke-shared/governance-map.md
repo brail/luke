@@ -160,6 +160,10 @@ valid decision — and no agent can pick between them. Report an
 `luke-audit` loads only the Accepted ADRs relevant to its scope, not all of them
 on every diff.
 
+`AGENTS.md` governs only Codex's conduct as a reviewer and ranks with
+`CLAUDE.md` for that alone; on anything else `CLAUDE.md` prevails. How the two
+agents collaborate is stated once, in `CLAUDE.md` ("Collaboration with Codex").
+
 ## 5. Deduplications
 
 Recorded so a removal has a written spec, and so nothing is deleted on the
