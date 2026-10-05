@@ -1095,3 +1095,23 @@ test('prose lines are counted exactly and keep their source line numbers', () =>
     [4]
   );
 });
+
+test('an English possessive is not an Italian elision, nor an English loanword a stressed ending', () => {
+  assert.deepEqual(italianTokens("All's well; Dell's laptop; Nell's notes."), []);
+  assert.deepEqual(italianTokens('A déjà vu moment, and voilà.'), []);
+});
+
+test('an escaped backtick does not open a code span that hides prose', () => {
+  assert.deepEqual(italianTokens('Use \\` to quote: questa sezione `x`'), ['questa', 'sezione']);
+});
+
+test('decomposed accents are normalized before matching', () => {
+  assert.deepEqual(italianTokens('La funzione più usata'), ['più']);
+});
+
+test('a fence nested in a list item is not prose', () => {
+  const { problems } = languageProblems({
+    'README.md': '# Steps\n\n1. Run it:\n\n      ```bash\n      echo "Configurazione salvata"\n      ```\n',
+  });
+  assert.deepEqual(problems, []);
+});

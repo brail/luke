@@ -32,8 +32,8 @@
  * 8. **ADR citations**: every `ADR-NNN` a tracked file cites names an ADR in
  *    the corpus (`CHANGELOG.md` and this checker's own tests and fixtures
  *    excepted).
- * 9. **Canonical language**: no prose line of a tracked document outside
- *    `.claude/` carries an Italian token (see `ITALIAN_TOKENS`). What the rule
+ * 9. **Canonical language**: no prose line of a tracked Markdown document
+ *    outside `.claude/` carries an Italian token (see `ITALIAN_TOKENS`). What the rule
  *    is lives in `CLAUDE.md` and ADR-030; this check is a regression guard,
  *    incomplete by construction: it misses Italian made only of words outside
  *    its list, so review and `/luke-docs audit` keep the semantic residue.
@@ -645,7 +645,8 @@ function proseLines(text: string): string[] {
     .replace(/<!--[\s\S]*?-->/g, match => match.replace(/[^\n]/g, ' '))
     .split('\n')
     .map(line => {
-      const delimiter = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      // Any indentation: a fence nested in a list item sits deeper than three spaces.
+      const delimiter = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
       if (fence) {
         if (
           delimiter &&
@@ -904,7 +905,8 @@ export function checkAdrTitleMatch(
  * A word is left out when English uses it too — `state`, `serve`, `solo`,
  * `per`, `con`, `non`, `la`, `le`, `il`, `del`, `sui`, `data`, `note`, `come`,
  * `via`, `era`, `prima`, `dove`, `poco` (a POCO class), `tutti` — so the list
- * stays quiet on English prose. Known false positive: `voilà`.
+ * stays quiet on English prose. Known false positives, rare in technical prose:
+ * names and terms such as `Che`, `Una`, `alla prima`, `Agnus Dei`.
  * One token is enough to fail a line: a heading such as `## Utilizzato da`
  * carries exactly one, which is also why a document-level density signal
  * would add nothing — it could only fire on a file that already fails here.
@@ -941,16 +943,19 @@ const ITALIAN_TOKENS: ReadonlySet<string> = new Set([
 /**
  * `dell'`, `un'` … before a letter, with a straight or typographic apostrophe:
  * an elision English does not write. `l'` counts only before a lowercase letter
- * (`l'Oréal` is a name); a bare `d'` is left out (`d'Artagnan`, `D'oh`).
+ * (`l'Oréal` is a name); a bare `d'` is left out (`d'Artagnan`, `D'oh`), and
+ * so is an English possessive (`All's`, `Dell's`).
  */
 const ITALIAN_ELISION_RE =
-  /(?<![\p{L}'’])(?:[lL]['’](?=\p{Ll})|(?:[uU]n|[dD]ell|[nN]ell|[aA]ll|[dD]all|[sS]ull|[qQ]uest|[qQ]uell)['’])\p{L}/gu;
+  /(?<![\p{L}'’])(?:[lL]['’](?=\p{Ll})|(?:[uU]n|[dD]ell|[nN]ell|[aA]ll|[dD]all|[sS]ull|[qQ]uest|[qQ]uell)['’])(?![sS](?!\p{L}))\p{L}/gu;
 /**
  * A word ending in a stressed vowel with a grave accent — `è`, `più`, `città`.
- * Only `è` stands alone in Italian, so `à` alone (`à la carte`) is not counted.
+ * Only `è` stands alone in Italian, so `à` alone (`à la carte`) is not counted,
+ * and the English loanwords in `ENGLISH_LOANWORDS` are skipped.
  */
 const ITALIAN_STRESSED_ENDING_RE =
   /(?<!\p{L})(?:\p{L}*[èÈ]|\p{L}+[àìòùÀÌÒÙ])(?!\p{L})/gu;
+const ENGLISH_LOANWORDS: ReadonlySet<string> = new Set(['déjà', 'voilà']);
 
 /**
  * The Italian tokens of one prose line, lower-cased, sorted and unique. Code
@@ -959,6 +964,8 @@ const ITALIAN_STRESSED_ENDING_RE =
  */
 export function italianTokens(line: string): string[] {
   const prose = line
+    .normalize('NFC')
+    .replace(/\\`/g, ' ')
     .replace(/(`+)(.*?)\1/g, ' ')
     .replace(/\]\([^)]*\)/g, ']')
     .replace(/<https?:\/\/[^>]*>/g, ' ')
@@ -972,7 +979,8 @@ export function italianTokens(line: string): string[] {
     found.add(match[0].toLowerCase());
   }
   for (const match of prose.matchAll(ITALIAN_STRESSED_ENDING_RE)) {
-    found.add(match[0].toLowerCase());
+    const word = match[0].toLowerCase();
+    if (!ENGLISH_LOANWORDS.has(word)) found.add(word);
   }
   return [...found].sort();
 }
@@ -1107,4 +1115,4 @@ function main(): void {
   );
 }
 
-main();
+if (require.main === module) main();
