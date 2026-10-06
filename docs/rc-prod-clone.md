@@ -16,12 +16,29 @@ RC volume so that encrypted `AppConfig` values stay readable. Rejected because:
 - it needs a Docker network shared between two otherwise isolated stacks;
 - it needs a prod Postgres credential stored in RC's configuration.
 
-`scripts/refresh-rc-db.sh` takes a variant of that route (see the comment at the
-top of the file): with both stacks on the same Docker host, it streams `pg_dump`
-from prod into RC and copies prod's master key into the RC API container. As of
-2026-10-05 the flow below has not yet been used in a real release, so the script
-stays as the fallback; it is retired after the first release that uses this flow
-successfully.
+`scripts/refresh-rc-db.sh` takes a narrower route (see the comment at the top of
+the file): with both stacks on the same Docker host, it streams `pg_dump` from
+prod into RC **without** the master key, then deletes the `AppConfig` rows
+through which RC could reach real systems before the RC API starts. LDAP is
+switched off on RC until it is saved again with RC values: sign in with a local
+administrator account. It is the
+only path while prod runs a version older than 3.0.0: the flow below downloads
+the export from `/download/backup/:id/export`, which those versions serve under
+`/maintenance/` instead, where the web app does not forward it.
+
+An RC refreshed by an earlier version of the script may still hold prod's key in
+its `api_rc_data` volume. Check once, on the Docker host:
+
+```bash
+docker exec <prod-api-container> sha256sum /root/.luke/secret.key
+docker exec <rc-api-container> sha256sum /root/.luke/secret.key
+```
+
+If the two hashes match, delete RC's copy
+(`docker exec <rc-api-container> rm /root/.luke/secret.key`) and restart the RC
+API: it generates a new key on boot, and RC's sessions and RC's own backups are
+lost. After the next refresh, reading an encrypted prod setting on RC logs
+`Config decryption error`: that is the expected sign that the keys differ.
 
 ## The alternative: the existing backup, export and import system
 
@@ -95,18 +112,23 @@ history.
   secret keys — remains encrypted at column level with **prod's** master key —
   encryption independent of the backup's DEK;
   see `apps/api/src/lib/configManager.ts`. After the restore, reading them on RC
-  throws at runtime at the point of use, not at boot. This is intended: RC can
-  never silently reuse real production credentials against external systems.
-  Reset them by hand with RC-appropriate values for each integration RC needs;
-  until then LDAP login, mail delivery, S3 storage, NAV sync and Google sync
-  fail on RC.
+  throws at runtime at the point of use, not at boot. Reset them by hand with
+  RC-appropriate values for each integration RC needs; until then LDAP login,
+  mail delivery, S3 storage, NAV sync and Google sync fail on RC.
+- Only encrypted values are protected that way. The generic configuration API
+  stores a value unencrypted unless asked, and such a value works on RC as it
+  does on prod. `refresh-rc-db.sh` deletes the SMTP, GitHub, S3, NAV host, LDAP
+  switch and plaintext credential rows before the RC API starts; this flow
+  restores into a running RC API and neutralizes nothing, so its schedulers
+  start on prod's configuration at once.
 - The `.lukebak` package is buffered entirely in memory during upload (no
   streaming multipart client in scope). Acceptable for `DB`-only backups; to be
   revisited if the flow is ever extended to `DB_AND_FILES`.
 
 ## Relationship with `refresh-rc-db.sh`
 
-The two scripts coexist. As of 2026-10-05 this flow has not been used in a real
-release, so `refresh-rc-db.sh` remains the operational fallback until it has.
-Deprecating or removing `refresh-rc-db.sh` is a separate decision, to be taken
-only after that validation.
+The two scripts coexist. As of 2026-10-07 this flow has not been used in a real
+release, and it cannot clone a prod older than 3.0.0, so `refresh-rc-db.sh`
+remains the operational path. Deprecating or removing it is a separate decision,
+to be taken only after this flow has run on a real release and neutralizes the
+restored configuration as the script does.

@@ -2,11 +2,12 @@
 /**
  * Luke — Clone production into RC via the built-in backup/export/import pipeline.
  *
- * Successor to `refresh-rc-db.sh`, once the backup system (this script's only dependency)
- * has shipped to `main`. Unlike that script, this one never touches Docker, never opens a
- * network path between the prod and RC stacks, and never copies prod's master key
- * (`~/.luke/secret.key`) anywhere — it only talks to each instance's already-authenticated
- * HTTP/tRPC API, the same surface a human admin uses from the browser.
+ * Successor to `refresh-rc-db.sh`, once prod runs 3.0.0 or later (the export download route)
+ * and this script neutralizes the restored configuration as that one does
+ * (`docs/rc-prod-clone.md`). Unlike that script, this one never touches Docker and never opens
+ * a network path between the prod and RC stacks — it only talks to each instance's
+ * already-authenticated HTTP/tRPC API, the same surface a human admin uses from the browser.
+ * Neither script copies prod's master key (`~/.luke/secret.key`).
  *
  * Flow:
  *   1. Log into PROD (`auth.login`) with credentials prompted interactively — never persisted,
@@ -33,9 +34,10 @@
  * stay encrypted with PROD's master key at the column level — a separate encryption layer from
  * the backup's own DEK (see `apps/api/src/lib/configManager.ts`). RC cannot decrypt those
  * specific values after this restore; reading them throws at the point of use rather than at
- * boot. This is deliberate, not a bug to route around: it guarantees RC can never silently reuse
- * prod's real external credentials. Re-save those keys with RC-appropriate values afterward if
- * you need working LDAP/SMTP on RC.
+ * boot. That protects encrypted values only: one saved in plaintext (the generic config API's
+ * default) works on RC as on prod, and unlike `refresh-rc-db.sh` this script deletes no config
+ * row, so RC's schedulers start on prod's configuration. Re-save those keys with RC-appropriate
+ * values afterward if you need working LDAP/SMTP on RC.
  *
  * Known limitation #2: the upload step buffers the whole `.lukebak` package in memory (no
  * streaming multipart client in scope here). Fine for a `DB`-only backup on this app's data
@@ -291,6 +293,7 @@ async function main() {
 
     console.log('\nDone. RC now reflects PROD data, with the migrations of this release applied.');
     console.log('Reminder: encrypted AppConfig secrets (LDAP/SMTP) stay encrypted with the PROD master key and will not be readable on RC until you set them again.');
+    console.log('Plaintext settings were NOT neutralized: check SMTP, NAV and GitHub on RC before relying on it.');
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
   }
