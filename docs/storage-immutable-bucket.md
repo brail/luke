@@ -115,8 +115,10 @@ considering the bucket truly immutable.
 
 Nothing in this repository restricts the application's delete rights on this
 bucket. The SeaweedFS S3 gateway of the Docker stack knows a single identity,
-with `Admin`, `Read`, `Write`, `List` and `Tagging` on every bucket
-(`docker/seaweedfs/entrypoint.sh`), and the application reaches every bucket
+the admin identity it builds from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+(set from the stack's `S3_ROOT_USER` / `S3_ROOT_PASSWORD` variables,
+`_RC`-suffixed in the RC stack; fixed values in `docker-compose.dev.yml`), with
+full rights on every bucket, and the application reaches every bucket
 with the one credential pair in `storage.s3.accessKey` /
 `storage.s3.secretKey`. No application procedure deletes from this bucket (the
 generic `storage.delete` was removed on 2026-09-25), but that single S3 identity
