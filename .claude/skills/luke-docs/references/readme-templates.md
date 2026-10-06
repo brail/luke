@@ -79,7 +79,7 @@ Only scripts a root or workspace `package.json` defines.}
 
 <!-- luke-docs:start:deployment -->
 
-{3-4 sentences: conventional tag → GitHub Actions → ghcr.io → Portainer.
+{3-4 sentences: conventional tag → GitHub Actions → ghcr.io → manual redeploy of the stack.
 Don't invent details you can't verify from the codebase.}
 
 <!-- luke-docs:end:deployment -->

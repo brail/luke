@@ -388,7 +388,12 @@ writes only `CHANGELOG.md`.
 1. `pnpm release:prepare <tag>`
 2. `git diff` — review the CHANGELOG section
 3. `git commit -am "chore(release): notes for X.Y.Z"` (after approval)
-4. `git tag <tag> && git push origin <tag>` — one tag per push, never `--tags`
+4. Publish the commit before the tag — the provenance gate refuses a tag whose commit the remote
+   line lacks. A candidate: `git push origin <train branch>`, then wait for its CI. A stable
+   version: push it on `release/<tag>` and merge that pull request into `main` (merge commit;
+   `main` takes no direct push)
+5. `git tag <tag> && git push origin <tag>` — on the stable line the tag goes on the merge commit
+   (`origin/main`); one tag per push, never `--tags`
 
 Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; `release.yml` decides.
 
@@ -407,10 +412,11 @@ Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; 
 
 **Release flow**: push or PR → CI (`CI gate`; images built, never published); tag → provenance gate
 → tagged-tree check → CI → images → `ghcr.io` (`rc-latest` from the train, `latest` + `X.Y` from
-`main`) → Portainer pull & redeploy. The repository variables `PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME`
-must be set (`OPERATIONS.md`). Runtime images carry runtime dependencies only (ADR-028). `main` does not carry
-these release gates yet: Appendix Z of `docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`. **NEVER delete the
-`luke_api_data` volume** — the master key lives there.
+`main`) → manual redeploy of the stack (nothing redeploys it automatically). The repository
+variables `PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME` must be set (`OPERATIONS.md`). Runtime images carry
+runtime dependencies only (ADR-028). `main` does not carry these release gates yet: Appendix Z of
+`docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`. **NEVER delete the `luke_api_data` volume** — the master
+key lives there.
 
 **A `develop-X.Y` branch dies when its stable tag is cut**, not at the merge: never reactivate it or
 backport onto it; the next cycle opens a new branch cut from `main`.

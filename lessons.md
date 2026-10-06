@@ -467,6 +467,17 @@ and the `vX.Y.Z` tag runs the same check before publishing. To de-risk a
 Dockerfile change before it reaches the train, push it on a branch with a
 draft pull request and read that job.
 
+### Push the release branch before its tag
+
+On 2026-10-06 the `v3.0.0-rc.1` tag was pushed before its notes commit reached
+`origin/develop-2.2`, and `release.yml`'s provenance gate refused it ("not
+reachable from origin/develop-2.2"); it published only on a rerun after the
+branch push. **Rule**: after the notes commit, publish it first — a candidate
+by pushing the train branch and waiting for its CI, a stable version by
+merging its `release/<tag>` pull request into `main` (no direct push there) —
+then push the one tag. `scripts/release-prepare.sh` prints the steps for
+each case.
+
 ## Branch management
 
 ### A graduated `develop-X.Y` is dead — never reactivate it
