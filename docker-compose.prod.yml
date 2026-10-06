@@ -107,14 +107,23 @@ services:
   seaweedfs:
     networks:
       - data
-    image: chrislusf/seaweedfs:latest
+    # Pinned: the env-var admin identity below is verified on this version;
+    # re-verify it (anonymous request refused) before bumping.
+    image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    # Self-contained, no bind mount: a Portainer Web-editor stack has no repository
+    # files. `weed` runs directly (the image entrypoint would add its own volume
+    # flags). -volume.max=100: the default 8 volume slots stop writes at ~8 buckets
+    # (one volume per bucket), and Luke has ~9.
+    entrypoint: ["/usr/bin/weed"]
+    command: ["server", "-dir=/data", "-s3", "-ip.bind=0.0.0.0", "-volume.max=100"]
     environment:
-      S3_ROOT_USER:     ${S3_ROOT_USER}
-      S3_ROOT_PASSWORD: ${S3_ROOT_PASSWORD}
+      # The S3 gateway's only identity when no -s3.config file and no filer IAM
+      # config exist. Without it the gateway would accept anonymous requests, so
+      # an unset variable stops the deploy (`:?`).
+      AWS_ACCESS_KEY_ID:     ${S3_ROOT_USER:?S3_ROOT_USER not set}
+      AWS_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD:?S3_ROOT_PASSWORD not set}
     volumes:
-      - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint.sh:ro
       - seaweedfs_data:/data
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]

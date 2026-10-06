@@ -16,17 +16,18 @@ services:
       retries: 10
 
   seaweedfs:
-    image: chrislusf/seaweedfs:latest
-    entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
+    # Same version, command and identity mechanism as docker-compose.prod.yml.
+    image: chrislusf/seaweedfs:4.48
+    entrypoint: ["/usr/bin/weed"]
+    command: ["server", "-dir=/data", "-s3", "-ip.bind=0.0.0.0", "-volume.max=100"]
     environment:
-      S3_ROOT_USER:     s3admin
-      S3_ROOT_PASSWORD: s3adminpwd
+      AWS_ACCESS_KEY_ID:     s3admin
+      AWS_SECRET_ACCESS_KEY: s3adminpwd
     ports:
       - "8333:8333"  # S3 API
       - "9333:9333"  # Master (cluster status / healthcheck; dev-only convenience)
       - "8888:8888"  # Filer UI (browse buckets/files; dev-only convenience)
     volumes:
-      - ./docker/seaweedfs/entrypoint.sh:/docker-entrypoint.sh:ro
       - seaweedfs_dev_data:/data
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
