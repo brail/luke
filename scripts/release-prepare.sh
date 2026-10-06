@@ -242,20 +242,30 @@ echo
 pnpm exec tsx tools/scripts/check-release-tree.ts --tag "$TAG" --worktree
 echo
 
+# The tag must point at a commit the remote line already has: release.yml's
+# provenance gate refuses it otherwise (v3.0.0-rc.1 was pushed before its
+# branch). The train takes a direct push; `main` takes only a merged pull request.
 if [ "$KIND" = "stable" ]; then
   ORIGIN_HINT="${STABLE_BRANCH} — release.yml refuses a stable tag on a commit that is not on ${STABLE_BRANCH}"
+  PUBLISH_STEPS="    git push origin HEAD:release/$TAG   # open its pull request into ${STABLE_BRANCH};
+                                       # merge it (merge commit) once its gates pass
+    git fetch origin ${STABLE_BRANCH} && git tag $TAG origin/${STABLE_BRANCH} && git push origin $TAG"
 else
   ORIGIN_HINT="the active release train — release.yml refuses an rc tag on a commit already on ${STABLE_BRANCH}"
+  BRANCH=$(git symbolic-ref --short -q HEAD || echo '<train-branch>')
+  PUBLISH_STEPS="    git push origin $BRANCH          # then wait for its CI
+    git tag $TAG && git push origin $TAG"
 fi
 
 cat <<EOF
 ──────────────────────────────────────────────────────────
-  Ready. Three steps remain, deliberately manual:
+  Ready. The rest is deliberately manual:
 
     git diff                       # review the CHANGELOG section
     git commit -am "chore(release): notes for $VERSION"
-    git tag $TAG && git push origin $TAG
+$PUBLISH_STEPS
 
+  The commit reaches the remote line before the tag does.
   Tag from: $ORIGIN_HINT.
   The tree above already claims $VERSION. \`.husky/pre-push\` re-checks the
   pushed object with the same checker — notes and, for a graduation, the last
