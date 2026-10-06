@@ -13,11 +13,13 @@ import { Readable } from 'stream';
 
 
 import {
+  AppConfigRegistry,
   localStorageConfigSchema,
   s3StorageConfigSchema,
   sanitizeFileName,
   type IStorageProvider,
   type StorageBucket,
+  type StorageType,
   type StoredObjectMeta,
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
@@ -120,12 +122,36 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
 }
 
 /**
+ * Reads `storage.type`, refusing a stored value outside the registry instead of
+ * falling back to the `local` default. 2.1.6 installs store `minio`: the fallback
+ * put every upload and derivative on the API's own disk while the real store's
+ * files looked missing (rc.1). No row still means the default.
+ *
+ * @throws {Error} When a stored value is not one of the registry's storage types.
+ */
+async function readStorageType(prisma: PrismaClient): Promise<StorageType> {
+  const raw = await getConfig(prisma, 'storage.type', false);
+  if (raw === null) return getConfigOrDefault(prisma, 'storage.type');
+
+  const schema = AppConfigRegistry['storage.type'];
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid AppConfig 'storage.type': '${raw}' is not one of ${schema.options.join(', ')}. ` +
+        'Set the storage type in Impostazioni → Storage.',
+    );
+  }
+  return parsed.data;
+}
+
+/**
  * Returns the singleton storage provider, initializing it on first call.
  *
  * Concurrent callers during initialization await the same promise to avoid
  * creating multiple provider instances.
  *
  * @returns The active IStorageProvider (local FS or S3-compatible).
+ * @throws {Error} When `storage.type` holds a value outside the registry.
  */
 export async function getStorageProvider(
   prisma: PrismaClient
@@ -136,7 +162,7 @@ export async function getStorageProvider(
 
   if (!providerInitPromise) {
     providerInitPromise = (async () => {
-      const storageType = await getConfigOrDefault(prisma, 'storage.type');
+      const storageType = await readStorageType(prisma);
 
       let provider: IStorageProvider;
       if (storageType === 's3') {

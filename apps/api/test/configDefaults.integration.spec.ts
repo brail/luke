@@ -7,13 +7,18 @@
  * which is also exactly what the provider uses, because it reads the same declaration.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtemp, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import { APP_CONFIG_DEFAULTS } from '@luke/core';
 
-import { loadS3Provider } from '../src/storage';
+import { getStorageProvider, loadS3Provider, resetStorageProvider } from '../src/storage';
 
 import { setupTestDb, createCallerAs } from './helpers';
+import { seedLocalStorageConfig } from './helpers/storageTestHelper';
 
 describe('AppConfig defaults', () => {
   let testPrisma: Awaited<ReturnType<typeof setupTestDb>>;
@@ -87,6 +92,38 @@ describe('AppConfig defaults', () => {
       });
 
       await expect(loadS3Provider(testPrisma)).rejects.toThrow(/S3 credentials not configured/);
+    });
+  });
+
+  describe('an invalid stored storage.type', () => {
+    // 2.1.6 installs store `minio`, which v3 no longer knows. Falling back to the `local` default
+    // put every upload and derivative on the API's own disk while the real store's files looked
+    // missing (rc.1). Unlike the settings-page reads above, resolving the provider fails closed.
+    let basePath: string;
+
+    beforeEach(async () => {
+      basePath = await mkdtemp(join(tmpdir(), 'luke-storage-type-'));
+      await seedLocalStorageConfig(testPrisma, basePath);
+      // Written straight to the table: `saveConfig` refuses a value outside the registry.
+      await testPrisma.appConfig.update({ where: { key: 'storage.type' }, data: { value: 'minio' } });
+      resetStorageProvider();
+    });
+
+    afterEach(async () => {
+      resetStorageProvider();
+      await rm(basePath, { recursive: true, force: true });
+    });
+
+    it('refuses to resolve a provider instead of falling back to local', async () => {
+      await expect(getStorageProvider(testPrisma)).rejects.toThrow(/storage\.type.*minio.*local, s3/);
+    });
+
+    it('resolves once the row is valid again, without a restart', async () => {
+      await expect(getStorageProvider(testPrisma)).rejects.toThrow();
+
+      await testPrisma.appConfig.update({ where: { key: 'storage.type' }, data: { value: 'local' } });
+
+      await expect(getStorageProvider(testPrisma)).resolves.toBeDefined();
     });
   });
 });

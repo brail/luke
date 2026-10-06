@@ -366,7 +366,10 @@ export async function getTypedConfig<K extends AppConfigKey>(
  * `APP_CONFIG_DEFAULTS` and the parse from the registry, so neither is a call site's business.
  *
  * A stored value that no longer validates falls back too, with a warning: refusing to serve a
- * storage provider because one row is malformed would take the app down for a bad edit.
+ * storage provider because one row is malformed would take the app down for a bad edit. This
+ * function makes no exception: `getStorageProvider` reads `storage.type` strictly through its own
+ * `readStorageType`, because a fallback to `local` silently misplaces every file. `saveConfig`
+ * validates, so an invalid row there is a legacy or hand-written one.
  */
 export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
   prisma: PrismaClient,
