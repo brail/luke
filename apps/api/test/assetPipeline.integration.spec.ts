@@ -18,8 +18,9 @@ import { Readable } from 'stream';
 import sharp from 'sharp';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { processMaster } from '../src/lib/assets/derivativeWorker';
 import { ingestImageAsset, readAssetBuffer } from '../src/services/asset.service';
-import { resetStorageProvider } from '../src/storage';
+import { getStorageProvider, readFileBuffer, resetStorageProvider } from '../src/storage';
 
 import { seedLocalStorageConfig } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
@@ -181,5 +182,76 @@ describe('asset pipeline (real storage, no mocks)', () => {
     // The read path still serves the (undecoded) master rather than erroring.
     const read = await readAssetBuffer(ctx.prisma, 'collection-row-pictures', result.key, 'export');
     expect(read).not.toBeNull();
+  });
+
+  describe('a storage read failure other than a missing object', () => {
+    // rc.1: `readFileBuffer` turned every read error into `null`, which the worker counts as a
+    // missing master, so a misconfigured provider burned 213 healthy masters to FAILED.
+
+    async function setStorageType(value: string): Promise<void> {
+      // Written straight to the table: `saveConfig` refuses a value outside the registry.
+      await ctx.prisma.appConfig.update({ where: { key: 'storage.type' }, data: { value } });
+      resetStorageProvider();
+    }
+
+    async function removeBucketDirectory(): Promise<void> {
+      await getStorageProvider(ctx.prisma); // init creates every bucket directory
+      await rm(join(basePath, 'collection-row-pictures'), { recursive: true, force: true });
+    }
+
+    it('readFileBuffer returns null only for a missing object', async () => {
+      await expect(readFileBuffer(ctx.prisma, 'collection-row-pictures', 'gone.png')).resolves.toBeNull();
+
+      await removeBucketDirectory();
+      await expect(readFileBuffer(ctx.prisma, 'collection-row-pictures', 'gone.png')).rejects.toThrow();
+
+      await setStorageType('s3'); // no S3 credentials seeded
+      await expect(readFileBuffer(ctx.prisma, 'collection-row-pictures', 'gone.png'))
+        .rejects.toThrow(/S3 credentials not configured/);
+    });
+
+    it.each([
+      ['an invalid storage.type', () => setStorageType('minio')],
+      ['a missing bucket directory', removeBucketDirectory],
+    ])('processMaster counts no attempt for %s', async (_, breakStorage) => {
+      // Created by hand, not ingested: an upload would enqueue the worker in the background.
+      const master = await ctx.prisma.fileObject.create({
+        data: {
+          bucket: 'collection-row-pictures',
+          key: '2026/10/07/master.png',
+          originalName: 'master.png',
+          size: 1,
+          contentType: 'image/png',
+          checksumSha256: 'test',
+          createdBy: 'test',
+        },
+      });
+      await breakStorage();
+
+      await expect(processMaster(ctx.prisma, master.id)).rejects.toThrow();
+
+      const after = await ctx.prisma.fileObject.findUniqueOrThrow({ where: { id: master.id } });
+      expect(after.derivativeAttempts).toBe(0);
+      expect(after.derivativesStatus).toBe('PENDING');
+    });
+
+    it('readAssetBuffer rejects instead of returning no picture, and still falls back on a missing variant', async () => {
+      const result = await ingestImageAsset(ctx, {
+        kind: 'collection-row-picture',
+        file: fileParams(await makePng(400, 300), 'photo.png', 'image/png'),
+      });
+      await waitForReady(result.fileObjectId);
+
+      const card = await ctx.prisma.fileObject.findFirstOrThrow({
+        where: { parentId: result.fileObjectId, variant: 'card' },
+      });
+      await rm(join(basePath, 'collection-row-pictures', card.key));
+      const read = await readAssetBuffer(ctx.prisma, 'collection-row-pictures', result.key, 'card');
+      expect(read?.contentType).toBe('image/png'); // the master, not the WebP card
+
+      await setStorageType('minio');
+      await expect(readAssetBuffer(ctx.prisma, 'collection-row-pictures', result.key, 'card'))
+        .rejects.toThrow(/storage\.type/);
+    });
   });
 });

@@ -270,7 +270,12 @@ export async function fetchCompanyExportContext(
 
     let companyLogoDataUri: string | null = null;
     if (profile.logoKey) {
-      const buf = await readFileBuffer(prisma, 'company-assets', profile.logoKey, logger);
+      // A storage failure costs the logo only, not the export settings and address read above —
+      // same policy as `resolveLogoDataUri` for brand logos.
+      const buf = await readFileBuffer(prisma, 'company-assets', profile.logoKey, logger).catch((err: unknown) => {
+        logger?.warn({ err }, 'fetchCompanyExportContext: failed to read the company logo');
+        return null;
+      });
       if (buf) {
         const key = profile.logoKey.toLowerCase();
         if (key.endsWith('.png'))        companyLogoDataUri = `data:image/png;base64,${buf.toString('base64')}`;

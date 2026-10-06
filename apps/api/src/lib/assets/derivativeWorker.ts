@@ -103,8 +103,10 @@ export async function processMaster(prisma: PrismaClient, masterId: string, logg
   // `FileObject` predating this pipeline has null width/height too (the migration
   // added the columns with no backfill), and those are legitimate images that
   // deserve a real sharp attempt. An undecodable master fails naturally below
-  // (`readFileBuffer`/`deriveVariant` throwing) and is retried up to
-  // `MAX_DERIVATIVE_ATTEMPTS` like any other failure — no separate fast-fail path.
+  // (`deriveVariant` throwing) and is retried up to `MAX_DERIVATIVE_ATTEMPTS` like
+  // any other failure — no separate fast-fail path. A storage read failure is not
+  // the master's fault: `readFileBuffer` throws it, and it reaches the caller
+  // without counting an attempt.
   const existing = await prisma.fileObject.findMany({
     where: { parentId: masterId, pipelineVersion: ASSET_PIPELINE_VERSION },
     select: { variant: true },

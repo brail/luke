@@ -17,6 +17,7 @@ import {
   localStorageConfigSchema,
   s3StorageConfigSchema,
   sanitizeFileName,
+  StorageObjectNotFoundError,
   type IStorageProvider,
   type StorageBucket,
   type StorageType,
@@ -456,7 +457,8 @@ export async function readObjectBuffer(prisma: PrismaClient, bucket: StorageBuck
  * Reads a file from storage as a Buffer, identified by bucket and key.
  *
  * Used internally for PDF/XLSX exports where no session context is available.
- * Returns `null` and logs a warning if the file cannot be read.
+ * Returns `null` and logs a warning only when no object has that key: any other failure
+ * (no provider, a backend outage) throws, so callers never mistake it for a missing file.
  */
 export async function readFileBuffer(
   prisma: PrismaClient,
@@ -467,7 +469,8 @@ export async function readFileBuffer(
   try {
     return await readObjectBuffer(prisma, bucket, key);
   } catch (err) {
-    logger?.warn({ err, bucket, key }, 'readFileBuffer: failed to read file');
+    if (!(err instanceof StorageObjectNotFoundError)) throw err;
+    logger?.warn({ err, bucket, key }, 'readFileBuffer: file not found');
     return null;
   }
 }
