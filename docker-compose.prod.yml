@@ -4,7 +4,12 @@
 # This file uses pre-built images from ghcr.io.
 # Do NOT run docker compose build here — images are built by GitHub Actions CI.
 #
-# Required environment variables (set in Portainer Stack → Env):
+# Self-contained: the stack must deploy from this file alone, without a checkout
+# of the repository. No service may reference a repository path (relative bind
+# mount, `build:`, `env_file:`).
+#
+# Required environment variables (set in Portainer Stack → Env). Never put `$` in
+# a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
 #   POSTGRES_PASSWORD      — strong random password for the PostgreSQL user
 #   NEXTAUTH_SECRET        — random string (openssl rand -base64 32)
 #   PUBLIC_HOSTNAME        — public hostname, e.g. luke.example.com
@@ -111,8 +116,8 @@ services:
     # re-verify it (anonymous request refused) before bumping.
     image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
-    # Self-contained, no bind mount: a Portainer Web-editor stack has no repository
-    # files. `weed` runs directly (the image entrypoint would add its own volume
+    # No bind mount: the stack deploys from this file alone (see the header).
+    # `weed` runs directly (the image entrypoint would add its own volume
     # flags). -volume.max=100: the default 8 volume slots stop writes at ~8 buckets
     # (one volume per bucket), and Luke has ~9.
     entrypoint: ["/usr/bin/weed"]

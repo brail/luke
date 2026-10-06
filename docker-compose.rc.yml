@@ -7,7 +7,12 @@
 # Distinct host ports, so it can coexist with the prod stack:
 #   web: 3010 (prod uses 3000)
 #
-# Required environment variables (set in Portainer Stack → Env):
+# Self-contained: the stack must deploy from this file alone, without a checkout
+# of the repository. No service may reference a repository path (relative bind
+# mount, `build:`, `env_file:`).
+#
+# Required environment variables (set in Portainer Stack → Env). Never put `$` in
+# a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
 #   POSTGRES_PASSWORD_RC  — DB password, separate from prod
 #   NEXTAUTH_SECRET_RC    — secret, separate from prod
 #   RC_PUBLIC_HOSTNAME    — RC hostname, e.g. rc.luke.febos.local
@@ -106,8 +111,8 @@ services:
     # re-verify it (anonymous request refused) before bumping.
     image: chrislusf/seaweedfs:4.48
     restart: unless-stopped
-    # Self-contained, no bind mount: a Portainer Web-editor stack has no repository
-    # files. `weed` runs directly (the image entrypoint would add its own volume
+    # No bind mount: the stack deploys from this file alone (see the header).
+    # `weed` runs directly (the image entrypoint would add its own volume
     # flags). -volume.max=100: the default 8 volume slots stop writes at ~8 buckets
     # (one volume per bucket), and Luke has ~9.
     entrypoint: ["/usr/bin/weed"]
