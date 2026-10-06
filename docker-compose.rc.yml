@@ -54,6 +54,7 @@ services:
       - edge
       - data
     image: ghcr.io/brail/luke-api:rc-latest
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres-rc:
@@ -85,6 +86,7 @@ services:
     networks:
       - edge
     image: ghcr.io/brail/luke-web:rc-latest
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       api-rc:
