@@ -63,7 +63,7 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
     keyBy: 'userId',
   },
   navSyncTrigger: {
-    max: 1, // 1 sync per window, prevents connection pool exhaustion
+    max: 1, // 1 sync per entity per window (keyed in integrations.nav.router.ts), prevents connection pool exhaustion
     timeWindow: '10m',
     keyBy: 'userId',
   },

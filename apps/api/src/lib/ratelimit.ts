@@ -85,7 +85,7 @@ export const RATE_LIMIT_CONFIG = {
   },
   navSyncTrigger: {
     max: 1,
-    windowMs: 600_000, // 10 minutes — 1 sync per window, prevents connection pool exhaustion
+    windowMs: 600_000, // 10 minutes — 1 sync per entity per window (keyed in integrations.nav.router.ts), prevents connection pool exhaustion
     keyBy: 'userId' as const,
   },
   exportGeneration: {

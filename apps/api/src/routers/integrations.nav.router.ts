@@ -21,7 +21,8 @@ import {
 } from '../lib/errorHandler';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
-import { withRateLimit } from '../lib/ratelimit';
+import { enforceRateLimit } from '../lib/ratelimit';
+import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -281,9 +282,15 @@ const navSyncRouter = router({
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
-    .use(withRateLimit('navSyncTrigger'))
     .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
     .mutation(async ({ input, ctx }) => {
+      // One manual sync per entity per window, not one for all three: syncing vendors must not
+      // block brands. Keyed by user and entity here, where the entity is known, whatever `keyBy`
+      // the policy carries (the AppConfig override has no writer). The scheduler lock below keeps
+      // two syncs of one entity apart, so at most one per entity runs at a time.
+      const policy = await resolveRateLimitPolicy('navSyncTrigger', ctx.prisma);
+      enforceRateLimit('navSyncTrigger', `${ctx.session.user.id}:${input.entity}`, policy);
+
       // The same lock as the scheduled sync of this entity, so the two never overlap.
       const report = await withSchedulerLock(ctx.prisma, `nav-sync:${input.entity}`, () =>
         runNavSync(ctx.prisma, getConfig, undefined, input.entity),

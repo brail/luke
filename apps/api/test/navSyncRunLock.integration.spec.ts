@@ -41,6 +41,17 @@ describe('integrations.nav.sync.run', () => {
     expect(runNavSync).not.toHaveBeenCalled();
   });
 
+  it('limits each entity on its own: a vendor sync does not block a brand sync', async () => {
+    spyRunNavSync();
+    const caller = await createCallerAs('admin');
+
+    await expect(caller.integrations.nav.sync.run({ entity: 'vendor' })).resolves.toEqual({ results: [] });
+    await expect(caller.integrations.nav.sync.run({ entity: 'brand' })).resolves.toEqual({ results: [] });
+    await expect(caller.integrations.nav.sync.run({ entity: 'vendor' })).rejects.toMatchObject({
+      code: 'TOO_MANY_REQUESTS',
+    });
+  });
+
   it('runs and releases the lock when it is free', async () => {
     const runNavSync = spyRunNavSync();
     const caller = await createCallerAs('admin');

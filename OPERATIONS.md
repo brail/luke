@@ -101,7 +101,7 @@ Code defaults at the time of writing; the source of truth is
 | `pendingEmail` | IP | 15m | 10 | 100 |
 | `ldapTest` | user | 15m | 3 | 100 |
 | `companyStructureMutations` | user | 1m | 30 | 100 |
-| `navSyncTrigger` | user | 10m | 1 | 1 |
+| `navSyncTrigger` | user and NAV entity | 10m | 1 | 1 |
 | `exportGeneration` | user | 1m | 10 | 100 |
 
 `auth.login` applies two buckets to the same attempt: `login` by IP and
