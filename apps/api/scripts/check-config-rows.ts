@@ -12,10 +12,14 @@
  * It reports, by key only, never by value:
  * - rows outside the prefixes that the registry does not declare — the ones that need a decision;
  * - rows under the prefixes that the registry does not declare — still deletable from the page;
+ * - registered rows whose stored value their schema refuses (an upgrade can leave one behind:
+ *   2.1.6 stored `storage.type = minio`, which 3.0 refuses), with the schema's message; a row
+ *   stored as `''` is listed apart, since that is how 2.1.6 recorded "not configured"; encrypted
+ *   rows are counted, not checked, since that would need the master key;
  * - whether `app.baseUrl` is stored: when it is not, every link in outgoing email already points
  *   at its default, `http://localhost:3000`.
  *
- * Exits 1 when either of the first or the last needs attention, 0 otherwise.
+ * Exits 1 when the first, the third or the last needs attention, 0 otherwise.
  *
  * Usage:
  *   In production, inside the API container (the image ships `dist-scripts`, the working directory
@@ -25,8 +29,7 @@
  *     pnpm --filter @luke/api db:check-config-rows
  */
 
-import { isAppConfigKey, isConfigRouterKey } from '@luke/core';
-
+import { checkConfigRows } from './lib/configRows.js';
 import { createScriptPrismaClient } from './lib/prisma.js';
 import { describeTarget } from './lib/target.js';
 
@@ -41,32 +44,36 @@ async function main() {
   try {
     console.log(`Target database: ${describeTarget(process.env.DATABASE_URL)}`);
 
-    const keys = (await prisma.appConfig.findMany({ select: { key: true }, orderBy: { key: 'asc' } }))
-      .map(row => row.key);
-    const unregistered = keys.filter(key => !isAppConfigKey(key));
-    const strandedOrphans = unregistered.filter(key => !isConfigRouterKey(key));
-    const deletableOrphans = unregistered.filter(key => isConfigRouterKey(key));
-    const ownedElsewhere = keys.filter(key => isAppConfigKey(key) && !isConfigRouterKey(key));
-    const hasBaseUrl = keys.includes('app.baseUrl');
+    const report = checkConfigRows(
+      await prisma.appConfig.findMany({ select: { key: true, value: true, isEncrypted: true }, orderBy: { key: 'asc' } })
+    );
 
-    console.log(`AppConfig rows: ${keys.length}`);
-    console.log(`Registered keys another router owns (managed on their own pages): ${ownedElsewhere.length}`);
+    console.log(`AppConfig rows: ${report.total}`);
+    console.log(`Registered keys another router owns (managed on their own pages): ${report.ownedElsewhere}`);
     printKeys(
       'Unregistered rows outside the router prefixes (the settings page can no longer delete them)',
-      strandedOrphans
+      report.strandedOrphans
     );
-    printKeys('Unregistered rows under the router prefixes (still deletable from the settings page)', deletableOrphans);
+    printKeys('Unregistered rows under the router prefixes (still deletable from the settings page)', report.deletableOrphans);
+    printKeys(
+      'Registered rows whose value their schema refuses (the application rejects or ignores it)',
+      report.invalid.map(({ key, message }) => `${key}: ${message}`)
+    );
+    printKeys(
+      "Registered rows stored as '' (2.1.6's \"not configured\"; harmless, deletable to tidy up)",
+      report.emptyStored
+    );
+    console.log(`Encrypted rows not checked (needs the master key): ${report.encryptedSkipped}`);
     console.log(
-      `\napp.baseUrl: ${hasBaseUrl ? 'stored' : 'NOT stored — email links currently use http://localhost:3000'}`
+      `\napp.baseUrl: ${report.hasBaseUrl ? 'stored' : 'NOT stored — email links currently use http://localhost:3000'}`
     );
 
-    const attention = strandedOrphans.length > 0 || !hasBaseUrl;
     console.log(
-      attention
-        ? '\nACTION NEEDED: decide on each stranded row (a data step removes it) and/or set app.baseUrl from the mail settings page.'
+      report.attention
+        ? '\nACTION NEEDED: decide on each stranded row (a data step removes it), correct each refused value from its settings page, and/or set app.baseUrl from the mail settings page.'
         : '\nOK: nothing needs a decision.'
     );
-    process.exitCode = attention ? 1 : 0;
+    process.exitCode = report.attention ? 1 : 0;
   } finally {
     await prisma.$disconnect();
   }

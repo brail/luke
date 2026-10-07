@@ -249,6 +249,11 @@ do before deleting it with SQL. If it reports that `app.baseUrl` is not stored,
 set it in `Impostazioni → Mail`: email links point at `http://localhost:3000` until
 then.
 
+It also lists, by key and message only, every stored value its setting refuses:
+correct each from that setting's page. It exits 1 while any of these needs a
+decision. Settings stored empty (`''`) are listed apart: that is how 2.1.6
+recorded "not configured", and they are harmless.
+
 Smoke test as an administrator: collection layout photos and thumbnails, a new
 photo upload, a company logo upload (`Impostazioni → Azienda` → `Profilo` →
 `Identità aziendale`), a PDF export
