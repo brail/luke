@@ -4,6 +4,31 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.0-rc.2] - 2026-10-07
+
+### Documentation
+- **storage**: Retire the SeaweedFS entrypoint script
+- **deploy**: State the self-contained stack contract and safe env values
+- **release**: Publish the notes commit before the tag, redeploy by hand
+- **deploy**: Add the 2.1.6 to 3.0 upgrade procedure
+
+### Fixed
+- **deps**: Bump fast-copy past GHSA-jggr-w7fw-pc2j
+- **storage**: Run SeaweedFS without the entrypoint bind mount
+- **storage**: Refuse an invalid storage.type instead of falling back to local
+- **deps**: Bump sharp and source-map-js past today's advisories
+- **release**: Print the publish step before the tag push
+- **deploy**: Always pull the RC images on redeploy
+- **storage**: Stop counting storage read failures as missing masters
+- **scripts**: Clone prod into RC without the master key
+- **web**: Upload the company logo through the API, not to storage
+- **api**: Report stored config values their schema refuses
+- **nav**: Limit manual syncs per entity, not per user
+- **web**: Sign out only when the session is revoked
+- **api**: Take file serving out of the global per-IP rate limit
+- **api**: Never report an empty error message
+- **api**: Say why a backup, a restore or the S3 test failed
+
 ## [3.0.0-rc.1] - 2026-10-05
 
 ### Added
