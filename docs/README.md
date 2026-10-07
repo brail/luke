@@ -25,6 +25,7 @@ preserved evidence.
 | [Google Calendar setup](google-calendar-setup.md) | Provision and configure the Google Calendar integration. |
 | [Prisma migration workflow](prisma-migration-workflow.md) | Generate, review, and apply versioned migrations for the multi-file Prisma schema. |
 | [Production-to-RC data clone](rc-prod-clone.md) | Clone production data into RC without exposing the production master key. |
+| [Upgrading from 2.1.6 to 3.0](upgrade-2.1-to-3.0.md) | Production upgrade: MinIO-to-SeaweedFS file copy, data repairs, and rollback. |
 
 ## Reference
 
