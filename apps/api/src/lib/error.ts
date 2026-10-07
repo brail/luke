@@ -22,9 +22,16 @@ import type {
 
 const isProd = isProduction();
 
-/** Extracts a readable message from any caught value. */
+/**
+ * Extracts a readable message from any caught value. An empty `message` falls back to what else the
+ * error carries: Node's dual-stack connect failure is an `AggregateError` whose own message is
+ * empty, with the real reasons in `errors` (#49).
+ */
 export function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (!(err instanceof Error)) return String(err);
+  if (err.message) return err.message;
+  if (err instanceof AggregateError && err.errors.length > 0) return err.errors.map(toErrorMessage).join('; ');
+  return 'code' in err && typeof err.code === 'string' ? `${err.name}: ${err.code}` : err.name;
 }
 
 /** Extracts a stable error code for audit logging: tRPC code, Prisma error code, or 'UNKNOWN'. */
