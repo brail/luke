@@ -112,6 +112,10 @@ export const config = {
         // (root cause of the `jwt expired` error).
         const cached = tokenVersionCache.get(token.sub);
         if (!cached || Date.now() - cached >= TOKEN_VERSION_CACHE_TTL) {
+          // Set before the call, whatever its outcome: at most one refresh per user per TTL. Set
+          // only on success, a 429 kept the cache cold, and every image request (each one runs
+          // `auth()`) fired another refresh counted by the same per-IP limiter — keeping it spent.
+          tokenVersionCache.set(token.sub, Date.now());
           try {
             const response = await fetch(buildTrpcUrl('auth.refreshToken'), {
               method: 'POST',
@@ -136,7 +140,6 @@ export const config = {
               debugError('Transient token refresh error (ignored):', response.status);
             } else {
               token.accessToken = freshToken;
-              tokenVersionCache.set(token.sub, Date.now());
             }
           } catch (error) {
             const isNetworkError = error instanceof TypeError && error.message === 'fetch failed';

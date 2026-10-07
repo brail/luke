@@ -1,8 +1,7 @@
-import { TRPCClientError } from '@trpc/client';
 import { signOut, useSession } from 'next-auth/react';
 import { useCallback, useEffect, useRef } from 'react';
 
-import { debugError, debugLog } from '../lib/debug';
+import { debugLog } from '../lib/debug';
 import { trpc } from '../lib/trpc';
 
 /**
@@ -38,23 +37,12 @@ export function useSessionVerification() {
 
   const verifyImmediately = useCallback(async () => {
     if (loggedOutRef.current) return;
-    try {
-      debugLog('Verifica tokenVersion immediata...');
-      const result = await verifySession();
-
-      if (!result.data) {
-        forceLogout();
-        return;
-      }
-    } catch (error: unknown) {
-      const isAuthError =
-        error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED';
-      if (isAuthError) {
-        forceLogout();
-      } else {
-        debugError('Session verification error (transient, ignored):', error);
-      }
-    }
+    debugLog('Verifica tokenVersion immediata...');
+    // `refetch` resolves with `{ data, error }` and never throws. Only UNAUTHORIZED means a
+    // revoked session: a 429, a 5xx or a network error is transient, and the query keeps its last
+    // data on error, so `data` says nothing about this check.
+    const { error } = await verifySession();
+    if (error?.data?.code === 'UNAUTHORIZED') forceLogout();
   }, [verifySession, forceLogout]);
 
   const handleVisibilityChange = useCallback(() => {
