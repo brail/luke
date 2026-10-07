@@ -2,7 +2,7 @@
 # Luke — RC Stack (Portainer)
 #
 # Stack running parallel to production, for release candidates (vX.Y.Z-rc.N).
-# Uses images tagged "rc-latest", built by GitHub Actions.
+# Runs the candidate named by LUKE_VERSION, built by GitHub Actions.
 #
 # Distinct host ports, so it can coexist with the prod stack:
 #   web: 3010 (prod uses 3000)
@@ -13,6 +13,7 @@
 #
 # Required environment variables (set in Portainer Stack → Env). Never put `$` in
 # a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
+#   LUKE_VERSION          — candidate to run, without the "v", e.g. 3.0.0-rc.3
 #   POSTGRES_PASSWORD_RC  — DB password, separate from prod
 #   NEXTAUTH_SECRET_RC    — secret, separate from prod
 #   RC_PUBLIC_HOSTNAME    — RC hostname, e.g. rc.luke.febos.local
@@ -53,7 +54,7 @@ services:
     networks:
       - edge
       - data
-    image: ghcr.io/brail/luke-api:rc-latest
+    image: ghcr.io/brail/luke-api:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -85,7 +86,7 @@ services:
   web-rc:
     networks:
       - edge
-    image: ghcr.io/brail/luke-web:rc-latest
+    image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
     depends_on:

@@ -10,15 +10,13 @@
 #
 # Required environment variables (set in Portainer Stack → Env). Never put `$` in
 # a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
+#   LUKE_VERSION           — release to run, without the "v", e.g. 3.0.0
 #   POSTGRES_PASSWORD      — strong random password for the PostgreSQL user
 #   NEXTAUTH_SECRET        — random string (openssl rand -base64 32)
 #   PUBLIC_HOSTNAME        — public hostname, e.g. luke.example.com
 #   COOKIE_SECURE          — "true" if behind HTTPS, "false" if plain HTTP
 #   S3_ROOT_USER           — S3 storage admin username
 #   S3_ROOT_PASSWORD       — S3 storage admin password (strong, 32+ chars)
-#
-# To deploy a specific version instead of latest, change image tags to e.g.:
-#   image: ghcr.io/brail/luke-api:1.2.3
 # ──────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -50,7 +48,7 @@ services:
     networks:
       - edge
       - data
-    image: ghcr.io/brail/luke-api:latest
+    image: ghcr.io/brail/luke-api:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
     depends_on:
@@ -85,7 +83,7 @@ services:
   web:
     networks:
       - edge
-    image: ghcr.io/brail/luke-web:latest
+    image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
     depends_on:
