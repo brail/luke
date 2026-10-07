@@ -28,6 +28,8 @@ import type { SchemaCompatibility, SchemaCompatibilityResult } from '@luke/core'
 import { PRISMA_MIGRATIONS_DIR, PRISMA_PACKAGE_ROOT } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
+import { toErrorMessage } from '../error';
+
 import { forEachArchiveEntry } from './archiveFormat';
 import { createPendingBackupRecord, getLatestMigrationName, runBackupJob, type BackupLogger } from './dumpPipeline';
 import { buildPostgresUrl, parseDatabaseUrl, runCommand, runPgBinary } from './pgConnection';
@@ -250,8 +252,11 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
     });
     // runBackupJob handles COMPLETED/FAILED on this record by itself.
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ migratedBackupId, err: message }, 'Migration bridge: failed');
+    // The error object, not its message: an AggregateError's own message is empty (#49), and
+    // pino serializes the stack and the inner errors. Credentials travel in the child's environment
+    // (PGPASSWORD, DATABASE_URL), never in its arguments, so none reaches this error.
+    const message = toErrorMessage(err);
+    logger.error({ migratedBackupId, err }, 'Migration bridge: failed');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },

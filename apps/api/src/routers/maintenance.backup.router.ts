@@ -479,7 +479,7 @@ export const backupRouter = router({
             logger: ctx.logger,
           });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = toErrorMessage(err);
           await logAudit(ctx, {
             action: 'BACKUP_RESTORE',
             targetType: 'BackupRecord',

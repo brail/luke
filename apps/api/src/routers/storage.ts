@@ -16,6 +16,7 @@ import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, typ
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { resolvePublicUrl } from '../lib/storageUrl';
@@ -204,7 +205,7 @@ export const storageRouter = router({
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Errore caricamento config storage S3: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Errore caricamento config storage S3: ${toErrorMessage(err)}`,
           cause: err,
         });
       }
@@ -215,7 +216,7 @@ export const storageRouter = router({
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Connessione allo storage S3 fallita: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Connessione allo storage S3 fallita: ${toErrorMessage(err)}`,
           cause: err,
         });
       }

@@ -21,6 +21,7 @@ import type { BackupScope, BackupTrigger, PrismaClient } from '@luke/db';
 import { getStorageProvider } from '../../storage';
 import { releaseIdentity } from '../appVersion';
 import { getBackupRetentionDays } from '../configManager';
+import { toErrorMessage } from '../error';
 
 import { addFileEntry, addStreamEntry, createArchivePacker } from './archiveFormat';
 import { AUDIT_STAGE_EXCLUDE_ARG } from './auditStage';
@@ -306,8 +307,11 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
 
     logger.info({ backupId, fileCount, sizeBytes: uploadResult.size }, 'Backup: completed');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ backupId, err: message }, 'Backup: failed');
+    // The error object, not its message: an AggregateError's own message is empty (#49), and
+    // pino serializes the stack and the inner errors. Credentials travel in the child's environment
+    // (PGPASSWORD, DATABASE_URL), never in its arguments, so none reaches this error.
+    const message = toErrorMessage(err);
+    logger.error({ backupId, err }, 'Backup: failed');
     await prisma.backupRecord.update({
       where: { id: backupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },
