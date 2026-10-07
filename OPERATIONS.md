@@ -129,10 +129,15 @@ limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
 
 ### Global limiter
 
-A second limiter runs before tRPC on every route: `@fastify/rate-limit` in
-`apps/api/src/server.ts`, 100 requests per minute per IP — 2,000 in
+A second limiter runs before tRPC on every route but one: `@fastify/rate-limit`
+in `apps/api/src/server.ts`, 100 requests per minute per IP — 2,000 in
 development, where the loopback addresses (`127.0.0.1`, `::1`,
-`::ffff:127.0.0.1`) are exempt. It is not configurable through the `rateLimit`
+`::ffff:127.0.0.1`) are exempt. File serving, `GET /uploads/:bucket/*`, is out
+of it: every picture on a page is one request, and a photo-heavy collection
+layout spent the whole budget on one uncached load. The only caller of that
+route is the web's authenticated `/api/uploads` proxy, and responses carry an
+immutable one-year cache; the residual is that a signed-in user can download
+files without a rate ceiling. It is not configurable through the `rateLimit`
 key, and `skipOnError` lets requests through when the limiter itself fails. Its
 429 has its own body — `{ statusCode, error, message, retryAfter }` — and no
 `error.data.code`.
