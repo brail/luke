@@ -96,7 +96,7 @@ export function ProfileTab() {
     : (pendingLogoUrl ?? (savedLogoKey ? buildCompanyLogoUrl(savedLogoKey) : null));
 
   const { upload, isUploading, progress: uploadProgress } = useStorageUpload({
-    fallbackProxyUrl: buildCompanyLogoUploadUrl(),
+    url: buildCompanyLogoUploadUrl(),
   });
 
   const syncFromProfile = (p: typeof profile) => {
@@ -142,7 +142,7 @@ export function ProfileTab() {
   const handleLogoUpload = async (file: File) => {
     try {
       // Keep the id, not the key: the server derives the key from the FileObject.
-      const result = await upload(file, 'company-assets');
+      const result = await upload(file);
       setPendingFileObjectId(result.fileObjectId);
       setPendingLogoUrl(result.publicUrl);
       setLogoCleared(false);

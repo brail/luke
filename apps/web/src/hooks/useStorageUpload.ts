@@ -3,10 +3,6 @@
 import { useSession } from 'next-auth/react';
 import { useCallback, useState } from 'react';
 
-import { type PRESIGNED_UPLOAD_BUCKETS } from '@luke/core';
-
-import { trpc } from '../lib/trpc';
-
 /** Result of a completed upload: the public URL plus the id needed to link the file to an entity. */
 export interface StorageUploadResult {
   publicUrl: string;
@@ -21,101 +17,41 @@ export interface StorageUploadResult {
   key?: string;
 }
 
-/** The buckets the presigned upload pair accepts (`PRESIGNED_UPLOAD_BUCKETS`). */
-export type UploadableBucket = (typeof PRESIGNED_UPLOAD_BUCKETS)[number];
-
 /** Options accepted by `useStorageUpload`. */
 export interface UseStorageUploadOptions {
   /**
-   * Fallback URL to use when storage is in proxy (local) mode.
-   * Should be an absolute API URL like buildBrandLogoUploadUrl(id).
-   * The response from this URL must contain `{ publicUrl: string }`.
+   * The API upload route, e.g. `buildCompanyLogoUploadUrl()`. Its response must contain
+   * `{ publicUrl, fileObjectId }`.
    */
-  fallbackProxyUrl?: string;
-  /** Additional multipart form fields for the proxy upload */
-  extraFields?: Record<string, string>;
+  url: string;
 }
 
 /** Return value of `useStorageUpload`: the upload function plus its in-flight state. */
 export interface UseStorageUploadReturn {
-  upload: (file: File, bucket: UploadableBucket) => Promise<StorageUploadResult>;
+  upload: (file: File) => Promise<StorageUploadResult>;
   isUploading: boolean;
   progress: number;
 }
 
 /**
- * Uploads a file to storage, picking the transport based on what
- * `storage.requestUpload` responds with: a direct presigned PUT (S3) when
- * `req.method === 'presigned'`, otherwise a multipart POST to `fallbackProxyUrl`
- * (local proxy mode).
+ * Uploads a file as a multipart POST to an API upload route. The browser never talks to
+ * storage directly: the storage service is not reachable from it (on 3.0 SeaweedFS sits on an
+ * internal network), and the presigned PUT this hook used to send failed in production on CORS.
  *
- * @throws {Error} When the proxy path is required but no `fallbackProxyUrl` was
- *   provided, or when the upload request itself fails.
+ * @throws {Error} When the upload request fails.
  */
-export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStorageUploadReturn {
-  const { fallbackProxyUrl, extraFields } = options;
+export function useStorageUpload({ url }: UseStorageUploadOptions): UseStorageUploadReturn {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const { data: session } = useSession();
 
-  const requestUpload = trpc.storage.requestUpload.useMutation();
-  const confirmUpload = trpc.storage.confirmUpload.useMutation();
-
-  const upload = useCallback(async (file: File, bucket: UploadableBucket): Promise<StorageUploadResult> => {
+  const upload = useCallback(async (file: File): Promise<StorageUploadResult> => {
     setIsUploading(true);
     setProgress(0);
 
     try {
-      const req = await requestUpload.mutateAsync({
-        bucket,
-        contentType: file.type || 'application/octet-stream',
-        size: file.size,
-        originalName: file.name,
-      });
-
-      if (req.method === 'presigned' && req.presignedUrl && req.key && req.uploadToken) {
-        // S3 path: PUT directly to presigned URL
-        setProgress(20);
-        const putRes = await fetch(req.presignedUrl, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        });
-
-        if (!putRes.ok) {
-          throw new Error(`Upload to storage failed (${putRes.status})`);
-        }
-
-        setProgress(80);
-        // Bucket and key are not sent back: the token carries them, which the server
-        // signed when it allocated the slot.
-        const confirmed = await confirmUpload.mutateAsync({
-          uploadToken: req.uploadToken,
-          contentType: file.type || 'application/octet-stream',
-          size: file.size,
-          originalName: file.name,
-        });
-
-        setProgress(100);
-        return {
-          publicUrl: confirmed.publicUrl,
-          fileObjectId: confirmed.fileObjectId,
-          key: confirmed.key,
-        };
-      }
-
-      // Local proxy path: POST multipart to entity-specific endpoint
-      if (!fallbackProxyUrl) {
-        throw new Error('Storage is in proxy mode but no fallbackProxyUrl was provided');
-      }
-
       const formData = new globalThis.FormData();
       formData.append('file', file);
-      if (extraFields) {
-        for (const [k, v] of Object.entries(extraFields)) {
-          formData.append(k, v);
-        }
-      }
 
       const headers: Record<string, string> = {};
       if (session?.accessToken) {
@@ -123,17 +59,21 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
       }
 
       setProgress(30);
-      const proxyRes = await fetch(fallbackProxyUrl, {
+      const res = await fetch(url, {
         method: 'POST',
         headers,
         body: formData,
       });
 
-      if (!proxyRes.ok) {
-        throw new Error(`Upload failed (${proxyRes.status})`);
+      if (!res.ok) {
+        // The route answers `{ error, message }`; `status` lets `getTrpcErrorMessage` map the
+        // refusal the way it maps a tRPC error.
+        const body: { message?: unknown } = await res.json().catch(() => ({}));
+        const message = typeof body.message === 'string' ? body.message : `Upload failed (${res.status})`;
+        throw Object.assign(new Error(message), { status: res.status });
       }
 
-      const data = await proxyRes.json();
+      const data = await res.json();
       setProgress(100);
       return {
         publicUrl: data.publicUrl,
@@ -143,7 +83,7 @@ export function useStorageUpload(options: UseStorageUploadOptions = {}): UseStor
     } finally {
       setIsUploading(false);
     }
-  }, [requestUpload, confirmUpload, fallbackProxyUrl, extraFields, session]);
+  }, [url, session]);
 
   return { upload, isUploading, progress };
 }

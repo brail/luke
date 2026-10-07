@@ -26,8 +26,9 @@ Backup restore, which accepts any bucket in `APP_STORAGE_BUCKETS`, can also
 write here. The presigned `storage.requestUpload` / `storage.confirmUpload`
 pair could too until 2026-09-27: it accepted every application bucket for any
 authenticated user and recorded a checksum the client declared. It now serves
-`PRESIGNED_UPLOAD_BUCKETS` only (`company-assets`, its one caller), and
-`confirmUpload` refuses a slot signed for any other bucket.
+`PRESIGNED_UPLOAD_BUCKETS` only (`company-assets`), and `confirmUpload`
+refuses a slot signed for any other bucket. Since 2026-10-07 the web app no
+longer calls the pair: the company logo goes through `/upload/company-logo`.
 
 ### Who reads
 
