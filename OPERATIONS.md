@@ -2,11 +2,12 @@
 
 Operational reference for the API's runtime protections whose behavior is
 configurable, or differs from what their names suggest — the password policy,
-rate limiting, idempotency and error responses — and for three operator tasks:
-signing in when LDAP is unreachable, email deliverability and the release
-build's repository variables. Security headers and the health and readiness
-probes are documented in the [API documentation](apps/api/README.md); session
-revocation is decided in [ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
+rate limiting, idempotency and error responses — and for four operator tasks:
+signing in when LDAP is unreachable, email deliverability, the reverse proxy's
+network and the release build's repository variables. Security headers and
+the health and readiness probes are documented in the
+[API documentation](apps/api/README.md); session revocation is decided in
+[ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
 
 ## Contents
 
@@ -16,6 +17,7 @@ revocation is decided in [ADR-019](docs/decisions/019-tokenversion-session-revoc
 - [Error responses](#error-responses)
 - [Signing in when LDAP is unreachable](#signing-in-when-ldap-is-unreachable)
 - [Email deliverability](#email-deliverability)
+- [Reverse proxy](#reverse-proxy)
 - [Release build variables](#release-build-variables)
 - [Related documentation](#related-documentation)
 
@@ -279,6 +281,32 @@ In production the domain of `smtp.from` needs:
 
 Without them the links tend to land in spam or be rejected. The test email on
 the mail settings page checks delivery end to end.
+
+---
+
+## Reverse proxy
+
+The reverse proxy (Nginx Proxy Manager, a container on the same host) reaches
+each stack's web service over an external network that only the two of them
+share: `luke-proxy` for production, `luke-rc-proxy` for the RC. The web
+publishes no host port, and the proxy forwards by container name —
+`http://luke-web-1:3000`, `http://luke-rc-web-rc-1:3000` — which depends on
+the stack names `luke` and `luke-rc`. The proxy is on neither stack's `edge`
+or `data` network, so it never reaches apps/api, postgres or the storage, and
+apps/api keeps trusting only its `edge` subnet (`LUKE_TRUSTED_PROXY_CIDR`).
+
+Create each network and connect the proxy once per host, before the stack's
+first deploy, which stops while its network is missing:
+
+```bash
+docker network create luke-proxy
+docker network connect luke-proxy nginx-proxy-manager
+```
+
+The network outlives the stack, so recreating the stack keeps the connection.
+Recreating the proxy's own container drops it: connect it again, or declare
+both networks as `external` in the proxy's own stack so that its deploy
+restores them.
 
 ---
 

@@ -5,9 +5,6 @@
 # Runs the candidate named by LUKE_VERSION, as release.yml publishes it to
 # ghcr.io from the rc tag.
 #
-# Distinct host ports, so it can coexist with the prod stack:
-#   web: 3010 (prod uses 3000)
-#
 # Self-contained: the stack must deploy from this file alone, without a checkout
 # of the repository. No service may reference a repository path (relative bind
 # mount, `build:`, `env_file:`).
@@ -25,9 +22,14 @@
 #   COOKIE_SECURE         — "true" for HTTPS; default "false"
 #   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
 #
+# Prerequisite, once per host: the external network `luke-rc-proxy`, shared only
+# by the web service and the reverse proxy (OPERATIONS.md, "Reverse proxy"). The
+# deploy stops while it is missing. The web publishes no host port.
+#   docker network create luke-rc-proxy
+#   docker network connect luke-rc-proxy nginx-proxy-manager
+#
 # Nginx Proxy Manager: create a new proxy host
-#   Domain: rc.luke.febos.local  →  Forward: http://<docker host>:3010
-#   (NPM runs in a container, where `localhost` is NPM itself.)
+#   Domain: rc.luke.febos.local  →  Forward: http://luke-rc-web-rc-1:3000
 # ──────────────────────────────────────────────────────────────────────────────
 
 x-logging: &logging
@@ -85,7 +87,7 @@ services:
       start_period: 60s
     logging: *logging
 
-  # ── Next.js web (RC) — exposed on port 3010 ──────────────────────────────────
+  # ── Next.js web (RC) ─────────────────────────────────────────────────────────
   web-rc:
     image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
@@ -93,8 +95,6 @@ services:
     depends_on:
       api-rc:
         condition: service_started
-    ports:
-      - '3010:3000'
     environment:
       NODE_ENV: production
       INTERNAL_API_URL: http://api-rc:3001
@@ -103,6 +103,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:
       - edge
+      - proxy
     logging: *logging
 
   # ── SeaweedFS object storage (RC, S3-compatible) ──────────────────────────────
@@ -156,3 +157,10 @@ networks:
   # than an assumption in a comment.
   data:
     internal: true
+
+  # Shared with the reverse proxy and nothing else: the proxy reaches the web
+  # here, never apps/api, postgres or seaweedfs. External, so recreating this
+  # stack neither deletes it nor drops the proxy's connection to it.
+  proxy:
+    external: true
+    name: luke-rc-proxy

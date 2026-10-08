@@ -20,6 +20,13 @@
 # Optional:
 #   COOKIE_SECURE          — "true" if behind HTTPS; default "false"
 #   LUKE_EDGE_SUBNET       — subnet of the `edge` network; default 10.254.10.0/24
+#
+# Prerequisite, once per host: the external network `luke-proxy`, shared only by
+# the web service and the reverse proxy (OPERATIONS.md, "Reverse proxy"). The
+# deploy stops while it is missing. The web publishes no host port: the proxy
+# forwards to http://luke-web-1:3000.
+#   docker network create luke-proxy
+#   docker network connect luke-proxy nginx-proxy-manager
 # ──────────────────────────────────────────────────────────────────────────────
 
 x-logging: &logging
@@ -89,8 +96,6 @@ services:
     depends_on:
       api:
         condition: service_started
-    ports:
-      - '3000:3000'
     environment:
       NODE_ENV: production
       # Internal Docker URL used by Next.js SSR and middleware
@@ -102,6 +107,7 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:
       - edge
+      - proxy
     logging: *logging
 
   # ── SeaweedFS object storage (S3-compatible) ──────────────────────────────────
@@ -155,3 +161,10 @@ networks:
   # than an assumption in a comment.
   data:
     internal: true
+
+  # Shared with the reverse proxy and nothing else: the proxy reaches the web
+  # here, never apps/api, postgres or seaweedfs. External, so recreating this
+  # stack neither deletes it nor drops the proxy's connection to it.
+  proxy:
+    external: true
+    name: luke-proxy
