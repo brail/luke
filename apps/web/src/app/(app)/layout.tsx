@@ -53,9 +53,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <SidebarProvider>
         <div className="flex h-screen w-full bg-background">
           <AppSidebar />
-          <div className="flex-1 flex flex-col overflow-y-auto">
+          {/* min-w-0: the column shrinks to the space left by the sidebar, so wide content
+              scrolls inside its own container instead of widening the page. */}
+          <div className="flex-1 flex flex-col min-w-0">
             {/* Shared header */}
-            <header className="sticky top-0 z-10 shrink-0 border-b bg-card">
+            <header className="shrink-0 border-b bg-card">
               <div className="flex items-center px-4 py-2">
                 <CollapsedSidebarTrigger />
                 <div className="ml-auto flex items-center gap-2">
@@ -65,8 +67,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
 
-            {/* Main content */}
-            <main className="flex-1 overflow-y-auto p-6">{children}</main>
+            {/* Main content: the only scroll container of the shell. `relative` makes it the
+                containing block of absolutely positioned descendants too (the hidden form
+                inputs of Radix's Switch and Select), so they cannot stretch the document. */}
+            <main className="relative flex-1 overflow-y-auto p-6">
+              {children}
+            </main>
           </div>
         </div>
 

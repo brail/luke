@@ -1,7 +1,7 @@
 import { readdirSync } from 'fs';
 import path from 'path';
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 import {
   expectContextConfigured,
@@ -52,10 +52,27 @@ const UNCOVERED_ROUTES: Record<string, string> = {
   '/settings/google': 'config with external credentials',
   '/settings/ldap': 'config with external credentials',
   '/settings/mail': 'config with external credentials',
-  '/settings/nav': 'config with external credentials',
+  '/settings/nav':
+    'config with external credentials; its document overflow is checked below',
   '/settings/nav-sync': 'starts real syncs against NAV',
   '/settings/storage': 'config, no heavy query',
 };
+
+/**
+ * How far the document itself scrolls, on either axis. The shell scrolls inside `<main>`
+ * only: when the document scrolls down, a strip of the page background shows below the
+ * shell and stays there while `<main>` scrolls back (#76); when it scrolls sideways, the
+ * header leaves the screen while wide content should scroll in its own container.
+ */
+function documentOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const root = document.documentElement;
+    return Math.max(
+      root.scrollHeight - root.clientHeight,
+      root.scrollWidth - root.clientWidth
+    );
+  });
+}
 
 /** Derives the static routes of the `(app)` group from the file tree. */
 function discoverAppRoutes(): string[] {
@@ -116,6 +133,10 @@ test.describe('smoke: shell applicativa', () => {
 
       await expectNoErrorBoundary(page);
 
+      expect(
+        await documentOverflow(page),
+        `The document scrolls on ${routePath}`
+      ).toBeLessThanOrEqual(0);
       expect(uncaught, `Eccezioni non gestite su ${routePath}`).toEqual([]);
       expect(
         serverErrors,
@@ -123,6 +144,34 @@ test.describe('smoke: shell applicativa', () => {
       ).toEqual([]);
     });
   }
+
+  // Radix's Switch and Select render a hidden, absolutely positioned form input; below the
+  // fold, one whose containing block lies outside `<main>` stretched the document. This
+  // page has two Switches below the fold, and loading it writes nothing.
+  test('/settings/nav does not make the document scroll', async ({ page }) => {
+    await page.goto('/settings/nav');
+    await expect(page.getByRole('switch')).toHaveCount(2);
+
+    expect(await documentOverflow(page)).toBeLessThanOrEqual(0);
+  });
+
+  // The collection layout table is `min-w-max`: wider than the viewport, it must scroll in
+  // its own container instead of widening the shell column and the document.
+  test('/product/collection-layout keeps a wide table inside the shell', async ({
+    page,
+  }) => {
+    await page.goto('/product/collection-layout');
+    const table = page.locator('main table').first();
+    const hasTable = await table
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .then(
+        () => true,
+        () => false
+      );
+    test.skip(!hasTable, 'No collection layout table in this database.');
+
+    expect(await documentOverflow(page)).toBeLessThanOrEqual(0);
+  });
 
   test('every app route is covered or declared uncovered', async () => {
     const covered = new Set(CRITICAL_ROUTES.map(r => r.path));
