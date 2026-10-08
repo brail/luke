@@ -1,53 +1,55 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Luke — Production Stack (Portainer)
 #
-# This file uses pre-built images from ghcr.io.
-# Do NOT run docker compose build here — images are built by GitHub Actions CI.
+# Runs the images release.yml publishes to ghcr.io from a release tag; nothing
+# here builds an image.
 #
 # Self-contained: the stack must deploy from this file alone, without a checkout
 # of the repository. No service may reference a repository path (relative bind
 # mount, `build:`, `env_file:`).
 #
-# Required environment variables (set in Portainer Stack → Env). Never put `$` in
-# a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
+# Environment variables (set in Portainer Stack → Env). Never put `$` in a value:
+# compose interpolates it. `openssl rand -hex 24` gives a safe value.
+# Required — the deploy stops without them:
 #   LUKE_VERSION           — release to run, without the "v", e.g. 3.0.0
 #   POSTGRES_PASSWORD      — strong random password for the PostgreSQL user
 #   NEXTAUTH_SECRET        — random string (openssl rand -base64 32)
 #   PUBLIC_HOSTNAME        — public hostname, e.g. luke.example.com
-#   COOKIE_SECURE          — "true" if behind HTTPS, "false" if plain HTTP
 #   S3_ROOT_USER           — S3 storage admin username
 #   S3_ROOT_PASSWORD       — S3 storage admin password (strong, 32+ chars)
+# Optional:
+#   COOKIE_SECURE          — "true" if behind HTTPS; default "false"
+#   LUKE_EDGE_SUBNET       — subnet of the `edge` network; default 10.254.10.0/24
 # ──────────────────────────────────────────────────────────────────────────────
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 services:
   # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
-    networks:
-      - data
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: luke
       POSTGRES_USER: luke
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
       interval: 5s
       timeout: 5s
       retries: 10
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
   # ── Fastify API ──────────────────────────────────────────────────────────────
   api:
-    networks:
-      - edge
-      - data
     image: ghcr.io/brail/luke-api:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
@@ -60,29 +62,27 @@ services:
       LUKE_TRUSTED_PROXY_CIDR: ${LUKE_EDGE_SUBNET:-10.254.10.0/24}
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD}@postgres:5432/luke
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD not set}@postgres:5432/luke
       # CORS: browser requests go through the web container (no direct API access)
       LUKE_CORS_ALLOWED_ORIGINS: ''
     volumes:
-      # Persistent volume for master key (~/.luke/secret.key) and local file storage.
-      # NEVER delete this volume — all JWT tokens derive from the master key.
+      # The master key (/root/.luke/secret.key) lives here. NEVER delete this
+      # volume: the key decrypts the stored secrets and every backup, and the
+      # API's token secrets are derived from it (ADR-020).
       - api_data:/root/.luke
+    networks:
+      - edge
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 60s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
   # ── Next.js web ───────────────────────────────────────────────────────────────
   web:
-    networks:
-      - edge
     image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
@@ -96,20 +96,16 @@ services:
       # Internal Docker URL used by Next.js SSR and middleware
       INTERNAL_API_URL: http://api:3001
       # NextAuth
-      NEXTAUTH_URL: http://${PUBLIC_HOSTNAME}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: http://${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME not set}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET not set}
       # Set to "true" when serving over HTTPS, "false" for plain HTTP
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    networks:
+      - edge
+    logging: *logging
 
   # ── SeaweedFS object storage (S3-compatible) ──────────────────────────────────
   seaweedfs:
-    networks:
-      - data
     # Pinned: the env-var admin identity below is verified on this version;
     # re-verify it (anonymous request refused) before bumping.
     image: chrislusf/seaweedfs:4.48
@@ -128,17 +124,15 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD:?S3_ROOT_PASSWORD not set}
     volumes:
       - seaweedfs_data:/data
+    networks:
+      - data
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
 volumes:
   postgres_data:

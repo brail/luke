@@ -2,7 +2,8 @@
 # Luke — RC Stack (Portainer)
 #
 # Stack running parallel to production, for release candidates (vX.Y.Z-rc.N).
-# Runs the candidate named by LUKE_VERSION, built by GitHub Actions.
+# Runs the candidate named by LUKE_VERSION, as release.yml publishes it to
+# ghcr.io from the rc tag.
 #
 # Distinct host ports, so it can coexist with the prod stack:
 #   web: 3010 (prod uses 3000)
@@ -11,49 +12,52 @@
 # of the repository. No service may reference a repository path (relative bind
 # mount, `build:`, `env_file:`).
 #
-# Required environment variables (set in Portainer Stack → Env). Never put `$` in
-# a value: compose interpolates it. `openssl rand -hex 24` gives a safe value.
+# Environment variables (set in Portainer Stack → Env). Never put `$` in a value:
+# compose interpolates it. `openssl rand -hex 24` gives a safe value.
+# Required — the deploy stops without them:
 #   LUKE_VERSION          — candidate to run, without the "v", e.g. 3.0.0-rc.3
 #   POSTGRES_PASSWORD_RC  — DB password, separate from prod
 #   NEXTAUTH_SECRET_RC    — secret, separate from prod
 #   RC_PUBLIC_HOSTNAME    — RC hostname, e.g. rc.luke.febos.local
-#   COOKIE_SECURE         — "true" for HTTPS, "false" for HTTP
 #   S3_ROOT_USER_RC       — S3 storage admin username (RC)
 #   S3_ROOT_PASSWORD_RC   — S3 storage admin password (RC, 32+ chars)
+# Optional:
+#   COOKIE_SECURE         — "true" for HTTPS; default "false"
+#   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
 #
 # Nginx Proxy Manager: create a new proxy host
-#   Domain: rc.luke.febos.local  →  Forward: http://localhost:3010
+#   Domain: rc.luke.febos.local  →  Forward: http://<docker host>:3010
+#   (NPM runs in a container, where `localhost` is NPM itself.)
 # ──────────────────────────────────────────────────────────────────────────────
+
+x-logging: &logging
+  driver: local
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 services:
   # ── PostgreSQL (isolated instance for RC) ────────────────────────────────────
   postgres-rc:
-    networks:
-      - data
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: luke
       POSTGRES_USER: luke
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_RC}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_RC:?POSTGRES_PASSWORD_RC not set}
     volumes:
       - postgres_rc_data:/var/lib/postgresql/data
+    networks:
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
       interval: 5s
       timeout: 5s
       retries: 10
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
   # ── Fastify API (RC) ─────────────────────────────────────────────────────────
   api-rc:
-    networks:
-      - edge
-      - data
     image: ghcr.io/brail/luke-api:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
@@ -66,26 +70,23 @@ services:
       LUKE_TRUSTED_PROXY_CIDR: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC}@postgres-rc:5432/luke
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC:?POSTGRES_PASSWORD_RC not set}@postgres-rc:5432/luke
       LUKE_CORS_ALLOWED_ORIGINS: ''
     volumes:
       - api_rc_data:/root/.luke
+    networks:
+      - edge
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 60s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
   # ── Next.js web (RC) — exposed on port 3010 ──────────────────────────────────
   web-rc:
-    networks:
-      - edge
     image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
     pull_policy: always
     restart: unless-stopped
@@ -97,19 +98,15 @@ services:
     environment:
       NODE_ENV: production
       INTERNAL_API_URL: http://api-rc:3001
-      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC}
+      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME:?RC_PUBLIC_HOSTNAME not set}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC:?NEXTAUTH_SECRET_RC not set}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    networks:
+      - edge
+    logging: *logging
 
   # ── SeaweedFS object storage (RC, S3-compatible) ──────────────────────────────
   seaweedfs-rc:
-    networks:
-      - data
     # Pinned: the env-var admin identity below is verified on this version;
     # re-verify it (anonymous request refused) before bumping.
     image: chrislusf/seaweedfs:4.48
@@ -128,17 +125,15 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD_RC:?S3_ROOT_PASSWORD_RC not set}
     volumes:
       - seaweedfs_rc_data:/data
+    networks:
+      - data
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
 volumes:
   postgres_rc_data:
