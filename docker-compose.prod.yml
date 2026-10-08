@@ -4,6 +4,12 @@
 # Runs the images release.yml publishes to ghcr.io from a release tag; nothing
 # here builds an image.
 #
+# Deployed as a Portainer Git stack (build method "Repository"), named `luke`:
+# this repository, reference refs/tags/v<version>, compose path
+# docker-compose.prod.yml, GitOps updates off. A release changes the reference
+# and LUKE_VERSION together; afterwards both containers must run
+# ghcr.io/brail/luke-{api,web}:<LUKE_VERSION> (docker inspect … Config.Image).
+#
 # Self-contained: the stack must deploy from this file alone, without a checkout
 # of the repository. No service may reference a repository path (relative bind
 # mount, `build:`, `env_file:`).

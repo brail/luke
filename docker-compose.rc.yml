@@ -5,6 +5,12 @@
 # Runs the candidate named by LUKE_VERSION, as release.yml publishes it to
 # ghcr.io from the rc tag.
 #
+# Deployed as a Portainer Git stack (build method "Repository"), named
+# `luke-rc`: this repository, reference refs/tags/v<version>, compose path
+# docker-compose.rc.yml, GitOps updates off. A candidate changes the reference
+# and LUKE_VERSION together; afterwards both containers must run
+# ghcr.io/brail/luke-{api,web}:<LUKE_VERSION> (docker inspect … Config.Image).
+#
 # Self-contained: the stack must deploy from this file alone, without a checkout
 # of the repository. No service may reference a repository path (relative bind
 # mount, `build:`, `env_file:`).
