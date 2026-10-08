@@ -478,6 +478,29 @@ merging its `release/<tag>` pull request into `main` (no direct push there) —
 then push the one tag. `scripts/release-prepare.sh` prints the steps for
 each case.
 
+### Write a release version in full, `X.Y.Z`
+
+Milestones, plans, issue texts and release references name a release as
+`3.1.0`, never `3.1`. A develop cycle produces exactly one stable target
+(`develop-3.1` → `v3.1.0`, through `-rc.N`), and tags and `release:prepare`
+take `X.Y.Z`. The short form names something else: the branch `develop-X.Y`
+names the cycle, and the `X.Y` image tag a moving series (ADR-033). On
+2026-10-07 the GitHub milestones `3.0.0` and `3.1` were created side by side;
+`3.1` has since been renamed `3.1.0`.
+
+### Read what runs in an environment before writing its procedure
+
+A procedure for an environment starts from what runs there — the stack text
+in Portainer, `docker network ls`, `docker volume ls`, the containers'
+non-secret environment — never from the repository's compose file. The
+2.1.6 → 3.0 upgrade procedure assumed production ran `docker-compose.prod.yml`;
+its stack had been edited in Portainer and differed from that file in its
+networks and settings. The rc.2 rehearsal could not catch it, because the RC
+stack is deployed from the repository file. As written, the procedure would
+have left production unreachable after the update, and its rollback would
+have restored a file production never ran (found 2026-10-08, before the
+upgrade).
+
 ## Branch management
 
 ### A graduated `develop-X.Y` is dead — never reactivate it
