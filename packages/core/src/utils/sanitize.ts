@@ -8,13 +8,11 @@
  */
 
 /**
- * Sanitizes a file name by removing dangerous characters
+ * Sanitizes a file name by removing or replacing dangerous characters.
  *
- * Removes:
- * - Path traversal: `..`, `/`, `\`
- * - Control characters (0x00-0x1F, 0x7F)
- * - Filesystem special characters: `<`, `>`, `:`, `"`, `|`, `?`, `*`
- * - Multiple spaces and trailing/leading whitespace
+ * Removes `..` and control characters (0x00-0x1F, 0x7F). Replaces with `-`:
+ * `/`, `\`, the filesystem special characters `<`, `>`, `:`, `"`, `|`, `?`,
+ * `*`, and every run of whitespace, after trimming the ends.
  *
  * @param name - File name to sanitize
  * @returns Safe file name
