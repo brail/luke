@@ -12,7 +12,7 @@
  *
  * Removes:
  * - Path traversal: `..`, `/`, `\`
- * - Control characters (0x00-0x1F)
+ * - Control characters (0x00-0x1F, 0x7F)
  * - Filesystem special characters: `<`, `>`, `:`, `"`, `|`, `?`, `*`
  * - Multiple spaces and trailing/leading whitespace
  *
@@ -20,9 +20,9 @@
  * @returns Safe file name
  *
  * @example
- * sanitizeFileName("../../etc/passwd") // "etc-passwd"
+ * sanitizeFileName("../../etc/passwd") // "--etc-passwd"
  * sanitizeFileName("file<test>.txt") // "file-test-.txt"
- * sanitizeFileName("  multi   spaces  .pdf") // "multi-spaces.pdf"
+ * sanitizeFileName("  multi   spaces  .pdf") // "multi-spaces-.pdf"
  */
 export function sanitizeFileName(name: string): string {
   if (!name || typeof name !== 'string') {
@@ -38,7 +38,7 @@ export function sanitizeFileName(name: string): string {
   sanitized = sanitized.replace(/[/\\]/g, '-');
 
   // Remove control characters (0x00-0x1F, 0x7F)
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- matching control characters is this regex's purpose
   sanitized = sanitized.replace(/[\x00-\x1F\x7F]/g, '');
 
   // Remove filesystem special characters
