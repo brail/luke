@@ -5,7 +5,7 @@ Docker host that serves the Portainer stack, with a shell there and an
 administrator account in the app. Follow it in order: every step relies on the one
 before it.
 
-Two changes in 3.0 make this more than a redeploy:
+Three changes in 3.0 make this more than a redeploy:
 
 - **Storage.** 3.0 replaces MinIO with SeaweedFS and drops the `minio` value of
   `storage.type`. The new stack has no MinIO service, so the files stay in the
@@ -15,6 +15,11 @@ Two changes in 3.0 make this more than a redeploy:
 - **Data repairs.** Six migrations run at boot, and three one-shot scripts repair
   data that 2.1.x wrote: all-day event dates, the photos of automatic revisions
   and the image thumbnails. Two of them must run before users edit anything.
+- **Networks.** 3.0 splits the stack over separate networks: `edge` for the web
+  and the API, an internal `data` network for the API, Postgres and the storage.
+  The reverse proxy reaches the web only over an external network, `luke-proxy`,
+  that the two of them share (`OPERATIONS.md`, "Reverse proxy"). Step 4 creates
+  it before the update; without it the proxy loses the web.
 
 Users are kept out from the freeze (step 3) to the reopening (step 8) by
 maintenance mode. On the rc.1 rehearsal the file copy took minutes for 542
@@ -47,10 +52,17 @@ variables; set them first:
 STACK=luke   # Portainer's name for the stack
 svc() { docker ps -q --filter "label=com.docker.compose.project=$STACK" --filter "label=com.docker.compose.service=$1"; }
 PG=$(svc postgres); API=$(svc api)
+NPM=nginx-proxy-manager   # the reverse proxy's container
 MINIO_IMG=$(docker inspect --format '{{.Image}}' "$(svc minio)"); echo "$MINIO_IMG"
 docker volume ls --filter name="${STACK}_minio_data"   # the volume holding today's files
-docker network ls --filter name="${STACK}_data"        # the internal data network
+docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'
 ```
+
+2.1.6 runs on the stack's default network, and the reverse proxy reaches the
+web there: the last command lists it among the containers. It stays connected
+until step 9, so a rollback finds the web again. In the proxy's admin page,
+check that the production host forwards to `http://luke-web-1:3000`: step 4
+relies on that container name.
 
 Write `MINIO_IMG` down: step 5 starts a temporary MinIO from that image, which
 stays on the host after the old container is gone, so nothing is pulled.
@@ -97,20 +109,56 @@ SQL
 
    The file holds every user's data: keep it on the host, mode 600, until the
    upgrade is accepted.
+3. Save the stack as it runs today: in Portainer, open the stack's editor and
+   copy its whole content to `luke-2.1.6-stack.yml`, next to the dump and with
+   the same mode 600. Production runs this text, not the repository's `v2.1.6`
+   file, and step 10 puts it back. Both Luke images in it must be `2.1.6`:
+
+   ```bash
+   grep -n 'image: ghcr.io/brail/luke-' luke-2.1.6-stack.yml   # both end in :2.1.6
+   ```
+
+   If one reads `latest`, change it to `2.1.6` in the saved copy now: by the
+   rollback `latest` is 3.0.0. The stack's environment variables in Portainer
+   stay as they are until step 9; the rollback reads them too.
 
 ## 4. Update the stack
+
+Create the network the reverse proxy will reach the web on, and connect the
+proxy to it. Its proxy host keeps forwarding to `http://luke-web-1:3000`: the
+same container name, reached over the new network once the update has run.
+
+```bash
+docker network create luke-proxy
+docker network connect luke-proxy "$NPM"
+docker network inspect luke-proxy --format '{{range .Containers}}{{.Name}} {{end}}'   # the proxy
+```
 
 In Portainer, open the stack's editor and replace its content with
 `docker-compose.prod.yml` from the `v3.0.0` tag
 (`https://raw.githubusercontent.com/brail/luke/v3.0.0/docker-compose.prod.yml`).
 Then:
 
-- change both image tags from `latest` to `3.0.0`;
-- add `S3_ROOT_USER` and `S3_ROOT_PASSWORD` to the environment, with the values
-  from step 1; keep `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` until step 9;
-- update the stack, re-pulling the images.
+- add `LUKE_VERSION` = `3.0.0` to the environment: the file names no image
+  version of its own, and the update is refused without it
+  (`LUKE_VERSION not set`);
+- add `S3_ROOT_USER` and `S3_ROOT_PASSWORD`, with the values from step 1; keep
+  `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` until step 9. 3.0 no longer reads
+  the stack variable `LUKE_TRUSTED_PROXY_CIDR`: the file sets the API's own from
+  its `edge` subnet. Keep it until step 9 as well, since the rollback text reads it;
+- update the stack, re-pulling the images. Recreating the containers takes the
+  site down for a few tens of seconds; users are out anyway.
 
 Expected:
+
+- the proxy reaches the new web, and the web publishes no host port:
+
+  ```bash
+  docker exec "$NPM" curl -sI http://luke-web-1:3000 | head -1   # an HTTP status line
+  docker port "$(svc web)"                                        # prints nothing
+  ```
+
+  The web may need a minute to start: repeat the first command until it answers.
 
 - `docker logs "$(svc api)"` shows `prisma migrate deploy` applying the six new
   migrations, then the server starting; the container becomes healthy;
@@ -146,8 +194,9 @@ docker run -d --name luke-minio-transition \
 until docker exec "$API" wget -qO- http://minio:9000/minio/health/live >/dev/null 2>&1; do sleep 2; done
 ```
 
-The last line waits until MinIO answers. `read -s` keeps the credentials out of the shell history; `-e NAME` passes them
-from the environment without writing them on the command line.
+The last line waits until MinIO answers. `read -s` keeps the credentials out of
+the shell history; `-e NAME` passes them from the environment without writing
+them on the command line.
 
 ## 6. Copy first, switch second
 
@@ -213,7 +262,10 @@ docker exec "$API" node dist-scripts/scripts/backfill-asset-derivatives.js
   wrong. Applied, it also resyncs the affected Google calendars. Run it before
   users edit events.
 - `backfill-asset-derivatives` generates the thumbnails of every image uploaded
-  before 3.0.
+  before 3.0. If it reports `No master waiting for derivatives: nothing to do.`,
+  the thumbnail worker has already handled them since the boot, or given up on
+  them (`FAILED`, attempts exhausted): the count below tells which, and the
+  reset below covers the second case.
 
 Then count the thumbnail states of the image masters:
 
@@ -243,11 +295,11 @@ docker exec "$API" node dist-scripts/scripts/check-config-rows.js
 ```
 
 It lists, by key only, the stored settings 3.0 no longer declares, such as
-`storage.minio.*`. Delete the ones under an allowed prefix from
-`Manutenzione → Configurazioni`. For a key outside those prefixes, decide what to
-do before deleting it with SQL. If it reports that `app.baseUrl` is not stored,
-set it in `Impostazioni → Mail`: email links point at `http://localhost:3000` until
-then.
+`storage.minio.*` and `storage.local.buckets`. Delete the ones under an allowed
+prefix from `Manutenzione → Configurazioni`. For a key outside those prefixes,
+decide what to do before deleting it with SQL. If it reports that `app.baseUrl`
+is not stored, set it in `Impostazioni → Mail`: email links point at
+`http://localhost:3000` until then.
 
 It also lists, by key and message only, every stored value its setting refuses:
 correct each from that setting's page. It exits 1 while any of these needs a
@@ -256,9 +308,39 @@ recorded "not configured", and they are harmless.
 
 Smoke test as an administrator: collection layout photos and thumbnails, a new
 photo upload, a company logo upload (`Impostazioni → Azienda` → `Profilo` →
-`Identità aziendale`), a PDF export
-with pictures, an in-app backup (now written to SeaweedFS), the calendar. Then `Manutenzione → Modalità Manutenzione` →
-`Termina`, and sign in once as a user who is not an administrator.
+`Identità aziendale`), a PDF export with pictures, an in-app backup, the
+calendar. The backup is written to SeaweedFS: its file there must have the size
+the app recorded.
+
+```bash
+docker exec -i "$PG" psql -U luke -d luke -At <<'SQL'
+SELECT filename, "sizeBytesEncrypted" FROM backup_records
+WHERE status = 'COMPLETED' ORDER BY "createdAt" DESC LIMIT 1;
+SQL
+docker exec "$(svc seaweedfs)" sh -c 'echo "fs.ls -l /buckets/backups" | weed shell' | grep -F '<filename>'
+```
+
+Put the printed `filename` in place of `<filename>`: the listed size must equal
+`sizeBytesEncrypted`.
+
+Check the network once more: only the proxy and `luke-web-1` on `luke-proxy`.
+
+```bash
+docker network inspect luke-proxy --format '{{range .Containers}}{{.Name}} {{end}}'
+```
+
+From your workstation, not the host, with the app's tabs closed: the API must
+count you, not a header you send. Between the two requests the counter drops
+by one; run the same loop from a second machine, and its counter is its own.
+
+```bash
+for x in 1.1.1.1 2.2.2.2; do
+  curl -s -o /dev/null -D - -H "X-Forwarded-For: $x" "http://<public hostname>/trpc/me.get" | grep -i x-ratelimit-remaining
+done
+```
+
+Then `Manutenzione → Modalità Manutenzione` → `Termina`, and sign in once as a
+user who is not an administrator.
 
 ## 9. Retire MinIO
 
@@ -268,12 +350,21 @@ docker rm -f luke-minio-transition
 unset MINIO_ROOT_USER MINIO_ROOT_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
 ```
 
-After a period of normal use, remove `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD`
-from the stack's environment, and remove any reverse-proxy host that forwards to
-MinIO (2.1.6's public storage URL): 3.0 has no use for one, and it exposes the
-storage API. Deleting the volume `${STACK}_minio_data` is
-irreversible, and it is the owner's call; until then it is the last copy of the
-files as 2.1.6 left them.
+After a period of normal use, remove `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`
+and `LUKE_TRUSTED_PROXY_CIDR` from the stack's environment, and remove any
+reverse-proxy host that forwards to MinIO (2.1.6's public storage URL): 3.0 has
+no use for one, and it exposes the storage API. Then take the proxy off 2.1.6's
+network and remove it, once nothing else is on it (in a new shell, set `STACK`
+and `NPM` again as in step 2):
+
+```bash
+docker network disconnect "${STACK}_default" "$NPM"
+docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'   # must print nothing
+docker network rm "${STACK}_default"
+```
+
+Deleting the volume `${STACK}_minio_data` is irreversible, and it is the owner's
+call; until then it is the last copy of the files as 2.1.6 left them.
 
 ## 10. Rollback
 
@@ -281,8 +372,8 @@ Possible until users are back on 3.0 (step 8). Any later rollback loses what the
 wrote on 3.0. Never touch the `${STACK}_api_data` volume: the master key lives
 there.
 
-In a new shell, set `STACK`, `svc` and `PG` again as in step 2, and `DUMP` to the
-file written in step 3.
+In a new shell, set `STACK`, `svc`, `PG` and `NPM` again as in step 2, and `DUMP`
+to the file written in step 3.
 
 1. Remove the temporary MinIO, stop 3.0 and restore the dump:
 
@@ -298,13 +389,22 @@ file written in step 3.
    The temporary MinIO must be gone before the next step: the 2.1.6 `minio`
    service starts on the same volume, and two MinIO processes on one volume
    corrupt it.
-2. In Portainer, put back `docker-compose.prod.yml` from the `v2.1.6` tag with
-   both images on `2.1.6`, and update the stack. MinIO comes back on its volume:
+2. In Portainer, put back the stack text saved in step 3 (`luke-2.1.6-stack.yml`),
+   not the repository's `v2.1.6` file, which production never ran. Its images
+   are `2.1.6` (checked in step 3), and it does not read `LUKE_VERSION`. Update
+   the stack. The web comes back on `${STACK}_default`, where the proxy still
+   is; this lists both:
+
+   ```bash
+   docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'
+   ```
+
+   MinIO comes back on its volume:
    the copy only read from it, apart from empty buckets its client may have
    created. The dump carries its own migration history, so the 2.1.6 API applies
    nothing at boot.
 3. The 3.0 `seaweedfs` container may survive the update as an orphan, since the
-   2.1.6 file does not declare it. It holds no 2.1.6 data:
-   `docker rm -f "$(svc seaweedfs)"`.
+   saved text does not declare it. It holds no 2.1.6 data:
+   `svc seaweedfs | xargs -r docker rm -f`. The `luke-proxy` network can stay.
 4. The dump was taken in maintenance, so 2.1.6 starts in maintenance:
    `Termina` once it is up.
