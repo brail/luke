@@ -5,7 +5,7 @@ Docker host that serves the Portainer stack, with a shell there and an
 administrator account in the app. Follow it in order: every step relies on the one
 before it.
 
-Three changes in 3.0 make this more than a redeploy:
+Four changes in 3.0 make this more than a redeploy:
 
 - **Storage.** 3.0 replaces MinIO with SeaweedFS and drops the `minio` value of
   `storage.type`. The new stack has no MinIO service, so the files stay in the
@@ -20,6 +20,9 @@ Three changes in 3.0 make this more than a redeploy:
   The reverse proxy reaches the web only over an external network, `luke-proxy`,
   that the two of them share (`OPERATIONS.md`, "Reverse proxy"). Step 4 creates
   it before the update; without it the proxy loses the web.
+- **Deployment.** From 3.0 the stack is a Portainer Git stack on the release tag,
+  so the compose file that runs is the tagged one (`README.md`, "Deployment").
+  Portainer cannot convert a stack: step 8 removes it and creates it again.
 
 Users are kept out from the freeze (step 3) to the reopening (step 8) by
 maintenance mode. On the rc.1 rehearsal the file copy took minutes for 542
@@ -49,20 +52,22 @@ On the day, work in one shell on the Docker host. Every command below uses these
 variables; set them first:
 
 ```bash
+mkdir -m 700 -p ~/luke-upgrade && cd ~/luke-upgrade   # every file below is saved here
 STACK=luke   # Portainer's name for the stack
 svc() { docker ps -q --filter "label=com.docker.compose.project=$STACK" --filter "label=com.docker.compose.service=$1"; }
 PG=$(svc postgres); API=$(svc api)
 NPM=nginx-proxy-manager   # the reverse proxy's container
+read -rp 'Portainer id of the stack (the number after "id=" in its address): ' STACK_ID
 MINIO_IMG=$(docker inspect --format '{{.Image}}' "$(svc minio)"); echo "$MINIO_IMG"
-docker volume ls --filter name="${STACK}_minio_data"   # the volume holding today's files
+docker volume inspect "${STACK}_minio_data" --format '{{.Name}}'   # the volume holding today's files
 docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'
 ```
 
 2.1.6 runs on the stack's default network, and the reverse proxy reaches the
 web there: the last command lists it among the containers. It stays connected
-until step 9, so a rollback finds the web again. In the proxy's admin page,
-check that the production host forwards to `http://luke-web-1:3000`: step 4
-relies on that container name.
+until step 8, so a rollback before then finds the web again. In the proxy's
+admin page, check that the production host forwards to
+`http://luke-web-1:3000`: step 4 relies on that container name.
 
 Write `MINIO_IMG` down: step 5 starts a temporary MinIO from that image, which
 stays on the host after the old container is gone, so nothing is pulled.
@@ -109,18 +114,26 @@ SQL
 
    The file holds every user's data: keep it on the host, mode 600, until the
    upgrade is accepted.
-3. Save the stack as it runs today: in Portainer, open the stack's editor and
-   copy its whole content to `luke-2.1.6-stack.yml`, next to the dump and with
-   the same mode 600. Production runs this text, not the repository's `v2.1.6`
-   file, and step 10 puts it back. Both Luke images in it must be `2.1.6`:
+3. Save the stack as it runs today, and the master key's hash. Portainer writes the
+   stack's compose file and its variables (`stack.env`) on every deploy;
+   production runs this text, not the repository's `v2.1.6` file, and step 10
+   rebuilds the 2.1.6 stack from these two files. Removing a stack deletes its
+   variables in Portainer, so the saved `stack.env` is their only copy then.
 
    ```bash
+   (umask 077
+    docker cp "portainer:/data/compose/$STACK_ID/docker-compose.yml" luke-2.1.6-stack.yml
+    docker cp "portainer:/data/compose/$STACK_ID/stack.env" luke-2.1.6-stack.env
+    chmod 600 luke-2.1.6-stack.yml luke-2.1.6-stack.env)
    grep -n 'image: ghcr.io/brail/luke-' luke-2.1.6-stack.yml   # both end in :2.1.6
+   cut -s -d= -f1 luke-2.1.6-stack.env                         # the variable names, no values
+   docker exec "$API" sha256sum /root/.luke/secret.key > luke-secret.sha256
    ```
 
-   If one reads `latest`, change it to `2.1.6` in the saved copy now: by the
-   rollback `latest` is 3.0.0. The stack's environment variables in Portainer
-   stay as they are until step 9; the rollback reads them too.
+   If an image reads `latest`, change it to `2.1.6` in the saved copy now: by
+   the rollback `latest` is 3.0.0. The master key itself never leaves its
+   volume: step 8 compares its hash with `luke-secret.sha256` to prove the stack
+   still mounts it. Keep these files with the dump.
 
 ## 4. Update the stack
 
@@ -142,10 +155,10 @@ Then:
 - add `LUKE_VERSION` = `3.0.0` to the environment: the file names no image
   version of its own, and the update is refused without it
   (`LUKE_VERSION not set`);
-- add `S3_ROOT_USER` and `S3_ROOT_PASSWORD`, with the values from step 1; keep
-  `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` until step 9. 3.0 no longer reads
-  the stack variable `LUKE_TRUSTED_PROXY_CIDR`: the file sets the API's own from
-  its `edge` subnet. Keep it until step 9 as well, since the rollback text reads it;
+- add `S3_ROOT_USER` and `S3_ROOT_PASSWORD`, with the values from step 1. Leave
+  `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and `LUKE_TRUSTED_PROXY_CIDR` in
+  place: 3.0 reads none of them (the file sets the API's trusted range from its
+  `edge` subnet), and step 8 creates the stack again without them;
 - update the stack, re-pulling the images. Recreating the containers takes the
   site down for a few tens of seconds; users are out anyway.
 
@@ -288,7 +301,7 @@ WHERE "parentId" IS NULL AND "derivativesStatus" = 'FAILED'
   AND bucket IN ('collection-row-pictures', 'brand-logos', 'company-assets', 'merchandising-specsheet-images');
 ```
 
-## 8. Check and reopen
+## 8. Check, move the stack to Git and reopen
 
 ```bash
 docker exec "$API" node dist-scripts/scripts/check-config-rows.js
@@ -323,10 +336,118 @@ docker exec "$(svc seaweedfs)" sh -c 'echo "fs.ls -l /buckets/backups" | weed sh
 Put the printed `filename` in place of `<filename>`: the listed size must equal
 `sizeBytesEncrypted`.
 
-Check the network once more: only the proxy and `luke-web-1` on `luke-proxy`.
+### Retire the temporary MinIO
+
+3.0 has written nothing to MinIO since step 6; its volume stays until step 9.
+In the shell of step 6, where `migrate` and the credentials are set:
 
 ```bash
-docker network inspect luke-proxy --format '{{range .Containers}}{{.Name}} {{end}}'
+migrate                                  # last dry run: 0 files to copy
+docker rm -f luke-minio-transition
+unset MINIO_ROOT_USER MINIO_ROOT_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
+```
+
+### Take the proxy off 2.1.6's network
+
+From now on the proxy reaches the web only over `luke-proxy`. A rollback then
+creates `${STACK}_default` from scratch (step 10).
+
+```bash
+docker network disconnect "${STACK}_default" "$NPM"
+docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'   # must print nothing
+docker network rm "${STACK}_default"
+```
+
+### Move the stack to Git
+
+Removing a stack removes its containers and its networks, never its volumes;
+creating it again under the same name finds them. Stop at any check that fails.
+
+1. Save the stack as it runs now: it is the way back if the conversion fails,
+   and `luke-3.0-editor-stack.env` is the only copy of its variables once point
+   5 has removed it.
+
+   ```bash
+   (umask 077
+    docker cp "portainer:/data/compose/$STACK_ID/docker-compose.yml" luke-3.0-editor-stack.yml
+    docker cp "portainer:/data/compose/$STACK_ID/stack.env" luke-3.0-editor-stack.env
+    chmod 600 luke-3.0-editor-stack.yml luke-3.0-editor-stack.env)
+   grep -n 'image: ghcr.io/brail/luke-' luke-3.0-editor-stack.yml   # both end in :3.0.0
+   ```
+
+   Portainer reads variables from a file on your workstation, not on the host.
+   Copy it there for point 7, never through the terminal's screen (`cat`):
+   `scp <host>:luke-upgrade/luke-3.0-editor-stack.env .` on the workstation.
+2. The master key is the one of step 3:
+
+   ```bash
+   docker exec "$API" sha256sum /root/.luke/secret.key | cmp - luke-secret.sha256 && echo 'same key'
+   ```
+
+3. Nothing but the stack's own containers and networks carries its label,
+   since removing the stack removes every one of them:
+
+   ```bash
+   docker ps -a --filter "label=com.docker.compose.project=$STACK" --format '{{.Names}} {{.Label "com.docker.compose.service"}}'
+   docker network ls --filter "label=com.docker.compose.project=$STACK" --format '{{.Name}}'
+   ```
+
+   Expected: postgres, api, web and seaweedfs; `${STACK}_edge` and
+   `${STACK}_data`.
+4. Note the volumes the stack mounts:
+
+   ```bash
+   for s in postgres api seaweedfs; do docker inspect "$(svc "$s")" --format '{{range .Mounts}}{{.Name}} {{end}}'; done
+   ```
+
+   Expected: `luke_postgres_data`, `luke_api_data`, `luke_seaweedfs_data`.
+5. In Portainer, environment `local` (the only one, and the one that lists
+   `luke`): `Stacks` → `luke` → `Remove`. If it reports an error and the stack
+   is still listed, it is still the 3.0 stack: redeploy it from its editor to
+   bring back any container the removal took, read the error message, and stop
+   the conversion there.
+6. The volumes are still there:
+
+   ```bash
+   docker volume inspect "${STACK}_postgres_data" "${STACK}_api_data" "${STACK}_seaweedfs_data" "${STACK}_minio_data" --format '{{.Name}}'   # all four; an error names a missing one
+   ```
+
+7. `Stacks` → `Add stack`, name `luke`, exactly: check it before deploying. Build
+   method `Repository`: URL `https://github.com/brail/luke`, reference
+   `refs/tags/v3.0.0`, compose path `docker-compose.prod.yml`, GitOps updates
+   off. `Environment variables` → `Load variables from .env file`: the file
+   copied at point 1; then delete `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` and
+   `LUKE_TRUSTED_PROXY_CIDR`, which 3.0 does not read. Deploy. If the deploy
+   fails, first remove the failed `luke` stack if Portainer still lists it, then
+   `Add stack` with the web editor: the content of `luke-3.0-editor-stack.yml`,
+   the variables from the same file, the same name. The stack is then back as it
+   was. Keep the workstation copy of the file until point 8 passes, then delete
+   it.
+8. Check the new stack:
+
+   ```bash
+   API=$(svc api); PG=$(svc postgres); echo "api=$API postgres=$PG"                 # both set
+   for s in postgres api seaweedfs; do docker inspect "$(svc "$s")" --format '{{range .Mounts}}{{.Name}} {{end}}'; done   # as in point 4
+   docker exec "$API" sha256sum /root/.luke/secret.key | cmp - luke-secret.sha256 && echo 'same key'
+   docker inspect "$(svc api)" "$(svc web)" --format '{{.Config.Image}}'             # both end in :3.0.0
+   docker exec "$API" printenv APP_VERSION                                           # 3.0.0
+   ```
+
+   If `api` or `postgres` is empty, the stack is not named `luke`: compose
+   labelled its containers with another project and gave them new, empty
+   volumes. Remove that stack and repeat point 7 with the name `luke`; the
+   original volumes are untouched, so do not restore the dump. With the right
+   name the key is the same; if `cmp` reports a difference, stop and do not
+   reopen. In Portainer the stack shows its repository and can be edited, not
+   `Limited`.
+
+### Reopen
+
+The proxy reaches the new web, and nothing else is on `luke-proxy`:
+
+```bash
+docker network inspect luke-proxy --format '{{range .Containers}}{{.Name}} {{end}}'   # the proxy and luke-web-1
+docker exec "$NPM" curl -sI http://luke-web-1:3000 | head -1                         # an HTTP status line
 ```
 
 From your workstation, not the host, with the app's tabs closed: the API must
@@ -339,41 +460,30 @@ for x in 1.1.1.1 2.2.2.2; do
 done
 ```
 
-Then `Manutenzione → Modalità Manutenzione` → `Termina`, and sign in once as a
-user who is not an administrator.
+Sign in once more and open the collection layout. Then
+`Manutenzione → Modalità Manutenzione` → `Termina`, and sign in once as a user
+who is not an administrator.
 
-## 9. Retire MinIO
+## 9. Clean up
 
-```bash
-migrate                                  # last dry run: 0 files to copy
-docker rm -f luke-minio-transition
-unset MINIO_ROOT_USER MINIO_ROOT_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
-```
-
-After a period of normal use, remove `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`
-and `LUKE_TRUSTED_PROXY_CIDR` from the stack's environment, and remove any
-reverse-proxy host that forwards to MinIO (2.1.6's public storage URL): 3.0 has
-no use for one, and it exposes the storage API. Then take the proxy off 2.1.6's
-network and remove it, once nothing else is on it (in a new shell, set `STACK`
-and `NPM` again as in step 2):
-
-```bash
-docker network disconnect "${STACK}_default" "$NPM"
-docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'   # must print nothing
-docker network rm "${STACK}_default"
-```
+After a period of normal use, remove any reverse-proxy host that forwards to
+MinIO (2.1.6's public storage URL): 3.0 has no use for one, and it exposes the
+storage API. Once the upgrade is accepted, delete the files kept since step 3:
+the dump, `luke-2.1.6-stack.yml`, `luke-2.1.6-stack.env`,
+`luke-3.0-editor-stack.yml`, `luke-3.0-editor-stack.env` and `luke-secret.sha256`;
+then `~/luke-upgrade` itself, and any `.env` copy left on your workstation.
 
 Deleting the volume `${STACK}_minio_data` is irreversible, and it is the owner's
 call; until then it is the last copy of the files as 2.1.6 left them.
 
 ## 10. Rollback
 
-Possible until users are back on 3.0 (step 8). Any later rollback loses what they
-wrote on 3.0. Never touch the `${STACK}_api_data` volume: the master key lives
-there.
+Possible until users are back on 3.0 (step 8, `Termina`). Any later rollback
+loses what they wrote on 3.0. Never touch the `${STACK}_api_data` volume: the
+master key lives there.
 
-In a new shell, set `STACK`, `svc`, `PG` and `NPM` again as in step 2, and `DUMP`
-to the file written in step 3.
+In a new shell, `cd ~/luke-upgrade`, set `STACK`, `svc`, `PG` and `NPM` again as
+in step 2, and `DUMP` to the file written in step 3.
 
 1. Remove the temporary MinIO, stop 3.0 and restore the dump:
 
@@ -389,22 +499,27 @@ to the file written in step 3.
    The temporary MinIO must be gone before the next step: the 2.1.6 `minio`
    service starts on the same volume, and two MinIO processes on one volume
    corrupt it.
-2. In Portainer, put back the stack text saved in step 3 (`luke-2.1.6-stack.yml`),
-   not the repository's `v2.1.6` file, which production never ran. Its images
-   are `2.1.6` (checked in step 3), and it does not read `LUKE_VERSION`. Update
-   the stack. The web comes back on `${STACK}_default`, where the proxy still
-   is; this lists both:
+2. In Portainer, remove the stack, from Git or from the editor; its volumes
+   stay. Then `Add stack` with the web editor, name `luke`: the content of
+   `luke-2.1.6-stack.yml` saved in step 3, not the repository's `v2.1.6` file,
+   which production never ran, and in `Environment variables` →
+   `Load variables from .env file` the file `luke-2.1.6-stack.env`, copied to
+   your workstation as in step 8 (`scp`, never `cat`). Its images are `2.1.6`
+   (checked in step 3), and it does not read `LUKE_VERSION`. Deploy, then delete
+   the workstation copy.
+3. If step 8 had already taken the proxy off `${STACK}_default`, compose has
+   just created that network again: connect the proxy. Otherwise the proxy is
+   still on it.
 
    ```bash
-   docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'
+   docker network connect "${STACK}_default" "$NPM"   # only after step 8's disconnect
+   API=$(svc api); PG=$(svc postgres)
+   docker network inspect "${STACK}_default" --format '{{range .Containers}}{{.Name}} {{end}}'   # the proxy and the web among them
    ```
 
-   MinIO comes back on its volume:
-   the copy only read from it, apart from empty buckets its client may have
-   created. The dump carries its own migration history, so the 2.1.6 API applies
-   nothing at boot.
-3. The 3.0 `seaweedfs` container may survive the update as an orphan, since the
-   saved text does not declare it. It holds no 2.1.6 data:
-   `svc seaweedfs | xargs -r docker rm -f`. The `luke-proxy` network can stay.
+   MinIO comes back on its volume: the copy only read from it, apart from empty
+   buckets its client may have created. The dump carries its own migration
+   history, so the 2.1.6 API applies nothing at boot. The `luke-proxy` network
+   can stay.
 4. The dump was taken in maintenance, so 2.1.6 starts in maintenance:
    `Termina` once it is up.
