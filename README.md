@@ -190,3 +190,7 @@ The notes commit reaches the remote line before the tag: the provenance gate ref
 
 Notes are generated from commit subjects, grouped by Conventional Commit type (anything else lands under Other). Subjects beginning with `Merge ` — git's default `Merge pull request …` and `Merge branch …` — are skipped, whatever follows; a merge given any other subject is rendered. A candidate whose only new commits are such merges is therefore rejected by the validator during preparation — the range contains nothing releasable — before any write starts. The empty-section rejection in `check-release-tree.ts` is not what stops it; that remains a backstop for an empty section reaching the release tree by another route. This is the intended behaviour.
 <!-- luke-docs:end:release -->
+
+## License
+
+Proprietary: all rights reserved. The repository is public for reference only; see [LICENSE](LICENSE).
