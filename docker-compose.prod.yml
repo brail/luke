@@ -10,9 +10,11 @@
 # and LUKE_VERSION together; afterwards both containers must run
 # ghcr.io/brail/luke-{api,web}:<LUKE_VERSION> (docker inspect … Config.Image).
 #
-# Self-contained: the stack must deploy from this file alone, without a checkout
-# of the repository. No service may reference a repository path (relative bind
-# mount, `build:`, `env_file:`).
+# Self-contained: the stack must deploy from this file alone. Portainer CE's Git
+# stack does not resolve relative paths (a Business Edition feature), and the
+# fallback and the rollback of docs/upgrade-2.1-to-3.0.md paste this file into
+# the web editor, where there is no checkout. No service may reference a
+# repository path (relative bind mount, `build:`, `env_file:`).
 #
 # Environment variables (set in Portainer Stack → Env). Never put `$` in a value:
 # compose interpolates it. `openssl rand -hex 24` gives a safe value.
