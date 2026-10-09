@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react';
-import { expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
-import { render } from 'vitest-browser-react';
+import { cleanup, render } from 'vitest-browser-react';
 
 import { SpecsheetModal } from '../SpecsheetModal';
 
@@ -35,8 +35,14 @@ vi.mock('../../../../../../lib/trpc', () => {
   };
 });
 
-// Only the id is read on the way to the upload; the rest of a listed row plays no part.
+// The upload reads only the id; the header's other fields render empty, which this test ignores.
 const row = { id: 'row-1' } as ComponentProps<typeof SpecsheetModal>['row'];
+
+// Unmount first: a render after the stubs are gone would call `buildApiUrl` without `process`.
+afterEach(async () => {
+  await cleanup();
+  vi.unstubAllGlobals();
+});
 
 test('an image upload carries the session token', async () => {
   h.fetch.mockResolvedValue(new Response(JSON.stringify({ id: 'img-1', publicUrl: '/x.png' }), { status: 200 }));

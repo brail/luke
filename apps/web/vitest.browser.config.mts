@@ -94,6 +94,9 @@ export default defineConfig({
       '@dnd-kit/utilities',
       '@radix-ui/react-checkbox',
       'react-dom',
+      // Added for SpecsheetModal.browser.test.tsx, the first to mount a Collapsible: it failed on a
+      // cold cache in review (`Cannot read properties of null (reading 'useState')`). Same reason.
+      '@radix-ui/react-collapsible',
     ],
   },
   oxc: {

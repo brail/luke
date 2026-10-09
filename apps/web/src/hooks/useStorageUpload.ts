@@ -69,7 +69,7 @@ export function useStorageUpload({ url }: UseStorageUploadOptions): UseStorageUp
         // The route answers `{ error, message }`; `status` lets `getTrpcErrorMessage` map the
         // refusal the way it maps a tRPC error.
         const body: { message?: unknown } = await res.json().catch(() => ({}));
-        const message = typeof body.message === 'string' ? body.message : `Upload failed (${res.status})`;
+        const message = typeof body.message === 'string' ? body.message : `Upload fallito (${res.status})`;
         throw Object.assign(new Error(message), { status: res.status });
       }
 

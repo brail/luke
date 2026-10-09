@@ -10,6 +10,8 @@ const HTTP_STATUS_TO_CODE: Record<number, string> = {
   403: 'FORBIDDEN',
   404: 'NOT_FOUND',
   409: 'CONFLICT',
+  429: 'TOO_MANY_REQUESTS',
+  503: 'SERVICE_UNAVAILABLE',
 };
 
 const DEFAULT_MESSAGES: Record<string, string> = {
