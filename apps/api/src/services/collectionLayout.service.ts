@@ -162,6 +162,7 @@ type RowCopySelection = { id: string; copyQuotations: boolean };
  *
  * @param options - When provided, only the listed row IDs are copied; each entry controls quotation copy.
  * @throws {TRPCError} NOT_FOUND if the source layout does not exist.
+ * @throws {TRPCError} BAD_REQUEST if a selected row is not one of the source layout's rows.
  * @throws {TRPCError} CONFLICT if a layout already exists for the target brand+season.
  */
 export async function copyFromSeason(
@@ -182,6 +183,18 @@ export async function copyFromSeason(
       code: 'NOT_FOUND',
       message: 'Collection layout di partenza non trovato',
     });
+  }
+
+  // A selected id outside the source would simply not be copied: the result would be a partial or
+  // empty layout reported as a success, and a retry would then meet the CONFLICT below.
+  if (options) {
+    const sourceRowIds = new Set(source.groups.flatMap(g => g.rows.map(r => r.id)));
+    if (options.rows.some(r => !sourceRowIds.has(r.id))) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Alcune righe selezionate non appartengono al layout di partenza',
+      });
+    }
   }
 
   const existing = await prisma.collectionLayout.findUnique({
@@ -208,7 +221,7 @@ export async function copyFromSeason(
       },
     });
 
-    for (const group of (source as CollectionLayoutWithRelations).groups) {
+    for (const group of source.groups) {
       const rows = rowMap
         ? group.rows.filter(r => rowMap.has(r.id))
         : group.rows;
