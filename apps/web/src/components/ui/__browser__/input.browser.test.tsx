@@ -24,24 +24,18 @@ test('a vertical wheel turn blurs a focused number field and leaves its value', 
   expect(onWheel).toHaveBeenCalled();
 });
 
-test('a sideways scroll over a number field, or a wheel turn over a text field, keeps the focus', async () => {
+test.each([
+  { name: 'a sideways scroll over a number field', type: 'number', delta: { x: 100 } },
+  { name: 'a wheel turn over a text field', type: 'text', delta: { y: -100 } },
+])('$name keeps the focus', async ({ type, delta }) => {
   const onWheel = vi.fn();
-  const screen = await render(
-    <>
-      <Input type="number" defaultValue={5} onWheel={onWheel} />
-      <Input type="text" onWheel={onWheel} />
-    </>
-  );
-  // The caller's `onWheel` runs after the blur would have: once it has, the focus is settled.
-  const number = screen.getByRole('spinbutton');
-  await number.click();
-  await userEvent.wheel(number, { delta: { x: 100 } });
-  await expect.poll(() => onWheel.mock.calls.length).toBe(1);
-  await expect.element(number).toHaveFocus();
+  const screen = await render(<Input type={type} onWheel={onWheel} />);
+  const field = screen.getByRole(type === 'number' ? 'spinbutton' : 'textbox');
 
-  const text = screen.getByRole('textbox');
-  await text.click();
-  await userEvent.wheel(text, { delta: { y: -100 } });
-  await expect.poll(() => onWheel.mock.calls.length).toBe(2);
-  await expect.element(text).toHaveFocus();
+  await field.click();
+  await userEvent.wheel(field, { delta });
+
+  // The caller's `onWheel` runs after the blur would have: once it has, the focus is settled.
+  await expect.poll(() => onWheel).toHaveBeenCalled();
+  await expect.element(field).toHaveFocus();
 });

@@ -5,13 +5,6 @@ const MESSAGE =
   'type="submit". If this input genuinely has nothing to submit (a file picker, a filter), ' +
   'disable this rule on the line with a comment saying which.';
 
-// Single-line entry only. A dialog holding one of these is a form whether or not it says so:
-// Enter in a single-line input is the browser's submit gesture, and with no form there is nothing
-// for it to submit. Textarea is deliberately absent — there Enter means "newline", so a dialog
-// whose only field is a Textarea is legitimately form-less. One holding both is still caught
-// through the Input. Checkbox, Switch and Select are reachable by keyboard without a submit.
-const TEXT_INPUTS = new Set(['Input']);
-
 // Overlay bodies. Enter is only load-bearing inside one of these: elsewhere the surrounding page
 // form, if any, already governs the field.
 const DIALOG_BODIES = new Set(['DialogContent', 'AlertDialogContent', 'SheetContent']);
@@ -47,7 +40,13 @@ export default {
 
     return {
       JSXElement(node) {
-        if (!TEXT_INPUTS.has(elementName(node))) return;
+        // Single-line entry only. A dialog holding an Input is a form whether or not it says so:
+        // Enter in a single-line input is the browser's submit gesture, and with no form there is
+        // nothing for it to submit. Textarea is deliberately absent — there Enter means "newline",
+        // so a dialog whose only field is a Textarea is legitimately form-less. One holding both is
+        // still caught through the Input. Checkbox, Switch and Select are reachable by keyboard
+        // without a submit.
+        if (elementName(node) !== 'Input') return;
 
         // Walk outward: a <form> on the way up satisfies the rule, a dialog body reached first
         // does not. Render props (`<FormField render={() => <Input/>} />`) stay on this chain,
