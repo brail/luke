@@ -2,7 +2,7 @@ import { useForm, type UseFormReturn } from 'react-hook-form';
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import type { CollectionLayoutRowInput } from '@luke/core';
+import type { CollectionGender, CollectionLayoutRowInput } from '@luke/core';
 
 import {
   buildDefaultValues,
@@ -98,7 +98,7 @@ function Harness({
   // reset loop. Every test in this file rerenders through this harness, so every test doubles
   // as a no-loop regression check; `'fresh-but-equivalent arrays...'` below just names it.
   const groups: CollectionGroup[] = [{ id: 'group-1' } as unknown as CollectionGroup];
-  const availableGenders = ['MAN', 'WOMAN'];
+  const availableGenders: CollectionGender[] = ['MAN', 'WOMAN'];
   const resolvedGroupId = resolveDefaultGroupId(defaultGroupId, groups);
   const resolvedGender = resolveDefaultGender(availableGenders);
 

@@ -9,6 +9,7 @@ import {
   classifyMargin,
   formatPhaseLabel,
   priceMargin,
+  type CollectionGender,
   type CollectionLayoutRowInput,
 } from '@luke/core';
 
@@ -198,7 +199,7 @@ function CatalogSelectField({ control, name, label, options, canUpdate, nullable
 interface IdentificationSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
-  availableGenders: string[];
+  availableGenders: CollectionGender[];
   groups: CollectionGroup[];
 }
 

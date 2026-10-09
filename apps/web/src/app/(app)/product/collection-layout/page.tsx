@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import type { CollectionLayoutRowInput } from '@luke/core';
+import type { CollectionGender, CollectionLayoutRowInput } from '@luke/core';
 
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -513,7 +513,10 @@ export default function CollectionLayoutPage() {
           defaultGroupId={rowDrawer?.defaultGroupId}
           groups={layout.groups}
           parameterSets={parameterSets}
-          availableGenders={layout.availableGenders}
+          // A Prisma `String[]`: new genders are checked against `COLLECTION_GENDER`, but one stored
+          // before that check (or copied from such a layout) passes through, and the row form's
+          // resolver refuses it on submit.
+          availableGenders={layout.availableGenders as CollectionGender[]}
           brandId={brand?.id ?? ''}
           seasonId={season?.id ?? ''}
           onSubmit={handleRowSubmit}

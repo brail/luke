@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { getProxyUrl } from '@luke/core';
+import { COLLECTION_GENDER, getProxyUrl } from '@luke/core';
 
 import { PageHeader } from '../../../../../../components/PageHeader';
 import { Badge } from '../../../../../../components/ui/badge';
@@ -34,7 +34,7 @@ function mapSnapshotToDisplayLayout(
   return {
     id: collectionLayoutId,
     hiddenColumns: [] as string[],
-    availableGenders: ['MAN', 'WOMAN'],
+    availableGenders: [...COLLECTION_GENDER],
     brand: { id: '', name: '', code: '', logoKey: null, logoUrl: null },
     season: { id: '', name: '', code: '', year: 0 },
     groups: snapshot.groups.map(g => ({
@@ -220,7 +220,7 @@ export default function RevisionDetailPage() {
           row={viewRow as any} /* same TS2589 as CollectionLayoutTable above */
           groups={mappedLayout.groups as any}
           parameterSets={parameterSets as any}
-          availableGenders={['MAN', 'WOMAN']}
+          availableGenders={[...COLLECTION_GENDER]}
           brandId={brand?.id ?? ''}
           seasonId={season?.id ?? ''}
           canUpdate={false}

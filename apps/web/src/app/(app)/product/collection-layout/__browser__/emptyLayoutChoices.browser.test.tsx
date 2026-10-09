@@ -143,3 +143,32 @@ test('going back to pick another season copies that season\'s rows', async () =>
     })
   );
 });
+
+test('a row deleted from the source while the dialog is open is not sent', async () => {
+  const screen = await render(<CollectionLayoutPage />);
+
+  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
+  await screen.getByRole('button', { name: 'FW 2026' }).click();
+  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await expect.element(screen.getByRole('button', { name: 'Copia 3 righe' })).toBeVisible();
+
+  // The source layout refetches without row-2, deleted meanwhile in the other season.
+  const loaded = h.query;
+  h.query = (path, input) => {
+    const data = loaded(path, input);
+    if (path !== 'collectionLayout.get' || input?.seasonId !== PREVIOUS) return data;
+    return { groups: [{ id: 'group-1', name: 'Borse', rows: [row('row-1', 'Tote'), row('row-3', 'Zaino')] }] };
+  };
+  await screen.rerender(<CollectionLayoutPage />);
+  await screen.getByRole('button', { name: /^Copia \d+ righ[ae]$/ }).click();
+
+  expect(h.mutate).toHaveBeenCalledWith(
+    'collectionLayout.copyFromSeason',
+    expect.objectContaining({
+      rows: [
+        { id: 'row-1', copyQuotations: true },
+        { id: 'row-3', copyQuotations: true },
+      ],
+    })
+  );
+});

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
-import type { CollectionGender, CollectionLayoutRowInput } from '@luke/core';
+import { COLLECTION_GENDER, type CollectionGender, type CollectionLayoutRowInput } from '@luke/core';
 
 import type { CollectionGroup, CollectionRow, QuotationState } from './CollectionRowSections';
 import type { UseFormReturn } from 'react-hook-form';
@@ -11,10 +11,8 @@ export function resolveDefaultGroupId(defaultGroupId: string | undefined, groups
 }
 
 /** Resolves the gender a new row defaults into: the layout's first enabled gender. */
-export function resolveDefaultGender(availableGenders: string[]): CollectionGender {
-  // A Prisma `String[]`: new genders are checked against `COLLECTION_GENDER`, but one stored before
-  // that check (or copied from such a layout) passes through here, and the resolver refuses it on submit.
-  return (availableGenders[0] ?? 'MAN') as CollectionGender;
+export function resolveDefaultGender(availableGenders: CollectionGender[]): CollectionGender {
+  return availableGenders[0] ?? COLLECTION_GENDER[0];
 }
 
 export function buildDefaultValues(

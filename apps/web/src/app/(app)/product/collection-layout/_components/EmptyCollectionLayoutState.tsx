@@ -3,7 +3,7 @@
 import { AlertCircle, ArrowLeft, Copy, LayoutGrid, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CollectionGender } from '@luke/core';
+import { COLLECTION_GENDER, type CollectionGender } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
@@ -62,7 +62,7 @@ export function EmptyCollectionLayoutState({
   const { can } = usePermission();
   const canUpdate = can('collection_layout:update');
 
-  const [selectedGenders, setSelectedGenders] = useState<CollectionGender[]>(['MAN', 'WOMAN']);
+  const [selectedGenders, setSelectedGenders] = useState<CollectionGender[]>([...COLLECTION_GENDER]);
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
@@ -89,8 +89,11 @@ export function EmptyCollectionLayoutState({
   }, [sourceLayout]);
 
   const allRowIds = sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)) ?? [];
+  const sourceRowIds = new Set(allRowIds);
+  // A row deleted from the source after the dialog loaded it stays in the map, where no checkbox
+  // reaches it: only rows still in the source can be copied.
   const selectedRows = [...rowSelections.entries()]
-    .filter(([, s]) => s.included)
+    .filter(([id, s]) => s.included && sourceRowIds.has(id))
     .map(([id, s]) => ({ id, copyQuotations: s.copyQuotations }));
 
   function setAllIncluded(included: boolean) {

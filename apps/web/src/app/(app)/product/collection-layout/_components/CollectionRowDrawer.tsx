@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 import {
   CollectionLayoutRowInputSchema,
+  type CollectionGender,
   type CollectionLayoutRowInput,
   buildCollectionRowPictureUploadUrl,
   buildTempCollectionRowPictureUploadUrl,
@@ -66,7 +67,7 @@ interface CollectionRowDrawerProps {
   defaultGroupId?: string;
   groups: CollectionGroup[];
   parameterSets: PricingParameterSet[];
-  availableGenders: string[];
+  availableGenders: CollectionGender[];
   brandId: string;
   seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
