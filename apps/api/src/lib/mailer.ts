@@ -150,7 +150,8 @@ function loadTextTemplate(
   const templatePath = join(__dirname, '../templates', `${templateName}.txt`);
   let template = readFileSync(templatePath, 'utf-8');
   Object.entries(variables).forEach(([key, value]) => {
-    template = template.replace(new RegExp(`{{${key}}}`, 'g'), value);
+    // A function, not the string: a string replacement would read `$&` and the like in the value.
+    template = template.replaceAll(`{{${key}}}`, () => value);
   });
   return template;
 }
