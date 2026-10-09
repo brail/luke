@@ -32,6 +32,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
+import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -190,7 +191,7 @@ function PortafoglioSyncTab() {
               const isStale = minutesAgo > 10;
               return (
                 <span className={`text-sm ${isStale ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                  Ultimo sync: {minutesAgo === 0 ? 'adesso' : `${minutesAgo} min fa`}
+                  Ultimo sync: {formatRelativeTime(headerState.lastSyncedAt)}
                   {isStale && ' ⚠︎'}
                 </span>
               );
@@ -354,7 +355,7 @@ function KimoSyncTab() {
               const isStale = minutesAgo > 60;
               return (
                 <span className={`text-sm ${isStale ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                  Ultimo sync: {minutesAgo === 0 ? 'adesso' : `${minutesAgo} min fa`}
+                  Ultimo sync: {formatRelativeTime(headerState.lastSyncedAt)}
                   {isStale && ' ⚠︎'}
                 </span>
               );

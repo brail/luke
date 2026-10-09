@@ -4,7 +4,8 @@ import Link from 'next/link';
 
 import type { RouterOutputs } from '@luke/api';
 
-import { NOTIFICATION_CATEGORY_META, formatNotificationRelativeTime } from '../lib/notificationCategoryMeta';
+import { NOTIFICATION_CATEGORY_META } from '../lib/notificationCategoryMeta';
+import { formatRelativeTime } from '../lib/relativeTime';
 import { cn } from '../lib/utils';
 
 import type { Route } from 'next';
@@ -53,7 +54,7 @@ export function NotificationRow({ notification: n, onMarkAsRead }: NotificationR
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
           {/* 10px: below Tailwind's text-xs (12px) floor; dense timestamp caption */}
           <p className="text-[10px] text-muted-foreground mt-1">
-            {formatNotificationRelativeTime(new Date(n.createdAt))}
+            {formatRelativeTime(n.createdAt)}
           </p>
         </div>
       </div>

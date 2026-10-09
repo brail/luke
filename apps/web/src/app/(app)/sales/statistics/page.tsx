@@ -35,15 +35,18 @@ const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** `"1 minuto"`, `"3 ore"`, `"2 giorni"`: `Intl` agrees the unit with the number. */
+const duration = (value: number, unit: 'minute' | 'hour' | 'day') =>
+  new Intl.NumberFormat('it-IT', { style: 'unit', unit, unitDisplay: 'long' }).format(value);
+
 function formatDuration(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
   if (totalSeconds < 60) return 'meno di un minuto';
   const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) return `${totalMinutes} minut${totalMinutes === 1 ? 'o' : 'i'}`;
+  if (totalMinutes < 60) return duration(totalMinutes, 'minute');
   const hours = Math.floor(totalMinutes / 60);
-  if (hours < 24) return `${hours} or${hours === 1 ? 'a' : 'e'}`;
-  const days = Math.floor(hours / 24);
-  return `${days} giorn${days === 1 ? 'o' : 'i'}`;
+  if (hours < 24) return duration(hours, 'hour');
+  return duration(Math.floor(hours / 24), 'day');
 }
 
 // ─── Progress bar hook ────────────────────────────────────────────────────────
