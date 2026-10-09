@@ -1,15 +1,19 @@
-const RELATIVE_TIME = new Intl.RelativeTimeFormat('it', { numeric: 'auto' });
+const RELATIVE_TIME = new Intl.RelativeTimeFormat('it-IT', { numeric: 'auto' });
 
 /**
- * Formats the time elapsed since `date` as an Italian relative-time string for display in the UI:
- * `"ora"` under a minute, then minutes, hours and days in the words `Intl` agrees with the number
- * (`"1 ora fa"`, `"ieri"`, `"5 giorni fa"`).
+ * Formats `date` relative to now as Italian text for the UI: `"ora"` within a minute, then minutes,
+ * hours and days in the words `Intl` agrees with the number — `"5 minuti fa"`, `"1 ora fa"`,
+ * `"ieri"`. `date` counts as past unless `ahead` is set (`"tra 5 minuti"`, `"domani"`): a server
+ * timestamp read on a browser whose clock runs behind would otherwise come out in the future.
  */
-export function formatRelativeTime(date: Date | string): string {
-  const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60_000);
+export function formatRelativeTime(date: Date | string, { ahead = false }: { ahead?: boolean } = {}): string {
+  const fromNow = new Date(date).getTime() - Date.now();
+  const diffMs = ahead ? fromNow : Math.min(fromNow, 0);
+  const sign = Math.sign(diffMs);
+  const mins = Math.floor(Math.abs(diffMs) / 60_000);
   if (mins < 1) return 'ora';
-  if (mins < 60) return RELATIVE_TIME.format(-mins, 'minute');
+  if (mins < 60) return RELATIVE_TIME.format(sign * mins, 'minute');
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return RELATIVE_TIME.format(-hours, 'hour');
-  return RELATIVE_TIME.format(-Math.floor(hours / 24), 'day');
+  if (hours < 24) return RELATIVE_TIME.format(sign * hours, 'hour');
+  return RELATIVE_TIME.format(sign * Math.floor(hours / 24), 'day');
 }

@@ -35,6 +35,7 @@ import {
 import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { cn } from '../../../../lib/utils';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -184,18 +185,7 @@ function PortafoglioSyncTab() {
               )}
             </Button>
 
-            {syncState && !syncState.isRunning && (() => {
-              const headerState = syncState.tables.find(t => t.tableName === 'nav_pf_sales_header');
-              if (!headerState?.lastSyncedAt) return null;
-              const minutesAgo = Math.round((Date.now() - new Date(headerState.lastSyncedAt).getTime()) / 60_000);
-              const isStale = minutesAgo > 10;
-              return (
-                <span className={`text-sm ${isStale ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                  Ultimo sync: {formatRelativeTime(headerState.lastSyncedAt)}
-                  {isStale && ' ⚠︎'}
-                </span>
-              );
-            })()}
+            <LastSyncLabel syncState={syncState} tableName="nav_pf_sales_header" staleAfterMinutes={10} />
           </div>
 
           {syncState && syncState.tables.length > 0 && (
@@ -348,18 +338,7 @@ function KimoSyncTab() {
               )}
             </Button>
 
-            {syncState && !syncState.isRunning && (() => {
-              const headerState = syncState.tables.find(t => t.tableName === 'nav_kimo_sales_header');
-              if (!headerState?.lastSyncedAt) return null;
-              const minutesAgo = Math.round((Date.now() - new Date(headerState.lastSyncedAt).getTime()) / 60_000);
-              const isStale = minutesAgo > 60;
-              return (
-                <span className={`text-sm ${isStale ? 'text-amber-500' : 'text-muted-foreground'}`}>
-                  Ultimo sync: {formatRelativeTime(headerState.lastSyncedAt)}
-                  {isStale && ' ⚠︎'}
-                </span>
-              );
-            })()}
+            <LastSyncLabel syncState={syncState} tableName="nav_kimo_sales_header" staleAfterMinutes={60} />
           </div>
 
           {syncState && syncState.tables.length > 0 && (
@@ -405,6 +384,32 @@ function KimoSyncTab() {
 }
 
 // ── Mode note ─────────────────────────────────────────────────────────────────
+
+/** Whole minutes since `date`, rounded down like the "Ultimo sync" label. */
+function minutesSince(date: Date | string): number {
+  return Math.floor((Date.now() - new Date(date).getTime()) / 60_000);
+}
+
+/** "Ultimo sync" of a NAV sync tab, with a warning once the header table is older than `staleAfterMinutes`. */
+function LastSyncLabel({
+  syncState,
+  tableName,
+  staleAfterMinutes,
+}: {
+  syncState: { isRunning: boolean; tables: { tableName: string; lastSyncedAt: Date | string | null }[] } | null | undefined;
+  tableName: string;
+  staleAfterMinutes: number;
+}) {
+  const lastSyncedAt = syncState?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
+  if (!lastSyncedAt || syncState?.isRunning) return null;
+  const isStale = minutesSince(lastSyncedAt) > staleAfterMinutes;
+  return (
+    <span className={cn('text-sm', isStale ? 'text-amber-500' : 'text-muted-foreground')}>
+      Ultimo sync: {formatRelativeTime(lastSyncedAt)}
+      {isStale && ' ⚠︎'}
+    </span>
+  );
+}
 
 function ModeNote({ mode, entityLabel }: { mode: SyncMode; entityLabel: string }) {
   if (mode === 'all') return null;

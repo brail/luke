@@ -21,6 +21,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { triggerDownload } from '../../../../lib/download';
+import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -35,18 +36,23 @@ const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** `"1 minuto"`, `"3 ore"`, `"2 giorni"`: `Intl` agrees the unit with the number. */
-const duration = (value: number, unit: 'minute' | 'hour' | 'day') =>
-  new Intl.NumberFormat('it-IT', { style: 'unit', unit, unitDisplay: 'long' }).format(value);
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  if (totalSeconds < 60) return 'meno di un minuto';
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) return duration(totalMinutes, 'minute');
-  const hours = Math.floor(totalMinutes / 60);
-  if (hours < 24) return duration(hours, 'hour');
-  return duration(Math.floor(hours / 24), 'day');
+/**
+ * The "last sync" and "next sync" labels of a NAV sync card: when the header table last synced,
+ * and, with auto-sync on, when it is due next.
+ */
+function syncStatusInfo(
+  state: { tables: { tableName: string; lastSyncedAt: Date | string | null }[] } | null | undefined,
+  schedule: { autoSyncEnabled: boolean; intervalMinutes: number } | null | undefined,
+  tableName: string
+): { lastSyncLabel: string; nextSyncLabel: string | null } | null {
+  const lastSyncedAt = state?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
+  if (!lastSyncedAt) return null;
+  const lastSync = new Date(lastSyncedAt);
+  const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatRelativeTime(lastSync)})`;
+  if (!schedule?.autoSyncEnabled || !schedule.intervalMinutes) return { lastSyncLabel, nextSyncLabel: null };
+  const nextSync = new Date(lastSync.getTime() + schedule.intervalMinutes * 60_000);
+  const nextSyncLabel = nextSync.getTime() - Date.now() < 60_000 ? 'imminente' : formatRelativeTime(nextSync, { ahead: true });
+  return { lastSyncLabel, nextSyncLabel };
 }
 
 // ─── Progress bar hook ────────────────────────────────────────────────────────
@@ -327,21 +333,7 @@ export default function StatisticsPage() {
   };
 
   // Portafoglio sync state
-  const pfSyncStatusInfo = (() => {
-    const headerState = pfSyncState?.tables.find(t => t.tableName === 'nav_pf_sales_header');
-    if (!headerState?.lastSyncedAt) return null;
-    const lastSync = new Date(headerState.lastSyncedAt);
-    const elapsedSince = Date.now() - lastSync.getTime();
-    const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatDuration(elapsedSince)} fa)`;
-    const autoEnabled = pfSyncSchedule?.autoSyncEnabled ?? false;
-    let nextSyncLabel: string | null = null;
-    if (autoEnabled && pfSyncSchedule?.intervalMinutes) {
-      const intervalMs = pfSyncSchedule.intervalMinutes * 60 * 1000;
-      const remainingMs = Math.max(0, intervalMs - elapsedSince);
-      nextSyncLabel = remainingMs === 0 ? 'imminente' : `tra ${formatDuration(remainingMs)}`;
-    }
-    return { lastSyncLabel, nextSyncLabel };
-  })();
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header');
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -387,21 +379,7 @@ export default function StatisticsPage() {
   };
 
   // Kimo sync state
-  const kimoSyncStatusInfo = (() => {
-    const headerState = kimoSyncState?.tables.find(t => t.tableName === 'nav_kimo_sales_header');
-    if (!headerState?.lastSyncedAt) return null;
-    const lastSync = new Date(headerState.lastSyncedAt);
-    const elapsedSince = Date.now() - lastSync.getTime();
-    const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatDuration(elapsedSince)} fa)`;
-    const autoEnabled = kimoSyncSchedule?.autoSyncEnabled ?? false;
-    let nextSyncLabel: string | null = null;
-    if (autoEnabled && kimoSyncSchedule?.intervalMinutes) {
-      const intervalMs = kimoSyncSchedule.intervalMinutes * 60 * 1000;
-      const remainingMs = Math.max(0, intervalMs - elapsedSince);
-      nextSyncLabel = remainingMs === 0 ? 'imminente' : `tra ${formatDuration(remainingMs)}`;
-    }
-    return { lastSyncLabel, nextSyncLabel };
-  })();
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header');
 
   // ── Render ───────────────────────────────────────────────────────────────────
 

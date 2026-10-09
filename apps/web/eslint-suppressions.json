@@ -91,9 +91,6 @@
     }
   },
   "src/app/(app)/sales/statistics/page.tsx": {
-    "react-hooks/purity": {
-      "count": 2
-    },
     "react/no-unescaped-entities": {
       "count": 1
     }
@@ -127,9 +124,6 @@
     }
   },
   "src/app/(app)/settings/nav-sync/page.tsx": {
-    "react-hooks/purity": {
-      "count": 2
-    },
     "react-hooks/set-state-in-effect": {
       "count": 5
     }
