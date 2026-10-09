@@ -93,25 +93,6 @@ const fastify = Fastify({
 // Register global handler/onError for logging and a safe response
 setGlobalErrorHandler(fastify);
 
-/**
- * Custom JSON content-type parser that accepts `application/json; charset=utf-8` and similar.
- *
- * Fixes tRPC mutations where the framework's default parser rejected the charset suffix,
- * causing input parameters to be silently dropped.
- */
-fastify.addContentTypeParser(
-  /^application\/json/,
-  { parseAs: 'string' },
-  (_req, body, done) => {
-    try {
-      const json = JSON.parse(body as string);
-      done(null, json);
-    } catch (err) {
-      done(err as Error, undefined);
-    }
-  }
-);
-
 /** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
 const prisma = createPrismaClient({
   log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],

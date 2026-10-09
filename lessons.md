@@ -94,6 +94,11 @@ content-type parser interferes with `incomingMessageToRequest`.
 header in the client's custom headers. Investigate which procedure returns
 non-awaited Promise-valued fields.
 
+The custom `application/json` parser in `apps/api/src/server.ts` is gone
+(#95): tRPC's Fastify adapter registers its own parser in its own plugin
+scope, which covers its routes, and Fastify 5's built-in one already accepts
+a `charset` suffix.
+
 ---
 
 ## Dependencies
