@@ -12,7 +12,7 @@ import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { SecureLogger } from '../lib/errorHandler';
-import { escapeLdapFilter } from '../lib/ldapAuth';
+import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -384,10 +384,7 @@ export const ldapRouter = router({
         }
 
         // Test user search (input.username escaped against LDAP injection — RFC 4515)
-        const searchFilter = config.searchFilter.replace(
-          /\$\{username\}/g,
-          escapeLdapFilter(input.username)
-        );
+        const searchFilter = fillLdapFilter(config.searchFilter, 'username', input.username);
         ctx.logger.info(
           {
             username: input.username,

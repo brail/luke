@@ -30,7 +30,7 @@ import * as emailHelpers from '../src/lib/emailHelpers';
 import { authenticateViaLdap } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
 
-import { createTestUser, setupTestDb } from './helpers';
+import { createCallerAs, createTestUser, setupTestDb } from './helpers';
 
 const SERVICE_DN = 'cn=svc,dc=test';
 const ALICE_DN = 'uid=alice,ou=people,dc=test';
@@ -302,5 +302,42 @@ describe('authenticateViaLdap', () => {
       // Never opened: every one of those logins reached the directory with its service bind.
       expect(bindsAs(SERVICE_DN)).toBe(BREAKER_THRESHOLD + 1);
     }
+  });
+});
+
+// `$&`, `` $` `` and `$'` mean something to `String.prototype.replace` when the replacement is a
+// string: a value carrying them must still reach the directory as itself, escaped (#94).
+describe('a filter template takes the value literally', () => {
+  const HOSTILE = "a$&b$'c";
+
+  it('the user search fills every ${username}', async () => {
+    await configureLdap({ 'auth.ldap.searchFilter': '(|(uid=${username})(mail=${username}))' });
+    search.mockResolvedValue(found());
+
+    await authenticateViaLdap(prisma, HOSTILE, 'pw');
+
+    expect(String(search.mock.calls[0]?.[1]?.filter)).toBe(`(|(uid=${HOSTILE})(mail=${HOSTILE}))`);
+  });
+
+  it('the group search fills every ${userDN}', async () => {
+    const dn = 'uid=a$&b,ou=people,dc=test';
+    await configureLdap({
+      'auth.ldap.groupSearchBase': 'ou=groups,dc=test',
+      'auth.ldap.groupSearchFilter': '(|(member=${userDN})(uniqueMember=${userDN}))',
+    });
+    search.mockResolvedValueOnce(found({ ...ALICE, dn }));
+
+    await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(String(search.mock.calls[1]?.[1]?.filter)).toBe(`(|(member=${dn})(uniqueMember=${dn}))`);
+  });
+
+  it('the settings page search test fills ${username}', async () => {
+    await configureLdap();
+    const caller = await createCallerAs('admin');
+
+    await caller.integrations.auth.testLdapSearch({ username: 'a$&b' });
+
+    expect(search.mock.calls[0]?.[1]?.filter).toBe('(uid=a$&b)');
   });
 });

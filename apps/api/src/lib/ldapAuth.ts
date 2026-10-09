@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { SASL_MECHANISMS } from 'ldapts';
+import { Filter, SASL_MECHANISMS } from 'ldapts';
 import pino from 'pino';
 
 import { Roles, type Role } from '@luke/core';
@@ -34,16 +34,12 @@ function getAttr(entry: Entry, key: string): string[] {
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 /**
- * Escapes special characters in a value to be safely embedded in an LDAP search filter.
- * Follows RFC 4515 §3.
+ * Fills every `${placeholder}` of an LDAP filter template from the configuration with `value`,
+ * escaped by ldapts (RFC 4515). The replacement is a function: a string one would read `$&`,
+ * `` $` `` and `$'` in the value as replacement patterns.
  */
-export function escapeLdapFilter(value: string): string {
-  return value
-    .replace(/\\/g, '\\5c')
-    .replace(/\*/g, '\\2a')
-    .replace(/\(/g, '\\28')
-    .replace(/\)/g, '\\29')
-    .replace(/\0/g, '\\00');
+export function fillLdapFilter(template: string, placeholder: 'username' | 'userDN', value: string): string {
+  return template.replaceAll(`\${${placeholder}}`, () => Filter.escape(value));
 }
 
 /**
@@ -219,10 +215,7 @@ async function searchUser(
   config: LdapConfig,
   username: string
 ): Promise<{ dn: string; attributes: Record<string, string[]> } | null> {
-  const searchFilter = config.searchFilter.replace(
-    /\$\{username\}/g,
-    escapeLdapFilter(username)
-  );
+  const searchFilter = fillLdapFilter(config.searchFilter, 'username', username);
 
   const options = {
     filter: searchFilter,
@@ -272,10 +265,7 @@ async function lookUpGroups(
     return [];
   }
 
-  const groupFilter = config.groupSearchFilter.replace(
-    /\$\{userDN\}/g,
-    escapeLdapFilter(userDN)
-  );
+  const groupFilter = fillLdapFilter(config.groupSearchFilter, 'userDN', userDN);
 
   const options = {
     filter: groupFilter,
