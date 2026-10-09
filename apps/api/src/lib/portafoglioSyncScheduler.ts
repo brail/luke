@@ -118,19 +118,23 @@ export function registerPortafoglioSyncScheduler(
 
     // Locked around _runSync (not the outer tick): _runSync is fire-and-forget from here, so
     // the tick itself returns almost instantly — the lock must span the actual sync work.
-    void withSchedulerLock(prisma, 'portafoglio-sync', _runSync)();
+    withSchedulerLock(prisma, 'portafoglio-sync', _runSync)()
+      .catch(err => fastify.log.error({ err }, 'Portafoglio sync scheduler: sync could not start'));
   };
 
   const guardedTick = guardMaintenance(prisma, tick);
+  // A tick that fails (the database is down, say) is logged: left unhandled, the rejection would
+  // stop the process.
+  const run = () => guardedTick().catch(err => fastify.log.error({ err }, 'Portafoglio sync scheduler: tick failed'));
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
     fastify.log.info('Portafoglio sync scheduler: started (tick every minute, configurable interval)');
 
     // First execution immediately after ready (respecting DB config)
-    void guardedTick();
+    void run();
 
-    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
+    timer = setInterval(run, TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {

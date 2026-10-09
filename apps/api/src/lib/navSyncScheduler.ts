@@ -178,20 +178,24 @@ export function registerNavSyncScheduler(
         // Locked around syncEntity (not the outer tick): syncEntity is fire-and-forget from here,
         // so the tick itself returns almost instantly — the lock must span the actual sync work,
         // which withSchedulerLock's try/finally does regardless of when its caller stops awaiting it.
-        void withSchedulerLock(prisma, `nav-sync:${entity}`, () => syncEntity(entity))();
+        withSchedulerLock(prisma, `nav-sync:${entity}`, () => syncEntity(entity))()
+          .catch(err => fastify.log.error({ err, entity }, 'NAV sync scheduler: sync could not start'));
       }
     }
   };
 
   const guardedTick = guardMaintenance(prisma, tick);
+  // A tick that fails (the database is down, say) is logged: left unhandled, the rejection would
+  // stop the process.
+  const run = () => guardedTick().catch(err => fastify.log.error({ err }, 'NAV sync scheduler: tick failed'));
 
   fastify.addHook('onReady', async () => {
     fastify.log.info('NAV sync scheduler: started (tick every 60s, per-entity intervals)');
 
     // First run right after ready
-    void guardedTick();
+    void run();
 
-    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
+    timer = setInterval(run, TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {
