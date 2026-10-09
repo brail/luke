@@ -123,10 +123,10 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: ['system.triggerCalendarDigest'],
   },
 
-  // ── Application domains with no tests at all: to be written ───────────────
+  // ── Application domains with procedures still untested: to be written ─────
   collectionLayout: {
     reason:
-      'the brand-scope spec invokes almost the whole domain to check the guards, so *access* coverage is high; the exports and `copyFromSeason` remain uncovered, and they need testing for what they produce, not for who can call them',
+      'the brand-scope spec invokes almost the whole domain to check the guards, so *access* coverage is high; `collectionLayoutCopy` tests what `copyFromSeason` produces, while the exports remain uncovered and need testing for what they produce, not for who can call them',
     uncovered: 4,
   },
   notifications: {

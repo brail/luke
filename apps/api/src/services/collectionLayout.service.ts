@@ -163,7 +163,7 @@ type RowCopySelection = { id: string; copyQuotations: boolean };
  *
  * @param options - When provided, only the listed row IDs are copied; each entry controls quotation copy.
  * @throws {TRPCError} NOT_FOUND if the source layout does not exist.
- * @throws {TRPCError} BAD_REQUEST if a selected row is not one of the source layout's rows.
+ * @throws {TRPCError} BAD_REQUEST if the selection is empty, repeats a row, or names a row the source lacks.
  * @throws {TRPCError} CONFLICT if a layout already exists for the target brand+season.
  */
 export async function copyFromSeason(
@@ -186,14 +186,20 @@ export async function copyFromSeason(
     });
   }
 
-  // A selected id outside the source would simply not be copied: the result would be a partial or
-  // empty layout reported as a success, and a retry would then meet the CONFLICT below.
+  // An empty selection, or an id outside the source, would leave a partial or empty layout reported
+  // as a success, and a retry would then meet the CONFLICT below; a repeated id would let the last
+  // entry silently decide its quotations.
   if (options) {
     const sourceRowIds = new Set(source.groups.flatMap(g => g.rows.map(r => r.id)));
-    if (options.rows.some(r => !sourceRowIds.has(r.id))) {
+    const selected = new Set(options.rows.map(r => r.id));
+    if (
+      selected.size === 0 ||
+      selected.size !== options.rows.length ||
+      [...selected].some(id => !sourceRowIds.has(id))
+    ) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: 'Alcune righe selezionate non appartengono al layout di partenza',
+        message: 'La selezione deve contenere righe distinte del layout di partenza',
       });
     }
   }

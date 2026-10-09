@@ -875,7 +875,7 @@ export const collectionLayoutRouter = router({
         fromSeasonId: z.string().uuid(),
         toBrandId: z.string().uuid(),
         toSeasonId: z.string().uuid(),
-        rows: z.array(z.object({ id: z.string().uuid(), copyQuotations: z.boolean() })).min(1).optional(),
+        rows: z.array(z.object({ id: z.string().uuid(), copyQuotations: z.boolean() })).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

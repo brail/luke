@@ -90,7 +90,11 @@ export type CollectionGroupInput = z.infer<typeof CollectionGroupInputSchema>;
 export const CollectionLayoutSettingsSchema = z.object({
   skuBudget: z.number().int().min(0).optional().nullable(),
   hiddenColumns: z.array(z.string()).optional().nullable(),
-  availableGenders: z.array(z.enum(COLLECTION_GENDER)).min(1).optional(),
+  availableGenders: z
+    .array(z.enum(COLLECTION_GENDER))
+    .min(1)
+    .refine(genders => new Set(genders).size === genders.length, 'Gender ripetuto')
+    .optional(),
 });
 
 /**

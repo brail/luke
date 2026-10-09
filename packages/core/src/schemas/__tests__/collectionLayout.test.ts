@@ -13,6 +13,10 @@ describe('collection layout genders', () => {
     expect(CollectionLayoutSettingsSchema.safeParse({ availableGenders: ['UOMO'] }).success).toBe(false);
   });
 
+  it('a layout does not list a gender twice', () => {
+    expect(CollectionLayoutSettingsSchema.safeParse({ availableGenders: ['MAN', 'MAN'] }).success).toBe(false);
+  });
+
   it('a row accepts only COLLECTION_GENDER values', () => {
     const gender = CollectionLayoutRowInputSchema.shape.gender;
     expect(gender.safeParse('WOMAN').success).toBe(true);

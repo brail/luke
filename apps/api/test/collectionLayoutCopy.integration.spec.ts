@@ -109,6 +109,18 @@ describe('collectionLayout.copyFromSeason — row selection', () => {
     expect(await targetLayout(target)).toBeNull();
   });
 
+  it('refuses a row selected twice, and creates nothing', async () => {
+    const target = await newSeason();
+
+    await expect(
+      copyTo(target, [
+        { id: rowIds[0], copyQuotations: false },
+        { id: rowIds[0], copyQuotations: true },
+      ])
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    expect(await targetLayout(target)).toBeNull();
+  });
+
   it('refuses an empty selection, and creates nothing', async () => {
     const target = await newSeason();
 
