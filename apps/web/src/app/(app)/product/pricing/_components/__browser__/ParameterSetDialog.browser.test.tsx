@@ -1,5 +1,6 @@
 import { type ComponentProps } from 'react';
 import { expect, test, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-react';
 
 import { ParameterSetDialog } from '../ParameterSetDialog';
@@ -68,4 +69,18 @@ test('every opening starts from the data it is given', async () => {
   await screen.rerender(dialog({ open: false }));
   await screen.rerender(dialog({ mode: 'create', initialData: undefined }));
   await expect.element(name).toHaveValue('');
+});
+
+test('a wheel scroll over a focused number field does not change it', async () => {
+  const screen = await render(dialog());
+  const fields = screen.getByRole('spinbutton').all();
+  expect(fields).toHaveLength(8);
+
+  for (const field of fields) {
+    // A spinbutton here is an `<input type="number">`; `element()` types it as a plain `Element`.
+    const before = (field.element() as HTMLInputElement).value;
+    await field.click();
+    await userEvent.wheel(field, { delta: { y: -100 } });
+    await expect.element(field).toHaveValue(Number(before));
+  }
 });

@@ -12,6 +12,7 @@ import {
   PRICING_CURRENCIES,
 } from '@luke/core';
 
+import { NumberInput } from '../../../../../components/NumberInput';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import {
@@ -240,8 +241,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Controllo Qualità (%)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.1"
                           min="0"
                           max="100"
@@ -263,8 +263,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Trasporto + Assicurazione</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0"
                           placeholder="es. 2.50"
@@ -285,8 +284,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Dazio (%)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.1"
                           min="0"
                           max="100"
@@ -308,8 +306,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Tasso di Cambio</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.0001"
                           min="0.0001"
                           placeholder="es. 1.07"
@@ -330,8 +327,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Costi Accessori Italia</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0"
                           placeholder="es. 0.30"
@@ -352,8 +348,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Stampi</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0"
                           placeholder="es. 1.00"
@@ -382,8 +377,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Moltiplicatore Retail</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0.01"
                           placeholder="es. 2.50"
@@ -404,8 +398,7 @@ function ParameterSetForm({
                     <FormItem>
                       <FormLabel>Margine Ottimale (%)</FormLabel>
                       <FormControl>
-                        <Input
-                          type="number"
+                        <NumberInput
                           step="0.1"
                           min="0"
                           max="99.9"
