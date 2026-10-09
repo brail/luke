@@ -22,12 +22,19 @@ import type { FastifyInstance } from 'fastify';
 
 const EXPORT_BATCH_SIZE = 500;
 
-function csvEscape(value: string): string {
-  return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+/**
+ * One CSV field. A value starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a
+ * leading `'`, so a spreadsheet shows it as text instead of evaluating it (CWE-1236); no
+ * column of this export is numeric, so the prefix never hides a number. A value holding a
+ * quote, a comma or a line break, `\r` included, is quoted, so it can never split its row.
+ */
+export function csvEscape(value: string): string {
+  const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /** Streams the CSV in batches rather than loading the whole audit trail into memory at once. */
-async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parameters<typeof buildAuditLogWhere>[0]) {
+export async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parameters<typeof buildAuditLogWhere>[0]) {
   // Leading BOM (explicit escape, not a literal character, so it doesn't trip no-irregular-whitespace):
   // makes Excel recognize UTF-8, otherwise it mangles accented characters.
   const BOM = '\uFEFF';
