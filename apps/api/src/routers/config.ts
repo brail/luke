@@ -9,6 +9,8 @@ import { z } from 'zod';
 import {
   CONFIG_ROUTER_KEY_REGEX,
   CONFIG_ROUTER_PREFIXES,
+  CONFIG_SECRET_PLACEHOLDER,
+  ConfigImportItemSchema,
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
@@ -171,29 +173,19 @@ const ExportJsonSchema = z.object({
 });
 
 /**
- * Schema for JSON import with validation
+ * Schema for JSON import: the rows of the file the config page exports (`ConfigImportItemSchema`).
  *
  * @example
  * {
  *   "items": [
  *     {"key": "app.name", "value": "Luke", "encrypt": false},
- *     {"key": "auth.ldap.password", "value": "secret", "encrypt": true},
+ *     {"key": "auth.ldap.bindPassword", "value": "secret", "encrypt": true},
  *     {"key": "auth.ldap.url", "value": null, "encrypt": true} // value: null is skipped
  *   ]
  * }
  */
 const ImportJsonSchema = z.object({
-  /** Array of configurations to import */
-  items: z.array(
-    z.object({
-      /** Key of the configuration (must respect the allowed format and prefixes) */
-      key: z.string().min(1),
-      /** Value of the configuration (null = skip this item) */
-      value: z.string().nullable(),
-      /** Whether to encrypt the value (true = encrypt, false/null = plaintext) */
-      encrypt: z.boolean().optional().nullable(),
-    })
-  ),
+  items: z.array(ConfigImportItemSchema),
 });
 
 /**
@@ -210,6 +202,15 @@ async function upsertConfig(
   // Validates the key and narrows it to an AppConfigKey. The value is validated by `saveConfig`
   // against the registry schema — there is no per-key special case here any more.
   validateKey(key);
+
+  // The registry cannot catch the placeholder: it passes every free-text schema, a password's
+  // included. `importJson` reports it as a per-item error and goes on with the other items.
+  if (value === CONFIG_SECRET_PLACEHOLDER) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Valore non valido per '${key}': ${CONFIG_SECRET_PLACEHOLDER} è il segnaposto dell'export, non un valore`,
+    });
+  }
 
   // If strictUpdate=true, verifies that the configuration exists
   if (options.strictUpdate) {
@@ -236,14 +237,14 @@ async function upsertConfig(
     metadata: {
       key,
       isEncrypted: encrypt,
-      valueRedacted: encrypt ? '[ENCRYPTED]' : redact(value),
+      valueRedacted: encrypt ? CONFIG_SECRET_PLACEHOLDER : redact(value),
       source: options.source,
     },
   });
 
   return {
     key,
-    value: encrypt ? '[CIFRATO]' : value,
+    value: encrypt ? CONFIG_SECRET_PLACEHOLDER : value,
     isEncrypted: encrypt,
     message: `Configurazione '${key}' ${
       options.strictUpdate ? 'aggiornata' : 'salvata'
@@ -311,7 +312,7 @@ export const configRouter = router({
 
       if (input.mode === 'masked') {
         // Masked mode: shows a placeholder if encrypted, otherwise the full value
-        value = config.isEncrypted ? '[ENCRYPTED]' : config.value;
+        value = config.isEncrypted ? CONFIG_SECRET_PLACEHOLDER : config.value;
       } else {
         // Raw mode: decrypts if encrypted, otherwise the normal value
         if (config.isEncrypted) {
@@ -566,7 +567,7 @@ export const configRouter = router({
         isEncrypted: config.isEncrypted,
         value: input.includeValues
           ? config.isEncrypted
-            ? '[ENCRYPTED]' // Never decrypt secrets in the export
+            ? CONFIG_SECRET_PLACEHOLDER // Never decrypt secrets in the export
             : config.value
           : null,
         updatedAt: config.updatedAt.toISOString(),
@@ -592,7 +593,9 @@ export const configRouter = router({
     }),
 
   /**
-   * Imports a batch of AppConfig entries from JSON; skips items with null values.
+   * Imports a batch of AppConfig entries from JSON; skips items with null values. An item carrying
+   * `CONFIG_SECRET_PLACEHOLDER` is refused and reported in `errors`, so re-importing an export leaves
+   * every secret as it was.
    *
    * @auth {config:update}
    * @input {ImportJsonSchema} — array of { key, value, encrypt? } items.

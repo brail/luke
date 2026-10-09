@@ -14,6 +14,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { CONFIG_SECRET_PLACEHOLDER } from '@luke/core';
+
 import { getConfig } from '../src/lib/configManager';
 
 import { setupTestDb, createCallerAs, expectToThrow } from './helpers';
@@ -137,6 +139,43 @@ describe('AppConfig write authority', () => {
       expect(
         await testPrisma.appConfig.findUnique({ where: { key: 'security.password.minLength' } }),
       ).toBeNull();
+    });
+
+    it('re-importing an export leaves every secret as it was and names the keys it skipped', async () => {
+      const caller = await createCallerAs('admin');
+      await caller.config.set({ key: 'auth.ldap.bindPassword', value: 'real-secret', encrypt: true });
+      await caller.config.set({ key: 'app.name', value: 'Luke', encrypt: false });
+
+      // The file the config page writes: `encrypt` is the export's `isEncrypted`, and the secret's
+      // value is the placeholder. Free-text schemas accept the placeholder, so the registry alone
+      // stored it, encrypted, over the secret. The extra row is a hand-edited file: the refusal does
+      // not depend on `encrypt`.
+      const exported = await caller.config.exportJson({ includeValues: true });
+      const result = await caller.config.importJson({
+        items: [
+          ...exported.configs.map(c => ({ key: c.key, value: c.value, encrypt: c.isEncrypted })),
+          { key: 'auth.ldap.bindDN', value: CONFIG_SECRET_PLACEHOLDER, encrypt: false },
+        ],
+      });
+
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'auth.ldap.bindDN' } })).toBeNull();
+      expect(result.successCount).toBe(1);
+      expect(result.errors.map(e => e.key).sort()).toEqual([
+        'auth.ldap.bindDN',
+        'auth.ldap.bindPassword',
+      ]);
+
+      // Every writer of the generic router refuses it, not only the import.
+      await expectToThrow(
+        caller.config.set({
+          key: 'auth.ldap.bindPassword',
+          value: CONFIG_SECRET_PLACEHOLDER,
+          encrypt: true,
+        }),
+        { code: 'BAD_REQUEST' },
+      );
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
     });
   });
 

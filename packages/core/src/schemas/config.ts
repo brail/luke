@@ -401,5 +401,26 @@ export function isUndeletableConfigKey(key: string): boolean {
   return UNDELETABLE_CONFIG_KEY_SET.has(key);
 }
 
+/**
+ * What `config.exportJson` writes in place of an encrypted value, and what `config.viewValue` shows
+ * for one in masked mode. It stands for a secret the export does not carry, so it is never a value:
+ * the generic router refuses to store it. Re-importing an export used to write it, encrypted, over
+ * every secret.
+ */
+export const CONFIG_SECRET_PLACEHOLDER = '[ENCRYPTED]';
+
+/**
+ * One row of a config import: an item of `config.importJson` and a row of the file the config page
+ * exports. `value: null` means "skip this key", which is how an export without values writes every row.
+ */
+export const ConfigImportItemSchema = z.object({
+  key: z.string().min(1),
+  value: z.string().nullable(),
+  /** Whether to store the value encrypted; absent or `null` means plaintext. */
+  encrypt: z.boolean().nullish(),
+});
+
+export type ConfigImportItem = z.infer<typeof ConfigImportItemSchema>;
+
 // Re-export LdapResilienceSchema for use in configManager (avoids double-import)
 export { LdapResilienceSchema };
