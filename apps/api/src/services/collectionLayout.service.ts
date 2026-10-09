@@ -7,6 +7,7 @@
 import { TRPCError } from '@trpc/server';
 
 import type {
+  CollectionGender,
   CollectionGroupInput,
   CollectionLayoutRowInput,
 } from '@luke/core';
@@ -140,7 +141,7 @@ export async function getOrCreateLayout(
   brandId: string,
   seasonId: string,
   prisma: PrismaClient,
-  availableGenders?: string[]
+  availableGenders?: CollectionGender[]
 ): Promise<CollectionLayoutWithRelations> {
   return prisma.collectionLayout.upsert({
     where: { brandId_seasonId: { brandId, seasonId } },
@@ -716,7 +717,7 @@ export async function duplicateRow(
  */
 export async function updateLayoutSettings(
   collectionLayoutId: string,
-  input: { skuBudget?: number | null; hiddenColumns?: string[] | null; availableGenders?: string[] },
+  input: { skuBudget?: number | null; hiddenColumns?: string[] | null; availableGenders?: CollectionGender[] },
   prisma: PrismaClient
 ): Promise<CollectionLayout> {
   const layout = await prisma.collectionLayout.findUnique({

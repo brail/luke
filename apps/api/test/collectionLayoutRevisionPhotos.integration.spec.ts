@@ -58,7 +58,7 @@ beforeEach(async () => {
   const layout = await asAdmin.collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   const group = await asAdmin.collectionLayout.groups.create({
     collectionLayoutId: layout.id,
@@ -76,7 +76,7 @@ afterEach(async () => {
 async function row(pictureKey: string | null = null): Promise<string> {
   const created = await createCallerWithSession(session).collectionLayout.rows.create({
     groupId,
-    gender: 'UOMO',
+    gender: 'MAN',
     line: `Linea ${randomUUID().substring(0, 4)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',

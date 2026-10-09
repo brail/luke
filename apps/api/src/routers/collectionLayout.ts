@@ -849,7 +849,7 @@ export const collectionLayoutRouter = router({
       z.object({
         brandId: z.string().uuid(),
         seasonId: z.string().uuid(),
-        availableGenders: z.array(z.string()).min(1).optional(),
+        availableGenders: CollectionLayoutSettingsSchema.shape.availableGenders,
       })
     )
     .mutation(async ({ input, ctx }) => {

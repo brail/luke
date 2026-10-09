@@ -90,7 +90,7 @@ export type CollectionGroupInput = z.infer<typeof CollectionGroupInputSchema>;
 export const CollectionLayoutSettingsSchema = z.object({
   skuBudget: z.number().int().min(0).optional().nullable(),
   hiddenColumns: z.array(z.string()).optional().nullable(),
-  availableGenders: z.array(z.string()).min(1).optional(),
+  availableGenders: z.array(z.enum(COLLECTION_GENDER)).min(1).optional(),
 });
 
 /**
@@ -103,7 +103,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   planningGroupId: z.string().uuid().optional(),
   order: z.number().int().optional(),
   // Required
-  gender: z.string().min(1, 'Gender obbligatorio'),
+  gender: z.enum(COLLECTION_GENDER, { error: 'Gender non valido' }),
   vendorId: z.string().uuid().nullable().optional(),
   line: z.string().min(1, 'Linea obbligatoria'),
   article: z.string().max(100).optional().nullable(),

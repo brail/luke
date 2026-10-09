@@ -3,6 +3,8 @@
 import { AlertCircle, ArrowLeft, Copy, LayoutGrid, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import type { CollectionGender } from '@luke/core';
+
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Alert, AlertDescription } from '../../../../../components/ui/alert';
@@ -23,7 +25,7 @@ import { cn } from '../../../../../lib/utils';
 interface EmptyCollectionLayoutStateProps {
   brandId: string;
   seasonId: string;
-  onCreateEmpty: (availableGenders: string[]) => void;
+  onCreateEmpty: (availableGenders: CollectionGender[]) => void;
   onCopyFromSeason: (fromSeasonId: string, rows: { id: string; copyQuotations: boolean }[]) => void;
   isLoading?: boolean;
 }
@@ -32,7 +34,7 @@ const GENDER_OPTIONS = [
   { label: 'Solo Uomo', value: ['MAN'] },
   { label: 'Solo Donna', value: ['WOMAN'] },
   { label: 'Uomo + Donna', value: ['MAN', 'WOMAN'] },
-] as const;
+] as const satisfies readonly { label: string; value: readonly CollectionGender[] }[];
 
 function genderKey(v: readonly string[]) {
   return [...v].sort().join(',');
@@ -60,7 +62,7 @@ export function EmptyCollectionLayoutState({
   const { can } = usePermission();
   const canUpdate = can('collection_layout:update');
 
-  const [selectedGenders, setSelectedGenders] = useState<string[]>(['MAN', 'WOMAN']);
+  const [selectedGenders, setSelectedGenders] = useState<CollectionGender[]>(['MAN', 'WOMAN']);
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2>(1);

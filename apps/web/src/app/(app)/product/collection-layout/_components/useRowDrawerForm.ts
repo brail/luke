@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
-import type { CollectionLayoutRowInput } from '@luke/core';
+import type { CollectionGender, CollectionLayoutRowInput } from '@luke/core';
 
 import type { CollectionGroup, CollectionRow, QuotationState } from './CollectionRowSections';
 import type { UseFormReturn } from 'react-hook-form';
@@ -11,13 +11,15 @@ export function resolveDefaultGroupId(defaultGroupId: string | undefined, groups
 }
 
 /** Resolves the gender a new row defaults into: the layout's first enabled gender. */
-export function resolveDefaultGender(availableGenders: string[]): string {
-  return availableGenders[0] ?? 'MAN';
+export function resolveDefaultGender(availableGenders: string[]): CollectionGender {
+  // A Prisma `String[]`: new genders are checked against `COLLECTION_GENDER`, but one stored before
+  // that check (or copied from such a layout) passes through here, and the resolver refuses it on submit.
+  return (availableGenders[0] ?? 'MAN') as CollectionGender;
 }
 
 export function buildDefaultValues(
   groupId: string,
-  gender: string,
+  gender: CollectionGender,
   defaultPlanningGroupId?: string
 ): CollectionLayoutRowInput {
   return {
@@ -72,14 +74,15 @@ export function buildRowFormValues(
   mode: 'create' | 'edit',
   row: CollectionRow | undefined,
   resolvedGroupId: string,
-  resolvedGender: string,
+  resolvedGender: CollectionGender,
   defaultPlanningGroupId: string | undefined
 ): CollectionLayoutRowInput {
   if (mode === 'edit' && row) {
     return {
       groupId: row.groupId,
       planningGroupId: row.planningGroupId,
-      gender: row.gender,
+      // A Prisma `String`: a stored value outside `COLLECTION_GENDER` fails the resolver on submit.
+      gender: row.gender as CollectionGender,
       vendorId: row.vendorId ?? null,
       line: row.line,
       article: row.article ?? null,
@@ -143,7 +146,7 @@ export interface UseRowDrawerFormParams {
    * needs: a real prop change, not an incidental re-render of whatever list it came from.
    */
   resolvedGroupId: string;
-  resolvedGender: string;
+  resolvedGender: CollectionGender;
   defaultPlanningGroupId?: string;
 }
 

@@ -59,10 +59,10 @@ beforeAll(async () => {
 
   const asAdmin = createCallerWithSession(admin.session);
   const buildRow = async (brandId: string) => {
-    const layout = await asAdmin.collectionLayout.getOrCreate({ brandId, seasonId: season.id, availableGenders: ['UOMO'] });
+    const layout = await asAdmin.collectionLayout.getOrCreate({ brandId, seasonId: season.id, availableGenders: ['MAN'] });
     const group = await asAdmin.collectionLayout.groups.create({ collectionLayoutId: layout.id, data: { name: 'Gruppo', order: 0 } });
     const row = await asAdmin.collectionLayout.rows.create({
-      groupId: group.id, gender: 'UOMO', line: 'Linea', status: COLLECTION_STATUS[0],
+      groupId: group.id, gender: 'MAN', line: 'Linea', status: COLLECTION_STATUS[0],
       productCategory: 'TEST', skuForecast: null, qtyForecast: null,
     });
     return row.id;

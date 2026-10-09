@@ -37,7 +37,7 @@ const asAdmin = () => createCallerWithSession(adminSession);
 async function createBaseRow() {
   return asAdmin().collectionLayout.rows.create({
     groupId,
-    gender: 'UOMO',
+    gender: 'MAN',
     line: `Row ${randomUUID().slice(0, 8)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',
@@ -61,7 +61,7 @@ beforeAll(async () => {
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   const group = await asAdmin().collectionLayout.groups.create({
     collectionLayoutId: layout.id,
@@ -166,7 +166,7 @@ describe('rows.create — quotations on the fly', () => {
   it('creates the row with its quotations in the same request, with per-quotation audit', async () => {
     const row = await asAdmin().collectionLayout.rows.create({
       groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: `Row with a quotation ${randomUUID().slice(0, 8)}`,
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',

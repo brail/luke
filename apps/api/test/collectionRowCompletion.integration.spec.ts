@@ -58,7 +58,7 @@ async function createRow(planningGroupId?: string) {
   return asAdmin().collectionLayout.rows.create({
     groupId,
     planningGroupId,
-    gender: 'UOMO',
+    gender: 'MAN',
     line: `Row ${randomUUID().slice(0, 8)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',
@@ -95,7 +95,7 @@ beforeAll(async () => {
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   layoutId = layout.id;
   const group = await asAdmin().collectionLayout.groups.create({
@@ -524,7 +524,7 @@ describe('phaseHistory.completionLeadTime', () => {
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Senza storico',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -542,7 +542,7 @@ describe('phaseHistory.completionLeadTime', () => {
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Con storico',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -570,7 +570,7 @@ describe('phaseHistory.completionLeadTime', () => {
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Ancora aperta',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -600,7 +600,7 @@ async function createIsolatedLayout(): Promise<{ layoutId: string; groupId: stri
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   const group = await asAdmin().collectionLayout.groups.create({
     collectionLayoutId: layout.id,

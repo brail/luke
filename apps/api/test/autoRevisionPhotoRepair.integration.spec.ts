@@ -52,7 +52,7 @@ beforeEach(async () => {
   const layout = await asAdmin.collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   const group = await asAdmin.collectionLayout.groups.create({
     collectionLayoutId: layout.id,
@@ -60,7 +60,7 @@ beforeEach(async () => {
   });
   const row = await asAdmin.collectionLayout.rows.create({
     groupId: group.id,
-    gender: 'UOMO',
+    gender: 'MAN',
     line: 'Linea',
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',

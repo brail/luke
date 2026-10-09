@@ -43,7 +43,7 @@ beforeAll(async () => {
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   layoutId = layout.id;
 });

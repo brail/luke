@@ -107,7 +107,7 @@ beforeAll(async () => {
     const layout = await asAdmin.collectionLayout.getOrCreate({
       brandId,
       seasonId,
-      availableGenders: ['UOMO'],
+      availableGenders: ['MAN'],
     });
     const group = await asAdmin.collectionLayout.groups.create({
       collectionLayoutId: layout.id,
@@ -115,7 +115,7 @@ beforeAll(async () => {
     });
     const row = await asAdmin.collectionLayout.rows.create({
       groupId: group.id,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Linea',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -274,7 +274,7 @@ describe('brand scope — indirect resources', () => {
     ['rows.create', () =>
       as().collectionLayout.rows.create({
         groupId: outRes.groupId,
-        gender: 'UOMO',
+        gender: 'MAN',
         line: 'X',
         status: COLLECTION_STATUS[0],
         productCategory: 'TEST',
@@ -406,7 +406,7 @@ describe('reorder — the ids must belong to the parent', () => {
     // Two distinct rows, each with its own quotation.
     const mine = await asAdmin.collectionLayout.rows.create({
       groupId: outRes.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Mia',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
