@@ -1,6 +1,14 @@
-import { CheckCircle, XCircle, AlertTriangle, LoaderCircle } from 'lucide-react';
-import React, { useState, useCallback } from 'react';
+import { CheckCircle, CircleMinus, XCircle, AlertTriangle, LoaderCircle } from 'lucide-react';
+import React, { useState } from 'react';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import {
+  CONFIG_SECRET_PLACEHOLDER,
+  ConfigImportFileSchema,
+  ConfigImportItemSchema,
+  type ConfigImportItem,
+} from '@luke/core';
 
 import {
   validateConfigKey,
@@ -8,6 +16,7 @@ import {
 } from '../../lib/configHelpers';
 import { debugError, debugWarn } from '../../lib/debug';
 import { trpc } from '../../lib/trpc';
+import { cn } from '../../lib/utils';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -30,17 +39,49 @@ import {
   TableRow,
 } from '../ui/table';
 
-interface ImportConfig {
-  key: string;
-  value: string;
-  encrypt: boolean;
-  category?: string;
-}
-
-interface ImportPreview {
-  config: ImportConfig;
-  status: 'new' | 'update' | 'invalid';
+/** A row of the file as the preview shows it; `error` holds the reason for `invalid` and `skipped`. */
+type ImportPreview = ConfigImportItem & {
+  status: 'new' | 'update' | 'invalid' | 'skipped';
   error?: string;
+};
+
+/**
+ * Classifies one row of the file. A row that passes every check is `new`; whether it already exists
+ * is asked of the server afterwards, for those rows only.
+ */
+function classifyRow(row: unknown, index: number): ImportPreview {
+  const parsed = ConfigImportItemSchema.safeParse(row);
+  if (!parsed.success) {
+    return {
+      key: `riga ${index + 1}`,
+      value: null,
+      status: 'invalid',
+      error: z.prettifyError(parsed.error),
+    };
+  }
+
+  const item = parsed.data;
+  if (item.value === null) {
+    return { ...item, status: 'skipped', error: 'Nessun valore nel file' };
+  }
+  if (item.value === CONFIG_SECRET_PLACEHOLDER) {
+    return {
+      ...item,
+      status: 'skipped',
+      error: "Valore cifrato: l'export non lo contiene, reinseriscilo a mano",
+    };
+  }
+
+  const keyValidation = validateConfigKey(item.key);
+  if (!keyValidation.valid) {
+    return { ...item, status: 'invalid', error: keyValidation.error };
+  }
+  const valueValidation = validateConfigValue(item.value);
+  if (!valueValidation.valid) {
+    return { ...item, status: 'invalid', error: valueValidation.error };
+  }
+
+  return { ...item, status: 'new' };
 }
 
 interface ConfigImportDialogProps {
@@ -51,11 +92,13 @@ interface ConfigImportDialogProps {
 /**
  * Three-step dialog for batch-importing AppConfig entries from a JSON file.
  *
- * Step 1 — file upload and JSON parsing. Step 2 — preview table distinguishing
- * new vs. update vs. invalid entries (checked against existing keys via tRPC).
- * Step 3 — import with a progress bar; reports per-item success and error counts.
+ * Step 1 — file upload, parsed with `ConfigImportFileSchema` and each row with the
+ * `ConfigImportItemSchema` that `config.importJson` shares. Step 2 — preview table
+ * distinguishing new vs. update vs. invalid vs. skipped rows (existence checked via tRPC).
+ * Step 3 — import with a progress bar; reports the skipped keys and the server's per-item errors.
  *
- * Existing keys are overwritten. Invalid entries (failed client-side validation) are skipped.
+ * Existing keys are overwritten, except by the rows the file carries without a value — `value: null`
+ * and the export's `CONFIG_SECRET_PLACEHOLDER` — which are skipped. Invalid rows are not sent.
  *
  * @param onSuccess - Called after at least one config was imported successfully.
  */
@@ -72,25 +115,10 @@ export function ConfigImportDialog({
 
   const importMutation = trpc.config.importJson.useMutation();
   const utils = trpc.useUtils();
+  // The rows the import sends: everything else stays as it is on the server.
+  const importable = preview.filter(p => p.status === 'new' || p.status === 'update');
 
-  const validateConfig = useCallback(
-    (config: ImportConfig): { valid: boolean; error?: string } => {
-      const keyValidation = validateConfigKey(config.key);
-      if (!keyValidation.valid) {
-        return { valid: false, error: keyValidation.error };
-      }
-
-      const valueValidation = validateConfigValue(config.value);
-      if (!valueValidation.valid) {
-        return { valid: false, error: valueValidation.error };
-      }
-
-      return { valid: true };
-    },
-    []
-  );
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (!selectedFile) return;
 
@@ -99,81 +127,51 @@ export function ConfigImportDialog({
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = async e => {
+    let data: unknown;
+    try {
+      data = JSON.parse(await selectedFile.text());
+    } catch (error) {
+      debugError('File parse error:', error);
+      toast.error('Errore nel parsing del file JSON');
+      return;
+    }
+
+    const file = ConfigImportFileSchema.safeParse(data);
+    if (!file.success) {
+      toast.error('Formato file non valido', { description: z.prettifyError(file.error) });
+      return;
+    }
+
+    const rows = file.data.configs.map(classifyRow);
+
+    const newKeys = rows.filter(r => r.status === 'new').map(r => r.key);
+    const existingKeys = new Set<string>();
+    if (newKeys.length > 0) {
       try {
-        const content = e.target?.result as string;
-        const data = JSON.parse(content) as { configs?: unknown[] };
-
-        if (!data.configs || !Array.isArray(data.configs)) {
-          throw new Error('Formato file non valido: manca array "configs"');
-        }
-
-        // Shape asserted here; validateConfig() below re-validates each field and marks invalid entries accordingly
-        const configs = data.configs as ImportConfig[];
-
-        // Check existence of valid keys
-        const validKeys = configs
-          .filter(c => validateConfig(c).valid)
-          .map(c => c.key);
-
-        const existingKeys = new Set<string>();
-        if (validKeys.length > 0) {
-          try {
-            const results = await utils.config.getMultiple.fetch({
-              keys: validKeys,
-              decrypt: false,
-            });
-            results.forEach(r => {
-              if (r.found) existingKeys.add(r.key);
-            });
-          } catch (err) {
-            debugWarn('Failed to check existing configs:', err);
-          }
-        }
-
-        // Validate and determine the status of each configuration
-        const previewData: ImportPreview[] = await Promise.all(
-          configs.map(async config => {
-            const validation = validateConfig(config);
-            if (!validation.valid) {
-              return {
-                config,
-                status: 'invalid' as const,
-                error: validation.error,
-              };
-            }
-
-            return {
-              config,
-              status: existingKeys.has(config.key)
-                ? ('update' as const)
-                : ('new' as const),
-            };
-          })
-        );
-
-        setPreview(previewData);
-        setStep('preview');
-      } catch (error) {
-        debugError('File parse error:', error);
-        toast.error('Errore nel parsing del file JSON');
+        const results = await utils.config.getMultiple.fetch({
+          keys: newKeys,
+          decrypt: false,
+        });
+        results.forEach(r => {
+          if (r.found) existingKeys.add(r.key);
+        });
+      } catch (err) {
+        debugWarn('Failed to check existing configs:', err);
       }
-    };
+    }
 
-    reader.readAsText(selectedFile);
+    setPreview(
+      rows.map(r =>
+        r.status === 'new' && existingKeys.has(r.key) ? { ...r, status: 'update' } : r
+      )
+    );
+    setStep('preview');
   };
 
   const handleImport = async () => {
-    const validConfigs = preview
-      .filter(p => p.status !== 'invalid')
-      .map(p => ({
-        key: p.config.key,
-        value: p.config.value,
-        encrypt: p.config.encrypt || false,
-      }));
+    const items = importable.map(({ key, value, encrypt }) => ({ key, value, encrypt }));
 
-    if (validConfigs.length === 0) {
+    if (items.length === 0) {
       toast.error('Nessuna configurazione valida da importare');
       return;
     }
@@ -190,28 +188,25 @@ export function ConfigImportDialog({
         setProgress(prev => Math.min(prev + 10, 90));
       }, 200);
 
-      const result = await importMutation.mutateAsync({
-        items: validConfigs,
-      });
+      const result = await importMutation.mutateAsync({ items });
 
-      setProgress(100); // Completa la progress bar
+      setProgress(100); // Complete the progress bar
+      void utils.config.invalidate();
 
       if (result.successCount > 0) {
-        toast.success(
-          `${result.successCount} configurazioni importate con successo`
-        );
+        const skipped = preview.filter(p => p.status === 'skipped').map(p => p.key);
+        toast.success(`${result.successCount} configurazioni importate con successo`, {
+          description: skipped.length > 0 ? `Saltate: ${skipped.join(', ')}` : undefined,
+        });
         onSuccess();
         onOpenChange();
       }
 
       if (result.errorCount > 0) {
-        toast.error(
-          `${result.errorCount} configurazioni non sono state importate`
-        );
-        // Show error details if available
-        if (result.errors && result.errors.length > 0) {
-          debugError('Import errors:', result.errors);
-        }
+        // Not every message names its key (the kill-switch guard, a database error), so the key goes first.
+        toast.error(`${result.errorCount} configurazioni non sono state importate`, {
+          description: result.errors.map(e => `${e.key}: ${e.error}`).join('; '),
+        });
       }
 
       // Reset form
@@ -244,6 +239,8 @@ export function ConfigImportDialog({
         return <AlertTriangle className="w-4 h-4 text-yellow-600" />;
       case 'invalid':
         return <XCircle className="w-4 h-4 text-red-600" />;
+      case 'skipped':
+        return <CircleMinus className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
@@ -263,6 +260,8 @@ export function ConfigImportDialog({
         );
       case 'invalid':
         return <Badge variant="destructive">Invalida</Badge>;
+      case 'skipped':
+        return <Badge variant="secondary">Saltata</Badge>;
     }
   };
 
@@ -275,7 +274,8 @@ export function ConfigImportDialog({
           <DialogTitle>Importa Configurazioni</DialogTitle>
           <DialogDescription>
             Importa configurazioni da un file JSON. Le configurazioni esistenti
-            verranno aggiornate.
+            verranno aggiornate. I valori cifrati non sono nell&apos;export:
+            vanno reinseriti a mano.
           </DialogDescription>
         </DialogHeader>
 
@@ -290,7 +290,7 @@ export function ConfigImportDialog({
                 id="import-file"
                 type="file"
                 accept=".json"
-                onChange={handleFileSelect}
+                onChange={e => void handleFileSelect(e)}
                 disabled={importing}
               />
             </div>
@@ -309,8 +309,7 @@ export function ConfigImportDialog({
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium">Anteprima Importazione</h3>
               <div className="text-sm text-muted-foreground">
-                {preview.filter(p => p.status !== 'invalid').length}{' '}
-                configurazioni valide
+                {importable.length} configurazioni da importare
               </div>
             </div>
 
@@ -336,20 +335,25 @@ export function ConfigImportDialog({
                       </TableCell>
                       <TableCell>
                         <code className="text-sm font-mono bg-muted px-1 py-0.5 rounded">
-                          {item.config.key}
+                          {item.key}
                         </code>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">
-                        {item.config.encrypt ? '••••••' : item.config.value}
+                        {item.encrypt ? '••••••' : item.value}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {item.config.encrypt ? 'Cifrato' : 'Normale'}
+                          {item.encrypt ? 'Cifrato' : 'Normale'}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         {item.error && (
-                          <span className="text-sm text-red-600">
+                          <span
+                            className={cn(
+                              'text-sm',
+                              item.status === 'skipped' ? 'text-muted-foreground' : 'text-red-600'
+                            )}
+                          >
                             {item.error}
                           </span>
                         )}
@@ -383,9 +387,7 @@ export function ConfigImportDialog({
             </Button>
             <Button
               onClick={handleImport}
-              disabled={
-                preview.filter(p => p.status !== 'invalid').length === 0
-              }
+              disabled={importable.length === 0}
             >
               Importa Configurazioni
             </Button>

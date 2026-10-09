@@ -404,8 +404,8 @@ export function isUndeletableConfigKey(key: string): boolean {
 /**
  * What `config.exportJson` writes in place of an encrypted value, and what `config.viewValue` shows
  * for one in masked mode. It stands for a secret the export does not carry, so it is never a value:
- * the generic router refuses to store it. Re-importing an export used to write it, encrypted, over
- * every secret.
+ * the generic router refuses to store it and the import dialog skips the rows that carry it.
+ * Re-importing an export used to write it, encrypted, over every secret.
  */
 export const CONFIG_SECRET_PLACEHOLDER = '[ENCRYPTED]';
 
@@ -421,6 +421,16 @@ export const ConfigImportItemSchema = z.object({
 });
 
 export type ConfigImportItem = z.infer<typeof ConfigImportItemSchema>;
+
+/**
+ * The file the config page exports and imports. Rows stay `unknown` here and are parsed one at a
+ * time with `ConfigImportItemSchema`, so a malformed row is reported on its own instead of failing
+ * the whole file. The other fields the export writes (`exportedAt`, `version`, `note`, each row's
+ * `category`) are ignored.
+ */
+export const ConfigImportFileSchema = z.object({
+  configs: z.array(z.unknown()),
+});
 
 // Re-export LdapResilienceSchema for use in configManager (avoids double-import)
 export { LdapResilienceSchema };
