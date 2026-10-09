@@ -50,6 +50,7 @@ model AuditLog {
   @@index([action, createdAt])
   @@index([actorId, createdAt])
   @@index([targetType, targetId])
+  @@index([createdAt, id])
   @@map("audit_logs")
 }
 

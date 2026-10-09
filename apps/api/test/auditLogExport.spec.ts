@@ -99,7 +99,10 @@ describe('generateAuditLogCsv', () => {
     expect(second.where).toEqual({
       AND: [
         { result: 'SUCCESS' },
-        { OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }] },
+        {
+          createdAt: { lte: last.createdAt },
+          OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }],
+        },
       ],
     });
   });

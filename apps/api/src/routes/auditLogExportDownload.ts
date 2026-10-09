@@ -50,9 +50,12 @@ async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters): As
   const whereClause = buildAuditLogWhere(filters);
   // Keyset, not offset: each batch starts after the last row read, so events written at the top or
   // rows retention deletes at the bottom while a long export runs neither repeat nor skip a row.
+  // The redundant `lte` bound is what Postgres can seek on in the `(createdAt, id)` index; the `OR`
+  // alone is only a filter, and every batch would rescan the rows already exported.
   let last: { createdAt: Date; id: string } | undefined;
   for (;;) {
     const after = last && {
+      createdAt: { lte: last.createdAt },
       OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }],
     };
     const batch = await prisma.auditLog.findMany({
