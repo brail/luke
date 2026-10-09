@@ -49,4 +49,10 @@ describe('sendAccountApprovedEmail', () => {
     const text = (sendMailMock.mock.calls[0] as unknown as [{ text: string }])[0].text; // vitest types mock calls loosely
     expect(text).toContain("Ciao a$&b$'c!");
   });
+
+  it('leaves a placeholder inside the name unfilled', async () => {
+    await sendAccountApprovedEmail({} as PrismaClient, 'a@test', '{{loginUrl}}', 'https://luke.test'); // the stub reaches no query: config is mocked
+    const text = (sendMailMock.mock.calls[0] as unknown as [{ text: string }])[0].text; // vitest types mock calls loosely
+    expect(text).toContain('Ciao {{loginUrl}}!');
+  });
 });

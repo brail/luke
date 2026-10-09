@@ -141,19 +141,18 @@ export async function sendEmail(
 }
 
 /**
- * Carica template testo e sostituisce placeholder
+ * Loads a plain-text email template and fills its `{{key}}` placeholders in one pass, so a value
+ * that itself contains `{{otherKey}}` stays as it is. The replacement is a function: a string one
+ * would read `$&` and the like in the value. A placeholder with no variable is left in place.
  */
 function loadTextTemplate(
   templateName: string,
   variables: Record<string, string>
 ): string {
   const templatePath = join(__dirname, '../templates', `${templateName}.txt`);
-  let template = readFileSync(templatePath, 'utf-8');
-  Object.entries(variables).forEach(([key, value]) => {
-    // A function, not the string: a string replacement would read `$&` and the like in the value.
-    template = template.replaceAll(`{{${key}}}`, () => value);
-  });
-  return template;
+  return readFileSync(templatePath, 'utf-8').replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
+    Object.hasOwn(variables, key) ? variables[key] : placeholder
+  );
 }
 
 // Email logo: an "L" on a slate background as the fallback (Gmail and clients that strip SVG),
