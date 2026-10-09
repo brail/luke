@@ -7,6 +7,8 @@
  * shutdown, 1 otherwise. 7 s in all, inside the 10 s `docker stop` waits before it kills.
  */
 
+import { setTimeout as delay } from 'timers/promises';
+
 import type { PrismaClient } from '@luke/db';
 
 import type { FastifyInstance } from 'fastify';
@@ -25,8 +27,8 @@ export interface GracefulShutdownDeps {
 
 /** Rejects after `ms`, without keeping the process alive. */
 function timeout(ms: number, what: string): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    setTimeout(() => reject(new Error(`${what} timeout`)), ms).unref();
+  return delay(ms, undefined, { ref: false }).then(() => {
+    throw new Error(`${what} timeout`);
   });
 }
 

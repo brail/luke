@@ -17,6 +17,8 @@ import { getStorageProvider } from '../src/storage';
 import { signExportToken } from '../src/utils/downloadToken';
 import { streamRawResponse } from '../src/utils/streamResponse';
 
+import { partialProvider } from './helpers/storageProvider';
+
 vi.mock('../src/storage', () => ({ getStorageProvider: vi.fn() }));
 
 let app: FastifyInstance;
@@ -124,9 +126,9 @@ describe('/download/backup/:id/export', () => {
   it('closes the storage stream when the client goes away', async () => {
     const stored = new PassThrough();
     stored.write('encrypted body');
-    vi.mocked(getStorageProvider).mockResolvedValue({
+    vi.mocked(getStorageProvider).mockResolvedValue(partialProvider({
       get: async () => ({ stream: stored }),
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    }));
     const backupId = '00000000-0000-4000-8000-000000000001';
     // Only the lookup the route makes; the rest of the client is never touched.
     const prisma = {

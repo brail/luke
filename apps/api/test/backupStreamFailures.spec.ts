@@ -23,6 +23,7 @@ import { stageBackupArchive } from '../src/lib/backup/restorePipeline';
 import { getStorageProvider } from '../src/storage';
 
 import { createSilentLogger } from './helpers/logger';
+import { partialProvider } from './helpers/storageProvider';
 
 const { DEK } = vi.hoisted(() => ({ DEK: Buffer.alloc(32, 7) }));
 
@@ -67,9 +68,9 @@ describe('stageBackupArchive', () => {
   it('rejects a backup whose auth tag does not match', async () => {
     const { bytes, ivHex, authTagHex } = await encryptedArchive();
     const tampered = `${authTagHex[0] === '0' ? '1' : '0'}${authTagHex.slice(1)}`;
-    vi.mocked(getStorageProvider).mockResolvedValue({
+    vi.mocked(getStorageProvider).mockResolvedValue(partialProvider({
       get: async () => ({ stream: Readable.from([bytes]) }),
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    }));
 
     await expect(stageBackupArchive({
       prisma: {} as PrismaClient, // reaches only the mocked storage provider
@@ -86,11 +87,11 @@ describe('stageBackupArchive', () => {
 describe('runBackupJob', () => {
   it('fails the job when the upload breaks while a tar entry is being written', async () => {
     const { prisma, update } = prismaRecordingUpdates();
-    vi.mocked(getStorageProvider).mockResolvedValue({
+    vi.mocked(getStorageProvider).mockResolvedValue(partialProvider({
       put: async ({ stream }: { stream: Readable }) => {
         for await (const _chunk of stream) stream.destroy(new Error('upload failed'));
       },
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    }));
 
     await runBackupJob({ prisma, backupId: `test-${randomBytes(4).toString('hex')}`, scope: 'DB', logger, sourceConnection: SOURCE });
 
@@ -100,7 +101,7 @@ describe('runBackupJob', () => {
   it('fails the job and closes the upload when a storage file cannot be read', async () => {
     const { prisma, update } = prismaRecordingUpdates();
     let uploaded: Readable | undefined;
-    vi.mocked(getStorageProvider).mockResolvedValue({
+    vi.mocked(getStorageProvider).mockResolvedValue(partialProvider({
       put: async ({ stream }: { stream: Readable }) => {
         uploaded = stream;
         // Drains like a real upload: held back, the `db.dump` entry would never finish.
@@ -108,7 +109,7 @@ describe('runBackupJob', () => {
       },
       list: async () => ({ items: [{ key: 'a.png', size: 10 }], nextCursor: undefined }),
       get: async () => { throw new Error('storage read failed'); },
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    }));
 
     await runBackupJob({ prisma, backupId: `test-${randomBytes(4).toString('hex')}`, scope: 'DB_AND_FILES', logger, sourceConnection: SOURCE });
 
