@@ -23,14 +23,15 @@ import type { FastifyInstance } from 'fastify';
 const EXPORT_BATCH_SIZE = 500;
 
 /**
- * One CSV field. A value starting with `=`, `+`, `-`, `@`, a tab or a carriage return gets a
- * leading `'`, so a spreadsheet shows it as text instead of evaluating it (CWE-1236); no
- * column of this export is numeric, so the prefix never hides a number. A value holding a
- * quote, a comma or a line break, `\r` included, is quoted, so it can never split its row.
+ * One CSV field, always quoted. A value starting with `=`, `+`, `-`, `@`, a tab or a carriage
+ * return gets a leading `'`, so a spreadsheet shows it as text instead of evaluating it
+ * (CWE-1236); no column of this export is numeric, so the prefix never hides a number. The
+ * quotes keep every separator and line break inside the field, `;` included: a spreadsheet
+ * whose locale splits on `;` cannot cut a value into a cell that starts a formula.
  */
 export function csvEscape(value: string): string {
   const text = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 /** Streams the CSV in batches rather than loading the whole audit trail into memory at once. */
