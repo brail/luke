@@ -53,32 +53,17 @@ async function selectFile(configs: object[]) {
   return screen;
 }
 
-test('a row without a value is skipped and the other rows import', async () => {
-  const screen = await selectFile([
-    { key: 'auth.ldap.url', value: null, encrypt: true },
-    { key: 'app.name', value: 'Luke', encrypt: false },
-  ]);
+test.each([
+  ['a row without a value', { key: 'auth.ldap.url', value: null, encrypt: true }],
+  ['an exported secret', { key: 'auth.ldap.bindPassword', value: '[ENCRYPTED]', encrypt: true, category: 'auth' }],
+])('%s is skipped and named, the other rows import, the list refreshes', async (_, skippedRow) => {
+  const screen = await selectFile([skippedRow, { key: 'app.name', value: 'Luke', encrypt: false }]);
   await screen.getByRole('button', { name: 'Importa Configurazioni' }).click();
 
   await expect
     .poll(() => h.importMutate.mock.calls)
     .toEqual([[{ items: [{ key: 'app.name', value: 'Luke', encrypt: false }] }]]);
-  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', { description: 'auth.ldap.url' });
-});
-
-test('re-importing an export skips every secret, names it, and refreshes the list', async () => {
-  const screen = await selectFile([
-    { key: 'auth.ldap.bindPassword', value: '[ENCRYPTED]', encrypt: true, category: 'auth' },
-    { key: 'app.name', value: 'Luke', encrypt: false, category: 'app' },
-  ]);
-  await screen.getByRole('button', { name: 'Importa Configurazioni' }).click();
-
-  await expect
-    .poll(() => h.importMutate.mock.calls)
-    .toEqual([[{ items: [{ key: 'app.name', value: 'Luke', encrypt: false }] }]]);
-  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', {
-    description: 'auth.ldap.bindPassword',
-  });
+  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', { description: skippedRow.key });
   expect(h.invalidate).toHaveBeenCalled();
 });
 

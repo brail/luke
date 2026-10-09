@@ -165,8 +165,12 @@ describe('AppConfig write authority', () => {
         'auth.ldap.bindDN',
         'auth.ldap.bindPassword',
       ]);
+    });
 
-      // Every writer of the generic router refuses it, not only the import.
+    it('every writer of the generic router refuses the placeholder, not only the import', async () => {
+      const caller = await createCallerAs('admin');
+      await caller.config.set({ key: 'auth.ldap.bindPassword', value: 'real-secret', encrypt: true });
+
       await expectToThrow(
         caller.config.set({
           key: 'auth.ldap.bindPassword',
