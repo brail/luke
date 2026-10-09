@@ -81,6 +81,9 @@ test('a wheel scroll over a focused number field does not change it', async () =
     const before = (field.element() as HTMLInputElement).value;
     await field.click();
     await userEvent.wheel(field, { delta: { y: -100 } });
+    // `wheel` resolves before the page handles the event: wait for the blur, after which the
+    // browser no longer steps the field, so the value check cannot pass before the step lands.
+    await expect.element(field).not.toHaveFocus();
     await expect.element(field).toHaveValue(Number(before));
   }
 });

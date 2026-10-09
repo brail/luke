@@ -59,9 +59,9 @@ interface ParameterSetDialogProps {
  * session refetch when the tab regains focus) passes an equal but new object, and must not reset
  * what is being typed.
  *
- * @param initialData - Pre-filled values in edit mode.
- * @param onSubmit - Called with validated data and optional makeDefault flag.
- * @param mode - Controls dialog title and whether `isDefault` toggle is shown.
+ * @param props.initialData - Pre-filled values in edit mode.
+ * @param props.onSubmit - Called with validated data and optional makeDefault flag.
+ * @param props.mode - Controls dialog title and whether `isDefault` toggle is shown.
  */
 export function ParameterSetDialog(props: ParameterSetDialogProps) {
   return props.open ? <ParameterSetForm {...props} /> : null;
