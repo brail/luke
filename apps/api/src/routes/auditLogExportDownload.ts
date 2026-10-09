@@ -42,12 +42,20 @@ export async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parame
   yield `${BOM}${['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'].join(',')}\n`;
 
   const whereClause = buildAuditLogWhere(filters);
-  let skip = 0;
+  // Keyset, not offset: each batch starts after the last row read, so events written at the top or
+  // rows retention deletes at the bottom while a long export runs neither repeat nor skip a row.
+  let last: { createdAt: Date; id: string } | undefined;
   for (;;) {
     const batch = await prisma.auditLog.findMany({
-      where: whereClause,
+      where: last
+        ? {
+            AND: [
+              whereClause,
+              { OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }] },
+            ],
+          }
+        : whereClause,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip,
       take: EXPORT_BATCH_SIZE,
       include: { actor: { select: { firstName: true, lastName: true, username: true, email: true } } },
     });
@@ -77,7 +85,7 @@ export async function* generateAuditLogCsv(prisma: PrismaClient, filters: Parame
     }
 
     if (batch.length < EXPORT_BATCH_SIZE) break;
-    skip += EXPORT_BATCH_SIZE;
+    last = batch.at(-1);
   }
 }
 

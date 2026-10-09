@@ -54,4 +54,27 @@ describe('generateAuditLogCsv', () => {
       `"2026-10-09T08:15:00.000Z","'@Mario Rossi","'\tmario@example.com","utente","Accesso effettuato","User","u1","SUCCESS","127.0.0.1"\n`,
     ]);
   });
+
+  it('starts each batch after the last row read, not at an offset', async () => {
+    const base = Date.parse('2026-10-09T08:00:00.000Z');
+    const fullBatch = Array.from({ length: 500 }, (_, i) => ({
+      createdAt: new Date(base - i * 1000), id: `id-${i}`, actorId: null, actor: null, action: 'AUTH_LOGIN',
+      targetType: 'User', targetId: null, result: 'SUCCESS', ip: null, metadata: null,
+    }));
+    const findMany = vi.fn().mockResolvedValueOnce(fullBatch).mockResolvedValue([]);
+    // Only the two calls the generator makes; the rest of the client is never touched.
+    const prisma = { auditLog: { findMany }, user: { findMany: async () => [] } } as unknown as PrismaClient;
+
+    for await (const _chunk of generateAuditLogCsv(prisma, { result: 'SUCCESS' }));
+
+    const last = fullBatch[499]!;
+    const second = findMany.mock.calls[1]![0];
+    expect(second).not.toHaveProperty('skip');
+    expect(second.where).toEqual({
+      AND: [
+        { result: 'SUCCESS' },
+        { OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }] },
+      ],
+    });
+  });
 });
