@@ -3,7 +3,7 @@
  * Persists structured audit events to the database with trace correlation,
  * request IP, and automatic metadata sanitisation. Also the shared home for reading it back —
  * `buildAuditLogWhere`/`auditActorName` are used by both the `auditLog` tRPC router and the raw
- * `/download/audit-log` CSV route, so neither has to import from the other.
+ * `/download/audit-log` export route, so neither has to import from the other.
  */
 
 import pino from 'pino';
@@ -597,7 +597,7 @@ export async function logAudit(
 // Entity-specific helpers removed - everything centralized in logAudit() for DRY
 // Use logAudit() directly with the new standardized parameters
 
-/** Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the `/download/audit-log` CSV route. */
+/** Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the `/download/audit-log` export route. */
 export function buildAuditLogWhere(filters: AuditLogFilters): Prisma.AuditLogWhereInput {
   return {
     ...(filters.actorId ? { actorId: filters.actorId } : {}),

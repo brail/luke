@@ -152,13 +152,13 @@ export const auditLogRouter = router({
     }),
 
   /**
-   * Signs a short-lived (5-minute) token to download the CSV export of the audit trail,
+   * Signs a short-lived (5-minute) token to download the export of the audit trail,
    * filtered the same way as `list` — the raw `/download/audit-log` route verifies
-   * it and streams the CSV.
+   * it and streams the export as CSV or XLSX.
    *
    * @auth {audit:read_all}
    * @input {AuditLogFiltersSchema} — same filters accepted by `list`.
-   * @output {{ token: string }} — signed short-lived download token for the CSV export route.
+   * @output {{ token: string }} — signed short-lived download token for the export route.
    */
   getExportLink: protectedProcedure
     .use(requirePermission('audit:read_all'))

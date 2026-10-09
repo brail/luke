@@ -11,6 +11,8 @@
 import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env.js';
 import { getProxyUrl } from '../storage/contracts.js';
 
+import type { AuditLogExportFormat } from '../schemas/auditLog.js';
+
 /**
  * Options for URL construction
  */
@@ -187,12 +189,13 @@ export function buildBackupImportUrl(options: UrlOptions = {}): string {
 }
 
 /**
- * Builds the CSV export download URL for the audit log.
+ * Builds the export download URL for the audit log.
  *
+ * @param format - `csv` or `xlsx`
  * @param token - Signed export token minted by `auditLog.getExportLink`, encoding the applied filters
  */
-export function buildAuditLogExportUrl(token: string, options: UrlOptions = {}): string {
-  return buildApiUrl(`/download/audit-log?token=${encodeURIComponent(token)}`, options);
+export function buildAuditLogExportUrl(format: AuditLogExportFormat, token: string, options: UrlOptions = {}): string {
+  return buildApiUrl(`/download/audit-log?format=${format}&token=${encodeURIComponent(token)}`, options);
 }
 
 /**

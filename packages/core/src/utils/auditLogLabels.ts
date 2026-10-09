@@ -1,6 +1,6 @@
 /**
  * Human-readable labels for `AuditLog.action` codes (SCREAMING_SNAKE_CASE) in Italian.
- * Shared between the API's CSV export and the web audit log viewer/widget so both render
+ * Shared between the API's export and the web audit log viewer/widget so both render
  * the exact same wording. Deliberately not exhaustive — grows incrementally as new areas
  * are covered; `getAuditActionLabel` falls back to a humanized version of the raw code.
  */

@@ -639,7 +639,7 @@ const start = async () => {
     await registerMultipart(); // Global multipart (required by all upload routes)
     await registerStoragePlugin(); // Storage asset proxy (/uploads/:bucket/*)
     await registerBackupExportDownloadRoute(fastify, prisma); // Passphrase-protected portable export download (streamed)
-    await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log CSV export (admin-only, streamed)
+    await registerAuditLogExportDownloadRoute(fastify, prisma); // Audit log export, CSV or XLSX (admin-only, streamed)
     await registerBackupImportRoute(fastify, prisma); // Passphrase-protected portable export upload
     await registerBrandLogoRoutes(); // Brand logo upload routes
     await registerCompanyLogoRoutes(); // Company logo upload routes

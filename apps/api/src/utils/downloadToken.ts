@@ -2,7 +2,7 @@
  * Download/Export Token HMAC
  *
  * Stateless system for generating and verifying temporary download/export tokens —
- * for files from storage (bucket/key) or data generated on-the-fly (e.g. audit log CSV).
+ * for files from storage (bucket/key) or data generated on-the-fly (e.g. audit log export).
  *
  * Security:
  * - HMAC-SHA256 with a key derived via HKDF
@@ -90,7 +90,7 @@ function verifySignature(payload: string, signature: string): boolean {
 /**
  * Signs a payload (exp + variant-specific fields) in the
  * `base64url(payload).base64url(signature)` format, shared by all token variants
- * (upload slot, backup export with an attached header, audit log CSV export).
+ * (upload slot, backup export with an attached header, audit log export).
  */
 function signTokenPayload<T extends BaseTokenPayload>(payload: T): string {
   const payloadStr = JSON.stringify(payload);
@@ -246,15 +246,15 @@ export function verifyExportToken(token: string): ExportTokenPayload {
 }
 
 /**
- * Audit log CSV export token payload — same stateless HMAC as the other variants,
- * but without bucket/key: it's not a file already present in storage, the CSV is
+ * Audit log export token payload — same stateless HMAC as the other variants,
+ * but without bucket/key: it's not a file already present in storage, the export is
  * generated on-the-fly from the filters encapsulated in the token.
  */
 export interface AuditLogExportTokenPayload extends BaseTokenPayload {
   filters: AuditLogFilters;
 }
 
-/** Signs a token for the audit log CSV export, encapsulating the applied filters. */
+/** Signs a token for the audit log export, encapsulating the applied filters. */
 export function signAuditLogExportToken(params: {
   filters: AuditLogFilters;
   exp?: number;

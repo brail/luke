@@ -1,16 +1,22 @@
 'use client';
 
-import { Download } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogResult } from '@luke/core';
+import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogExportFormat, type AuditLogResult } from '@luke/core';
 
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../../components/ui/dropdown-menu';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import {
@@ -117,12 +123,12 @@ export default function AuditLogPage() {
 
   const getExportLinkMutation = trpc.auditLog.getExportLink.useMutation();
 
-  const handleDownload = async () => {
+  const handleDownload = async (format: AuditLogExportFormat) => {
     try {
       const { token } = await getExportLinkMutation.mutateAsync(apiFilters);
       triggerUrlDownload(
-        buildAuditLogExportUrl(token),
-        `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
+        buildAuditLogExportUrl(format, token),
+        `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`
       );
     } catch {
       toast.error('Download audit log fallito');
@@ -149,10 +155,24 @@ export default function AuditLogPage() {
         title="Audit Log"
         description="Registro di tutte le operazioni di creazione, modifica ed eliminazione effettuate nel sistema."
         actions={
-          <Button variant="outline" onClick={() => void handleDownload()} disabled={getExportLinkMutation.isPending}>
-            <Download className="mr-2 h-4 w-4" />
-            Scarica CSV
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={getExportLinkMutation.isPending}>
+                <Download className="mr-2 h-4 w-4" />
+                Esporta
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void handleDownload('xlsx')}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Excel (.xlsx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handleDownload('csv')}>
+                <FileText className="mr-2 h-4 w-4" />
+                CSV (.csv)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
 

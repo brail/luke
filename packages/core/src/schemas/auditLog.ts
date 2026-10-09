@@ -20,7 +20,7 @@ export const AuditLogGetLastChangeInputSchema = z.object({
 
 export const AuditLogResultSchema = z.enum(['SUCCESS', 'FAILURE']);
 
-/** Shared filter fields between `auditLog.list` (paginated) and `auditLog.getExportLink` (same filters, unpaginated CSV). */
+/** Shared filter fields between `auditLog.list` (paginated) and `auditLog.getExportLink` (same filters, unpaginated export). */
 export const AuditLogFiltersSchema = z.object({
   actorId: z.string().uuid().optional(),
   action: z.string().max(100).optional(),
@@ -29,6 +29,9 @@ export const AuditLogFiltersSchema = z.object({
   dateFrom: z.string().datetime().optional(),
   dateTo: z.string().datetime().optional(),
 });
+
+/** Formats the audit log export route serves, chosen by its `format` query parameter. */
+export const AuditLogExportFormatSchema = z.enum(['csv', 'xlsx']);
 
 export const AuditLogListInputSchema = AuditLogFiltersSchema.extend({
   page: z.number().int().min(1).default(1),
@@ -39,4 +42,5 @@ export type AuditLogLastChangeTargetType = z.infer<typeof AuditLogLastChangeTarg
 export type AuditLogGetLastChangeInput = z.infer<typeof AuditLogGetLastChangeInputSchema>;
 export type AuditLogResult = z.infer<typeof AuditLogResultSchema>;
 export type AuditLogFilters = z.infer<typeof AuditLogFiltersSchema>;
+export type AuditLogExportFormat = z.infer<typeof AuditLogExportFormatSchema>;
 export type AuditLogListInput = z.infer<typeof AuditLogListInputSchema>;
