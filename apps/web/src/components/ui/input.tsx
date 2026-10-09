@@ -1,3 +1,5 @@
+'use client';
+
 import * as React from 'react';
 
 import { cn } from '../../lib/utils';
@@ -25,12 +27,17 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
-        // The browser steps a focused number input on the wheel, so scrolling the page over the
-        // field would change the value and then save it: blurring stops the step.
-        onWheel={e => {
-          if (type === 'number') e.currentTarget.blur();
-          onWheel?.(e);
-        }}
+        // Chromium steps a focused number input on a vertical wheel turn, so scrolling the page
+        // over the field silently changes its value; blurring the field stops the step. A local
+        // change to the shadcn primitive: keep it when re-adding the component.
+        onWheel={
+          type === 'number'
+            ? e => {
+                if (e.deltaY !== 0) e.currentTarget.blur();
+                onWheel?.(e);
+              }
+            : onWheel
+        }
         {...props}
       />
     );

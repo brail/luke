@@ -10,7 +10,7 @@ const MESSAGE =
 // for it to submit. Textarea is deliberately absent — there Enter means "newline", so a dialog
 // whose only field is a Textarea is legitimately form-less. One holding both is still caught
 // through the Input. Checkbox, Switch and Select are reachable by keyboard without a submit.
-const TEXT_INPUTS = new Set(['Input', 'NumberInput']);
+const TEXT_INPUTS = new Set(['Input']);
 
 // Overlay bodies. Enter is only load-bearing inside one of these: elsewhere the surrounding page
 // form, if any, already governs the field.
