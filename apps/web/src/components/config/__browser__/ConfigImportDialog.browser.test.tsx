@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
   invalidate: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  toastInfo: vi.fn(),
+  toastWarning: vi.fn(),
   // The real `useUtils()` is one object for the component's lifetime.
   utils: {} as object,
 }));
@@ -29,7 +31,9 @@ vi.mock('../../../lib/trpc', () => ({
   },
 }));
 
-vi.mock('sonner', () => ({ toast: { success: h.toastSuccess, error: h.toastError } }));
+vi.mock('sonner', () => ({
+  toast: { success: h.toastSuccess, error: h.toastError, info: h.toastInfo, warning: h.toastWarning },
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -59,9 +63,7 @@ test('a row without a value is skipped and the other rows import', async () => {
   await expect
     .poll(() => h.importMutate.mock.calls)
     .toEqual([[{ items: [{ key: 'app.name', value: 'Luke', encrypt: false }] }]]);
-  expect(h.toastSuccess).toHaveBeenCalledWith(expect.any(String), {
-    description: 'Saltate: auth.ldap.url',
-  });
+  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', { description: 'auth.ldap.url' });
 });
 
 test('re-importing an export skips every secret, names it, and refreshes the list', async () => {
@@ -74,10 +76,37 @@ test('re-importing an export skips every secret, names it, and refreshes the lis
   await expect
     .poll(() => h.importMutate.mock.calls)
     .toEqual([[{ items: [{ key: 'app.name', value: 'Luke', encrypt: false }] }]]);
-  expect(h.toastSuccess).toHaveBeenCalledWith(expect.any(String), {
-    description: 'Saltate: auth.ldap.bindPassword',
+  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', {
+    description: 'auth.ldap.bindPassword',
   });
   expect(h.invalidate).toHaveBeenCalled();
+});
+
+test('the skipped keys are named even when nothing imports', async () => {
+  h.importMutate.mockResolvedValue({
+    successCount: 0,
+    errorCount: 1,
+    errors: [{ key: 'app.name', error: 'refused' }],
+  });
+  const screen = await selectFile([
+    { key: 'auth.ldap.bindPassword', value: '[ENCRYPTED]', encrypt: true },
+    { key: 'app.name', value: 'Luke', encrypt: false },
+  ]);
+  await screen.getByRole('button', { name: 'Importa Configurazioni' }).click();
+
+  await expect.poll(() => h.toastError.mock.calls.length).toBe(1);
+  expect(h.toastError).toHaveBeenCalledWith(expect.any(String), { description: 'app.name: refused' });
+  expect(h.toastInfo).toHaveBeenCalledWith('Righe saltate: 1', {
+    description: 'auth.ldap.bindPassword',
+  });
+});
+
+test('a failed existence check is reported, not hidden behind rows that all look new', async () => {
+  h.fetchExisting.mockRejectedValue(new Error('network'));
+  const screen = await selectFile([{ key: 'app.name', value: 'Luke', encrypt: false }]);
+
+  await expect.element(screen.getByText('1 configurazioni da importare')).toBeVisible();
+  expect(h.toastWarning).toHaveBeenCalledOnce();
 });
 
 test('the preview names why a row is skipped, and a malformed row does not reject the file', async () => {

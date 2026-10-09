@@ -157,6 +157,9 @@ export function ConfigImportDialog({
         });
       } catch (err) {
         debugWarn('Failed to check existing configs:', err);
+        toast.warning('Impossibile verificare le chiavi esistenti', {
+          description: 'Le righe risultano tutte nuove: quelle già presenti verranno sovrascritte',
+        });
       }
     }
 
@@ -194,10 +197,7 @@ export function ConfigImportDialog({
       void utils.config.invalidate();
 
       if (result.successCount > 0) {
-        const skipped = preview.filter(p => p.status === 'skipped').map(p => p.key);
-        toast.success(`${result.successCount} configurazioni importate con successo`, {
-          description: skipped.length > 0 ? `Saltate: ${skipped.join(', ')}` : undefined,
-        });
+        toast.success(`${result.successCount} configurazioni importate con successo`);
         onSuccess();
         onOpenChange();
       }
@@ -207,6 +207,12 @@ export function ConfigImportDialog({
         toast.error(`${result.errorCount} configurazioni non sono state importate`, {
           description: result.errors.map(e => `${e.key}: ${e.error}`).join('; '),
         });
+      }
+
+      // Whatever the outcome: the preview that listed them is gone once the form resets.
+      const skipped = preview.filter(p => p.status === 'skipped').map(p => p.key);
+      if (skipped.length > 0) {
+        toast.info(`Righe saltate: ${skipped.length}`, { description: skipped.join(', ') });
       }
 
       // Reset form

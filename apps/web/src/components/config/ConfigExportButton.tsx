@@ -2,6 +2,8 @@ import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { CONFIG_SECRET_PLACEHOLDER } from '@luke/core';
+
 import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
 import { triggerBlobDownload } from '../../lib/download';
@@ -16,7 +18,8 @@ interface ConfigExportButtonProps {
 /**
  * Button that exports all AppConfig entries as a JSON file download.
  *
- * Encrypted values are replaced with `[ENCRYPTED]` in the export for security.
+ * Encrypted values are replaced with `CONFIG_SECRET_PLACEHOLDER` in the export for security; the
+ * import skips the rows that carry it.
  * Triggers a browser download via a temporary object URL.
  */
 export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
@@ -28,9 +31,8 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
     setIsExporting(true);
 
     try {
-      // Use the new exportJson endpoint
       const result = await exportMutation.mutateAsync({
-        includeValues: true, // Includes values, but encrypted ones show [ENCRYPTED]
+        includeValues: true, // Includes values, but encrypted ones show CONFIG_SECRET_PLACEHOLDER
       });
 
       // Prepare the data for the export
@@ -43,7 +45,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
         })),
         exportedAt: result.exportedAt,
         version: '1.0',
-        note: 'I valori cifrati sono sostituiti con [ENCRYPTED] per sicurezza',
+        note: `I valori cifrati sono sostituiti con ${CONFIG_SECRET_PLACEHOLDER} per sicurezza`,
       };
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
