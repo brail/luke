@@ -4,7 +4,15 @@ import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogExportFormat, type AuditLogResult } from '@luke/core';
+import {
+  addCalendarDays,
+  buildAuditLogExportUrl,
+  getAuditActionLabel,
+  parseCalendarDate,
+  startOfDayIn,
+  type AuditLogExportFormat,
+  type AuditLogResult,
+} from '@luke/core';
 
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -103,13 +111,19 @@ export default function AuditLogPage() {
     return () => clearTimeout(t);
   }, [targetTypeInput]);
 
+  // The rows are shown in the profile's time zone, so the days picked are days in that zone; the API
+  // filter is inclusive at both ends, hence the instant before the day after `dateTo` starts.
+  const dayFrom = parseCalendarDate(filters.dateFrom);
+  const dayTo = parseCalendarDate(filters.dateTo);
   const apiFilters = {
     actorId: filters.actorId || undefined,
     action: filters.action.trim() || undefined,
     targetType: filters.targetType.trim() || undefined,
     result: filters.result || undefined,
-    dateFrom: filters.dateFrom ? new Date(filters.dateFrom).toISOString() : undefined,
-    dateTo: filters.dateTo ? new Date(`${filters.dateTo}T23:59:59`).toISOString() : undefined,
+    dateFrom: dayFrom ? startOfDayIn(dayFrom, fmt.timezone).toISOString() : undefined,
+    dateTo: dayTo
+      ? new Date(startOfDayIn(addCalendarDays(dayTo, 1), fmt.timezone).getTime() - 1).toISOString()
+      : undefined,
   };
 
   const { data, isLoading } = trpc.auditLog.list.useQuery(
@@ -237,13 +251,13 @@ export default function AuditLogPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Dal</Label>
-            <Input type="date" value={filters.dateFrom} onChange={e => updateFilter('dateFrom', e.target.value)} />
+            <Label htmlFor="audit-date-from">Dal</Label>
+            <Input id="audit-date-from" type="date" value={filters.dateFrom} onChange={e => updateFilter('dateFrom', e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Al</Label>
-            <Input type="date" value={filters.dateTo} onChange={e => updateFilter('dateTo', e.target.value)} />
+            <Label htmlFor="audit-date-to">Al</Label>
+            <Input id="audit-date-to" type="date" value={filters.dateTo} onChange={e => updateFilter('dateTo', e.target.value)} />
           </div>
         </div>
       </SectionCard>
