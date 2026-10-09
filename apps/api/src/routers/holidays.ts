@@ -199,8 +199,9 @@ export const holidaysRouter = router({
       const where: Record<string, unknown> = {};
       if (input.countryCodes?.length) where['countryCode'] = { in: input.countryCodes };
       if (input.year) {
-        where['startDate'] = { gte: new Date(`${input.year}-01-01`) };
-        where['endDate']   = { lte: new Date(`${input.year}-12-31`) };
+        // Overlap, not containment: a holiday range from late December to early January belongs to both years.
+        where['startDate'] = { lte: new Date(`${input.year}-12-31`) };
+        where['endDate']   = { gte: new Date(`${input.year}-01-01`) };
       }
       return ctx.prisma.holiday.findMany({
         where,
