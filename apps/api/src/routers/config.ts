@@ -23,6 +23,7 @@ import {
   getConfig,
   listConfigsPaged,
   deleteConfig,
+  decryptValue,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
@@ -317,7 +318,6 @@ export const configRouter = router({
         // Raw mode: decrypts if encrypted, otherwise the normal value
         if (config.isEncrypted) {
           try {
-            const { decryptValue } = await import('../lib/configManager.js');
             value = decryptValue(config.value);
           } catch (error) {
             ctx.logger.error(
@@ -603,6 +603,7 @@ export const configRouter = router({
    */
   importJson: protectedProcedure
     .use(requirePermission('config:update'))
+    .use(withRateLimit('configMutations'))
     .input(ImportJsonSchema)
     .mutation(async ({ input, ctx }) => {
       const results = {

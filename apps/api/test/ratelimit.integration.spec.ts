@@ -239,6 +239,18 @@ describe('Rate-Limit Integration', () => {
         { code: 'TOO_MANY_REQUESTS' }
       );
     });
+
+    it('counts importJson in the same bucket as set', async () => {
+      const adminCaller = await createCallerAs('admin');
+
+      for (let i = 0; i < 20; i++) {
+        await adminCaller.config.set({ key: 'app.name', value: `value${i}`, encrypt: false });
+      }
+
+      await expectToThrow(adminCaller.config.importJson({ items: [] }), {
+        code: 'TOO_MANY_REQUESTS',
+      });
+    });
   });
 
   describe('rate limit window reset', () => {
