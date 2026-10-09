@@ -7,7 +7,6 @@ import { z } from 'zod';
 
 import { CollectionGroupInputSchema } from '@luke/core';
 
-import { NumberInput } from '../../../../../components/NumberInput';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -117,7 +116,8 @@ export function CollectionGroupDialog({
                 <FormItem>
                   <FormLabel>SKU Budget</FormLabel>
                   <FormControl>
-                    <NumberInput
+                    <Input
+                      type="number"
                       min={0}
                       placeholder="Nessun limite"
                       {...field}

@@ -12,7 +12,6 @@ import {
   type CollectionLayoutRowInput,
 } from '@luke/core';
 
-import { NumberInput } from '../../../../../components/NumberInput';
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
@@ -820,7 +819,8 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
           <FormItem>
             <FormLabel>SKU Forecast</FormLabel>
             <FormControl>
-              <NumberInput
+              <Input
+                type="number"
                 {...field}
                 value={field.value == null || isNaN(field.value as number) ? '' : field.value}
                 onChange={e => {
@@ -844,7 +844,8 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
           <FormItem>
             <FormLabel>Qty Forecast</FormLabel>
             <FormControl>
-              <NumberInput
+              <Input
+                type="number"
                 {...field}
                 value={field.value == null || isNaN(field.value as number) ? '' : field.value}
                 onChange={e => {
@@ -924,7 +925,8 @@ export function PricingFooterSection({
             <FormItem className="flex items-center gap-3 space-y-0 shrink-0">
               <FormLabel className="shrink-0 text-sm">Impianti (€)</FormLabel>
               <FormControl>
-                <NumberInput
+                <Input
+                  type="number"
                   className="w-28"
                   placeholder="0.00"
                   step={0.01}
@@ -1047,7 +1049,8 @@ export function PricingFooterSection({
                                 {sellSym}
                               </span>
                             )}
-                            <NumberInput
+                            <Input
+                              type="number"
                               inputSize="sm"
                               className={cn('w-[88px]', sellSym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
@@ -1069,7 +1072,8 @@ export function PricingFooterSection({
                                 {buySym}
                               </span>
                             )}
-                            <NumberInput
+                            <Input
+                              type="number"
                               inputSize="sm"
                               className={cn('w-[88px]', buySym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
@@ -1137,7 +1141,8 @@ export function PricingFooterSection({
 
                         {/* SKU (peso per media margine) */}
                         <td className="px-2 py-1.5">
-                          <NumberInput
+                          <Input
+                            type="number"
                             inputSize="sm"
                             className="w-14 text-center"
                             placeholder="—"

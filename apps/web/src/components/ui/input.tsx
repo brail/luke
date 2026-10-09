@@ -15,7 +15,7 @@ export interface InputProps
 }
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ className, type, inputSize = 'default', ...props }, ref) => {
+  ({ className, type, inputSize = 'default', onWheel, ...props }, ref) => {
     return (
       <input
         type={type}
@@ -25,6 +25,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           className
         )}
         ref={ref}
+        // The browser steps a focused number input on the wheel, so scrolling the page over the
+        // field would change the value and then save it: blurring stops the step.
+        onWheel={e => {
+          if (type === 'number') e.currentTarget.blur();
+          onWheel?.(e);
+        }}
         {...props}
       />
     );
