@@ -15,7 +15,6 @@ type Props = ComponentProps<typeof ParameterSetDialog>;
 type ParameterSet = NonNullable<Props['initialData']>;
 
 const leather: ParameterSet = {
-  id: 'set-1',
   isDefault: true,
   name: 'Pelle',
   countryCode: 'IT',
@@ -30,7 +29,6 @@ const leather: ParameterSet = {
   retailMultiplier: 2.5,
   optimalMargin: 50,
 };
-const textile: ParameterSet = { ...leather, id: 'set-2', isDefault: false, name: 'Tessuto' };
 
 /** Spreads the set anew on every call, as the panel does on every render. */
 function dialog(props: Partial<Props> = {}) {
@@ -62,7 +60,7 @@ test('every opening starts from the data it is given', async () => {
   await expect.element(screen.getByRole('switch')).toBeChecked();
 
   await screen.rerender(dialog({ open: false }));
-  await screen.rerender(dialog({ initialData: { ...textile } }));
+  await screen.rerender(dialog({ initialData: { ...leather, isDefault: false, name: 'Tessuto' } }));
   await expect.element(name).toHaveValue('Tessuto');
   await expect.element(screen.getByRole('switch')).not.toBeChecked();
 
