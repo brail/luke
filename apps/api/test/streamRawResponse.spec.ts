@@ -5,9 +5,9 @@
 
 import { once } from 'events';
 import { Agent, get, type IncomingMessage } from 'http';
-import { PassThrough, type Readable } from 'stream';
+import { PassThrough, Writable, type Readable } from 'stream';
 
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
@@ -98,6 +98,25 @@ describe('streamRawResponse', () => {
     expect(onError).toHaveBeenCalledTimes(2);
     expect(onError.mock.calls[0]![0]).toMatchObject({ message: 'read failed' });
     expect(onError.mock.calls[1]![0]).toMatchObject({ code: 'ERR_STREAM_PREMATURE_CLOSE' });
+  });
+});
+
+describe('streamRawResponse, response still sending', () => {
+  it('does not report a client that leaves after the source has ended', async () => {
+    const onError = vi.fn();
+    // A response whose writes never complete: the source ends while the response is still sending.
+    const raw = Object.assign(new Writable({ write: () => {} }), { writeHead: () => {} });
+    const reply = { hijack: () => {}, raw } as unknown as FastifyReply; // the two members it uses
+    const source = new PassThrough();
+    source.end('payload');
+
+    streamRawResponse(reply, source, {}, onError);
+    await once(source, 'end');
+    raw.destroy(); // the client goes away
+    await closed(raw);
+    await settle();
+
+    expect(onError).not.toHaveBeenCalled();
   });
 });
 

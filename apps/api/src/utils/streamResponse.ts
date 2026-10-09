@@ -16,8 +16,9 @@ import type { FastifyReply } from 'fastify';
  * `pipeline` destroys both ends when either fails: a client that goes away stops the source, and a
  * source that fails cuts the response short (its headers are already sent, so no late 500).
  * `onError` hears about failures of the source, not about a client leaving: when the client goes,
- * the response closes while the source is still alive; when the source fails or ends early, it is
- * already destroyed by the time the response closes.
+ * the response closes while the source is still alive, or after it has ended normally; when the
+ * source fails or ends early, it is already destroyed, without having ended, by the time the
+ * response closes.
  */
 export function streamRawResponse(
   reply: FastifyReply,
@@ -29,7 +30,7 @@ export function streamRawResponse(
   reply.raw.writeHead(200, headers);
   let clientGone = false;
   reply.raw.on('close', () => {
-    if (!reply.raw.writableFinished && !stream.destroyed) clientGone = true;
+    if (!reply.raw.writableFinished && (stream.readableEnded || !stream.destroyed)) clientGone = true;
   });
   pipeline(stream, reply.raw, err => {
     if (err && !clientGone) onError(err);
