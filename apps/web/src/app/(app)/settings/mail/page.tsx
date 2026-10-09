@@ -61,13 +61,20 @@ export default function MailPage() {
   });
 
   // Load the existing configuration
-  const { data: existingConfigs, isLoading } = trpc.config.list.useQuery({
+  // The SMTP keys by prefix (the first page of all configs would miss them once there are more than
+  // 100 rows), plus the base URL the mail links use.
+  const { data: existingConfigs, isLoading: smtpLoading } = trpc.config.list.useQuery({
+    category: 'smtp',
     page: 1,
     pageSize: 100,
   });
+  const { data: baseUrlConfig, isLoading: baseUrlLoading } = trpc.config.getMultiple.useQuery({
+    keys: ['app.baseUrl'],
+  });
+  const isLoading = smtpLoading || baseUrlLoading;
 
   useEffect(() => {
-    if (existingConfigs) {
+    if (existingConfigs && baseUrlConfig) {
       const configs = existingConfigs.items;
       const smtpHost = configs.find(c => c.key === 'smtp.host');
       const smtpPort = configs.find(c => c.key === 'smtp.port');
@@ -75,7 +82,6 @@ export default function MailPage() {
       const smtpUser = configs.find(c => c.key === 'smtp.user');
       const smtpPass = configs.find(c => c.key === 'smtp.pass');
       const smtpFrom = configs.find(c => c.key === 'smtp.from');
-      const appBaseUrl = configs.find(c => c.key === 'app.baseUrl');
 
       form.reset({
         host: smtpHost?.valuePreview || '',
@@ -84,13 +90,13 @@ export default function MailPage() {
         user: smtpUser?.valuePreview || '',
         pass: '',
         from: smtpFrom?.valuePreview || '',
-        baseUrl: appBaseUrl?.valuePreview || '',
+        baseUrl: baseUrlConfig[0]?.value || '',
       });
 
       // Whether the password is already configured
       setHasPassword(!!smtpPass);
     }
-  }, [existingConfigs, form]);
+  }, [existingConfigs, baseUrlConfig, form]);
 
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
     onSuccess: () => {

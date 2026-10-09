@@ -100,9 +100,11 @@ export default defineConfig({
     ],
   },
   // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left
-  // unset, as in development, so `buildApiUrl` (@luke/core `getApiBaseUrl`) falls back to localhost.
+  // unset, as in development: `buildApiUrl` (@luke/core `getApiBaseUrl`) then falls back to
+  // localhost, and the mail form starts with an empty base URL.
   define: {
     'process.env.NEXT_PUBLIC_API_URL': 'undefined',
+    'process.env.NEXT_PUBLIC_FRONTEND_URL': 'undefined',
   },
   oxc: {
     jsx: { runtime: 'automatic' },

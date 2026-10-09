@@ -50,7 +50,9 @@ export default function NavSettingsPage() {
     },
   });
 
+  // By prefix: the first page of all configs would miss these keys once there are more than 100 rows.
   const { data: existingConfigs, isLoading } = trpc.config.list.useQuery({
+    category: 'integrations.nav',
     page: 1,
     pageSize: 100,
   });
