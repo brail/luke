@@ -86,6 +86,14 @@ export default defineConfig({
       // Added for BrandDialogWithPermissions.browser.test.tsx, the first to import a Progress (through
       // the dialog; it renders only during an upload): same reason.
       '@radix-ui/react-progress',
+      // Added for emptyLayoutChoices.browser.test.tsx, the first to mount collection-layout/page.tsx:
+      // its import graph brings the table's drag-and-drop, the copy dialog's Checkbox and the
+      // fullscreen portal. Same cold-cache reason.
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/utilities',
+      '@radix-ui/react-checkbox',
+      'react-dom',
     ],
   },
   oxc: {

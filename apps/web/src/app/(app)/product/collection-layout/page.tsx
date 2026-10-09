@@ -367,18 +367,20 @@ export default function CollectionLayoutPage() {
           <EmptyCollectionLayoutState
             brandId={brand.id}
             seasonId={season.id}
-            onCreateEmpty={() =>
+            onCreateEmpty={availableGenders =>
               getOrCreateMutation.mutate({
                 brandId: brand.id,
                 seasonId: season.id,
+                availableGenders,
               })
             }
-            onCopyFromSeason={fromSeasonId =>
+            onCopyFromSeason={(fromSeasonId, rows) =>
               copyFromSeasonMutation.mutate({
                 fromBrandId: brand.id,
                 fromSeasonId,
                 toBrandId: brand.id,
                 toSeasonId: season.id,
+                rows,
               })
             }
             isLoading={
