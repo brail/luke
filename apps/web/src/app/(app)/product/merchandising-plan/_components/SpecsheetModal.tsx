@@ -38,6 +38,7 @@ import {
   FormLabel,
 } from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
+import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../../lib/utils';
@@ -122,7 +123,9 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
   // Sections collapsed state
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const { upload: uploadImage, isUploading: uploadingImage } = useStorageUpload({
+    url: specsheet ? buildSpecsheetImageUploadUrl(specsheet.id) : '',
+  });
 
   // Sync local state when data arrives
   useEffect(() => {
@@ -243,20 +246,13 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
 
   const handleImageUpload = async (file: File) => {
     if (!specsheet) return;
-    setUploadingImage(true);
     try {
-      const formData = new globalThis.FormData();
-      formData.append('file', file);
-      const url = buildSpecsheetImageUploadUrl(specsheet.id);
-      const res = await fetch(url, { method: 'POST', body: formData, credentials: 'include' });
-      if (!res.ok) throw new Error('Upload fallito');
+      await uploadImage(file);
       utils.merchandisingPlan.getSpecsheet.invalidate({ rowId: row.id });
       onSaved();
       toast.success('Immagine caricata');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Errore upload immagine');
-    } finally {
-      setUploadingImage(false);
+      toast.error(getTrpcErrorMessage(err));
     }
   };
 
