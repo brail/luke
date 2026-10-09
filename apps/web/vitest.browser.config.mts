@@ -99,6 +99,11 @@ export default defineConfig({
       '@radix-ui/react-collapsible',
     ],
   },
+  // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left
+  // unset, as in development, so `buildApiUrl` (@luke/core `getApiBaseUrl`) falls back to localhost.
+  define: {
+    'process.env.NEXT_PUBLIC_API_URL': 'undefined',
+  },
   oxc: {
     jsx: { runtime: 'automatic' },
   },
