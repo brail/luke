@@ -13,7 +13,8 @@ const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 /**
  * Handles GET /api/uploads/[...path]. Authenticated proxy that streams static files from the API
  * backend storage at `/uploads/<path>`. Validates each path segment against {@link SAFE_SEGMENT_RE}
- * to prevent path traversal attacks. Responses are cached immutably for one year.
+ * to prevent path traversal attacks. Responses are cached immutably for one year, by the browser
+ * only (`private`): the file is behind a session, so no shared cache may keep it.
  * @auth {session-required}
  */
 export const GET = auth(async function GET(req) {
@@ -52,7 +53,7 @@ export const GET = auth(async function GET(req) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': 'private, max-age=31536000, immutable',
       },
     });
   } catch (error) {

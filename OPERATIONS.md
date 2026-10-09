@@ -137,12 +137,12 @@ development, where the loopback addresses (`127.0.0.1`, `::1`,
 `::ffff:127.0.0.1`) are exempt. File serving, `GET /uploads/:bucket/*`, is out
 of it: every picture on a page is one request, and a photo-heavy collection
 layout spent the whole budget on one uncached load. The only caller of that
-route is the web's authenticated `/api/uploads` proxy, and responses carry an
-immutable one-year cache; the residual is that a signed-in user can download
-files without a rate ceiling. It is not configurable through the `rateLimit`
-key, and `skipOnError` lets requests through when the limiter itself fails. Its
-429 has its own body — `{ statusCode, error, message, retryAfter }` — and no
-`error.data.code`.
+route is the web's authenticated `/api/uploads` proxy, and responses carry a
+private, immutable one-year cache; the residual is that a signed-in user can
+download files without a rate ceiling. It is not configurable through the
+`rateLimit` key, and `skipOnError` lets requests through when the limiter itself
+fails. Its 429 has its own body — `{ statusCode, error, message, retryAfter }` —
+and no `error.data.code`.
 
 ---
 

@@ -10,9 +10,10 @@
  * Out of the global per-IP rate limiter (`config: { rateLimit: false }`): every picture on a page
  * is one request, and a photo-heavy collection layout spent the whole budget on one uncached load,
  * leaving every other request from that browser to a 429. Safe because the only caller is the
- * authenticated web route and responses carry an immutable one-year cache. Residual: a signed-in
- * user can pull objects with no ceiling, each buffered here and in the web route (at most
- * `maxFileSizeMB`); keys are server-generated, so nothing can be enumerated.
+ * authenticated web route and responses carry an immutable one-year browser cache (`private`: no
+ * shared cache may keep a file served behind a session). Residual: a signed-in user can pull
+ * objects with no ceiling, each buffered here and in the web route (at most `maxFileSizeMB`);
+ * keys are server-generated, so nothing can be enumerated.
  *
  * Uploads go through the per-asset-kind `/upload/*` routes in `src/routes/` (the presigned
  * `storage.requestUpload`/`confirmUpload` pair remains, with no web caller).
@@ -87,7 +88,7 @@ export async function storagePlugin(
 
       reply.header('Content-Type', contentType || 'application/octet-stream');
       reply.header('Content-Length', buffer.length);
-      reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+      reply.header('Cache-Control', 'private, max-age=31536000, immutable');
       reply.send(buffer);
     } catch (err) {
       fastify.log.warn({ err, bucket, key }, 'Storage GET failed');
