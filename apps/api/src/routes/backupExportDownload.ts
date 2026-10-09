@@ -11,7 +11,8 @@
  * permission check (`maintenance:backup_export`) already happened when the token was minted.
  */
 
-import { PassThrough, type Readable } from 'stream';
+import { PassThrough } from 'stream';
+import { pipeline } from 'stream/promises';
 
 import type { PrismaClient } from '@luke/db';
 
@@ -53,8 +54,10 @@ export async function registerBackupExportDownloadRoute(
 
         const combined = new PassThrough();
         combined.write(encodeExportHeader(payload.header));
-        (stream as Readable).on('error', err => combined.destroy(err));
-        (stream as Readable).pipe(combined);
+        // `pipeline`, so a client that goes away (which destroys `combined`) also closes the storage
+        // stream. Nothing to log here: a source failure reaches `streamRawResponse`'s `onError`, and
+        // a client leaving is not an error.
+        pipeline(stream, combined).catch(() => {});
 
         streamRawResponse(
           reply,

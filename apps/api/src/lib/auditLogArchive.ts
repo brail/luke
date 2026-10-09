@@ -4,12 +4,13 @@
  * archives it instead of discarding it outright (unlike `Notification`, which is pure UX state).
  *
  * Streaming idiom mirrors `generateAuditLogCsv` in `routes/auditLogExportDownload.ts` (async
- * generator → `Readable.from` → piped stream), and reuses `createGzip` the same way
+ * generator → `Readable.from` → `pipeline`), and reuses `createGzip` the same way
  * `backup/dumpPipeline.ts` does for its own blob upload. One file per (tick, tier) rather than
  * one per delete batch, so a busy tick doesn't scatter dozens of small archive files.
  */
 
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { createGzip } from 'zlib';
 
 import type { IStorageProvider } from '@luke/core';
@@ -53,9 +54,11 @@ export async function archiveAuditLogRows(
 ): Promise<{ key: string }> {
   const key = auditLogArchiveKey(tickId, tier);
   const gzip = createGzip();
-  Readable.from(generateAuditLogNdjson(prisma, ids)).pipe(gzip);
+  // Awaited with the upload: a failed read rejects the archive (and so keeps the rows) instead of
+  // escaping as an uncaught exception.
+  const compressed = pipeline(Readable.from(generateAuditLogNdjson(prisma, ids)), gzip);
 
-  await provider.put({
+  const put = provider.put({
     bucket: 'backups',
     key,
     originalName: key,
@@ -64,6 +67,7 @@ export async function archiveAuditLogRows(
     stream: gzip,
     bypassSizeLimit: true, // internal privileged write, not a user upload — same as the backup engine's own blob
   });
+  await Promise.all([compressed, put]);
 
   return { key };
 }

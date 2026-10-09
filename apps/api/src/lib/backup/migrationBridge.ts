@@ -103,10 +103,10 @@ async function stageOldDumpFromBackup(params: {
   destPath: string;
 }): Promise<void> {
   const { prisma, sourceBackup, destPath } = params;
-  const extract = await openBackupArchiveStream({ prisma, ...sourceBackup });
+  const { extract, done } = await openBackupArchiveStream({ prisma, ...sourceBackup });
 
   let dbDumpFound = false;
-  await forEachArchiveEntry(extract, async (header, entryStream) => {
+  const extracted = forEachArchiveEntry(extract, async (header, entryStream) => {
     if (header.name === 'db.dump') {
       dbDumpFound = true;
       await pipeline(entryStream, createWriteStream(destPath));
@@ -115,6 +115,7 @@ async function stageOldDumpFromBackup(params: {
     entryStream.resume();
     await finished(entryStream);
   });
+  await Promise.all([extracted, done]);
 
   if (!dbDumpFound) throw new Error('Pacchetto di backup senza voce db.dump');
 }

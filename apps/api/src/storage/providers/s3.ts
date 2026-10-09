@@ -12,6 +12,7 @@
 
 import { createHash, randomUUID } from 'crypto';
 import { Transform, type TransformCallback } from 'stream';
+import { pipeline } from 'stream/promises';
 
 import {
   S3Client,
@@ -156,7 +157,9 @@ export class S3Provider implements IStorageProvider {
         callback(null, chunk);
       },
     });
-    params.stream.pipe(hashingStream);
+    // Awaited with the upload: a source that fails rejects the put instead of escaping as an
+    // uncaught exception, and an upload that fails closes the source.
+    const hashed = pipeline(params.stream, hashingStream);
 
     const upload = new Upload({
       client: this.client,
@@ -168,7 +171,13 @@ export class S3Provider implements IStorageProvider {
       },
     });
 
-    await upload.done();
+    await Promise.all([
+      hashed,
+      upload.done().catch((err: Error) => {
+        hashingStream.destroy(err);
+        throw err;
+      }),
+    ]);
 
     return { key, checksumSha256: hash.digest('hex'), size };
   }

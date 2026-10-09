@@ -376,6 +376,10 @@ async function dropAllAuditStages(prisma: PrismaClient): Promise<void> {
  * Downloads + decrypts a backup's blob into a ready-to-iterate tar extraction stream — shared by
  * a real restore (which also replays `files/*`) and the migration bridge (which only wants
  * `db.dump`, discarding everything else).
+ *
+ * `done` settles with the whole chain: a storage read error, a wrong auth tag or a corrupt gzip
+ * rejects it and destroys `extract`, so the caller awaits it together with its iteration of
+ * `extract` instead of the error escaping as an uncaught exception.
  */
 export async function openBackupArchiveStream(params: {
   prisma: PrismaClient;
@@ -383,7 +387,7 @@ export async function openBackupArchiveStream(params: {
   ivHex: string;
   authTagHex: string;
   wrappedDekHex: string;
-}): Promise<ReturnType<typeof createArchiveExtractor>> {
+}): Promise<{ extract: ReturnType<typeof createArchiveExtractor>; done: Promise<void> }> {
   const provider = await getStorageProvider(params.prisma);
   const { stream: blobStream } = await provider.get({ bucket: 'backups', key: params.filename });
 
@@ -392,11 +396,7 @@ export async function openBackupArchiveStream(params: {
   const gunzip = createGunzip();
   const extract = createArchiveExtractor();
 
-  blobStream.pipe(decipher);
-  decipher.pipe(gunzip);
-  gunzip.pipe(extract);
-
-  return extract;
+  return { extract, done: pipeline(blobStream, decipher, gunzip, extract) };
 }
 
 /** Parses a `files/<bucket>/<key...>` tar entry name. Returns `null` if the bucket isn't recognized. */
@@ -495,13 +495,13 @@ export async function stageBackupArchive(params: StageBackupArchiveParams): Prom
     await mkdir(filesDir, { recursive: true, mode: 0o700 });
 
     logger.info({ filename }, 'Restore: downloading and decrypting the archive');
-    const extract = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
+    const { extract, done } = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
 
     const stagedFiles: StagedFileEntry[] = [];
     let fileIndex = 0;
     let dumpFound = false;
 
-    await forEachArchiveEntry(extract, async (header, entryStream) => {
+    const extracted = forEachArchiveEntry(extract, async (header, entryStream) => {
       if (header.name === 'db.dump') {
         dumpFound = true;
         await pipeline(entryStream, createWriteStream(dumpPath));
@@ -520,6 +520,7 @@ export async function stageBackupArchive(params: StageBackupArchiveParams): Prom
       await pipeline(entryStream, createWriteStream(stagedPath));
       stagedFiles.push({ bucket: parsed.bucket, key: parsed.key, stagedPath, size: header.size ?? 0 });
     });
+    await Promise.all([extracted, done]);
 
     if (!dumpFound) {
       throw new RestorePreconditionError("L'archivio del backup non contiene il dump del database (voce \"db.dump\" assente)");

@@ -13,6 +13,7 @@ import { mkdir, rm } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { createGzip } from 'zlib';
 
 import { APP_STORAGE_BUCKETS, type IStorageProvider } from '@luke/core';
@@ -228,8 +229,9 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     const { iv, cipher } = createBackupCipher(dek);
     const gzip = createGzip();
 
-    pack.pipe(gzip);
-    gzip.pipe(cipher);
+    // Awaited with the upload below: a failure at any stage rejects the job instead of escaping as an
+    // uncaught exception, and an upload failure flows back to `pack`.
+    const archived = pipeline(pack, gzip, cipher);
 
     const blobKey = backupBlobKey(backupId);
     const uploadPromise = provider.put({
@@ -250,9 +252,12 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
         fileCount = await addAllStorageFiles(pack, provider);
       }
       pack.finalize();
-    })();
+    })().catch((err: Error) => {
+      pack.destroy(err); // a file that cannot be read ends the chain, and the upload, with it
+      throw err;
+    });
 
-    const [, uploadResult] = await Promise.all([packPromise, uploadPromise]);
+    const [, , uploadResult] = await Promise.all([packPromise, archived, uploadPromise]);
 
     // Only safe to read now: getAuthTag() requires cipher.final() to have run, which happens
     // once the upload has consumed the cipher's entire output (its readable side has ended).

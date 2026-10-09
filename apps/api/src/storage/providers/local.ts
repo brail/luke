@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
+import { Transform, type TransformCallback } from 'stream';
 import { pipeline } from 'stream/promises';
 
 import type {
@@ -28,17 +29,6 @@ import type {
   LocalStorageConfig,
 } from '@luke/core';
 import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError, isPathSafe } from '@luke/core';
-
-/**
- * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
- * more concrete `stream.Readable`) — narrows structurally instead of casting.
- */
-function tryDestroyStream(stream: NodeJS.ReadableStream): void {
-  const maybeDestroyable = stream as unknown as { destroy?: unknown };
-  if (typeof maybeDestroyable.destroy === 'function') {
-    (maybeDestroyable.destroy as () => void)();
-  }
-}
 
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
@@ -195,37 +185,23 @@ export class LocalFsProvider implements IStorageProvider {
     // Create parent directory if it doesn't exist
     await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
 
-    const writeStream = createWriteStream(targetPath, { mode: 0o600 });
-
-    return new Promise((resolve, reject) => {
-      stream.on('data', (chunk: Buffer) => {
-        bytesWritten += chunk.length;
-
-        // Check size limit (if applicable)
-        if (maxSize !== null && bytesWritten > maxSize) {
-          // Close the streams
-          tryDestroyStream(stream);
-          writeStream.destroy();
-          reject(new Error(`File troppo grande (max ${maxSize} bytes)`));
-        }
-      });
-
-      stream.on('error', error => {
-        writeStream.destroy();
-        reject(error);
-      });
-
-      writeStream.on('error', error => {
-        tryDestroyStream(stream);
-        reject(error);
-      });
-
-      writeStream.on('finish', () => {
-        resolve(bytesWritten);
-      });
-
-      stream.pipe(writeStream);
-    });
+    // `pipeline` also rejects on a source that has already failed or closed, which the source's own
+    // events would no longer report, and destroys every stream when one of them fails.
+    await pipeline(
+      stream,
+      new Transform({
+        transform(chunk: Buffer, _encoding, callback: TransformCallback) {
+          bytesWritten += chunk.length;
+          if (maxSize !== null && bytesWritten > maxSize) {
+            callback(new Error(`File troppo grande (max ${maxSize} bytes)`));
+          } else {
+            callback(null, chunk);
+          }
+        },
+      }),
+      createWriteStream(targetPath, { mode: 0o600 })
+    );
+    return bytesWritten;
   }
 
   /**

@@ -12,6 +12,7 @@
 
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
+import { pipeline } from 'stream/promises';
 
 import * as tarStream from 'tar-stream';
 
@@ -47,8 +48,9 @@ export function addStreamEntry(
       if (err) reject(err);
       else resolve();
     });
-    source.on('error', reject);
-    source.pipe(entry);
+    // `pipeline`, not `pipe`: an upload failure that reaches `pack` destroys this entry with the
+    // error, which without a listener on `entry` would be an uncaught exception.
+    pipeline(source, entry).catch(reject);
   });
 }
 
