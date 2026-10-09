@@ -9,6 +9,7 @@
 
 import { randomBytes } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -148,5 +149,11 @@ describe('buildCollectionLayoutXlsx', () => {
     expect(buffer.length).toBeGreaterThan(0);
     // XLSX is a zip container -> "PK" local file header signature
     expect(buffer.subarray(0, 2).toString('ascii')).toBe('PK');
+
+    // The auto-filter spans exactly the header row.
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer); // exceljs types `load` with ArrayBuffer; it reads a Buffer
+    const sheet = workbook.worksheets[0];
+    expect(sheet.autoFilter).toBe(`A1:${sheet.getRow(1).getCell(sheet.getRow(1).cellCount).address}`);
   });
 });

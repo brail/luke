@@ -182,9 +182,8 @@ export async function buildCollectionLayoutXlsx(
   headerRow.height = ROW_HEIGHT_WITH_IMAGE;
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
 
-  // Auto-filter
-  const lastColLetter = columnIndexToLetter(COLUMNS.length);
-  sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
+  // Auto-filter over the header row
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNS.length } };
 
   // Fetch images
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
@@ -312,15 +311,4 @@ export async function buildCollectionLayoutXlsx(
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
-}
-
-function columnIndexToLetter(colIndex: number): string {
-  let result = '';
-  let n = colIndex;
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    result = String.fromCharCode(65 + rem) + result;
-    n = Math.floor((n - 1) / 26);
-  }
-  return result;
 }

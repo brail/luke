@@ -306,13 +306,7 @@ export async function getMenuCollapsibleStates(
     return {};
   }
 
-  try {
-    const menuStates = (prefs.data as UserPreferenceData)?.menuStates ?? {};
-    return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
-  } catch (error) {
-    logger.warn({ err: error }, 'Failed to parse menuCollapsibleStates');
-    return {};
-  }
+  return (prefs.data as UserPreferenceData)?.menuStates ?? {};
 }
 
 /**
@@ -404,11 +398,5 @@ export async function setMenuCollapsibleStates(
     select: { data: true },
   });
 
-  try {
-    const saved = (updated.data as UserPreferenceData)?.menuStates ?? {};
-    return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
-  } catch (error) {
-    logger.warn({ err: error }, 'Failed to parse menuCollapsibleStates after set');
-    return menuStates;
-  }
+  return (updated.data as UserPreferenceData)?.menuStates ?? {};
 }
