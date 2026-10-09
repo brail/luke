@@ -12,6 +12,7 @@ import CollectionLayoutPage from '../page';
 const BRAND = 'brand-1';
 const SEASON = 'season-current';
 const PREVIOUS = 'season-previous';
+const OLDER = 'season-older';
 
 const h = vi.hoisted(() => ({
   query: (_path: string, _input?: { seasonId?: string }): unknown => undefined,
@@ -67,6 +68,7 @@ beforeEach(() => {
         items: [
           { id: SEASON, code: 'SS', year: 2027 },
           { id: PREVIOUS, code: 'FW', year: 2026 },
+          { id: OLDER, code: 'SS', year: 2026 },
         ],
       };
     }
@@ -74,6 +76,9 @@ beforeEach(() => {
       return {
         groups: [{ id: 'group-1', name: 'Borse', rows: [row('row-1', 'Tote'), row('row-2', 'Clutch'), row('row-3', 'Zaino')] }],
       };
+    }
+    if (path === 'collectionLayout.get' && input?.seasonId === OLDER) {
+      return { groups: [{ id: 'group-2', name: 'Scarpe', rows: [row('row-4', 'Sneaker'), row('row-5', 'Mocassino')] }] };
     }
     return undefined;
   };
@@ -114,4 +119,27 @@ test('a copy sends the rows and quotations chosen', async () => {
       { id: 'row-3', copyQuotations: true },
     ],
   });
+});
+
+test('going back to pick another season copies that season\'s rows', async () => {
+  const screen = await render(<CollectionLayoutPage />);
+
+  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
+  await screen.getByRole('button', { name: 'FW 2026' }).click();
+  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await screen.getByRole('button', { name: 'Indietro' }).click();
+  await screen.getByRole('button', { name: 'SS 2026' }).click();
+  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await screen.getByRole('button', { name: /^Copia \d+ righ[ae]$/ }).click();
+
+  expect(h.mutate).toHaveBeenCalledWith(
+    'collectionLayout.copyFromSeason',
+    expect.objectContaining({
+      fromSeasonId: OLDER,
+      rows: [
+        { id: 'row-4', copyQuotations: true },
+        { id: 'row-5', copyQuotations: true },
+      ],
+    })
+  );
 });

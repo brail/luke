@@ -130,6 +130,15 @@ export function EmptyCollectionLayoutState({
     });
   }
 
+  // Another source season has other rows: the selection made for the previous one must not reach
+  // the copy, so the next step starts again from all of the new season's rows.
+  function chooseSourceSeason(id: string) {
+    if (id === selectedFromSeasonId) return;
+    setSelectedFromSeasonId(id);
+    setRowSelections(new Map());
+    rowSelectionsInitialized.current = false;
+  }
+
   function resetDialogState() {
     setIsCopyDialogOpen(false);
     setSelectedFromSeasonId(null);
@@ -240,7 +249,7 @@ export function EmptyCollectionLayoutState({
                   <button
                     type="button"
                     key={s.id}
-                    onClick={() => setSelectedFromSeasonId(s.id)}
+                    onClick={() => chooseSourceSeason(s.id)}
                     className={cn(
                       'w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors',
                       selectedFromSeasonId === s.id
