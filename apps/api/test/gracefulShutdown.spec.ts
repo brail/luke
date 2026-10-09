@@ -1,0 +1,33 @@
+/**
+ * SIGTERM runs the server's shutdown, `onClose` hooks included, even with `instrument.ts` preloaded
+ * and telemetry off: the instrumentation registers no signal handler of its own that would exit
+ * first (#87).
+ */
+
+import { spawn } from 'child_process';
+import { join } from 'path';
+
+import { describe, expect, it } from 'vitest';
+
+const API_DIR = join(__dirname, '..');
+
+describe('graceful shutdown', () => {
+  it('runs the onClose hooks on SIGTERM and exits 0', async () => {
+    const child = spawn(
+      join(API_DIR, 'node_modules', '.bin', 'tsx'),
+      ['--import', './src/instrument.ts', 'test/fixtures/shutdownChild.ts'],
+      // nosemgrep: luke-no-direct-env -- the child inherits the environment (PATH); only OTel is switched off
+      { cwd: API_DIR, env: { ...process.env, OTEL_ENABLED: 'false' } }
+    );
+    let stdout = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+      if (stdout.includes('ready\n')) child.kill('SIGTERM');
+    });
+
+    const code = await new Promise<number | null>(resolve => child.on('exit', resolve));
+
+    expect(stdout).toContain('onClose ran');
+    expect(code).toBe(0);
+  }, 30_000);
+});

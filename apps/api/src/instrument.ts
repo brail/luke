@@ -5,8 +5,10 @@
  * (Fastify, HTTP, Undici, Prisma) are applied from the very start of the process.
  *
  * Initialization is skipped when `OTEL_ENABLED=false` or when
- * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Graceful SDK shutdown is wired to
- * `SIGTERM` and `SIGINT` signals.
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Preloaded in every mode — `--require` in production,
+ * `--import` under tsx in development — so `server.ts` importing `shutdownTelemetry` gets this same
+ * instance. It registers no signal handler: `lib/gracefulShutdown.ts` calls `shutdownTelemetry`
+ * after the server has closed.
  */
 
 import FastifyOtelInstrumentation from '@fastify/otel';
@@ -70,27 +72,13 @@ if (otelEnabled) {
   logger.info('ℹ️  OpenTelemetry disabled (no endpoint configured)');
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  if (sdk) {
-    logger.info('Shutting down OpenTelemetry SDK...');
-    try {
-      await sdk.shutdown();
-    } catch (err) {
-      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
-    }
+/** Flushes and stops the OpenTelemetry SDK; does nothing when telemetry is disabled. Never throws. */
+export async function shutdownTelemetry(): Promise<void> {
+  if (!sdk) return;
+  logger.info('Shutting down OpenTelemetry SDK...');
+  try {
+    await sdk.shutdown();
+  } catch (err) {
+    logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
   }
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  if (sdk) {
-    logger.info('Shutting down OpenTelemetry SDK...');
-    try {
-      await sdk.shutdown();
-    } catch (err) {
-      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
-    }
-  }
-  process.exit(0);
-});
+}

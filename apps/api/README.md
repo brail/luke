@@ -288,7 +288,7 @@ pnpm --filter @luke/api build   # dist/ and dist-scripts/ (never while pnpm dev 
 ```
 
 **Set `NODE_ENV=development` in `apps/api/.env` yourself.** The `dev` script is
-`tsx watch --env-file=.env`; nothing sets the variable for you, `apps/api/.env`
+`tsx watch --env-file=.env --import ./src/instrument.ts`; nothing sets the variable for you, `apps/api/.env`
 is gitignored, and `isDevelopment()` compares with `'development'` exactly. Left
 unset, the local API runs as neither development nor production: CSP on, `info`
 logs without pino-pretty, and the global rate limit at 100 requests per minute
@@ -379,7 +379,7 @@ values in the environment table below, and no configuration file is read. Ration
 
 - Global error handling: Fastify's `setErrorHandler` and the `onError` hook log in a structured way, with the `traceId` from the `x-luke-trace-id` header. In production the messages are generic, and no stack reaches a response.
 - tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs the path, the code, the original message and the cause's message, unredacted.
-- Process guards: `SIGTERM`/`SIGINT` run a graceful shutdown with a timeout; `uncaughtException`/`unhandledRejection` log at `fatal`, attempt `app.close()` best-effort, then `process.exit(1)`.
+- Process guards (`src/lib/gracefulShutdown.ts`, the only shutdown path): `SIGTERM`/`SIGINT` close Fastify, running its `onClose` hooks, and disconnect Prisma within 5 s, then shut telemetry down within 2 s whatever the close did, then exit — 0 if the close was clean, 1 otherwise. `uncaughtException`/`unhandledRejection` log at `fatal`, run the same close, then `process.exit(1)`. `src/instrument.ts` registers no signal handler of its own.
 - Timeouts: `requestTimeout` is 6 minutes, aligned with the Next.js proxy timeout and the NAV pool, and `connectionTimeout` is disabled. The LDAP client relies on its own operation timeouts; it does not abort a request in flight.
 
 ## tRPC Routers
@@ -470,10 +470,11 @@ docker run --rm --name luke-jaeger \
 ```
 
 Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` in the API process
-environment and leave `OTEL_ENABLED` unset or set to `true`. The compiled API's
-`start` script preloads `src/instrument.ts`'s compiled output; the `dev` script
-does not preload it. Setting the variables alone is not sufficient without
-loading that instrumentation bootstrap before the server.
+environment and leave `OTEL_ENABLED` unset or set to `true`. Both scripts preload
+the instrumentation bootstrap before the server: `start` with `--require` on
+`src/instrument.ts`'s compiled output, `dev` with tsx's `--import` on the source
+(tsx's `--require` cannot load this import graph: startup fails with
+`ERR_METHOD_NOT_IMPLEMENTED`).
 
 Open `http://localhost:16686` to inspect traces for service `@luke/api`.
 The collector uses transient in-memory storage: stopping it loses the traces.

@@ -26,6 +26,7 @@ import {
 } from '@luke/core/server';
 import { createPrismaClient } from '@luke/db';
 
+import { shutdownTelemetry } from './instrument';
 import { appVersion } from './lib/appVersion';
 import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
@@ -35,6 +36,7 @@ import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { setGlobalErrorHandler } from './lib/error';
 import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
+import { setupGracefulShutdown } from './lib/gracefulShutdown';
 import { buildHelmetConfig } from './lib/helmet';
 import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
@@ -483,71 +485,6 @@ function setupTempFileCleanup() {
 }
 
 /**
- * Wires up graceful shutdown for SIGTERM, SIGINT, uncaughtException, and unhandledRejection.
- *
- * On any termination signal: stops in-memory stores, closes the HTTP server (5 s timeout),
- * disconnects Prisma, then exits. Fatal errors follow the same path with `process.exit(1)`.
- */
-function setupGracefulShutdown() {
-  const closeWithTimeout = async (ms: number) => {
-    const timeout = new Promise((_resolve, reject) =>
-      setTimeout(() => reject(new Error('close timeout')), ms)
-    );
-    await Promise.race([
-      (async () => {
-        await fastify.close();
-        await prisma.$disconnect();
-      })(),
-      timeout,
-    ]);
-  };
-
-  const gracefulShutdown = async (signal: string) => {
-    fastify.log.info(`Received signal ${signal}, starting graceful shutdown...`);
-
-    try {
-      // Stop in-memory cleanup intervals before closing HTTP server
-      rateLimitStore.stop();
-      idempotencyStore.stop();
-
-      // Close HTTP server
-      await closeWithTimeout(5_000);
-      fastify.log.info('Server HTTP chiuso');
-
-      fastify.log.info('Shutdown completed');
-      process.exit(0);
-    } catch (error: unknown) {
-      fastify.log.error({ err: error }, 'Error during shutdown');
-      process.exit(1);
-    }
-  };
-
-  // Handle termination signals
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-  // Handle uncaught errors
-  const onFatal = async (reason: any, type: string) => { // process events can propagate any thrown value, not just Error
-    try {
-      fastify.log.fatal({ reason }, `${type}: shutting down`);
-      await closeWithTimeout(5_000);
-    } catch (e) {
-      fastify.log.error({ e }, 'Error during close on fatal');
-    } finally {
-      process.exit(1);
-    }
-  };
-
-  process.on('uncaughtException', (error: any) => { // Node.js listener signature accepts any thrown value
-    void onFatal(error, 'uncaughtException');
-  });
-
-  process.on('unhandledRejection', (reason: any) => { // rejection reason can be any value
-    void onFatal(reason, 'unhandledRejection');
-  });
-}
-
-/**
  * POLICY: Bootstrap env guard (API server)
  *
  * Only infrastructure variables are allowed in process.env.
@@ -686,7 +623,15 @@ const start = async () => {
     registerFeedbackSyncScheduler(fastify, prisma);
 
     // Configure graceful shutdown
-    setupGracefulShutdown();
+    setupGracefulShutdown({
+      fastify,
+      prisma,
+      stopStores: () => {
+        rateLimitStore.stop();
+        idempotencyStore.stop();
+      },
+      shutdownTelemetry,
+    });
 
     // Start server
     const port = parseInt(process.env.PORT || '3001', 10);
