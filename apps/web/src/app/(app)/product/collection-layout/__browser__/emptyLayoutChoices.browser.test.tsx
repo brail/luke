@@ -60,6 +60,18 @@ vi.mock('../../../../../lib/trpc', () => {
 
 const row = (id: string, line: string) => ({ id, gender: 'MAN', line, article: null });
 
+type Screen = Awaited<ReturnType<typeof render>>;
+
+/** Opens the copy dialog on `season` and moves on to its rows. */
+async function openRowStep(screen: Screen, season: string) {
+  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
+  await screen.getByRole('button', { name: season }).click();
+  await screen.getByRole('button', { name: 'Avanti →' }).click();
+}
+
+/** The copy button, whatever row count it shows. */
+const copyButton = (screen: Screen) => screen.getByRole('button', { name: /^Copia \d+ righ[ae]$/ });
+
 beforeEach(() => {
   h.mutate.mockClear();
   h.query = (path, input) => {
@@ -100,9 +112,7 @@ test('a blank layout is created with the genders chosen', async () => {
 test('a copy sends the rows and quotations chosen', async () => {
   const screen = await render(<CollectionLayoutPage />);
 
-  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
-  await screen.getByRole('button', { name: 'FW 2026' }).click();
-  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await openRowStep(screen, 'FW 2026');
   // Two checkboxes per row, in row order: include, then quotations.
   const boxes = screen.getByRole('dialog').getByRole('checkbox');
   await boxes.nth(1).click();
@@ -124,13 +134,11 @@ test('a copy sends the rows and quotations chosen', async () => {
 test('going back to pick another season copies that season\'s rows', async () => {
   const screen = await render(<CollectionLayoutPage />);
 
-  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
-  await screen.getByRole('button', { name: 'FW 2026' }).click();
-  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await openRowStep(screen, 'FW 2026');
   await screen.getByRole('button', { name: 'Indietro' }).click();
   await screen.getByRole('button', { name: 'SS 2026' }).click();
   await screen.getByRole('button', { name: 'Avanti →' }).click();
-  await screen.getByRole('button', { name: /^Copia \d+ righ[ae]$/ }).click();
+  await copyButton(screen).click();
 
   expect(h.mutate).toHaveBeenCalledWith(
     'collectionLayout.copyFromSeason',
@@ -147,9 +155,7 @@ test('going back to pick another season copies that season\'s rows', async () =>
 test('a row deleted from the source while the dialog is open is not sent', async () => {
   const screen = await render(<CollectionLayoutPage />);
 
-  await screen.getByRole('button', { name: 'Copia da stagione precedente' }).click();
-  await screen.getByRole('button', { name: 'FW 2026' }).click();
-  await screen.getByRole('button', { name: 'Avanti →' }).click();
+  await openRowStep(screen, 'FW 2026');
   await expect.element(screen.getByRole('button', { name: 'Copia 3 righe' })).toBeVisible();
 
   // The source layout refetches without row-2, deleted meanwhile in the other season.
@@ -160,7 +166,7 @@ test('a row deleted from the source while the dialog is open is not sent', async
     return { groups: [{ id: 'group-1', name: 'Borse', rows: [row('row-1', 'Tote'), row('row-3', 'Zaino')] }] };
   };
   await screen.rerender(<CollectionLayoutPage />);
-  await screen.getByRole('button', { name: /^Copia \d+ righ[ae]$/ }).click();
+  await copyButton(screen).click();
 
   expect(h.mutate).toHaveBeenCalledWith(
     'collectionLayout.copyFromSeason',

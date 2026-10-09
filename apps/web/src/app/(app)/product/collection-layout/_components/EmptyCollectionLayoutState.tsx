@@ -88,8 +88,7 @@ export function EmptyCollectionLayoutState({
     setRowSelections(new Map(allRows.map(r => [r.id, { included: true, copyQuotations: true }])));
   }, [sourceLayout]);
 
-  const allRowIds = sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)) ?? [];
-  const sourceRowIds = new Set(allRowIds);
+  const sourceRowIds = new Set(sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)));
   // A row deleted from the source after the dialog loaded it stays in the map, where no checkbox
   // reaches it: only rows still in the source can be copied.
   const selectedRows = [...rowSelections.entries()]
@@ -99,7 +98,7 @@ export function EmptyCollectionLayoutState({
   function setAllIncluded(included: boolean) {
     setRowSelections(prev => {
       const next = new Map(prev);
-      for (const id of allRowIds) {
+      for (const id of sourceRowIds) {
         const cur = next.get(id) ?? { included: false, copyQuotations: true };
         next.set(id, { ...cur, included });
       }
@@ -140,6 +139,10 @@ export function EmptyCollectionLayoutState({
   function chooseSourceSeason(id: string) {
     if (id === selectedFromSeasonId) return;
     setSelectedFromSeasonId(id);
+    clearRowSelections();
+  }
+
+  function clearRowSelections() {
     setRowSelections(new Map());
     rowSelectionsInitialized.current = false;
   }
@@ -148,8 +151,7 @@ export function EmptyCollectionLayoutState({
     setIsCopyDialogOpen(false);
     setSelectedFromSeasonId(null);
     setStep(1);
-    setRowSelections(new Map());
-    rowSelectionsInitialized.current = false;
+    clearRowSelections();
   }
 
   function handleCopy() {
