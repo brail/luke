@@ -1,9 +1,9 @@
 /**
  * Centralised hook for AppConfig query and mutation management.
- * Encapsulates all tRPC calls for the configuration admin UI, providing:
+ * Encapsulates the list and edit tRPC calls of the configuration admin UI (import and export live
+ * in their own components), providing:
  * - Paginated list query with filtering and sorting
  * - CRUD mutations (set, update, delete)
- * - Batch import/export mutations
  * - Automatic React Query cache invalidation
  * - Unified error handling with toast notifications
  * - Aggregated loading state (`isAnyLoading`)
@@ -47,7 +47,7 @@ export interface ConfigFormData {
  *
  * @param params - Filters, sorting, and pagination for the config list.
  * @returns Query state, raw mutation objects, and convenience helpers
- *   (`saveConfig`, `deleteConfig`, `importConfigs`, `exportConfigs`, `invalidateQueries`).
+ *   (`saveConfig`, `deleteConfig`, `invalidateQueries`).
  */
 export function useConfigQuery(params: ConfigQueryParams = {}) {
   const utils = trpc.useUtils();
@@ -113,42 +113,6 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     },
   });
 
-  // Batch import mutation
-  const importMutation = trpc.config.importJson.useMutation({
-    onSuccess: data => {
-      const { successCount, errorCount } = data;
-
-      if (successCount > 0) {
-        toast.success(`${successCount} configurazioni importate con successo`);
-      }
-
-      if (errorCount > 0) {
-        toast.error(`${errorCount} configurazioni non sono state importate`);
-      }
-
-      invalidateQueries();
-    },
-    onError: error => {
-      debugError('Error importing configurations:', error);
-      toast.error(
-        `Errore: ${error.message || 'Impossibile importare le configurazioni'}`
-      );
-    },
-  });
-
-  // Export mutation
-  const exportMutation = trpc.config.exportJson.useMutation({
-    onSuccess: data => {
-      toast.success(`Esportate ${data.count} configurazioni`);
-    },
-    onError: error => {
-      debugError('Error exporting configurations:', error);
-      toast.error(
-        `Errore: ${error.message || 'Impossibile esportare le configurazioni'}`
-      );
-    },
-  });
-
   /**
    * Invalidates the `config` queries so the list refetches after a mutation.
    *
@@ -192,33 +156,6 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     [deleteMutation]
   );
 
-  /**
-   * Imports a batch of config entries from a JSON array.
-   */
-  const importConfigs = useCallback(
-    async (
-      items: Array<{
-        key: string;
-        value: string;
-        encrypt?: boolean;
-      }>
-    ) => {
-      return await importMutation.mutateAsync({ items });
-    },
-    [importMutation]
-  );
-
-  /**
-   * Exports all config entries as a JSON blob.
-   * @param includeValues - When `false`, values are omitted from the export.
-   */
-  const exportConfigs = useCallback(
-    async (includeValues = true) => {
-      return await exportMutation.mutateAsync({ includeValues });
-    },
-    [exportMutation]
-  );
-
   return {
     // Query data
     data: query.data,
@@ -230,14 +167,10 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
     setMutation,
     updateMutation,
     deleteMutation,
-    importMutation,
-    exportMutation,
 
     // Helper functions
     saveConfig,
     deleteConfig,
-    importConfigs,
-    exportConfigs,
     invalidateQueries,
 
     // Aggregated loading states
@@ -245,8 +178,6 @@ export function useConfigQuery(params: ConfigQueryParams = {}) {
       query.isLoading ||
       setMutation.isPending ||
       updateMutation.isPending ||
-      deleteMutation.isPending ||
-      importMutation.isPending ||
-      exportMutation.isPending,
+      deleteMutation.isPending,
   };
 }

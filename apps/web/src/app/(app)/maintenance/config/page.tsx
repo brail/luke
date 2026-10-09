@@ -122,7 +122,6 @@ export default function MaintenanceConfigPage() {
 
   const handleImportSuccess = () => {
     setImportDialogOpen(false);
-    // Invalidation is handled automatically by the hook
   };
 
   const handleOpenImport = () => {
