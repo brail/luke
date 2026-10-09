@@ -82,8 +82,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   users: {
     reason:
-      'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); heartbeat and the menu preferences are not',
-    uncovered: 7,
+      'CRUD covered by the audit/idempotency specs; approvePending by the spec on mandatory team assignment; forceLocalAccess and revokeLocalAccess by the spec on the LDAP/OIDC bypass (usersLocalAccess.integration.spec.ts); list by its search case in users.integration.spec.ts; heartbeat and the menu preferences are not',
+    uncovered: 6,
   },
   seasonCalendar: {
     reason:

@@ -329,3 +329,15 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     expect(after.tokenVersion).toBe(before.tokenVersion);
   });
 });
+
+describe('users.list — search', () => {
+  it('ignores case, like the brand, season and vendor lists', async () => {
+    const { user } = await createTestUser('viewer');
+    const lastName = `Rossi${user.id.slice(0, 6)}`;
+    await prisma.user.update({ where: { id: user.id }, data: { firstName: 'Mario', lastName } });
+
+    const found = await createCallerWithSession(sessions.admin).users.list({ search: lastName.toLowerCase() });
+
+    expect(found.users.map(u => u.id)).toContain(user.id);
+  });
+});
