@@ -126,24 +126,27 @@ describe('writeAuditLogXlsx', () => {
   });
 
   it('reads no further while the client takes nothing, and stops once it goes away', async () => {
-    let batches = 0;
+    // Counted when a read starts, not when it returns: a read already in flight when the client
+    // leaves still completes, and under load it did so after the snapshot below. Only a read that
+    // starts afterwards means the export went on.
+    let started = 0;
     const prisma = prismaWith(async () => {
+      const batch = ++started;
       await new Promise(resolve => setTimeout(resolve, 5)); // a database round trip
-      batches++;
-      return batches > 20 ? [] : manyEvents(500, i => ({
-        id: `${batches}-${i}`, targetId: crypto.randomUUID(), ip: crypto.randomUUID(),
+      return batch > 20 ? [] : manyEvents(500, i => ({
+        id: `${batch}-${i}`, targetId: crypto.randomUUID(), ip: crypto.randomUUID(),
       }));
     });
     const out = new PassThrough(); // never read: a client that has stopped downloading
 
     const written = writeAuditLogXlsx(prisma, {}, out);
     await new Promise(resolve => setTimeout(resolve, 300));
-    const readBeforeLeaving = batches;
+    const startedBeforeLeaving = started;
     out.destroy();
     await written;
 
-    expect(readBeforeLeaving).toBeLessThan(20);
-    expect(batches).toBe(readBeforeLeaving);
+    expect(startedBeforeLeaving).toBeLessThan(20);
+    expect(started).toBe(startedBeforeLeaving);
   });
 });
 
