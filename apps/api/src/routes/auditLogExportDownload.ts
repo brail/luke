@@ -11,12 +11,16 @@
 
 import { PassThrough, Readable } from 'stream';
 
-import ExcelJS from 'exceljs';
-
-import { AuditLogExportFormatSchema, getAuditActionLabel, type AuditLogFilters } from '@luke/core';
+import {
+  AuditLogExportFormatSchema,
+  getAuditActionLabel,
+  type AuditLogExportFormat,
+  type AuditLogFilters,
+} from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
+import { applyStreamingHeaderStyle, createStreamingWorkbook } from '../lib/export/xlsxStreaming';
 import { verifyAuditLogExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
@@ -24,6 +28,10 @@ import type { FastifyInstance } from 'fastify';
 
 const EXPORT_BATCH_SIZE = 500;
 const EXPORT_COLUMNS = ['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'];
+const CONTENT_TYPES: Record<AuditLogExportFormat, string> = {
+  csv: 'text/csv; charset=utf-8',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
 
 /**
  * One CSV field, always quoted. A value starting with `=`, `+`, `-`, `@`, a tab or a carriage
@@ -44,15 +52,11 @@ async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters): As
   // rows retention deletes at the bottom while a long export runs neither repeat nor skip a row.
   let last: { createdAt: Date; id: string } | undefined;
   for (;;) {
+    const after = last && {
+      OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }],
+    };
     const batch = await prisma.auditLog.findMany({
-      where: last
-        ? {
-            AND: [
-              whereClause,
-              { OR: [{ createdAt: { lt: last.createdAt } }, { createdAt: last.createdAt, id: { lt: last.id } }] },
-            ],
-          }
-        : whereClause,
+      where: after ? { AND: [whereClause, after] } : whereClause,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: EXPORT_BATCH_SIZE,
       include: { actor: { select: { firstName: true, lastName: true, username: true, email: true } } },
@@ -112,9 +116,11 @@ function drainedOrClosed(stream: PassThrough): Promise<void> {
  * needs a leading `'`. A row is added only once `out` has room, and none after it closes.
  */
 export async function writeAuditLogXlsx(prisma: PrismaClient, filters: AuditLogFilters, out: PassThrough): Promise<void> {
-  const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: out, useSharedStrings: false });
+  const workbook = createStreamingWorkbook(out, { title: 'Audit Log' });
   const sheet = workbook.addWorksheet('Audit Log', { views: [{ state: 'frozen', ySplit: 1 }] });
-  sheet.addRow(EXPORT_COLUMNS).commit();
+  const header = sheet.addRow(EXPORT_COLUMNS);
+  applyStreamingHeaderStyle(header, 'report');
+  header.commit();
   for await (const row of auditLogRows(prisma, filters)) {
     if (out.writableNeedDrain) await drainedOrClosed(out);
     if (out.destroyed) return;
@@ -150,9 +156,7 @@ export async function registerAuditLogExportDownloadRoute(
         reply,
         xlsx ?? Readable.from(generateAuditLogCsv(prisma, payload.filters)),
         {
-          'Content-Type': xlsx
-            ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            : 'text/csv; charset=utf-8',
+          'Content-Type': CONTENT_TYPES[format.data],
           'Content-Disposition': `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.${format.data}"`,
           'Cache-Control': 'private, no-store',
         },

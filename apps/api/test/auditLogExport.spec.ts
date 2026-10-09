@@ -5,6 +5,7 @@
  */
 
 import { PassThrough } from 'stream';
+import { buffer } from 'stream/consumers';
 
 import ExcelJS from 'exceljs';
 import Fastify from 'fastify';
@@ -20,9 +21,9 @@ import {
 } from '../src/routes/auditLogExportDownload';
 import { signAuditLogExportToken } from '../src/utils/downloadToken';
 
-/** A client whose audit log holds `events`; only the two calls the export makes exist. */
-function prismaWith(events: object[]): PrismaClient {
-  const findMany = vi.fn().mockResolvedValueOnce(events).mockResolvedValue([]);
+/** A client whose audit log holds `events`, or answers through `findMany`. */
+function prismaWith(events: object[] | (() => Promise<object[]>)): PrismaClient {
+  const findMany = Array.isArray(events) ? vi.fn().mockResolvedValueOnce(events).mockResolvedValue([]) : events;
   // Only the two calls the generator makes; the rest of the client is never touched.
   return { auditLog: { findMany }, user: { findMany: async () => [] } } as unknown as PrismaClient;
 }
@@ -31,6 +32,11 @@ const FORMULA_EVENT = {
   createdAt: new Date('2026-10-09T08:15:00.000Z'), actorId: null, actor: null, action: 'AUTH_LOGIN',
   targetType: '=1+1', targetId: '-1', result: 'FAILURE', ip: '@ip', metadata: { username: 'mario' },
 };
+
+/** `n` events like `FORMULA_EVENT`, each with the fields `at(i)` returns. */
+function manyEvents(n: number, at: (i: number) => object): object[] {
+  return Array.from({ length: n }, (_, i) => ({ ...FORMULA_EVENT, ...at(i) }));
+}
 
 /** The text of the first nine cells of `row`. */
 function rowText(sheet: ExcelJS.Worksheet, row: number): string[] {
@@ -81,17 +87,13 @@ describe('generateAuditLogCsv', () => {
 
   it('starts each batch after the last row read, not at an offset', async () => {
     const base = Date.parse('2026-10-09T08:00:00.000Z');
-    const fullBatch = Array.from({ length: 500 }, (_, i) => ({
-      createdAt: new Date(base - i * 1000), id: `id-${i}`, actorId: null, actor: null, action: 'AUTH_LOGIN',
-      targetType: 'User', targetId: null, result: 'SUCCESS', ip: null, metadata: null,
-    }));
-    const findMany = vi.fn().mockResolvedValueOnce(fullBatch).mockResolvedValue([]);
-    // Only the two calls the generator makes; the rest of the client is never touched.
-    const prisma = { auditLog: { findMany }, user: { findMany: async () => [] } } as unknown as PrismaClient;
+    const last = { createdAt: new Date(base - 499_000), id: 'id-499' };
+    const findMany = vi.fn()
+      .mockResolvedValueOnce(manyEvents(500, i => ({ createdAt: new Date(base - i * 1000), id: `id-${i}` })))
+      .mockResolvedValue([]);
 
-    for await (const _chunk of generateAuditLogCsv(prisma, { result: 'SUCCESS' }));
+    for await (const _chunk of generateAuditLogCsv(prismaWith(findMany), { result: 'SUCCESS' }));
 
-    const last = fullBatch[499]!;
     const second = findMany.mock.calls[1]![0];
     expect(second).not.toHaveProperty('skip');
     expect(second.where).toEqual({
@@ -106,15 +108,11 @@ describe('generateAuditLogCsv', () => {
 describe('writeAuditLogXlsx', () => {
   it('writes the CSV columns as string cells under a frozen header', async () => {
     const out = new PassThrough();
-    const chunks: Buffer[] = [];
-    out.on('data', (chunk: Buffer) => chunks.push(chunk));
-    const ended = new Promise(resolve => out.on('end', resolve));
-
+    const bytes = buffer(out);
     await writeAuditLogXlsx(prismaWith([FORMULA_EVENT]), {}, out);
-    await ended;
 
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Uint8Array.from(Buffer.concat(chunks)).buffer);
+    await workbook.xlsx.load(Uint8Array.from(await bytes).buffer);
     const sheet = workbook.getWorksheet('Audit Log')!;
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     expect(rowText(sheet, 1)).toEqual(['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP']);
@@ -126,15 +124,13 @@ describe('writeAuditLogXlsx', () => {
 
   it('reads no further while the client takes nothing, and stops once it goes away', async () => {
     let batches = 0;
-    const findMany = vi.fn(async () => {
+    const prisma = prismaWith(async () => {
       await new Promise(resolve => setTimeout(resolve, 5)); // a database round trip
       batches++;
-      return batches > 20 ? [] : Array.from({ length: 500 }, (_, i) => ({
-        ...FORMULA_EVENT, id: `${batches}-${i}`, targetId: crypto.randomUUID(), ip: crypto.randomUUID(),
+      return batches > 20 ? [] : manyEvents(500, i => ({
+        id: `${batches}-${i}`, targetId: crypto.randomUUID(), ip: crypto.randomUUID(),
       }));
     });
-    // Only the two calls the generator makes; the rest of the client is never touched.
-    const prisma = { auditLog: { findMany }, user: { findMany: async () => [] } } as unknown as PrismaClient;
     const out = new PassThrough(); // never read: a client that has stopped downloading
 
     const written = writeAuditLogXlsx(prisma, {}, out);

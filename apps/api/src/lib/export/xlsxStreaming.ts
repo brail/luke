@@ -1,4 +1,5 @@
-import { PassThrough } from 'stream';
+import { PassThrough, type Writable } from 'stream';
+import { buffer } from 'stream/consumers';
 
 import ExcelJS from 'exceljs';
 
@@ -28,31 +29,15 @@ export const XLSX_HEADER_STYLES = {
 } as const;
 
 /**
- * Creates a streaming ExcelJS workbook backed by a PassThrough stream.
- * The workbook writes to the stream as rows are committed; the accumulated
- * bytes are resolved once the stream ends.
+ * Creates a streaming ExcelJS workbook that writes into `stream` as rows are committed, carrying
+ * the document metadata every export sets.
  *
+ * @param stream - Destination of the XLSX bytes (a response, or a PassThrough to collect them).
  * @param meta - Document metadata applied to the workbook properties.
- * @returns `wb` — the workbook writer to add sheets to;
- *   `bufferPromise` — resolves with the complete XLSX buffer after `wb.commit()`.
  */
-export function createStreamingBuffer(meta: XlsxMeta): {
-  wb: ExcelJS.stream.xlsx.WorkbookWriter;
-  bufferPromise: Promise<Buffer>;
-} {
-  const pass = new PassThrough();
-
-  const bufferPromise = new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    pass.on('data', (chunk: Buffer | string) =>
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
-    );
-    pass.on('end', () => resolve(Buffer.concat(chunks)));
-    pass.on('error', reject);
-  });
-
+export function createStreamingWorkbook(stream: Writable, meta: XlsxMeta): ExcelJS.stream.xlsx.WorkbookWriter {
   const wb = new ExcelJS.stream.xlsx.WorkbookWriter({
-    stream: pass,
+    stream,
     useStyles: true,
     useSharedStrings: false,
   });
@@ -64,7 +49,22 @@ export function createStreamingBuffer(meta: XlsxMeta): {
   wb.created        = new Date();
   wb.modified       = new Date();
 
-  return { wb, bufferPromise };
+  return wb;
+}
+
+/**
+ * Creates a streaming workbook whose bytes are collected in memory.
+ *
+ * @param meta - Document metadata applied to the workbook properties.
+ * @returns `wb` — the workbook writer to add sheets to;
+ *   `bufferPromise` — resolves with the complete XLSX buffer after `wb.commit()`.
+ */
+export function createStreamingBuffer(meta: XlsxMeta): {
+  wb: ExcelJS.stream.xlsx.WorkbookWriter;
+  bufferPromise: Promise<Buffer>;
+} {
+  const pass = new PassThrough();
+  return { wb: createStreamingWorkbook(pass, meta), bufferPromise: buffer(pass) };
 }
 
 /**
