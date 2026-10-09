@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Calculator } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
@@ -51,16 +51,22 @@ interface ParameterSetDialogProps {
 /**
  * Dialog for creating or editing a pricing parameter set.
  *
- * All monetary fields (duty, exchange rate, costs) are validated by
- * `PricingParameterSetInputSchema`. Currencies are limited to `PRICING_CURRENCIES`.
- * A live preview computes the effective landed cost for a sample supplier price.
+ * All fields are validated by `PricingParameterSetInputSchema`. Currencies are limited to
+ * `PRICING_CURRENCIES`. The company multiplier is computed live from the optimal margin.
+ *
+ * The form is mounted once per opening and reads `initialData` only then: a parent re-render (the
+ * session refetch when the tab regains focus) passes an equal but new object, and must not reset
+ * what is being typed.
  *
  * @param initialData - Pre-filled values in edit mode.
  * @param onSubmit - Called with validated data and optional makeDefault flag.
  * @param mode - Controls dialog title and whether `isDefault` toggle is shown.
  */
-export function ParameterSetDialog({
-  open,
+export function ParameterSetDialog(props: ParameterSetDialogProps) {
+  return props.open ? <ParameterSetForm {...props} /> : null;
+}
+
+function ParameterSetForm({
   onOpenChange,
   initialData,
   onSubmit,
@@ -77,19 +83,6 @@ export function ParameterSetDialog({
     },
   });
 
-  // Reset form and makeDefault state when dialog opens
-  useEffect(() => {
-    if (open) {
-      setMakeDefault(initialData?.isDefault ?? false);
-      form.reset(
-        initialData ?? {
-          name: '',
-          countryCode: '',
-        }
-      );
-    }
-  }, [open, initialData, form]);
-
   // Compute companyMultiplier live, over the range the schema accepts (0 included, as the panel
   // shows it); 0 only while the margin being typed is outside it.
   const optimalMargin = form.watch('optimalMargin');
@@ -99,7 +92,7 @@ export function ParameterSetDialog({
       : 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
