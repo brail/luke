@@ -34,8 +34,9 @@
 | [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Accepted |
 | [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Accepted |
 | [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) | Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets | Accepted |
-| [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Accepted |
+| [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Superseded by [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) |
 | [033](033-release-identity-versioning-contract-and-release-trains.md) | Release Identity, Versioning Contract and Release Trains | Accepted |
+| [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) | Outbound Boundary for Sensitive Data and Masked Configuration Reads | Accepted |
 
 _Last updated: 2026-10-05_
 <!-- luke-docs:end:adr-index -->

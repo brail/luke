@@ -1,16 +1,16 @@
-# ADR-032 — Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values
+# ADR-034 — Outbound Boundary for Sensitive Data and Masked Configuration Reads
 
 ## Status
 
-Superseded by [034 — Outbound Boundary for Sensitive Data and Masked Configuration Reads](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md)
+Accepted
 
 ## Context
 
-[ADR-023](023-sensitive-data-outbound-boundary.md) replaced ADR-004's unconditional `select` rule with the boundary Luke actually enforces: a small set of secret and key fields must never leave the process, and two fields are returned deliberately behind stated gates. Its decision still holds, but three of its statements about those gates no longer describe the code.
+[ADR-032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) restated the outbound boundary Luke enforces and the gates behind which two fields leave the process deliberately. One of its governed exceptions no longer describes the code: `config.getMultiple` did not mask, returning an encrypted value as stored, and had a decrypting mode gated by `config:update`.
 
-Reading a decrypted configuration value was gated by an inline `role !== 'admin'` comparison; it is now gated by the `config:update` permission, and a refusal is logged like every other permission refusal ([ADR-029](029-resource-action-permissions-one-builder-logged-refusals.md)). That changes a condition of one of ADR-023's governed exceptions, so under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md) it is recorded by a superseding ADR rather than an erratum. Separately, `config.get` was removed, leaving four configuration procedures that return stored values, and `storage.getConfig` stopped returning the S3 secret key.
+`config.getMultiple` now masks an encrypted value as `config.list` does and reports whether each requested key is stored; its decrypting mode had no caller and was removed. That changes a condition of one of ADR-032's governed exceptions, so under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md) it is recorded by a superseding ADR rather than an erratum.
 
-This record supersedes ADR-023 and restates its decision as it holds today. ADR-023 remains as the historical record, including the query census its context reported when it was accepted.
+This record supersedes ADR-032 and restates its decision as it holds today. ADR-032 remains as the historical record.
 
 ## Decision
 
@@ -33,7 +33,7 @@ An explicit `select` narrows a query to what the caller needs and makes review c
 - **`AuditLog.metadata`** is returned verbatim by `auditLog.list`, which requires `audit:read_all`. It is filtered on write rather than on read, and the filter is allowlist-first: `sanitizeMetadata` consults `FREE_TEXT_KEYS`, `MAP_VALUED_KEYS` and then `SAFE_KEY_LIST` before the `/password|token|secret|key|auth|credential|bind/i` pattern, so a key the allowlist vouches for is stored even when it matches the pattern — `key`, `configKey`, `hasBindPassword`, `passwordUpdated` and `secretKeyUpdated` among them. An unlisted key holding a scalar is redacted; one holding an object or an array is walked, and its children are filtered by their own names. What the allowlist admits is a deliberate decision recorded there, and it is bound to a type: a metadata key outside it fails type checking where metadata is written, and outside production it is refused at run time rather than redacted.
 - **`AppConfig.value`** is returned by four procedures of the config router. **Reading a decrypted value requires `config:update`, a stronger permission than the `config:read` that reads stored and masked values.**
   - `config.viewValue` requires `config:read` and masks an encrypted value as `[ENCRYPTED]`; its raw mode requires `config:update` and writes an audit row.
-  - `config.getMultiple` requires `config:read` and does not mask: without `decrypt` it returns the stored string as it stands, which for an encrypted key is the `iv:authTag:ciphertext` blob. With `decrypt` it requires `config:update`.
+  - `config.getMultiple` requires `config:read` and masks: for each requested key, in the order asked, it returns whether the key is stored (`found`) and its stored value, or `null` for an encrypted key, as `config.list` does. It has no decrypting mode.
   - `config.list` requires `config:read` and returns `valuePreview` — `null` for an encrypted key, the stored value in full for every other, despite a name that implies a truncation.
   - `config.exportJson` requires `config:update` and never decrypts: an encrypted key exports as `[ENCRYPTED]`, the rest in full when `includeValues` is set and as `null` otherwise.
 
@@ -59,4 +59,5 @@ An explicit `select` narrows a query to what the caller needs and makes review c
 These deviations exist when this record is accepted. They are recorded as follow-ups; this record does not endorse them.
 
 - **A secret stored with `isEncrypted: false` is read back in plaintext** by any holder of `config:read`, because masking is driven by that flag and encryption is chosen by the caller rather than declared by the registry ([ADR-018](018-runtime-configuration-and-bootstrap-environment.md)). It is a property of how values are written, not of the outbound boundary.
+- **Some routers read a configuration value without decrypting it** and return it to the client (the Google settings) or use it (the local storage path). A value stored encrypted under one of those keys would come back as stored rather than masked or decrypted. Tracked as a follow-up.
 - Several write paths return an unprojected row: `sectionAccess.set` through an `upsert`, and `company.profile.get` and `company.profile.update` through a `create` and an `upsert` on `CompanyProfile`. No guarded field is involved in any of them.
