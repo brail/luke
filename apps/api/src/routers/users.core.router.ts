@@ -74,12 +74,13 @@ export const usersCoreRouter = router({
 
       const where: Prisma.UserWhereInput = { pendingApproval: false };
 
-      if (search && search.trim()) {
+      const term = search?.trim();
+      if (term) {
         where.OR = [
-          { email: { contains: search, mode: 'insensitive' } },
-          { username: { contains: search, mode: 'insensitive' } },
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
+          { email: { contains: term, mode: 'insensitive' } },
+          { username: { contains: term, mode: 'insensitive' } },
+          { firstName: { contains: term, mode: 'insensitive' } },
+          { lastName: { contains: term, mode: 'insensitive' } },
         ];
       }
 

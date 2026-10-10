@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { VendorClosureUpsertInputSchema } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -196,12 +197,12 @@ export const holidaysRouter = router({
       year: z.number().int().min(2020).max(2040).optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const where: Record<string, unknown> = {};
-      if (input.countryCodes?.length) where['countryCode'] = { in: input.countryCodes };
+      const where: Prisma.HolidayWhereInput = {};
+      if (input.countryCodes?.length) where.countryCode = { in: input.countryCodes };
       if (input.year) {
         // Overlap, not containment: a holiday range from late December to early January belongs to both years.
-        where['startDate'] = { lte: new Date(`${input.year}-12-31`) };
-        where['endDate']   = { gte: new Date(`${input.year}-01-01`) };
+        where.startDate = { lte: new Date(`${input.year}-12-31`) };
+        where.endDate = { gte: new Date(`${input.year}-01-01`) };
       }
       return ctx.prisma.holiday.findMany({
         where,

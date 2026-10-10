@@ -336,8 +336,10 @@ describe('users.list — search', () => {
     const lastName = `Rossi${user.id.slice(0, 6)}`;
     await prisma.user.update({ where: { id: user.id }, data: { firstName: 'Mario', lastName } });
 
-    const found = await createCallerWithSession(sessions.admin).users.list({ search: lastName.toLowerCase() });
+    const list = createCallerWithSession(sessions.admin).users.list;
 
-    expect(found.users.map(u => u.id)).toContain(user.id);
+    expect((await list({ search: lastName.toLowerCase() })).users.map(u => u.id)).toContain(user.id);
+    // A pasted name often carries a space at the end.
+    expect((await list({ search: `${lastName} ` })).users.map(u => u.id)).toContain(user.id);
   });
 });
