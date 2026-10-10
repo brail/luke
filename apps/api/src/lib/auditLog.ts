@@ -613,8 +613,7 @@ export function buildAuditLogWhere(filters: AuditLogFilters, timeZone: string): 
       ? {
           createdAt: {
             ...(dateFrom ? { gte: startOfDayIn(dateFrom, timeZone) } : {}),
-            // Up to the start of the next day; the last day the helpers represent has none, so no bound.
-            ...(dateTo && dateTo < '9999-12-31' ? { lt: startOfDayIn(addCalendarDays(dateTo, 1), timeZone) } : {}),
+            ...(dateTo ? { lt: startOfDayIn(addCalendarDays(dateTo, 1), timeZone) } : {}),
           },
         }
       : {}),

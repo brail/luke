@@ -45,7 +45,7 @@ export function TimezoneUpdateDialog() {
   const { mutate: updateTimezone, isPending: isUpdatingTimezone } =
     useStandardMutation({
       mutateFn: updateTimezoneMutation.mutateAsync,
-      invalidate: refresh.me,
+      invalidate: refresh.timeZone,
       onSuccessMessage: 'Fuso orario aggiornato con successo',
       onErrorMessage: 'Errore aggiornamento',
       onSuccess: () => setOpen(false),

@@ -2,13 +2,10 @@
  * @luke/core - Core package of the Luke system
  *
  * This package provides:
- * - Zod schemas for data validation (User, AppConfig)
+ * - Zod schemas for data validation, one module per domain under `schemas/`
  * - RBAC system for role and permissions management
  * - Utility functions for dates and money management
  * - Pricing functions and margin calculation
- *
- * @version 0.1.0
- * @author Luke Team
  */
 
 // Re-export schemas
@@ -38,6 +35,7 @@ export * from './schemas/maintenanceMode.js';
 export * from './schemas/feedback.js';
 export * from './schemas/confirmation.js';
 export * from './schemas/reason.js';
+export * from './schemas/dates.js';
 export * from './schemas/password.js';
 export * from './schemas/google.js';
 

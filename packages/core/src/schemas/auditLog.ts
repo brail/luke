@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 
-import { CalendarDateSchema } from '../utils/zod.js';
+import { CalendarDateSchema } from './dates.js';
 
 /** Entity types that expose a "last modified by" lookup via `auditLog.getLastChange`. Restricting this to an explicit enum doubles as the authorization allowlist — an unmapped `targetType` is rejected at the input-parsing boundary before any permission check runs. */
 export const AuditLogLastChangeTargetTypeSchema = z.enum([

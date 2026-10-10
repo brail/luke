@@ -28,7 +28,9 @@ import { streamRawResponse } from '../utils/streamResponse';
 import type { FastifyInstance } from 'fastify';
 
 const EXPORT_BATCH_SIZE = 500;
-const EXPORT_COLUMNS = ['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'];
+// The instant is written in UTC, as audit trails are exported elsewhere: the file is compared across
+// zones and systems, and the header says so beside the day in the file name, which is the reader's.
+const EXPORT_COLUMNS = ['Data/Ora (UTC)', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP'];
 const CONTENT_TYPES: Record<AuditLogExportFormat, string> = {
   csv: 'text/csv; charset=utf-8',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

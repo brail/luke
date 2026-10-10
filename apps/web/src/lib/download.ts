@@ -17,11 +17,12 @@ export function triggerBlobDownload(blob: Blob, filename: string): void {
 /**
  * Triggers a native browser download for a plain URL (e.g. a signed download link) —
  * no `fetch`/`Blob` involved, so the file never gets buffered into page memory first.
+ * Without `filename`, the name the response gives (`Content-Disposition`) is kept.
  */
-export function triggerUrlDownload(url: string, filename: string): void {
+export function triggerUrlDownload(url: string, filename?: string): void {
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = filename ?? '';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

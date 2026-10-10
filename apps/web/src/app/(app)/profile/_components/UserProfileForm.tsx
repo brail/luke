@@ -71,7 +71,8 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
   // Standard mutations
   const { mutate: updateProfile } = useStandardMutation({
     mutateFn: updateProfileMutation.mutateAsync,
-    invalidate: refresh.me,
+    // The profile carries the time zone, which some server reads depend on (`refresh.timeZone`).
+    invalidate: refresh.timeZone,
     onSuccessMessage: 'Profilo aggiornato con successo',
     onErrorMessage: "Errore durante l'aggiornamento del profilo",
   });

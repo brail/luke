@@ -4,7 +4,13 @@ import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogExportFormat, type AuditLogResult } from '@luke/core';
+import {
+  buildAuditLogExportUrl,
+  getAuditActionLabel,
+  CalendarDateSchema,
+  type AuditLogExportFormat,
+  type AuditLogResult,
+} from '@luke/core';
 
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -104,13 +110,14 @@ export default function AuditLogPage() {
   }, [targetTypeInput]);
 
   // The days go as picked: the server reads them in the profile's zone, the one the rows are shown in.
+  // One the server would refuse is left out, as the date field holds one while its year is typed.
   const apiFilters = {
     actorId: filters.actorId || undefined,
     action: filters.action.trim() || undefined,
     targetType: filters.targetType.trim() || undefined,
     result: filters.result || undefined,
-    dateFrom: filters.dateFrom || undefined,
-    dateTo: filters.dateTo || undefined,
+    dateFrom: CalendarDateSchema.safeParse(filters.dateFrom).data,
+    dateTo: CalendarDateSchema.safeParse(filters.dateTo).data,
   };
 
   const { data, isLoading } = trpc.auditLog.list.useQuery(
@@ -127,8 +134,8 @@ export default function AuditLogPage() {
   const handleDownload = async (format: AuditLogExportFormat) => {
     try {
       const { token } = await getExportLinkMutation.mutateAsync(apiFilters);
-      // No name of our own: the route names the file after the day in the profile's zone.
-      triggerUrlDownload(buildAuditLogExportUrl(format, token), '');
+      // The route names the file after the day in the profile's zone.
+      triggerUrlDownload(buildAuditLogExportUrl(format, token));
     } catch {
       toast.error('Download audit log fallito');
     }

@@ -133,11 +133,12 @@ const { mutate: saveConfig, isPending } = useStandardMutation({
 `onSuccess` and `onError` callbacks are available for logic that goes beyond the
 toast, such as closing a dialog or navigating.
 
-`useRefresh()` provides four helpers:
+`useRefresh()` provides these helpers:
 
 | Helper | Invalidates |
 |---|---|
 | `me` | the current user's profile |
+| `timeZone` | every cached query: a change of the user's time zone (profile or browser prompt) changes what some server reads return |
 | `users` | the active and pending user lists |
 | `storageConfig` | the storage configuration |
 | `company` | the company functions and teams |

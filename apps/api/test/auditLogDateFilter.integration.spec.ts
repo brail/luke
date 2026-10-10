@@ -41,16 +41,13 @@ describe('auditLog date filter — whole days in the reader zone', () => {
     expect(await instants('2026-10-09', '2026-10-09')).toEqual(['2026-10-08T11:00:00.000Z', '2026-10-09T10:59:59.999Z']);
   });
 
-  it('takes the last day the calendar holds as an open end', async () => {
-    expect(await instants('2026-10-09', '9999-12-31')).toEqual([
-      '2026-10-08T11:00:00.000Z',
-      '2026-10-09T10:59:59.999Z',
-      '2026-10-09T11:00:00.000Z',
-    ]);
+  it('ends a range given only its last day where the next day starts', async () => {
+    expect(await instants(undefined, '2026-10-08')).toEqual(['2026-10-08T10:59:59.999Z']);
   });
 
-  it('refuses a day that does not exist', async () => {
+  it('refuses a day that does not exist, or one with no day after it', async () => {
     await expect(instants('2026-02-30')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    await expect(instants('2026-10-09', '9999-12-31')).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
   it('signs the reader zone into the export link', async () => {

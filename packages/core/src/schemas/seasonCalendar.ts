@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
-import { CalendarDateSchema } from '../utils/zod.js';
-
+import { CalendarDateSchema, CalendarInstantSchema } from './dates.js';
 import { MandatoryReasonSchema } from './reason.js';
 
 /** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
- * open-day period within a season, used in working-day calculations. */
+ * open-day period within a season, shown while events are placed; the working-day math does not
+ * read it (`docs/country-aware-working-days.md`). */
 export const VendorClosureUpsertInputSchema = z.object({
   id:          z.string().uuid().optional(),
   vendorId:    z.string().uuid(),
@@ -18,13 +18,6 @@ export const VendorClosureUpsertInputSchema = z.object({
   notes:       z.string().max(500, 'Massimo 500 caratteri').nullable().optional(),
 });
 export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSchema>;
-
-/**
- * An event instant as the API accepts it: ISO 8601 (UTC, four-digit year) within 1900–9999, the
- * years the calendar-date helpers support. A year typed as "26" would otherwise be stored as year 26
- * and make every deadline evaluation on the event throw.
- */
-const calendarInstantSchema = z.string().datetime().refine(value => value >= '1900', 'Anno fuori intervallo (1900–9999)');
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
@@ -48,9 +41,9 @@ export const CalendarEventBaseSchema = z.object({
   phaseId:                      z.string().uuid().optional().nullable(),
   calendarDaysRelevance:        z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                        z.string().min(1).max(200),
-  startAt:                      calendarInstantSchema,
+  startAt:                      CalendarInstantSchema,
   description:                  z.string().max(2000).optional(),
-  endAt:                        calendarInstantSchema.optional(),
+  endAt:                        CalendarInstantSchema.optional(),
   allDay:                       z.boolean().default(false),
   publishExternally:            z.boolean().default(true),
   templateItemId:               z.string().uuid().optional(),
@@ -98,8 +91,8 @@ export type EventDatesExpected = z.infer<typeof EventDatesExpectedSchema>;
  */
 export const MilestoneRescheduleInputSchema = z.object({
   id: z.string().uuid(),
-  startAt: calendarInstantSchema,
-  endAt: calendarInstantSchema.optional().nullable(),
+  startAt: CalendarInstantSchema,
+  endAt: CalendarInstantSchema.optional().nullable(),
   allDay: z.boolean().optional(),
   reason: MandatoryReasonSchema,
   expected: EventDatesExpectedSchema,
@@ -126,7 +119,7 @@ export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
 export const ApplyTemplateInputSchema = z.object({
   planningGroupId: z.string().uuid(),
   templateId:      z.string().uuid(),
-  anchorDate:      calendarInstantSchema.optional(),
+  anchorDate:      CalendarInstantSchema.optional(),
   force:           z.boolean().default(false),
 });
 export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;

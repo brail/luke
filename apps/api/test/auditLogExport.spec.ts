@@ -11,6 +11,7 @@ import ExcelJS from 'exceljs';
 import Fastify from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 
+import { AuditLogFiltersSchema } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import {
@@ -85,6 +86,18 @@ describe('generateAuditLogCsv', () => {
     ]);
   });
 
+  it("reads the filter's days in the zone the link was made for", async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const filters = AuditLogFiltersSchema.parse({ dateFrom: '2026-10-09', dateTo: '2026-10-09' });
+
+    for await (const _chunk of generateAuditLogCsv(prismaWith(findMany), filters, 'Pacific/Auckland'));
+
+    // 9 October in Auckland (UTC+13 in daylight time) runs from 8 Oct 11:00Z to 9 Oct 11:00Z.
+    expect(findMany.mock.calls[0]![0].where).toEqual({
+      createdAt: { gte: new Date('2026-10-08T11:00:00.000Z'), lt: new Date('2026-10-09T11:00:00.000Z') },
+    });
+  });
+
   it('starts each batch after the last row read, not at an offset', async () => {
     const base = Date.parse('2026-10-09T08:00:00.000Z');
     const last = { createdAt: new Date(base - 499_000), id: 'id-499' };
@@ -118,7 +131,7 @@ describe('writeAuditLogXlsx', () => {
     await workbook.xlsx.load(Uint8Array.from(await bytes).buffer);
     const sheet = workbook.getWorksheet('Audit Log')!;
     expect(sheet.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
-    expect(rowText(sheet, 1)).toEqual(['Data/Ora', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP']);
+    expect(rowText(sheet, 1)).toEqual(['Data/Ora (UTC)', 'Autore', 'Email', 'Attribuzione', 'Azione', 'Entità', 'ID Entità', 'Esito', 'IP']);
     expect(rowText(sheet, 2)).toEqual([
       '2026-10-09T08:15:00.000Z', 'mario', '', 'soggetto', 'Accesso effettuato', '=1+1', '-1', 'FAILURE', '@ip',
     ]);
