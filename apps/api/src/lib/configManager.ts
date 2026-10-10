@@ -562,7 +562,7 @@ export async function listConfigsPaged(
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
     isEncrypted: item.isEncrypted,
-    valuePreview: maskedValue(item), // Always pass the full value
+    valuePreview: maskedValue(item),
     updatedAt: item.updatedAt.toISOString(),
   }));
 

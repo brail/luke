@@ -144,7 +144,8 @@ export function ConfigImportDialog({
 
     const rows = file.data.configs.map(classifyRow);
 
-    const newKeys = rows.filter(r => r.status === 'new').map(r => r.key);
+    // Each registry key once: getMultiple takes no more keys than the registry declares.
+    const newKeys = [...new Set(rows.filter(r => r.status === 'new').map(r => r.key))];
     const existingKeys = new Set<string>();
     if (newKeys.length > 0) {
       try {
