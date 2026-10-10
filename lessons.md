@@ -204,6 +204,19 @@ invisible on an already-populated database:
    a pristine database (`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`).
    A development DB accumulates state that masks ordering dependencies.
 
+### A new integration test that calls a procedure needs the full suite before the push
+
+`apps/api/test/procedure-coverage.ts` declares, per router, how many tRPC procedures no integration
+spec invokes, and the gate fails when the measured count differs. It is checked only on a full run: a
+partial one (`vitest run --config vitest.integration.config.mts <spec>`) prints `[procedure-coverage]
+partial run … gate not applied`. A test added to `configDefaults.integration.spec.ts` started calling
+`maintenance.backup.getScheduleConfig`; the full suite had been run before the test was written, the
+spec alone after, and CI failed on "9 uninvoked procedures declared, 8 measured" (2026-10-10, `cd3e3ae5`).
+
+**Rule:** when a unit adds, removes or changes which procedures an integration spec calls, the last gate
+before the commit is a full `pnpm test:integration:local` (dev stopped); a changed count is updated with
+its reason in `procedure-coverage.ts`, in the same commit.
+
 ## CI / Security Gates
 
 ### A `schedule` job only runs if the workflow exists on the default branch
