@@ -19,6 +19,7 @@ import {
   validateConfigValue,
   APP_CONFIG_DEFAULTS,
   type AppConfigKeyWithDefault,
+  type BackupScheduleConfig,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
@@ -26,7 +27,7 @@ import {
   Roles,
 } from '@luke/core';
 import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
-import type { BackupScope, Prisma, PrismaClient } from '@luke/db';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import {
   countRecoveryCapable,
@@ -380,10 +381,8 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
     raw,
     key,
     // The default is declared in the string form AppConfig stores, and a test proves every entry
-    // parses; this is the same schema that test uses. Parsed eagerly, so a stored row makes it
-    // wasted work — a Zod parse of a short literal, against a query, on paths that run once per
-    // provider init or per settings-page load. Making it lazy costs either a duplicate of
-    // `parseConfigOrDefault`'s warning branch or a thunk parameter its two other callers do not want.
+    // parses; this is the same schema that test uses. Parsed eagerly: with a stored row it is a
+    // wasted Zod parse of a short literal, next to the query this read already makes.
     parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
   );
 }
@@ -639,16 +638,6 @@ export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
 }
 
 /**
- * Reads the minimum number of completed backups the retention sweep must always keep,
- * even if they're past their retention window.
- *
- * @returns Minimum backup count to retain. Defaults to 3; invalid values fall back to the default.
- */
-export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number> {
-  return getConfigOrDefault(prisma, 'backup.retentionMinCount');
-}
-
-/**
  * Reads how many days a non-critical audit log row stays before it's eligible for retention sweep.
  *
  * @returns Retention window in days. Defaults to 365; invalid values fall back to the default.
@@ -687,16 +676,6 @@ export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise
   return getConfigOrDefault(prisma, 'notification.dedupRetentionDays');
 }
 
-/** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
-export interface BackupScheduleSettings {
-  enabled: boolean;
-  dailyTime: string;
-  scope: BackupScope;
-  retentionDays: number;
-  retentionMinCount: number;
-  notifyOnFailure: boolean;
-}
-
 /**
  * Parses a raw config value through its `AppConfigRegistry` Zod schema, falling back to
  * `fallback` if the key is unset or the stored value no longer validates.
@@ -722,29 +701,21 @@ function parseConfigOrDefault<K extends AppConfigKey>(
  * Reads the automatic-backup schedule settings — single source of truth shared by the
  * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
  */
-export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
-  const [enabled, dailyTimeRaw, scopeRaw, notifyOnFailure, retentionDays, retentionMinCount] =
+export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleConfig> {
+  const [enabled, dailyTime, scope, notifyOnFailure, retentionDays, retentionMinCount] =
     await Promise.all([
       getConfigOrDefault(prisma, 'backup.schedule.enabled'),
-      getConfig(prisma, 'backup.schedule.dailyTime', false),
-      getConfig(prisma, 'backup.schedule.scope', false),
+      getConfigOrDefault(prisma, 'backup.schedule.dailyTime'),
+      getConfigOrDefault(prisma, 'backup.schedule.scope'),
       getConfigOrDefault(prisma, 'backup.notifyOnFailure'),
-      getBackupRetentionDays(prisma),
-      getBackupRetentionMinCount(prisma),
+      getConfigOrDefault(prisma, 'backup.retentionDays'),
+      getConfigOrDefault(prisma, 'backup.retentionMinCount'),
     ]);
 
   return {
-    // All six go through the registry schema. The two booleans used to be compared by hand
-    // against the literal strings, working around `z.coerce.boolean()` treating every non-empty
-    // string — `"false"` included — as true; `booleanConfigSchema` parses the two words, so the
-    // workaround outlived the footgun it was written for.
-    //
-    // Their fallbacks come from `APP_CONFIG_DEFAULTS` rather than being written here: a literal
-    // `false` in this file is a second copy of a fact the registry already states.
-    // `dailyTime`/`scope` keep theirs inline — those two keys have no declared default.
     enabled,
-    dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
-    scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
+    dailyTime,
+    scope,
     retentionDays,
     retentionMinCount,
     notifyOnFailure,

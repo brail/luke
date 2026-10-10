@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import { BackupScheduleConfigSchema, BackupScopeSchema } from './backup.js';
 import { TimeZoneSchema, WallTimeSchema } from './dates.js';
 import { LDAP_STRATEGIES } from './ldap.js';
 import { smtpFromSchema } from './mail.js';
@@ -15,8 +16,7 @@ import { sectionAccessDefaultsSchema } from './rbac.js';
  * `z.coerce.boolean()` follows JavaScript truthiness, so every non-empty string is `true` — the
  * literal `"false"` included. A setting declared that way can be switched on and never off, and
  * the failure is silent: the value is in the database, the admin sees it, and nothing applies it.
- * `configManager.getBackupScheduleSettings` already sidesteps this with a hand-written string
- * comparison; parsing the two words here means no reader has to know.
+ * Parsing the two words here means no reader has to know.
  */
 const booleanConfigSchema = z.enum(['true', 'false']).transform(v => v === 'true');
 
@@ -193,9 +193,9 @@ export const AppConfigRegistry = {
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
   'backup.schedule.enabled':        booleanConfigSchema,
   'backup.schedule.dailyTime':      WallTimeSchema, // wall time in app.defaultTimezone
-  'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
-  'backup.retentionDays':           z.coerce.number().int().min(1).max(3650),
-  'backup.retentionMinCount':       z.coerce.number().int().min(0).max(1000),
+  'backup.schedule.scope':          BackupScopeSchema,
+  'backup.retentionDays':           z.coerce.number().pipe(BackupScheduleConfigSchema.shape.retentionDays),
+  'backup.retentionMinCount':       z.coerce.number().pipe(BackupScheduleConfigSchema.shape.retentionMinCount),
   'backup.target.bucket':           z.string().min(1),
   'backup.notifyOnFailure':         booleanConfigSchema,
 
@@ -260,10 +260,12 @@ export const APP_CONFIG_DEFAULTS = {
 
   'integrations.google.calendarSync.enabled': 'false',
 
-  'backup.schedule.enabled':  'false',
-  'backup.notifyOnFailure':   'true',
-  'backup.retentionDays':     '30',
-  'backup.retentionMinCount': '3',
+  'backup.schedule.enabled':   'false',
+  'backup.schedule.dailyTime': '03:00',
+  'backup.schedule.scope':     'DB',
+  'backup.notifyOnFailure':    'true',
+  'backup.retentionDays':      '30',
+  'backup.retentionMinCount':  '3',
 
   'security.tokenVersionCacheTTL': '60000',
   'editLock.ttlMs':                '900000',

@@ -126,4 +126,23 @@ describe('AppConfig defaults', () => {
       await expect(getStorageProvider(testPrisma)).resolves.toBeDefined();
     });
   });
+
+  describe('backup schedule', () => {
+    it('reports the declared defaults when nothing is stored', async () => {
+      const caller = await createCallerAs('admin');
+      expect(await caller.maintenance.backup.getScheduleConfig()).toEqual({
+        enabled: false, dailyTime: '03:00', scope: 'DB', retentionDays: 30, retentionMinCount: 3, notifyOnFailure: true,
+      });
+    });
+
+    it('falls back to the declared default for a stored value the registry refuses', async () => {
+      // Written straight to the table: `saveConfig` refuses a value outside the registry.
+      await testPrisma.appConfig.createMany({ data: [
+        { key: 'backup.schedule.dailyTime', value: '25:00', isEncrypted: false },
+        { key: 'backup.schedule.scope', value: 'EVERYTHING', isEncrypted: false },
+      ] });
+      const caller = await createCallerAs('admin');
+      expect(await caller.maintenance.backup.getScheduleConfig()).toMatchObject({ dailyTime: '03:00', scope: 'DB' });
+    });
+  });
 });
