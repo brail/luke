@@ -25,7 +25,8 @@ vi.mock('../../../lib/trpc', () => ({
   trpc: {
     useUtils: () =>
       Object.assign(h.utils, {
-        config: { getMultiple: { fetch: h.fetchExisting }, invalidate: h.invalidate },
+        client: { config: { getMultiple: { query: h.fetchExisting } } },
+        config: { invalidate: h.invalidate },
       }),
     config: { importJson: { useMutation: () => ({ mutateAsync: h.importMutate }) } },
   },
@@ -103,4 +104,18 @@ test('the preview names why a row is skipped, and a malformed row does not rejec
   await expect.element(screen.getByText(/Valore cifrato: l'export non lo contiene/)).toBeVisible();
   await expect.element(screen.getByText('riga 2')).toBeVisible();
   await expect.element(screen.getByText('0 configurazioni da importare')).toBeVisible();
+});
+
+test('a key the server stores is an update, one it does not is new', async () => {
+  h.fetchExisting.mockResolvedValue([
+    { key: 'app.name', value: 'Luke', found: true },
+    { key: 'app.baseUrl', value: null, found: false },
+  ]);
+  const screen = await selectFile([
+    { key: 'app.name', value: 'Luke', encrypt: false },
+    { key: 'app.baseUrl', value: 'https://luke.example.test', encrypt: false },
+  ]);
+
+  await expect.element(screen.getByText('Aggiorna', { exact: true })).toBeVisible();
+  await expect.element(screen.getByText('Nuova', { exact: true })).toBeVisible();
 });

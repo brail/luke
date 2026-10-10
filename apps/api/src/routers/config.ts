@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
+  AppConfigRegistry,
   CONFIG_ROUTER_KEY_REGEX,
   CONFIG_ROUTER_PREFIXES,
   CONFIG_SECRET_PLACEHOLDER,
@@ -20,6 +21,7 @@ import {
 import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
+  getConfigsMasked,
   listConfigsPaged,
   deleteConfig,
   decryptValue,
@@ -452,23 +454,13 @@ export const configRouter = router({
     .use(requirePermission('config:read'))
     .input(
       z.object({
-        keys: z.array(
-          z.string().min(1, 'Chiave configurazione non può essere vuota')
-        ),
+        // No caller needs more keys than the registry declares: the import dialog sends only those.
+        keys: z
+          .array(z.string().min(1, 'Chiave configurazione non può essere vuota'))
+          .max(Object.keys(AppConfigRegistry).length),
       })
     )
-    .query(async ({ input, ctx }) => {
-      // One read: the rows answer existence and encryption together, so no write can land between.
-      const rows = await ctx.prisma.appConfig.findMany({
-        where: { key: { in: input.keys } },
-        select: { key: true, value: true, isEncrypted: true },
-      });
-      const stored = new Map(rows.map(row => [row.key, row]));
-      return input.keys.map(key => {
-        const row = stored.get(key);
-        return { key, value: row && !row.isEncrypted ? row.value : null, found: row !== undefined };
-      });
-    }),
+    .query(({ input, ctx }) => getConfigsMasked(ctx.prisma, input.keys)),
 
   /**
    * Upserts multiple AppConfig entries in one call; returns per-key success/error results.

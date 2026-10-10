@@ -423,6 +423,31 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
   }
 }
 
+/** A stored value as the config router hands it out: an encrypted one is never decrypted, only `null`. */
+function maskedValue(row: { value: string; isEncrypted: boolean }): string | null {
+  return row.isEncrypted ? null : row.value;
+}
+
+/**
+ * The stored values of `keys`, one entry per requested key in their order, masked like
+ * `listConfigsPaged`; `found` says whether the key is stored. One read answers existence and
+ * encryption together, so no write can land between the two.
+ */
+export async function getConfigsMasked(
+  prisma: PrismaClient,
+  keys: string[]
+): Promise<{ key: string; value: string | null; found: boolean }[]> {
+  const rows = await prisma.appConfig.findMany({
+    where: { key: { in: keys } },
+    select: { key: true, value: true, isEncrypted: true },
+  });
+  const stored = new Map(rows.map(row => [row.key, row]));
+  return keys.map(key => {
+    const row = stored.get(key);
+    return { key, value: row ? maskedValue(row) : null, found: row !== undefined };
+  });
+}
+
 /**
  * Returns a paginated, filterable list of configuration entries.
  *
@@ -537,7 +562,7 @@ export async function listConfigsPaged(
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
     isEncrypted: item.isEncrypted,
-    valuePreview: item.isEncrypted ? null : item.value, // Always pass the full value
+    valuePreview: maskedValue(item), // Always pass the full value
     updatedAt: item.updatedAt.toISOString(),
   }));
 

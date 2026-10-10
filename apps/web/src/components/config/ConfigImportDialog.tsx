@@ -148,7 +148,8 @@ export function ConfigImportDialog({
     const existingKeys = new Set<string>();
     if (newKeys.length > 0) {
       try {
-        const results = await utils.config.getMultiple.fetch({ keys: newKeys });
+        // Straight from the server: a cached answer could call a key saved since then new.
+        const results = await utils.client.config.getMultiple.query({ keys: newKeys });
         results.forEach(r => {
           if (r.found) existingKeys.add(r.key);
         });
