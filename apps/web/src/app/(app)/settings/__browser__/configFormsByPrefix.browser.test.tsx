@@ -11,12 +11,14 @@ import NavSettingsPage from '../nav/page';
 
 const h = vi.hoisted(() => ({ baseUrlFails: false }));
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: { user: { role: 'admin' }, accessToken: 't' } }),
 }));
 vi.mock('../../../../lib/trpc', () => {
   const mutation = { useMutation: () => ({ mutate: vi.fn(), isPending: false }) };
-  const page = (items: { key: string; valuePreview: string }[]) => ({ data: { items }, isLoading: false });
+  const settled = { isPending: false, error: null, refetch: vi.fn() };
+  const page = (items: { key: string; valuePreview: string }[]) => ({ ...settled, data: { items } });
   // One object per query, as React Query keeps it: the pages reset their form when `data` changes.
   const pages: Record<string, ReturnType<typeof page>> = {
     smtp: page([
@@ -30,8 +32,8 @@ vi.mock('../../../../lib/trpc', () => {
     // Without a prefix, the first page holds 100 other rows, as on an install with many keys.
     '': page(Array.from({ length: 100 }, (_, i) => ({ key: `app.other${i}`, valuePreview: 'x' }))),
   };
-  const baseUrl = { data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }], isLoading: false };
-  const baseUrlFailed = { data: undefined, isLoading: false };
+  const baseUrl = { ...settled, data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }] };
+  const baseUrlFailed = { ...settled, data: undefined, error: new Error('rete') };
   const utils = { config: { invalidate: vi.fn() } };
   return {
     trpc: {
@@ -70,9 +72,11 @@ test('the NAV form shows the saved server', async () => {
   await expect.element(screen.getByLabelText(/^Porta/)).toHaveValue(1533);
 });
 
-test('the mail form fills in even when the base URL cannot be read', async () => {
+test('the mail form is not offered when the base URL cannot be read', async () => {
+  // Saving it would write the fallback over the stored `app.baseUrl` the links use.
   h.baseUrlFails = true;
   const screen = await render(<MailPage />);
 
-  await expect.element(screen.getByLabelText(/^Host SMTP/)).toHaveValue('smtp.example.test');
+  await expect.element(screen.getByText('Errore nel caricamento')).toBeVisible();
+  expect(screen.getByLabelText(/^Host SMTP/).elements()).toHaveLength(0);
 });

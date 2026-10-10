@@ -406,7 +406,7 @@ export default function CollectionControlPage() {
   const [newOverridePhase, setNewOverridePhase] = useState<string>('');
 
   const utils = trpc.useUtils();
-  const { data: existing, isLoading, error } = trpc.phaseAlert.thresholds.useQuery();
+  const { data: existing, isPending, error, refetch } = trpc.phaseAlert.thresholds.useQuery();
   const { data: phases } = trpc.phase.list.useQuery();
 
   useEffect(() => {
@@ -476,8 +476,10 @@ export default function CollectionControlPage() {
     <SettingsFormShell
       title="Alert Calendario/Fasi"
       description="Configura le bande di criticità (giorni alla scadenza) usate dal motore di alert del calendario e delle fasi collezione"
-      isLoading={isLoading}
+      isPending={isPending}
       error={error}
+      hasData={!!existing}
+      onRetry={() => void refetch()}
     >
       {thresholds && (
         <>

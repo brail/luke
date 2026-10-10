@@ -78,7 +78,7 @@ export default function GoogleWorkspacePage() {
 
   const authMode = form.watch('authMode');
 
-  const { data: config, isLoading } = trpc.integrations.google.getConfig.useQuery();
+  const { data: config, isPending, error, refetch } = trpc.integrations.google.getConfig.useQuery();
 
   useEffect(() => {
     if (!config) return;
@@ -202,7 +202,10 @@ export default function GoogleWorkspacePage() {
     <SettingsFormShell
       title="Google Workspace"
       description="Integrazione con Google Workspace. Le credenziali sono condivise tra tutti i prodotti Google (Calendar, Drive, ecc.)."
-      isLoading={isLoading}
+      isPending={isPending}
+      error={error}
+      hasData={!!config}
+      onRetry={() => void refetch()}
     >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(values => saveMutation.mutate(values))} className="space-y-6">

@@ -1,7 +1,6 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -48,7 +47,6 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function LdapSettingsPage() {
-  const { data: _session, status } = useSession();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
@@ -88,8 +86,9 @@ export default function LdapSettingsPage() {
   // Load the existing configuration (admin only)
   const {
     data: existingConfig,
-    isLoading: isLoadingConfig,
+    isPending: isConfigPending,
     error: configError,
+    refetch: refetchConfig,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
   // Update form when existing configuration arrives
@@ -163,19 +162,6 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // Admin access check
-  if (status === 'loading') {
-    return (
-      <SettingsFormShell
-        title="Configurazione LDAP"
-        description="Caricamento..."
-        isLoading={true}
-      >
-        <div />
-      </SettingsFormShell>
-    );
-  }
-
   const onSubmit = (data: LdapConfigInput) => {
     // Prepare the payload, leaving out bindPassword if empty
     const { bindPassword, ...payloadWithoutPassword } = data;
@@ -216,8 +202,10 @@ export default function LdapSettingsPage() {
     <SettingsFormShell
       title="Configurazione LDAP"
       description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
-      isLoading={isLoadingConfig}
+      isPending={isConfigPending}
       error={configError}
+      hasData={!!existingConfig}
+      onRetry={() => void refetchConfig()}
     >
       <SectionCard
         title="Parametri LDAP"

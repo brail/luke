@@ -63,15 +63,14 @@ export default function MailPage() {
   // Load the existing configuration
   // The SMTP keys by prefix (the first page of all configs would miss them once there are more than
   // 100 rows), plus the base URL the mail links use.
-  const { data: existingConfigs, isLoading: smtpLoading } = trpc.config.list.useQuery({
+  const { data: existingConfigs, isPending: smtpPending, error: smtpError, refetch: refetchSmtp } = trpc.config.list.useQuery({
     category: 'smtp',
     page: 1,
     pageSize: 100,
   });
-  const { data: baseUrlConfig, isLoading: baseUrlLoading } = trpc.config.getMultiple.useQuery({
+  const { data: baseUrlConfig, isPending: baseUrlPending, error: baseUrlError, refetch: refetchBaseUrl } = trpc.config.getMultiple.useQuery({
     keys: ['app.baseUrl'],
   });
-  const isLoading = smtpLoading || baseUrlLoading;
 
   useEffect(() => {
     if (existingConfigs) {
@@ -159,7 +158,15 @@ export default function MailPage() {
     <SettingsFormShell
       title="Configurazione Mail"
       description="Gestisci l'integrazione SMTP per l'invio delle email transazionali (reset password, verifica email)"
-      isLoading={isLoading}
+      isPending={smtpPending || baseUrlPending}
+      // Both: the form saves `app.baseUrl` too, and a fallback written over an unread value would
+      // replace the address of every password-reset and verification link.
+      error={smtpError ?? baseUrlError}
+      hasData={!!existingConfigs && !!baseUrlConfig}
+      onRetry={() => {
+        void refetchSmtp();
+        void refetchBaseUrl();
+      }}
     >
       <SectionCard
         title="Parametri SMTP"

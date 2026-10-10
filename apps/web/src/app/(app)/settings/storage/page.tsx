@@ -1,15 +1,14 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { storageSaveConfigSchema, type StorageSaveConfig } from '@luke/core';
 
-import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
+import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -42,12 +41,11 @@ type StorageForm = StorageSaveConfig;
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StoragePage() {
-  const { status } = useSession();
   const refresh = useRefresh();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  const { data: config, isLoading } = trpc.storage.getConfig.useQuery(undefined);
+  const { data: config, isPending, error, refetch } = trpc.storage.getConfig.useQuery(undefined);
 
   const saveConfigMutation = trpc.storage.saveConfig.useMutation();
   const { mutate: saveConfig, isPending: isSaving } = useStandardMutation({
@@ -117,19 +115,17 @@ export default function StoragePage() {
     }
   }, [config, form]);
 
-  const disabled = !canUpdate || isLoading || isSaving;
-
-  if (status === 'loading') {
-    return <div className="flex items-center justify-center p-8 text-muted-foreground">Caricamento...</div>;
-  }
+  const disabled = !canUpdate || isSaving;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Configurazione Storage"
-        description="Gestisci il provider di storage per il salvataggio dei file"
-      />
-
+    <SettingsFormShell
+      title="Configurazione Storage"
+      description="Gestisci il provider di storage per il salvataggio dei file"
+      isPending={isPending}
+      error={error}
+      hasData={!!config}
+      onRetry={() => void refetch()}
+    >
       <Form {...form}>
         <form
           onSubmit={form.handleSubmit(submit)}
@@ -525,6 +521,6 @@ export default function StoragePage() {
           </div>
         </SectionCard>
       )}
-    </div>
+    </SettingsFormShell>
   );
 }

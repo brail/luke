@@ -51,7 +51,7 @@ export default function NavSettingsPage() {
   });
 
   // By prefix: the first page of all configs would miss these keys once there are more than 100 rows.
-  const { data: existingConfigs, isLoading } = trpc.config.list.useQuery({
+  const { data: existingConfigs, isPending, error, refetch } = trpc.config.list.useQuery({
     category: 'integrations.nav',
     page: 1,
     pageSize: 100,
@@ -138,7 +138,10 @@ export default function NavSettingsPage() {
     <SettingsFormShell
       title="Configurazione Microsoft NAV"
       description="Gestisci la connessione a Microsoft Dynamics NAV tramite SQL Server"
-      isLoading={isLoading}
+      isPending={isPending}
+      error={error}
+      hasData={!!existingConfigs}
+      onRetry={() => void refetch()}
     >
       <SectionCard
         title="Connessione SQL Server"

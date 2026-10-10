@@ -1,57 +1,54 @@
 import React from 'react';
 
+import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { PageHeader } from '../PageHeader';
+import { ErrorState } from '../system/ErrorState';
+import { RetryButton } from '../system/RetryButton';
 
 interface SettingsFormShellProps {
   title: string;
   description?: string;
-  isLoading?: boolean;
-  error?: Error | { message: string } | null;
+  /** The page's reads have not settled (TanStack `isPending`: a query paused offline included). */
+  isPending: boolean;
+  /** The first read error, shown through `getTrpcErrorMessage`. */
+  error?: unknown;
+  /** Every read the form edits has returned data. */
+  hasData: boolean;
+  onRetry: () => void;
   children: React.ReactNode;
 }
 
 /**
- * Layout shell for settings pages that handles loading and error states before rendering the form.
- *
- * Renders a loading message while `isLoading` is true, an error message when `error` is set,
- * or the `children` form content otherwise. Includes `PageHeader` in all states.
+ * Layout shell for settings pages: a loading message while the reads are pending, the form once
+ * they returned data without error, and otherwise the error with a retry — never the form without
+ * a fresh read of the stored data, whose placeholders a save would write over the stored
+ * configuration. Includes `PageHeader` in all states.
  */
 export function SettingsFormShell({
   title,
   description,
-  isLoading,
+  isPending,
   error,
+  hasData,
+  onRetry,
   children,
 }: SettingsFormShellProps) {
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title={title} description={description} />
-        <div className="text-center py-8 text-muted-foreground">
-          Caricamento configurazione...
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title={title} description={description} />
-        <div className="text-center py-8">
-          <div className="text-destructive text-lg font-semibold mb-2">
-            Errore nel caricamento
-          </div>
-          <p className="text-muted-foreground">{error.message}</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <PageHeader title={title} description={description} />
-      {children}
+      {isPending ? (
+        <div className="text-center py-8 text-muted-foreground">
+          Caricamento configurazione...
+        </div>
+      ) : hasData && !error ? (
+        children
+      ) : (
+        <ErrorState
+          title="Errore nel caricamento"
+          description={error ? getTrpcErrorMessage(error) : undefined}
+          actionSlot={<RetryButton onRetry={onRetry} />}
+        />
+      )}
     </div>
   );
 }
