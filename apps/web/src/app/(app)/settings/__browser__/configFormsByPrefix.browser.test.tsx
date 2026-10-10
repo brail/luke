@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import MailPage from '../mail/page';
@@ -8,6 +8,8 @@ import NavSettingsPage from '../nav/page';
  * The mail and NAV forms read the first 100 config rows and looked their keys up in them: with more
  * rows than that (93 registry keys today) they opened blank. They now ask for their own prefix.
  */
+
+const h = vi.hoisted(() => ({ baseUrlFails: false }));
 
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: { user: { role: 'admin' }, accessToken: 't' } }),
@@ -34,14 +36,17 @@ vi.mock('../../../../lib/trpc', () => {
     ])
   );
   const baseUrl = { data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }], isLoading: false };
+  const baseUrlFailed = { data: undefined, isLoading: false };
+  const utils = { config: { invalidate: vi.fn() } };
   return {
     trpc: {
+      useUtils: () => utils,
       config: {
         list: {
           useQuery: (input: { category?: string }) => pages[input.category ?? ''],
         },
         getMultiple: {
-          useQuery: () => baseUrl,
+          useQuery: () => (h.baseUrlFails ? baseUrlFailed : baseUrl),
         },
       },
       integrations: {
@@ -50,6 +55,10 @@ vi.mock('../../../../lib/trpc', () => {
       },
     },
   };
+});
+
+afterEach(() => {
+  h.baseUrlFails = false;
 });
 
 test('the mail form shows the saved SMTP server', async () => {
@@ -64,4 +73,11 @@ test('the NAV form shows the saved server', async () => {
 
   await expect.element(screen.getByLabelText(/^Host/)).toHaveValue('nav.example.test');
   await expect.element(screen.getByLabelText(/^Porta/)).toHaveValue(1533);
+});
+
+test('the mail form fills in even when the base URL cannot be read', async () => {
+  h.baseUrlFails = true;
+  const screen = await render(<MailPage />);
+
+  await expect.element(screen.getByLabelText(/^Host SMTP/)).toHaveValue('smtp.example.test');
 });

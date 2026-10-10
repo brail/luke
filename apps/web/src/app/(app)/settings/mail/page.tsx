@@ -74,7 +74,7 @@ export default function MailPage() {
   const isLoading = smtpLoading || baseUrlLoading;
 
   useEffect(() => {
-    if (existingConfigs && baseUrlConfig) {
+    if (existingConfigs) {
       const configs = existingConfigs.items;
       const smtpHost = configs.find(c => c.key === 'smtp.host');
       const smtpPort = configs.find(c => c.key === 'smtp.port');
@@ -90,7 +90,8 @@ export default function MailPage() {
         user: smtpUser?.valuePreview || '',
         pass: '',
         from: smtpFrom?.valuePreview || '',
-        baseUrl: baseUrlConfig[0]?.value || '',
+        // A base URL not stored, or not read, keeps the deployment's own address.
+        baseUrl: baseUrlConfig?.[0]?.value || process.env.NEXT_PUBLIC_FRONTEND_URL || '',
       });
 
       // Whether the password is already configured
@@ -98,8 +99,11 @@ export default function MailPage() {
     }
   }, [existingConfigs, baseUrlConfig, form]);
 
+  const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
     onSuccess: () => {
+      // The cached rows predate the save: coming back to the page must not refill the old values.
+      void utils.config.invalidate();
       toast.success('Configurazione SMTP salvata con successo');
       setHasPassword(true);
       setTestStatus('idle');

@@ -86,8 +86,11 @@ export default function NavSettingsPage() {
     }
   }, [existingConfigs, form]);
 
+  const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
     onSuccess: data => {
+      // The cached rows predate the save: coming back to the page must not refill the old values.
+      void utils.config.invalidate();
       setHasPassword(true);
       setTestStatus('idle');
       setTestMessage('');
