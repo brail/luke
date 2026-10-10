@@ -125,7 +125,7 @@
   },
   "src/app/(app)/settings/nav-sync/page.tsx": {
     "react-hooks/set-state-in-effect": {
-      "count": 5
+      "count": 4
     }
   },
   "src/app/(app)/settings/storage/page.tsx": {

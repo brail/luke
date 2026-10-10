@@ -1,14 +1,16 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 
 import { SectionCard } from '../../../../components/SectionCard';
+import { SettingsFormGate } from '../../../../components/settings/SettingsFormShell';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { Input } from '../../../../components/ui/input';
+import { Label } from '../../../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -71,29 +73,80 @@ const ENTITY_TABS: { id: EntityId; label: string }[] = [
   { id: 'season', label: 'Stagioni' },
 ];
 
-// ── Portafoglio Vendite tab ────────────────────────────────────────────────────
+// ── Sync schedule ─────────────────────────────────────────────────────────────
 
-function PortafoglioSyncTab() {
+/** The automatic-sync switch and, while it is on, the interval in minutes. */
+function ScheduleFields({
+  autoSyncEnabled,
+  onAutoSyncChange,
+  intervalMinutes,
+  onIntervalChange,
+  defaultIntervalMinutes,
+}: {
+  autoSyncEnabled: boolean;
+  onAutoSyncChange: (enabled: boolean) => void;
+  intervalMinutes: number;
+  onIntervalChange: (minutes: number) => void;
+  defaultIntervalMinutes: number;
+}) {
+  const intervalId = useId();
+  return (
+    <>
+      <div className="flex items-center justify-between rounded-lg border p-3">
+        <div className="space-y-0.5">
+          <p className="text-sm font-medium">Automatica</p>
+          <p className="text-xs text-muted-foreground">
+            {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
+          </p>
+        </div>
+        <Switch
+          checked={autoSyncEnabled}
+          onCheckedChange={onAutoSyncChange}
+        />
+      </div>
 
-  const { data: syncState, refetch: refetchSyncState } =
-    trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
-      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
-    });
-
-  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
-    { entity: 'portafoglio' },
-    { refetchOnWindowFocus: false },
+      {autoSyncEnabled && (
+        <div className="flex items-center gap-2">
+          <Label htmlFor={intervalId} className="whitespace-nowrap font-normal">Ogni</Label>
+          <Input
+            id={intervalId}
+            type="number"
+            min={1}
+            max={1440}
+            value={intervalMinutes}
+            onChange={e => onIntervalChange(Math.max(1, parseInt(e.target.value) || defaultIntervalMinutes))}
+            className="w-20"
+          />
+          <span className="text-sm text-muted-foreground">minuti</span>
+        </div>
+      )}
+    </>
   );
+}
+
+/** Auto-sync schedule of a NAV table set (Portafoglio, KIMO), editable only once the stored schedule has been read. */
+function SyncScheduleCard({
+  entity,
+  description,
+  defaultIntervalMinutes,
+}: {
+  entity: 'portafoglio' | 'kimo';
+  description: string;
+  defaultIntervalMinutes: number;
+}) {
+  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery({ entity });
 
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState(5);
+  const [intervalMinutes, setIntervalMinutes] = useState(defaultIntervalMinutes);
 
+  // Keyed on `data` alone: a refetch that returns the same filter keeps its reference (structural
+  // sharing), so a failed refetch that recovers does not discard unsaved edits.
   useEffect(() => {
-    if (filterQuery.isSuccess && filterQuery.data) {
+    if (filterQuery.data) {
       setAutoSyncEnabled(filterQuery.data.autoSyncEnabled ?? false);
-      setIntervalMinutes(filterQuery.data.intervalMinutes ?? 5);
+      setIntervalMinutes(filterQuery.data.intervalMinutes ?? defaultIntervalMinutes);
     }
-  }, [filterQuery.isSuccess, filterQuery.data]);
+  }, [filterQuery.data, defaultIntervalMinutes]);
 
   const saveSyncScheduleMutation = trpc.integrations.nav.sync.saveSyncSchedule.useMutation({
     onSuccess: () => {
@@ -102,6 +155,45 @@ function PortafoglioSyncTab() {
     },
     onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
+
+  return (
+    <SectionCard title="Pianificazione sync automatico" description={description}>
+      <SettingsFormGate
+        isPending={filterQuery.isPending}
+        error={filterQuery.error}
+        hasData={filterQuery.data !== undefined}
+        onRetry={() => void filterQuery.refetch()}
+      >
+        <div className="space-y-4">
+          <ScheduleFields
+            autoSyncEnabled={autoSyncEnabled}
+            onAutoSyncChange={setAutoSyncEnabled}
+            intervalMinutes={intervalMinutes}
+            onIntervalChange={setIntervalMinutes}
+            defaultIntervalMinutes={defaultIntervalMinutes}
+          />
+
+          <Button
+            size="sm"
+            onClick={() => saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes })}
+            disabled={saveSyncScheduleMutation.isPending}
+          >
+            {saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
+          </Button>
+        </div>
+      </SettingsFormGate>
+    </SectionCard>
+  );
+}
+
+// ── Portafoglio Vendite tab ────────────────────────────────────────────────────
+
+function PortafoglioSyncTab() {
+
+  const { data: syncState, refetch: refetchSyncState } =
+    trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
+      refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
+    });
 
   const syncMutation = trpc.sales.statistics.portafoglio.triggerSync.useMutation({
     onSuccess: result => {
@@ -117,48 +209,11 @@ function PortafoglioSyncTab() {
 
   return (
     <div className="space-y-6">
-      <SectionCard
-        title="Pianificazione sync automatico"
+      <SyncScheduleCard
+        entity="portafoglio"
         description="Configura la frequenza di sincronizzazione automatica NAV → PostgreSQL per il portafoglio ordini."
-      >
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Automatica</p>
-              <p className="text-xs text-muted-foreground">
-                {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
-              </p>
-            </div>
-            <Switch
-              checked={autoSyncEnabled}
-              onCheckedChange={setAutoSyncEnabled}
-            />
-          </div>
-
-          {autoSyncEnabled && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm whitespace-nowrap">Ogni</label>
-              <Input
-                type="number"
-                min={1}
-                max={1440}
-                value={intervalMinutes}
-                onChange={e => setIntervalMinutes(Math.max(1, parseInt(e.target.value) || 5))}
-                className="w-20"
-              />
-              <span className="text-sm text-muted-foreground">minuti</span>
-            </div>
-          )}
-
-          <Button
-            size="sm"
-            onClick={() => saveSyncScheduleMutation.mutate({ entity: 'portafoglio', autoSyncEnabled, intervalMinutes })}
-            disabled={saveSyncScheduleMutation.isPending}
-          >
-            {saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
-          </Button>
-        </div>
-      </SectionCard>
+        defaultIntervalMinutes={5}
+      />
 
       <SectionCard
         title="Sincronizzazione portafoglio ordini"
@@ -233,29 +288,6 @@ function KimoSyncTab() {
       refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
-  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
-    { entity: 'kimo' },
-    { refetchOnWindowFocus: false },
-  );
-
-  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState(30);
-
-  useEffect(() => {
-    if (filterQuery.isSuccess && filterQuery.data) {
-      setAutoSyncEnabled(filterQuery.data.autoSyncEnabled ?? false);
-      setIntervalMinutes(filterQuery.data.intervalMinutes ?? 30);
-    }
-  }, [filterQuery.isSuccess, filterQuery.data]);
-
-  const saveSyncScheduleMutation = trpc.integrations.nav.sync.saveSyncSchedule.useMutation({
-    onSuccess: () => {
-      toast.success('Pianificazione salvata');
-      void filterQuery.refetch();
-    },
-    onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
-  });
-
   const syncMutation = trpc.sales.statistics.kimo.triggerSync.useMutation({
     onSuccess: result => {
       void refetchSyncState();
@@ -270,48 +302,11 @@ function KimoSyncTab() {
 
   return (
     <div className="space-y-6">
-      <SectionCard
-        title="Pianificazione sync automatico"
+      <SyncScheduleCard
+        entity="kimo"
         description="Configura la frequenza di sincronizzazione automatica NAV → PostgreSQL per le tabelle KIMO-FASHION."
-      >
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium">Automatica</p>
-              <p className="text-xs text-muted-foreground">
-                {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
-              </p>
-            </div>
-            <Switch
-              checked={autoSyncEnabled}
-              onCheckedChange={setAutoSyncEnabled}
-            />
-          </div>
-
-          {autoSyncEnabled && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm whitespace-nowrap">Ogni</label>
-              <Input
-                type="number"
-                min={1}
-                max={1440}
-                value={intervalMinutes}
-                onChange={e => setIntervalMinutes(Math.max(1, parseInt(e.target.value) || 30))}
-                className="w-20"
-              />
-              <span className="text-sm text-muted-foreground">minuti</span>
-            </div>
-          )}
-
-          <Button
-            size="sm"
-            onClick={() => saveSyncScheduleMutation.mutate({ entity: 'kimo', autoSyncEnabled, intervalMinutes })}
-            disabled={saveSyncScheduleMutation.isPending}
-          >
-            {saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
-          </Button>
-        </div>
-      </SectionCard>
+        defaultIntervalMinutes={30}
+      />
 
       <SectionCard
         title="Sincronizzazione KIMO-FASHION"
@@ -442,10 +437,7 @@ function NavSyncTab({
 }) {
 
   // ── Filter query ───────────────────────────────────────────────────────────
-  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery(
-    { entity },
-    { refetchOnWindowFocus: false },
-  );
+  const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery({ entity });
 
   // ── Preview: lazy — never auto-executed ───────────────────────────────────
   // Loads only when user presses "Load preview"
@@ -489,21 +481,16 @@ function NavSyncTab({
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(30);
 
-  // Initialize selection, mode and schedule from the saved filter
+  // Initialize selection, mode and schedule from the saved filter. Keyed on `data` alone, as in
+  // SyncScheduleCard: a recovered failed refetch keeps unsaved edits.
   useEffect(() => {
-    if (filterQuery.isSuccess) {
-      if (filterQuery.data) {
-        setMode(filterQuery.data.mode as SyncMode);
-        setSelectedNavNos(new Set(filterQuery.data.navNos));
-        setAutoSyncEnabled(filterQuery.data.autoSyncEnabled ?? false);
-        setIntervalMinutes(filterQuery.data.intervalMinutes ?? 30);
-      } else {
-        setMode(null);
-        setAutoSyncEnabled(false);
-        setIntervalMinutes(30);
-      }
-    }
-  }, [filterQuery.isSuccess, filterQuery.data]);
+    const saved = filterQuery.data;
+    if (!saved) return;
+    setMode(saved.mode as SyncMode);
+    setSelectedNavNos(new Set(saved.navNos));
+    setAutoSyncEnabled(saved.autoSyncEnabled ?? false);
+    setIntervalMinutes(saved.intervalMinutes ?? 30);
+  }, [filterQuery.data]);
 
   // Reset preview when mode changes
   useEffect(() => {
@@ -512,7 +499,7 @@ function NavSyncTab({
     setShowOnlySelected(false);
   }, [mode]);
 
-  const isNotConfigured = filterQuery.isSuccess && !filterQuery.data;
+  const isNotConfigured = filterQuery.data === null;
 
   // Reset page when text filter changes
   useEffect(() => {
@@ -598,94 +585,81 @@ function NavSyncTab({
         title="Criterio di sincronizzazione"
         description="Definisci quali record NAV vengono inclusi nel sync"
       >
-        <div className="space-y-4">
-          {/* Warning: no criterion configured */}
-          {isNotConfigured && (
-            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
-              ⚠️ Nessun criterio configurato — il sync è bloccato finché non selezioni e salvi un&apos;opzione.
-            </p>
-          )}
+        <SettingsFormGate
+          isPending={filterQuery.isPending}
+          error={filterQuery.error}
+          hasData={filterQuery.data !== undefined}
+          onRetry={() => void filterQuery.refetch()}
+        >
+          <div className="space-y-4">
+            {/* Warning: no criterion configured */}
+            {isNotConfigured && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
+                ⚠️ Nessun criterio configurato — il sync è bloccato finché non selezioni e salvi un&apos;opzione.
+              </p>
+            )}
 
-          {/* Counter badge — only when a selection is active */}
-          {showPreview && selectedNavNos.size > 0 && (
-            <Badge variant="secondary" className="text-sm">
-              {selectedNavNos.size} {entityLabel.toLowerCase()} selezionati
-              {filterQuery.data?.updatedAt && (
-                <span className="ml-2 text-xs text-muted-foreground">
-                  — salvato {new Date(filterQuery.data.updatedAt).toLocaleString('it-IT')}
-                </span>
-              )}
-            </Badge>
-          )}
+            {/* Counter badge — only when a selection is active */}
+            {showPreview && selectedNavNos.size > 0 && (
+              <Badge variant="secondary" className="text-sm">
+                {selectedNavNos.size} {entityLabel.toLowerCase()} selezionati
+                {filterQuery.data?.updatedAt && (
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    — salvato {new Date(filterQuery.data.updatedAt).toLocaleString('it-IT')}
+                  </span>
+                )}
+              </Badge>
+            )}
 
-          {/* Radio mode + pianificazione — layout a due colonne */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            {/* Left column: filter */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Filtro record</p>
-              {(
-                [
-                  { value: 'all', label: 'Sincronizza tutti' },
-                  { value: 'whitelist', label: 'Solo selezionati' },
-                  { value: 'exclude', label: 'Escludi selezionati' },
-                ] as const
-              ).map(opt => (
-                <label key={opt.value} className="flex cursor-pointer items-center gap-2">
-                  <input
-                    type="radio"
-                    name={`sync-mode-${entity}`}
-                    value={opt.value}
-                    checked={mode === opt.value}
-                    onChange={() => setMode(opt.value)}
-                    className="accent-primary h-4 w-4"
-                  />
-                  <span className="text-sm">{opt.label}</span>
-                </label>
-              ))}
-              {mode && <ModeNote mode={mode} entityLabel={entityLabel} />}
-            </div>
-
-            {/* Right column: sync mode */}
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modalità sync</p>
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div className="space-y-0.5">
-                  <p className="text-sm font-medium">Automatica</p>
-                  <p className="text-xs text-muted-foreground">
-                    {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
-                  </p>
-                </div>
-                <Switch
-                  checked={autoSyncEnabled}
-                  onCheckedChange={setAutoSyncEnabled}
-                />
+            {/* Radio mode + pianificazione — layout a due colonne */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              {/* Left column: filter */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Filtro record</p>
+                {(
+                  [
+                    { value: 'all', label: 'Sincronizza tutti' },
+                    { value: 'whitelist', label: 'Solo selezionati' },
+                    { value: 'exclude', label: 'Escludi selezionati' },
+                  ] as const
+                ).map(opt => (
+                  <label key={opt.value} className="flex cursor-pointer items-center gap-2">
+                    <input
+                      type="radio"
+                      name={`sync-mode-${entity}`}
+                      value={opt.value}
+                      checked={mode === opt.value}
+                      onChange={() => setMode(opt.value)}
+                      className="accent-primary h-4 w-4"
+                    />
+                    <span className="text-sm">{opt.label}</span>
+                  </label>
+                ))}
+                {mode && <ModeNote mode={mode} entityLabel={entityLabel} />}
               </div>
 
-              {autoSyncEnabled && (
-                <div className="flex items-center gap-2">
-                  <label className="text-sm whitespace-nowrap">Ogni</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={intervalMinutes}
-                    onChange={e => setIntervalMinutes(Math.max(1, parseInt(e.target.value) || 30))}
-                    className="w-20"
-                  />
-                  <span className="text-sm text-muted-foreground">minuti</span>
-                </div>
-              )}
+              {/* Right column: sync mode */}
+              <div className="space-y-3">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Modalità sync</p>
+                <ScheduleFields
+                  autoSyncEnabled={autoSyncEnabled}
+                  onAutoSyncChange={setAutoSyncEnabled}
+                  intervalMinutes={intervalMinutes}
+                  onIntervalChange={setIntervalMinutes}
+                  defaultIntervalMinutes={30}
+                />
+              </div>
             </div>
-          </div>
 
-          <Button
-            onClick={handleSaveFilter}
-            disabled={saveFilterMutation.isPending || saveSyncScheduleMutation.isPending || mode === null}
-            size="sm"
-          >
-            {saveFilterMutation.isPending || saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
-          </Button>
-        </div>
+            <Button
+              onClick={handleSaveFilter}
+              disabled={saveFilterMutation.isPending || saveSyncScheduleMutation.isPending || mode === null}
+              size="sm"
+            >
+              {saveFilterMutation.isPending || saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
+            </Button>
+          </div>
+        </SettingsFormGate>
       </SectionCard>
 
       {/* ── Selection preview (whitelist / exclude only) ──────────────────── */}

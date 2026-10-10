@@ -97,6 +97,9 @@ export default defineConfig({
       // Added for SpecsheetModal.browser.test.tsx, the first to mount a Collapsible: it failed on a
       // cold cache in review (`Cannot read properties of null (reading 'useState')`). Same reason.
       '@radix-ui/react-collapsible',
+      // Added for navSyncAndCompanyForms.browser.test.tsx, the first to mount a Tabs: it reloaded
+      // mid-run on its first run (`Cannot read properties of null (reading 'useContext')`).
+      '@radix-ui/react-tabs',
     ],
   },
   // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left

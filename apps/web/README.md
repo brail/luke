@@ -172,7 +172,8 @@ Configuration pages under `settings/` share the components in
 
 | Component | Role |
 |---|---|
-| `SettingsFormShell` | Page wrapper with loading and error states |
+| `SettingsFormShell` | Page wrapper: `PageHeader`, then the form behind `SettingsFormGate` |
+| `SettingsFormGate` | Loading, error and retry gate for a form inside a card or tab: renders the form only after its stored values are read |
 | `SettingsActions` | Save button and optional test button, with pending states |
 | `SensitiveField` | Credential input with a show/hide toggle that never displays the stored value |
 | `TestStatusBanner` | Connection-test result (`idle`, `success`, `error`), announced through `role="status"` |

@@ -36,8 +36,12 @@ test('a pending read shows no form', async () => {
   expect(screen.getByRole('button', { name: 'Salva' }).elements()).toHaveLength(0);
 });
 
-test('the stored data shows the form', async () => {
-  const screen = await render(shell({ isPending: false, error: null, hasData: true }));
+test.each([
+  ['the stored data', null],
+  // A failed background refetch keeps the data read before: the form stays, edits included.
+  ['the stored data with a failed refetch', new Error('rete')],
+])('%s shows the form', async (_, error) => {
+  const screen = await render(shell({ isPending: false, error, hasData: true }));
 
   await expect.element(screen.getByRole('button', { name: 'Salva' })).toBeVisible();
 });
