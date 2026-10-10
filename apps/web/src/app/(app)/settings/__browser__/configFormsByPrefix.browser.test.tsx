@@ -16,25 +16,20 @@ vi.mock('next-auth/react', () => ({
 }));
 vi.mock('../../../../lib/trpc', () => {
   const mutation = { useMutation: () => ({ mutate: vi.fn(), isPending: false }) };
-  const saved: Record<string, { key: string; valuePreview: string }[]> = {
-    smtp: [
+  const page = (items: { key: string; valuePreview: string }[]) => ({ data: { items }, isLoading: false });
+  // One object per query, as React Query keeps it: the pages reset their form when `data` changes.
+  const pages: Record<string, ReturnType<typeof page>> = {
+    smtp: page([
       { key: 'smtp.host', valuePreview: 'smtp.example.test' },
       { key: 'smtp.port', valuePreview: '2525' },
-    ],
-    'integrations.nav': [
+    ]),
+    'integrations.nav': page([
       { key: 'integrations.nav.host', valuePreview: 'nav.example.test' },
       { key: 'integrations.nav.port', valuePreview: '1533' },
-    ],
+    ]),
+    // Without a prefix, the first page holds 100 other rows, as on an install with many keys.
+    '': page(Array.from({ length: 100 }, (_, i) => ({ key: `app.other${i}`, valuePreview: 'x' }))),
   };
-  // Without a prefix, the first page holds 100 other rows, as on an install with many keys.
-  const firstPage = Array.from({ length: 100 }, (_, i) => ({ key: `app.other${i}`, valuePreview: 'x' }));
-  // One object per query, as React Query keeps it: the pages reset their form when `data` changes.
-  const pages = Object.fromEntries(
-    [...Object.entries(saved), ['', firstPage] as const].map(([category, items]) => [
-      category,
-      { data: { items }, isLoading: false },
-    ])
-  );
   const baseUrl = { data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }], isLoading: false };
   const baseUrlFailed = { data: undefined, isLoading: false };
   const utils = { config: { invalidate: vi.fn() } };
