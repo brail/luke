@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 
-import { parseCalendarDate } from '../utils/dateUtils.js';
+import { isInstantInRange, parseCalendarDate, utcMidnightOf } from '../utils/dateUtils.js';
 
 /**
  * A `YYYY-MM-DD` calendar date that exists (`2026-02-30` is refused), from 1900-01-01 to 9999-12-30.
@@ -14,7 +14,7 @@ import { parseCalendarDate } from '../utils/dateUtils.js';
  */
 export const CalendarDateSchema = z.string().transform((value, ctx) => {
   const date = parseCalendarDate(value);
-  if (date === null || date >= '9999-12-31') {
+  if (date === null || !isInstantInRange(utcMidnightOf(date), { allDay: true })) {
     ctx.addIssue({ code: 'custom', message: 'Data non valida' });
     return z.NEVER;
   }
@@ -22,10 +22,13 @@ export const CalendarDateSchema = z.string().transform((value, ctx) => {
 });
 
 /**
- * An instant as the API accepts it: ISO 8601 (UTC, four-digit year) within 1900–9999. A year typed
- * as "26" would otherwise be stored as year 26 and make every deadline evaluation on it throw.
+ * An instant as the API accepts it: ISO 8601 (UTC, four-digit year) whose UTC date is a calendar
+ * date, so it also carries an all-day value stored at UTC midnight. A year typed as "26" would
+ * otherwise be stored as year 26 and make every deadline evaluation on it throw. A timed event's
+ * narrower range is checked by `assertEventDates`, on its effective `allDay` (ADR-035).
  */
 export const CalendarInstantSchema = z
   .string()
-  .datetime()
-  .refine(value => value >= '1900', 'Anno fuori intervallo (1900–9999)');
+  // `abort`: a malformed value gets one issue, not also the range one (Zod 4 runs the refine anyway).
+  .datetime({ abort: true })
+  .refine(value => isInstantInRange(new Date(value), { allDay: true }), "Data fuori dall'intervallo supportato");

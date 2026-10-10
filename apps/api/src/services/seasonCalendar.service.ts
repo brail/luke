@@ -8,6 +8,7 @@ import {
   deadlineReachedAt,
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
+  isInstantInRange,
   utcMidnightOf,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
@@ -304,6 +305,13 @@ export function datesFromExpected(expected: EventDatesExpected): EventDates {
   return { startAt: new Date(expected.startAt), endAt: expected.endAt ? new Date(expected.endAt) : null, allDay: expected.allDay };
 }
 
+/** The same instants on both ends and the same `allDay`. */
+function sameEventDates(a: EventDates, b: EventDates): boolean {
+  return a.startAt.getTime() === b.startAt.getTime()
+    && (a.endAt?.getTime() ?? null) === (b.endAt?.getTime() ?? null)
+    && a.allDay === b.allDay;
+}
+
 /** An all-day event stored off UTC midnight on either end — the one rule for a valid all-day value. */
 function isOffMidnightAllDay({ startAt, endAt, allDay }: EventDates): boolean {
   return allDay && [startAt, endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0);
@@ -311,14 +319,18 @@ function isOffMidnightAllDay({ startAt, endAt, allDay }: EventDates): boolean {
 
 /**
  * Refuses dates an event must never be stored with: an all-day value off UTC midnight — a calendar
- * date stored as anything else is read as another day by some reader — and an end before
- * the start. Judged on what the write leaves in the row, and only by writes that touch the dates:
- * a row already stored off midnight stays editable until its dates are changed.
+ * date stored as anything else is read as another day by some reader — a date outside the range
+ * the date helpers read (`isInstantInRange`, narrower for a timed event), and an end before the
+ * start. Judged on what the write leaves in the row, and only by writes that touch the dates: a
+ * row already stored off midnight stays editable until its dates are changed.
  *
  * @throws {TRPCError} BAD_REQUEST
  */
 export function assertEventDates(dates: EventDates): void {
-  const { startAt, endAt } = dates;
+  const { startAt, endAt, allDay } = dates;
+  if ([startAt, endAt].some(d => d !== null && !isInstantInRange(d, { allDay }))) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: "Data fuori dall'intervallo supportato" });
+  }
   if (isOffMidnightAllDay(dates)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Un evento di un giorno intero deve iniziare e finire a mezzanotte (UTC)' });
   }
@@ -528,13 +540,14 @@ export async function updateMilestone(
   prisma: PrismaClient,
   read: EventDates
 ) {
-  if (input.startAt !== undefined || input.endAt !== undefined || input.allDay !== undefined) {
-    assertEventDates({
-      startAt: input.startAt !== undefined ? new Date(input.startAt) : read.startAt,
-      endAt: input.endAt !== undefined ? new Date(input.endAt) : read.endAt,
-      allDay: input.allDay ?? read.allDay,
-    });
-  }
+  const next: EventDates = {
+    startAt: input.startAt !== undefined ? new Date(input.startAt) : read.startAt,
+    endAt: input.endAt !== undefined ? new Date(input.endAt) : read.endAt,
+    allDay: input.allDay ?? read.allDay,
+  };
+  // Judged only when the dates change: the event dialog resends them unchanged on every edit, and a
+  // row stored before a rule existed must stay editable until its dates are moved.
+  if (!sameEventDates(next, read)) assertEventDates(next);
   return prisma.$transaction(async tx => {
     const updated = await tx.calendarEvent.update({
       where: readDates(eventId, read),
@@ -543,9 +556,8 @@ export async function updateMilestone(
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.phaseId !== undefined ? { phaseId: input.phaseId } : {}),
         ...(input.calendarDaysRelevance !== undefined ? { calendarDaysRelevance: input.calendarDaysRelevance } : {}),
-        ...(input.startAt !== undefined ? { startAt: new Date(input.startAt) } : {}),
-        ...(input.endAt !== undefined ? { endAt: new Date(input.endAt) } : {}),
-        ...(input.allDay !== undefined ? { allDay: input.allDay } : {}),
+        // Unchanged dates rewrite what `where` already pins.
+        ...next,
         ...(input.publishExternally !== undefined ? { publishExternally: input.publishExternally } : {}),
       },
     });

@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import type { EventDatesExpected } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { assertEventDates, detectPhaseOrderWarning, rescheduleMilestone, updateMilestone } from '../src/services/seasonCalendar.service';
@@ -138,6 +139,39 @@ describe('assertEventDates', () => {
     expect(() => assertEventDates({ startAt: new Date('1900-01-01T00:00:00.000Z'), endAt: null, allDay: true })).not.toThrow();
     expect(() => assertEventDates({ startAt: new Date('1969-12-31T22:00:00.000Z'), endAt: null, allDay: true })).toThrow(TRPCError);
   });
+
+  // The bounds are `isInstantInRange`'s, tested in core; here, that both ends are judged on `allDay`.
+  it('holds both ends to the range of the event\'s allDay', () => {
+    const edge = new Date('9999-12-30T00:00:00.000Z');
+    expect(() => assertEventDates({ startAt: edge, endAt: null, allDay: true })).not.toThrow();
+    expect(() => assertEventDates({ startAt: edge, endAt: null, allDay: false })).toThrow(TRPCError);
+    expect(() => assertEventDates({ startAt: MIDNIGHT, endAt: new Date('9999-12-31T00:00:00.000Z'), allDay: true })).toThrow(TRPCError);
+  });
+
+  it('create: a timed event is held to the timed range, with allDay omitted', async () => {
+    await expectBadRequest(asAdmin().seasonCalendar.createMilestone({
+      planningGroupId, title: 'Fuori intervallo', startAt: '1900-01-01T05:00:00.000Z', publishExternally: false, visibilityFunctionIds: [fnA],
+    }));
+  });
+
+  it.each([
+    ['update', (id: string, expected: EventDatesExpected) =>
+      asAdmin().seasonCalendar.updateMilestone({ id, expected, data: { startAt: '1900-01-01T05:00:00.000Z' } })],
+    ['reschedule', (id: string, expected: EventDatesExpected) =>
+      asAdmin().seasonCalendar.rescheduleMilestone({ id, expected, startAt: '1900-01-01T05:00:00.000Z', reason: 'prova' })],
+  ])('%s: judges the bound on the stored allDay when the input omits it', async (_, write) => {
+    const event = await createEvent({ startAt: new Date('2099-06-01T09:00:00.000Z'), allDay: false });
+    await expectBadRequest(write(event.id, await expectedOf(prisma, event.id)));
+  });
+
+  it('update: a row stored out of the timed range stays editable while its dates are resent unchanged', async () => {
+    const legacy = await createEvent({ startAt: new Date('9999-12-30T05:00:00.000Z'), allDay: false });
+    await asAdmin().seasonCalendar.updateMilestone({
+      id: legacy.id, expected: await expectedOf(prisma, legacy.id), data: { title: 'Rinominato', startAt: legacy.startAt.toISOString(), allDay: false },
+    });
+    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ title: 'Rinominato' });
+  });
+
 });
 
 describe('an event never ends before it starts', () => {

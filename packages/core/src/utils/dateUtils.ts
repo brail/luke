@@ -21,6 +21,8 @@ export interface CalendarHoliday {
 const MS_PER_DAY = 86_400_000;
 const MS_PER_HOUR = 3_600_000;
 const MIN_CALENDAR_DATE = '1900-01-01';
+/** The last date Luke accepts: the day after it, 9999-12-31, is the last the helpers represent. */
+const MAX_CALENDAR_DATE = '9999-12-30';
 
 /** Milliseconds at the UTC midnight of `date`. */
 function utcMs(date: CalendarDate): number {
@@ -58,6 +60,22 @@ export function calendarDateOf(stored: Date): CalendarDate {
 /** The UTC midnight of `date` — the stored form, for Prisma writes and queries. */
 export function utcMidnightOf(date: CalendarDate): Date {
   return new Date(utcMs(date));
+}
+
+/** `[start, end)` in ms, the UTC midnights of every accepted date; a timed instant one day inside it. */
+const ALL_DAY_RANGE = [Date.parse(`${MIN_CALENDAR_DATE}T00:00:00Z`), Date.parse(`${MAX_CALENDAR_DATE}T00:00:00Z`) + MS_PER_DAY] as const;
+const TIMED_RANGE = [ALL_DAY_RANGE[0] + MS_PER_DAY, ALL_DAY_RANGE[1] - MS_PER_DAY] as const;
+
+/**
+ * `true` when `instant` lies in the range Luke stores (ADR-035 §Bounds): an all-day value's UTC date
+ * is an accepted date; a timed instant's date in every zone from UTC−12 to UTC+14, and the day after
+ * it, are too. Outside it `calendarDateIn` or `addCalendarDays` can throw. An invalid `Date` is out
+ * of range.
+ */
+export function isInstantInRange(instant: Date, { allDay }: { allDay: boolean }): boolean {
+  const [start, end] = allDay ? ALL_DAY_RANGE : TIMED_RANGE;
+  const ms = instant.getTime();
+  return ms >= start && ms < end;
 }
 
 /** `date` plus `days` whole days (negative goes back). Throws a `RangeError` outside 1900–9999. */

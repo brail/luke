@@ -12,6 +12,7 @@ import {
   instantAt,
   canonicalTimeZone,
   isValidTimeZone,
+  isInstantInRange,
   isWorkingDate,
   parseCalendarDate,
   startOfDayIn,
@@ -262,5 +263,23 @@ describe.each([
       '%s → %s', (tz, expected) => {
         expect(canonicalTimeZone(tz)).toBe(expected);
       });
+  });
+});
+
+// A comparison of milliseconds: no process zone to vary.
+describe('isInstantInRange', () => {
+  it.each([
+    ['1900-01-01T00:00:00.000Z', true, true],
+    ['1899-12-31T23:59:59.999Z', true, false],
+    ['9999-12-30T00:00:00.000Z', true, true],
+    ['9999-12-31T00:00:00.000Z', true, false],
+    ['1900-01-01T05:00:00.000Z', false, false],
+    ['1900-01-02T00:00:00.000Z', false, true],
+    ['9999-12-29T23:59:59.999Z', false, true],
+    ['9999-12-30T00:00:00.000Z', false, false],
+    ['not a date', true, false],
+    ['not a date', false, false],
+  ])('%s, allDay %s → %s', (value, allDay, expected) => {
+    expect(isInstantInRange(new Date(value), { allDay })).toBe(expected);
   });
 });
