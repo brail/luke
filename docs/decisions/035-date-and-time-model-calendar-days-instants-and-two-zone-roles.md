@@ -114,3 +114,10 @@ These are the main deviations that exist when this record is accepted, not an in
 - `User.timezone` defaults to `Europe/Rome` in the database, and the CHECK constraints cover only `calendar_events` and `planning_groups`, up to the year 9999.
 - The season sync stores NAV's blank date `1753-01-01` as a date.
 - Parts of this decision do not exist yet: the `@luke` ESLint rule, `WallTimeSchema` and `TimeZoneSchema` (zones are validated inline only, by the profile schema and the `app.defaultTimezone` registry entry), the shared shift helper (core has `addCalendarDays` only), and the business zone for new users (the creators set no `timezone`, so the database default applies).
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-10 — Context and Observed gaps, "`CalendarInstantSchema` accepts 9999-12-31".** Since `ea9c490f` `CalendarInstantSchema` refuses an instant whose UTC date is past 9999-12-30, and `assertEventDates` holds to the bounds of their effective `allDay` the dates written by the create and reschedule procedures, and by every update that changes them (`isInstantInRange`). Template results and clones are still not checked.
+- **2026-10-10 — Observed gaps, "Parts of this decision do not exist yet".** Since `7bfc979a` `WallTimeSchema` and `TimeZoneSchema` exist in `schemas/dates.ts`; the `app.defaultTimezone` and `backup.schedule.dailyTime` registry entries, the profile schemas, `BackupScheduleConfigSchema` and the API's reader of `User.timezone` use them, and `instantAt` shares the wall-time pattern. The clocks-widget zones are still not validated, and the ESLint rule, the shared shift helper and the business zone for new users still do not exist.
