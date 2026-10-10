@@ -4,9 +4,9 @@
  * Same rationale as `backupExportDownload.ts`: not a tRPC procedure, so the browser can download via
  * a native `<a href>` instead of buffering into a JS `Blob`. Authorized via a short-lived signed
  * token (`auditLog.getExportLink` mints it after checking `audit:read_all`) rather than a Bearer
- * session — the token encodes the filters applied on the audit log page, not a stored file
- * bucket/key, since the export is generated on the fly from the database rather than read from
- * storage.
+ * session — the token encodes the filters applied on the audit log page and the requester's time
+ * zone their days are read in, not a stored file bucket/key, since the export is generated on the
+ * fly from the database rather than read from storage.
  */
 
 import { PassThrough, Readable } from 'stream';
@@ -14,6 +14,7 @@ import { PassThrough, Readable } from 'stream';
 import {
   AuditLogExportFormatSchema,
   getAuditActionLabel,
+  calendarDateIn,
   type AuditLogExportFormat,
   type AuditLogFilters,
 } from '@luke/core';
@@ -46,8 +47,8 @@ export function csvEscape(value: string): string {
 }
 
 /** Yields one row of `EXPORT_COLUMNS` per event, read in batches rather than the whole audit trail at once. */
-async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters): AsyncGenerator<string[]> {
-  const whereClause = buildAuditLogWhere(filters);
+async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters, timeZone: string): AsyncGenerator<string[]> {
+  const whereClause = buildAuditLogWhere(filters, timeZone);
   // Keyset, not offset: each batch starts after the last row read, so events written at the top or
   // rows retention deletes at the bottom while a long export runs neither repeat nor skip a row.
   // The redundant `lte` bound is what Postgres can seek on in the `(createdAt, id)` index; the `OR`
@@ -94,12 +95,12 @@ async function* auditLogRows(prisma: PrismaClient, filters: AuditLogFilters): As
 }
 
 /** Streams the export as CSV. */
-export async function* generateAuditLogCsv(prisma: PrismaClient, filters: AuditLogFilters) {
+export async function* generateAuditLogCsv(prisma: PrismaClient, filters: AuditLogFilters, timeZone: string) {
   // Leading BOM (explicit escape, not a literal character, so it doesn't trip no-irregular-whitespace):
   // makes Excel recognize UTF-8, otherwise it mangles accented characters.
   const BOM = '\uFEFF';
   yield `${BOM}${EXPORT_COLUMNS.join(',')}\n`;
-  for await (const row of auditLogRows(prisma, filters)) yield `${row.map(csvEscape).join(',')}\n`;
+  for await (const row of auditLogRows(prisma, filters, timeZone)) yield `${row.map(csvEscape).join(',')}\n`;
 }
 
 /** Resolves once `stream` drains or closes, whichever comes first. */
@@ -118,13 +119,18 @@ function drainedOrClosed(stream: PassThrough): Promise<void> {
  * Cells are strings, which exceljs writes as text and never as a formula: unlike the CSV, no value
  * needs a leading `'`. A row is added only once `out` has room, and none after it closes.
  */
-export async function writeAuditLogXlsx(prisma: PrismaClient, filters: AuditLogFilters, out: PassThrough): Promise<void> {
+export async function writeAuditLogXlsx(
+  prisma: PrismaClient,
+  filters: AuditLogFilters,
+  timeZone: string,
+  out: PassThrough
+): Promise<void> {
   const workbook = createStreamingWorkbook(out, { title: 'Audit Log' });
   const sheet = workbook.addWorksheet('Audit Log', { views: [{ state: 'frozen', ySplit: 1 }] });
   const header = sheet.addRow(EXPORT_COLUMNS);
   applyStreamingHeaderStyle(header, 'report');
   header.commit();
-  for await (const row of auditLogRows(prisma, filters)) {
+  for await (const row of auditLogRows(prisma, filters, timeZone)) {
     if (out.writableNeedDrain) await drainedOrClosed(out);
     if (out.destroyed) return;
     sheet.addRow(row).commit();
@@ -157,16 +163,16 @@ export async function registerAuditLogExportDownloadRoute(
       const xlsx = format.data === 'xlsx' ? new PassThrough() : undefined;
       streamRawResponse(
         reply,
-        xlsx ?? Readable.from(generateAuditLogCsv(prisma, payload.filters)),
+        xlsx ?? Readable.from(generateAuditLogCsv(prisma, payload.filters, payload.timeZone)),
         {
           'Content-Type': CONTENT_TYPES[format.data],
-          'Content-Disposition': `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.${format.data}"`,
+          'Content-Disposition': `attachment; filename="audit-log-${calendarDateIn(new Date(), payload.timeZone)}.${format.data}"`,
           'Cache-Control': 'private, no-store',
         },
         err => fastify.log.error({ err }, 'Audit log export stream failed')
       );
       // The writer's failure reaches the response through the stream's error handler.
-      if (xlsx) writeAuditLogXlsx(prisma, payload.filters, xlsx).catch((err: Error) => xlsx.destroy(err));
+      if (xlsx) writeAuditLogXlsx(prisma, payload.filters, payload.timeZone, xlsx).catch((err: Error) => xlsx.destroy(err));
     }
   );
 }

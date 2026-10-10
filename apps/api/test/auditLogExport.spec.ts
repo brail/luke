@@ -77,7 +77,7 @@ describe('generateAuditLogCsv', () => {
       },
     ];
     const chunks: string[] = [];
-    for await (const chunk of generateAuditLogCsv(prismaWith(events), {})) chunks.push(chunk);
+    for await (const chunk of generateAuditLogCsv(prismaWith(events), {}, 'Europe/Rome')) chunks.push(chunk);
 
     expect(chunks.slice(1)).toEqual([
       `"2026-10-09T08:15:00.000Z","x;=1+1","","soggetto","Accesso effettuato","'+User","'-1","FAILURE","'@ip\rforged"\n`,
@@ -92,7 +92,7 @@ describe('generateAuditLogCsv', () => {
       .mockResolvedValueOnce(manyEvents(500, i => ({ createdAt: new Date(base - i * 1000), id: `id-${i}` })))
       .mockResolvedValue([]);
 
-    for await (const _chunk of generateAuditLogCsv(prismaWith(findMany), { result: 'SUCCESS' }));
+    for await (const _chunk of generateAuditLogCsv(prismaWith(findMany), { result: 'SUCCESS' }, 'Europe/Rome'));
 
     const second = findMany.mock.calls[1]![0];
     expect(second).not.toHaveProperty('skip');
@@ -112,7 +112,7 @@ describe('writeAuditLogXlsx', () => {
   it('writes the CSV columns as string cells under a frozen header', async () => {
     const out = new PassThrough();
     const bytes = buffer(out);
-    await writeAuditLogXlsx(prismaWith([FORMULA_EVENT]), {}, out);
+    await writeAuditLogXlsx(prismaWith([FORMULA_EVENT]), {}, 'Europe/Rome', out);
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(Uint8Array.from(await bytes).buffer);
@@ -139,7 +139,7 @@ describe('writeAuditLogXlsx', () => {
     });
     const out = new PassThrough(); // never read: a client that has stopped downloading
 
-    const written = writeAuditLogXlsx(prisma, {}, out);
+    const written = writeAuditLogXlsx(prisma, {}, 'Europe/Rome', out);
     await new Promise(resolve => setTimeout(resolve, 300));
     const startedBeforeLeaving = started;
     out.destroy();
@@ -156,7 +156,7 @@ describe('/download/audit-log', () => {
     await registerAuditLogExportDownloadRoute(app, prismaWith([FORMULA_EVENT]));
     return app.inject({ method: 'GET', url });
   }
-  const token = () => encodeURIComponent(signAuditLogExportToken({ filters: {} }));
+  const token = () => encodeURIComponent(signAuditLogExportToken({ filters: {}, timeZone: 'Europe/Rome' }));
 
   it('refuses a link without a valid token', async () => {
     expect((await get('/download/audit-log?format=xlsx&token=forged')).statusCode).toBe(401);

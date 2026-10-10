@@ -8,7 +8,7 @@
 
 import pino from 'pino';
 
-import { fullName, type AuditLogFilters, type AuditLogResult } from '@luke/core';
+import { addCalendarDays, fullName, startOfDayIn, type AuditLogFilters, type AuditLogResult } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import type { FastifyBaseLogger } from 'fastify';
@@ -597,18 +597,24 @@ export async function logAudit(
 // Entity-specific helpers removed - everything centralized in logAudit() for DRY
 // Use logAudit() directly with the new standardized parameters
 
-/** Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the `/download/audit-log` export route. */
-export function buildAuditLogWhere(filters: AuditLogFilters): Prisma.AuditLogWhereInput {
+/**
+ * Translates audit log page/export filters into a Prisma where clause — shared by `auditLog.list` and the
+ * `/download/audit-log` export route. The dates are whole days in `timeZone`, the reader's
+ * (`getUserTimeZone`), the zone the page shows the rows in.
+ */
+export function buildAuditLogWhere(filters: AuditLogFilters, timeZone: string): Prisma.AuditLogWhereInput {
+  const { dateFrom, dateTo } = filters;
   return {
     ...(filters.actorId ? { actorId: filters.actorId } : {}),
     ...(filters.action ? { action: { contains: filters.action, mode: 'insensitive' } } : {}),
     ...(filters.targetType ? { targetType: { contains: filters.targetType, mode: 'insensitive' } } : {}),
     ...(filters.result ? { result: filters.result } : {}),
-    ...(filters.dateFrom || filters.dateTo
+    ...(dateFrom || dateTo
       ? {
           createdAt: {
-            ...(filters.dateFrom ? { gte: new Date(filters.dateFrom) } : {}),
-            ...(filters.dateTo ? { lte: new Date(filters.dateTo) } : {}),
+            ...(dateFrom ? { gte: startOfDayIn(dateFrom, timeZone) } : {}),
+            // Up to the start of the next day; the last day the helpers represent has none, so no bound.
+            ...(dateTo && dateTo < '9999-12-31' ? { lt: startOfDayIn(addCalendarDays(dateTo, 1), timeZone) } : {}),
           },
         }
       : {}),

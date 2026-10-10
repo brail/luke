@@ -252,18 +252,21 @@ export function verifyExportToken(token: string): ExportTokenPayload {
  */
 export interface AuditLogExportTokenPayload extends BaseTokenPayload {
   filters: AuditLogFilters;
+  /** The requester's zone (`getUserTimeZone`), in which the filter's days are read. */
+  timeZone: string;
 }
 
 /** Signs a token for the audit log export, encapsulating the applied filters. */
 export function signAuditLogExportToken(params: {
   filters: AuditLogFilters;
+  timeZone: string;
   exp?: number;
 }): string {
   const exp = params.exp || Date.now() + DOWNLOAD_TOKEN_TTL_MS;
-  return signTokenPayload<AuditLogExportTokenPayload>({ filters: params.filters, exp });
+  return signTokenPayload<AuditLogExportTokenPayload>({ filters: params.filters, timeZone: params.timeZone, exp });
 }
 
 /** Verifies and decodes an audit log export token. @throws Error if the token is invalid or expired. */
 export function verifyAuditLogExportToken(token: string): AuditLogExportTokenPayload {
-  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters']);
+  return verifyTokenPayload<AuditLogExportTokenPayload>(token, ['filters', 'timeZone']);
 }

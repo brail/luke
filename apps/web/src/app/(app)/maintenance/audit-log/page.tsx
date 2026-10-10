@@ -4,15 +4,7 @@ import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import {
-  addCalendarDays,
-  buildAuditLogExportUrl,
-  getAuditActionLabel,
-  parseCalendarDate,
-  startOfDayIn,
-  type AuditLogExportFormat,
-  type AuditLogResult,
-} from '@luke/core';
+import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogExportFormat, type AuditLogResult } from '@luke/core';
 
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -111,19 +103,14 @@ export default function AuditLogPage() {
     return () => clearTimeout(t);
   }, [targetTypeInput]);
 
-  // The rows are shown in the profile's time zone, so the days picked are days in that zone; the API
-  // filter is inclusive at both ends, hence the instant before the day after `dateTo` starts.
-  const dayFrom = parseCalendarDate(filters.dateFrom);
-  const dayTo = parseCalendarDate(filters.dateTo);
+  // The days go as picked: the server reads them in the profile's zone, the one the rows are shown in.
   const apiFilters = {
     actorId: filters.actorId || undefined,
     action: filters.action.trim() || undefined,
     targetType: filters.targetType.trim() || undefined,
     result: filters.result || undefined,
-    dateFrom: dayFrom ? startOfDayIn(dayFrom, fmt.timezone).toISOString() : undefined,
-    dateTo: dayTo
-      ? new Date(startOfDayIn(addCalendarDays(dayTo, 1), fmt.timezone).getTime() - 1).toISOString()
-      : undefined,
+    dateFrom: filters.dateFrom || undefined,
+    dateTo: filters.dateTo || undefined,
   };
 
   const { data, isLoading } = trpc.auditLog.list.useQuery(
@@ -140,10 +127,8 @@ export default function AuditLogPage() {
   const handleDownload = async (format: AuditLogExportFormat) => {
     try {
       const { token } = await getExportLinkMutation.mutateAsync(apiFilters);
-      triggerUrlDownload(
-        buildAuditLogExportUrl(format, token),
-        `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`
-      );
+      // No name of our own: the route names the file after the day in the profile's zone.
+      triggerUrlDownload(buildAuditLogExportUrl(format, token), '');
     } catch {
       toast.error('Download audit log fallito');
     }

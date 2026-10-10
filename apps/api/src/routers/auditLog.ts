@@ -16,6 +16,7 @@ import {
 import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { signAuditLogExportToken } from '../utils/downloadToken';
 
 /**
@@ -109,7 +110,7 @@ export const auditLogRouter = router({
     .use(requirePermission('audit:read_all'))
     .input(AuditLogListInputSchema)
     .query(async ({ ctx, input }): Promise<AuditLogListOutput> => {
-      const where = buildAuditLogWhere(input);
+      const where = buildAuditLogWhere(input, await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
 
       const [items, total] = await Promise.all([
         ctx.prisma.auditLog.findMany({
@@ -163,8 +164,10 @@ export const auditLogRouter = router({
   getExportLink: protectedProcedure
     .use(requirePermission('audit:read_all'))
     .input(AuditLogFiltersSchema)
-    .mutation(({ input }) => {
-      const token = signAuditLogExportToken({ filters: input });
+    .mutation(async ({ ctx, input }) => {
+      // The zone is fixed when the link is made: the export reads the days as the page does.
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+      const token = signAuditLogExportToken({ filters: input, timeZone });
       return { token };
     }),
 });

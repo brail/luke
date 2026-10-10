@@ -1,5 +1,17 @@
 import { z, ZodDefault, type ZodObject, type ZodRawShape, type ZodOptional } from 'zod';
 
+import { parseCalendarDate } from './dateUtils.js';
+
+/** A `YYYY-MM-DD` calendar date that exists (`2026-02-30` is refused), years 1900–9999. */
+export const CalendarDateSchema = z.string().transform((value, ctx) => {
+  const date = parseCalendarDate(value);
+  if (date === null) {
+    ctx.addIssue({ code: 'custom', message: 'Data non valida' });
+    return z.NEVER;
+  }
+  return date;
+});
+
 type StripDefault<T> = T extends ZodDefault<infer Inner> ? Inner : T;
 type StrippedPartialShape<S extends ZodRawShape> = { [K in keyof S]: ZodOptional<StripDefault<S[K]>> };
 

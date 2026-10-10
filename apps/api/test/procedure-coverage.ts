@@ -173,8 +173,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   auditLog: {
     reason:
-      '`auditlog.integration.spec.ts` checks the written rows mostly by querying Prisma directly, besides invoking `list`; getLastChange/getExportLink remain uncovered',
-    uncovered: 2,
+      '`auditlog.integration.spec.ts` checks the written rows mostly by querying Prisma directly, besides invoking `list`; `auditLogDateFilter.integration.spec.ts` covers getExportLink; getLastChange remains uncovered',
+    uncovered: 1,
   },
   editLock: {
     reason: "acquireMany's permission refusal covered by the access-denied logging spec; release, renew and the lock itself, the planning wizard's session lock, have no tests",
