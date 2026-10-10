@@ -20,7 +20,6 @@ import {
 import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
-  getConfig,
   listConfigsPaged,
   deleteConfig,
   decryptValue,
@@ -441,11 +440,13 @@ export const configRouter = router({
     }),
 
   /**
-   * Fetches multiple AppConfig values in a single request; returns partial results on missing keys.
+   * Fetches multiple AppConfig values in a single request, one result per requested key, in order.
+   * `found` says whether the key is stored; an encrypted value comes back as `null`, as in `list`
+   * (`viewValue` is the audited way to read one).
    *
-   * @auth {config:read; config:update for decrypt=true}
-   * @input {{ keys: string[], decrypt?: boolean }} — list of config keys, optional decrypt flag.
-   * @output {Array<{ key, value, found, error? }>}
+   * @auth {config:read}
+   * @input {{ keys: string[] }} — list of config keys.
+   * @output {Array<{ key, value, found }>}
    */
   getMultiple: protectedProcedure
     .use(requirePermission('config:read'))
@@ -454,41 +455,19 @@ export const configRouter = router({
         keys: z.array(
           z.string().min(1, 'Chiave configurazione non può essere vuota')
         ),
-        decrypt: z.boolean().optional().default(false),
       })
     )
     .query(async ({ input, ctx }) => {
-      // Decrypting takes at least what writing the value takes.
-      if (input.decrypt && !can(ctx, 'config:update')) {
-        logAccessDenied(ctx, { deniedPermissions: ['config:update'] });
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Accesso negato: serve il permesso di modificare la configurazione per decrittare valori',
-        });
-      }
-
-      const results = await Promise.all(
-        input.keys.map(async key => {
-          try {
-            const value = await getConfig(ctx.prisma, key, input.decrypt);
-            return {
-              key,
-              value,
-              found: true,
-            };
-          } catch (error) {
-            return {
-              key,
-              value: null,
-              found: false,
-              error:
-                error instanceof Error ? error.message : 'Errore sconosciuto',
-            };
-          }
-        })
-      );
-
-      return results;
+      // One read: the rows answer existence and encryption together, so no write can land between.
+      const rows = await ctx.prisma.appConfig.findMany({
+        where: { key: { in: input.keys } },
+        select: { key: true, value: true, isEncrypted: true },
+      });
+      const stored = new Map(rows.map(row => [row.key, row]));
+      return input.keys.map(key => {
+        const row = stored.get(key);
+        return { key, value: row && !row.isEncrypted ? row.value : null, found: row !== undefined };
+      });
     }),
 
   /**

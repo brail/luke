@@ -60,3 +60,9 @@ These deviations exist when this record is accepted. They are recorded as follow
 
 - **A secret stored with `isEncrypted: false` is read back in plaintext** by any holder of `config:read`, because masking is driven by that flag and encryption is chosen by the caller rather than declared by the registry ([ADR-018](018-runtime-configuration-and-bootstrap-environment.md)). It is a property of how values are written, not of the outbound boundary.
 - Several write paths return an unprojected row: `sectionAccess.set` through an `upsert`, and `company.profile.get` and `company.profile.update` through a `create` and an `upsert` on `CompanyProfile`. No guarded field is involved in any of them.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-10 — Decision, Governed exceptions, `config.getMultiple`.** Since the commit that adds this entry the procedure takes no `decrypt` and masks an encrypted value: for each requested key it returns whether the key is stored (`found`) and its stored value, or `null` for an encrypted key as `config.list` does. It requires `config:read` only; the raw mode of `config.viewValue` is the config router's one decrypted read, and it requires `config:update`.

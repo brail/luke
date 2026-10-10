@@ -148,10 +148,7 @@ export function ConfigImportDialog({
     const existingKeys = new Set<string>();
     if (newKeys.length > 0) {
       try {
-        const results = await utils.config.getMultiple.fetch({
-          keys: newKeys,
-          decrypt: false,
-        });
+        const results = await utils.config.getMultiple.fetch({ keys: newKeys });
         results.forEach(r => {
           if (r.found) existingKeys.add(r.key);
         });

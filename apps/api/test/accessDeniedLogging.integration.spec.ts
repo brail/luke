@@ -78,7 +78,7 @@ describe('a manual permission guard logs the denial', () => {
   });
 
   // No role holds `config:read` without `config:update` today: `can` is narrowed to make one.
-  describe('config, a raw or decrypted value without config:update', () => {
+  describe('config, a raw value without config:update', () => {
     beforeEach(() => {
       const real = permissions.can;
       vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) =>
@@ -90,15 +90,6 @@ describe('a manual permission guard logs the denial', () => {
       const { user, warn, caller } = await callerAs('admin');
 
       await expect(caller.config.viewValue({ key: 'app.baseUrl', mode: 'raw' })).rejects.toMatchObject({
-        code: 'FORBIDDEN',
-      });
-      expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['config:update'] }));
-    });
-
-    it('getMultiple with decrypt', async () => {
-      const { user, warn, caller } = await callerAs('admin');
-
-      await expect(caller.config.getMultiple({ keys: ['app.baseUrl'], decrypt: true })).rejects.toMatchObject({
         code: 'FORBIDDEN',
       });
       expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['config:update'] }));

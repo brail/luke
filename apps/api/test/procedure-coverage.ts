@@ -77,7 +77,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   config: {
     reason:
-      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; the getMultiple decrypt refusal by the access-denied logging spec; setMultiple and update remain',
+      'set, viewValue and importJson covered by the audit/idempotency/write-authority specs; list, exportJson and delete by the spec on the row whose key left the registry; getMultiple by configGetMultiple.integration.spec.ts; setMultiple and update remain',
     uncovered: 2,
   },
   users: {
