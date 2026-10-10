@@ -184,6 +184,26 @@ packages/
 - `list()`: filters `isActive=true` by default; `includeInactive=true` for admin
 - Inactive row in a table: `className={!item.isActive ? 'opacity-50' : undefined}`
 
+## Dates & Time Zones
+
+Helpers in `packages/core/src/utils/dateUtils.ts`, schemas in `packages/core/src/schemas/dates.ts`.
+Rationale: ADR-035. Until they move there, the instant formatters are in `utils/date.ts`: never rely
+on their fallback to the runtime zone.
+
+- Use core date helpers and schemas; keep calendar days, instants and wall times distinct.
+- Calendar days are zone-free; UTC-midnight storage is an encoding.
+- Deadlines, lateness, working days, locks, deadline notices, weekly sales, calendar cloning, template
+  application and the backup slot use `app.defaultTimezone`.
+- Everything else a person reads or types — UI, exports (the audit export aside), emails, digests — uses
+  the server-resolved profile zone; wait until it is available.
+- The browser zone only proposes profile updates and dates instants before sign-in, naming the zone;
+  world clocks name explicit zones.
+- Shift days with core helpers; preserve instant precision and document DST behavior.
+- Validate generated and external dates (holiday import, NAV, audit metadata) where they are written or
+  read; a reader degrades one bad value instead of failing the whole result.
+- Format instants through core with explicit zone and locale, calendar days without a zone; the audit
+  export declares UTC, other exports name the profile zone.
+
 ## AppConfig System
 
 All runtime configuration lives in the `AppConfig` table (Postgres KV), and `AppConfigRegistry` in
