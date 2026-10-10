@@ -1,11 +1,11 @@
 /**
- * The date primitives the API accepts. Luke plans by calendar days and records instants; both stay
- * within 1900–9999, the years the calendar-date helpers in `utils/dateUtils.ts` represent.
+ * The date primitives the API accepts (ADR-035): calendar days and instants, which stay within the
+ * years the helpers in `utils/dateUtils.ts` represent, wall times and time zones.
  */
 
 import { z } from 'zod';
 
-import { isInstantInRange, parseCalendarDate, utcMidnightOf } from '../utils/dateUtils.js';
+import { WALL_TIME_PATTERN, canonicalTimeZone, isInstantInRange, isValidTimeZone, parseCalendarDate, utcMidnightOf } from '../utils/dateUtils.js';
 
 /**
  * A `YYYY-MM-DD` calendar date that exists (`2026-02-30` is refused), from 1900-01-01 to 9999-12-30.
@@ -32,3 +32,12 @@ export const CalendarInstantSchema = z
   // `abort`: a malformed value gets one issue, not also the range one (Zod 4 runs the refine anyway).
   .datetime({ abort: true })
   .refine(value => isInstantInRange(new Date(value), { allDay: true }), "Data fuori dall'intervallo supportato");
+
+/** A time of day with no date and no zone of its own (`WALL_TIME_PATTERN`). */
+export const WallTimeSchema = z.string().regex(WALL_TIME_PATTERN, 'Formato orario non valido (HH:mm)');
+
+/**
+ * An IANA zone (`isValidTimeZone`) in `canonicalTimeZone`'s spelling (ADR-035). `User.timezone`
+ * stores the parsed value; an AppConfig value is stored as written and read through this schema.
+ */
+export const TimeZoneSchema = z.string().refine(isValidTimeZone, 'Fuso orario non valido').transform(canonicalTimeZone);

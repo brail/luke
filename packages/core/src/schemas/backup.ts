@@ -5,6 +5,7 @@
 import { z } from 'zod';
 
 import { typedConfirmation } from './confirmation.js';
+import { WallTimeSchema } from './dates.js';
 
 /** Confirmation phrase the restore dialog makes the admin type. */
 export const BACKUP_RESTORE_CONFIRM_PHRASE = 'RIPRISTINA';
@@ -145,7 +146,7 @@ export const BackupRecordSchema = z.object({
 /** Form/input schema for the automatic-backup schedule + retention settings (one AppConfig key each). */
 export const BackupScheduleConfigSchema = z.object({
   enabled: z.boolean(),
-  dailyTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Formato orario non valido (HH:mm)'),
+  dailyTime: WallTimeSchema,
   scope: BackupScopeSchema,
   retentionDays: z.number().int().min(1).max(3650),
   retentionMinCount: z.number().int().min(0).max(1000),

@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
 import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
-import { canonicalTimeZone, isValidTimeZone } from '../utils/dateUtils.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import { TimeZoneSchema, WallTimeSchema } from './dates.js';
 import { LDAP_STRATEGIES } from './ldap.js';
 import { smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
@@ -61,9 +61,7 @@ export const AppConfigRegistry = {
    * dashboard's weekly sales end on, and the zone a user reads in when their stored `User.timezone`
    * is not an IANA name (`resolveUserTimeZone`).
    */
-  // Read in the case `Intl` spells it: the value is stored as written, and a zone typed in another
-  // case must still name that zone rather than fail the read and fall back to the default.
-  'app.defaultTimezone': z.string().refine(isValidTimeZone, 'Fuso orario non valido').transform(canonicalTimeZone),
+  'app.defaultTimezone': TimeZoneSchema,
   'app.baseUrl':         z.string().url(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
@@ -194,7 +192,7 @@ export const AppConfigRegistry = {
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
   'backup.schedule.enabled':        booleanConfigSchema,
-  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm", wall time in app.defaultTimezone
+  'backup.schedule.dailyTime':      WallTimeSchema, // wall time in app.defaultTimezone
   'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
   'backup.retentionDays':           z.coerce.number().int().min(1).max(3650),
   'backup.retentionMinCount':       z.coerce.number().int().min(0).max(1000),

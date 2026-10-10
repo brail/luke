@@ -16,7 +16,8 @@ describe('User.timezone on write', () => {
     expect(UserProfileSchema.safeParse({ ...PROFILE, timezone }).success).toBe(true);
   });
 
-  it.each(['', 'Mars/Olympus', '+01:00', '−01:00', 'Europe/Rome '.repeat(6)])('refuses %j', timezone => {
+  // A padded zone is refused, not trimmed: `isValidTimeZone` is the whole rule (ADR-035).
+  it.each(['', ' Europe/Rome', 'Mars/Olympus', '+01:00', '−01:00', 'Europe/Rome '.repeat(6)])('refuses %j', timezone => {
     expect(UpdateTimezoneSchema.safeParse({ timezone }).success).toBe(false);
     expect(UserProfileSchema.safeParse({ ...PROFILE, timezone }).success).toBe(false);
   });

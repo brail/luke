@@ -1,17 +1,7 @@
 import { z } from 'zod';
 
-import { canonicalTimeZone, isValidTimeZone } from '../utils/dateUtils.js';
-
+import { TimeZoneSchema } from './dates.js';
 import { passwordPrefilterSchema } from './password.js';
-
-/** An IANA zone name: the zone the server renders this person's dates and times in. */
-const userTimeZoneSchema = z
-  .string()
-  .trim()
-  .min(1, 'Timezone obbligatorio')
-  .max(64, 'Timezone troppo lungo')
-  .refine(isValidTimeZone, 'Fuso orario non valido')
-  .transform(canonicalTimeZone);
 
 /**
  * Input schema for updating the authenticated user's profile. No email: it changes only through
@@ -39,15 +29,12 @@ export const UserProfileSchema = z.object({
     .min(2, 'Locale non valido')
     .max(10, 'Locale troppo lungo'),
 
-  /** User timezone (e.g. Europe/Rome, America/New_York) */
-  timezone: userTimeZoneSchema,
+  /** The zone this person reads and types dates in (the reader zone, ADR-035). */
+  timezone: TimeZoneSchema,
 });
 
 /** Input schema for updating only the user's timezone without requiring other profile fields. */
-export const UpdateTimezoneSchema = z.object({
-  /** User timezone (e.g. Europe/Rome, America/New_York) */
-  timezone: userTimeZoneSchema,
-});
+export const UpdateTimezoneSchema = UserProfileSchema.pick({ timezone: true });
 
 /**
  * Input schema for changing the authenticated user's password.

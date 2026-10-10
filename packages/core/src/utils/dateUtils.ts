@@ -217,6 +217,9 @@ export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
   return instantAt(date, '00:00', timeZone);
 }
 
+/** `HH:mm` on the 24-hour clock; groups: hours, minutes. */
+export const WALL_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
 /**
  * The earliest instant at which the wall clock in `timeZone` reads `time` (`'HH:mm'`) on `date` or
  * later: a wall time the zone skips (spring forward) is the first instant after the jump, one it
@@ -233,7 +236,7 @@ export function startOfDayIn(date: CalendarDate, timeZone: string): Date {
  * are predictions). A zone breaking it would need the transitions scanned across the window.
  */
 export function instantAt(date: CalendarDate, time: string, timeZone: string): Date {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(time);
+  const match = WALL_TIME_PATTERN.exec(time);
   if (!match) throw new RangeError(`Not a wall time: ${time}`);
   const format = wallClockFormat(timeZone);
   const wall = utcMs(date) + (Number(match[1]) * 60 + Number(match[2])) * 60_000;
