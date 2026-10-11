@@ -342,7 +342,7 @@ analytics replicas, described below.
   the KIMO report. `syncPortafoglioNow` and `syncKimoNow` in `@luke/nav` refresh
   them.
 - **Schedule.** Each has a `NavSyncFilter` row (`entity` `portafoglio` or
-  `kimo`), created when its tab's schedule is saved (`Salva configurazione`,
+  `kimo`), created when its tab's schedule is saved (`Salva Configurazione`,
   `integrations.nav.sync.saveSyncSchedule`). Its scheduler reads `autoSyncEnabled`
   and `intervalMinutes` on every tick and runs under a scheduler lock; `mode` and
   `navNos` do not apply. The tab's manual sync calls

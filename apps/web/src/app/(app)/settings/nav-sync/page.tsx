@@ -4,7 +4,9 @@ import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react
 import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 
+import { PermissionButton } from '../../../../components/PermissionButton';
 import { SectionCard } from '../../../../components/SectionCard';
+import { SettingsActions } from '../../../../components/settings/SettingsActions';
 import { SettingsFormGate } from '../../../../components/settings/SettingsFormShell';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -34,6 +36,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
+import { usePermission } from '../../../../hooks/usePermission';
 import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -67,6 +70,8 @@ interface SyncRunResult {
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
+const SYNC_PERMISSION_TOOLTIP = 'Non hai i permessi per avviare la sincronizzazione';
+
 const ENTITY_TABS: { id: EntityId; label: string }[] = [
   { id: 'vendor', label: 'Fornitori' },
   { id: 'brand', label: 'Brand' },
@@ -89,17 +94,18 @@ function ScheduleFields({
   onIntervalChange: (minutes: number) => void;
   defaultIntervalMinutes: number;
 }) {
-  const intervalId = useId();
+  const id = useId();
   return (
     <>
       <div className="flex items-center justify-between rounded-lg border p-3">
         <div className="space-y-0.5">
-          <p className="text-sm font-medium">Automatica</p>
+          <Label htmlFor={`${id}-auto`}>Automatica</Label>
           <p className="text-xs text-muted-foreground">
             {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
           </p>
         </div>
         <Switch
+          id={`${id}-auto`}
           checked={autoSyncEnabled}
           onCheckedChange={onAutoSyncChange}
         />
@@ -107,9 +113,9 @@ function ScheduleFields({
 
       {autoSyncEnabled && (
         <div className="flex items-center gap-2">
-          <Label htmlFor={intervalId} className="whitespace-nowrap font-normal">Ogni</Label>
+          <Label htmlFor={`${id}-interval`} className="whitespace-nowrap font-normal">Ogni</Label>
           <Input
-            id={intervalId}
+            id={`${id}-interval`}
             type="number"
             min={1}
             max={1440}
@@ -124,7 +130,10 @@ function ScheduleFields({
   );
 }
 
-/** Auto-sync schedule of a NAV table set (Portafoglio, KIMO), editable only once the stored schedule has been read. */
+/**
+ * Auto-sync schedule of a NAV table set (Portafoglio, KIMO): editable once the stored schedule has
+ * been read, and read-only without `config:update`.
+ */
 function SyncScheduleCard({
   entity,
   description,
@@ -134,6 +143,8 @@ function SyncScheduleCard({
   description: string;
   defaultIntervalMinutes: number;
 }) {
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery({ entity });
 
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
@@ -164,7 +175,7 @@ function SyncScheduleCard({
         hasData={filterQuery.data !== undefined}
         onRetry={() => void filterQuery.refetch()}
       >
-        <div className="space-y-4">
+        <fieldset disabled={!canUpdate} className="space-y-4">
           <ScheduleFields
             autoSyncEnabled={autoSyncEnabled}
             onAutoSyncChange={setAutoSyncEnabled}
@@ -173,14 +184,11 @@ function SyncScheduleCard({
             defaultIntervalMinutes={defaultIntervalMinutes}
           />
 
-          <Button
-            size="sm"
-            onClick={() => saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes })}
-            disabled={saveSyncScheduleMutation.isPending}
-          >
-            {saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
-          </Button>
-        </div>
+          <SettingsActions
+            onSave={() => saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes })}
+            isSaving={saveSyncScheduleMutation.isPending}
+          />
+        </fieldset>
       </SettingsFormGate>
     </SectionCard>
   );
@@ -190,8 +198,11 @@ function SyncScheduleCard({
 
 function PortafoglioSyncTab() {
 
+  const { can } = usePermission();
+  const canSync = can('sales:read');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
+      enabled: canSync,
       refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
@@ -221,7 +232,9 @@ function PortafoglioSyncTab() {
       >
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <Button
+            <PermissionButton
+              hasPermission={canSync}
+              tooltip={SYNC_PERMISSION_TOOLTIP}
               variant="outline"
               onClick={() => syncMutation.mutate()}
               disabled={isSyncing}
@@ -238,7 +251,7 @@ function PortafoglioSyncTab() {
                   Aggiorna ora
                 </>
               )}
-            </Button>
+            </PermissionButton>
 
             <LastSyncLabel syncState={syncState} tableName="nav_pf_sales_header" staleAfterMinutes={10} />
           </div>
@@ -283,8 +296,11 @@ function PortafoglioSyncTab() {
 
 function KimoSyncTab() {
 
+  const { can } = usePermission();
+  const canSync = can('sales:read');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
+      enabled: canSync,
       refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
@@ -314,7 +330,9 @@ function KimoSyncTab() {
       >
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <Button
+            <PermissionButton
+              hasPermission={canSync}
+              tooltip={SYNC_PERMISSION_TOOLTIP}
               variant="outline"
               onClick={() => syncMutation.mutate()}
               disabled={isSyncing}
@@ -331,7 +349,7 @@ function KimoSyncTab() {
                   Aggiorna ora
                 </>
               )}
-            </Button>
+            </PermissionButton>
 
             <LastSyncLabel syncState={syncState} tableName="nav_kimo_sales_header" staleAfterMinutes={60} />
           </div>
@@ -436,11 +454,14 @@ function NavSyncTab({
   entityLabel: string;
 }) {
 
+  const { can } = usePermission();
+  const canUpdate = can('config:update');
+
   // ── Filter query ───────────────────────────────────────────────────────────
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery({ entity });
 
   // ── Preview: lazy — never auto-executed ───────────────────────────────────
-  // Loads only when user presses "Load preview"
+  // Loads only when the user presses "Carica da NAV"
   // and is visible only when mode is whitelist or exclude.
   const previewQuery = trpc.integrations.nav.sync.preview.useQuery(
     { entity },
@@ -477,7 +498,7 @@ function NavSyncTab({
   const [syncRunResult, setSyncRunResult] = useState<SyncRunResult | null>(null);
   const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-  // Pianificazione sync
+  // Auto-sync schedule
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
   const [intervalMinutes, setIntervalMinutes] = useState(30);
 
@@ -591,7 +612,7 @@ function NavSyncTab({
           hasData={filterQuery.data !== undefined}
           onRetry={() => void filterQuery.refetch()}
         >
-          <div className="space-y-4">
+          <fieldset disabled={!canUpdate} className="space-y-4">
             {/* Warning: no criterion configured */}
             {isNotConfigured && (
               <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-400">
@@ -611,7 +632,7 @@ function NavSyncTab({
               </Badge>
             )}
 
-            {/* Radio mode + pianificazione — layout a due colonne */}
+            {/* Mode radios and schedule, in two columns */}
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {/* Left column: filter */}
               <div className="space-y-2">
@@ -623,7 +644,7 @@ function NavSyncTab({
                     { value: 'exclude', label: 'Escludi selezionati' },
                   ] as const
                 ).map(opt => (
-                  <label key={opt.value} className="flex cursor-pointer items-center gap-2">
+                  <label key={opt.value} className="flex cursor-pointer items-center gap-2 has-disabled:cursor-default">
                     <input
                       type="radio"
                       name={`sync-mode-${entity}`}
@@ -651,14 +672,12 @@ function NavSyncTab({
               </div>
             </div>
 
-            <Button
-              onClick={handleSaveFilter}
-              disabled={saveFilterMutation.isPending || saveSyncScheduleMutation.isPending || mode === null}
-              size="sm"
-            >
-              {saveFilterMutation.isPending || saveSyncScheduleMutation.isPending ? 'Salvataggio…' : 'Salva configurazione'}
-            </Button>
-          </div>
+            <SettingsActions
+              onSave={handleSaveFilter}
+              isSaving={saveFilterMutation.isPending || saveSyncScheduleMutation.isPending}
+              disabled={mode === null}
+            />
+          </fieldset>
         </SettingsFormGate>
       </SectionCard>
 
@@ -736,7 +755,7 @@ function NavSyncTab({
                         <Checkbox
                           checked={headerCheckState}
                           onCheckedChange={toggleAll}
-                          disabled={previewQuery.isLoading || filteredRecords.length === 0}
+                          disabled={!canUpdate || previewQuery.isLoading || filteredRecords.length === 0}
                           aria-label="Seleziona/deseleziona tutti"
                         />
                       </TableHead>
@@ -774,13 +793,14 @@ function NavSyncTab({
                         <TableRow
                           key={row.navNo}
                           data-state={selectedNavNos.has(row.navNo) ? 'selected' : undefined}
-                          className="cursor-pointer"
-                          onClick={() => toggleRow(row.navNo)}
+                          className={cn(canUpdate && 'cursor-pointer')}
+                          onClick={canUpdate ? () => toggleRow(row.navNo) : undefined}
                         >
                           <TableCell onClick={e => e.stopPropagation()}>
                             <Checkbox
                               checked={selectedNavNos.has(row.navNo)}
                               onCheckedChange={() => toggleRow(row.navNo)}
+                              disabled={!canUpdate}
                               aria-label={`Seleziona ${row.navNo}`}
                             />
                           </TableCell>
@@ -866,14 +886,16 @@ function NavSyncTab({
             </p>
           )}
 
-          <Button
+          <PermissionButton
+            hasPermission={canUpdate}
+            tooltip={SYNC_PERMISSION_TOOLTIP}
             onClick={handleRunSync}
             disabled={runSyncMutation.isPending || isNotConfigured}
             className="gap-2"
           >
             <RefreshCw size={16} className={runSyncMutation.isPending ? 'animate-spin' : ''} />
             {runSyncMutation.isPending ? 'Sincronizzazione in corso…' : `Sync ${entityLabel} ora`}
-          </Button>
+          </PermissionButton>
 
           {syncRunResult && !runSyncMutation.isPending && (() => {
             const r = syncRunResult.results[0];
