@@ -28,6 +28,13 @@ describe('deadlineDay', () => {
     const event = { startAt: '2026-10-01T00:00:00.000Z', endAt: '2026-10-09T00:00:00.000Z', allDay: true };
     expect(deadlineDay(event, ROME)).toBe('2026-10-09');
   });
+
+  // A timed end is exclusive: the window below covers 1–8 October in Rome, as the calendar shows it.
+  it('due on the last day of a timed window ending at local midnight', () => {
+    const event = { startAt: '2026-09-30T22:00:00.000Z', endAt: '2026-10-08T22:00:00.000Z', allDay: false };
+    expect(deadlineDay(event, ROME)).toBe('2026-10-08');
+    expect(deadlineDay({ ...event, endAt: '2026-10-08T22:00:00.001Z' }, ROME)).toBe('2026-10-09');
+  });
 });
 
 describe('deadlineReachedAt', () => {

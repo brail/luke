@@ -1,7 +1,7 @@
 import {
   addCalendarDays,
-  calendarDateIn,
   calendarDateOf,
+  eventCalendarDays,
   startOfDayIn,
   type CalendarDate,
 } from './dateUtils.js';
@@ -32,12 +32,11 @@ function storedDeadline(event: DeadlineEvent): Date {
 }
 
 /**
- * The day a deadline falls on — what countdowns count to. An all-day value is its own calendar date
- * (zone-free); a timed one is the date of its instant in the business zone.
+ * The day a deadline falls on — what countdowns count to: the last day the calendar shows the event
+ * on (`eventCalendarDays`), so a timed window ending at local midnight is due the day before.
  */
 export function deadlineDay(event: DeadlineEvent, timeZone: string): CalendarDate {
-  const deadline = storedDeadline(event);
-  return event.allDay ? calendarDateOf(deadline) : calendarDateIn(deadline, timeZone);
+  return eventCalendarDays(new Date(event.startAt), event.endAt ? new Date(event.endAt) : null, event.allDay, timeZone)[1];
 }
 
 /**

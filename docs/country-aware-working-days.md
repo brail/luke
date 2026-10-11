@@ -127,8 +127,10 @@ built on `isWorkingDate`. Both work on calendar dates (`CalendarDate`,
 - "Today" is the date of now in the business time zone
   (`app.defaultTimezone`, `Impostazioni › Azienda`). The deadline's date is
   `deadlineDay` (`packages/core/src/utils/calendarEventLock.ts`): an all-day
-  deadline is its own date, a timed one is the date of its instant in the
-  business zone. The zone the API process runs in plays no part.
+  deadline is its own date, a timed one is the business-zone date of the last
+  day it covers — its end is exclusive, so a window ending at local midnight is
+  due the day before (`eventCalendarDays`). The zone the API process runs in
+  plays no part.
 
 ### Intersection of open days in both
 
