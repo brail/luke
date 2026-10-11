@@ -16,6 +16,7 @@
  */
 
 
+import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_DEFAULT_INTERVAL_MINUTES, type NavMasterDataEntity } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import { closePool, runNavSync } from '@luke/nav';
 
@@ -30,8 +31,8 @@ import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minute
 
-const ENTITIES = ['vendor', 'brand', 'season'] as const;
-export type Entity = (typeof ENTITIES)[number];
+const ENTITIES = NAV_MASTER_DATA_ENTITIES;
+export type Entity = NavMasterDataEntity;
 
 // Timestamp (ms) of the last completed run per entity
 const lastRunAt: Partial<Record<Entity, number>> = {};
@@ -170,7 +171,7 @@ export function registerNavSyncScheduler(
       const filter = await prisma.navSyncFilter.findUnique({ where: { entity } });
       if (!filter?.autoSyncEnabled) continue;
 
-      const intervalMs = (filter.intervalMinutes ?? 30) * 60 * 1000;
+      const intervalMs = (filter.intervalMinutes ?? NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity]) * 60 * 1000;
       const last = lastRunAt[entity] ?? 0;
 
       if (now - last >= intervalMs) {

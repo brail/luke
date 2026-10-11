@@ -7,7 +7,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { navConfigSchema } from '@luke/core';
+import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, navConfigSchema } from '@luke/core';
 import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
 
@@ -38,7 +38,7 @@ const navSyncRouter = router({
    */
   preview: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
+    .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .query(async ({ input, ctx }) => {
       const config = await getNavDbConfig(ctx.prisma, getConfig);
       const pool = await getPool(config);
@@ -180,11 +180,7 @@ const navSyncRouter = router({
    */
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({
-      entity: z.enum(['vendor', 'brand', 'season', 'portafoglio', 'kimo']),
-      autoSyncEnabled: z.boolean(),
-      intervalMinutes: z.number().int().min(1).max(1440),
-    }))
+    .input(NavSyncScheduleInputSchema)
     .mutation(async ({ input, ctx }) => {
       const filter = await ctx.prisma.navSyncFilter.upsert({
         where: { entity: input.entity },
@@ -226,7 +222,7 @@ const navSyncRouter = router({
    */
   getFilter: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(z.object({ entity: z.string().min(1) }))
+    .input(z.object({ entity: z.enum(NAV_SYNC_ENTITIES) }))
     .query(async ({ input, ctx }) => {
       return ctx.prisma.navSyncFilter.findUnique({
         where: { entity: input.entity },
@@ -243,7 +239,7 @@ const navSyncRouter = router({
   saveFilter: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
-      entity: z.string().min(1),
+      entity: z.enum(NAV_SYNC_ENTITIES),
       mode: z.enum(['all', 'whitelist', 'exclude']),
       navNos: z.array(z.string()),
       active: z.boolean().optional(),
@@ -282,7 +278,7 @@ const navSyncRouter = router({
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
+    .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .mutation(async ({ input, ctx }) => {
       // One manual sync per entity per window, not one for all three: syncing vendors must not
       // block brands. Keyed by user and entity here, where the entity is known, whatever `keyBy`

@@ -32,6 +32,7 @@ const h = vi.hoisted(() => {
     state,
     getFilter: vi.fn((_input: { entity: string }) => state.filter),
     saveSchedule: vi.fn(),
+    saveFilter: vi.fn(),
     can: (_permission: string): boolean => true,
     preview: {} as { data?: unknown[] },
   };
@@ -60,7 +61,16 @@ vi.mock('../../../../lib/trpc', () => {
           sync: {
             getFilter: { useQuery: h.getFilter },
             preview: { useQuery: () => ({ ...h.preview, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }) },
-            saveFilter: mutation,
+            // Calls `onSuccess`, so the entity tab's schedule save that follows the filter runs too.
+            saveFilter: {
+              useMutation: () => ({
+                mutate: (input: unknown, opts?: { onSuccess?: () => void }) => {
+                  h.saveFilter(input);
+                  opts?.onSuccess?.();
+                },
+                isPending: false,
+              }),
+            },
             saveSyncSchedule: { useMutation: () => ({ mutate: h.saveSchedule, isPending: false }) },
             run: mutation,
           },
@@ -80,6 +90,7 @@ beforeEach(() => {
   h.preview = {};
   h.getFilter.mockClear();
   h.saveSchedule.mockClear();
+  h.saveFilter.mockClear();
   h.state.filter = read({ entity: 'x', mode: 'all', navNos: [], autoSyncEnabled: true, intervalMinutes: 15, updatedAt: new Date() });
   h.state.profile = read({ legalName: 'Febos S.r.l.', displayName: 'Febos', updatedAt: new Date() });
   h.state.zone = read([{ key: 'app.defaultTimezone', value: 'Asia/Shanghai', found: true }]);
@@ -195,6 +206,43 @@ test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without sales
   await screen.getByRole('tab', { name: tab }).click();
 
   await expect.element(screen.getByRole('button', { name: 'Aggiorna ora' })).toBeDisabled();
+});
+
+test.each(NAV_TABS)('NAV sync "%s": an emptied or out-of-range interval is refused with a message', async tab => {
+  // `parseInt('') || default` put the default back while typing; 2000 reached the server's refusal.
+  const screen = await render(navSync());
+  await screen.getByRole('tab', { name: tab }).click();
+  for (const typed of ['', '2000', '1.5']) {
+    await screen.getByRole('spinbutton', { name: 'Ogni' }).fill(typed);
+    await expect.element(screen.getByText('Inserisci un numero intero di minuti tra 1 e 1440')).toBeVisible();
+    await expect.element(screen.getByText('Intervallo non valido')).toBeVisible();
+    await expect.element(screen.getByRole('button', { name: 'Salva Configurazione' })).toBeDisabled();
+    expect(screen.getByText(/NaN/).elements(), typed).toHaveLength(0);
+  }
+});
+
+test.each([
+  ['Fornitori', 'vendor'],
+  ['Portafoglio Vendite', 'portafoglio'],
+  ['KIMO-FASHION', 'kimo'],
+])('NAV sync "%s": with automatic sync off, an emptied interval saves the stored one', async (tab, entity) => {
+  // The field is hidden once the switch is off: the save must not stay blocked without a visible fix.
+  const screen = await render(navSync());
+  await screen.getByRole('tab', { name: tab }).click();
+  await screen.getByRole('spinbutton', { name: 'Ogni' }).fill('');
+  await screen.getByRole('switch', { name: 'Automatica' }).click();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
+
+  expect(h.saveSchedule).toHaveBeenCalledWith({ entity, autoSyncEnabled: false, intervalMinutes: 15 });
+});
+
+test('NAV sync: with automatic sync off and a stored interval out of range, the default is saved', async () => {
+  h.state.filter = read({ entity: 'portafoglio', mode: 'all', navNos: [], autoSyncEnabled: false, intervalMinutes: 2000, updatedAt: new Date() });
+  const screen = await render(navSync());
+  await screen.getByRole('tab', { name: 'Portafoglio Vendite' }).click();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
+
+  expect(h.saveSchedule).toHaveBeenCalledWith({ entity: 'portafoglio', autoSyncEnabled: false, intervalMinutes: 5 });
 });
 
 test('company profile: a failed read shows the error and a retry, and no form to save', async () => {

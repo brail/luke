@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react
 import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 
+import { NAV_SYNC_DEFAULT_INTERVAL_MINUTES, NavSyncScheduleInputSchema, type NavMasterDataEntity, type NavSyncEntity } from '@luke/core';
+
 import { PermissionButton } from '../../../../components/PermissionButton';
 import { SectionCard } from '../../../../components/SectionCard';
 import { SettingsActions } from '../../../../components/settings/SettingsActions';
@@ -37,6 +39,7 @@ import {
   TabsTrigger,
 } from '../../../../components/ui/tabs';
 import { usePermission } from '../../../../hooks/usePermission';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -45,7 +48,7 @@ import { cn } from '../../../../lib/utils';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type SyncMode = 'all' | 'whitelist' | 'exclude';
-type EntityId = 'vendor' | 'brand' | 'season';
+type EntityId = NavMasterDataEntity;
 
 interface PreviewRecord {
   navNo: string;
@@ -80,19 +83,36 @@ const ENTITY_TABS: { id: EntityId; label: string }[] = [
 
 // ── Sync schedule ─────────────────────────────────────────────────────────────
 
-/** The automatic-sync switch and, while it is on, the interval in minutes. */
+/** Why the server would refuse `minutes` as an interval, or `undefined` when it would not. */
+function intervalError(minutes: number): string | undefined {
+  return NavSyncScheduleInputSchema.shape.intervalMinutes.safeParse(minutes).error?.issues[0]?.message;
+}
+
+/**
+ * The typed interval's error while automatic sync is on, and what a save sends: the typed value when
+ * valid; with automatic sync off (field hidden, value unused) the saved one or else the entity's
+ * default; otherwise `null`, and the save waits.
+ */
+function scheduleInterval(typed: number, autoSyncEnabled: boolean, saved: number | null | undefined, entity: NavSyncEntity) {
+  const error = intervalError(typed);
+  if (!error) return { error, interval: typed };
+  if (autoSyncEnabled) return { error, interval: null };
+  return { error: undefined, interval: saved != null && !intervalError(saved) ? saved : NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity] };
+}
+
+/** The automatic-sync switch and, while it is on, the interval in minutes with `error` under it. */
 function ScheduleFields({
   autoSyncEnabled,
   onAutoSyncChange,
   intervalMinutes,
   onIntervalChange,
-  defaultIntervalMinutes,
+  error,
 }: {
   autoSyncEnabled: boolean;
   onAutoSyncChange: (enabled: boolean) => void;
   intervalMinutes: number;
   onIntervalChange: (minutes: number) => void;
-  defaultIntervalMinutes: number;
+  error: string | undefined;
 }) {
   const id = useId();
   return (
@@ -101,7 +121,7 @@ function ScheduleFields({
         <div className="space-y-0.5">
           <Label htmlFor={`${id}-auto`}>Automatica</Label>
           <p className="text-xs text-muted-foreground">
-            {autoSyncEnabled ? `Ogni ${intervalMinutes} min` : 'Solo manuale'}
+            {!autoSyncEnabled ? 'Solo manuale' : error ? 'Intervallo non valido' : `Ogni ${intervalMinutes} min`}
           </p>
         </div>
         <Switch
@@ -119,13 +139,15 @@ function ScheduleFields({
             type="number"
             min={1}
             max={1440}
-            value={intervalMinutes}
-            onChange={e => onIntervalChange(Math.max(1, parseInt(e.target.value) || defaultIntervalMinutes))}
+            {...numberInputProps(intervalMinutes, onIntervalChange)}
+            aria-invalid={error !== undefined}
+            aria-describedby={error ? `${id}-interval-error` : undefined}
             className="w-20"
           />
           <span className="text-sm text-muted-foreground">minuti</span>
         </div>
       )}
+      {error && <p id={`${id}-interval-error`} className="text-sm text-destructive">{error}</p>}
     </>
   );
 }
@@ -137,18 +159,17 @@ function ScheduleFields({
 function SyncScheduleCard({
   entity,
   description,
-  defaultIntervalMinutes,
 }: {
-  entity: 'portafoglio' | 'kimo';
+  entity: Exclude<NavSyncEntity, NavMasterDataEntity>;
   description: string;
-  defaultIntervalMinutes: number;
 }) {
+  const defaultIntervalMinutes = NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity];
   const { can } = usePermission();
   const canUpdate = can('config:update');
   const filterQuery = trpc.integrations.nav.sync.getFilter.useQuery({ entity });
 
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState(defaultIntervalMinutes);
+  const [intervalMinutes, setIntervalMinutes] = useState<number>(defaultIntervalMinutes);
 
   // Keyed on `data` alone: a refetch that returns the same filter keeps its reference (structural
   // sharing), so a failed refetch that recovers does not discard unsaved edits.
@@ -166,6 +187,7 @@ function SyncScheduleCard({
     },
     onError: err => toast.error('Errore salvataggio pianificazione', { description: getTrpcErrorMessage(err) }),
   });
+  const { error: intervalProblem, interval } = scheduleInterval(intervalMinutes, autoSyncEnabled, filterQuery.data?.intervalMinutes, entity);
 
   return (
     <SectionCard title="Pianificazione sync automatico" description={description}>
@@ -181,12 +203,15 @@ function SyncScheduleCard({
             onAutoSyncChange={setAutoSyncEnabled}
             intervalMinutes={intervalMinutes}
             onIntervalChange={setIntervalMinutes}
-            defaultIntervalMinutes={defaultIntervalMinutes}
+            error={intervalProblem}
           />
 
           <SettingsActions
-            onSave={() => saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes })}
+            onSave={() => {
+              if (interval !== null) saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes: interval });
+            }}
             isSaving={saveSyncScheduleMutation.isPending}
+            disabled={interval === null}
           />
         </fieldset>
       </SettingsFormGate>
@@ -223,7 +248,6 @@ function PortafoglioSyncTab() {
       <SyncScheduleCard
         entity="portafoglio"
         description="Configura la frequenza di sincronizzazione automatica NAV → PostgreSQL per il portafoglio ordini."
-        defaultIntervalMinutes={5}
       />
 
       <SectionCard
@@ -321,7 +345,6 @@ function KimoSyncTab() {
       <SyncScheduleCard
         entity="kimo"
         description="Configura la frequenza di sincronizzazione automatica NAV → PostgreSQL per le tabelle KIMO-FASHION."
-        defaultIntervalMinutes={30}
       />
 
       <SectionCard
@@ -470,10 +493,9 @@ function NavSyncTab({
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const saveFilterMutation = trpc.integrations.nav.sync.saveFilter.useMutation({
-    onSuccess: () => {
-      toast.success('Filtro salvato');
-      void filterQuery.refetch();
-    },
+    // No refetch here: the schedule save that follows refetches, and a refetch now would put the
+    // stored schedule back into the fields before they are saved.
+    onSuccess: () => toast.success('Filtro salvato'),
     onError: err => toast.error('Errore salvataggio filtro', { description: getTrpcErrorMessage(err) }),
   });
 
@@ -500,7 +522,7 @@ function NavSyncTab({
 
   // Auto-sync schedule
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [intervalMinutes, setIntervalMinutes] = useState<number>(NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity]);
 
   // Initialize selection, mode and schedule from the saved filter. Keyed on `data` alone, as in
   // SyncScheduleCard: a recovered failed refetch keeps unsaved edits.
@@ -510,8 +532,8 @@ function NavSyncTab({
     setMode(saved.mode as SyncMode);
     setSelectedNavNos(new Set(saved.navNos));
     setAutoSyncEnabled(saved.autoSyncEnabled ?? false);
-    setIntervalMinutes(saved.intervalMinutes ?? 30);
-  }, [filterQuery.data]);
+    setIntervalMinutes(saved.intervalMinutes ?? NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity]);
+  }, [filterQuery.data, entity]);
 
   // Reset preview when mode changes
   useEffect(() => {
@@ -576,13 +598,16 @@ function NavSyncTab({
     });
   };
 
+  // Checked before the filter is saved, so an invalid interval never leaves the filter saved alone.
+  const { error: intervalProblem, interval } = scheduleInterval(intervalMinutes, autoSyncEnabled, filterQuery.data?.intervalMinutes, entity);
+
   const handleSaveFilter = () => {
-    if (!mode) return;
+    if (!mode || interval === null) return;
     saveFilterMutation.mutate(
       { entity, mode, navNos: mode === 'all' ? [] : [...selectedNavNos] },
       {
         onSuccess: () => {
-          saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes });
+          saveSyncScheduleMutation.mutate({ entity, autoSyncEnabled, intervalMinutes: interval });
         },
       }
     );
@@ -667,7 +692,7 @@ function NavSyncTab({
                   onAutoSyncChange={setAutoSyncEnabled}
                   intervalMinutes={intervalMinutes}
                   onIntervalChange={setIntervalMinutes}
-                  defaultIntervalMinutes={30}
+                  error={intervalProblem}
                 />
               </div>
             </div>
@@ -675,7 +700,7 @@ function NavSyncTab({
             <SettingsActions
               onSave={handleSaveFilter}
               isSaving={saveFilterMutation.isPending || saveSyncScheduleMutation.isPending}
-              disabled={mode === null}
+              disabled={mode === null || interval === null}
             />
           </fieldset>
         </SettingsFormGate>

@@ -14,6 +14,7 @@
  */
 
 
+import { NAV_SYNC_DEFAULT_INTERVAL_MINUTES } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult } from '@luke/nav';
 
@@ -112,7 +113,7 @@ export function registerPortafoglioSyncScheduler(
 
     if (!config?.autoSyncEnabled) return;
 
-    const intervalMs = (config.intervalMinutes ?? 5) * 60 * 1000;
+    const intervalMs = (config.intervalMinutes ?? NAV_SYNC_DEFAULT_INTERVAL_MINUTES.portafoglio) * 60 * 1000;
     const elapsed = _lastRunAt ? Date.now() - _lastRunAt.getTime() : Infinity;
     if (elapsed < intervalMs) return;
 
