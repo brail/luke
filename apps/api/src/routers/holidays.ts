@@ -2,12 +2,25 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { utcMidnightOf, VendorClosureUpsertInputSchema } from '@luke/core';
-import type { Prisma } from '@luke/db';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
+import { isForeignKeyViolation } from '../lib/error.js';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
+
+/** A closure write whose closure (P2025), vendor or season (foreign key) no longer exists is
+ * NOT_FOUND, not a 500. */
+function rethrowClosureNotFound(e: unknown): never {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Periodo non trovato' });
+  }
+  if (isForeignKeyViolation(e, 'vendor_closure_periods_vendorId_fkey') || isForeignKeyViolation(e, 'vendor_closure_periods_seasonId_fkey')) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore o stagione non trovati' });
+  }
+  throw e;
+}
 
 // ─── Nager.Date API ──────────────────────────────────────────────────────────
 
@@ -287,6 +300,7 @@ export const holidaysRouter = router({
    * @auth {season_calendar:update}
    * @input {{ vendorId: string, seasonId: string, countryCodes: string[] }}
    * @output {{ created: number }}
+   * @throws {TRPCError} NOT_FOUND for a vendor or season that does not exist.
    */
   prefillVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -316,7 +330,7 @@ export const holidaysRouter = router({
           sourceHolidayId: h.id,
         })),
         skipDuplicates: true,
-      });
+      }).catch(rethrowClosureNotFound);
 
       return { created };
     }),
@@ -327,52 +341,40 @@ export const holidaysRouter = router({
    * @auth {season_calendar:update}
    * @input {{ id?, vendorId, seasonId, countryCode, name, startDate, endDate, type, notes? }}
    * @output {VendorClosurePeriod}
+   * @throws {TRPCError} NOT_FOUND for an `id` that is no closure of that vendor and season, or for a
+   *   vendor or season that does not exist.
    */
   upsertVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(VendorClosureUpsertInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const startDate = utcMidnightOf(input.startDate);
-      const endDate   = utcMidnightOf(input.endDate);
+      const data = {
+        countryCode: input.countryCode,
+        name: input.name,
+        startDate: utcMidnightOf(input.startDate),
+        endDate: utcMidnightOf(input.endDate),
+        type: input.type,
+        notes: input.notes,
+      };
 
-      if (input.countryCode) {
-        await ctx.prisma.holidayCountry.upsert({
-          where: { code: input.countryCode },
-          update: {},
-          create: { code: input.countryCode, name: input.countryCode },
-        });
-      }
+      // The placeholder country commits with the closure, so a failed closure write leaves none.
+      const closure = await ctx.prisma.$transaction(async tx => {
+        if (input.countryCode) {
+          await tx.holidayCountry.upsert({
+            where: { code: input.countryCode },
+            update: {},
+            create: { code: input.countryCode, name: input.countryCode },
+          });
+        }
+        // An update finds its closure under the vendor and season it names: a stale dialog's id is
+        // gone, and another vendor's closure is not this request's to change.
+        return input.id
+          ? tx.vendorClosurePeriod.update({ where: { id: input.id, vendorId: input.vendorId, seasonId: input.seasonId }, data })
+          : tx.vendorClosurePeriod.create({ data: { ...data, vendorId: input.vendorId, seasonId: input.seasonId } });
+      }).catch(rethrowClosureNotFound);
 
-      if (input.id) {
-        const updated = await ctx.prisma.vendorClosurePeriod.update({
-          where: { id: input.id },
-          data: {
-            countryCode: input.countryCode,
-            name: input.name,
-            startDate,
-            endDate,
-            type: input.type,
-            notes: input.notes,
-          },
-        });
-        await logAudit(ctx, { action: 'VENDOR_CLOSURE_UPDATE', targetType: 'VendorClosurePeriod', targetId: updated.id, result: 'SUCCESS', metadata: { vendorId: updated.vendorId, seasonId: updated.seasonId, name: updated.name, type: updated.type } });
-        return updated;
-      }
-
-      const created = await ctx.prisma.vendorClosurePeriod.create({
-        data: {
-          vendorId: input.vendorId,
-          seasonId: input.seasonId,
-          countryCode: input.countryCode,
-          name: input.name,
-          startDate,
-          endDate,
-          type: input.type,
-          notes: input.notes,
-        },
-      });
-      await logAudit(ctx, { action: 'VENDOR_CLOSURE_CREATE', targetType: 'VendorClosurePeriod', targetId: created.id, result: 'SUCCESS', metadata: { vendorId: created.vendorId, seasonId: created.seasonId, name: created.name, type: created.type } });
-      return created;
+      await logAudit(ctx, { action: input.id ? 'VENDOR_CLOSURE_UPDATE' : 'VENDOR_CLOSURE_CREATE', targetType: 'VendorClosurePeriod', targetId: closure.id, result: 'SUCCESS', metadata: { vendorId: closure.vendorId, seasonId: closure.seasonId, name: closure.name, type: closure.type } });
+      return closure;
     }),
 
   /**
@@ -381,22 +383,25 @@ export const holidaysRouter = router({
    * @auth {season_calendar:update}
    * @input {{ id: string }}
    * @output {{ success: true }}
+   * @throws {TRPCError} NOT_FOUND for a closure already deleted.
    */
   deleteVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const deleted = await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } });
+      const deleted = await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } }).catch(rethrowClosureNotFound);
       await logAudit(ctx, { action: 'VENDOR_CLOSURE_DELETE', targetType: 'VendorClosurePeriod', targetId: input.id, result: 'SUCCESS', metadata: { vendorId: deleted.vendorId, seasonId: deleted.seasonId, name: deleted.name } });
       return { success: true };
     }),
 
   /**
-   * Marks a set of vendor closure periods as confirmed by the current user.
+   * Marks the unconfirmed closure periods among `ids` as confirmed by the current user; one already
+   * confirmed keeps its author and time.
    *
    * @auth {season_calendar:update}
    * @input {{ ids: string[] }} — UUIDs of closure periods to confirm.
-   * @output {{ confirmed: number }}
+   * @output {{ confirmed: number }} — the rows this call confirmed; an id deleted or already confirmed
+   *   is not counted.
    */
   confirmVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -405,8 +410,10 @@ export const holidaysRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const now = new Date();
-      await ctx.prisma.vendorClosurePeriod.updateMany({
-        where: { id: { in: input.ids } },
+      const { count } = await ctx.prisma.vendorClosurePeriod.updateMany({
+        // Unconfirmed only: the list the dialog sent from may be stale, and a confirmation already
+        // made keeps its author and time.
+        where: { id: { in: input.ids }, confirmedAt: null },
         data: {
           confirmedAt: now,
           confirmedByUserId: ctx.session.user.id,
@@ -417,8 +424,8 @@ export const holidaysRouter = router({
         targetType: 'VendorClosurePeriod',
         targetId: input.ids.join(','),
         result: 'SUCCESS',
-        metadata: { count: input.ids.length },
+        metadata: { count },
       });
-      return { confirmed: input.ids.length };
+      return { confirmed: count };
     }),
 });

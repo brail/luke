@@ -104,8 +104,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   holidays: {
     reason:
-      'listHolidays and upsertVendorClosure are covered by holidays.integration.spec.ts (the year filter, the closure days); previewImport and confirmImport fetch the public Nager.Date API, so testing them first needs the HTTP client stubbed; listCountries, deleteHoliday and the other vendor closure procedures have no test yet',
-    uncovered: 9,
+      'listHolidays and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts; previewImport and confirmImport fetch the public Nager.Date API, so testing them first needs the HTTP client stubbed; listCountries, deleteHoliday and the closure reads have no test yet',
+    uncovered: 6,
   },
   storage: {
     reason:
