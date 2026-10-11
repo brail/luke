@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { CalendarDateSchema } from './dates.js';
+
 /** All registered dashboard widget identifiers. Each ID maps to a rendered widget component. */
 export const WIDGET_IDS = [
   'kpi-stats',
@@ -43,12 +45,16 @@ export type WidgetConfigItem = z.infer<typeof WidgetConfigItemSchema>;
 /** Ordered array of widget configuration items representing a user's full dashboard layout. */
 export const DashboardWidgetsSchema = z.array(WidgetConfigItemSchema);
 
-/** Input schema for a personal dashboard task (to-do item with optional due date). */
+/**
+ * Input schema for a personal dashboard task (to-do item with optional due date). The due date is a
+ * calendar day. On an update a field left out keeps its stored value, and a `null` due date clears
+ * it.
+ */
 export const DashboardTaskInputSchema = z.object({
   id: z.string().optional(),
   label: z.string().min(1).max(200),
-  done: z.boolean().default(false),
-  dueDate: z.string().datetime().optional().nullable(),
+  done: z.boolean().optional(),
+  dueDate: CalendarDateSchema.optional().nullable(),
 });
 
 export type DashboardTaskInput = z.infer<typeof DashboardTaskInputSchema>;

@@ -135,8 +135,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   dashboard: {
     reason:
-      'only `getSeasonProgress`, from the brand-scope spec; config, tasks, KPIs, exchange rates and weekly sales remain',
-    uncovered: 8,
+      '`getSeasonProgress` from the brand-scope spec, `upsertTask` from the dashboard-tasks spec; config, the other task procedures, KPIs, exchange rates and weekly sales remain',
+    uncovered: 7,
   },
   vendors: {
     reason:

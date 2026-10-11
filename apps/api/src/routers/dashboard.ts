@@ -97,7 +97,9 @@ export const dashboardRouter = router({
    * Creates or updates a dashboard task for the current user.
    *
    * @auth {authenticated}
-   * @input {DashboardTaskInputSchema} — optional id (update if present), label, done, optional dueDate.
+   * @input {DashboardTaskInputSchema} — optional id (update if present), label, optional done and
+   *   dueDate (a `YYYY-MM-DD` day). On an update, a field left out keeps its stored value; a `null`
+   *   dueDate clears it.
    * @output {DashboardTask}
    */
   upsertTask: selfProcedure
@@ -106,6 +108,8 @@ export const dashboardRouter = router({
       const userId = ctx.session.user.id;
       const { id, label, done, dueDate } = input;
 
+      // A calendar day, stored at UTC midnight.
+      const due = dueDate == null ? dueDate : utcMidnightOf(dueDate);
       const task = await ctx.prisma.$transaction(async tx => {
         if (id) {
           const existing = await tx.dashboardTask.findFirst({ where: { id, userId } });
@@ -114,11 +118,11 @@ export const dashboardRouter = router({
           }
           return tx.dashboardTask.update({
             where: { id },
-            data: { label, done, dueDate: dueDate ? new Date(dueDate) : null },
+            data: { label, done, dueDate: due },
           });
         }
         return tx.dashboardTask.create({
-          data: { userId, label, done, dueDate: dueDate ? new Date(dueDate) : null },
+          data: { userId, label, done, dueDate: due },
         });
       });
 

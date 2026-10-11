@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { ApplyTemplateInputSchema, CalendarDigestRangeInputSchema, CalendarEventBaseSchema, MilestoneRescheduleInputSchema, VendorClosureUpsertInputSchema } from '../seasonCalendar.js';
+import { ApplyTemplateInputSchema, CalendarDigestRangeInputSchema, CalendarEventBaseSchema, EventDatesExpectedSchema, MilestoneRescheduleInputSchema, VendorClosureUpsertInputSchema } from '../seasonCalendar.js';
 
 const ID = '00000000-0000-4000-8000-000000000000';
 /** The dates the client read, required on every write that can move an event. */
@@ -81,5 +81,18 @@ describe('template anchor', () => {
   // Rome's midnight of 10 March is 23:00Z on the 9th: taken as an instant, it would anchor on the 9th.
   it.each(['2026-03-09T23:00:00.000Z', '2026-03-10T00:00:00.000Z', '1899-12-31'])('refuses %s', value => {
     expect(apply(value).success).toBe(false);
+  });
+});
+
+describe('the dates a write was based on', () => {
+  const expected = (startAt: string) => EventDatesExpectedSchema.safeParse({ ...EXPECTED, startAt });
+
+  // A stored all-day value at the lower bound must stay comparable.
+  it('accepts an all-day value at 1900-01-01', () => {
+    expect(expected('1900-01-01T00:00:00.000Z').success).toBe(true);
+  });
+
+  it('refuses a date with no next day', () => {
+    expect(expected('9999-12-31T00:00:00.000Z').success).toBe(false);
   });
 });

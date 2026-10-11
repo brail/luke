@@ -4,6 +4,9 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { calendarDateIn, calendarDateOf, type CalendarDate } from '@luke/core';
+
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 import { cn } from '../../../lib/utils';
@@ -14,13 +17,12 @@ import { Checkbox } from '../../ui/checkbox';
 import { Input } from '../../ui/input';
 import { Skeleton } from '../../ui/skeleton';
 
-function getDueDateStatus(dueDate: string | Date | null | undefined): 'today' | 'overdue' | null {
-  if (!dueDate) return null;
-  const due = new Date(dueDate);
-  const today = new Date();
-  if (due.toDateString() === today.toDateString()) return 'today';
-  if (due < today) return 'overdue';
-  return null;
+/** A task's due day (a calendar day, stored at UTC midnight) against `today` in the profile zone. */
+function getDueDateStatus(dueDate: string | Date | null | undefined, today: CalendarDate | undefined): 'today' | 'overdue' | null {
+  if (!dueDate || !today) return null;
+  const due = calendarDateOf(new Date(dueDate));
+  if (due === today) return 'today';
+  return due < today ? 'overdue' : null;
 }
 
 /**
@@ -36,6 +38,9 @@ export function TasksWidget() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: tasks, isLoading } = trpc.dashboard.getTasks.useQuery();
+  const { zone } = useFormatDate();
+  // No due badge until the profile zone is known: the browser's day is not the reader's.
+  const today = zone ? calendarDateIn(new Date(), zone) : undefined;
 
   const invalidate = () => utils.dashboard.getTasks.invalidate();
 
@@ -55,7 +60,7 @@ export function TasksWidget() {
   function handleAdd() {
     const label = newLabel.trim();
     if (!label) return;
-    upsertMutation.mutate({ label, done: false });
+    upsertMutation.mutate({ label });
     setNewLabel('');
   }
 
@@ -93,7 +98,7 @@ export function TasksWidget() {
         ) : (
           <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
             {tasks.slice(0, 20).map(task => {
-              const dueDateStatus = getDueDateStatus(task.dueDate);
+              const dueDateStatus = getDueDateStatus(task.dueDate, today);
               return (
                 <div key={task.id} className="flex items-center gap-2 group">
                   <Checkbox

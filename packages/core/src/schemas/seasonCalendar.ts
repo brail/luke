@@ -89,8 +89,8 @@ export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSc
  * write that can move an event, so no caller can forget it.
  */
 export const EventDatesExpectedSchema = z.object({
-  startAt: z.string().datetime(),
-  endAt: z.string().datetime().nullable(),
+  startAt: CalendarInstantSchema,
+  endAt: CalendarInstantSchema.nullable(),
   allDay: z.boolean(),
 });
 export type EventDatesExpected = z.infer<typeof EventDatesExpectedSchema>;
