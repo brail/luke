@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { intInRange, PortSchema } from '../schemas/number.js';
+
 import { APP_STORAGE_BUCKETS, type StorageBucket } from './types.js';
 
 /**
@@ -74,7 +76,7 @@ export const localStorageSaveConfigSchema = z.object({
     .string()
     .min(1, 'Path richiesto')
     .regex(/^(\/|~\/)[a-zA-Z0-9_./-]*$/, 'Path deve iniziare con / oppure ~/'),
-  maxFileSizeMB: z.number().int().positive().min(1).max(1000),
+  maxFileSizeMB: intInRange(1, 1000, 'Inserisci una dimensione tra 1 e 1000 MB'),
   enableProxy: z.boolean(),
 });
 
@@ -82,7 +84,7 @@ export const localStorageSaveConfigSchema = z.object({
 export const s3StorageSaveConfigSchema = z.object({
   type: z.literal('s3'),
   endpoint: z.string().min(1, 'Endpoint richiesto'),
-  port: z.number().int().min(1).max(65535),
+  port: PortSchema,
   useSSL: z.boolean(),
   accessKey: z.string().min(1, 'Access key richiesta'),
   // Blank keeps the stored secret: the settings page is never sent it (`storage.getConfig` reports
@@ -90,8 +92,8 @@ export const s3StorageSaveConfigSchema = z.object({
   secretKey: z.string().trim().optional(),
   region: z.string().min(1, 'Region richiesta'),
   publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
-  presignedPutTtl: z.number().int().min(60).max(86400),
-  presignedGetTtl: z.number().int().min(60).max(86400),
+  presignedPutTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
+  presignedGetTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
 });
 
 /** The `storage.saveConfig` input. */

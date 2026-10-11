@@ -83,8 +83,9 @@ export const AlertBandEmphasisSchema = z.enum(['outline', 'soft', 'solid']);
  * `maxDaysToDeadline: null` means "no upper bound" (furthest-out band).
  */
 export const AlertBandSchema = z.object({
-  minDaysToDeadline: z.number().int(),
-  maxDaysToDeadline: z.number().int().nullable(),
+  // `{ error }` names an emptied field (NaN), reported in English otherwise (see `intInRange`).
+  minDaysToDeadline: z.number({ error: 'I giorni di ogni fascia devono essere numeri interi' }).int('I giorni di ogni fascia devono essere numeri interi'),
+  maxDaysToDeadline: z.number({ error: 'I giorni di ogni fascia devono essere numeri interi' }).int('I giorni di ogni fascia devono essere numeri interi').nullable(),
   color: z.string().min(1),
   label: z.string().min(1),
   /** Defaulted so blobs written before emphasis existed keep parsing (and keep rendering as before). */

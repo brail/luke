@@ -20,7 +20,7 @@ interface QueryState {
 
 const query = vi.hoisted(() => {
   const current: QueryState = { isPending: true, error: null, refetch: () => {} };
-  return { current };
+  return { current, mutate: vi.fn() };
 });
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -31,7 +31,7 @@ vi.mock('../../../lib/trpc', () => ({
     maintenance: {
       backup: {
         getScheduleConfig: { useQuery: () => query.current },
-        updateScheduleConfig: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+        updateScheduleConfig: { useMutation: () => ({ mutate: query.mutate, isPending: false }) },
       },
     },
   },
@@ -43,6 +43,17 @@ const stored: BackupScheduleConfig = {
 
 beforeEach(() => {
   query.current = { data: stored, isPending: false, error: null, refetch: vi.fn() };
+  query.mutate.mockClear();
+});
+
+test('an emptied retention field is refused with a message, not saved as 0', async () => {
+  // `parseInt('') || 0` saved 0: no backup kept back from pruning.
+  const screen = await render(<BackupScheduleCard />);
+  await screen.getByRole('spinbutton', { name: 'Minimo da conservare' }).clear();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
+
+  await expect.element(screen.getByText('Inserisci un numero tra 0 e 1000')).toBeVisible();
+  expect(query.mutate).not.toHaveBeenCalled();
 });
 
 test('a failed read shows the error and a retry, and no form to save', async () => {

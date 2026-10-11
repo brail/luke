@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { typedConfirmation } from './confirmation.js';
 import { WallTimeSchema } from './dates.js';
+import { intInRange } from './number.js';
 
 /** Confirmation phrase the restore dialog makes the admin type. */
 export const BACKUP_RESTORE_CONFIRM_PHRASE = 'RIPRISTINA';
@@ -148,8 +149,8 @@ export const BackupScheduleConfigSchema = z.object({
   enabled: z.boolean(),
   dailyTime: WallTimeSchema,
   scope: BackupScopeSchema,
-  retentionDays: z.number().int().min(1).max(3650),
-  retentionMinCount: z.number().int().min(0).max(1000),
+  retentionDays: intInRange(1, 3650, 'Inserisci un numero di giorni tra 1 e 3650'),
+  retentionMinCount: intInRange(0, 1000, 'Inserisci un numero tra 0 e 1000'),
   notifyOnFailure: z.boolean(),
 });
 

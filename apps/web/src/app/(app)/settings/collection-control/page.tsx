@@ -35,6 +35,7 @@ import {
 } from '../../../../components/ui/table';
 import { usePermission } from '../../../../hooks/usePermission';
 import { bandBadgeStyle, isHexColor } from '../../../../lib/alertBandStyle';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 
@@ -249,11 +250,8 @@ function BandSetEditor({
                     type="number"
                     aria-label="Da giorni"
                     className="h-9"
-                    value={band.minDaysToDeadline}
                     disabled={disabled}
-                    onChange={e =>
-                      updateBand(index, { minDaysToDeadline: parseInt(e.target.value, 10) || 0 })
-                    }
+                    {...numberInputProps(band.minDaysToDeadline, v => updateBand(index, { minDaysToDeadline: v }))}
                   />
                 </TableCell>
                 <TableCell className="py-2">
@@ -264,11 +262,12 @@ function BandSetEditor({
                     // the placeholder tells you where needed, not in the header.
                     placeholder="unlimited"
                     className="h-9"
-                    value={band.maxDaysToDeadline ?? ''}
+                    value={band.maxDaysToDeadline === null || Number.isNaN(band.maxDaysToDeadline) ? '' : band.maxDaysToDeadline}
                     disabled={disabled}
                     onChange={e =>
                       updateBand(index, {
-                        maxDaysToDeadline: e.target.value === '' ? null : parseInt(e.target.value, 10) || 0,
+                        // A number input reports '' for unparseable text too: only a truly empty field is "no limit".
+                        maxDaysToDeadline: e.target.value === '' && !e.target.validity.badInput ? null : e.target.valueAsNumber,
                       })
                     }
                   />

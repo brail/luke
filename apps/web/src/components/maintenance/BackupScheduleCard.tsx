@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { BackupScheduleConfigSchema, type BackupScheduleConfig } from '@luke/core';
 
 import { usePermission } from '../../hooks/usePermission';
+import { numberInputProps } from '../../lib/numberInput';
 import { trpc } from '../../lib/trpc';
 import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { SectionCard } from '../SectionCard';
@@ -172,7 +173,7 @@ function BackupScheduleForm({ stored }: { stored: BackupScheduleConfig }) {
                     min={1}
                     max={3650}
                     {...field}
-                    onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
+                    {...numberInputProps(field.value, field.onChange)}
                     disabled={!canUpdate}
                   />
                 </FormControl>
@@ -194,7 +195,7 @@ function BackupScheduleForm({ stored }: { stored: BackupScheduleConfig }) {
                     min={0}
                     max={1000}
                     {...field}
-                    onChange={e => field.onChange(parseInt(e.target.value, 10) || 0)}
+                    {...numberInputProps(field.value, field.onChange)}
                     disabled={!canUpdate}
                   />
                 </FormControl>

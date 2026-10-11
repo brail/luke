@@ -25,14 +25,10 @@ import { Label } from '../../../../components/ui/label';
 import { RadioGroup, RadioGroupItem } from '../../../../components/ui/radio-group';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const onNumberChange = (onChange: (v: number) => void) =>
-  (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber);
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -237,7 +233,7 @@ export default function StoragePage() {
                     <FormItem>
                       <FormLabel>Dimensione massima file (MB)</FormLabel>
                       <FormControl>
-                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" onChange={onNumberChange(field.onChange)} />
+                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" {...numberInputProps(field.value, field.onChange)} />
                       </FormControl>
                       <FormDescription>Range: 1 – 1000 MB. Default: 50 MB.</FormDescription>
                       <FormMessage />
@@ -298,7 +294,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>Porta</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -406,7 +402,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned PUT (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per upload diretto. Default: 3600 (1h).</FormDescription>
                           <FormMessage />
@@ -420,7 +416,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned GET (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per download firmati. Default: 3600 (1h).</FormDescription>
                           <FormMessage />

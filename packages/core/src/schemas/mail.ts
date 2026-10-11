@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+import { PortSchema } from './number.js';
+
 /**
  * SMTP sender: `email@domain.com` or `Name <email@domain.com>`. A format check, not strict address
  * validation. Also the `smtp.from` entry of `AppConfigRegistry`, so the form input and the stored
@@ -20,11 +22,7 @@ export const smtpFromSchema = z
 /** Input schema for saving SMTP configuration, shared by the settings form and the API. */
 export const mailSmtpConfigSchema = z.object({
   host: z.string().min(1, 'Host SMTP richiesto'),
-  port: z
-    .number()
-    .int()
-    .min(1, 'Porta deve essere tra 1 e 65535')
-    .max(65535, 'Porta deve essere tra 1 e 65535'),
+  port: PortSchema,
   secure: z.boolean(),
   user: z.string().min(1, 'Username richiesto'),
   pass: z.string().optional().or(z.literal('')),

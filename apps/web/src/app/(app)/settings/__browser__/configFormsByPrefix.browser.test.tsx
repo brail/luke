@@ -9,7 +9,7 @@ import NavSettingsPage from '../nav/page';
  * rows than that (93 registry keys today) they opened blank. They now ask for their own prefix.
  */
 
-const h = vi.hoisted(() => ({ baseUrlFails: false }));
+const h = vi.hoisted(() => ({ baseUrlFails: false, save: vi.fn() }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('next-auth/react', () => ({
@@ -17,6 +17,7 @@ vi.mock('next-auth/react', () => ({
 }));
 vi.mock('../../../../lib/trpc', () => {
   const mutation = { useMutation: () => ({ mutate: vi.fn(), isPending: false }) };
+  const save = { useMutation: () => ({ mutate: h.save, isPending: false }) };
   const settled = { isPending: false, error: null, refetch: vi.fn() };
   const page = (items: { key: string; valuePreview: string }[]) => ({ ...settled, data: { items } });
   // One object per query, as React Query keeps it: the pages reset their form when `data` changes.
@@ -47,8 +48,8 @@ vi.mock('../../../../lib/trpc', () => {
         },
       },
       integrations: {
-        mail: { saveConfig: mutation, test: mutation },
-        nav: { saveConfig: mutation, testConnection: mutation },
+        mail: { saveConfig: save, test: mutation },
+        nav: { saveConfig: save, testConnection: mutation },
       },
     },
   };
@@ -56,6 +57,7 @@ vi.mock('../../../../lib/trpc', () => {
 
 afterEach(() => {
   h.baseUrlFails = false;
+  h.save.mockClear();
 });
 
 test('the mail form shows the saved SMTP server', async () => {
@@ -70,6 +72,20 @@ test('the NAV form shows the saved server', async () => {
 
   await expect.element(screen.getByLabelText(/^Host/)).toHaveValue('nav.example.test');
   await expect.element(screen.getByLabelText(/^Porta/)).toHaveValue(1533);
+});
+
+// `parseInt('') || 587` (or 1433) put the default back while typing and saved it unasked.
+test.each([
+  ['mail', MailPage, /^Host SMTP/],
+  ['NAV', NavSettingsPage, /^Host/],
+])('the %s form refuses an emptied port with a message', async (_, Page, host) => {
+  const screen = await render(<Page />);
+  await expect.element(screen.getByLabelText(host)).toBeVisible();
+  await screen.getByLabelText(/^Porta/).clear();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
+
+  await expect.element(screen.getByText('Inserisci una porta tra 1 e 65535')).toBeVisible();
+  expect(h.save).not.toHaveBeenCalled();
 });
 
 test('the mail form is not offered when the base URL cannot be read', async () => {

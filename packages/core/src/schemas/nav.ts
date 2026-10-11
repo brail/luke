@@ -5,10 +5,12 @@
 
 import { z } from 'zod';
 
+import { PortSchema } from './number.js';
+
 /** Input schema for saving NAV SQL Server connection configuration. */
 export const navConfigSchema = z.object({
   host: z.string().min(1, 'Host richiesto'),
-  port: z.number().int().min(1).max(65535),
+  port: PortSchema,
   database: z.string().min(1, 'Database richiesto'),
   user: z.string().min(1, 'Utente richiesto'),
   password: z.string().optional(),

@@ -26,6 +26,7 @@ import {
 import { Input } from '../../../../components/ui/input';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -181,7 +182,7 @@ export default function NavSettingsPage() {
                         type="number"
                         placeholder="1433"
                         {...field}
-                        onChange={e => field.onChange(parseInt(e.target.value) || 1433)}
+                        {...numberInputProps(field.value, field.onChange)}
                       />
                     </FormControl>
                     <FormDescription>Porta SQL Server (default: 1433)</FormDescription>
