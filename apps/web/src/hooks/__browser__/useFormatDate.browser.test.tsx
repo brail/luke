@@ -1,0 +1,56 @@
+import { afterEach, expect, test, vi } from 'vitest';
+import { renderHook } from 'vitest-browser-react';
+
+import { useFormatDate } from '../useFormatDate';
+
+/**
+ * Dates are read in the profile zone `me.get` resolves and written in the one default locale
+ * (ADR-035): never in a zone written in the hook while `me.get` loads or after it fails, and never
+ * in the locale saved on the profile.
+ */
+
+const { meQuery, toastError } = vi.hoisted(() => ({
+  // Read fresh by the mocked `useQuery` on every render, like the real query transitioning.
+  meQuery: { data: undefined as { timezone: string; locale: string } | undefined, error: null as Error | null },
+  toastError: vi.fn(),
+}));
+
+vi.mock('../../lib/trpc', () => ({ trpc: { me: { get: { useQuery: () => meQuery } } } }));
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 't' }, status: 'authenticated' }) }));
+vi.mock('sonner', () => ({ toast: { error: toastError } }));
+
+afterEach(() => {
+  meQuery.data = undefined;
+  meQuery.error = null;
+  toastError.mockReset();
+});
+
+const INSTANT = '2026-01-15T10:30:00.000Z';
+
+test('while the profile zone loads, dates show a placeholder rather than another zone', async () => {
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current.dateTime(INSTANT)).toBe('…');
+  expect(result.current.time(INSTANT)).toBe('…');
+  expect(result.current.ready).toBe(false);
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+test('dates are written in the profile zone and the default locale, whatever locale the profile holds', async () => {
+  meQuery.data = { timezone: 'Asia/Shanghai', locale: 'en-US' };
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current.dateTime(INSTANT)).toBe('15/01/2026, 18:30');
+  expect(result.current.time(new Date(INSTANT))).toBe('18:30');
+  expect(result.current).toMatchObject({ ready: true, zone: 'Asia/Shanghai', locale: 'it-IT' });
+});
+
+test('a failed profile read is reported once and leaves the placeholder', async () => {
+  meQuery.error = new Error('down');
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current.dateTime(INSTANT)).toBe('…');
+  expect(result.current).toMatchObject({ ready: false, error: meQuery.error });
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+  expect(toastError).toHaveBeenCalledWith(expect.any(String), { id: 'reader-zone' });
+});

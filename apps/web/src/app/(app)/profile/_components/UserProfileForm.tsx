@@ -16,7 +16,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
-import { LOCALES } from '../../../../lib/i18n/locales';
 import { TIMEZONES } from '../../../../lib/i18n/timezones';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
@@ -38,7 +37,7 @@ interface UserProfileFormProps {
 }
 
 /**
- * Profile edit form covering display name, locale, timezone, and email change.
+ * Profile edit form covering display name, timezone, and email change.
  * Fields for first name and last name are read-only when the account is managed
  * by an external provider (LDAP or SSO); a tooltip indicates the sync source.
  * @param user - Current user data; `provider` determines which fields are editable.
@@ -59,6 +58,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
     defaultValues: {
       firstName: user.firstName,
       lastName: user.lastName,
+      // No field until the i18n cycle (dates use one locale, ADR-035): the saved value is resubmitted.
       locale: user.locale,
       timezone: user.timezone,
     },
@@ -221,31 +221,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         {errors.lastName && (
           <p id="lastName-error" className="text-sm text-destructive">
             {errors.lastName.message}
-          </p>
-        )}
-      </div>
-
-      {/* Locale */}
-      <div className="space-y-2">
-        <Label htmlFor="locale">Lingua</Label>
-        <select
-          id="locale"
-          {...register('locale')}
-          className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-            errors.locale ? 'border-destructive' : ''
-          }`}
-          aria-invalid={!!errors.locale}
-          aria-describedby={errors.locale ? 'locale-error' : undefined}
-        >
-          {LOCALES.map(locale => (
-            <option key={locale.value} value={locale.value}>
-              {locale.label}
-            </option>
-          ))}
-        </select>
-        {errors.locale && (
-          <p id="locale-error" className="text-sm text-destructive">
-            {errors.locale.message}
           </p>
         )}
       </div>

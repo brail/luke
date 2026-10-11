@@ -1,5 +1,6 @@
 /**
- * Supported UI locales (BCP 47 tags) for user profile selection.
+ * Supported UI locales (BCP 47 tags) for user profile selection. Unused until the i18n cycle: the
+ * profile hides its language field while every date is written in one locale (ADR-035 §Formatting).
  */
 
 export interface LocaleOption {

@@ -1,80 +1,59 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 
-import {
-  formatDateWithTimezone,
-  formatShortDate,
-  formatDateTimeWithTimezone,
-  formatCompactDate,
-  formatTime,
-} from '@luke/core/utils/date';
+import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
+/** Shown while the zone is unknown. */
+const PENDING = '…';
+
 /**
- * Returns date-formatting helpers scoped to the current user's timezone and locale.
- * Fetches up-to-date user preferences from `trpc.me.get` (stale for 5 min) rather
- * than reading them from the NextAuth session, which may lag after a profile update.
- *
- * @returns Object containing formatting functions (`format`, `shortDate`, `dateTime`,
- *   `compactDate`, `time`) plus the resolved `timezone` and `locale` strings.
+ * Formats instants in the reader zone — the profile zone as `me.get` resolves it — and in the one
+ * locale dates are written in until the i18n cycle (`DEFAULT_LOCALE`). Until `me.get` has answered
+ * (`ready` false) the formatters return a placeholder; if it fails, `error` is set, one toast says
+ * so, and the placeholder stays: no other zone stands in (ADR-035).
  *
  * @example
  * ```tsx
  * const fmt = useFormatDate();
- * <p>{fmt.compactDate(user.createdAt)}</p>
- * <p>{fmt.time(user.lastLoginAt)}</p>
+ * <p>{fmt.dateTime(user.createdAt)}</p>
  * ```
  */
 export function useFormatDate() {
   const { data: session } = useSession();
-
-  // Use the fresh data from the API instead of the NextAuth session
-  const { data: userData } = trpc.me.get.useQuery(undefined, {
+  const { data, error } = trpc.me.get.useQuery(undefined, {
+    // The request carries the session's token, so it waits for the session.
     enabled: !!session?.accessToken,
-    staleTime: 5 * 60 * 1000, // 5 minutes - reduces API requests
+    staleTime: 5 * 60 * 1000,
   });
+  const zone = data?.timezone;
+  const failed = !zone && !!error;
 
-  const timezone = userData?.timezone || 'Europe/Rome';
-  const locale = userData?.locale || 'it-IT';
+  useEffect(() => {
+    // One toast however many components format dates: sonner replaces a toast with the same id.
+    if (failed) toast.error('Fuso orario del profilo non disponibile: date non mostrate', { id: 'reader-zone' });
+  }, [failed]);
 
-  // Hook for date formatting in the user timezone
+  const format = (value: Date | string, options: Intl.DateTimeFormatOptions) =>
+    zone ? formatInstant(new Date(value), zone, options, DEFAULT_LOCALE) : PENDING;
 
   return {
-    /**
-     * Formats a date with custom `Intl.DateTimeFormatOptions`.
-     * @param options - Intl date/time format options
-     */
-    format: (date: Date | string, options: Intl.DateTimeFormatOptions) =>
-      formatDateWithTimezone(date, timezone, options, locale),
-
-    /**
-     * Formats a date as a short numeric string, e.g. "15/01/2024".
-     */
-    shortDate: (date: Date | string) => formatShortDate(date, timezone, locale),
-
-    /**
-     * Formats a date with time, e.g. "15/01/2024, 14:30".
-     */
-    dateTime: (date: Date | string) =>
-      formatDateTimeWithTimezone(date, timezone, locale),
-
-    /**
-     * Formats a date in compact form, e.g. "15 gen 2024".
-     */
-    compactDate: (date: Date | string) =>
-      formatCompactDate(date, timezone, locale),
-
-    /**
-     * Formats only the time portion, e.g. "14:30".
-     */
-    time: (date: Date | string) => formatTime(date, timezone, locale),
-
-    /** The current user's resolved timezone (IANA identifier). */
-    timezone,
-
-    /** The current user's resolved locale (BCP 47 tag). */
-    locale,
+    /** Whether the reader zone is known. */
+    ready: !!zone,
+    /** The `me.get` error, when the zone could not be loaded. */
+    error,
+    /** The reader zone (IANA), once known. */
+    zone,
+    /** The locale every date is written in. */
+    locale: DEFAULT_LOCALE,
+    format,
+    /** Date and wall time, e.g. "15/01/2024, 14:30". */
+    dateTime: (value: Date | string) => format(value, NUMERIC_DATE_TIME),
+    /** Wall time only, e.g. "14:30". */
+    time: (value: Date | string) => format(value, NUMERIC_TIME),
   };
 }
