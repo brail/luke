@@ -209,9 +209,9 @@ on their fallback to the runtime zone.
 All runtime configuration lives in the `AppConfig` table (Postgres KV), and `AppConfigRegistry` in
 `packages/core/src/schemas/config.ts` is the **single source of truth**. Rationale: ADR-018.
 
-- **Never `process.env.*` in application code** — read AppConfig with `getConfig`, `getTypedConfig`
-  or `getConfigOrDefault` (`apps/api/src/lib/configManager.ts`) or the tRPC config router. Env vars
-  only for bootstrap
+- **Never `process.env.*` in application code** — read AppConfig with `getConfig`, `getTypedConfig`,
+  `getConfigOrDefault` or `getStoredConfigOrDefault` (`apps/api/src/lib/configManager.ts`) or the
+  tRPC config router. Env vars only for bootstrap
 - **Every new config key goes in `AppConfigRegistry`** with its Zod schema, numeric bounds included
   — `saveConfig` validates against it before writing. Never widen a schema to accommodate a write:
   "not configured" is an absent key (a `null` entry in a `saveConfigs` batch, or `deleteConfig`),
@@ -223,8 +223,12 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
   `jsonConfigSchema(Inner)` for JSON — never a bare `.transform(s => Inner.parse(JSON.parse(s)))`,
   which throws through `safeParse`
 - **Defaults live once in `APP_CONFIG_DEFAULTS`**, in the stored string form; read such a key with
-  `getConfigOrDefault`, never with a call-site fallback or coercion. Credentials have no default:
-  their readers refuse to start (`loadS3Provider`, `getSmtpConfig`)
+  `getConfigOrDefault`, never with a call-site fallback or coercion. It also falls back, with a
+  warning, on a stored value the registry refuses; where that fallback would silently do the wrong
+  thing (the storage provider's `storage.type`, `backup.schedule.scope`), read with
+  `getStoredConfigOrDefault`, which throws `InvalidStoredConfigError` and leaves the caller to refuse
+  the operation. Credentials have no default: their readers refuse to start (`loadS3Provider`,
+  `getSmtpConfig`)
 - `getConfig` decrypts encrypted rows by default; for numbers and booleans use the typed readers,
   never `parseInt`/`=== 'true'` on its result
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add a key only if its absence must block boot

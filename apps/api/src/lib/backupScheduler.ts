@@ -77,6 +77,27 @@ async function runScheduledBackup(
   })).catch(e => log.error({ err: e }, 'Failed to notify admins of scheduled backup failure'));
 }
 
+/**
+ * The backup due when the stored scope is invalid: skipped, not run with the default `DB`, which
+ * would silently drop the files. Logged, and notified under its own key so that a real failure
+ * right after the fix is still reported.
+ */
+async function skipScheduledBackup(
+  prisma: PrismaClient,
+  log: FastifyInstance['log'],
+  storedScope: string,
+  notifyOnFailure: boolean,
+): Promise<void> {
+  log.error({ storedScope }, 'Backup scheduler: stored scope is invalid, scheduled backup skipped');
+  if (!notifyOnFailure) return;
+  await notifyDeduped(prisma, 'backup-schedule:invalid-scope', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+    category: 'SYSTEM',
+    title: 'Backup pianificato non eseguito',
+    message: `Il contenuto salvato ('${storedScope}') non è valido: sceglilo in Backup automatici e salva.`,
+    data: { type: 'backup_schedule_failure' },
+  })).catch(e => log.error({ err: e }, 'Failed to notify admins of a skipped scheduled backup'));
+}
+
 /** Marks backups abandoned in RUNNING/PENDING as FAILED, so a crashed job doesn't linger forever. */
 async function reapStuckBackups(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
   const cutoff = new Date(Date.now() - STUCK_JOB_THRESHOLD_MS);
@@ -151,7 +172,8 @@ async function pruneExpiredBackups(
   log.info({ deleted, retentionMinCount }, 'Backup retention: pruning completed');
 }
 
-async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
+/** One scheduler tick: the backup due, if any, then reaping and pruning. Exported for tests. */
+export async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
   const now = new Date();
   const [config, timeZone] = await Promise.all([
     getBackupScheduleSettings(prisma),
@@ -164,7 +186,10 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
       where: { trigger: 'SCHEDULED', createdAt: { gte: slot } },
       select: { id: true },
     });
-    if (!slotRun) await runScheduledBackup(prisma, log, config.scope, config.notifyOnFailure);
+    if (!slotRun) {
+      if (config.scope === null) await skipScheduledBackup(prisma, log, config.storedScope, config.notifyOnFailure);
+      else await runScheduledBackup(prisma, log, config.scope, config.notifyOnFailure);
+    }
   }
   await reapStuckBackups(prisma, log);
   await pruneExpiredBackups(prisma, log, config.retentionMinCount);

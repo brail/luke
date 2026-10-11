@@ -148,7 +148,8 @@ export const BackupRecordSchema = z.object({
 export const BackupScheduleConfigSchema = z.object({
   enabled: z.boolean(),
   dailyTime: WallTimeSchema,
-  scope: BackupScopeSchema,
+  // The form's message for an unchosen scope; the shared enum keeps Zod's, which lists the values.
+  scope: z.enum(BackupScopeSchema.options, { error: 'Scegli il contenuto del backup' }),
   retentionDays: intInRange(1, 3650, 'Inserisci un numero di giorni tra 1 e 3650'),
   retentionMinCount: intInRange(0, 1000, 'Inserisci un numero tra 0 e 1000'),
   notifyOnFailure: z.boolean(),
@@ -169,3 +170,13 @@ export type PassphraseWrappedDek = z.infer<typeof PassphraseWrappedDekSchema>;
 export type BackupExportHeader = z.infer<typeof BackupExportHeaderSchema>;
 export type BackupRecord = z.infer<typeof BackupRecordSchema>;
 export type BackupScheduleConfig = z.infer<typeof BackupScheduleConfigSchema>;
+
+/**
+ * The stored schedule as `maintenance.backup.getScheduleConfig` reports it. `scope` is `null` when
+ * the stored value is not a scope — a hand edit or an older version: the routers refuse one — with
+ * that value in `storedScope`, so the page shows it and asks for a choice instead of a default.
+ */
+export type BackupScheduleSettings = Omit<BackupScheduleConfig, 'scope'> & BackupScopeField;
+
+/** The scope of `BackupScheduleSettings`: a valid one, or `null` with the stored value. */
+export type BackupScopeField = { scope: BackupScope; storedScope?: undefined } | { scope: null; storedScope: string };

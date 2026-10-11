@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { BackupScheduleConfigSchema, type BackupScheduleConfig } from '@luke/core';
+import { BackupScheduleConfigSchema, type BackupScheduleConfig, type BackupScheduleSettings } from '@luke/core';
 
 import { usePermission } from '../../hooks/usePermission';
 import { numberInputProps } from '../../lib/numberInput';
@@ -69,13 +69,14 @@ export function BackupScheduleCard() {
 }
 
 /** The schedule form, filled from the stored settings and kept in step with them after a save. */
-function BackupScheduleForm({ stored }: { stored: BackupScheduleConfig }) {
+function BackupScheduleForm({ stored }: { stored: BackupScheduleSettings }) {
   const { can } = usePermission();
   const canUpdate = can('maintenance:update');
   const utils = trpc.useUtils();
 
-  const form = useForm<BackupScheduleConfig>({
-    resolver: zodResolver(BackupScheduleConfigSchema),
+  // Stored settings in (`scope` may be null), a valid schedule out: the schema demands a scope.
+  const form = useForm<BackupScheduleSettings, unknown, BackupScheduleConfig>({
+    resolver: zodResolver<BackupScheduleSettings, unknown, BackupScheduleConfig>(BackupScheduleConfigSchema),
     values: stored,
     // A refetch (the one after a save) must not discard what the admin is still editing.
     resetOptions: { keepDirtyValues: true },
@@ -96,6 +97,15 @@ function BackupScheduleForm({ stored }: { stored: BackupScheduleConfig }) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        {stored.scope === null && (
+          <Alert variant="destructive">
+            <AlertTitle>Contenuto salvato non valido</AlertTitle>
+            <AlertDescription>
+              Il valore salvato «{stored.storedScope}» non è un contenuto di backup: i backup pianificati non partono
+              {canUpdate ? ' finché non ne scegli uno e salvi.' : ' finché chi gestisce i backup non ne sceglie uno.'}
+            </AlertDescription>
+          </Alert>
+        )}
         <FormField
           control={form.control}
           name="enabled"
@@ -145,10 +155,11 @@ function BackupScheduleForm({ stored }: { stored: BackupScheduleConfig }) {
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Contenuto</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange} disabled={!canUpdate}>
+                {/* Radix shows the placeholder only for '' or undefined, not for the null of an invalid stored scope. */}
+                <Select value={field.value ?? ''} onValueChange={field.onChange} disabled={!canUpdate}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Scegli il contenuto" />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>

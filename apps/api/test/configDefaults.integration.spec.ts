@@ -135,14 +135,17 @@ describe('AppConfig defaults', () => {
       });
     });
 
-    it('falls back to the declared default for a stored value the registry refuses', async () => {
-      // Written straight to the table: `saveConfig` refuses a value outside the registry.
+    it('falls back to the default for a stored time the registry refuses, not for a stored scope', async () => {
+      // Written straight to the table: `saveConfig` refuses a value outside the registry. A scope
+      // falling back to `DB` would silently drop the files from every scheduled backup.
       await testPrisma.appConfig.createMany({ data: [
         { key: 'backup.schedule.dailyTime', value: '25:00', isEncrypted: false },
         { key: 'backup.schedule.scope', value: 'EVERYTHING', isEncrypted: false },
       ] });
       const caller = await createCallerAs('admin');
-      expect(await caller.maintenance.backup.getScheduleConfig()).toMatchObject({ dailyTime: '03:00', scope: 'DB' });
+      expect(await caller.maintenance.backup.getScheduleConfig()).toMatchObject({
+        dailyTime: '03:00', scope: null, storedScope: 'EVERYTHING',
+      });
     });
   });
 });

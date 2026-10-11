@@ -19,7 +19,8 @@ import {
   validateConfigValue,
   APP_CONFIG_DEFAULTS,
   type AppConfigKeyWithDefault,
-  type BackupScheduleConfig,
+  type BackupScheduleSettings,
+  type BackupScopeField,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
@@ -367,10 +368,10 @@ export async function getTypedConfig<K extends AppConfigKey>(
  * `APP_CONFIG_DEFAULTS` and the parse from the registry, so neither is a call site's business.
  *
  * A stored value that no longer validates falls back too, with a warning: refusing to serve a
- * storage provider because one row is malformed would take the app down for a bad edit. This
- * function makes no exception: `getStorageProvider` reads `storage.type` strictly through its own
- * `readStorageType`, because a fallback to `local` silently misplaces every file. `saveConfig`
- * validates, so an invalid row there is a legacy or hand-written one.
+ * storage provider because one row is malformed would take the app down for a bad edit. Where the
+ * fallback would silently do the wrong thing — the storage provider's `storage.type`, the backup's
+ * `backup.schedule.scope` — the reader uses `getStoredConfigOrDefault` instead. `saveConfig`
+ * validates, so an invalid row is a legacy or hand-written one.
  */
 export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
   prisma: PrismaClient,
@@ -385,6 +386,34 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
     // wasted Zod parse of a short literal, next to the query this read already makes.
     parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
   );
+}
+
+/** A stored AppConfig value the registry refuses, for a reader that must not fall back. */
+export class InvalidStoredConfigError extends Error {
+  constructor(readonly key: AppConfigKey, readonly raw: string, options?: ErrorOptions) {
+    super(`Invalid AppConfig '${key}': '${raw}'`, options);
+    this.name = 'InvalidStoredConfigError';
+  }
+}
+
+/**
+ * Reads a key that has a declared default like `getConfigOrDefault`, but refuses a stored value the
+ * registry rejects instead of falling back, for keys whose default would silently do the wrong thing:
+ * a `local` storage type misplaces every file, a `DB` backup scope drops them from every backup.
+ * No row → the default; an invalid row → `InvalidStoredConfigError`; a database error propagates.
+ * Read without decrypting, as `getConfigOrDefault` reads: an encrypted row is reported invalid.
+ */
+export async function getStoredConfigOrDefault<K extends AppConfigKeyWithDefault>(
+  prisma: PrismaClient,
+  key: K,
+): Promise<AppConfigValue<K>> {
+  const raw = await getConfig(prisma, key, false);
+  if (raw === null) return parseConfigValue(key, APP_CONFIG_DEFAULTS[key]);
+  try {
+    return parseConfigValue(key, raw);
+  } catch (error) {
+    throw new InvalidStoredConfigError(key, raw, { cause: error });
+  }
 }
 
 /**
@@ -698,15 +727,28 @@ function parseConfigOrDefault<K extends AppConfigKey>(
 }
 
 /**
+ * The stored backup scope, or `null` with the stored value when the registry refuses it: a scheduled
+ * backup must not quietly fall back to `DB` and stop including the files.
+ */
+async function readBackupScope(prisma: PrismaClient): Promise<BackupScopeField> {
+  try {
+    return { scope: await getStoredConfigOrDefault(prisma, 'backup.schedule.scope') };
+  } catch (error) {
+    if (error instanceof InvalidStoredConfigError) return { scope: null, storedScope: error.raw };
+    throw error;
+  }
+}
+
+/**
  * Reads the automatic-backup schedule settings — single source of truth shared by the
  * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
  */
-export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleConfig> {
+export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
   const [enabled, dailyTime, scope, notifyOnFailure, retentionDays, retentionMinCount] =
     await Promise.all([
       getConfigOrDefault(prisma, 'backup.schedule.enabled'),
       getConfigOrDefault(prisma, 'backup.schedule.dailyTime'),
-      getConfigOrDefault(prisma, 'backup.schedule.scope'),
+      readBackupScope(prisma),
       getConfigOrDefault(prisma, 'backup.notifyOnFailure'),
       getConfigOrDefault(prisma, 'backup.retentionDays'),
       getConfigOrDefault(prisma, 'backup.retentionMinCount'),
@@ -715,7 +757,7 @@ export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<B
   return {
     enabled,
     dailyTime,
-    scope,
+    ...scope,
     retentionDays,
     retentionMinCount,
     notifyOnFailure,

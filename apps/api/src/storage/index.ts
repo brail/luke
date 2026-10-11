@@ -26,7 +26,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { InvalidStoredConfigError, getConfig, getConfigOrDefault, getStoredConfigOrDefault } from '../lib/configManager';
 import { streamToBuffer } from '../lib/imageUpload';
 
 
@@ -131,18 +131,16 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
  * @throws {Error} When a stored value is not one of the registry's storage types.
  */
 async function readStorageType(prisma: PrismaClient): Promise<StorageType> {
-  const raw = await getConfig(prisma, 'storage.type', false);
-  if (raw === null) return getConfigOrDefault(prisma, 'storage.type');
-
-  const schema = AppConfigRegistry['storage.type'];
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) {
+  try {
+    return await getStoredConfigOrDefault(prisma, 'storage.type');
+  } catch (error) {
+    if (!(error instanceof InvalidStoredConfigError)) throw error;
     throw new Error(
-      `Invalid AppConfig 'storage.type': '${raw}' is not one of ${schema.options.join(', ')}. ` +
+      `Invalid AppConfig 'storage.type': '${error.raw}' is not one of ${AppConfigRegistry['storage.type'].options.join(', ')}. ` +
         'Set the storage type in Impostazioni → Storage.',
+      { cause: error },
     );
   }
-  return parsed.data;
 }
 
 /**

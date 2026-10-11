@@ -534,7 +534,8 @@ export const backupRouter = router({
    * @auth {maintenance:read}
    * @input None
    * @output Schedule/retention settings: `{ enabled, dailyTime, scope, retentionDays,
-   * retentionMinCount, notifyOnFailure }`.
+   * retentionMinCount, notifyOnFailure }`; `scope` is `null`, with the stored value in `storedScope`,
+   * when the stored one is not a scope (`BackupScheduleSettings`).
    */
   getScheduleConfig: protectedProcedure
     .use(requirePermission('maintenance:read'))
