@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { VendorClosureUpsertInputSchema } from '@luke/core';
+import { utcMidnightOf, VendorClosureUpsertInputSchema } from '@luke/core';
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
@@ -332,8 +332,8 @@ export const holidaysRouter = router({
     .use(requirePermission('season_calendar:update'))
     .input(VendorClosureUpsertInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const startDate = new Date(input.startDate);
-      const endDate   = new Date(input.endDate);
+      const startDate = utcMidnightOf(input.startDate);
+      const endDate   = utcMidnightOf(input.endDate);
 
       if (input.countryCode) {
         await ctx.prisma.holidayCountry.upsert({

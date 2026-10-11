@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { ApplyTemplateInputSchema, CalendarDigestRangeInputSchema, CalendarEventBaseSchema, MilestoneRescheduleInputSchema } from '../seasonCalendar.js';
+import { ApplyTemplateInputSchema, CalendarDigestRangeInputSchema, CalendarEventBaseSchema, MilestoneRescheduleInputSchema, VendorClosureUpsertInputSchema } from '../seasonCalendar.js';
 
 const ID = '00000000-0000-4000-8000-000000000000';
 /** The dates the client read, required on every write that can move an event. */
@@ -51,5 +51,24 @@ describe('manual digest range', () => {
     ['an end before the start', { from: '2026-10-02', to: '2026-10-01' }],
   ])('refuses %s', (_label, value) => {
     expect(CalendarDigestRangeInputSchema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe('vendor closure days', () => {
+  const closure = (startDate: string, endDate: string) =>
+    VendorClosureUpsertInputSchema.safeParse({ vendorId: ID, seasonId: ID, countryCode: null, name: 'Ferie', startDate, endDate, type: 'CLOSURE' });
+
+  it('accepts calendar days, one day included', () => {
+    expect(closure('2026-08-10', '2026-08-21').data).toMatchObject({ startDate: '2026-08-10', endDate: '2026-08-21' });
+    expect(closure('2026-08-10', '2026-08-10').success).toBe(true);
+  });
+
+  // Rome's midnight of 10 August is 22:00Z on the 9th: taken as an instant, it would store the 9th.
+  it('refuses an instant for a day', () => {
+    expect(closure('2026-08-09T22:00:00.000Z', '2026-08-21T22:00:00.000Z').success).toBe(false);
+  });
+
+  it('refuses an end before the start', () => {
+    expect(closure('2026-08-21', '2026-08-10').error?.issues).toMatchObject([{ path: ['endDate'] }]);
   });
 });

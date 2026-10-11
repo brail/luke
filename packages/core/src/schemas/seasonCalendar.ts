@@ -3,20 +3,31 @@ import { z } from 'zod';
 import { CalendarDateSchema, CalendarInstantSchema } from './dates.js';
 import { MandatoryReasonSchema } from './reason.js';
 
-/** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
- * open-day period within a season, shown while events are placed; the working-day math does not
- * read it (`docs/country-aware-working-days.md`). */
-export const VendorClosureUpsertInputSchema = z.object({
+/** The fields of a vendor closure, unrefined so the dialog can pick from them (Zod 4 refuses `.pick`
+ * on a refined object). */
+export const VendorClosureUpsertBaseSchema = z.object({
   id:          z.string().uuid().optional(),
   vendorId:    z.string().uuid(),
   seasonId:    z.string().uuid(),
   countryCode: z.string().length(2).nullable(),
   name:        z.string().min(1, 'Il nome è obbligatorio').max(200, 'Massimo 200 caratteri'),
-  startDate:   z.string().datetime(),
-  endDate:     z.string().datetime(),
+  startDate:   CalendarDateSchema,
+  endDate:     CalendarDateSchema,
   type:        z.enum(['CLOSURE', 'OPEN']),
   notes:       z.string().max(500, 'Massimo 500 caratteri').nullable().optional(),
 });
+
+/** A closure's last day is not before its first; the dialog applies it too, for the message on the
+ * end date. */
+export const VendorClosureDaysInOrder = z.refine<{ startDate: string; endDate: string }>(value => value.endDate >= value.startDate, {
+  path: ['endDate'],
+  message: 'La data di fine non può precedere quella di inizio',
+});
+
+/** What `holidays.upsertVendorClosure` accepts, for both create and update — a vendor closure or
+ * open-day period within a season, shown while events are placed; the working-day math does not
+ * read it (`docs/country-aware-working-days.md`). Its days are calendar days, the last included. */
+export const VendorClosureUpsertInputSchema = VendorClosureUpsertBaseSchema.check(VendorClosureDaysInOrder);
 export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSchema>;
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────

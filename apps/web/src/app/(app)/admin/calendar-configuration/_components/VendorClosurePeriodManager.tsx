@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { VendorClosureUpsertInputSchema } from '@luke/core';
+import { calendarDateOf, formatCalendarDate, NUMERIC_DATE, VendorClosureDaysInOrder, VendorClosureUpsertBaseSchema } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
@@ -66,23 +66,17 @@ const EMPTY_FORM: ClosureForm = {
 };
 
 /**
- * The dialog's own shape of `holidays.upsertVendorClosure`: the date inputs hold `yyyy-mm-dd` and
- * are widened to the ISO datetimes the mutation wants on submit, and `countryCode`/`notes` are
- * plain strings that become null when left empty. The ordering check is new — nothing stopped an
- * end date before the start date before.
+ * The dialog's own shape of `holidays.upsertVendorClosure`: the date inputs hold the `yyyy-mm-dd`
+ * calendar days the mutation takes as they are, and `countryCode`/`notes` are plain strings that
+ * become null when left empty.
  */
-const ClosureFormSchema: z.ZodType<ClosureForm, ClosureForm> = VendorClosureUpsertInputSchema
-  .pick({ name: true, type: true })
+const ClosureFormSchema: z.ZodType<ClosureForm, ClosureForm> = VendorClosureUpsertBaseSchema
+  .pick({ name: true, type: true, startDate: true, endDate: true })
   .extend({
     countryCode: z.string(),
-    startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data di inizio non valida'),
-    endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data di fine non valida'),
     notes: z.string().max(500, 'Massimo 500 caratteri'),
   })
-  .refine(value => value.endDate >= value.startDate, {
-    path: ['endDate'],
-    message: 'La data di fine non può precedere quella di inizio',
-  });
+  .check(VendorClosureDaysInOrder);
 
 /**
  * Card-based manager for a vendor's closure and extra-opening periods in the
@@ -164,8 +158,8 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
     form.reset({
       name: closure.name,
       countryCode: closure.countryCode ?? '',
-      startDate: String(closure.startDate).slice(0, 10),
-      endDate: String(closure.endDate).slice(0, 10),
+      startDate: calendarDateOf(new Date(closure.startDate)),
+      endDate: calendarDateOf(new Date(closure.endDate)),
       type: closure.type as 'CLOSURE' | 'OPEN',
       notes: closure.notes ?? '',
     });
@@ -180,8 +174,8 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
       seasonId: season.id,
       countryCode: data.countryCode || null,
       name: data.name,
-      startDate: new Date(data.startDate).toISOString(),
-      endDate: new Date(data.endDate).toISOString(),
+      startDate: data.startDate,
+      endDate: data.endDate,
       type: data.type,
       notes: data.notes || null,
     });
@@ -287,10 +281,10 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           which is invalid directly inside <tr> and fails the row render. */}
                       <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td>
                       <td className="px-3 py-2 tabular-nums">
-                        {String(c.startDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(c.startDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-3 py-2 tabular-nums">
-                        {String(c.endDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(c.endDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant={c.type === 'CLOSURE' ? 'destructive' : 'secondary'}>
