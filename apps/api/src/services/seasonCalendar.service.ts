@@ -9,7 +9,9 @@ import {
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
   isInstantInRange,
+  startOfDayIn,
   utcMidnightOf,
+  type CalendarDate,
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
   type EventDatesExpected,
@@ -317,6 +319,11 @@ function isOffMidnightAllDay({ startAt, endAt, allDay }: EventDates): boolean {
   return allDay && [startAt, endAt].some(d => d !== null && d.getTime() % MS_PER_DAY !== 0);
 }
 
+/** The refusal of a date outside the range the date helpers read. */
+function outOfRange(): TRPCError {
+  return new TRPCError({ code: 'BAD_REQUEST', message: "Data fuori dall'intervallo supportato" });
+}
+
 /**
  * Refuses dates an event must never be stored with: an all-day value off UTC midnight — a calendar
  * date stored as anything else is read as another day by some reader — a date outside the range
@@ -328,9 +335,7 @@ function isOffMidnightAllDay({ startAt, endAt, allDay }: EventDates): boolean {
  */
 export function assertEventDates(dates: EventDates): void {
   const { startAt, endAt, allDay } = dates;
-  if ([startAt, endAt].some(d => d !== null && !isInstantInRange(d, { allDay }))) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: "Data fuori dall'intervallo supportato" });
-  }
+  if ([startAt, endAt].some(d => d !== null && !isInstantInRange(d, { allDay }))) throw outOfRange();
   if (isOffMidnightAllDay(dates)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Un evento di un giorno intero deve iniziare e finire a mezzanotte (UTC)' });
   }
@@ -632,24 +637,61 @@ export async function listTemplates(prisma: PrismaClient) {
 }
 
 /**
- * Materializes a milestone template onto a planning group anchored at `anchorDate`.
+ * The dates of a template item `offsetDays` after `anchorDay`, over `durationDays` days. Day
+ * arithmetic is zone-free. An all-day item is stored at UTC midnight; a timed one — the template
+ * gives it no time — starts at the start of its day in `businessZone` (ADR-035) and ends at the start
+ * of the day after its last, the exclusive end `eventCalendarDays` reads, so it is due when its last
+ * day ends, as the all-day item is.
+ *
+ * @throws {TRPCError} BAD_REQUEST for a date out of the supported range.
+ */
+function templateItemDates(
+  anchorDay: CalendarDate,
+  item: { offsetDays: number; durationDays: number; allDay: boolean },
+  businessZone: string,
+): EventDates {
+  let startDay: CalendarDate;
+  let dayAfter: CalendarDate;
+  try {
+    startDay = addCalendarDays(anchorDay, item.offsetDays);
+    dayAfter = addCalendarDays(startDay, item.durationDays);
+  } catch (error) {
+    // The day arithmetic left the years the helpers read (1900–9999).
+    if (error instanceof RangeError) throw outOfRange();
+    throw error;
+  }
+  const dates: EventDates = item.allDay
+    ? { startAt: utcMidnightOf(startDay), endAt: item.durationDays > 1 ? utcMidnightOf(addCalendarDays(dayAfter, -1)) : null, allDay: true }
+    : { startAt: startOfDayIn(startDay, businessZone), endAt: startOfDayIn(dayAfter, businessZone), allDay: false };
+  assertEventDates(dates);
+  return dates;
+}
+
+/**
+ * Materializes a milestone template onto a planning group anchored at `anchorDay`.
  * Creates events and visibility entries within a transaction, stamping each created event with the
  * group's id — that's what makes them applicable only to the rows of the same group.
  *
  * @param force - When false, throws CONFLICT if the planning group already has events.
  * @throws {TRPCError} CONFLICT if events exist and `force` is false.
  * @throws {TRPCError} NOT_FOUND if the planning group or template does not exist.
+ * @throws {TRPCError} BAD_REQUEST without an anchor, in the request or recorded by a previous
+ *   apply, or if an item's date falls out of the supported range.
  */
 export async function applyTemplate(
   planningGroupId: string,
   templateId: string,
-  anchorDate: Date,
+  requestedAnchor: CalendarDate | undefined,
   force: boolean,
   prisma: PrismaClient
 ) {
+  const businessZone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
   return prisma.$transaction(async tx => {
     const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
     if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
+    // Without an anchor in the request, the one recorded by the group's last apply.
+    const anchorDay = requestedAnchor ?? (group.anchorDate ? calendarDateOf(group.anchorDate) : null);
+    if (!anchorDay) throw new TRPCError({ code: 'BAD_REQUEST', message: 'anchorDate richiesta' });
 
     const existing = await tx.calendarEvent.count({ where: { planningGroupId } });
     if (existing > 0 && !force) {
@@ -671,17 +713,7 @@ export async function applyTemplate(
     });
     if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
 
-    // Calendar arithmetic on the anchor's date (a `@db.Date` / UTC midnight): zone-free, so the
-    // generated dates never depend on the zone the API process runs in.
-    const anchorDay = calendarDateOf(anchorDate);
-    const itemsWithDates = template.items.map(item => {
-      const startDay = addCalendarDays(anchorDay, item.offsetDays);
-      const startAt = utcMidnightOf(startDay);
-      const endAt = item.durationDays > 1
-        ? utcMidnightOf(addCalendarDays(startDay, item.durationDays - 1))
-        : undefined;
-      return { item, startAt, endAt };
-    });
+    const itemsWithDates = template.items.map(item => ({ item, ...templateItemDates(anchorDay, item, businessZone) }));
 
     const created = await tx.calendarEvent.createManyAndReturn({
       data: itemsWithDates.map(({ item, startAt, endAt }) => ({
@@ -721,7 +753,7 @@ export async function applyTemplate(
     );
 
     // Record the anchor date used, so a later re-apply/admin view can default to it.
-    await tx.planningGroup.update({ where: { id: planningGroupId }, data: { anchorDate } });
+    await tx.planningGroup.update({ where: { id: planningGroupId }, data: { anchorDate: utcMidnightOf(anchorDay) } });
 
     return created;
   });

@@ -15,13 +15,11 @@ const EXPECTED = { startAt: '2026-10-01T00:00:00.000Z', endAt: null, allDay: tru
 describe('event instants', () => {
   it.each(['1900-01-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z', '9999-12-30T23:59:59.999Z'])('accept %s', value => {
     expect(MilestoneRescheduleInputSchema.safeParse({ id: ID, startAt: value, endAt: value, reason: 'motivo', expected: EXPECTED }).success).toBe(true);
-    expect(ApplyTemplateInputSchema.safeParse({ planningGroupId: ID, templateId: ID, anchorDate: value }).success).toBe(true);
   });
 
   // 9999-12-31 has no next day: an all-day deadline on it could not be evaluated.
   it.each(['0026-10-02T00:00:00.000Z', '1899-12-31T23:59:59.999Z', '9999-12-31T00:00:00.000Z'])('refuse %s', value => {
     expect(MilestoneRescheduleInputSchema.safeParse({ id: ID, startAt: value, reason: 'motivo', expected: EXPECTED }).success).toBe(false);
-    expect(ApplyTemplateInputSchema.safeParse({ planningGroupId: ID, templateId: ID, anchorDate: value }).success).toBe(false);
     expect(CalendarEventBaseSchema.shape.startAt.safeParse(value).success).toBe(false);
     expect(CalendarEventBaseSchema.shape.endAt.safeParse(value).success).toBe(false);
   });
@@ -70,5 +68,18 @@ describe('vendor closure days', () => {
 
   it('refuses an end before the start', () => {
     expect(closure('2026-08-21', '2026-08-10').error?.issues).toMatchObject([{ path: ['endDate'] }]);
+  });
+});
+
+describe('template anchor', () => {
+  const apply = (anchorDate: string) => ApplyTemplateInputSchema.safeParse({ planningGroupId: ID, templateId: ID, anchorDate });
+
+  it('accepts a calendar day', () => {
+    expect(apply('2026-03-10').data?.anchorDate).toBe('2026-03-10');
+  });
+
+  // Rome's midnight of 10 March is 23:00Z on the 9th: taken as an instant, it would anchor on the 9th.
+  it.each(['2026-03-09T23:00:00.000Z', '2026-03-10T00:00:00.000Z', '1899-12-31'])('refuses %s', value => {
+    expect(apply(value).success).toBe(false);
   });
 });

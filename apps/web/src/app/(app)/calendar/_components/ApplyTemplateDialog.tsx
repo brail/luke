@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { ApplyTemplateInputSchema } from '@luke/core';
+import { ApplyTemplateInputSchema, calendarDateIn, CalendarDateSchema } from '@luke/core';
 
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Button } from '../../../../components/ui/button';
@@ -34,9 +34,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../../components/ui/select';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { narrowRouterOutput, trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { toLocalIsoDate } from '../utils';
 
 import type { CalendarEventItem } from './types';
 
@@ -49,23 +49,18 @@ interface Props {
   seasonId: string;
 }
 
-/** Today on the user's own calendar — the UTC date is a day off near midnight. */
-function todayIso(): string {
-  return toLocalIsoDate(new Date());
-}
-
 /**
  * Same shape the mutation accepts, with two deliberate departures: the uuid messages are the ones
- * the user should read when a select is still empty, and `anchorDate` is the `yyyy-mm-dd` a date
- * input produces — widened to the ISO datetime `ApplyTemplateInputSchema` wants on submit.
- * `force` is derived from the chosen group, not typed by anyone, so it is not a form field.
+ * the user should read when a select is still empty, and the anchor is required here — the
+ * `yyyy-mm-dd` calendar day a date input produces, sent as it is. `force` is derived from the chosen
+ * group, not typed by anyone, so it is not a form field.
  */
 const ApplyTemplateFormSchema = ApplyTemplateInputSchema
   .pick({ planningGroupId: true, templateId: true })
   .extend({
     planningGroupId: z.string().uuid('Seleziona un gruppo di pianificazione'),
     templateId: z.string().uuid('Seleziona un template'),
-    anchorDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data non valida'),
+    anchorDate: CalendarDateSchema,
   });
 
 type ApplyTemplateFormData = z.infer<typeof ApplyTemplateFormSchema>;
@@ -82,10 +77,11 @@ type ApplyTemplateFormData = z.infer<typeof ApplyTemplateFormSchema>;
  * @param onApplied - Called with the newly created events after a successful apply.
  */
 export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonId }: Props) {
-  const form = useForm<ApplyTemplateFormData>({
+  const form = useForm<z.input<typeof ApplyTemplateFormSchema>, unknown, ApplyTemplateFormData>({
     resolver: zodResolver(ApplyTemplateFormSchema),
-    defaultValues: { planningGroupId: '', templateId: '', anchorDate: todayIso() },
+    defaultValues: { planningGroupId: '', templateId: '', anchorDate: '' },
   });
+  const { zone } = useFormatDate();
 
   const { data: templates, isLoading: loadingTemplates } = trpc.seasonCalendar.listTemplates.useQuery(
     undefined,
@@ -112,8 +108,14 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
   // The dialog stays mounted across open/close, so without this reset it reopens on the group and
   // template picked last time.
   useEffect(() => {
-    if (open) form.reset({ planningGroupId: '', templateId: '', anchorDate: todayIso() });
+    if (open) form.reset();
   }, [open, form]);
+
+  // The anchor defaults to today in the profile zone, once that zone is known; a zone arriving late
+  // fills an anchor still empty and leaves the rest of the form as the user set it.
+  useEffect(() => {
+    if (open && zone && !form.getValues('anchorDate')) form.setValue('anchorDate', calendarDateIn(new Date(), zone));
+  }, [open, zone, form]);
 
   // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
   // without this guard the dialog is dismissable while the template is being applied.
@@ -122,12 +124,7 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
   };
 
   const handleApply = (data: ApplyTemplateFormData) => {
-    applyMutation.mutate({
-      planningGroupId: data.planningGroupId,
-      templateId: data.templateId,
-      anchorDate: new Date(data.anchorDate).toISOString(),
-      force: hasMilestones,
-    });
+    applyMutation.mutate({ ...data, force: hasMilestones });
   };
 
   return (

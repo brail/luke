@@ -768,12 +768,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
 
-      const anchor = input.anchorDate
-        ? new Date(input.anchorDate)
-        : (group.anchorDate ?? null);
-      if (!anchor) throw new TRPCError({ code: 'BAD_REQUEST', message: 'anchorDate richiesta' });
-
-      const result = await applyTemplate(input.planningGroupId, input.templateId, anchor, input.force, ctx.prisma);
+      const result = await applyTemplate(input.planningGroupId, input.templateId, input.anchorDate, input.force, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_APPLY_TEMPLATE', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { templateId: input.templateId, count: result.length } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {

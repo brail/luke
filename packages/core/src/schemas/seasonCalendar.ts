@@ -126,11 +126,12 @@ export const PlanningGroupInputSchema = z.object({
 export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
 
 /** Input schema for applying a milestone template to a planning group. `calendarId` is derived
- * server-side from `planningGroupId` — never accepted directly, to avoid a mismatched pair. */
+ * server-side from `planningGroupId` — never accepted directly, to avoid a mismatched pair. The
+ * anchor is the calendar day the items' offsets count from. */
 export const ApplyTemplateInputSchema = z.object({
   planningGroupId: z.string().uuid(),
   templateId:      z.string().uuid(),
-  anchorDate:      CalendarInstantSchema.optional(),
+  anchorDate:      CalendarDateSchema.optional(),
   force:           z.boolean().default(false),
 });
 export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;
