@@ -9,6 +9,7 @@ import {
   isEventDateLocked as isEventDateLockedCore,
   isEventDeleteLocked as isEventDeleteLockedCore,
   isInstantInRange,
+  shiftEventByDays,
   startOfDayIn,
   utcMidnightOf,
   type CalendarDate,
@@ -954,13 +955,37 @@ export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
 // ─── Clone ────────────────────────────────────────────────────────────────────
 
 /**
+ * `event`'s dates moved `days` calendar days in `businessZone` (`shiftEventByDays`, ADR-035), held to
+ * `assertEventDates` like every generated date. The refusal names the event: a source written before
+ * those checks (an end before its start) is the user's to find and correct.
+ *
+ * @param businessZone - Already valid (the registry parses `app.defaultTimezone`): a `RangeError` of
+ *   the shift is then a date out of range, never the zone.
+ * @throws {TRPCError} BAD_REQUEST
+ */
+function clonedDates(event: EventDates & { title: string }, days: number, businessZone: string): EventDates {
+  try {
+    const dates = { ...shiftEventByDays(event, days, businessZone), allDay: event.allDay };
+    assertEventDates(dates);
+    return dates;
+  } catch (error) {
+    const refusal = error instanceof RangeError ? outOfRange() : error;
+    if (refusal instanceof TRPCError) throw new TRPCError({ code: refusal.code, message: `«${event.title}»: ${refusal.message}` });
+    throw refusal;
+  }
+}
+
+/**
  * Copies events from a chosen set of source planning groups into a target brand+season calendar.
  * For each selected source group, a matching target group is created (or reused, matched by name)
  * in the target calendar, and that group's events are cloned into it, shifted by `dateShiftDays`
- * (mandatory — there's no longer a single calendar-wide anchor date to auto-derive it from, since
- * anchorDate now lives per planning group).
+ * calendar days in the business zone (`shiftEventByDays`, ADR-035) — mandatory: there's no longer a
+ * single calendar-wide anchor date to auto-derive it from, since anchorDate now lives per planning
+ * group.
  *
  * @throws {TRPCError} NOT_FOUND if the source calendar or any of the selected groups do not exist.
+ * @throws {TRPCError} BAD_REQUEST if an all-day source is stored off UTC midnight, or a cloned event's
+ *   dates are refused (`clonedDates`).
  */
 export async function cloneFromBrandSeason(
   input: CloneSeasonCalendarInput,
@@ -989,9 +1014,9 @@ export async function cloneFromBrandSeason(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Uno o più gruppi di pianificazione sorgente non trovati' });
   }
 
-  // Shifting by whole days keeps a midnight a midnight, and copies an all-day source stored off it
-  // as it is: refused, not normalised — which date it was meant to be depends on the zone it was
-  // entered in, which the row does not record.
+  // The shift reads an all-day value's UTC date, so a source stored off midnight would land on that
+  // date: refused, not normalised — which date it was meant to be depends on the zone it was entered
+  // in, which the row does not record.
   const offMidnight = sourceGroups.flatMap(g => g.events).filter(isOffMidnightAllDay);
   if (offMidnight.length > 0) {
     throw new TRPCError({
@@ -1000,7 +1025,9 @@ export async function cloneFromBrandSeason(
     });
   }
 
-  const shift = dateShiftDays;
+  const businessZone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
+  // Shifted before the transaction opens: a refused event writes nothing.
+  const groups = sourceGroups.map(g => ({ ...g, events: g.events.map(e => ({ ...e, ...clonedDates(e, dateShiftDays, businessZone) })) }));
 
   return prisma.$transaction(async tx => {
     const targetCalendar = await tx.seasonCalendar.upsert({
@@ -1012,7 +1039,7 @@ export async function cloneFromBrandSeason(
     let totalCreated = 0;
     const createdEventIds: string[] = [];
 
-    for (const sourceGroup of sourceGroups) {
+    for (const sourceGroup of groups) {
       const targetGroup = await tx.planningGroup.upsert({
         where: { calendarId_name: { calendarId: targetCalendar.id, name: sourceGroup.name } },
         create: { calendarId: targetCalendar.id, name: sourceGroup.name, isDefault: sourceGroup.isDefault },
@@ -1027,8 +1054,8 @@ export async function cloneFromBrandSeason(
           planningGroupId: targetGroup.id,
           title: e.title,
           description: e.description,
-          startAt: new Date(e.startAt.getTime() + shift * MS_PER_DAY),
-          endAt: e.endAt ? new Date(e.endAt.getTime() + shift * MS_PER_DAY) : undefined,
+          startAt: e.startAt,
+          endAt: e.endAt,
           allDay: e.allDay,
           publishExternally: e.publishExternally,
         })),

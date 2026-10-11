@@ -889,11 +889,12 @@ export const seasonCalendarRouter = router({
   // ─── Clone ──────────────────────────────────────────────────────────────────
 
   /**
-   * Clones a season calendar (events and dependencies) from one brand/season to another.
+   * Clones the selected planning groups of a season calendar, with their events and visibility,
+   * from one brand/season to another.
    *
    * @auth season_calendar:update
    * @input CloneSeasonCalendarInputSchema
-   * @output { calendarId, count }
+   * @output { calendarId, milestonesCreated, createdEventIds }
    */
   cloneFromBrandSeason: protectedProcedure
     .use(requirePermission('season_calendar:update'))

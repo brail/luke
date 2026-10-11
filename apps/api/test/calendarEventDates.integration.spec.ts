@@ -291,13 +291,13 @@ describe('detectPhaseOrderWarning compares deadlines by day, then by time when b
   });
 });
 
-describe('cloneFromBrandSeason refuses an all-day source off midnight', () => {
-  const clone = (groupId: string, includeCancelled = false) => asAdmin().seasonCalendar.cloneFromBrandSeason({
-    sourceBrandId: source.brandId, sourceSeasonId: source.seasonId,
-    targetBrandId: target.brandId, targetSeasonId: target.seasonId,
-    sourcePlanningGroupIds: [groupId], dateShiftDays: 7, includeCancelled,
-  });
+const clone = (groupId: string, includeCancelled = false, dateShiftDays = 7) => asAdmin().seasonCalendar.cloneFromBrandSeason({
+  sourceBrandId: source.brandId, sourceSeasonId: source.seasonId,
+  targetBrandId: target.brandId, targetSeasonId: target.seasonId,
+  sourcePlanningGroupIds: [groupId], dateShiftDays, includeCancelled,
+});
 
+describe('cloneFromBrandSeason refuses an all-day source off midnight', () => {
   it('clones midnight sources shifted by whole days', async () => {
     const group = await prisma.planningGroup.create({ data: { calendarId, name: `Pulito ${randomUUID().slice(0, 8)}` } });
     await createEvent({ groupId: group.id, startAt: MIDNIGHT, allDay: true });
@@ -321,5 +321,31 @@ describe('cloneFromBrandSeason refuses an all-day source off midnight', () => {
     await prisma.calendarEvent.update({ where: { id: cancelled.id }, data: { cancelledAt: new Date(), cancelReason: 'prova' } });
     await expect(clone(group.id, true)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     await expect(clone(group.id)).resolves.toBeDefined();
+  });
+});
+
+describe('cloneFromBrandSeason shifts by calendar days in the business zone', () => {
+  // Business zone Europe/Rome (the default): 07:00 UTC is 09:00 there in October, 08:00 in November.
+  it('a timed event keeps its wall time across a daylight-saving change, and its duration', async () => {
+    const group = await prisma.planningGroup.create({ data: { calendarId, name: `Ora legale ${randomUUID().slice(0, 8)}` } });
+    await createEvent({ groupId: group.id, startAt: new Date('2099-10-15T07:00:00.000Z'), endAt: new Date('2099-10-15T08:00:00.000Z'), allDay: false });
+    await clone(group.id, false, 30);
+    const [copied] = await prisma.calendarEvent.findMany({ where: { planningGroup: { name: group.name, calendar: target } } });
+    expect([copied?.startAt, copied?.endAt]).toEqual([new Date('2099-11-14T08:00:00.000Z'), new Date('2099-11-14T09:00:00.000Z')]);
+  });
+
+  it('refuses a copy out of the supported range or ending before it starts, naming the event, and creates nothing', async () => {
+    for (const [source, days] of [
+      [{ startAt: new Date('9999-12-01T00:00:00.000Z'), allDay: true }, 60],
+      [{ startAt: new Date('9999-12-01T12:00:00.000Z'), allDay: false }, 29],
+      [{ startAt: MIDNIGHT, allDay: false }, 2 ** 52],
+      // Written before assertEventDates guarded the writes; no database constraint refuses it.
+      [{ startAt: NEXT_MIDNIGHT, endAt: MIDNIGHT, allDay: false }, 7],
+    ] as const) {
+      const group = await prisma.planningGroup.create({ data: { calendarId, name: `Rifiutato ${randomUUID().slice(0, 8)}` } });
+      const event = await createEvent({ groupId: group.id, ...source });
+      await expect(clone(group.id, false, days)).rejects.toMatchObject({ code: 'BAD_REQUEST', message: expect.stringContaining(event.title) });
+      expect(await prisma.planningGroup.count({ where: { name: group.name, calendar: target } })).toBe(0);
+    }
   });
 });
