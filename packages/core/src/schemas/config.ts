@@ -1,13 +1,19 @@
 import { z } from 'zod';
 
-import { driveStorageProviderConfigSchema, smbStorageProviderConfigSchema } from '../storage/config.js';
+import {
+  driveStorageProviderConfigSchema,
+  localStorageSaveConfigSchema,
+  s3StorageSaveConfigSchema,
+  smbStorageProviderConfigSchema,
+} from '../storage/config.js';
 
 import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
 import { BackupScheduleConfigSchema, BackupScopeSchema } from './backup.js';
 import { TimeZoneSchema, WallTimeSchema } from './dates.js';
 import { LDAP_STRATEGIES } from './ldap.js';
-import { smtpFromSchema } from './mail.js';
+import { mailSmtpConfigSchema, smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
+import { navConfigSchema } from './nav.js';
 import { sectionAccessDefaultsSchema } from './rbac.js';
 
 /**
@@ -44,11 +50,20 @@ const jsonConfigSchema = <T extends z.ZodTypeAny>(inner: T) =>
     .pipe(inner);
 
 /**
+ * An integer setting, as AppConfig stores it: a canonical decimal string, then validated by `inner`
+ * (integer and range rules — the form or provider schema's own where one exists). Not
+ * `z.coerce.number()`, which is `Number(input)`: `''` and blanks read as 0, `'1e3'` and `'0x10'` pass.
+ */
+const integerConfigSchema = <T extends z.ZodType<number, number>>(inner: T) =>
+  z.string().regex(/^(0|-?[1-9]\d*)$/, 'Deve essere un numero intero').transform(Number).pipe(inner);
+
+/**
  * Central registry of all AppConfig keys with their Zod validation schemas.
  *
- * All values stored in the database are raw strings; `z.coerce.*` schemas handle
- * automatic type conversion. Add new keys here to gain compile-time type safety
- * and automatic validation on boot via `validateCriticalConfig()`.
+ * All values stored in the database are raw strings, parsed by each key's schema (integers,
+ * booleans and JSON through the helpers above). Add new keys here to gain compile-time type safety
+ * and validation on every write (`saveConfig`) and typed read; only `CRITICAL_CONFIG_KEYS` are also
+ * checked at boot (`validateCriticalConfig()`).
  */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
@@ -79,7 +94,7 @@ export const AppConfigRegistry = {
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
-  'smtp.port':   z.coerce.number().int().min(1).max(65535),
+  'smtp.port':   integerConfigSchema(mailSmtpConfigSchema.shape.port),
   'smtp.secure': booleanConfigSchema,
   'smtp.user':   z.string(),
   'smtp.pass':   z.string(),
@@ -91,7 +106,7 @@ export const AppConfigRegistry = {
   // 8 is the floor, and this is where it is declared. It used to say 6 while `getPasswordPolicy`
   // clamped to 8 and `upsertConfig` refused anything under 8 by hand — three numbers for one rule,
   // so asking for 4 produced 12 and asking for 7 produced 8.
-  'security.password.minLength':           z.coerce.number().int().min(8).max(128),
+  'security.password.minLength':           integerConfigSchema(z.number().int().min(8).max(128)),
   'security.password.requireUppercase':    booleanConfigSchema,
   'security.password.requireLowercase':    booleanConfigSchema,
   'security.password.requireDigit':        booleanConfigSchema,
@@ -99,27 +114,27 @@ export const AppConfigRegistry = {
   // 10s–10min. The bounds used to live only in `getTokenVersionCacheTTL`, which clamped anything
   // outside them back to the default while this schema accepted `0` — so a write of 5000 was
   // validated, stored, and then silently read as 60000. Declared once, here.
-  'security.tokenVersionCacheTTL':         z.coerce.number().int().min(10_000).max(600_000),
-  'security.session.maxAge':               z.coerce.number().int().min(60),
-  'security.session.updateAge':            z.coerce.number().int().min(60),
+  'security.tokenVersionCacheTTL':         integerConfigSchema(z.number().int().min(10_000).max(600_000)),
+  'security.session.maxAge':               integerConfigSchema(z.number().int().min(60)),
+  'security.session.updateAge':            integerConfigSchema(z.number().int().min(60)),
 
   // ── Storage ──────────────────────────────────────────────────────────────
   'storage.type':                z.enum(['local', 's3']),
   'storage.local.basePath':      z.string().min(1),
-  'storage.local.maxFileSizeMB': z.coerce.number().int().min(1).max(1000),
+  'storage.local.maxFileSizeMB': integerConfigSchema(localStorageSaveConfigSchema.shape.maxFileSizeMB),
   'storage.local.publicBaseUrl': z.string().url(),
   'storage.local.enableProxy':   booleanConfigSchema,
 
   // ── Storage — S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...) ─────────────
   'storage.s3.endpoint':        z.string().min(1),
-  'storage.s3.port':            z.coerce.number().int().min(1).max(65535),
+  'storage.s3.port':            integerConfigSchema(s3StorageSaveConfigSchema.shape.port),
   'storage.s3.useSSL':          booleanConfigSchema,
   'storage.s3.accessKey':       z.string().min(1),
   'storage.s3.secretKey':       z.string().min(1),
   'storage.s3.region':          z.string(),
   'storage.s3.publicBaseUrl':   z.string().url(),
-  'storage.s3.presignedPutTtl': z.coerce.number().int().min(60),
-  'storage.s3.presignedGetTtl': z.coerce.number().int().min(60),
+  'storage.s3.presignedPutTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedPutTtl),
+  'storage.s3.presignedGetTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedGetTtl),
 
   // ── Storage — asset derivative pipeline (thumb/card/export image variants) ────
   'storage.derivatives.enabled': booleanConfigSchema,
@@ -138,7 +153,7 @@ export const AppConfigRegistry = {
   'collectionControl.alertThresholds': jsonConfigSchema(CollectionAlertThresholdsSchema),
 
   // ── Edit lock — session-scoped entity lock (currently: planning wizard) ────
-  'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
+  'editLock.ttlMs': integerConfigSchema(z.number().int().min(300_000).max(3_600_000)),
 
   // ── LDAP ─────────────────────────────────────────────────────────────────
   'auth.ldap.enabled':        booleanConfigSchema,
@@ -154,16 +169,16 @@ export const AppConfigRegistry = {
   'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
 
   // ── LDAP resilience (individual scalars) ─────────────────────────────────
-  'auth.ldap.resilience.timeoutMs':               z.coerce.number().int().min(100),
-  'auth.ldap.resilience.maxRetries':              z.coerce.number().int().min(0),
-  'auth.ldap.resilience.baseDelayMs':             z.coerce.number().int().min(10),
-  'auth.ldap.resilience.breakerFailureThreshold': z.coerce.number().int().min(1),
-  'auth.ldap.resilience.breakerCooldownMs':       z.coerce.number().int().min(500),
-  'auth.ldap.resilience.halfOpenMaxAttempts':     z.coerce.number().int().min(1),
+  'auth.ldap.resilience.timeoutMs':               integerConfigSchema(z.number().int().min(100)),
+  'auth.ldap.resilience.maxRetries':              integerConfigSchema(z.number().int().min(0)),
+  'auth.ldap.resilience.baseDelayMs':             integerConfigSchema(z.number().int().min(10)),
+  'auth.ldap.resilience.breakerFailureThreshold': integerConfigSchema(z.number().int().min(1)),
+  'auth.ldap.resilience.breakerCooldownMs':       integerConfigSchema(z.number().int().min(500)),
+  'auth.ldap.resilience.halfOpenMaxAttempts':     integerConfigSchema(z.number().int().min(1)),
 
   // ── Microsoft NAV (SQL Server) ───────────────────────────────────────────
   'integrations.nav.host':                  z.string().min(1),
-  'integrations.nav.port':                  z.coerce.number().int().min(1).max(65535),
+  'integrations.nav.port':                  integerConfigSchema(navConfigSchema.shape.port),
   'integrations.nav.database':              z.string().min(1),
   'integrations.nav.user':                  z.string().min(1),
   'integrations.nav.password':              z.string(),
@@ -188,22 +203,22 @@ export const AppConfigRegistry = {
   // ── Feedback ──────────────────────────────────────────────────────────────
   'integrations.github.feedbackToken':          z.string().min(1),   // GitHub PAT (encrypted)
   'integrations.github.feedbackRepo':           z.string().min(1),   // format: "owner/repo"
-  'integrations.github.feedbackSyncIntervalMs': z.coerce.number().int().min(300_000).max(604_800_000), // 5min–7d, default 24h (seed.ts)
+  'integrations.github.feedbackSyncIntervalMs': integerConfigSchema(z.number().int().min(300_000).max(604_800_000)), // 5min–7d, default 24h (seed.ts)
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
   'backup.schedule.enabled':        booleanConfigSchema,
   'backup.schedule.dailyTime':      WallTimeSchema, // wall time in app.defaultTimezone
   'backup.schedule.scope':          BackupScopeSchema,
-  'backup.retentionDays':           z.coerce.number().pipe(BackupScheduleConfigSchema.shape.retentionDays),
-  'backup.retentionMinCount':       z.coerce.number().pipe(BackupScheduleConfigSchema.shape.retentionMinCount),
+  'backup.retentionDays':           integerConfigSchema(BackupScheduleConfigSchema.shape.retentionDays),
+  'backup.retentionMinCount':       integerConfigSchema(BackupScheduleConfigSchema.shape.retentionMinCount),
   'backup.target.bucket':           z.string().min(1),
   'backup.notifyOnFailure':         booleanConfigSchema,
 
   // ── Retention sweep (audit log + notifications) ──────────────────────────
-  'auditLog.retentionDays':             z.coerce.number().int().min(1).max(3650),
-  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1).max(36500),
-  'notification.retentionDays':         z.coerce.number().int().min(1).max(3650),
-  'notification.dedupRetentionDays':    z.coerce.number().int().min(1).max(3650),
+  'auditLog.retentionDays':             integerConfigSchema(z.number().int().min(1).max(3650)),
+  'auditLog.criticalRetentionDays':     integerConfigSchema(z.number().int().min(1).max(36500)),
+  'notification.retentionDays':         integerConfigSchema(z.number().int().min(1).max(3650)),
+  'notification.dedupRetentionDays':    integerConfigSchema(z.number().int().min(1).max(3650)),
 
   // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)

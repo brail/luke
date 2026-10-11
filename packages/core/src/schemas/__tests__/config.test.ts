@@ -27,6 +27,8 @@ import {
   isUndeletableConfigKey,
   parseConfigValue,
   validateConfigValue,
+  type AppConfigKey,
+  type AppConfigValue,
 } from '../config.js';
 import { passwordPrefilterSchema } from '../password.js';
 
@@ -234,9 +236,63 @@ describe('numeric bounds are declared once, on the schema', () => {
     ['backup.retentionDays', '99999', '30'],
     ['backup.retentionMinCount', '99999', '3'],
     ['editLock.ttlMs', '99999999', '900000'],
+    // The S3 provider refuses more than a day; the registry used to store it anyway.
+    ['storage.s3.presignedGetTtl', '86401', '86400'],
+    ['storage.s3.presignedPutTtl', '86401', '86400'],
   ] as const)('%s rejects %s and accepts %s', (key, outOfRange, inRange) => {
     expect(validateConfigValue(key, outOfRange).success).toBe(false);
     expect(validateConfigValue(key, inRange).success).toBe(true);
+  });
+});
+
+type IntegerConfigKey = {
+  [K in AppConfigKey]: AppConfigValue<K> extends number ? K : never;
+}[AppConfigKey];
+
+/** A valid stored value for every integer key (its default where it has one): `tsc` fails on a key left out. */
+const VALID_INTEGER: Record<IntegerConfigKey, string> = {
+  'smtp.port': '587',
+  'security.password.minLength': '12',
+  'security.tokenVersionCacheTTL': '60000',
+  'security.session.maxAge': '28800',
+  'security.session.updateAge': '3600',
+  'storage.local.maxFileSizeMB': '50',
+  'storage.s3.port': '8333',
+  'storage.s3.presignedPutTtl': '3600',
+  'storage.s3.presignedGetTtl': '3600',
+  'editLock.ttlMs': '900000',
+  'auth.ldap.resilience.timeoutMs': '3000',
+  'auth.ldap.resilience.maxRetries': '2',
+  'auth.ldap.resilience.baseDelayMs': '200',
+  'auth.ldap.resilience.breakerFailureThreshold': '5',
+  'auth.ldap.resilience.breakerCooldownMs': '10000',
+  'auth.ldap.resilience.halfOpenMaxAttempts': '1',
+  'integrations.nav.port': '1433',
+  'integrations.github.feedbackSyncIntervalMs': '86400000',
+  'backup.retentionDays': '30',
+  'backup.retentionMinCount': '3',
+  'auditLog.retentionDays': '365',
+  'auditLog.criticalRetentionDays': '3650',
+  'notification.retentionDays': '90',
+  'notification.dedupRetentionDays': '30',
+};
+// `Object.entries` widens the keys to `string`.
+const INTEGER_SAMPLES = Object.entries(VALID_INTEGER) as [IntegerConfigKey, string][];
+
+describe('integer settings accept only plain decimal digits', () => {
+  // `z.coerce.number()` is `Number(input)`: it read `''` and blanks as 0 and took `'1e3'`, `'0x10'`,
+  // `'587.0'` and padded values, so an emptied `auth.ldap.resilience.maxRetries` was stored as 0. Each
+  // key's own valid value is the base, so a key with a high minimum (`editLock.ttlMs`) cannot pass by
+  // its bounds alone.
+  it.each(INTEGER_SAMPLES)('%s accepts %s and none of its other spellings', (key, valid) => {
+    expect(validateConfigValue(key, valid).success).toBe(true);
+    const other = [` ${valid}`, `${valid} `, `${valid}e0`, `0x${Number(valid).toString(16)}`, `+${valid}`, `0${valid}`, `${valid}.0`, '', '  '];
+    for (const raw of other) expect(validateConfigValue(key, raw).success, raw).toBe(false);
+  });
+
+  it.each(INTEGER_SAMPLES)('%s accepts 0 only where its minimum is 0', key => {
+    const zeroAllowed = key === 'auth.ldap.resilience.maxRetries' || key === 'backup.retentionMinCount';
+    expect(validateConfigValue(key, '0').success).toBe(zeroAllowed);
   });
 });
 

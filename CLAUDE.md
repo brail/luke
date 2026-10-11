@@ -218,7 +218,8 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
   never `''`
 - **A form that writes several keys calls `saveConfigs` once**, so a failure leaves the stored form
   as it was (`apps/api/test/configFormAtomicity.integration.spec.ts`)
-- Stored values are strings: `z.coerce.*` for numbers, `booleanConfigSchema` for booleans,
+- Stored values are strings: `integerConfigSchema(Inner)` for integers, with integer and range
+  validation in `Inner` — never bare `z.coerce.number()`; `booleanConfigSchema` for booleans;
   `jsonConfigSchema(Inner)` for JSON — never a bare `.transform(s => Inner.parse(JSON.parse(s)))`,
   which throws through `safeParse`
 - **Defaults live once in `APP_CONFIG_DEFAULTS`**, in the stored string form; read such a key with

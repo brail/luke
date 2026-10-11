@@ -12,7 +12,7 @@ model AppConfig {
   id          String   @id @default(uuid())
   /// Dot-notation key (e.g. "auth.strategy", "smtp.host"). Must match an AppConfigRegistry entry.
   key         String   @unique
-  /// Stored value always as string. Use z.coerce.* or JSON.parse in the application layer.
+  /// Stored value always as string, parsed by its key's AppConfigRegistry schema.
   value       String
   /// When true, value is AES-GCM encrypted at rest. Decrypted via getConfig({ decrypt: true }).
   isEncrypted Boolean  @default(false)
