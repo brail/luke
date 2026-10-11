@@ -122,18 +122,44 @@ export function workingDaysBetweenDates(
   return days < 0 ? 0 - count : count;
 }
 
+/** Days since the Monday of `date`'s week: 0 on Monday, 6 on Sunday. */
+function isoWeekdayIndex(date: CalendarDate): number {
+  return (new Date(utcMs(date)).getUTCDay() + 6) % 7;
+}
+
+/** The Monday of the ISO 8601 week `date` falls in. */
+export function startOfIsoWeek(date: CalendarDate): CalendarDate {
+  return addCalendarDays(date, -isoWeekdayIndex(date));
+}
+
 /**
- * Formatters by zone. Building one costs far more than using it, and a criticality batch builds
- * several per row. Only zones `Intl` accepted are stored, so the map is bounded by the zone list.
+ * The ISO 8601 week of `date`: weeks start on Monday and week 1 holds the year's first Thursday, so
+ * 2021-01-03 is week 53 of 2020 and 2024-12-30 week 1 of 2025.
+ */
+export function isoWeekOf(date: CalendarDate): { year: number; week: number } {
+  const thursday = utcMs(date) + (3 - isoWeekdayIndex(date)) * MS_PER_DAY;
+  const year = new Date(thursday).getUTCFullYear();
+  // `Date.UTC` maps years 0–99 to 1900–1999; Luke's years start at 1900, so it cannot apply here.
+  return { year, week: 1 + Math.floor((thursday - Date.UTC(year, 0, 1)) / (7 * MS_PER_DAY)) };
+}
+
+/**
+ * Formatters by resolved zone name. Building one costs far more than using it, and a criticality
+ * batch builds several per row. Keyed by the name `Intl` resolves, so the map is bounded by the zone
+ * list whatever the spelling.
  */
 const wallClockFormats = new Map<string, Intl.DateTimeFormat>();
 
-/** A formatter reading the wall clock of `timeZone`. Throws a `RangeError` for an unknown zone. */
+/**
+ * A formatter reading the wall clock of `timeZone`. Throws a `RangeError` for an unknown zone or a
+ * fixed offset such as `'+01:00'`, which has no daylight-saving rules (ADR-035 §Formatting).
+ */
 function wallClockFormat(timeZone: string): Intl.DateTimeFormat {
-  let format = wallClockFormats.get(timeZone);
+  const zone = requireZone(timeZone);
+  let format = wallClockFormats.get(zone);
   if (!format) {
     format = new Intl.DateTimeFormat('en-US', {
-      timeZone,
+      timeZone: zone,
       hourCycle: 'h23',
       year: 'numeric',
       month: 'numeric',
@@ -142,7 +168,7 @@ function wallClockFormat(timeZone: string): Intl.DateTimeFormat {
       minute: 'numeric',
       second: 'numeric',
     });
-    wallClockFormats.set(timeZone, format);
+    wallClockFormats.set(zone, format);
   }
   return format;
 }
@@ -172,21 +198,55 @@ export function calendarDateIn(instant: Date, timeZone: string): CalendarDate {
   return utcDateOf(wallClockMs(wallClockFormat(timeZone), instant.getTime()));
 }
 
-/** `dd/mm/yyyy` in it-IT: the day-only numeric form the tables, tooltips and exports use. */
-export const NUMERIC_DATE: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric' };
+/**
+ * The wall time (`'HH:mm'`, 24-hour clock) `instant` shows in `timeZone` (IANA). Throws a
+ * `RangeError` for an unknown zone or an invalid `Date`.
+ */
+export function wallTimeIn(instant: Date, timeZone: string): string {
+  const wall = new Date(wallClockMs(wallClockFormat(timeZone), instant.getTime()));
+  return `${String(wall.getUTCHours()).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`;
+}
 
-const calendarDateFormats = new Map<string, Intl.DateTimeFormat>();
+/** The one locale dates are written in until the i18n cycle (ADR-035 §Formatting). */
+export const DEFAULT_LOCALE = 'it-IT';
+
+// The presets are frozen: every caller shares them, and one that wrote into them would change every
+// later date in the process.
+
+/** `dd/mm/yyyy` in it-IT: the day-only numeric form the tables, tooltips and exports use. */
+export const NUMERIC_DATE: Readonly<Intl.DateTimeFormatOptions> = Object.freeze({ day: '2-digit', month: '2-digit', year: 'numeric' });
+
+/** `dd/mm/yyyy, hh:mm` in it-IT: an instant's date and wall time. */
+export const NUMERIC_DATE_TIME: Readonly<Intl.DateTimeFormatOptions> = Object.freeze({ ...NUMERIC_DATE, hour: '2-digit', minute: '2-digit' });
+
+/** `hh:mm` in it-IT: an instant's wall time. */
+export const NUMERIC_TIME: Readonly<Intl.DateTimeFormatOptions> = Object.freeze({ hour: '2-digit', minute: '2-digit' });
+
+const intlFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** One formatter per locale, zone and options, reused: views and exports format once per row. */
+function intlFormat(locale: string, timeZone: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale}|${timeZone}|${JSON.stringify(options)}`;
+  let format = intlFormats.get(key);
+  if (!format) intlFormats.set(key, (format = new Intl.DateTimeFormat(locale, { ...options, timeZone })));
+  return format;
+}
 
 /**
  * `date` written with `Intl` `options` in `locale`. Zone-free: its UTC midnight read in UTC, so a
- * reader west of UTC never sees the day before. One formatter per locale and options, reused: views
- * and exports call it once per row.
+ * reader west of UTC never sees the day before.
  */
-export function formatCalendarDate(date: CalendarDate, options: Intl.DateTimeFormatOptions, locale = 'it-IT'): string {
-  const key = `${locale}|${JSON.stringify(options)}`;
-  let format = calendarDateFormats.get(key);
-  if (!format) calendarDateFormats.set(key, (format = new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' })));
-  return format.format(utcMidnightOf(date));
+export function formatCalendarDate(date: CalendarDate, options: Intl.DateTimeFormatOptions, locale = DEFAULT_LOCALE): string {
+  return intlFormat(locale, 'UTC', options).format(utcMidnightOf(date));
+}
+
+/**
+ * `instant` written with `Intl` `options` in `locale`, read in `timeZone` (IANA). Both are required
+ * (CLAUDE.md §Dates & Time Zones): an unknown zone or a fixed offset throws a `RangeError` rather
+ * than falling back to the process's zone, and so does an invalid `Date`.
+ */
+export function formatInstant(instant: Date, timeZone: string, options: Intl.DateTimeFormatOptions, locale: string): string {
+  return intlFormat(locale, requireZone(timeZone), options).format(instant);
 }
 
 /**
@@ -238,23 +298,111 @@ export const WALL_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 export function instantAt(date: CalendarDate, time: string, timeZone: string): Date {
   const match = WALL_TIME_PATTERN.exec(time);
   if (!match) throw new RangeError(`Not a wall time: ${time}`);
-  const format = wallClockFormat(timeZone);
   const wall = utcMs(date) + (Number(match[1]) * 60 + Number(match[2])) * 60_000;
-  let before = wall - 15 * MS_PER_HOUR;
-  let after = wall + 13 * MS_PER_HOUR;
+  return new Date(resolveWall(wallClockFormat(timeZone), wall, { second: false, skipped: 'gapEnd' }));
+}
+
+/**
+ * The instant at which the wall clock of `format`'s zone reads `wall` (ms, written as if it were
+ * UTC) — see `instantAt` for the search. A repeated wall time gives its first occurrence, or the
+ * second when `second` is set; a skipped one gives the first instant after the gap (`'gapEnd'`) or
+ * the wall time read with the offset before the gap (`'offsetBefore'`, RFC 5545 and `Temporal`'s
+ * `compatible`: as far past the gap as it was past the hour).
+ */
+function resolveWall(
+  format: Intl.DateTimeFormat,
+  wall: number,
+  { second, skipped }: { second: boolean; skipped: 'gapEnd' | 'offsetBefore' },
+): number {
+  // Whole-second bounds: offsets change on whole seconds, and the bisection keeps them whole.
+  let before = Math.floor(wall / 1000) * 1000 - 15 * MS_PER_HOUR;
+  let after = before + 28 * MS_PER_HOUR;
   const offsetBefore = offsetMs(format, before);
   const offsetAfter = offsetMs(format, after);
-  if (offsetBefore === offsetAfter) return new Date(wall - offsetBefore);
+  if (offsetBefore === offsetAfter) return wall - offsetBefore;
 
-  // Bisect to the first second on the new offset; both bounds stay whole seconds.
+  // Bisect to the first second on the new offset.
   while (after - before > 1000) {
     const mid = before + Math.floor((after - before) / 2000) * 1000;
     if (offsetMs(format, mid) === offsetBefore) before = mid;
     else after = mid;
   }
   const transition = after;
-  const onOldOffset = wall - offsetBefore;
-  return new Date(onOldOffset < transition ? onOldOffset : Math.max(transition, wall - offsetAfter));
+  const onOld = wall - offsetBefore;
+  const onNew = wall - offsetAfter;
+  const oldReadsWall = onOld < transition;
+  const newReadsWall = onNew >= transition;
+  if (oldReadsWall && newReadsWall) return second ? onNew : onOld;
+  if (oldReadsWall) return onOld;
+  if (newReadsWall) return onNew;
+  return skipped === 'gapEnd' ? transition : onOld;
+}
+
+/**
+ * An event moved by `days` whole calendar days, ADR-035 §Moving and saving: all-day dates by calendar
+ * arithmetic; a timed start keeps its wall time in `timeZone` to the millisecond (skipped: offset
+ * before the gap, as RFC 5545; repeated: the start's occurrence where it exists, else the first) and
+ * the end keeps the duration. `days === 0` returns copies. Throws a `RangeError` for a bad zone
+ * (checked first), fractional `days`, an invalid `Date` or an all-day result outside 1900–9999; a
+ * timed result outside the stored range is the caller's to refuse (`isInstantInRange`).
+ */
+export function shiftEventByDays(
+  event: { startAt: Date; endAt: Date | null; allDay: boolean },
+  days: number,
+  timeZone: string,
+): { startAt: Date; endAt: Date | null } {
+  const { startAt, endAt, allDay } = event;
+  const format = wallClockFormat(timeZone);
+  if (!Number.isInteger(days)) throw new RangeError(`Not a whole number of days: ${days}`);
+  if (Number.isNaN(startAt.getTime()) || (endAt && Number.isNaN(endAt.getTime()))) throw new RangeError('Invalid event date');
+  if (days === 0) return { startAt: new Date(startAt), endAt: endAt && new Date(endAt) };
+  if (allDay) {
+    const shift = (d: Date) => utcMidnightOf(addCalendarDays(calendarDateOf(d), days));
+    return { startAt: shift(startAt), endAt: endAt ? shift(endAt) : null };
+  }
+  const ms = startAt.getTime();
+  const subSecond = ms - Math.floor(ms / 1000) * 1000;
+  const wall = wallClockMs(format, ms - subSecond) + subSecond;
+  // Was the start the later occurrence of a repeated wall time?
+  const second = resolveWall(format, wall, { second: false, skipped: 'gapEnd' }) !== ms;
+  const shifted = resolveWall(format, wall + days * MS_PER_DAY, { second, skipped: 'offsetBefore' });
+  return { startAt: new Date(shifted), endAt: endAt ? new Date(shifted + endAt.getTime() - ms) : null };
+}
+
+/**
+ * The names `Intl` resolves zone spellings to, keyed by the spelling with ASCII letters lower-cased
+ * (`Intl` ignores ASCII case only), so the map is bounded by the zone list. Refused spellings are not
+ * stored: arbitrary input cannot grow it.
+ */
+const resolvedZones = new Map<string, string>();
+
+/** `s` with ASCII letters lower-cased, nothing else: how `Intl` compares zone names. */
+function asciiLowerCase(s: string): string {
+  return s.replace(/[A-Z]/g, c => c.toLowerCase());
+}
+
+/** The name `Intl` resolves `timeZone` to, or `null` for an unknown name or a fixed offset. */
+function resolvedZone(timeZone: string): string | null {
+  const key = asciiLowerCase(timeZone);
+  const cached = resolvedZones.get(key);
+  if (cached) return cached;
+  let name: string;
+  try {
+    name = new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
+  } catch {
+    return null;
+  }
+  // A fixed offset such as `'+01:00'` resolves to itself (`'−01:00'`, with U+2212, to `'-01:00'`).
+  if (/^[+-]/.test(name)) return null;
+  resolvedZones.set(key, name);
+  return name;
+}
+
+/** The name `Intl` resolves `timeZone` to; a `RangeError` for an unknown name or a fixed offset. */
+function requireZone(timeZone: string): string {
+  const zone = resolvedZone(timeZone);
+  if (!zone) throw new RangeError(`Not an IANA time zone: ${timeZone}`);
+  return zone;
 }
 
 /**
@@ -262,24 +410,30 @@ export function instantAt(date: CalendarDate, time: string, timeZone: string): D
  * one zone is never stored under two spellings — that would split every grouping by zone and match
  * no option of a zone list. Only the case: an alias `Intl` resolves to another name
  * (`Asia/Kolkata` → `Asia/Calcutta`) is left as written, since browsers disagree on which name is
- * primary. A name `Intl` does not know is returned unchanged.
+ * primary — and an alias in another case too (`asia/kolkata`): `Intl` lists canonical names only, so
+ * nothing says how an alias is spelt. Compare zones with `sameTimeZone`, which reads through both.
+ * A name `Intl` does not know is returned unchanged.
  */
 export function canonicalTimeZone(timeZone: string): string {
-  if (!isValidTimeZone(timeZone)) return timeZone;
-  const resolved = new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone;
-  return resolved.toLowerCase() === timeZone.toLowerCase() ? resolved : timeZone;
+  const resolved = resolvedZone(timeZone);
+  return resolved && asciiLowerCase(resolved) === asciiLowerCase(timeZone) ? resolved : timeZone;
 }
 
 /**
  * `true` when `timeZone` is a zone name `Intl` knows. A fixed offset such as `'+01:00'`, which
- * `Intl` also accepts, is refused: it is not an IANA name and has no daylight-saving rules. The
- * check reads the name `Intl` resolves to, so every spelling it normalises to an offset is caught
- * (`'−01:00'`, with U+2212, becomes `'-01:00'`).
+ * `Intl` also accepts, is refused: it is not an IANA name and has no daylight-saving rules.
  */
 export function isValidTimeZone(timeZone: string): boolean {
-  try {
-    return !/^[+-]/.test(new Intl.DateTimeFormat('en-US', { timeZone }).resolvedOptions().timeZone);
-  } catch {
-    return false;
-  }
+  return resolvedZone(timeZone) !== null;
+}
+
+/**
+ * `true` when `a` and `b` name the same zone for `Intl` in this runtime, aliases and letter case
+ * included (`Asia/Kolkata` and `asia/calcutta`); `false` when either is not a zone. Aliases match
+ * because `resolvedOptions()` returns the ICU canonical name; an engine that returns the input's
+ * spelling (TC39's canonicalisation proposal) keeps them apart — to revisit in DT-5f.
+ */
+export function sameTimeZone(a: string, b: string): boolean {
+  const zone = resolvedZone(a);
+  return zone !== null && zone === resolvedZone(b);
 }

@@ -3,20 +3,29 @@ import process from 'node:process';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 
 import {
+  DEFAULT_LOCALE,
+  NUMERIC_DATE_TIME,
+  NUMERIC_TIME,
   addCalendarDays,
   calendarDateIn,
   calendarDateOf,
   calendarDaysBetween,
   eventCalendarDays,
   formatCalendarDate,
+  formatInstant,
   instantAt,
+  isoWeekOf,
   canonicalTimeZone,
   isValidTimeZone,
   isInstantInRange,
   isWorkingDate,
   parseCalendarDate,
+  sameTimeZone,
+  shiftEventByDays,
   startOfDayIn,
+  startOfIsoWeek,
   utcMidnightOf,
+  wallTimeIn,
   workingDaysBetweenDates,
   type CalendarDate,
   type CalendarHoliday,
@@ -263,6 +272,128 @@ describe.each([
       '%s → %s', (tz, expected) => {
         expect(canonicalTimeZone(tz)).toBe(expected);
       });
+  });
+
+  describe('sameTimeZone', () => {
+    // A zone saved under an alias or in another case is still the same zone (ADR-035 §Two zone roles).
+    it.each([['Asia/Kolkata', 'Asia/Calcutta'], ['asia/kolkata', 'Asia/Calcutta'], ['Europe/Rome', 'europe/rome'], ['UTC', 'Etc/UTC']])(
+      '%s = %s', (a, b) => {
+        expect(sameTimeZone(a, b)).toBe(true);
+      });
+
+    it.each([['Europe/Rome', 'Europe/Paris'], ['Roma', 'Roma'], ['+01:00', '+01:00'], ['America/New_Yor\u212A', 'America/New_York']])('%s ≠ %s', (a, b) => {
+      expect(sameTimeZone(a, b)).toBe(false);
+    });
+  });
+
+  describe('isoWeekOf and startOfIsoWeek', () => {
+    // Expected values from Python's `date.isocalendar()`.
+    it.each([
+      ['2020-12-31', 53, 2020, '2020-12-28'],
+      ['2021-01-03', 53, 2020, '2020-12-28'],
+      ['2021-01-04', 1, 2021, '2021-01-04'],
+      ['2024-12-30', 1, 2025, '2024-12-30'],
+      ['2026-10-11', 41, 2026, '2026-10-05'],
+      ['1900-01-01', 1, 1900, '1900-01-01'],
+    ])('%s is week %i of %i, starting %s', (day, week, year, monday) => {
+      expect(isoWeekOf(date(day))).toEqual({ year, week });
+      expect(startOfIsoWeek(date(day))).toBe(monday);
+    });
+  });
+
+  describe('wallTimeIn', () => {
+    it.each([['Europe/Rome', '12:00'], ['Asia/Kolkata', '15:30'], ['America/Los_Angeles', '03:00'], ['UTC', '10:00']])(
+      'reads 2026-07-01T10:00Z in %s as %s', (timeZone, expected) => {
+        expect(wallTimeIn(new Date('2026-07-01T10:00:00Z'), timeZone)).toBe(expected);
+      });
+
+    it.each(['Europe/Nowhere', '+01:00'])('throws for the zone %j', timeZone => {
+      expect(() => wallTimeIn(new Date('2026-07-01T10:00:00Z'), timeZone)).toThrow(RangeError);
+    });
+
+    it('reads the last representable instants without garbling the time', () => {
+      expect(wallTimeIn(new Date('9999-12-31T20:00:00Z'), 'Pacific/Kiritimati')).toBe('10:00');
+    });
+  });
+
+  describe('formatInstant', () => {
+    const instant = new Date('2026-07-01T10:00:00Z');
+
+    it('writes what `utils/date.ts` writes for the same zone', () => {
+      expect(formatInstant(instant, 'Europe/Rome', NUMERIC_DATE_TIME, DEFAULT_LOCALE)).toBe('01/07/2026, 12:00');
+      expect(formatInstant(instant, 'Europe/Rome', NUMERIC_TIME, DEFAULT_LOCALE)).toBe('12:00');
+      expect(formatInstant(instant, 'europe/rome', NUMERIC_TIME, DEFAULT_LOCALE)).toBe('12:00');
+    });
+
+    // `utils/date.ts` fell back to the process's zone and printed 'Invalid date' (ADR-035 §Formatting).
+    it.each(['Roma', '+01:00', ''])('refuses the zone %j instead of falling back', timeZone => {
+      expect(() => formatInstant(instant, timeZone, NUMERIC_TIME, DEFAULT_LOCALE)).toThrow(RangeError);
+    });
+
+    it('refuses an invalid date', () => {
+      expect(() => formatInstant(new Date(Number.NaN), 'Europe/Rome', NUMERIC_TIME, DEFAULT_LOCALE)).toThrow(RangeError);
+    });
+  });
+
+  describe('shiftEventByDays', () => {
+    const at = (s: string) => new Date(s);
+    const timed = (startAt: string, endAt: string | null) => ({ startAt: at(startAt), endAt: endAt ? at(endAt) : null, allDay: false });
+    const shifted = (event: ReturnType<typeof timed>, days: number, timeZone = 'Europe/Rome') => {
+      const result = shiftEventByDays(event, days, timeZone);
+      return [iso(result.startAt), result.endAt && iso(result.endAt)];
+    };
+
+    it('keeps the wall time and the millisecond across a daylight-saving change, the end at the same duration', () => {
+      // 09:00:00.123 CEST on 20 Oct → 09:00:00.123 CET on 30 Oct; two hours long before and after.
+      expect(shifted(timed('2026-10-20T07:00:00.123Z', '2026-10-20T09:00:00.123Z'), 10)).toEqual(
+        ['2026-10-30T08:00:00.123Z', '2026-10-30T10:00:00.123Z'],
+      );
+    });
+
+    it('returns copies of the same instants for 0 days', () => {
+      const event = timed('2026-10-25T01:30:00Z', '2026-10-25T02:30:00Z');
+      const result = shiftEventByDays(event, 0, 'Europe/Rome');
+      expect(result.startAt).not.toBe(event.startAt);
+      expect([iso(result.startAt), result.endAt && iso(result.endAt)]).toEqual(['2026-10-25T01:30:00.000Z', '2026-10-25T02:30:00.000Z']);
+    });
+
+    it('reads a skipped wall time with the offset before the gap (RFC 5545)', () => {
+      // 02:30 on 29 Mar 2026 does not exist in Rome: 02:30 CET is 03:30 CEST.
+      expect(shifted(timed('2026-03-28T01:30:00Z', null), 1)).toEqual(['2026-03-29T01:30:00.000Z', null]);
+    });
+
+    it('lands on the first occurrence of a repeated wall time from an ordinary one', () => {
+      // 02:30 on 25 Oct 2026 happens at 00:30Z (CEST) and 01:30Z (CET).
+      expect(shifted(timed('2026-10-24T00:30:00Z', null), 1)).toEqual(['2026-10-25T00:30:00.000Z', null]);
+    });
+
+    it('keeps the occurrence a repeated wall time was in where the target repeats it too', () => {
+      expect(shifted(timed('2026-10-25T00:30:00Z', null), 371)).toEqual(['2027-10-31T00:30:00.000Z', null]);
+      expect(shifted(timed('2026-10-25T01:30:00Z', null), 371)).toEqual(['2027-10-31T01:30:00.000Z', null]);
+    });
+
+    it('moves across a day the zone skipped (Pacific/Apia, 30 Dec 2011)', () => {
+      // 10:00 on 29 Dec (UTC−10) + 1 day: the 30th does not exist; read with the old offset, 10:00 on the 31st (UTC+14).
+      expect(shifted(timed('2011-12-29T20:00:00Z', null), 1, 'Pacific/Apia')).toEqual(['2011-12-30T20:00:00.000Z', null]);
+    });
+
+    it('moves both dates of an all-day event by calendar days, in any zone', () => {
+      const result = shiftEventByDays(
+        { startAt: at('2026-03-28T00:00:00Z'), endAt: at('2026-03-29T00:00:00Z'), allDay: true }, 2, 'Pacific/Kiritimati',
+      );
+      expect([iso(result.startAt), result.endAt && iso(result.endAt)]).toEqual(['2026-03-30T00:00:00.000Z', '2026-03-31T00:00:00.000Z']);
+    });
+
+    // Checked first: a clone with a misconfigured zone fails before moving anything.
+    it.each([
+      ['an unknown zone on an all-day event', { startAt: at('2026-03-28T00:00:00Z'), endAt: null, allDay: true }, 1, 'Europe/Nowhere'],
+      ['an unknown zone at 0 days', timed('2026-10-20T07:00:00Z', null), 0, 'Europe/Nowhere'],
+      ['a fixed offset', timed('2026-10-20T07:00:00Z', null), 1, '+01:00'],
+      ['a fractional number of days', timed('2026-10-20T07:00:00Z', null), 1.5, 'Europe/Rome'],
+      ['an invalid end', { startAt: at('2026-10-20T07:00:00Z'), endAt: new Date(Number.NaN), allDay: false }, 1, 'Europe/Rome'],
+    ] as const)('throws for %s', (_, event, days, timeZone) => {
+      expect(() => shiftEventByDays(event, days, timeZone)).toThrow(RangeError);
+    });
   });
 });
 
