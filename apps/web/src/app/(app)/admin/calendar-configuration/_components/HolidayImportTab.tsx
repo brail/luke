@@ -44,7 +44,8 @@ export function HolidayImportTab() {
 
   const previewMutation = trpc.holidays.previewImport.useQuery(
     { countryCodes: selectedCountries, year: selectedYear },
-    { enabled: false },
+    // On demand, and not retried: a refusal is the import's, and asking again fetches every country again.
+    { enabled: false, retry: false },
   );
 
   const confirmMutation = trpc.holidays.confirmImport.useMutation({
@@ -79,6 +80,12 @@ export function HolidayImportTab() {
       return;
     }
     const result = await previewMutation.refetch();
+    // A refused preview is the import that would be refused: say why rather than show no holidays.
+    if (result.error) {
+      setPreviewRows(null);
+      toast.error(getTrpcErrorMessage(result.error));
+      return;
+    }
     setPreviewRows(result.data ?? []);
   }
 

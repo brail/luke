@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { utcMidnightOf, VendorClosureUpsertInputSchema } from '@luke/core';
+import { NagerHolidaysSchema, parseCalendarDate, utcMidnightOf, VendorClosureUpsertInputSchema } from '@luke/core';
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
@@ -22,28 +22,54 @@ function rethrowClosureNotFound(e: unknown): never {
   throw e;
 }
 
+/**
+ * The holidays overlapping the years `from` to `to` — a range from late December to early January
+ * belongs to both years. Throws a `RangeError` for a year outside 1900–9999.
+ */
+function overlappingYears(from: number, to: number): Prisma.HolidayWhereInput {
+  const first = parseCalendarDate(`${from}-01-01`);
+  const last = parseCalendarDate(`${to}-12-31`);
+  if (!first || !last) throw new RangeError(`Years outside 1900–9999: ${from}–${to}`);
+  return { startDate: { lte: utcMidnightOf(last) }, endDate: { gte: utcMidnightOf(first) } };
+}
+
 // ─── Nager.Date API ──────────────────────────────────────────────────────────
 
 const NAGER_BASE = 'https://date.nager.at/api/v3';
 
-interface NagerHoliday {
-  date: string;
-  localName: string;
-  name: string;
-  countryCode: string;
-  fixed: boolean;
-  global: boolean;
+/** A preview or an import: the countries unique and sorted, so both list the same holidays and
+ * concurrent imports take the countries' keys in the same order. */
+const NagerImportInputSchema = z.object({
+  countryCodes: z.array(z.string().regex(/^[A-Z]{2}$/)).min(1).max(10).transform(codes => [...new Set(codes)].sort()),
+  year: z.number().int().min(2020).max(2040),
+});
+
+/**
+ * The public holidays Nager.Date lists for `countryCode` in `year`, validated: none for a country it
+ * does not cover (404).
+ *
+ * @throws {TRPCError} BAD_REQUEST if Nager.Date cannot be reached, answers with an error, or sends
+ *   an answer that is not a list of holidays on existing days.
+ */
+async function fetchNagerHolidays(countryCode: string, year: number) {
+  const res = await fetch(`${NAGER_BASE}/PublicHolidays/${year}/${countryCode}`, { signal: AbortSignal.timeout(10_000) })
+    .catch((cause: unknown) => {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: `Nager.Date non risponde per ${countryCode}`, cause });
+    });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new TRPCError({ code: 'BAD_REQUEST', message: `Nager.Date non risponde per ${countryCode} (${res.status})` });
+  const parsed = NagerHolidaysSchema.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) throw new TRPCError({ code: 'BAD_REQUEST', message: `Risposta non valida da Nager.Date per ${countryCode}` });
+  return parsed.data;
 }
 
-async function fetchNagerHolidays(countryCode: string, year: number): Promise<NagerHoliday[]> {
-  const res = await fetch(`${NAGER_BASE}/PublicHolidays/${year}/${countryCode}`);
-  if (!res.ok) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `Nager.Date API error for ${countryCode}/${year}: ${res.status}`,
-    });
-  }
-  return res.json() as Promise<NagerHoliday[]>;
+/** The holidays of `countryCodes` in `year`, all or nothing: one country that fails refuses them all. */
+async function fetchAllNagerHolidays(countryCodes: string[], year: number) {
+  const fetched = await Promise.all(countryCodes.map(async code => ({ code, holidays: await fetchNagerHolidays(code, year) })));
+  return fetched.flatMap(({ code, holidays }) => holidays.map(h => {
+    const name = h.localName || h.name;
+    return { code, name, nameEn: h.name !== name ? h.name : null, date: h.date };
+  }));
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -91,99 +117,44 @@ export const holidaysRouter = router({
    * @auth {config:update}
    * @input {{ countryCodes: string[], year: number }} — 1–10 ISO 3166-1 alpha-2 codes and year.
    * @output {Array<{ code, name, nameEn, date }>} — flattened holiday preview list.
+   * @throws {TRPCError} BAD_REQUEST as `confirmImport` does, so the preview never lists an import
+   *   that would be refused.
    */
   previewImport: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({
-      countryCodes: z.array(z.string().length(2)).min(1).max(10),
-      year: z.number().int().min(2020).max(2040),
-    }))
-    .query(async ({ input }) => {
-      const results = await Promise.allSettled(
-        input.countryCodes.map(async code => {
-          const holidays = await fetchNagerHolidays(code, input.year);
-          return { code, holidays };
-        }),
-      );
-
-      const preview: Array<{ code: string; name: string; nameEn: string | null; date: string }> = [];
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          for (const h of r.value.holidays) {
-            const localName = h.localName || h.name;
-            preview.push({
-              code: h.countryCode,
-              name: localName,
-              nameEn: h.name !== localName ? h.name : null,
-              date: h.date,
-            });
-          }
-        }
-      }
-      return preview;
-    }),
+    .input(NagerImportInputSchema)
+    .query(({ input }) => fetchAllNagerHolidays(input.countryCodes, input.year)),
 
   /**
-   * Imports public holidays from Nager.Date API into the database (upsert by country+name+date).
+   * Imports public holidays from Nager.Date API into the database (upsert by country+name+date), all
+   * or nothing, in one transaction.
    *
    * @auth {config:update}
    * @input {{ countryCodes: string[], year: number }}
    * @output {{ imported: number }}
+   * @throws {TRPCError} BAD_REQUEST if Nager.Date fails for a country (`fetchNagerHolidays`).
    */
   confirmImport: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({
-      countryCodes: z.array(z.string().length(2)).min(1).max(10),
-      year: z.number().int().min(2020).max(2040),
-    }))
+    .input(NagerImportInputSchema)
     .mutation(async ({ input, ctx }) => {
-      // Auto-upsert HolidayCountry rows (FK anchor) so any vendor country is accepted
-      await Promise.all(
-        input.countryCodes.map(code =>
-          ctx.prisma.holidayCountry.upsert({
-            where: { code },
-            update: {},
-            create: { code, name: code },
-          }),
-        ),
-      );
+      // Every country is fetched and every day validated before anything is written.
+      const holidays = await fetchAllNagerHolidays(input.countryCodes, input.year);
 
-      const results = await Promise.allSettled(
-        input.countryCodes.map(code => fetchNagerHolidays(code, input.year)),
-      );
-
-      let imported = 0;
-      for (let i = 0; i < input.countryCodes.length; i++) {
-        const r = results[i]!;
-        if (r.status !== 'fulfilled') continue;
-        const code = input.countryCodes[i]!;
-
-        for (const h of r.value) {
-          const startDate = new Date(h.date);
-          const endDate   = new Date(h.date); // single-day holidays from nager
-          const name = h.localName || h.name;
-          const nameEn = h.name !== name ? h.name : null;
-          await ctx.prisma.holiday.upsert({
-            where: {
-              countryCode_name_startDate: {
-                countryCode: code,
-                name,
-                startDate,
-              },
-            },
-            update: { endDate, nameEn },
-            create: {
-              countryCode: code,
-              name,
-              nameEn,
-              startDate,
-              endDate,
-              source: 'nager.date',
-            },
+      await ctx.prisma.$transaction(async tx => {
+        // The countries are the holidays' foreign-key anchor: any vendor country is accepted.
+        await tx.holidayCountry.createMany({ data: input.countryCodes.map(code => ({ code, name: code })), skipDuplicates: true });
+        for (const h of holidays) {
+          // Single-day holidays from Nager.Date.
+          const day = utcMidnightOf(h.date);
+          await tx.holiday.upsert({
+            where: { countryCode_name_startDate: { countryCode: h.code, name: h.name, startDate: day } },
+            update: { endDate: day, nameEn: h.nameEn },
+            create: { countryCode: h.code, name: h.name, nameEn: h.nameEn, startDate: day, endDate: day, source: 'nager.date' },
           });
-          imported++;
         }
-      }
+      }, { timeout: 15000 });
+      const imported = holidays.length;
 
       await logAudit(ctx, {
         action: 'HOLIDAY_IMPORT',
@@ -210,15 +181,11 @@ export const holidaysRouter = router({
       year: z.number().int().min(2020).max(2040).optional(),
     }))
     .query(async ({ input, ctx }) => {
-      const where: Prisma.HolidayWhereInput = {};
-      if (input.countryCodes?.length) where.countryCode = { in: input.countryCodes };
-      if (input.year) {
-        // Overlap, not containment: a holiday range from late December to early January belongs to both years.
-        where.startDate = { lte: new Date(`${input.year}-12-31`) };
-        where.endDate = { gte: new Date(`${input.year}-01-01`) };
-      }
       return ctx.prisma.holiday.findMany({
-        where,
+        where: {
+          countryCode: input.countryCodes?.length ? { in: input.countryCodes } : undefined,
+          ...(input.year ? overlappingYears(input.year, input.year) : undefined),
+        },
         orderBy: [{ countryCode: 'asc' }, { startDate: 'asc' }],
       });
     }),
@@ -295,7 +262,9 @@ export const holidaysRouter = router({
     }),
 
   /**
-   * Pre-fills vendor closure periods from stored holidays for the given country codes.
+   * Pre-fills vendor closure periods from the stored holidays of the given country codes: those
+   * overlapping the season's year and the one before, when its planning starts, or of every year for
+   * a season without one (as NAV creates them).
    *
    * @auth {season_calendar:update}
    * @input {{ vendorId: string, seasonId: string, countryCodes: string[] }}
@@ -310,8 +279,15 @@ export const holidaysRouter = router({
       countryCodes: z.array(z.string().length(2)).min(1),
     }))
     .mutation(async ({ input, ctx }) => {
+      const [vendor, season] = await Promise.all([
+        ctx.prisma.vendor.findUnique({ where: { id: input.vendorId }, select: { id: true } }),
+        ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { year: true } }),
+      ]);
+      // Read first: with nothing to copy, the write's foreign keys would not refuse a missing one.
+      if (!vendor || !season) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore o stagione non trovati' });
+
       const holidays = await ctx.prisma.holiday.findMany({
-        where: { countryCode: { in: input.countryCodes } },
+        where: { countryCode: { in: input.countryCodes }, ...(season.year === null ? undefined : overlappingYears(season.year - 1, season.year)) },
       });
 
       // @@unique([vendorId, seasonId, sourceHolidayId]) makes this idempotent

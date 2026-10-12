@@ -30,6 +30,17 @@ export const VendorClosureDaysInOrder = z.refine<{ startDate: string; endDate: s
 export const VendorClosureUpsertInputSchema = VendorClosureUpsertBaseSchema.check(VendorClosureDaysInOrder);
 export type VendorClosureUpsertInput = z.infer<typeof VendorClosureUpsertInputSchema>;
 
+/**
+ * The answer of Nager.Date's `GET /api/v3/PublicHolidays/{year}/{countryCode}`, the fields the
+ * holiday import reads: an external source, so its days are checked as calendar days where they are
+ * read (ADR-035 §Bounds).
+ */
+export const NagerHolidaysSchema = z.array(z.object({
+  date: CalendarDateSchema,
+  localName: z.string().nullish(),
+  name: z.string().min(1),
+}));
+
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
 /** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */
