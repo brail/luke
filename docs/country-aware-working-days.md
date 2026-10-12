@@ -240,7 +240,10 @@ not reached and its day is at most two calendar days away (`oggi`, `domani`,
 ## Holiday sources
 
 - **`Holiday` rows are the only holiday input.** An admin imports them on demand
-  from the Nager.Date public API, one country and year at a time
+  from the Nager.Date public API, for one year and up to ten countries at a
+  time, all or nothing: if Nager.Date cannot be reached or sends an invalid
+  answer for one country, the preview and the import are refused and nothing is
+  written; a country Nager.Date does not cover imports no holidays
   (`holidays.previewImport` / `holidays.confirmImport`, `config:update`). Each
   holiday is stored as a single-day entry with `source: 'nager.date'` and can be
   deleted individually. There is no scheduled sync. The seed creates

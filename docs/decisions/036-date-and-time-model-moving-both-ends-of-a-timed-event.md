@@ -61,3 +61,9 @@ ADR-035's observed gaps, as its errata correct them when this record is accepted
 - `User.timezone` defaults to `Europe/Rome` in the database and its creators set no `timezone`; the CHECK constraints cover only `calendar_events` and `planning_groups`, up to the year 9999.
 - The season sync stores NAV's blank date `1753-01-01` as a date.
 - The `@luke` ESLint rule does not exist yet.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-12 — Observed gaps, "The holiday import stores the dates of its external source without validating them, one row at a time" (inherited from ADR-035).** Since `fff8b2cb` `holidays.previewImport` and `holidays.confirmImport` read Nager.Date's answer through `NagerHolidaysSchema`, whose days are `CalendarDateSchema`, before anything is written; the import is all or nothing, in one transaction, and its preview is refused whenever the import would be.
