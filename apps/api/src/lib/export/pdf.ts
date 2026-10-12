@@ -1,6 +1,8 @@
 import {
   CompanyAddressSchema,
   CompanyExportSettingsSchema,
+  DEFAULT_LOCALE,
+  formatInstant,
   type CompanyAddress,
   type CompanyExportSettings,
 } from '@luke/core';
@@ -110,6 +112,14 @@ function configurePdfMake(): typeof pdfMake {
   }
 
   return pdfMake;
+}
+
+/**
+ * `at` as an export header writes it: in `timeZone`, the reader's, which it names (ADR-035
+ * §Formatting) — `01/07/2026 (Europe/Rome)`.
+ */
+export function formatExportInstant(at: Date, timeZone: string, preset: Readonly<Intl.DateTimeFormatOptions>): string {
+  return `${formatInstant(at, timeZone, preset, DEFAULT_LOCALE)} (${timeZone})`;
 }
 
 /**

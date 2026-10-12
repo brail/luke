@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PrismaClient } from '@luke/db';
 
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
+import * as pdf from '../../lib/export/pdf';
 import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutPdf } from '../collectionLayout.export.pdf.service';
 
@@ -145,6 +146,17 @@ describe('buildCollectionLayoutPdf', () => {
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.length).toBeLessThan(undecodable.length);
+  });
+
+  it("writes the header's extraction time in the requester's zone, and names it", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const header = vi.spyOn(pdf, 'buildBrandPageHeader');
+
+    // 23:30Z on June 30 is 16:30 the same day in Los Angeles.
+    await buildCollectionLayoutPdf(makeLayout([makeRow('row-1', null)]), mockPrisma, 'Tester', new Date('2026-06-30T23:30:00Z'), 'America/Los_Angeles');
+
+    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 30/06/2026, 16:30 (America/Los_Angeles)');
+    header.mockRestore();
   });
 
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {

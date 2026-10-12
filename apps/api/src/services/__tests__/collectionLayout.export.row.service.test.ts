@@ -97,14 +97,14 @@ describe('buildCollectionRowPdf', () => {
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
   });
 
-  it("writes the header's extraction time in the requester's zone", async () => {
+  it("writes the header's extraction time in the requester's zone, and names it", async () => {
     vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const header = vi.spyOn(pdf, 'buildBrandPageHeader');
 
     // 20:05Z on March 1 is 05:05 on March 2 in Tokyo.
     await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date('2032-03-01T20:05:00Z'), 'Asia/Tokyo');
 
-    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 02/03/2032, 05:05');
+    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 02/03/2032, 05:05 (Asia/Tokyo)');
     header.mockRestore();
   });
 

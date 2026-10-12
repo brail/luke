@@ -10,8 +10,8 @@ import ExcelJS from 'exceljs';
 import {
   calcMaxSupplierCost,
   classifyMargin,
-  formatDateTimeWithTimezone,
   landedCostBreakdown,
+  NUMERIC_DATE_TIME,
   priceMargin,
 } from '@luke/core';
 import type { PrismaClient,
@@ -21,7 +21,7 @@ import type { PrismaClient,
   Vendor } from '@luke/db';
 
 import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, extensionForExcelJs, resizeForEmbed } from '../lib/export/image';
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
 
 import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
@@ -157,7 +157,7 @@ export async function buildCollectionRowPdf(
     1,
     {
       subtitle: `${row.line}${row.article ? ` / ${row.article}` : ''} — ${season.code} ${season.year}`,
-      extractedInfo: `${extractedBy} — ${formatDateTimeWithTimezone(extractedAt, timeZone)}`,
+      extractedInfo: `${extractedBy} — ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE_TIME)}`,
     },
   );
 

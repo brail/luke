@@ -1,8 +1,8 @@
 
 import {
   DEFAULT_OPTIMAL_MARGIN,
+  NUMERIC_DATE_TIME,
   classifyMargin,
-  formatDateTimeWithTimezone,
   retailMargin,
   skuWeightedAverage,
 } from '@luke/core';
@@ -17,7 +17,7 @@ import type { PrismaClient,
 
 import { imageFetchLimiter } from '../lib/export/concurrency';
 import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
 
 import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
 import { buildProgressLabelMap } from './collectionLayout.service';
@@ -384,7 +384,7 @@ export async function buildCollectionLayoutPdf(
   }
 
   const subtitle      = `Collection Layout — ${[layout.season.code, layout.season.name].filter(Boolean).join(' ')}`;
-  const extractedInfo = `${extractedBy} — ${formatDateTimeWithTimezone(extractedAt, timeZone)}`;
+  const extractedInfo = `${extractedBy} — ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE_TIME)}`;
 
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A3',

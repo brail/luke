@@ -1,8 +1,8 @@
 
-import { calcMaxSupplierCost, calculateCompanyMultiplier, formatShortDate, generateRetailPriceRange } from '@luke/core';
+import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange, NUMERIC_DATE } from '@luke/core';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle, createStreamingBuffer } from '../lib/export/xlsxStreaming';
 
 import { resolveLogoDataUri } from './asset.service';
@@ -168,7 +168,7 @@ export async function buildPricingGridPdf(
   ]);
 
   const subtitle = `${season.code} ${season.year ?? ''} — Griglia Prezzi`;
-  const extractedInfo = `Estratto da ${extractedBy} il ${formatShortDate(extractedAt, timeZone)}`;
+  const extractedInfo = `Estratto da ${extractedBy} il ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE)}`;
 
   // Parameters section
   const paramRows: Content[] = [];
