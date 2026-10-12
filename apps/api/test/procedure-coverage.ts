@@ -130,13 +130,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 4,
   },
   notifications: {
-    reason: 'no tests written, including the preferences and the SSE ticket',
-    uncovered: 10,
+    reason: '`list` and its cursor from the notifications spec; the rest is untested, including the preferences and the SSE ticket',
+    uncovered: 9,
   },
   dashboard: {
     reason:
-      '`getSeasonProgress` from the brand-scope spec, `upsertTask` from the dashboard-tasks spec; config, the other task procedures, KPIs, exchange rates and weekly sales remain',
-    uncovered: 7,
+      '`getSeasonProgress` from the brand-scope spec, `upsertTask` from the dashboard-tasks spec, `getForexRates` (with Frankfurter stubbed) from the forex spec; config, the other task procedures, KPIs and weekly sales remain',
+    uncovered: 6,
   },
   vendors: {
     reason:

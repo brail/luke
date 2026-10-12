@@ -58,3 +58,13 @@ export const DashboardTaskInputSchema = z.object({
 });
 
 export type DashboardTaskInput = z.infer<typeof DashboardTaskInputSchema>;
+
+/**
+ * The answer of Frankfurter (`https://api.frankfurter.app/{latest|YYYY-MM-DD}?from=…&to=…`), the ECB
+ * reference rates behind the exchange-rate widget: the fixing's ECB working day and its rates. An
+ * external source, so its day is checked as a calendar day where it is read (ADR-035 §Bounds).
+ */
+export const FrankfurterRatesSchema = z.object({
+  date: CalendarDateSchema,
+  rates: z.record(z.string(), z.number()),
+});

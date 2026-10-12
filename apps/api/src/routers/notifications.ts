@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import { z } from 'zod';
 
-import { CALENDAR_EVENT_KEYS, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
+import { CALENDAR_EVENT_KEYS, CalendarInstantSchema, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
 
 import { sseStore } from '../lib/sseStore';
 import { selfProcedure, router } from '../lib/trpc';
@@ -20,8 +20,9 @@ export const notificationsRouter = router({
   list: selfProcedure
     .input(
       z.object({
-        limit: z.number().min(1).max(50).default(20),
-        cursor: z.string().optional(),
+        limit: z.number().int().min(1).max(50).default(20),
+        // The last item's `createdAt`, sent back: an instant, refused before it reaches the query.
+        cursor: CalendarInstantSchema.optional(),
         unreadOnly: z.boolean().optional(),
         includeArchived: z.boolean().optional(),
         category: notificationCategoryEnum.optional(),

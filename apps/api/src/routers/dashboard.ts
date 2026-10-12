@@ -7,10 +7,12 @@ import {
   DEFAULT_FOREX_PAIRS,
   DashboardTaskInputSchema,
   DashboardWidgetsSchema,
+  FrankfurterRatesSchema,
   addCalendarDays,
   calendarDateIn,
   calendarDateOf,
   utcMidnightOf,
+  type CalendarDate,
   type WidgetConfigItem,
 } from '@luke/core';
 import { type Prisma } from '@luke/db';
@@ -183,11 +185,14 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Fetches live FX rates from Frankfurter API for the requested currency pairs.
+   * Fetches live FX rates from Frankfurter API for the requested currency pairs: the latest ECB
+   * fixing and the one before it, to compare. A base Frankfurter fails for is left out.
    *
    * @auth {dashboard:read}
    * @input {{ pairs: string[] }} — 1–8 currency pairs in "BASE/QUOTE" format (e.g. "EUR/USD").
-   * @output {{ rates, previousRates: Record<string, number>, timestamp: string }}
+   * @output {{ rates, previousRates: Record<string, number>, timestamp: CalendarDate | null }} —
+   *   `timestamp` is the latest fixing's day.
+   * @throws {TRPCError} BAD_GATEWAY when Frankfurter answers for no base.
    */
   getForexRates: protectedProcedure
     .use(requirePermission('dashboard:read'))
@@ -200,39 +205,46 @@ export const dashboardRouter = router({
         byBase.get(base)!.push(quote);
       }
 
-      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
       const rates: Record<string, number> = {};
       const previousRates: Record<string, number> = {};
-      let timestamp = new Date().toISOString();
 
-      await Promise.all(
-        Array.from(byBase.entries()).map(async ([base, quotes]) => {
-          const toParam = quotes.join(',');
-          const [latestRes, prevRes] = await Promise.all([
-            fetch(`https://api.frankfurter.app/latest?from=${base}&to=${toParam}`, { signal: AbortSignal.timeout(8000) }),
-            fetch(`https://api.frankfurter.app/${yesterday}?from=${base}&to=${toParam}`, { signal: AbortSignal.timeout(8000) }),
-          ]);
+      /** Frankfurter's rates at `path`, validated; `null`, with a warning, when it fails or answers something else. */
+      const fetchRates = async (path: string) => {
+        const res = await fetch(`https://api.frankfurter.app/${path}`, { signal: AbortSignal.timeout(8000) }).catch((err: unknown) => {
+          ctx.logger.warn({ err, path }, 'forex fetch failed');
+          return null;
+        });
+        if (!res) return null;
+        if (!res.ok) {
+          await res.body?.cancel();
+          ctx.logger.warn({ status: res.status, path }, 'forex fetch failed');
+          return null;
+        }
+        const parsed = FrankfurterRatesSchema.safeParse(await res.json().catch(() => null));
+        if (!parsed.success) ctx.logger.warn({ path }, 'forex answer not understood');
+        return parsed.success ? parsed.data : null;
+      };
 
-          if (latestRes.ok) {
-            const data = (await latestRes.json()) as { rates: Record<string, number>; date: string };
-            timestamp = data.date;
-            for (const [quote, rate] of Object.entries(data.rates)) {
-              rates[`${base}/${quote}`] = rate;
-            }
-          } else {
-            ctx.logger.warn({ status: latestRes.status }, 'forex latest fetch failed');
-          }
+      const fixingDays = await Promise.all(
+        Array.from(byBase.entries()).map(async ([base, quotes]): Promise<CalendarDate | null> => {
+          const query = `from=${base}&to=${quotes.join(',')}`;
+          const latest = await fetchRates(`latest?${query}`);
+          if (!latest) return null;
+          for (const [quote, rate] of Object.entries(latest.rates)) rates[`${base}/${quote}`] = rate;
 
-          if (prevRes.ok) {
-            const data = (await prevRes.json()) as { rates: Record<string, number> };
-            for (const [quote, rate] of Object.entries(data.rates)) {
-              previousRates[`${base}/${quote}`] = rate;
-            }
-          }
+          // The fixing before the latest one: Frankfurter answers a day with the last ECB working day's
+          // fixing on or before it, so no clock or zone decides which day "yesterday" is.
+          const previous = await fetchRates(`${addCalendarDays(latest.date, -1)}?${query}`);
+          for (const [quote, rate] of Object.entries(previous?.rates ?? {})) previousRates[`${base}/${quote}`] = rate;
+          return latest.date;
         })
       );
+      // Nothing at all is a failure, so the client keeps the rates it has and retries.
+      if (Object.keys(rates).length === 0) {
+        throw new TRPCError({ code: 'BAD_GATEWAY', message: 'Cambi non disponibili: Frankfurter non risponde' });
+      }
 
-      return { rates, previousRates, timestamp };
+      return { rates, previousRates, timestamp: fixingDays.find(day => day !== null) ?? null };
     }),
 
   /**
