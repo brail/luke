@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, LoaderCircle, RefreshCw } from 'lucide-react
 import React, { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 
-import { NAV_SYNC_DEFAULT_INTERVAL_MINUTES, NavSyncScheduleInputSchema, type NavMasterDataEntity, type NavSyncEntity } from '@luke/core';
+import { NAV_SYNC_DEFAULT_INTERVAL_MINUTES, NavSyncScheduleInputSchema, formatCalendarDate, NUMERIC_DATE, type CalendarDate, type NavMasterDataEntity, type NavSyncEntity } from '@luke/core';
 
 import { PermissionButton } from '../../../../components/PermissionButton';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -56,6 +56,8 @@ interface PreviewRecord {
   city: string | null;
   countryCode: string | null;
   blocked: number;
+  startingDate: CalendarDate | null;
+  endingDate: CalendarDate | null;
 }
 
 interface SyncResultItem {
@@ -847,10 +849,10 @@ function NavSyncTab({
                             </TableCell>
                           )}
                           {entity === 'season' && (
-                            <TableCell className="text-muted-foreground text-xs">{row.city ?? '—'}</TableCell>
+                            <TableCell className="text-muted-foreground text-xs">{row.startingDate ? formatCalendarDate(row.startingDate, NUMERIC_DATE) : '—'}</TableCell>
                           )}
                           {entity === 'season' && (
-                            <TableCell className="text-muted-foreground text-xs">{row.countryCode ?? '—'}</TableCell>
+                            <TableCell className="text-muted-foreground text-xs">{row.endingDate ? formatCalendarDate(row.endingDate, NUMERIC_DATE) : '—'}</TableCell>
                           )}
                         </TableRow>
                       ))

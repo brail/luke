@@ -84,6 +84,17 @@ export function buildWhereClause(predicates: string[]): string {
   return predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : '';
 }
 
+/** NAV's blank date: the minimum of SQL Server's `datetime`, written in a date field left empty. */
+const NAV_BLANK_DATE_MS = Date.UTC(1753, 0, 1);
+
+/**
+ * A NAV date column as the driver reads it (UTC), or `null` when the field is empty: a missing
+ * value or NAV's blank date `1753-01-01` (ADR-035 §External dates).
+ */
+export function navDateOrNull(value: Date | null | undefined): Date | null {
+  return value == null || value.getTime() === NAV_BLANK_DATE_MS ? null : value;
+}
+
 /**
  * Creates an mssql request with an explicit timeout instead of the driver default,
  * since NAV sync queries scan large tables in chunked loops.

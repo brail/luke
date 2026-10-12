@@ -7,8 +7,8 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, navConfigSchema } from '@luke/core';
-import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
+import { createSyncRequest, getNavDbConfig, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
 
 import { logAudit } from '../lib/auditLog';
@@ -26,6 +26,16 @@ import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
 
+/**
+ * A NAV date column as a calendar day: `null` when NAV left it blank, or when it lies outside the
+ * supported range, so one bad value empties its cell instead of failing the whole preview
+ * (ADR-035 §Bounds, §External dates).
+ */
+function navCalendarDate(value: Date | null): CalendarDate | null {
+  const date = navDateOrNull(value);
+  return date && isInstantInRange(date, { allDay: true }) ? calendarDateOf(date) : null;
+}
+
 // ── Sync sub-router ───────────────────────────────────────────────────────────
 
 const navSyncRouter = router({
@@ -34,7 +44,7 @@ const navSyncRouter = router({
    *
    * @auth {config:read}
    * @input {{ entity: "vendor" | "brand" | "season" }}
-   * @output {Array<{ navNo, name, city, countryCode, blocked }>}
+   * @output {Array<{ navNo, name, city, countryCode, blocked, startingDate, endingDate }>} — season days as `YYYY-MM-DD`
    */
   preview: protectedProcedure
     .use(requirePermission('config:read'))
@@ -63,6 +73,8 @@ const navSyncRouter = router({
           city: null,
           countryCode: null,
           blocked: 0,
+          startingDate: null,
+          endingDate: null,
         }));
       }
 
@@ -88,9 +100,11 @@ const navSyncRouter = router({
         return result.recordset.map(row => ({
           navNo: row['Code'],
           name: row['Description'] ?? '',
-          city: row['Starting Date']?.toISOString().slice(0, 10) ?? null,
-          countryCode: row['Ending Date']?.toISOString().slice(0, 10) ?? null,
+          city: null,
+          countryCode: null,
           blocked: 0,
+          startingDate: navCalendarDate(row['Starting Date']),
+          endingDate: navCalendarDate(row['Ending Date']),
         }));
       }
 
@@ -124,6 +138,8 @@ const navSyncRouter = router({
         city: row['City'] ?? null,
         countryCode: row['Country_Region Code'] ?? null,
         blocked: row['Blocked'] ?? 0,
+        startingDate: null,
+        endingDate: null,
       }));
     }),
 

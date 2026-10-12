@@ -192,6 +192,17 @@ test('NAV sync "Fornitori": without config:update the selection cannot be change
   await expect.element(row).not.toBeChecked();
 });
 
+test('NAV sync "Stagioni": the preview shows the season days, a blank one as a dash', async () => {
+  h.state.filter = read({ entity: 'season', mode: 'whitelist', navNos: [], autoSyncEnabled: false, intervalMinutes: 30, updatedAt: new Date() });
+  h.preview = { data: [{ navNo: 'S26', name: 'Estate 2026', city: null, countryCode: null, blocked: 0, startingDate: '2026-02-01', endingDate: null }] };
+  const screen = await render(navSync());
+  await screen.getByRole('tab', { name: 'Stagioni' }).click();
+
+  const row = screen.getByRole('row', { name: /S26/ });
+  await expect.element(row.getByText('01/02/2026')).toBeVisible();
+  await expect.element(row.getByText('—')).toBeVisible();
+});
+
 test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without config:update the manual sync still follows sales:read', async tab => {
   h.can = p => p !== 'config:update';
   const screen = await render(navSync());

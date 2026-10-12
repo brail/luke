@@ -2,7 +2,7 @@ import type { PrismaClient, Prisma } from '@luke/db';
 
 import { sanitizeCompany } from '../config.js';
 
-import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, navDateOrNull, processInBatches } from './utils.js';
 
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
@@ -68,8 +68,8 @@ export async function syncSeasons(
   await processInBatches(rows, UPSERT_BATCH_SIZE, async row => {
     const navCode = row['Code'];
     const description = row['Description'] ?? '';
-    const startingDate = row['Starting Date'] ?? null;
-    const endingDate = row['Ending Date'] ?? null;
+    const startingDate = navDateOrNull(row['Starting Date']);
+    const endingDate = navDateOrNull(row['Ending Date']);
 
     try {
       // Atomic: NAV replica + local master data in a single transaction.
