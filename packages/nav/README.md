@@ -36,6 +36,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 |--------|------|-------------|
 | `runNavSync(prisma, getConfig, logger?, entity?)` | function | Orchestrates vendors, brands and seasons — or the single entity requested — each in its own try/catch |
 | `syncVendors` / `syncBrands` / `syncSeasons` | function | Per-entity sync: NAV read, `nav_*` replica upsert and local master upsert inside one transaction |
+| `navDateOrNull(value)` | function | A NAV date, or `null` when the field is empty — missing, or NAV's blank date `1753-01-01`; the season sync stores `Starting Date` and `Ending Date` through it |
 
 ### Analytics replicas and reporting queries
 

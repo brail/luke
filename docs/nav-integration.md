@@ -187,7 +187,8 @@ scheduler.
 All four NAV sync models live in `packages/db/prisma/catalog.prisma`.
 `NavBrand` (`nav_brands`) and `NavSeason` (`nav_seasons`) replicate the NAV
 brand and season tables, keyed by the NAV `Code`; local `Brand.navBrandId` and
-`Season.navSeasonId` link to them (`onDelete: SetNull`).
+`Season.navSeasonId` link to them (`onDelete: SetNull`). A season date NAV leaves
+blank (`1753-01-01`) is stored as `null` (ADR-035 §External dates).
 
 ### `NavVendor`
 
