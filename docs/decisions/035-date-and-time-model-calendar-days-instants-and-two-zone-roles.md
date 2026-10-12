@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [036 — Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days](036-date-and-time-model-moving-both-ends-of-a-timed-event.md)
 
 ## Context
 

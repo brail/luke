@@ -187,8 +187,8 @@ packages/
 ## Dates & Time Zones
 
 Helpers in `packages/core/src/utils/dateUtils.ts`, schemas in `packages/core/src/schemas/dates.ts`.
-Rationale: ADR-035. Until they move there, the instant formatters are in `utils/date.ts`: never rely
-on their fallback to the runtime zone.
+Rationale: ADR-035 and ADR-036. Until they move there, the instant formatters are in `utils/date.ts`:
+never rely on their fallback to the runtime zone.
 
 - Use core date helpers and schemas; keep calendar days, instants and wall times distinct.
 - Calendar days are zone-free; UTC-midnight storage is an encoding.

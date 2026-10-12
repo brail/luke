@@ -37,7 +37,8 @@
 | [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Superseded by [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) |
 | [033](033-release-identity-versioning-contract-and-release-trains.md) | Release Identity, Versioning Contract and Release Trains | Accepted |
 | [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) | Outbound Boundary for Sensitive Data and Masked Configuration Reads | Accepted |
-| [035](035-date-and-time-model-calendar-days-instants-and-two-zone-roles.md) | Date and Time Model: Calendar Days, Instants and Two Zone Roles | Accepted |
+| [035](035-date-and-time-model-calendar-days-instants-and-two-zone-roles.md) | Date and Time Model: Calendar Days, Instants and Two Zone Roles | Superseded by [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) |
+| [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 
-_Last updated: 2026-10-10_
+_Last updated: 2026-10-12_
 <!-- luke-docs:end:adr-index -->
