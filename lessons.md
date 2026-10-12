@@ -74,6 +74,15 @@ Full diagnosis and fix: `docs/prisma-migration-workflow.md` → Troubleshooting.
 Rule: never `resolve --applied` without having verified that the DB actually
 reflects that state.
 
+### A read-only `psql` session: `PGOPTIONS='-c default_transaction_read_only=on'`
+
+`PGOPTIONS` carries server command-line options, so each setting takes `-c`;
+without it the server refuses the connection ("invalid command-line argument for
+server process") before any query runs — 2026-10-12, a read-only count handed to
+the owner for RC and production. Rule: `docker exec -e PGOPTIONS='-c
+default_transaction_read_only=on' -i <container> psql …`, and try a command meant
+for the owner on a throwaway Postgres first.
+
 ---
 
 ## tRPC & Fastify
