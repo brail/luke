@@ -22,6 +22,7 @@ import { withSectionAccess } from '../lib/sectionAccessMiddleware';
 import { resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import { resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
+import { generateStorageKey } from '../storage/keys';
 import { signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 const RequestUploadSchema = z.object({
@@ -67,17 +68,10 @@ export const storageRouter = router({
       const provider = await getStorageProvider(ctx.prisma);
 
       if (provider.capabilities.supportsPresignedUpload && provider.getPresignedPutUrl) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const ext = input.contentType === 'image/png' ? '.png'
-                  : input.contentType === 'image/webp' ? '.webp'
-                  : '.jpg';
         // The server chooses the key. It used to be `input.key ?? <generated>`, i.e.
         // the client could preallocate it — and `confirmUpload` picked it back up
         // from the input without verifying it.
-        const key = `${year}/${month}/${day}/${randomUUID()}${ext}`;
+        const key = generateStorageKey(input.contentType);
 
         const { url, expiresAt } = await provider.getPresignedPutUrl({
           bucket: input.bucket as StorageBucket,

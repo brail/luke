@@ -10,7 +10,7 @@
  * Bucket auto-creation is performed at initialization for all known buckets.
  */
 
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { Transform, type TransformCallback } from 'stream';
 import { pipeline } from 'stream/promises';
 
@@ -47,6 +47,8 @@ import type {
   StoragePutParams,
   StoragePutResult,
 } from '@luke/core';
+
+import { generateStorageKey } from '../keys';
 
 /** S3-compatible storage provider. Implements IStorageProvider using the AWS SDK v3. */
 export class S3Provider implements IStorageProvider {
@@ -114,27 +116,6 @@ export class S3Provider implements IStorageProvider {
     }));
   }
 
-  /** Generate a key with the same date-partitioned format as LocalFsProvider */
-  private generateKey(contentType?: string): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const uuid = randomUUID();
-    const ext = this.extFromMime(contentType);
-    return `${year}/${month}/${day}/${uuid}${ext}`;
-  }
-
-  private extFromMime(mime?: string): string {
-    switch (mime) {
-      case 'image/png':  return '.png';
-      case 'image/jpeg':
-      case 'image/jpg':  return '.jpg';
-      case 'image/webp': return '.webp';
-      default:           return '';
-    }
-  }
-
   /**
    * Uploads a file via a true streaming multipart upload (`@aws-sdk/lib-storage`),
    * without buffering the payload in memory — required for arbitrarily large files (e.g. DB backups).
@@ -142,7 +123,7 @@ export class S3Provider implements IStorageProvider {
    * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and byte size.
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
-    const key = params.key ?? this.generateKey(params.contentType);
+    const key = params.key ?? generateStorageKey(params.contentType);
 
     // Single consumer of params.stream: a Transform that hashes each chunk while forwarding it
     // unchanged as the upload Body. Attaching two independent consumers to the same source stream
@@ -263,7 +244,7 @@ export class S3Provider implements IStorageProvider {
    * @returns The presigned URL, the key under which the file will be stored, and its expiry time.
    */
   async getPresignedPutUrl(params: PresignedPutParams): Promise<PresignedPutResult> {
-    const key = params.key ?? this.generateKey(params.contentType);
+    const key = params.key ?? generateStorageKey(params.contentType);
     const ttl = params.expiresIn ?? this.config.presignedPutTtl;
 
     const url = await getSignedUrl(

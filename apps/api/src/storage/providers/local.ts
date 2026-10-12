@@ -30,6 +30,8 @@ import type {
 } from '@luke/core';
 import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError, isPathSafe } from '@luke/core';
 
+import { generateStorageKey } from '../keys';
+
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
@@ -126,38 +128,6 @@ export class LocalFsProvider implements IStorageProvider {
     return finalAbs;
   }
 
-  /**
-   * Generates a server-side storage key with date-based path partitioning: `YYYY/MM/DD/<uuid>[.ext]`.
-   */
-  private generateKey(contentType?: string): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const uuid = randomUUID();
-
-    // Add extension based on content-type
-    const extension = this.getExtensionFromContentType(contentType);
-    return `${year}/${month}/${day}/${uuid}${extension}`;
-  }
-
-  /** Returns the file extension for a given MIME type, or an empty string if unknown. */
-  private getExtensionFromContentType(contentType?: string): string {
-    if (!contentType) return '';
-    
-    switch (contentType) {
-      case 'image/png':
-        return '.png';
-      case 'image/jpeg':
-      case 'image/jpg':
-        return '.jpg';
-      case 'image/webp':
-        return '.webp';
-      default:
-        return '';
-    }
-  }
-
   /** Computes the SHA-256 hex digest of the file at the given path. */
   private async calculateChecksum(filePath: string): Promise<string> {
     const hash = createHash('sha256');
@@ -211,7 +181,7 @@ export class LocalFsProvider implements IStorageProvider {
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
     // Use the caller-supplied key, if present; otherwise generate server-side with an extension
-    const key = params.key ?? this.generateKey(params.contentType);
+    const key = params.key ?? generateStorageKey(params.contentType);
 
     // Final and temporary paths
     const finalPath = join(params.bucket, key);
