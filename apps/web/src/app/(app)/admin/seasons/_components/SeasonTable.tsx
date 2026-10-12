@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
+import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -54,6 +55,7 @@ export function SeasonTable({
   onRetry,
 }: SeasonTableProps) {
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const canUpdate = can('seasons:update');
   const canDelete = can('seasons:delete');
   // A permanent delete is admin-only (`*:*`); the resource's `:delete` only archives.
@@ -198,7 +200,7 @@ export function SeasonTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {new Date(season.updatedAt).toLocaleDateString('it-IT')}
+                {fmt.date(season.updatedAt)}
               </TableCell>
               <TableCell className="text-right">
                 {canRead && (

@@ -4,12 +4,15 @@ import { useSession } from 'next-auth/react';
 import { useEffect } from 'react';
 import { toast } from 'sonner';
 
-import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
+import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
 /** Shown while the zone is unknown. */
 const PENDING = '…';
+
+/** An instant, as a `Date` or its ISO string — never a `CalendarDate`, which `formatCalendarDate` writes without a zone. */
+type Instant = Date | (string & { readonly __brand?: never });
 
 /**
  * Formats instants in the reader zone — the profile zone as `me.get` resolves it — and in the one
@@ -38,7 +41,7 @@ export function useFormatDate() {
     if (failed) toast.error('Fuso orario del profilo non disponibile: date non mostrate', { id: 'reader-zone' });
   }, [failed]);
 
-  const format = (value: Date | string, options: Intl.DateTimeFormatOptions) =>
+  const format = (value: Instant, options: Intl.DateTimeFormatOptions) =>
     zone ? formatInstant(new Date(value), zone, options, DEFAULT_LOCALE) : PENDING;
 
   return {
@@ -51,9 +54,11 @@ export function useFormatDate() {
     /** The locale every date is written in. */
     locale: DEFAULT_LOCALE,
     format,
+    /** The instant's day, e.g. "15/01/2024". */
+    date: (value: Instant) => format(value, NUMERIC_DATE),
     /** Date and wall time, e.g. "15/01/2024, 14:30". */
-    dateTime: (value: Date | string) => format(value, NUMERIC_DATE_TIME),
+    dateTime: (value: Instant) => format(value, NUMERIC_DATE_TIME),
     /** Wall time only, e.g. "14:30". */
-    time: (value: Date | string) => format(value, NUMERIC_TIME),
+    time: (value: Instant) => format(value, NUMERIC_TIME),
   };
 }

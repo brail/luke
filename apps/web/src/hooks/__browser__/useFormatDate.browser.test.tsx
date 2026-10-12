@@ -1,6 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { renderHook } from 'vitest-browser-react';
 
+import { calendarDateOf } from '@luke/core';
+
 import { useFormatDate } from '../useFormatDate';
 
 /**
@@ -30,6 +32,7 @@ const INSTANT = '2026-01-15T10:30:00.000Z';
 test('while the profile zone loads, dates show a placeholder rather than another zone', async () => {
   const { result } = await renderHook(() => useFormatDate());
 
+  expect(result.current.date(INSTANT)).toBe('…');
   expect(result.current.dateTime(INSTANT)).toBe('…');
   expect(result.current.time(INSTANT)).toBe('…');
   expect(result.current.ready).toBe(false);
@@ -43,6 +46,16 @@ test('dates are written in the profile zone and the default locale, whatever loc
   expect(result.current.dateTime(INSTANT)).toBe('15/01/2026, 18:30');
   expect(result.current.time(new Date(INSTANT))).toBe('18:30');
   expect(result.current).toMatchObject({ ready: true, zone: 'Asia/Shanghai', locale: 'it-IT' });
+});
+
+test("a date alone is the instant's day in the profile zone, not the browser's", async () => {
+  meQuery.data = { timezone: 'America/Los_Angeles', locale: 'it-IT' };
+  const { result } = await renderHook(() => useFormatDate());
+
+  // 1 February in UTC and east of it, where the browser runs; still 31 January in Los Angeles.
+  expect(result.current.date('2026-02-01T05:30:00.000Z')).toBe('31/01/2026');
+  // @ts-expect-error a calendar day is not an instant: `formatCalendarDate` writes it, without a zone
+  result.current.date(calendarDateOf(new Date('2026-01-15T00:00:00.000Z')));
 });
 
 test('a failed profile read is reported once and leaves the placeholder', async () => {
