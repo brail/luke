@@ -955,7 +955,7 @@ export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
 // ─── Clone ────────────────────────────────────────────────────────────────────
 
 /**
- * `event`'s dates moved `days` calendar days in `businessZone` (`shiftEventByDays`, ADR-035), held to
+ * `event`'s dates moved `days` calendar days in `businessZone` (`shiftEventByDays`, ADR-036), held to
  * `assertEventDates` like every generated date. The refusal names the event: a source written before
  * those checks (an end before its start) is the user's to find and correct.
  *
@@ -979,7 +979,7 @@ function clonedDates(event: EventDates & { title: string }, days: number, busine
  * Copies events from a chosen set of source planning groups into a target brand+season calendar.
  * For each selected source group, a matching target group is created (or reused, matched by name)
  * in the target calendar, and that group's events are cloned into it, shifted by `dateShiftDays`
- * calendar days in the business zone (`shiftEventByDays`, ADR-035) — mandatory: there's no longer a
+ * calendar days in the business zone (`shiftEventByDays`, ADR-036) — mandatory: there's no longer a
  * single calendar-wide anchor date to auto-derive it from, since anchorDate now lives per planning
  * group.
  *

@@ -326,12 +326,22 @@ describe('cloneFromBrandSeason refuses an all-day source off midnight', () => {
 
 describe('cloneFromBrandSeason shifts by calendar days in the business zone', () => {
   // Business zone Europe/Rome (the default): 07:00 UTC is 09:00 there in October, 08:00 in November.
-  it('a timed event keeps its wall time across a daylight-saving change, and its duration', async () => {
+  it('a timed event keeps the wall times of both ends across a daylight-saving change', async () => {
     const group = await prisma.planningGroup.create({ data: { calendarId, name: `Ora legale ${randomUUID().slice(0, 8)}` } });
     await createEvent({ groupId: group.id, startAt: new Date('2099-10-15T07:00:00.000Z'), endAt: new Date('2099-10-15T08:00:00.000Z'), allDay: false });
     await clone(group.id, false, 30);
     const [copied] = await prisma.calendarEvent.findMany({ where: { planningGroup: { name: group.name, calendar: target } } });
     expect([copied?.startAt, copied?.endAt]).toEqual([new Date('2099-11-14T08:00:00.000Z'), new Date('2099-11-14T09:00:00.000Z')]);
+  });
+
+  it('a day-aligned timed item stays on its days across a daylight-saving change, so its deadline day does not slip', async () => {
+    // A template item of 25 Oct 2099 (the change to winter time): Rome's midnights of the 25th and 26th.
+    const group = await prisma.planningGroup.create({ data: { calendarId, name: `Giorno ${randomUUID().slice(0, 8)}` } });
+    await createEvent({ groupId: group.id, startAt: new Date('2099-10-24T22:00:00.000Z'), endAt: new Date('2099-10-25T23:00:00.000Z'), allDay: false });
+    await clone(group.id, false, 7);
+    const [copied] = await prisma.calendarEvent.findMany({ where: { planningGroup: { name: group.name, calendar: target } } });
+    // Rome's midnights of 1 and 2 Nov: 1 Nov only, not 1–2 Nov.
+    expect([copied?.startAt, copied?.endAt]).toEqual([new Date('2099-10-31T23:00:00.000Z'), new Date('2099-11-01T23:00:00.000Z')]);
   });
 
   it('refuses a copy out of the supported range or ending before it starts, naming the event, and creates nothing', async () => {
@@ -341,6 +351,10 @@ describe('cloneFromBrandSeason shifts by calendar days in the business zone', ()
       [{ startAt: MIDNIGHT, allDay: false }, 2 ** 52],
       // Written before assertEventDates guarded the writes; no database constraint refuses it.
       [{ startAt: NEXT_MIDNIGHT, endAt: MIDNIGHT, allDay: false }, 7],
+      // 03:00 to 02:30 on 28 Mar 2026: on the 29th 02:30 is skipped, and the end alone would read 03:30.
+      [{ startAt: new Date('2026-03-28T02:00:00.000Z'), endAt: new Date('2026-03-28T01:30:00.000Z'), allDay: false }, 1],
+      // Rome's midnight of 1 Dec 9999, moved to a day past 9999.
+      [{ startAt: new Date('9999-11-30T23:00:00.000Z'), allDay: false }, 60],
     ] as const) {
       const group = await prisma.planningGroup.create({ data: { calendarId, name: `Rifiutato ${randomUUID().slice(0, 8)}` } });
       const event = await createEvent({ groupId: group.id, ...source });

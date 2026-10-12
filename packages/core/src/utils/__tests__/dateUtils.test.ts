@@ -343,7 +343,7 @@ describe.each([
       return [iso(result.startAt), result.endAt && iso(result.endAt)];
     };
 
-    it('keeps the wall time and the millisecond across a daylight-saving change, the end at the same duration', () => {
+    it('keeps the wall time and the millisecond of both ends across a daylight-saving change', () => {
       // 09:00:00.123 CEST on 20 Oct → 09:00:00.123 CET on 30 Oct; two hours long before and after.
       expect(shifted(timed('2026-10-20T07:00:00.123Z', '2026-10-20T09:00:00.123Z'), 10)).toEqual(
         ['2026-10-30T08:00:00.123Z', '2026-10-30T10:00:00.123Z'],
@@ -393,6 +393,101 @@ describe.each([
       ['an invalid end', { startAt: at('2026-10-20T07:00:00Z'), endAt: new Date(Number.NaN), allDay: false }, 1, 'Europe/Rome'],
     ] as const)('throws for %s', (_, event, days, timeZone) => {
       expect(() => shiftEventByDays(event, days, timeZone)).toThrow(RangeError);
+    });
+
+    describe('a day-aligned item moves by days; any other timed event keeps the wall time of each end', () => {
+      const sod = (d: string, timeZone = 'Europe/Rome') => startOfDayIn(date(d), timeZone);
+      /** The moved event's instants and the days it covers there — the last one is its deadline day. */
+      const moved = (startAt: Date, endAt: Date, days: number, timeZone = 'Europe/Rome') => {
+        const result = shiftEventByDays({ startAt, endAt, allDay: false }, days, timeZone);
+        return {
+          at: [iso(result.startAt), result.endAt && iso(result.endAt)],
+          days: result.endAt && result.endAt > result.startAt ? eventCalendarDays(result.startAt, result.endAt, false, timeZone) : null,
+        };
+      };
+
+      it.each([
+        // A template item spans its days from start of day to start of the day after its last (ADR-036).
+        ['a day spanning the change to winter time, +7', '2099-10-25', '2099-10-26', 7, '2099-11-01', '2099-11-02', 'Europe/Rome'],
+        ['an ordinary day onto the change to summer time, +7', '2099-03-22', '2099-03-23', 7, '2099-03-29', '2099-03-30', 'Europe/Rome'],
+        ['fourteen days across the change to winter time, +182', '2099-10-20', '2099-11-03', 182, '2100-04-20', '2100-05-04', 'Europe/Rome'],
+        ['and back, -182', '2100-04-20', '2100-05-04', -182, '2099-10-20', '2099-11-03', 'Europe/Rome'],
+        // Midnight skipped (the day starts at 01:00): Rome on 1966-05-22, Santiago on 2026-09-06.
+        ['the day before a skipped midnight, +1', '1966-05-21', '1966-05-22', 1, '1966-05-22', '1966-05-23', 'Europe/Rome'],
+        ['the day of a skipped midnight, -1', '1966-05-22', '1966-05-23', -1, '1966-05-21', '1966-05-22', 'Europe/Rome'],
+        ['the day before a skipped midnight, +1', '2026-09-05', '2026-09-06', 1, '2026-09-06', '2026-09-07', 'America/Santiago'],
+        ['the day of a skipped midnight, -1', '2026-09-06', '2026-09-07', -1, '2026-09-05', '2026-09-06', 'America/Santiago'],
+        // Midnight repeated: the day starts at the first one.
+        ['the day of a repeated midnight, -7', '2025-11-02', '2025-11-03', -7, '2025-10-26', '2025-10-27', 'America/Havana'],
+      ] as const)('keeps a day-aligned item on its days: %s (%s)', (_, from, to, days, newFrom, newTo, timeZone) => {
+        expect(moved(sod(from, timeZone), sod(to, timeZone), days, timeZone)).toEqual({
+          at: [iso(sod(newFrom, timeZone)), iso(sod(newTo, timeZone))],
+          // The end is exclusive: the last day covered — the deadline day — is the one before it.
+          days: [newFrom, addCalendarDays(date(newTo), -1)],
+        });
+      });
+
+      it('keeps the wall time of an end at the start of a day when the start is not', () => {
+        // 18:00 on 24 Oct 2099 to midnight ending the 25th (the change to winter time), +7: midnight again.
+        expect(moved(at('2099-10-24T16:00:00Z'), sod('2099-10-26'), 7)).toEqual({
+          at: ['2099-10-31T17:00:00.000Z', iso(sod('2099-11-02'))],
+          days: ['2099-10-31', '2099-11-01'],
+        });
+      });
+
+      it('keeps the wall time and occurrence of an end in a repeated hour', () => {
+        // 01:00 CEST to 02:30 CET (its second occurrence) on 25 Oct 2026, +1: 01:00 to 02:30 CET, not 03:30.
+        expect(moved(at('2026-10-24T23:00:00Z'), at('2026-10-25T01:30:00Z'), 1).at).toEqual(
+          ['2026-10-26T00:00:00.000Z', '2026-10-26T01:30:00.000Z'],
+        );
+        // +371 lands on 31 Oct 2027, which repeats 02:30 too: the second occurrence again.
+        expect(moved(at('2026-10-24T23:00:00Z'), at('2026-10-25T01:30:00Z'), 371).at).toEqual(
+          ['2027-10-30T23:00:00.000Z', '2027-10-31T01:30:00.000Z'],
+        );
+      });
+
+      it('keeps the wall times of an event that starts at the end of a skipped midnight but is not day-aligned', () => {
+        // 01:00 to 01:30 on 6 Sep 2026 in Santiago (the day starts at 01:00), -7: 01:00 to 01:30, not 00:00.
+        expect(moved(at('2026-09-06T04:00:00Z'), at('2026-09-06T04:30:00Z'), -7, 'America/Santiago').at).toEqual(
+          ['2026-08-30T05:00:00.000Z', '2026-08-30T05:30:00.000Z'],
+        );
+      });
+
+      it('reads an end the target day skips with the offset before the gap, to the millisecond', () => {
+        // 01:00 to 02:30:00.123 CET on 28 Mar 2026, +1: 02:30 does not exist on the 29th.
+        expect(moved(at('2026-03-28T00:00:00Z'), at('2026-03-28T01:30:00.123Z'), 1).at).toEqual(
+          ['2026-03-29T00:00:00.000Z', '2026-03-29T01:30:00.123Z'],
+        );
+      });
+
+      it.each([
+        // 02:30 CEST to 02:30 CET on 25 Oct 2026: one hour, both ends 02:30 on the 26th.
+        ['would collapse', '2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z', '2026-10-26T01:30:00.000Z', '2026-10-26T02:30:00.000Z'],
+        // 02:45 CEST to 02:15 CET on 25 Oct 2026: thirty minutes, 02:45 to 02:15 on the 26th.
+        ['would invert', '2026-10-25T00:45:00Z', '2026-10-25T01:15:00Z', '2026-10-26T01:45:00.000Z', '2026-10-26T02:15:00.000Z'],
+      ])('keeps the original duration where the moved end %s', (_, startAt, endAt, newStart, newEnd) => {
+        expect(moved(at(startAt), at(endAt), 1).at).toEqual([newStart, newEnd]);
+      });
+
+      it('never repairs an end before its start, which the end alone would', () => {
+        // 03:00 to 02:30 CET on 28 Mar 2026, +1: 02:30 is skipped on the 29th and would read 03:30 CEST.
+        expect(moved(at('2026-03-28T02:00:00Z'), at('2026-03-28T01:30:00Z'), 1).at).toEqual(
+          ['2026-03-29T01:00:00.000Z', '2026-03-29T00:30:00.000Z'],
+        );
+      });
+
+      it('starts a day-aligned item moved onto a date the zone skipped when the next date starts', () => {
+        // Pacific/Apia had no 30 Dec 2011; the item of the 28th, +2, covers the 31st.
+        expect(moved(sod('2011-12-28', 'Pacific/Apia'), sod('2011-12-29', 'Pacific/Apia'), 2, 'Pacific/Apia')).toEqual({
+          at: ['2011-12-30T10:00:00.000Z', '2011-12-31T10:00:00.000Z'],
+          days: ['2011-12-31', '2011-12-31'],
+        });
+      });
+
+      it('leaves a day-aligned item moved past 9999 to the caller to refuse', () => {
+        const result = shiftEventByDays({ startAt: sod('9999-12-01'), endAt: sod('9999-12-02'), allDay: false }, 60, 'Europe/Rome');
+        expect(isInstantInRange(result.startAt, { allDay: false })).toBe(false);
+      });
     });
   });
 });

@@ -339,12 +339,17 @@ function resolveWall(
 }
 
 /**
- * An event moved by `days` whole calendar days, ADR-035 §Moving and saving: all-day dates by calendar
- * arithmetic; a timed start keeps its wall time in `timeZone` to the millisecond (skipped: offset
- * before the gap, as RFC 5545; repeated: the start's occurrence where it exists, else the first) and
- * the end keeps the duration. `days === 0` returns copies. Throws a `RangeError` for a bad zone
- * (checked first), fractional `days`, an invalid `Date` or an all-day result outside 1900–9999; a
- * timed result outside the stored range is the caller's to refuse (`isInstantInRange`).
+ * An event moved by `days` whole calendar days, ADR-036: all-day dates by calendar arithmetic. A
+ * timed event with both ends at the start of their day in `timeZone` and the end after the start —
+ * a template item — moves each to the start of the day `days` later (a day whose midnight is
+ * skipped starts at the end of the gap, a skipped date when the next one does); any other timed
+ * event keeps the wall time of each end to the millisecond (skipped: offset before the gap, as
+ * RFC 5545; repeated: its occurrence where it exists, else the first). The moved end is kept only
+ * where it still comes after the moved start, as the original did; otherwise it follows at the
+ * original duration, so a positive interval never collapses or inverts and an inverted one is never
+ * repaired. `days === 0` returns copies. Throws a `RangeError` for a bad zone (checked first),
+ * fractional `days`, an invalid `Date` or an all-day result outside 1900–9999; a timed result
+ * outside the stored range is the caller's to refuse (`isInstantInRange`).
  */
 export function shiftEventByDays(
   event: { startAt: Date; endAt: Date | null; allDay: boolean },
@@ -360,13 +365,29 @@ export function shiftEventByDays(
     const shift = (d: Date) => utcMidnightOf(addCalendarDays(calendarDateOf(d), days));
     return { startAt: shift(startAt), endAt: endAt ? shift(endAt) : null };
   }
-  const ms = startAt.getTime();
-  const subSecond = ms - Math.floor(ms / 1000) * 1000;
-  const wall = wallClockMs(format, ms - subSecond) + subSecond;
-  // Was the start the later occurrence of a repeated wall time?
-  const second = resolveWall(format, wall, { second: false, skipped: 'gapEnd' }) !== ms;
-  const shifted = resolveWall(format, wall + days * MS_PER_DAY, { second, skipped: 'offsetBefore' });
-  return { startAt: new Date(shifted), endAt: endAt ? new Date(shifted + endAt.getTime() - ms) : null };
+  /** The wall clock at `instant`, to the millisecond, written as if it were UTC. */
+  const wallOf = (instant: Date): number => {
+    const ms = instant.getTime();
+    const subSecond = ms - Math.floor(ms / 1000) * 1000;
+    return wallClockMs(format, ms - subSecond) + subSecond;
+  };
+  /** The start of the day `n` days after the local day of `wall`, as `startOfDayIn` resolves it. */
+  const dayStart = (wall: number, n: number) =>
+    resolveWall(format, (Math.floor(wall / MS_PER_DAY) + n) * MS_PER_DAY, { second: false, skipped: 'gapEnd' });
+  const dayAligned = endAt !== null && endAt > startAt && [startAt, endAt].every(d => dayStart(wallOf(d), 0) === d.getTime());
+  const move = (instant: Date): number => {
+    const wall = wallOf(instant);
+    if (dayAligned) return dayStart(wall, days);
+    // Was it the later occurrence of a repeated wall time?
+    const second = resolveWall(format, wall, { second: false, skipped: 'gapEnd' }) !== instant.getTime();
+    return resolveWall(format, wall + days * MS_PER_DAY, { second, skipped: 'offsetBefore' });
+  };
+  const start = move(startAt);
+  if (!endAt) return { startAt: new Date(start), endAt: null };
+  const duration = endAt.getTime() - startAt.getTime();
+  // A zero-length or inverted source keeps its duration — an inverted one for the caller to refuse.
+  const end = duration > 0 ? move(endAt) : start + duration;
+  return { startAt: new Date(start), endAt: new Date(end > start ? end : start + duration) };
 }
 
 /**
