@@ -204,7 +204,9 @@ sent; the service deliberately avoids disclosing whether the account exists.
 AppConfig: a password-reset link, an email-verification link and the approval
 notice of a pending LDAP account. Each body is a plain-text template in
 `src/templates/` (`reset.txt`, `verify.txt`, `approved.txt`) plus a branded HTML
-version built in `mailer.ts`.
+version built in `mailer.ts`. The maintenance notices (scheduled and ended) and
+the daily calendar digest go through the same `sendEmail` / `sendBulkEmail`,
+with bodies built in code.
 
 - **Password reset** — for an active account with a LOCAL identity.
   `auth.requestPasswordReset` answers the same generic message whether or not
