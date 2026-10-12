@@ -10,6 +10,7 @@ import {
   UserProfileSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
+  wallTimeIn,
 } from '@luke/core';
 import { Prisma } from '@luke/db';
 
@@ -508,9 +509,7 @@ export const meRouter = router({
     ]);
 
     const timeZone = await resolveUserTimeZone(ctx.prisma, { id: userId, timezone: user?.timezone ?? '' }, ctx.logger);
-    const hour = Number(
-      new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(new Date())
-    );
+    const hour = Number(wallTimeIn(new Date(), timeZone).slice(0, 2));
 
     return {
       enabled: true as const,

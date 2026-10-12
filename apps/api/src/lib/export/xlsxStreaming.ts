@@ -3,6 +3,8 @@ import { buffer } from 'stream/consumers';
 
 import ExcelJS from 'exceljs';
 
+import { calendarDateIn, wallTimeIn } from '@luke/core';
+
 /**
  * Document metadata for generated XLSX files.
  */
@@ -72,11 +74,7 @@ export function createStreamingBuffer(meta: XlsxMeta): {
  * (the requester's, `getUserTimeZone`). Suitable for embedding in export filenames.
  */
 export function exportTimestamp(timeZone: string, now: Date = new Date()): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(now);
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value ?? '';
-  return `${part('year')}${part('month')}${part('day')}-${part('hour')}${part('minute')}`;
+  return `${calendarDateIn(now, timeZone).replaceAll('-', '')}-${wallTimeIn(now, timeZone).replace(':', '')}`;
 }
 
 /**
