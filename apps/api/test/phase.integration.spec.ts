@@ -171,7 +171,7 @@ describe('Phase Router', () => {
       // The point of the change: historical labels are needed by anyone reading the layout, while
       // `listAll` (catalog management) stays admin-only.
       const viewer = await adminContext.prisma.user.create({
-        data: { email: 'viewer-list@example.com', username: 'viewer-list', firstName: 'V', lastName: 'U', role: 'viewer', isActive: true },
+        data: { timezone: 'Europe/Rome', email: 'viewer-list@example.com', username: 'viewer-list', firstName: 'V', lastName: 'U', role: 'viewer', isActive: true },
       });
       const viewerCtx: Context = {
         ...adminContext,
@@ -300,6 +300,7 @@ describe('Phase Router', () => {
         (['editor', 'viewer'] as const).map(role =>
           adminContext.prisma.user.create({
             data: {
+              timezone: 'Europe/Rome',
               email: `${role}-phase@example.com`,
               username: `${role}-phase`,
               firstName: role,

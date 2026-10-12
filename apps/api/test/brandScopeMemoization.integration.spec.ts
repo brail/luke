@@ -35,6 +35,7 @@ beforeAll(async () => {
   const [user, brand, fn] = await Promise.all([
     prisma.user.create({
       data: {
+        timezone: 'Europe/Rome',
         email: `memo-${uid}@test.com`, username: `memo-${uid}`,
         firstName: 'Memo', lastName: 'Test', role: 'viewer', isActive: true,
       },

@@ -35,7 +35,9 @@ model User {
   /// True while a newly registered user is awaiting admin approval.
   pendingApproval Boolean   @default(false)
   locale          String    @default("it-IT")
-  timezone        String    @default("Europe/Rome")
+  /// IANA zone the user reads dates in. No default: the creator writes the business zone
+  /// (`app.defaultTimezone`) at creation, ADR-035 §New users.
+  timezone        String
   /// Incremented on password change or forced logout to invalidate existing JWTs.
   tokenVersion    Int       @default(0)
   emailVerifiedAt DateTime?

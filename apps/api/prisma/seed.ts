@@ -15,7 +15,7 @@ import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
 import { createPrismaClient, type PrismaClient } from '@luke/db';
 
 
-import { encryptValue } from '../src/lib/configManager';
+import { encryptValue, getConfigOrDefault } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
 
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
@@ -65,7 +65,8 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
 
     console.log('🔧 Creating admin user...');
 
-    // Create admin user with local identity in a transaction
+    // Create admin user with local identity in a transaction, in the business zone (ADR-035 §New users)
+    const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
     const adminUser = await prisma.$transaction(async tx => {
       // Create user
       const user = await tx.user.create({
@@ -73,6 +74,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
           email: 'admin@luke.local',
           username: 'admin',
           role: 'admin',
+          timezone,
           isActive: true,
           emailVerifiedAt: new Date(), // Admin pre-verified
         },

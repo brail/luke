@@ -520,26 +520,32 @@ TZ=Europe/Rome node dist-scripts/scripts/fix-allday-event-dates.js --dry-run   #
 
 ### Calendar date range
 
-Every date of a calendar event (`startAt`, `endAt`, `baselineStartAt`, `baselineEndAt`) and a
-planning group's `anchorDate` must lie in the years 1900–9999: the calendar-date helpers throw
-outside them. Migration `20260929224334_calendar_dates_in_supported_years` enforces it with CHECK
-constraints, validated when they are added — on a database holding a row out of range, `migrate
-deploy` fails and `entrypoint.sh` stops the API from starting. Count such rows before deploying it;
-the result must be 0:
+Calendar values must lie in the bounds ADR-035 §Bounds sets, outside which the calendar-date
+helpers throw: calendar days from 1900-01-01 to 9999-12-30 (a planning group's `anchorDate`, a
+holiday's and a vendor closure's days, an all-day event's days at UTC midnight), timed event
+instants in [1900-01-02, 9999-12-30), and event baselines as any instant whose UTC day is an
+accepted day. Migrations `20260929224334_calendar_dates_in_supported_years` and
+`20261012220000_user_timezone_and_calendar_date_bounds` enforce them with CHECK constraints,
+validated when they are added — on a database holding a row out of range, `migrate deploy` fails
+and `entrypoint.sh` stops the API from starting. Count such rows before deploying; every count must
+be 0:
 
 ```sql
-SELECT count(*) FROM calendar_events
-WHERE "startAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "endAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "baselineStartAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "baselineEndAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999';
-SELECT count(*) FROM planning_groups WHERE "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-31';
+SELECT count(*) AS events_out_of_range FROM calendar_events WHERE NOT (
+  CASE WHEN "allDay"
+    THEN "startAt" >= '1900-01-01' AND "startAt" < '9999-12-31' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-01' AND "endAt" < '9999-12-31'))
+    ELSE "startAt" >= '1900-01-02' AND "startAt" < '9999-12-30' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-02' AND "endAt" < '9999-12-30'))
+  END
+  AND ("baselineStartAt" IS NULL OR ("baselineStartAt" >= '1900-01-01' AND "baselineStartAt" < '9999-12-31'))
+  AND ("baselineEndAt" IS NULL OR ("baselineEndAt" >= '1900-01-01' AND "baselineEndAt" < '9999-12-31')));
+SELECT count(*) AS groups_out_of_range FROM planning_groups WHERE "anchorDate" IS NOT NULL AND "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS holidays_out_of_range FROM holidays WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS closures_out_of_range FROM vendor_closure_periods WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
 ```
 
-A row out of range was typed wrong (a year entered as `26`): correct its date by hand. If the
+A row out of range was typed wrong (a year entered as `26`): correct its date by hand. If a
 migration has already failed, correct the rows, mark it rolled back with `prisma migrate resolve
---rolled-back 20260929224334_calendar_dates_in_supported_years` (from `packages/db/`, against that
-database) and deploy again.
+--rolled-back <migration>` (from `packages/db/`, against that database) and deploy again.
 
 ### Operational scripts
 

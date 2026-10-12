@@ -101,6 +101,7 @@ describe('users.update — reset password admin', () => {
     const timestamp = Date.now();
     const ldapUser = await prisma.user.create({
       data: {
+        timezone: 'Europe/Rome',
         email: `ldap-pwtest-${timestamp}@test.com`,
         username: `ldap-pwtest-${timestamp}`,
         firstName: 'LDAP',
@@ -130,6 +131,7 @@ describe('users.update — reset password admin', () => {
     const timestamp = Date.now();
     const dualUser = await prisma.user.create({
       data: {
+        timezone: 'Europe/Rome',
         email: `dual-pwtest-${timestamp}@test.com`,
         username: `dual-pwtest-${timestamp}`,
         firstName: 'Dual',

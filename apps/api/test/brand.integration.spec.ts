@@ -650,6 +650,7 @@ describe('Brand Router', () => {
         ROLES.map(role =>
           testContext.prisma.user.create({
             data: {
+              timezone: 'Europe/Rome',
               email: `${role}@example.com`,
               username: role,
               firstName: role.charAt(0).toUpperCase() + role.slice(1),

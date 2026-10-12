@@ -10,6 +10,11 @@
 # docker-compose.rc.yml, GitOps updates off. A candidate changes the reference
 # and LUKE_VERSION together; afterwards both containers must run
 # ghcr.io/brail/luke-{api,web}:<LUKE_VERSION> (docker inspect … Config.Image).
+# Going back to an earlier candidate: the later candidate's migrations stay
+# applied, and an earlier one may not run on them (from rc.3, users.timezone has
+# no default, so rc.2 cannot create users). Move the stack to the earlier
+# candidate first, then run scripts/refresh-rc-db.sh, whose restart of api-rc
+# applies that candidate's migrations to the fresh clone.
 #
 # Self-contained: the stack must deploy from this file alone. Portainer CE's Git
 # stack does not resolve relative paths (a Business Edition feature), and a

@@ -58,9 +58,10 @@ written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
 
 - **A `CHECK` constraint Prisma does not model.** It has no representation in the `.prisma` files:
   `migrate diff` does not report it and `db push` never creates it. Document it with a `///`
-  comment on the fields it covers, since the schema alone does not show it. Two exist:
-  `company_profile_singleton` (`20260515000000_company_structure`) and the calendar date range
-  (`20260929224334_calendar_dates_in_supported_years`).
+  comment on the fields it covers, since the schema alone does not show it. They are
+  `company_profile_singleton` (`20260515000000_company_structure`) and the calendar date bounds
+  (`20260929224334_calendar_dates_in_supported_years`, narrowed and extended to holidays and vendor
+  closures by `20261012220000_user_timezone_and_calendar_date_bounds`).
 - **A one-time rewrite of stored data** that must reach every database, restored backups included:
   only a versioned migration is replayed by the backup migration bridge, which a `db:*` script is
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),

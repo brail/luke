@@ -116,21 +116,39 @@ describe('an all-day event is stored at UTC midnight', () => {
   });
 });
 
-describe('the database refuses calendar dates outside 1900–9999', () => {
+describe('the database refuses calendar dates outside the bounds the API writes (ADR-035 §Bounds)', () => {
   // The calendar-date helpers throw outside those years, and every reader of a row would fail
   // with them: the constraint keeps such a row from existing, whoever writes it.
-  it('on every date of an event', async () => {
+  it('on every date of an event, narrower for a timed one', async () => {
     await expect(createEvent({ startAt: new Date('0026-06-01T00:00:00.000Z'), allDay: true })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
     await expect(createEvent({ startAt: MIDNIGHT, endAt: new Date('1899-12-31T00:00:00.000Z'), allDay: true })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
     await expect(prisma.calendarEvent.create({
       data: { calendarId, planningGroupId, title: 'Baseline', startAt: MIDNIGHT, allDay: true, baselineStartAt: new Date('0026-06-01T00:00:00.000Z') },
     })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
-    await expect(createEvent({ startAt: new Date('1900-01-01T00:00:00.000Z'), endAt: new Date('9999-12-31T00:00:00.000Z'), allDay: true })).resolves.toBeDefined();
+    // An all-day value is an accepted day's UTC midnight: 9999-12-30 is the last.
+    await expect(createEvent({ startAt: new Date('1900-01-01T00:00:00.000Z'), endAt: new Date('9999-12-30T00:00:00.000Z'), allDay: true })).resolves.toBeDefined();
+    await expect(createEvent({ startAt: MIDNIGHT, endAt: new Date('9999-12-31T00:00:00.000Z'), allDay: true })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    // A timed instant lies in [1900-01-02, 9999-12-30): its day exists in every zone, with a next one.
+    await expect(createEvent({ startAt: new Date('1900-01-01T05:00:00.000Z'), allDay: false })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    await expect(createEvent({ startAt: MIDNIGHT, endAt: new Date('9999-12-30T00:00:00.000Z'), allDay: false })).rejects.toThrow(/calendar_events_dates_in_supported_years/);
+    await expect(createEvent({ startAt: new Date('1900-01-02T00:00:00.000Z'), endAt: new Date('9999-12-29T23:59:59.999Z'), allDay: false })).resolves.toBeDefined();
   });
 
   it('on a planning group anchor date', async () => {
     await expect(prisma.planningGroup.create({ data: { calendarId, name: `Ancora ${randomUUID().slice(0, 8)}`, anchorDate: new Date('1899-12-31T00:00:00.000Z') } }))
       .rejects.toThrow(/planning_groups_anchor_date_in_supported_years/);
+    await expect(prisma.planningGroup.create({ data: { calendarId, name: `Ancora ${randomUUID().slice(0, 8)}`, anchorDate: new Date('9999-12-31T00:00:00.000Z') } }))
+      .rejects.toThrow(/planning_groups_anchor_date_in_supported_years/);
+  });
+
+  it('on the days of a holiday and of a vendor closure', async () => {
+    await prisma.holidayCountry.upsert({ where: { code: 'ZZ' }, update: {}, create: { code: 'ZZ', name: 'Test' } });
+    await expect(prisma.holiday.create({ data: { countryCode: 'ZZ', name: `Festa ${randomUUID().slice(0, 8)}`, startDate: new Date('0026-06-01'), endDate: new Date('0026-06-01') } }))
+      .rejects.toThrow(/holidays_dates_in_supported_years/);
+    const vendor = await prisma.vendor.create({ data: { name: `Fornitore ${randomUUID().slice(0, 8)}` } });
+    await expect(prisma.vendorClosurePeriod.create({
+      data: { vendorId: vendor.id, seasonId: source.seasonId, name: 'Chiusura', type: 'CLOSURE', startDate: new Date('2026-08-10'), endDate: new Date('9999-12-31') },
+    })).rejects.toThrow(/vendor_closure_periods_dates_in_supported_years/);
   });
 });
 
@@ -162,14 +180,6 @@ describe('assertEventDates', () => {
   ])('%s: judges the bound on the stored allDay when the input omits it', async (_, write) => {
     const event = await createEvent({ startAt: new Date('2099-06-01T09:00:00.000Z'), allDay: false });
     await expectBadRequest(write(event.id, await expectedOf(prisma, event.id)));
-  });
-
-  it('update: a row stored out of the timed range stays editable while its dates are resent unchanged', async () => {
-    const legacy = await createEvent({ startAt: new Date('9999-12-30T05:00:00.000Z'), allDay: false });
-    await asAdmin().seasonCalendar.updateMilestone({
-      id: legacy.id, expected: await expectedOf(prisma, legacy.id), data: { title: 'Rinominato', startAt: legacy.startAt.toISOString(), allDay: false },
-    });
-    expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: legacy.id } })).toMatchObject({ title: 'Rinominato' });
   });
 
 });

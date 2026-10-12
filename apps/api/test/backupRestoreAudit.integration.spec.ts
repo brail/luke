@@ -151,7 +151,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
   it('brings the data back to the backup and loses no activity log event', async () => {
     // --- state at the moment of the backup ---
     await prisma.user.create({
-      data: { id: 'u1', email: 'old@x.it', username: 'olduser', firstName: 'Old', role: 'admin' },
+      data: { timezone: 'Europe/Rome', id: 'u1', email: 'old@x.it', username: 'olduser', firstName: 'Old', role: 'admin' },
     });
     await prisma.auditLog.create({
       data: { id: 'a1', actorId: 'u1', action: 'BEFORE_BACKUP', targetType: 'User', result: 'SUCCESS' },
@@ -170,7 +170,7 @@ describe.skipIf(!TEST_DATABASE_URL || skew !== null)('restore: preservazione aud
     });
     // A user created after the backup: the restore deletes them, but their event must survive.
     await prisma.user.create({
-      data: { id: 'u2', email: 'new@x.it', username: 'newuser', firstName: 'After', role: 'editor' },
+      data: { timezone: 'Europe/Rome', id: 'u2', email: 'new@x.it', username: 'newuser', firstName: 'After', role: 'editor' },
     });
     await prisma.auditLog.create({
       data: { id: 'a3', actorId: 'u2', action: 'BY_USER_NOT_IN_BACKUP', targetType: 'User', result: 'SUCCESS' },

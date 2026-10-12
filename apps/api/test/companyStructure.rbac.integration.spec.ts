@@ -72,6 +72,7 @@ beforeAll(async () => {
   // A user to use as a member in the addMembers/removeMembers tests
   const member = await prisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `rbac-member-${uid}@test.com`,
       username: `rbac-member-${uid}`,
       firstName: 'Member',

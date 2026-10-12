@@ -20,6 +20,7 @@ async function createUser() {
   const id = randomUUID().substring(0, 8);
   const user = await prisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `access-test-${id}@test.com`,
       username: `access-test-${id}`,
       firstName: 'Access',

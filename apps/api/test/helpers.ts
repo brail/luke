@@ -75,6 +75,7 @@ export async function createTestUser(
   
   const user = await testPrisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `${role}-${uniqueId}@test.com`,
       username: `${role}-${uniqueId}`,
       firstName: role.charAt(0).toUpperCase() + role.slice(1),

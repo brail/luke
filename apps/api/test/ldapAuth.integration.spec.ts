@@ -101,10 +101,12 @@ afterEach(() => {
 describe('authenticateViaLdap', () => {
   it('authenticates a user the directory verifies, creating the local record at first login', async () => {
     await configureLdap();
+    // A new user reads dates in the business zone (ADR-035 §New users).
+    await saveConfig(prisma, 'app.defaultTimezone', 'Asia/Shanghai');
 
     const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
 
-    expect(login.user).toMatchObject({ username: 'alice', email: ALICE.mail, pendingApproval: true });
+    expect(login.user).toMatchObject({ username: 'alice', email: ALICE.mail, pendingApproval: true, timezone: 'Asia/Shanghai' });
     expect(bind.mock.calls).toEqual([
       [SERVICE_DN, 'service-password'],
       [ALICE_DN, 'her-password'],

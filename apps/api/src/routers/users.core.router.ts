@@ -13,6 +13,7 @@ import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
+import { getConfigOrDefault } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
@@ -196,6 +197,8 @@ export const usersCoreRouter = router({
       await assertPasswordMeetsPolicy(ctx.prisma, input.password);
 
       const passwordHash = await hashPassword(input.password);
+      // A new user reads dates in the business zone until they choose another (ADR-035 §New users).
+      const timezone = await getConfigOrDefault(ctx.prisma, 'app.defaultTimezone');
 
       // Create user, identity, and credential in a transaction
       let result;
@@ -209,6 +212,7 @@ export const usersCoreRouter = router({
               firstName: input.firstName || '',
               lastName: input.lastName || '',
               role: input.role,
+              timezone,
               isActive: true,
               pendingApproval: true,
             },

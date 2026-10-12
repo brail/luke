@@ -64,6 +64,7 @@ async function createLdapUser(emailSuffix = '@test.com') {
   const uid = randomUUID().substring(0, 8);
   const user = await prisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `ldap-fla-${uid}${emailSuffix}`,
       username: `ldap-fla-${uid}`,
       firstName: 'LDAP',

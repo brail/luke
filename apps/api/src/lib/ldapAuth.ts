@@ -11,6 +11,7 @@ import { Roles, type Role } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
 import {
+  getConfigOrDefault,
   getLdapConfig,
   getLdapResilienceConfig,
   type LdapConfig,
@@ -409,7 +410,8 @@ async function createOrUpdateUser(
       }
     });
   } else {
-    // Create new user
+    // Create new user, in the business zone (ADR-035 §New users)
+    const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
     user = await prisma.$transaction(async tx => {
       const newUser = await tx.user.create({
         data: {
@@ -418,6 +420,7 @@ async function createOrUpdateUser(
           firstName,
           lastName,
           role,
+          timezone,
           isActive: true,
           pendingApproval: true,
         },

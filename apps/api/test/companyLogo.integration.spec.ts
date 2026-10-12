@@ -75,7 +75,7 @@ describe('company.profile.update — logo', () => {
 
   it('rejects a file uploaded by another user', async () => {
     const other = await ctx.prisma.user.create({
-      data: { email: `o-${randomUUID()}@t.test`, username: `o-${randomUUID().slice(0, 8)}`, role: 'viewer', isActive: true },
+      data: { timezone: 'Europe/Rome', email: `o-${randomUUID()}@t.test`, username: `o-${randomUUID().slice(0, 8)}`, role: 'viewer', isActive: true },
     });
     const file = await seedFile({ createdBy: other.id });
 

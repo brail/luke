@@ -12,7 +12,7 @@ Four changes in 3.0 make this more than a redeploy:
   old MinIO volume until they are copied across. A stored `storage.type = minio`
   makes every storage call fail with an error naming the key, never a silent
   fallback.
-- **Data repairs.** Six migrations run at boot, and three one-shot scripts repair
+- **Data repairs.** Eight migrations run at boot, and three one-shot scripts repair
   data that 2.1.x wrote: all-day event dates, the photos of automatic revisions
   and the image thumbnails. Two of them must run before users edit anything.
 - **Networks.** 3.0 splits the stack over separate networks: `edge` for the web
@@ -74,20 +74,23 @@ stays on the host after the old container is gone, so nothing is pulled.
 
 ```bash
 docker exec -i "$PG" psql -U luke -d luke <<'SQL'
-SELECT count(*) AS events_out_of_range FROM calendar_events
-WHERE "startAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "endAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "baselineStartAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999'
-   OR "baselineEndAt" NOT BETWEEN '1900-01-01' AND '9999-12-31 23:59:59.999';
-SELECT count(*) AS groups_out_of_range FROM planning_groups
-WHERE "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-31';
+SELECT count(*) AS events_out_of_range FROM calendar_events WHERE NOT (
+  CASE WHEN "allDay"
+    THEN "startAt" >= '1900-01-01' AND "startAt" < '9999-12-31' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-01' AND "endAt" < '9999-12-31'))
+    ELSE "startAt" >= '1900-01-02' AND "startAt" < '9999-12-30' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-02' AND "endAt" < '9999-12-30'))
+  END
+  AND ("baselineStartAt" IS NULL OR ("baselineStartAt" >= '1900-01-01' AND "baselineStartAt" < '9999-12-31'))
+  AND ("baselineEndAt" IS NULL OR ("baselineEndAt" >= '1900-01-01' AND "baselineEndAt" < '9999-12-31')));
+SELECT count(*) AS groups_out_of_range FROM planning_groups WHERE "anchorDate" IS NOT NULL AND "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS holidays_out_of_range FROM holidays WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS closures_out_of_range FROM vendor_closure_periods WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
 SELECT id, timezone FROM users WHERE timezone NOT IN (SELECT name FROM pg_timezone_names);
 SELECT count(*) AS blank_vendor_nicknames FROM vendors WHERE btrim(nickname) = '';
 SELECT value AS storage_type FROM app_configs WHERE key = 'storage.type';
 SQL
 ```
 
-- Both out-of-range counts must be **0**: otherwise a 3.0 migration fails and
+- All four out-of-range counts must be **0**: otherwise a 3.0 migration fails and
   the API does not start. Correct those dates first (see "Calendar date range" in
   `apps/api/README.md`).
 - Any user listed with an invalid time zone: correct it before the upgrade.
@@ -173,7 +176,7 @@ Expected:
 
   The web may need a minute to start: repeat the first command until it answers.
 
-- `docker logs "$(svc api)"` shows `prisma migrate deploy` applying the six new
+- `docker logs "$(svc api)"` shows `prisma migrate deploy` applying the eight new
   migrations, then the server starting; the container becomes healthy;
 - the log also reports that the temporary-file cleanup failed with an error naming
   `storage.type` and `minio`: expected until step 6;
