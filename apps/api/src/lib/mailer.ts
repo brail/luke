@@ -10,7 +10,7 @@ import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
-import { calcBackoffDelay, formatDateWithTimezone, parseConfigValue } from '@luke/core';
+import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant, parseConfigValue } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
@@ -317,9 +317,9 @@ export async function sendMaintenanceScheduledEmail(
   timeZone: string
 ): Promise<void> {
   const subject = 'Manutenzione programmata - Luke';
-  const whenLabel = formatDateWithTimezone(scheduledAt, timeZone, {
+  const whenLabel = formatInstant(scheduledAt, timeZone, {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-  });
+  }, DEFAULT_LOCALE);
   const message = reason
     ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${escapeHtml(reason)}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
     : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;

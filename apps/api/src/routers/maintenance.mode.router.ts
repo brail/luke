@@ -11,7 +11,8 @@
 import { TRPCError } from '@trpc/server';
 
 import {
-  formatDateWithTimezone,
+  DEFAULT_LOCALE,
+  formatInstant,
   MaintenanceModeActivateInputSchema,
   MaintenanceModeScheduleInputSchema,
 } from '@luke/core';
@@ -117,9 +118,9 @@ export const maintenanceModeRouter = router({
       // users to know right away, not just 15/5/1 minute before. One notice per zone: the time is
       // written in each reader's zone, with the zone's short name.
       for (const [timeZone, group] of usersByZone) {
-        const when = formatDateWithTimezone(scheduledAt, timeZone, {
+        const when = formatInstant(scheduledAt, timeZone, {
           day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
-        });
+        }, DEFAULT_LOCALE);
         void bulkNotify(ctx.prisma, group.map(u => u.id), {
           category: 'SYSTEM',
           title: 'Manutenzione programmata',

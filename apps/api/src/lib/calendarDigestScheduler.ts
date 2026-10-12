@@ -36,11 +36,13 @@ import {
   calendarDateIn,
   calendarDateOf,
   CATEGORY_LEVEL_EVENT_KEY,
+  DEFAULT_LOCALE,
   eventCalendarDays,
   formatCalendarDate,
-  formatTime,
+  formatInstant,
   fullName,
   instantAt,
+  NUMERIC_TIME,
   startOfDayIn,
   utcMidnightOf,
   type CalendarDate,
@@ -89,11 +91,16 @@ const DAY_SHORT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' }
 const DAY_MEDIUM: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
 const DAY_LONG: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
 
+/** The wall time `instant` shows in `timeZone`, as the digest writes it (`hh:mm`). */
+function timeIn(instant: Date, timeZone: string): string {
+  return formatInstant(instant, timeZone, NUMERIC_TIME, DEFAULT_LOCALE);
+}
+
 function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, timeZone: string): string {
   const [first, last] = eventCalendarDays(startAt, endAt, allDay, timeZone);
   if (first !== last) return `${formatCalendarDate(first, DAY_SHORT)}–${formatCalendarDate(last, DAY_MEDIUM)}`;
   if (allDay) return formatCalendarDate(first, DAY_MEDIUM);
-  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${formatTime(startAt, timeZone)}`;
+  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${timeIn(startAt, timeZone)}`;
 }
 
 /**
@@ -296,7 +303,7 @@ export async function buildDigestTasks(
   for (const entry of logs) {
     const actor = entry.actor;
     const actorName = actor ? fullName(actor) : 'Sistema';
-    const time = formatTime(entry.createdAt, timeZone);
+    const time = timeIn(entry.createdAt, timeZone);
     const meta = (entry.metadata ?? {}) as Record<string, unknown>;
 
     if (entry.action === 'CALENDAR_EVENT_DELETE' && Array.isArray(meta.snapshots)) {
@@ -451,7 +458,7 @@ export async function buildDigestTasks(
         if (oldLast !== newLast) dateChangeLabel = `Durata modificata: fine ${formatCalendarDate(oldLast, DAY_SHORT)} → ${formatCalendarDate(newLast, DAY_SHORT)}`;
       } else if ((oldEnd?.getTime() ?? null) !== (liveEvent.endAt?.getTime() ?? null)) {
         const formatEnd = (end: Date | null) => end
-          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${formatTime(end, timeZone)}`
+          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${timeIn(end, timeZone)}`
           : '—';
         dateChangeLabel = `Durata modificata: fine ${formatEnd(oldEnd)} → ${formatEnd(liveEvent.endAt)}`;
       }
