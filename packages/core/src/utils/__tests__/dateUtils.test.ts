@@ -25,6 +25,7 @@ import {
   startOfDayIn,
   startOfIsoWeek,
   utcMidnightOf,
+  wallClockDate,
   wallTimeIn,
   workingDaysBetweenDates,
   type CalendarDate,
@@ -489,6 +490,29 @@ describe.each([
         expect(isInstantInRange(result.startAt, { allDay: false })).toBe(false);
       });
     });
+  });
+});
+
+describe('wallClockDate', () => {
+  it.each([
+    // 10:00:00.123Z on 1 July: 12:00 in Rome (CEST), 03:00 in Los Angeles (PDT), 15:30 in Kolkata.
+    ['Europe/Rome', '2026-07-01T12:00:00.123Z'],
+    ['America/Los_Angeles', '2026-07-01T03:00:00.123Z'],
+    ['Asia/Kolkata', '2026-07-01T15:30:00.123Z'],
+  ])('writes the wall clock of %s in the UTC fields, to the millisecond', (timeZone, expected) => {
+    expect(iso(wallClockDate(new Date('2026-07-01T10:00:00.123Z'), timeZone))).toBe(expected);
+  });
+
+  it('writes the day the zone is on, across midnight', () => {
+    // 23:30Z on 30 June is already 1 July in Rome.
+    expect(iso(wallClockDate(new Date('2026-06-30T23:30:00Z'), 'Europe/Rome'))).toBe('2026-07-01T01:30:00.000Z');
+  });
+
+  it.each([
+    ['an unknown zone', new Date('2026-07-01T10:00:00Z'), 'Europe/Nowhere'],
+    ['an invalid date', new Date(Number.NaN), 'Europe/Rome'],
+  ])('throws for %s', (_, instant, timeZone) => {
+    expect(() => wallClockDate(instant, timeZone)).toThrow(RangeError);
   });
 });
 

@@ -184,6 +184,12 @@ function wallClockMs(format: Intl.DateTimeFormat, ms: number): number {
   return wall.getTime();
 }
 
+/** `wallClockMs` to the millisecond: the sub-second part carried over, which no offset changes. */
+function wallClockMsExact(format: Intl.DateTimeFormat, ms: number): number {
+  const subSecond = ms - Math.floor(ms / 1000) * 1000;
+  return wallClockMs(format, ms - subSecond) + subSecond;
+}
+
 /** The zone's UTC offset at `ms`, in milliseconds (whole seconds: tzdb has no finer offsets). */
 function offsetMs(format: Intl.DateTimeFormat, ms: number): number {
   const second = Math.floor(ms / 1000) * 1000;
@@ -205,6 +211,16 @@ export function calendarDateIn(instant: Date, timeZone: string): CalendarDate {
 export function wallTimeIn(instant: Date, timeZone: string): string {
   const wall = new Date(wallClockMs(wallClockFormat(timeZone), instant.getTime()));
   return `${String(wall.getUTCHours()).padStart(2, '0')}:${String(wall.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * `instant` as a `Date` whose UTC fields read the wall clock of `timeZone` (IANA) there, to the
+ * millisecond — for a writer that serializes a `Date` by its UTC fields (exceljs), so a spreadsheet
+ * cell shows the reader's local time. Not an instant: never compare or store it. Throws a
+ * `RangeError` for an unknown zone or an invalid `Date`.
+ */
+export function wallClockDate(instant: Date, timeZone: string): Date {
+  return new Date(wallClockMsExact(wallClockFormat(timeZone), instant.getTime()));
 }
 
 /** The one locale dates are written in until the i18n cycle (ADR-035 §Formatting). */
@@ -365,12 +381,7 @@ export function shiftEventByDays(
     const shift = (d: Date) => utcMidnightOf(addCalendarDays(calendarDateOf(d), days));
     return { startAt: shift(startAt), endAt: endAt ? shift(endAt) : null };
   }
-  /** The wall clock at `instant`, to the millisecond, written as if it were UTC. */
-  const wallOf = (instant: Date): number => {
-    const ms = instant.getTime();
-    const subSecond = ms - Math.floor(ms / 1000) * 1000;
-    return wallClockMs(format, ms - subSecond) + subSecond;
-  };
+  const wallOf = (instant: Date): number => wallClockMsExact(format, instant.getTime());
   /** The start of the day `n` days after the local day of `wall`, as `startOfDayIn` resolves it. */
   const dayStart = (wall: number, n: number) =>
     resolveWall(format, (Math.floor(wall / MS_PER_DAY) + n) * MS_PER_DAY, { second: false, skipped: 'gapEnd' });

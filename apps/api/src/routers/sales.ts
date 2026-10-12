@@ -31,7 +31,7 @@ import {
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
 import { router, protectedProcedure } from '../lib/trpc';
-import { getUserTimeZone } from '../lib/userTimeZone';
+import { getUserTimeZone, resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedBrandIds } from '../services/context.service';
 import { buildKimoXlsx } from '../services/kimo.statistics';
 import { buildPortafoglioXlsx } from '../services/sales.statistics';
@@ -488,21 +488,23 @@ const kimoRouter = router({
       const sheetName = `${season.code}_${brand.code}_Kimo`;
       const dbUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
-        select: { firstName: true, lastName: true, email: true },
+        select: { firstName: true, lastName: true, email: true, timezone: true },
       });
       const authorName =
         [dbUser?.firstName, dbUser?.lastName].filter(Boolean).join(' ') ||
         dbUser?.email ||
         ctx.session.user.email;
 
-      const buffer = await buildKimoXlsx(rows, sheetName, {
+      // One zone for the cells, their headers and the file name.
+      const timeZone = await resolveUserTimeZone(ctx.prisma, { id: ctx.session.user.id, timezone: dbUser?.timezone ?? '' }, ctx.logger);
+      const buffer = await buildKimoXlsx(rows, timeZone, sheetName, {
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
         manager: `Luke - ${versionLabel(appVersion())}`,
       });
 
-      const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
+      const stamp = exportTimestamp(timeZone);
       const filterSuffix = input.customerCode
         ? `_${input.customerCode}`
         : input.salespersonCode
