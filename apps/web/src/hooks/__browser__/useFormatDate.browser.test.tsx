@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { renderHook } from 'vitest-browser-react';
 
-import { calendarDateOf, formatInstant, NUMERIC_DATE_TIME } from '@luke/core';
+import { calendarDateIn, calendarDateOf, formatInstant, NUMERIC_DATE_TIME } from '@luke/core';
 
 import { useFormatDate } from '../useFormatDate';
 
@@ -49,6 +49,7 @@ test('dates are written in the profile zone and the default locale, whatever loc
 
   expect(result.current.dateTime(INSTANT)).toBe('15/01/2026, 18:30');
   expect(result.current.time(new Date(INSTANT))).toBe('18:30');
+  expect(result.current.today).toBe(calendarDateIn(new Date(), 'Asia/Shanghai'));
   expect(result.current).toMatchObject({ ready: true, zone: 'Asia/Shanghai', locale: 'it-IT' });
 });
 

@@ -253,7 +253,7 @@ export const dashboardRouter = router({
    *
    * @auth {sales:read}
    * @input {{ brandId: string, seasonId: string }}
-   * @output {Array<{ date: string, count: number }>} — 7 entries, one per day.
+   * @output {Array<{ date: CalendarDate, count: number }>} — 7 entries, one per day.
    */
   getWeeklySales: protectedProcedure
     .use(requirePermission('sales:read'))
@@ -266,10 +266,10 @@ export const dashboardRouter = router({
       ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
       getConfigOrDefault(ctx.prisma, 'app.defaultTimezone'),
     ]);
-    if (!brand || !season) return [] as { date: string; count: number }[];
+    if (!brand || !season) return [];
 
     const today = calendarDateIn(new Date(), timeZone);
-    const result: { date: string; count: number }[] = Array.from({ length: 7 }, (_, i) => ({
+    const result: { date: CalendarDate; count: number }[] = Array.from({ length: 7 }, (_, i) => ({
       date: addCalendarDays(today, i - 6),
       count: 0,
     }));

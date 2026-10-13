@@ -4,8 +4,9 @@ import { SlidersHorizontal } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useMemo, useState } from 'react';
 
-import type { WidgetId } from '@luke/core';
+import { formatCalendarDate, greetingAt, isoWeekOf, type WidgetId } from '@luke/core';
 
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
@@ -19,29 +20,21 @@ import { SeasonProgressWidget } from './widgets/SeasonProgressWidget';
 import { TasksWidget } from './widgets/TasksWidget';
 import { WeeklySalesWidget } from './widgets/WeeklySalesWidget';
 
-function getISOWeek(date: Date): number {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-}
-
-function DashboardHeader({ firstName }: { firstName?: string }) {
-  const now = new Date();
-  const hour = now.getHours();
-  const greeting = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
-  const dateLabel = new Intl.DateTimeFormat('it-IT', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  }).format(now);
-
+/**
+ * Greeting, today and its ISO week, all read in the profile zone. Until the zone is known (or when
+ * it cannot be), a greeting that claims no time of day and a placeholder for the date.
+ */
+export function DashboardHeader({ firstName }: { firstName?: string }) {
+  const { zone, today } = useFormatDate();
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight">
-        {greeting}{firstName ? `, ${firstName}` : ''}
+        {zone ? greetingAt(new Date(), zone) : 'Ciao'}{firstName ? `, ${firstName}` : ''}
       </h1>
       <p className="text-sm text-muted-foreground mt-0.5 capitalize">
-        {dateLabel} · Settimana {getISOWeek(now)}
+        {today
+          ? `${formatCalendarDate(today, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Settimana ${isoWeekOf(today).week}`
+          : '…'}
       </p>
     </div>
   );

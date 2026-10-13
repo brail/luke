@@ -1,6 +1,9 @@
 'use client';
 
+import { formatCalendarDate } from '@luke/core';
+
 import { useAppContext } from '../../../contexts/AppContextProvider';
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
 import { cn } from '../../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -20,9 +23,10 @@ export function WeeklySalesWidget() {
     { enabled },
   );
 
-  // The server's seven dates always end on today in the business time zone: the last bar is today,
-  // whatever the browser's clock or zone says.
-  const isToday = (i: number) => data !== undefined && i === data.length - 1;
+  // The bars are the business zone's last seven days; "Oggi" marks the one that is today for the
+  // reader, in the profile zone the dashboard header uses — none, while the two zones disagree.
+  const { today } = useFormatDate();
+  const isToday = (i: number) => data?.[i]?.date === today;
   const maxCount = data && data.length > 0 ? Math.max(...data.map(d => d.count), 1) : 1;
 
   return (
@@ -63,7 +67,7 @@ export function WeeklySalesWidget() {
                 return (
                   <div key={date} className="flex-1 text-center">
                     <div className={cn(isToday(i) && 'font-medium text-foreground')}>
-                      {isToday(i) ? 'Oggi' : new Date(date + 'T00:00:00').toLocaleDateString('it-IT', { weekday: 'short' })}
+                      {isToday(i) ? 'Oggi' : formatCalendarDate(date, { weekday: 'short' })}
                     </div>
                     <div className="font-medium text-foreground">{count}</div>
                   </div>

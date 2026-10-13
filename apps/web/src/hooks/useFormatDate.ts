@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { DEFAULT_LOCALE, formatInstant, isValidTimeZone, NUMERIC_DATE, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
+import { calendarDateIn, DEFAULT_LOCALE, formatInstant, isValidTimeZone, NUMERIC_DATE, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
 
 import { trpc } from '../lib/trpc';
 
@@ -66,6 +66,8 @@ export function useFormatDate() {
     error,
     /** The reader zone (IANA), once known. */
     zone,
+    /** Today in the reader zone, once it is known. */
+    today: zone ? calendarDateIn(new Date(), zone) : undefined,
     /** The locale every date is written in. */
     locale: DEFAULT_LOCALE,
     format,
