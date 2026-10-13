@@ -4,6 +4,8 @@ import { Globe } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 
+import { isValidTimeZone, sameTimeZone } from '@luke/core';
+
 import { debugWarn } from '../lib/debug';
 import { useRefresh } from '../lib/refresh';
 import { trpc } from '../lib/trpc';
@@ -19,18 +21,30 @@ import {
   DialogFooter,
 } from './ui/dialog';
 
+/** The browser's zone, or `null` when it cannot be read or is not one the server accepts. */
+function readBrowserZone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone && isValidTimeZone(zone) ? zone : null;
+  } catch (error) {
+    debugWarn('Unable to detect the browser timezone:', error);
+    return null;
+  }
+}
+
 /**
  * Auto-shown dialog that prompts the user to update their timezone when a browser mismatch is detected.
  *
- * Appears at most once per session, with a 2-second delay after login to avoid a flash.
- * Compares the browser's `Intl.DateTimeFormat` timezone against the value from `me.get`.
- * Calls `me.updateTimezone` on confirmation.
+ * Judged once per session, when the profile zone first arrives, and shown 2 seconds later to avoid a
+ * flash. Compares the browser's `Intl.DateTimeFormat` timezone with the stored profile zone as zones,
+ * not strings: an alias of the same zone (`Asia/Kolkata`, `Asia/Calcutta`) is no mismatch. Reads the
+ * stored value through its own `me.get` rather than `useFormatDate`, deliberately: a zone this
+ * browser cannot use is exactly the one worth replacing, and this globally mounted dialog must not
+ * raise the hook's "dates not shown" toast on every page. Calls `me.updateTimezone` on confirmation.
  */
 export function TimezoneUpdateDialog() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
-  const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null);
-  const [hasShownForSession, setHasShownForSession] = useState(false);
   const refresh = useRefresh();
 
   // Use the fresh data from the API instead of the NextAuth session
@@ -38,6 +52,19 @@ export function TimezoneUpdateDialog() {
     enabled: !!session?.accessToken,
     staleTime: 5 * 60 * 1000, // 5 minutes - reduces API requests
   });
+  const userTz = userData?.timezone;
+
+  // Judged once per session, when the profile zone first arrives (React's pattern for state set
+  // during render): a zone the user picks later is not questioned. Logging out starts over.
+  const [judged, setJudged] = useState<{ detected: string | null } | null>(null);
+  if (status === 'unauthenticated' && judged) {
+    setJudged(null);
+    setOpen(false);
+  }
+  if (status === 'authenticated' && session?.user && userTz && !judged) setJudged({ detected: readBrowserZone() });
+  // A mismatch only when the zones differ: one the profile resolves in the meantime (another tab, the
+  // profile form) drops out.
+  const detectedTimezone = judged?.detected && userTz && !sameTimeZone(judged.detected, userTz) ? judged.detected : null;
 
   // Mutation tRPC
   const updateTimezoneMutation = trpc.me.updateTimezone.useMutation();
@@ -51,35 +78,13 @@ export function TimezoneUpdateDialog() {
       onSuccess: () => setOpen(false),
     });
 
+  // Shown 2 seconds after the mismatch is found, to avoid a flash on load; once closed, in any way,
+  // it stays closed.
   useEffect(() => {
-    // Reset flag when session changes (login/logout)
-    if (status === 'unauthenticated') {
-      setHasShownForSession(false);
-      setDetectedTimezone(null);
-      setOpen(false);
-      return;
-    }
-
-    // Show the dialog only on the first access after login
-    if (status === 'authenticated' && !hasShownForSession) {
-      // Detect the timezone from the browser
-      try {
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const userTz = userData?.timezone; // Use the data from the API
-
-        // If different and the session is active, show the dialog only once per session
-        if (browserTz && userTz && browserTz !== userTz && session?.user) {
-          setDetectedTimezone(browserTz);
-          setHasShownForSession(true);
-          // Show dialog only after 2 seconds to avoid flash on load
-          setTimeout(() => setOpen(true), 2000);
-        }
-      } catch (error) {
-        // Ignore timezone detection errors
-        debugWarn('Unable to detect the browser timezone:', error);
-      }
-    }
-  }, [userData?.timezone, session?.user, status, hasShownForSession]);
+    if (!detectedTimezone) return;
+    const timer = setTimeout(() => setOpen(true), 2000);
+    return () => clearTimeout(timer);
+  }, [detectedTimezone]);
 
   const handleUpdate = () => {
     if (!detectedTimezone) return;
@@ -93,7 +98,7 @@ export function TimezoneUpdateDialog() {
   const handleDismiss = () => {
     setOpen(false);
     // Do not show it again for this session
-    setDetectedTimezone(null);
+    setJudged({ detected: null });
   };
 
   if (!detectedTimezone || !session?.user) return null;
@@ -115,7 +120,7 @@ export function TimezoneUpdateDialog() {
           <div className="rounded-lg bg-muted p-3">
             <p className="text-sm font-medium">Attuale:</p>
             <p className="text-sm text-muted-foreground">
-              {userData?.timezone}
+              {userTz}
             </p>
           </div>
           <div className="rounded-lg bg-primary/10 p-3">

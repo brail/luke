@@ -8,16 +8,9 @@ import { APP_CONFIG_DEFAULTS } from '@luke/core';
 import { SectionCard } from '../../../../../components/SectionCard';
 import { SettingsActions } from '../../../../../components/settings/SettingsActions';
 import { SettingsFormGate } from '../../../../../components/settings/SettingsFormShell';
+import { TimeZoneSelect } from '../../../../../components/TimeZoneSelect';
 import { Label } from '../../../../../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../../../../components/ui/select';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { TIMEZONES } from '../../../../../lib/i18n/timezones';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -54,9 +47,6 @@ export function BusinessTimeZoneCard() {
 
   if (!canRead) return null;
 
-  // A zone written elsewhere (the raw configuration page) stays visible even when it is not listed.
-  const options = TIMEZONES.some(t => t.value === stored) ? TIMEZONES : [{ value: stored, label: stored }, ...TIMEZONES];
-
   return (
     <SectionCard
       title="Fuso orario aziendale"
@@ -66,14 +56,7 @@ export function BusinessTimeZoneCard() {
       <SettingsFormGate isPending={isPending} error={error} hasData={!!data} onRetry={() => void refetch()}>
         <div className="max-w-sm space-y-1.5">
           <Label htmlFor="business-time-zone">Fuso orario</Label>
-          <Select value={timeZone} onValueChange={setDraft} disabled={!canUpdate}>
-            <SelectTrigger id="business-time-zone"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {options.map(option => (
-                <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <TimeZoneSelect id="business-time-zone" value={timeZone} onValueChange={setDraft} stored={stored} disabled={!canUpdate} />
           <p className="text-sm text-muted-foreground">
             Cambiarlo ricalcola subito conteggi, fasce e blocchi, anche di eventi passati. Revisioni,
             notifiche e riepiloghi già inviati restano come sono.

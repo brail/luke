@@ -3,11 +3,12 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoaderCircle, Info } from 'lucide-react';
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { UserProfileSchema, type UserProfileInput } from '@luke/core';
 
+import { TimeZoneSelect } from '../../../../components/TimeZoneSelect';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
@@ -16,7 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
-import { TIMEZONES } from '../../../../lib/i18n/timezones';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
@@ -51,6 +51,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
   // Form setup with Zod validation
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<UserProfileInput>({
@@ -228,21 +229,22 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       {/* Timezone */}
       <div className="space-y-2">
         <Label htmlFor="timezone">Fuso Orario</Label>
-        <select
-          id="timezone"
-          {...register('timezone')}
-          className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-            errors.timezone ? 'border-destructive' : ''
-          }`}
-          aria-invalid={!!errors.timezone}
-          aria-describedby={errors.timezone ? 'timezone-error' : undefined}
-        >
-          {TIMEZONES.map(timezone => (
-            <option key={timezone.value} value={timezone.value}>
-              {timezone.label}
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="timezone"
+          control={control}
+          render={({ field }) => (
+            <TimeZoneSelect
+              id="timezone"
+              ref={field.ref}
+              value={field.value}
+              onValueChange={field.onChange}
+              onBlur={field.onBlur}
+              stored={user.timezone}
+              invalid={!!errors.timezone}
+              describedBy={errors.timezone ? 'timezone-error' : undefined}
+            />
+          )}
+        />
         {errors.timezone && (
           <p id="timezone-error" className="text-sm text-destructive">
             {errors.timezone.message}
