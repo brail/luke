@@ -31,6 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { triggerUrlDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
@@ -102,6 +103,7 @@ function showBackupRecap(backup: BackupRecord) {
 
 export default function MaintenanceBackupPage() {
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const utils = trpc.useUtils();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -257,9 +259,7 @@ export default function MaintenanceBackupPage() {
               {items.map(backup => (
                 <TableRow key={backup.id}>
                   <TableCell>
-                    {new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(
-                      new Date(backup.createdAt)
-                    )}
+                    {fmt.format(backup.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
                   </TableCell>
                   <TableCell>
                     {SCOPE_LABEL[backup.scope]}

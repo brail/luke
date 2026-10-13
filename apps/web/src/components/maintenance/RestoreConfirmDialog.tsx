@@ -13,6 +13,7 @@ import {
   type CheckRestoreCompatibilityOutput,
 } from '@luke/core';
 
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
 import {
@@ -87,6 +88,7 @@ export function RestoreConfirmDialog({
   onRunMigrationBridge,
   isBridging = false,
 }: RestoreConfirmDialogProps) {
+  const fmt = useFormatDate();
   const [acknowledgeMigrationBridge, setAcknowledgeMigrationBridge] = useState(false);
 
   const form = useForm<RestoreFormData>({
@@ -246,9 +248,7 @@ export function RestoreConfirmDialog({
               <p className="font-medium text-foreground">
                 Questa operazione SOVRASCRIVE completamente il database attuale con il contenuto
                 del backup del{' '}
-                {new Intl.DateTimeFormat('it-IT', { dateStyle: 'long', timeStyle: 'short' }).format(
-                  new Date(backup.createdAt)
-                )}
+                {fmt.format(backup.createdAt, { dateStyle: 'long', timeStyle: 'short' })}
                 . Tutti i dati creati o modificati dopo quel momento andranno persi.
               </p>
               <p>

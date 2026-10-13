@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { renderHook } from 'vitest-browser-react';
 
-import { calendarDateOf } from '@luke/core';
+import { calendarDateOf, formatInstant, NUMERIC_DATE_TIME } from '@luke/core';
 
 import { useFormatDate } from '../useFormatDate';
 
@@ -11,19 +11,23 @@ import { useFormatDate } from '../useFormatDate';
  * in the locale saved on the profile.
  */
 
-const { meQuery, toastError } = vi.hoisted(() => ({
+const { meQuery, session, toastError } = vi.hoisted(() => ({
   // Read fresh by the mocked `useQuery` on every render, like the real query transitioning.
   meQuery: { data: undefined as { timezone: string; locale: string } | undefined, error: null as Error | null },
+  session: { status: 'authenticated' as 'authenticated' | 'unauthenticated' },
   toastError: vi.fn(),
 }));
 
 vi.mock('../../lib/trpc', () => ({ trpc: { me: { get: { useQuery: () => meQuery } } } }));
-vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 't' }, status: 'authenticated' }) }));
+vi.mock('next-auth/react', () => ({
+  useSession: () => (session.status === 'authenticated' ? { data: { accessToken: 't' }, status: 'authenticated' } : { data: null, status: 'unauthenticated' }),
+}));
 vi.mock('sonner', () => ({ toast: { error: toastError } }));
 
 afterEach(() => {
   meQuery.data = undefined;
   meQuery.error = null;
+  session.status = 'authenticated';
   toastError.mockReset();
 });
 
@@ -56,6 +60,15 @@ test("a date alone is the instant's day in the profile zone, not the browser's",
   expect(result.current.date('2026-02-01T05:30:00.000Z')).toBe('31/01/2026');
   // @ts-expect-error a calendar day is not an instant: `formatCalendarDate` writes it, without a zone
   result.current.date(calendarDateOf(new Date('2026-01-15T00:00:00.000Z')));
+});
+
+test('without a session there is no profile zone: the browser zone dates instants, and every value names it', async () => {
+  session.status = 'unauthenticated';
+  const { result } = await renderHook(() => useFormatDate());
+
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  expect(result.current).toMatchObject({ ready: true, zone });
+  expect(result.current.dateTime(INSTANT)).toBe(`${formatInstant(new Date(INSTANT), zone, NUMERIC_DATE_TIME, 'it-IT')} (${zone})`);
 });
 
 test('a failed profile read is reported once and leaves the placeholder', async () => {

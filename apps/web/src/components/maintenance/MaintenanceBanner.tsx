@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { getMaintenanceUrgencyTier, type MaintenanceModeState, type MaintenanceUrgencyTier } from '@luke/core';
 
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { trpc } from '../../lib/trpc';
 import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { Button } from '../ui/button';
@@ -14,14 +15,6 @@ function formatCountdown(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/** Far/normal tiers show the actual date/time (a precise mm:ss countdown is noise a day out); approaching/imminent switch to the live countdown, where second-level precision actually matters. */
-function formatRemaining(tier: MaintenanceUrgencyTier, msRemaining: number, scheduledAt: string): string {
-  if (tier === 'far' || tier === 'normal') {
-    return new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(scheduledAt));
-  }
-  return `tra ${formatCountdown(msRemaining)}`;
 }
 
 const TIER_STYLE: Record<MaintenanceUrgencyTier, string> = {
@@ -47,6 +40,30 @@ interface MaintenanceBannerProps {
 }
 
 /**
+ * The notice of a scheduled window. Its own component so that only a scheduled window loads the
+ * reader zone: during active maintenance `me.get` is refused to whoever does not bypass it.
+ */
+function ScheduledNotice({ message, scheduledAt, msRemaining }: { message: string | null; scheduledAt: string; msRemaining: number }) {
+  const fmt = useFormatDate();
+  const tier = getMaintenanceUrgencyTier(msRemaining / 60_000);
+  const Icon = TIER_ICON[tier];
+  // Far/normal tiers show the date and time (a mm:ss countdown is noise a day out); approaching and
+  // imminent switch to the live countdown, where seconds matter.
+  const remaining =
+    tier === 'far' || tier === 'normal'
+      ? fmt.format(scheduledAt, { dateStyle: 'medium', timeStyle: 'short' })
+      : `tra ${formatCountdown(msRemaining)}`;
+  return (
+    <div className={`flex items-center justify-center gap-2 px-4 ${TIER_STYLE[tier]}`}>
+      <Icon className="h-4 w-4 shrink-0" />
+      <span>
+        {message || 'Manutenzione programmata'} — {remaining}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Persistent top bar shown whenever maintenance mode is `SCHEDULED` (countdown, all users) or
  * `ACTIVE` while the viewer is an admin (discrete notice + one-click "end maintenance" — admins
  * are never locked out, see `MaintenanceLockScreen` for the non-admin `ACTIVE` case).
@@ -66,16 +83,7 @@ export function MaintenanceBanner({ state, isAdmin, canEnd, msRemaining }: Maint
   });
 
   if (state.status === 'SCHEDULED' && state.scheduledAt && msRemaining !== null) {
-    const tier = getMaintenanceUrgencyTier(msRemaining / 60_000);
-    const Icon = TIER_ICON[tier];
-    return (
-      <div className={`flex items-center justify-center gap-2 px-4 ${TIER_STYLE[tier]}`}>
-        <Icon className="h-4 w-4 shrink-0" />
-        <span>
-          {state.message || 'Manutenzione programmata'} — {formatRemaining(tier, msRemaining, state.scheduledAt)}
-        </span>
-      </div>
-    );
+    return <ScheduledNotice message={state.message} scheduledAt={state.scheduledAt} msRemaining={msRemaining} />;
   }
 
   if (state.status === 'ACTIVE' && isAdmin) {
