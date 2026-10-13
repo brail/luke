@@ -143,11 +143,6 @@ export default function ProfilePage() {
     );
   }
 
-  // Compute statistics from real data
-  const userStats = {
-    lastLogin: user.lastLoginAt || new Date(),
-  };
-
   const handleCopyEmail = () => copy(user.email, { successMessage: 'Email copiata negli appunti!' });
 
   const handleExportProfile = () => {
@@ -162,7 +157,7 @@ export default function ProfilePage() {
       timezone: user.timezone,
       provider: user.provider,
       createdAt: user.createdAt,
-      lastLogin: userStats.lastLogin,
+      lastLogin: user.lastLoginAt ?? null,
     };
 
     const blob = new Blob([JSON.stringify(profileData, null, 2)], {
@@ -236,7 +231,7 @@ export default function ProfilePage() {
                 </span>
                 <span className="text-sm font-medium">
                   {user.lastLoginAt
-                    ? formatDate.time(userStats.lastLogin)
+                    ? formatDate.dateTime(user.lastLoginAt)
                     : 'N/A'}
                 </span>
               </div>

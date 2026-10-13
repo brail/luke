@@ -2,6 +2,8 @@ import path from 'path';
 
 import { expect, type Page } from '@playwright/test';
 
+import { addCalendarDays, calendarDateIn } from '@luke/core';
+
 import { dailyGreetingSeenKey } from '../../src/lib/dailyGreetingKey';
 
 /**
@@ -45,17 +47,17 @@ export async function login(
 /**
  * The daily greeting is a full-screen `Dialog` that intercepts every click: without this,
  * the first spec of every run would fail on a covered element. `useDailyGreeting` skips it
- * if it finds today's flag, so we write it for today and tomorrow — that way a run across
- * midnight does not wake it up halfway. Suppressing it here does not leave it uncovered:
- * it is the modal's behaviour, not that of the flows the smoke tests check.
+ * if it finds today's flag, today being the profile zone's: up to a day either side of this
+ * process's UTC day, and one more for a run across midnight, so we flag all four. Suppressing it
+ * here does not leave it uncovered: it is the modal's behaviour, not that of the flows the smoke
+ * tests check.
  *
  * The key comes from `dailyGreetingSeenKey`, the same module the hook uses: re-deriving
  * its format here would break it silently at the first change.
  */
 export async function suppressDailyGreeting(page: Page): Promise<void> {
-  const now = new Date();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const keys = [dailyGreetingSeenKey(now), dailyGreetingSeenKey(tomorrow)];
+  const today = calendarDateIn(new Date(), 'UTC');
+  const keys = [-1, 0, 1, 2].map(offset => dailyGreetingSeenKey(addCalendarDays(today, offset)));
 
   await page.evaluate(ks => {
     for (const key of ks) {
