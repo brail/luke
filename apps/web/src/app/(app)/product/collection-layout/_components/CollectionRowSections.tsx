@@ -435,7 +435,7 @@ export function PlanningSection({
         {mode === 'edit' && rowId && (
           <RowCompletionToggle
             rowId={rowId}
-            completedAt={completedAt ?? null}
+            isCompleted={isCompleted}
             canUpdate={canUpdate}
             onChanged={onCompletionChanged}
           />

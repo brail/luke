@@ -319,12 +319,19 @@ describe('completionOutcome', () => {
     const result = completionOutcome('row-1', new Date('2026-09-10T00:00:00Z'), null, ALERT, null, NO_WORKING_DAYS);
     expect(result).toMatchObject({
       state: 'completed',
+      completedDay: '2026-09-10',
       daysVsDeadline: null,
       late: false,
       deadlineDay: null,
       eventId: null,
       band: THRESHOLDS.completedBand,
     });
+  });
+
+  it('names the completion day in the business zone, the day its delta counts from', () => {
+    // 00:30 on 1 September in Rome, still 31 August in UTC.
+    const result = completionOutcome('row-1', new Date('2026-08-31T22:30:00Z'), allDayGate(), ALERT, null, NO_WORKING_DAYS);
+    expect(result).toMatchObject({ completedDay: '2026-09-01', daysVsDeadline: -1 });
   });
 
   it('completed before the deadline → positive delta (early) and "on time" band', () => {

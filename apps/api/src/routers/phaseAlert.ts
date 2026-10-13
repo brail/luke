@@ -32,10 +32,11 @@ export const phaseAlertRouter = router({
    * @input {{ rowId: string }}
    * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartDay, phaseId, deadlineDay,
    *   daysToDeadline, reached, daysMode, relevantCountryCodes, band, nextPhase }
-   *   | { state: 'completed', rowId, completedAt, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
+   *   | { state: 'completed', rowId, completedDay, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
    *   daysMode, relevantCountryCodes, band } | null} — counts in the business time zone;
    *   `reached`/`late` decide lateness, the count stays real; `deadlineDay`/`eventStartDay` are
-   *   calendar dates — an all-day event's own, a timed one's in that zone.
+   *   calendar dates — an all-day event's own, a timed one's in that zone — and `completedDay` is
+   *   the completion's day in that zone.
    */
   criticalityForRow: protectedProcedure
     .use(requirePermission('collection_alert:read'))

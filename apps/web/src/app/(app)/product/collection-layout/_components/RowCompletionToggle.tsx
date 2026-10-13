@@ -4,8 +4,6 @@ import { CheckCircle2, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { formatDate } from '@luke/core';
-
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
@@ -14,7 +12,7 @@ import { RowCompletionDialog } from './RowCompletionDialog';
 
 interface Props {
   rowId: string;
-  completedAt: Date | string | null;
+  isCompleted: boolean;
   canUpdate: boolean;
   /** Refetches the layout and the alert queries — the badge and the dashboards both read from them. */
   onChanged: () => void;
@@ -31,9 +29,8 @@ interface Props {
  * cancel an outcome. Before completing, `completionPreview` is queried to learn which phases the
  * row is skipping — the list feeds the warning and, if the user proceeds, `force`.
  */
-export function RowCompletionToggle({ rowId, completedAt, canUpdate, onChanged }: Props) {
+export function RowCompletionToggle({ rowId, isCompleted, canUpdate, onChanged }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const isCompleted = completedAt !== null;
 
   // Only when completing, and only with the dialog open: reopening skips nothing, and a row open
   // in the drawer must not pay for a query that only serves whoever presses the button.
@@ -56,11 +53,6 @@ export function RowCompletionToggle({ rowId, completedAt, canUpdate, onChanged }
 
   return (
     <div className="flex items-center gap-2">
-      {isCompleted && (
-        <span className="text-xs text-muted-foreground">
-          Conclusa il {formatDate(new Date(completedAt))}
-        </span>
-      )}
       <PermissionButton
         type="button"
         variant="outline"

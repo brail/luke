@@ -586,10 +586,13 @@ export function completionOutcome(
   workingDaysCtx: WorkingDaysContext
 ) {
   const { timeZone, thresholds } = alert;
+  // The day the row was concluded, in the business zone: the day its delta counts from, and the only
+  // completion date readers show (the instant itself decides only `late`).
+  const completedDay = calendarDateIn(completedAt, timeZone);
   // No reference milestone: only the completion date remains, no invented delta.
   const due = completionEvent ? deadlineDay(completionEvent, timeZone) : null;
   const counted = completionEvent && due
-    ? resolveDaysCount(calendarDateIn(completedAt, timeZone), due, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
+    ? resolveDaysCount(completedDay, due, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
     : { days: null, daysMode: 'calendar' as const, relevantCountryCodes: [] as string[] };
   // With no deadline to measure against, the completion can't be late.
   const late = completionEvent ? completedAt >= deadlineReachedAt(completionEvent, timeZone) : false;
@@ -597,7 +600,7 @@ export function completionOutcome(
   return {
     state: 'completed' as const,
     rowId,
-    completedAt,
+    completedDay,
     eventId: completionEvent?.id ?? null,
     eventTitle: completionEvent?.title ?? null,
     deadlineDay: due,

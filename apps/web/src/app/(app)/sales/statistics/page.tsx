@@ -20,6 +20,7 @@ import {
 } from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { triggerDownload } from '../../../../lib/download';
 import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
@@ -38,17 +39,19 @@ const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
 
 /**
  * The "last sync" and "next sync" labels of a NAV sync card: when the header table last synced,
- * and, with auto-sync on, when it is due next.
+ * and, with auto-sync on, when it is due next. `formatDateTime` writes an instant in the reader
+ * zone (`useFormatDate().dateTime`).
  */
 function syncStatusInfo(
   state: { tables: { tableName: string; lastSyncedAt: Date | string | null }[] } | null | undefined,
   schedule: { autoSyncEnabled: boolean; intervalMinutes: number } | null | undefined,
-  tableName: string
+  tableName: string,
+  formatDateTime: (instant: Date) => string,
 ): { lastSyncLabel: string; nextSyncLabel: string | null } | null {
   const lastSyncedAt = state?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
   if (!lastSyncedAt) return null;
   const lastSync = new Date(lastSyncedAt);
-  const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatRelativeTime(lastSync)})`;
+  const lastSyncLabel = `${formatDateTime(lastSync)} (${formatRelativeTime(lastSync)})`;
   if (!schedule?.autoSyncEnabled || !schedule.intervalMinutes) return { lastSyncLabel, nextSyncLabel: null };
   const nextSync = new Date(lastSync.getTime() + schedule.intervalMinutes * 60_000);
   const nextSyncLabel = nextSync.getTime() - Date.now() < 60_000 ? 'imminente' : formatRelativeTime(nextSync, { ahead: true });
@@ -280,6 +283,7 @@ function DownloadSection({
 
 export default function StatisticsPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
+  const fmt = useFormatDate();
 
   const [pfFilters, setPfFilters] = useState<Filters>(EMPTY_FILTERS);
   const [kimoFilters, setKimoFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -333,7 +337,7 @@ export default function StatisticsPage() {
   };
 
   // Portafoglio sync state
-  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header');
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header', fmt.dateTime);
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -379,7 +383,7 @@ export default function StatisticsPage() {
   };
 
   // Kimo sync state
-  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header');
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header', fmt.dateTime);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 

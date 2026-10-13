@@ -195,7 +195,7 @@ the relevance of the event it measures against:
 | --- | --- | --- |
 | `daysToDeadline` | today → active milestone's deadline day | active event |
 | `nextPhase.daysUntil` | today → next milestone's deadline day | next event |
-| `daysVsDeadline` (concluded rows) | `completedAt`'s date → last milestone on an active phase | that milestone |
+| `daysVsDeadline` (concluded rows) | `completedDay` (`completedAt`'s date) → last milestone on an active phase | that milestone |
 
 Every date is read in the business time zone. The deadline is always the
 event's live `endAt ?? startAt` (`deadlineDay` / `deadlineReachedAt`) and never

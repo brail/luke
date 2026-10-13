@@ -1,7 +1,7 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
-import { formatCalendarDate, formatDate, NUMERIC_DATE } from '@luke/core';
+import { formatCalendarDate, NUMERIC_DATE } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
@@ -62,10 +62,11 @@ export function formatCriticalityTooltip({ daysToDeadline, reached, deadlineDay,
  * `daysVsDeadline` follows the same sign convention as `daysToDeadline` (positive = ahead of the
  * deadline), and is `null` when the row's planning group has no milestone to measure against — in
  * which case the tooltip states just the date, with no delta invented. `late` decides a count of 0:
- * completed after a timed deadline on its own day is past it, not "on the day".
+ * completed after a timed deadline on its own day is past it, not "on the day". Both dates are the
+ * server's calendar days in the business zone, the days the count runs between.
  */
-export function formatCompletionTooltip({ completedAt, daysVsDeadline, late, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CompletionInfo, 'completedAt' | 'daysVsDeadline' | 'late' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
-  const completedLabel = formatDate(new Date(completedAt));
+export function formatCompletionTooltip({ completedDay, daysVsDeadline, late, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CompletionInfo, 'completedDay' | 'daysVsDeadline' | 'late' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
+  const completedLabel = formatCalendarDate(completedDay, NUMERIC_DATE);
   if (daysVsDeadline === null || deadlineDay === null) {
     return `Conclusa il ${completedLabel} — nessuna milestone di riferimento`;
   }
@@ -141,7 +142,7 @@ export function CriticalitySituation({ rowId, phaseById, className }: Props & { 
       <div className={cn('flex items-center gap-1.5 text-xs', className)}>
         <CriticalityBandBadge band={data.band} tooltip={formatCompletionTooltip(data)} />
         <span className="text-muted-foreground">
-          Conclusa il {formatDate(new Date(data.completedAt))}
+          Conclusa il {formatCalendarDate(data.completedDay, NUMERIC_DATE)}
         </span>
       </div>
     );
