@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { ApplyTemplateInputSchema, calendarDateIn, CalendarDateSchema } from '@luke/core';
+import { ApplyTemplateInputSchema, CalendarDateSchema } from '@luke/core';
 
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Button } from '../../../../components/ui/button';
@@ -81,7 +81,7 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
     resolver: zodResolver(ApplyTemplateFormSchema),
     defaultValues: { planningGroupId: '', templateId: '', anchorDate: '' },
   });
-  const { zone } = useFormatDate();
+  const { today } = useFormatDate();
 
   const { data: templates, isLoading: loadingTemplates } = trpc.seasonCalendar.listTemplates.useQuery(
     undefined,
@@ -114,8 +114,8 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
   // The anchor defaults to today in the profile zone, once that zone is known; a zone arriving late
   // fills an anchor still empty and leaves the rest of the form as the user set it.
   useEffect(() => {
-    if (open && zone && !form.getValues('anchorDate')) form.setValue('anchorDate', calendarDateIn(new Date(), zone));
-  }, [open, zone, form]);
+    if (open && today && !form.getValues('anchorDate')) form.setValue('anchorDate', today);
+  }, [open, today, form]);
 
   // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
   // without this guard the dialog is dismissable while the template is being applied.

@@ -4,7 +4,7 @@
  * (prefixes, format, keys that cannot be deleted) live in `@luke/core`, shared with the API.
  */
 
-import { CONFIG_ROUTER_KEY_REGEX, CONFIG_ROUTER_PREFIXES, isAppConfigKey } from '@luke/core';
+import { calendarDateIn, CONFIG_ROUTER_KEY_REGEX, CONFIG_ROUTER_PREFIXES, isAppConfigKey, wallTimeIn } from '@luke/core';
 
 /**
  * Extracts the category prefix from a config key (the segment before the first `.`).
@@ -110,11 +110,10 @@ export function validateConfigValue(value: string): {
 }
 
 /**
- * Generates a timestamped filename for a config export, e.g.
- * `luke-config-export-2026-06-28T14-30-00.json`.
+ * The file name of a config export taken at `exportedAt` (the server's time), read in `timeZone`
+ * (the reader zone) like the API's other exports, e.g. `luke-config-export-20260628-1430.json`.
  */
-export function generateExportFileName(): string {
-  const now = new Date();
-  const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
-  return `luke-config-export-${timestamp}.json`;
+export function generateExportFileName(exportedAt: Date | string, timeZone: string): string {
+  const at = new Date(exportedAt);
+  return `luke-config-export-${calendarDateIn(at, timeZone).replaceAll('-', '')}-${wallTimeIn(at, timeZone).replace(':', '')}.json`;
 }

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { CONFIG_SECRET_PLACEHOLDER } from '@luke/core';
 
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
 import { triggerBlobDownload } from '../../lib/download';
@@ -24,10 +25,13 @@ interface ConfigExportButtonProps {
  */
 export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
+  // The file is named in the reader zone, like every export but the audit log's: it waits for it.
+  const { zone } = useFormatDate();
 
   const exportMutation = trpc.config.exportJson.useMutation();
 
   const handleExport = async () => {
+    if (!zone) return;
     setIsExporting(true);
 
     try {
@@ -51,7 +55,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json',
       });
-      triggerBlobDownload(blob, generateExportFileName());
+      triggerBlobDownload(blob, generateExportFileName(result.exportedAt, zone));
 
       toast.success(`Esportate ${result.count} configurazioni`);
     } catch (error) {
@@ -67,7 +71,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
       variant="outline"
       size="sm"
       onClick={handleExport}
-      disabled={isExporting || disabled}
+      disabled={isExporting || disabled || !zone}
       className={className}
     >
       {isExporting ? (

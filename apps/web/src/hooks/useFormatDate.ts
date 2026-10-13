@@ -68,7 +68,6 @@ export function useFormatDate() {
     today: zone ? calendarDateIn(new Date(), zone) : undefined,
     /** The locale every date is written in. */
     locale: DEFAULT_LOCALE,
-    format,
     /** The instant's day, e.g. "15/01/2024". */
     date: (value: Instant) => format(value, NUMERIC_DATE),
     /** Date and wall time, e.g. "15/01/2024, 14:30". */

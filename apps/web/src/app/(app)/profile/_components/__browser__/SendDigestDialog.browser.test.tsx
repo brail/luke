@@ -27,9 +27,11 @@ vi.mock('../../../../../lib/trpc', () => ({
   },
 }));
 
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 't' }, status: 'authenticated' }) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 afterEach(() => {
+  vi.useRealTimers();
   meQuery.data = undefined;
   mutateMock.mockReset();
 });
@@ -61,4 +63,17 @@ test.each(['Pacific/Kiritimati', 'Pacific/Pago_Pago'])('defaults to today in the
   const sent = mutateMock.mock.calls[0]?.[0] as { from: string; to: string } | undefined;
   expect([before, after]).toContain(sent?.from);
   expect(sent?.to).toBe(sent?.from);
+});
+
+test('a range already typed survives the day turning while the dialog is open', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-13T21:55:00Z')); // 23:55 in Rome
+  meQuery.data = { timezone: 'Europe/Rome' };
+  const screen = await render(<SendDigestDialog open onClose={() => undefined} />);
+  await screen.getByLabelText('Dal', { exact: true }).fill('2026-10-01');
+
+  vi.setSystemTime(new Date('2026-10-13T22:05:00Z')); // 00:05 on 14 October
+  await screen.rerender(<SendDigestDialog open onClose={() => undefined} />);
+
+  await expect.element(screen.getByLabelText('Dal', { exact: true })).toHaveValue('2026-10-01');
 });

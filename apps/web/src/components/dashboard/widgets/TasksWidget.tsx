@@ -4,7 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { calendarDateIn, calendarDateOf, type CalendarDate } from '@luke/core';
+import { calendarDateOf, type CalendarDate } from '@luke/core';
 
 import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
@@ -38,9 +38,8 @@ export function TasksWidget() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; label: string } | null>(null);
 
   const { data: tasks, isLoading } = trpc.dashboard.getTasks.useQuery();
-  const { zone } = useFormatDate();
   // No due badge until the profile zone is known: the browser's day is not the reader's.
-  const today = zone ? calendarDateIn(new Date(), zone) : undefined;
+  const { today } = useFormatDate();
 
   const invalidate = () => utils.dashboard.getTasks.invalidate();
 

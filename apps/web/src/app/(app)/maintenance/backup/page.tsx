@@ -259,7 +259,7 @@ export default function MaintenanceBackupPage() {
               {items.map(backup => (
                 <TableRow key={backup.id}>
                   <TableCell>
-                    {fmt.format(backup.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
+                    {fmt.dateTime(backup.createdAt)}
                   </TableCell>
                   <TableCell>
                     {SCOPE_LABEL[backup.scope]}

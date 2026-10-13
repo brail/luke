@@ -248,7 +248,7 @@ export function RestoreConfirmDialog({
               <p className="font-medium text-foreground">
                 Questa operazione SOVRASCRIVE completamente il database attuale con il contenuto
                 del backup del{' '}
-                {fmt.format(backup.createdAt, { dateStyle: 'long', timeStyle: 'short' })}
+                {fmt.dateTime(backup.createdAt)}
                 . Tutti i dati creati o modificati dopo quel momento andranno persi.
               </p>
               <p>

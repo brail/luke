@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import { formatInstant, type MaintenanceModeState } from '@luke/core';
+import { DEFAULT_LOCALE, formatInstant, NUMERIC_DATE_TIME, type MaintenanceModeState } from '@luke/core';
 
 import { MaintenanceBanner } from '../MaintenanceBanner';
 
@@ -67,7 +67,7 @@ test('a window days away is dated in the profile zone', async () => {
   const screen = await render(<MaintenanceBanner state={scheduled} isAdmin={false} canEnd={false} msRemaining={threeDays} />);
 
   // 09:00 UTC: 10:00 in Rome, 01:00 in Los Angeles.
-  await expect.element(screen.getByText('Manutenzione programmata — 2 nov 2026, 01:00')).toBeVisible();
+  await expect.element(screen.getByText('Manutenzione programmata — 02/11/2026, 01:00')).toBeVisible();
 });
 
 test('without a session the window is dated in the browser zone, which it names', async () => {
@@ -75,7 +75,7 @@ test('without a session the window is dated in the browser zone, which it names'
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const screen = await render(<MaintenanceBanner state={scheduled} isAdmin={false} canEnd={false} msRemaining={threeDays} />);
 
-  const at = formatInstant(new Date(AT), zone, { dateStyle: 'medium', timeStyle: 'short' }, 'it-IT');
+  const at = formatInstant(new Date(AT), zone, NUMERIC_DATE_TIME, DEFAULT_LOCALE);
   await expect.element(screen.getByText(`Manutenzione programmata — ${at} (${zone})`)).toBeVisible();
 });
 

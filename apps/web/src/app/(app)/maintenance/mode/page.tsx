@@ -26,8 +26,6 @@ const STATUS_LABEL: Record<MaintenanceModeStatus, string> = {
   ACTIVE: 'Attiva',
 };
 
-const DATE_TIME: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
-
 /** The earliest value the `datetime-local` field offers (`YYYY-MM-DDTHH:mm`): 5 minutes from now, read in `zone`. */
 function minDateTimeLocal(zone: string): string {
   const soon = new Date(Date.now() + 5 * 60 * 1000);
@@ -124,12 +122,12 @@ export default function MaintenanceModePage() {
               </Badge>
               {state.status === 'SCHEDULED' && state.scheduledAt && (
                 <span className="text-sm text-muted-foreground">
-                  Prevista per {fmt.format(state.scheduledAt, DATE_TIME)}
+                  Prevista per {fmt.dateTime(state.scheduledAt)}
                 </span>
               )}
               {state.status === 'ACTIVE' && state.activatedAt && (
                 <span className="text-sm text-muted-foreground">
-                  Attiva dalle {fmt.format(state.activatedAt, DATE_TIME)}
+                  Attiva dalle {fmt.dateTime(state.activatedAt)}
                 </span>
               )}
             </div>

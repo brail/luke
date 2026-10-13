@@ -51,7 +51,7 @@ function ScheduledNotice({ message, scheduledAt, msRemaining }: { message: strin
   // imminent switch to the live countdown, where seconds matter.
   const remaining =
     tier === 'far' || tier === 'normal'
-      ? fmt.format(scheduledAt, { dateStyle: 'medium', timeStyle: 'short' })
+      ? fmt.dateTime(scheduledAt)
       : `tra ${formatCountdown(msRemaining)}`;
   return (
     <div className={`flex items-center justify-center gap-2 px-4 ${TIER_STYLE[tier]}`}>

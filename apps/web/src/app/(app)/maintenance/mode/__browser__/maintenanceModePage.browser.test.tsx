@@ -71,5 +71,5 @@ test('a scheduled window is shown in the profile zone', async () => {
   h.state = { status: 'SCHEDULED', scheduledAt: '2030-01-15T09:00:00.000Z', activatedAt: null, message: null };
   const screen = await render(<MaintenanceModePage />);
 
-  await expect.element(screen.getByText('Prevista per 15 gen 2030, 01:00')).toBeVisible();
+  await expect.element(screen.getByText('Prevista per 15/01/2030, 01:00')).toBeVisible();
 });
