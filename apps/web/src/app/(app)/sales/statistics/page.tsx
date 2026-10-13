@@ -22,7 +22,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { triggerDownload } from '../../../../lib/download';
-import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -39,22 +38,22 @@ const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
 
 /**
  * The "last sync" and "next sync" labels of a NAV sync card: when the header table last synced,
- * and, with auto-sync on, when it is due next. `formatDateTime` writes an instant in the reader
- * zone (`useFormatDate().dateTime`).
+ * and, with auto-sync on, when it is due next, written by the reader-zone formatters of
+ * `useFormatDate`.
  */
 function syncStatusInfo(
   state: { tables: { tableName: string; lastSyncedAt: Date | string | null }[] } | null | undefined,
   schedule: { autoSyncEnabled: boolean; intervalMinutes: number } | null | undefined,
   tableName: string,
-  formatDateTime: (instant: Date) => string,
+  fmt: Pick<ReturnType<typeof useFormatDate>, 'dateTime' | 'relative'>,
 ): { lastSyncLabel: string; nextSyncLabel: string | null } | null {
   const lastSyncedAt = state?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
   if (!lastSyncedAt) return null;
   const lastSync = new Date(lastSyncedAt);
-  const lastSyncLabel = `${formatDateTime(lastSync)} (${formatRelativeTime(lastSync)})`;
+  const lastSyncLabel = `${fmt.dateTime(lastSync)} (${fmt.relative(lastSync)})`;
   if (!schedule?.autoSyncEnabled || !schedule.intervalMinutes) return { lastSyncLabel, nextSyncLabel: null };
   const nextSync = new Date(lastSync.getTime() + schedule.intervalMinutes * 60_000);
-  const nextSyncLabel = nextSync.getTime() - Date.now() < 60_000 ? 'imminente' : formatRelativeTime(nextSync, { ahead: true });
+  const nextSyncLabel = nextSync.getTime() - Date.now() < 60_000 ? 'imminente' : fmt.relative(nextSync, { ahead: true });
   return { lastSyncLabel, nextSyncLabel };
 }
 
@@ -337,7 +336,7 @@ export default function StatisticsPage() {
   };
 
   // Portafoglio sync state
-  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header', fmt.dateTime);
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header', fmt);
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -383,7 +382,7 @@ export default function StatisticsPage() {
   };
 
   // Kimo sync state
-  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header', fmt.dateTime);
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header', fmt);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ afterEach(() => {
   meQuery.data = undefined;
   meQuery.error = null;
   session.status = 'authenticated';
+  vi.useRealTimers();
   toastError.mockReset();
 });
 
@@ -70,6 +71,16 @@ test('without a session there is no profile zone: the browser zone dates instant
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   expect(result.current).toMatchObject({ ready: true, zone });
   expect(result.current.dateTime(INSTANT)).toBe(`${formatInstant(new Date(INSTANT), zone, NUMERIC_DATE_TIME, 'it-IT')} (${zone})`);
+});
+
+test('a relative time counts days in the profile zone, not the browser zone', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  // 01:00 on 17 January in Shanghai, 18:00 on 16 January in Rome; INSTANT is 15 January either way.
+  vi.setSystemTime(new Date('2026-01-16T17:00:00Z'));
+  meQuery.data = { timezone: 'Asia/Shanghai', locale: 'it-IT' };
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current.relative(INSTANT)).toBe('l’altro ieri');
 });
 
 test('a profile zone this browser does not know is reported like a failed read, never thrown', async () => {

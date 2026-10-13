@@ -38,9 +38,9 @@ import {
   TabsList,
   TabsTrigger,
 } from '../../../../components/ui/tabs';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { numberInputProps } from '../../../../lib/numberInput';
-import { formatRelativeTime } from '../../../../lib/relativeTime';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../lib/utils';
@@ -226,6 +226,7 @@ function SyncScheduleCard({
 function PortafoglioSyncTab() {
 
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const canSync = can('sales:read');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
@@ -303,7 +304,7 @@ function PortafoglioSyncTab() {
                       </td>
                       <td className="px-3 py-1.5 text-right text-muted-foreground">
                         {t.lastSyncedAt
-                          ? new Date(t.lastSyncedAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })
+                          ? fmt.dateTime(t.lastSyncedAt)
                           : '—'}
                       </td>
                     </tr>
@@ -323,6 +324,7 @@ function PortafoglioSyncTab() {
 function KimoSyncTab() {
 
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const canSync = can('sales:read');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
@@ -400,7 +402,7 @@ function KimoSyncTab() {
                       </td>
                       <td className="px-3 py-1.5 text-right text-muted-foreground">
                         {t.lastSyncedAt
-                          ? new Date(t.lastSyncedAt).toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })
+                          ? fmt.dateTime(t.lastSyncedAt)
                           : '—'}
                       </td>
                     </tr>
@@ -438,12 +440,13 @@ function LastSyncLabel({
   tableName: string;
   staleAfterMinutes: number;
 }) {
+  const fmt = useFormatDate();
   const lastSyncedAt = syncState?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
   if (!lastSyncedAt || syncState?.isRunning) return null;
   const isStale = minutesSince(lastSyncedAt) > staleAfterMinutes;
   return (
     <span className={cn('text-sm', isStale ? 'text-amber-500' : 'text-muted-foreground')}>
-      Ultimo sync: {formatRelativeTime(lastSyncedAt)}
+      Ultimo sync: {fmt.relative(lastSyncedAt)}
       {isStale && ' ⚠︎'}
     </span>
   );
@@ -480,6 +483,7 @@ function NavSyncTab({
 }) {
 
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const canUpdate = can('config:update');
 
   // ── Filter query ───────────────────────────────────────────────────────────
@@ -653,7 +657,7 @@ function NavSyncTab({
                 {selectedNavNos.size} {entityLabel.toLowerCase()} selezionati
                 {filterQuery.data?.updatedAt && (
                   <span className="ml-2 text-xs text-muted-foreground">
-                    — salvato {new Date(filterQuery.data.updatedAt).toLocaleString('it-IT')}
+                    — salvato {fmt.dateTime(filterQuery.data.updatedAt)}
                   </span>
                 )}
               </Badge>

@@ -6,10 +6,8 @@ import { toast } from 'sonner';
 
 import { calendarDateIn, DEFAULT_LOCALE, formatInstant, isValidTimeZone, NUMERIC_DATE, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
 
+import { formatRelativeTime, PENDING } from '../lib/relativeTime';
 import { trpc } from '../lib/trpc';
-
-/** Shown while the zone is unknown. */
-const PENDING = '…';
 
 /** An instant, as a `Date` or its ISO string — never a `CalendarDate`, which `formatCalendarDate` writes without a zone. */
 type Instant = Date | (string & { readonly __brand?: never });
@@ -25,8 +23,8 @@ function browserZone(): string {
  * locale dates are written in until the i18n cycle (`DEFAULT_LOCALE`). Until `me.get` has answered
  * (`ready` false) the formatters return a placeholder; if it fails, `error` is set, one toast says
  * so, and the placeholder stays: no other zone stands in (ADR-035). A reader without a session (the
- * sign-in page) has no profile zone: the browser zone dates instants, and every formatted value
- * names it.
+ * sign-in page) has no profile zone: the browser zone dates instants, and every absolute value
+ * names it (a relative one does not).
  *
  * @example
  * ```tsx
@@ -77,6 +75,8 @@ export function useFormatDate() {
     dateTime: (value: Instant) => format(value, NUMERIC_DATE_TIME),
     /** Wall time only, e.g. "14:30". */
     time: (value: Instant) => format(value, NUMERIC_TIME),
+    /** Relative to now, days counted in the reader zone, e.g. "5 minuti fa", "ieri" (`formatRelativeTime`). */
+    relative: (value: Instant, options?: { ahead?: boolean }) => formatRelativeTime(value, zone, options),
   };
 }
 

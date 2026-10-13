@@ -39,6 +39,7 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 't' }, status: 'authenticated' }) }));
 vi.mock('../../../../hooks/usePermission', () => ({ usePermission: () => ({ can: (p: string) => h.can(p) }) }));
 vi.mock('../../../../hooks/useStorageUpload', () => ({
   useStorageUpload: () => ({ upload: vi.fn(), isUploading: false, progress: 0 }),
@@ -50,6 +51,7 @@ vi.mock('../../../../lib/trpc', () => {
   return {
     trpc: {
       useUtils: () => utils,
+      me: { get: { useQuery: () => ({ data: { timezone: 'Europe/Rome' }, error: null }) } },
       sales: {
         statistics: {
           portafoglio: { getSyncState: syncState, triggerSync: mutation },
