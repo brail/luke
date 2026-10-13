@@ -10,13 +10,13 @@ import {
   UserProfileSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
-  wallTimeIn,
+  greetingAt,
 } from '@luke/core';
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
-import { getTimeBasedGreeting, GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
+import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
@@ -509,11 +509,10 @@ export const meRouter = router({
     ]);
 
     const timeZone = await resolveUserTimeZone(ctx.prisma, { id: userId, timezone: user?.timezone ?? '' }, ctx.logger);
-    const hour = Number(wallTimeIn(new Date(), timeZone).slice(0, 2));
 
     return {
       enabled: true as const,
-      greeting: getTimeBasedGreeting(hour),
+      greeting: greetingAt(new Date(), timeZone),
       userName: user?.firstName ?? '',
       intro: pickRandom(GREETING_INTROS),
       ...content,

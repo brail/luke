@@ -6,10 +6,10 @@
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { greetingAt } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { deleteConfig, getConfig, saveConfig } from '../src/lib/configManager';
-import { getTimeBasedGreeting } from '../src/lib/greetingPhrases';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
@@ -25,8 +25,7 @@ afterEach(() => {
 
 /** The greeting a reader in `timeZone` should get right now. */
 function greetingIn(timeZone: string): string {
-  const hour = new Intl.DateTimeFormat('en-GB', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(new Date());
-  return getTimeBasedGreeting(Number(hour));
+  return greetingAt(new Date(), timeZone);
 }
 
 describe('User.timezone on write', () => {
