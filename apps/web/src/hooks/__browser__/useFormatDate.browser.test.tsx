@@ -71,6 +71,15 @@ test('without a session there is no profile zone: the browser zone dates instant
   expect(result.current.dateTime(INSTANT)).toBe(`${formatInstant(new Date(INSTANT), zone, NUMERIC_DATE_TIME, 'it-IT')} (${zone})`);
 });
 
+test('a profile zone this browser does not know is reported like a failed read, never thrown', async () => {
+  meQuery.data = { timezone: 'Mars/Olympus_Mons', locale: 'it-IT' };
+  const { result } = await renderHook(() => useFormatDate());
+
+  expect(result.current.dateTime(INSTANT)).toBe('…');
+  expect(result.current.ready).toBe(false);
+  await vi.waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+});
+
 test('a failed profile read is reported once and leaves the placeholder', async () => {
   meQuery.error = new Error('down');
   const { result } = await renderHook(() => useFormatDate());

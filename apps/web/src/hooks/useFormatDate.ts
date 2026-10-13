@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { DEFAULT_LOCALE, formatInstant, isValidTimeZone, NUMERIC_DATE, NUMERIC_DATE_TIME, NUMERIC_TIME } from '@luke/core';
@@ -42,8 +42,11 @@ export function useFormatDate() {
     staleTime: 5 * 60 * 1000,
   });
   const sessionless = status === 'unauthenticated';
-  const zone = sessionless ? browserZone() : data?.timezone;
-  const failed = !zone && !!error;
+  const profileZone = data?.timezone;
+  // A zone this browser's `Intl` does not know (older zone data than the server's) is unavailable,
+  // like a failed read: formatting with it would throw during render.
+  const zone = sessionless ? browserZone() : profileZone && isValidTimeZone(profileZone) ? profileZone : undefined;
+  const failed = !zone && (!!error || !!profileZone);
 
   useEffect(() => {
     // One toast however many components format dates: sonner replaces a toast with the same id.
@@ -73,4 +76,19 @@ export function useFormatDate() {
     /** Wall time only, e.g. "14:30". */
     time: (value: Instant) => format(value, NUMERIC_TIME),
   };
+}
+
+/**
+ * The reader zone as the calling form first knew it, `undefined` until then. A form names it next
+ * to its time fields and converts typed wall times with it, so a profile change while the form is
+ * open does not reinterpret what was typed (ADR-035). It is captured once per mount: a dialog calls
+ * it from a body mounted only while the dialog is open.
+ */
+export function useFormZone(): string | undefined {
+  const { zone } = useFormatDate();
+  const [captured, setCaptured] = useState(zone);
+  // Set once, during render: React's pattern for state that depends on an earlier render (React
+  // discards this render's output and renders again with the state set).
+  if (captured === undefined && zone !== undefined) setCaptured(zone);
+  return captured;
 }
