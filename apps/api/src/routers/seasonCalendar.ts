@@ -40,6 +40,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
+import { isForeignKeyViolation } from '../lib/error.js';
 import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -714,11 +715,26 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CalendarEventPersonalNoteInputSchema)
     .mutation(async ({ input, ctx }) => {
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
+        select: { calendar: { select: { brandId: true } } },
+      });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx, event.calendar.brandId);
+
       if (input.body.trim() === '') {
         await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
         return null;
       }
-      return upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma);
+      try {
+        return await upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma);
+      } catch (err) {
+        // The event was deleted after the lookup above: the lookup's answer, not a 500.
+        if (isForeignKeyViolation(err, 'calendar_event_personal_notes_eventId_fkey')) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+        }
+        throw err;
+      }
     }),
 
   /**
@@ -733,6 +749,13 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ eventId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
+      const event = await ctx.prisma.calendarEvent.findUnique({
+        where: { id: input.eventId },
+        select: { calendar: { select: { brandId: true } } },
+      });
+      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx, event.calendar.brandId);
+
       await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
       return { success: true };
     }),
@@ -1009,6 +1032,7 @@ export const seasonCalendarRouter = router({
         },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx, event.calendar.brandId);
 
       const [candidates, audience] = await Promise.all([
         listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma),
@@ -1048,6 +1072,7 @@ export const seasonCalendarRouter = router({
         select: { title: true, calendar: { select: { brandId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx, event.calendar.brandId);
 
       await ctx.prisma.$transaction(async tx => {
         const accessMap = await resolveBrandAccess(input.userIds, tx);
@@ -1120,9 +1145,10 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await ctx.prisma.calendarEvent.findUnique({
         where: { id: input.eventId },
-        select: { title: true },
+        select: { title: true, calendar: { select: { brandId: true } } },
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      await assertBrandAccess(ctx, event.calendar.brandId);
 
       await ctx.prisma.calendarEventUserVisibility.deleteMany({
         where: { eventId: input.eventId, userId: { in: input.userIds } },

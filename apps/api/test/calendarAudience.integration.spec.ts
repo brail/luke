@@ -317,7 +317,38 @@ describe('listGrantCandidates — the share picker', () => {
       const candidates = await caller.seasonCalendar.listGrantCandidates({ eventId: eventY });
       expect(candidates.find(c => c.id === userC)?.alreadyGranted).toBe(true);
     } finally {
-      await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: eventY, userId: userC } } });
+      await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: eventY, userId: userC } } }).catch(() => {});
+    }
+  });
+});
+
+describe("share procedures — the caller's brand boundary", () => {
+  let editorXSession: UserSession; // teamCX: fnC, brandX — may update calendars, not brandY's
+
+  beforeAll(async () => {
+    const editor = await createTestUser('editor');
+    editorXSession = editor.session;
+    await grantBrandAccess(prisma, { functionId: fnC, brandIds: [brandX], userIds: [editor.user.id], label: 'Team C/X' });
+  });
+
+  it('refuses to list, grant, revoke or note on an event of a brand the caller has no access to', async () => {
+    const viewer = createCallerWithSession(userXSession); // brandX only
+    await expectToThrow(viewer.seasonCalendar.listGrantCandidates({ eventId: eventY }), { code: 'FORBIDDEN' });
+    await expectToThrow(viewer.seasonCalendar.upsertNote({ eventId: eventY, body: 'note' }), { code: 'FORBIDDEN' });
+    await expectToThrow(viewer.seasonCalendar.deleteNote({ eventId: eventY }), { code: 'FORBIDDEN' });
+    expect(await prisma.calendarEventPersonalNote.count({ where: { eventId: eventY } })).toBe(0);
+
+    const editor = createCallerWithSession(editorXSession);
+    await expectToThrow(editor.seasonCalendar.grantUserVisibility({ eventId: eventY, userIds: [userC] }), { code: 'FORBIDDEN' });
+    expect(await prisma.calendarEventUserVisibility.count({ where: { eventId: eventY } })).toBe(0);
+
+    // An existing share, so a refused revoke has something it must leave in place.
+    await prisma.calendarEventUserVisibility.create({ data: { eventId: eventY, userId: userC } });
+    try {
+      await expectToThrow(editor.seasonCalendar.revokeUserVisibility({ eventId: eventY, userIds: [userC] }), { code: 'FORBIDDEN' });
+      expect(await prisma.calendarEventUserVisibility.count({ where: { eventId: eventY } })).toBe(1);
+    } finally {
+      await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: eventY, userId: userC } } }).catch(() => {});
     }
   });
 });

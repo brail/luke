@@ -87,8 +87,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   seasonCalendar: {
     reason:
-      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
-    uncovered: 19,
+      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), with revokeUserVisibility, upsertNote and deleteNote only on their brand-scope refusal, getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
+    uncovered: 16,
   },
   integrations: {
     reason:
