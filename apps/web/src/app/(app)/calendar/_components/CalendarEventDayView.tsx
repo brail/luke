@@ -3,21 +3,26 @@
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { addCalendarDays, calendarDateIn, type CalendarDate, formatCalendarDate, instantAt, wallTimeIn } from '@luke/core';
+
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { cancelledClass } from '../constants';
-import { addDays, canEditMilestone, groupBadge, groupEventsByDay, groupTooltip, hoursWithinDay, resolveBrandColor, sameDay } from '../utils';
+import { canEditMilestone, groupBadge, groupEventsByDay, groupTooltip, hoursWithinDay, resolveBrandColor, wallMinutes } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {
   milestones: CalendarEvent[];
-  viewDate: Date;
-  onViewDateChange: (d: Date) => void;
+  viewDate: CalendarDate;
+  /** The reader zone: the hour grid and today are read in it. */
+  zone: string;
+  onViewDateChange: (d: CalendarDate) => void;
   onEventClick: (id: string) => void;
   onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
-  onDayClick?: (isoDate: string) => void;
+  /** Called with the ISO instant at which the clicked hour starts in `zone`. */
+  onDayClick?: (isoInstant: string) => void;
   activeBrandId?: string;
   brandColorMap: Record<string, string>;
   canUpdate?: boolean;
@@ -33,14 +38,6 @@ const LABEL_W = 52;
 const SNAP_MIN = 15;
 const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i);
 
-function timeLabel(date: Date): string {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function dayLabel(date: Date): string {
-  return date.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-}
-
 type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt: Date; origEndAt: Date | null };
 
 /**
@@ -51,33 +48,33 @@ type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt
  * via `onEventUpdate` in 15-minute snaps.
  *
  * @param onEventUpdate - Called after a drag completes with the new ISO timestamps.
- * @param onDayClick - Called with the ISO timestamp of the clicked hour slot.
+ * @param onDayClick - Called with the ISO instant of the clicked hour slot.
  * @param onNoteClick - Called with the event ID to open the personal-note dialog.
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map from `assignBrandColors`.
  */
-export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate, showGroupBadge }: Props) {
-  const today = useMemo(() => new Date(), []);
-  const isToday = sameDay(viewDate, today);
+export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, brandColorMap, canUpdate, showGroupBadge }: Props) {
+  // Read at every render, not once per mount: the page may stay open past midnight.
+  const today = calendarDateIn(new Date(), zone);
+  const isToday = viewDate === today;
 
-  const dayEvents = useMemo(() => groupEventsByDay(milestones, [viewDate])[0]!, [milestones, viewDate]);
+  const dayEvents = useMemo(() => groupEventsByDay(milestones, [viewDate], zone)[0]!, [milestones, viewDate, zone]);
 
   const allDayEvents = useMemo(() => dayEvents.filter(m => m.allDay), [dayEvents]);
   const timedEvents = useMemo(() => dayEvents.filter(m => !m.allDay), [dayEvents]);
 
-  const [nowMinutes, setNowMinutes] = useState<number>(() => today.getHours() * 60 + today.getMinutes());
+  const [nowMinutes, setNowMinutes] = useState<number>(() => wallMinutes(new Date(), zone));
   const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isToday) return;
     const tick = () => {
-      const n = new Date();
-      const mins = n.getHours() * 60 + n.getMinutes();
+      const mins = wallMinutes(new Date(), zone);
       setNowMinutes(prev => prev === mins ? prev : mins);
     };
     const id = setInterval(tick, 60_000);
     return () => clearInterval(id);
-  }, [isToday]);
+  }, [isToday, zone]);
 
   // Only scroll to current time on mount or when switching to today — not on every tick
   useEffect(() => {
@@ -135,12 +132,12 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
   return (
     <div className="flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b">
-        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
         <span className={cn('text-sm font-medium flex-1 text-center capitalize', isToday && 'text-blue-600 dark:text-blue-400')}>
-          {dayLabel(viewDate)}
+          {formatCalendarDate(viewDate, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </span>
-        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(viewDate, 1))}><ChevronRight size={14} /></Button>
-        <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+        <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(viewDate, 1))}><ChevronRight size={14} /></Button>
+        <Button variant="outline" size="xs" onClick={() => onViewDateChange(today)}>Oggi</Button>
       </div>
 
       {allDayEvents.length > 0 && (
@@ -196,8 +193,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                   className="flex-1 cursor-pointer hover:bg-muted/20 transition-colors"
                   onClick={() => {
                     if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
-                    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate(), h, 0, 0);
-                    onDayClick(d.toISOString());
+                    onDayClick(instantAt(viewDate, `${String(h).padStart(2, '0')}:00`, zone).toISOString());
                   }}
                 />
               )}
@@ -222,7 +218,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
             const end = m.endAt ? new Date(m.endAt) : new Date(start.getTime() + 3_600_000);
             // Clipped to the viewed day first: an overnight event is drawn up to midnight on its
             // first day and from midnight on the next, never from its own hours on both.
-            const [dayStartH, dayEndH] = hoursWithinDay(m, viewDate);
+            const [dayStartH, dayEndH] = hoursWithinDay(m, viewDate, zone);
             const startH = dayStartH + deltaMin / 60;
             const endH = dayEndH + deltaMin / 60;
             const clampedStart = Math.max(startH, GRID_START);
@@ -260,7 +256,7 @@ export function CalendarEventDayView({ milestones, viewDate, onViewDateChange, o
                   {/* 11px: below Tailwind's text-xs (12px) floor; dense event chip */}
                   {height >= ROW_H * 0.8 && (
                     <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {timeLabel(previewStart)}{m.endAt ? ` – ${timeLabel(previewEnd)}` : ''}
+                      {wallTimeIn(previewStart, zone)}{m.endAt ? ` – ${wallTimeIn(previewEnd, zone)}` : ''}
                     </span>
                   )}
                 </button>

@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { type CalendarDate } from '@luke/core';
+
+import { at as atInstant, date, PROFILE, ZONE } from '../../__browser__/zoneFixtures';
 import { CalendarEventDayView } from '../CalendarEventDayView';
 import { CalendarEventGantt } from '../CalendarEventGantt';
 import { CalendarEventMonthView } from '../CalendarEventMonthView';
@@ -16,8 +19,12 @@ import type { HolidayMap } from '../useHolidays';
  * change and a timed event is clipped to the day it is drawn on.
  */
 
-const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const noop = () => {};
+
+/** The instant the profile wall clock reads `time` on `day`, as an ISO string. */
+function at(day: string, time: string): string {
+  return atInstant(day, time).toISOString();
+}
 
 function event(id: string, startAt: string, endAt: string | null, allDay: boolean): CalendarEventItem {
   return { id, title: id, startAt, endAt, allDay, publishExternally: false, visibilities: [], planningGroupId: 'g1' };
@@ -28,7 +35,7 @@ const HOLIDAY: HolidayMap = new Map([['2026-12-25', [{ countryCode: 'FX', name: 
 describe(`calendar views (${ZONE})`, () => {
   test('week view shades the holiday on its own day row', async () => {
     const screen = await render(
-      <CalendarEventWeekView milestones={[]} viewDate={new Date(2026, 11, 23)} onViewDateChange={noop}
+      <CalendarEventWeekView milestones={[]} viewDate={date('2026-12-23')} zone={ZONE} onViewDateChange={noop}
         onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} holidayDates={HOLIDAY} />,
     );
     // The day number and the holiday badges share the row header.
@@ -39,7 +46,7 @@ describe(`calendar views (${ZONE})`, () => {
   test('month view starts an all-day event on its own date', async () => {
     const screen = await render(
       <CalendarEventMonthView milestones={[event('Evento A', '2026-12-10T00:00:00.000Z', null, true)]}
-        viewDate={new Date(2026, 11, 1)} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
+        viewDate={date('2026-12-01')} zone={ZONE} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
     );
     const chips = screen.getByText('Evento A', { exact: true }).elements();
     expect(chips).toHaveLength(1);
@@ -50,7 +57,7 @@ describe(`calendar views (${ZONE})`, () => {
   test('week view offers the drag on the first day of a multi-day all-day event only', async () => {
     const screen = await render(
       <CalendarEventWeekView milestones={[event('Evento A', '2026-12-22T00:00:00.000Z', '2026-12-23T00:00:00.000Z', true)]}
-        viewDate={new Date(2026, 11, 23)} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop}
+        viewDate={date('2026-12-23')} zone={ZONE} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop}
         brandColorMap={{}} canUpdate />,
     );
     const draggable = screen.container.querySelectorAll('[aria-roledescription="draggable"]');
@@ -100,18 +107,66 @@ describe(`calendar views (${ZONE})`, () => {
 
   test('day view clips an overnight timed event to the day it is drawn on', async () => {
     const overnight = event('Notte', new Date(2026, 3, 13, 20, 0).toISOString(), new Date(2026, 3, 14, 9, 0).toISOString(), false);
-    const block = async (viewDate: Date) => {
+    const block = async (viewDate: CalendarDate) => {
       const screen = await render(
-        <CalendarEventDayView milestones={[overnight]} viewDate={viewDate} onViewDateChange={noop}
+        <CalendarEventDayView milestones={[overnight]} viewDate={viewDate} zone={ZONE} onViewDateChange={noop}
           onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
       );
       const el = screen.getByText('Notte', { exact: true }).element().closest<HTMLElement>('[class*="absolute rounded-r"]');
       const style = { top: el?.style.top, height: el?.style.height };
-      screen.unmount();
+      await screen.unmount();
       return style;
     };
     // The grid shows 07:00–22:00 at 56 px an hour: Monday 20–24 is drawn 20–22, Tuesday 0–9 is 07–09.
-    expect(await block(new Date(2026, 3, 13))).toEqual({ top: `${13 * 56}px`, height: `${2 * 56}px` });
-    expect(await block(new Date(2026, 3, 14))).toEqual({ top: '0px', height: `${2 * 56}px` });
+    expect(await block(date('2026-04-13'))).toEqual({ top: `${13 * 56}px`, height: `${2 * 56}px` });
+    expect(await block(date('2026-04-14'))).toEqual({ top: '0px', height: `${2 * 56}px` });
+  });
+});
+
+describe(`calendar views in the profile zone (browser ${ZONE}, profile ${PROFILE})`, () => {
+  test('month view puts a timed event in the cell of its profile date', async () => {
+    // Half past midnight is the day before west of the profile zone, half past eleven the day after east of it.
+    for (const time of ['00:30', '23:30']) {
+      const screen = await render(
+        <CalendarEventMonthView milestones={[event('Evento A', at('2026-12-10', time), null, false)]}
+          viewDate={date('2026-12-01')} zone={PROFILE} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
+      );
+      const cell = screen.getByText('Evento A', { exact: true }).element().closest('[class*="min-h-"]');
+      expect(cell?.querySelector('span')?.textContent).toBe('10');
+      await screen.unmount();
+    }
+  });
+
+  test('week view puts a timed event on the row of its profile date', async () => {
+    for (const time of ['00:30', '23:30']) {
+      const screen = await render(
+        <CalendarEventWeekView milestones={[event('Evento A', at('2026-12-23', time), null, false)]}
+          viewDate={date('2026-12-23')} zone={PROFILE} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
+      );
+      const row = screen.getByText('Evento A', { exact: true }).element().closest('.flex.border-b');
+      expect(row?.querySelector('.rounded-full')?.textContent).toBe('23');
+      await screen.unmount();
+    }
+  });
+
+  test('day view draws a timed event at its profile hours', async () => {
+    const screen = await render(
+      <CalendarEventDayView milestones={[event('Riunione', at('2026-04-13', '09:00'), at('2026-04-13', '11:00'), false)]}
+        viewDate={date('2026-04-13')} zone={PROFILE} onViewDateChange={noop} onEventClick={noop} onEventUpdate={noop} brandColorMap={{}} />,
+    );
+    const el = screen.getByText('Riunione', { exact: true }).element().closest<HTMLElement>('[class*="absolute rounded-r"]');
+    expect({ top: el?.style.top, height: el?.style.height }).toEqual({ top: `${2 * 56}px`, height: `${2 * 56}px` });
+    expect(el?.textContent).toContain('09:00 – 11:00');
+  });
+
+  test('day view sends the clicked hour as that profile wall time', async () => {
+    const clicks: string[] = [];
+    const screen = await render(
+      <CalendarEventDayView milestones={[]} viewDate={date('2026-04-13')} zone={PROFILE} onViewDateChange={noop}
+        onEventClick={noop} onEventUpdate={noop} onDayClick={iso => clicks.push(iso)} brandColorMap={{}} canUpdate />,
+    );
+    // The first hour slot of the 07:00–22:00 grid.
+    screen.container.querySelector<HTMLElement>('.cursor-pointer')!.click();
+    expect(clicks).toEqual([at('2026-04-13', '07:00')]);
   });
 });

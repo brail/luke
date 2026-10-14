@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { addCalendarDays, instantAt, parseCalendarDate, sameTimeZone, startOfDayIn, type CalendarDate } from '@luke/core';
+import { addCalendarDays, calendarDateIn, startOfDayIn, type CalendarDate } from '@luke/core';
 
 import {
   eventDays,
@@ -10,12 +10,15 @@ import {
   groupEventsByDay,
   hoursWithinDay,
   isStaleListError,
+  monthStart,
   moveEvent,
   moveEventTo,
   moveToCell,
   resizeEvent,
   sortByFirstDay,
 } from '../utils';
+
+import { at, date, PROFILE, ZONE } from './zoneFixtures';
 
 /**
  * The calendar views' day logic, run in a real Chromium under each zone of
@@ -26,7 +29,6 @@ import {
  * for its own offset; the DST cases find the zone's own transition days instead of assuming Rome's.
  */
 
-const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const HOUR = 3_600_000;
 
 type Ev = { startAt: string; endAt: string | null; allDay: boolean };
@@ -39,10 +41,9 @@ function timed(start: Date, end: Date | null): Ev {
   return { startAt: start.toISOString(), endAt: end ? end.toISOString() : null, allDay: false };
 }
 
-function date(s: string): CalendarDate {
-  const parsed = parseCalendarDate(s);
-  if (!parsed) throw new Error(`bad fixture date ${s}`);
-  return parsed;
+/** The browser-zone date of a local `Date` — how these invariants name a view cell. */
+function local(d: Date): CalendarDate {
+  return calendarDateIn(d, ZONE);
 }
 
 /** The day of `month` 2026 (1-based) whose local length is not 24 h in this zone, or `null`. */
@@ -65,22 +66,22 @@ describe(`calendar day helpers (${ZONE})`, () => {
   });
 
   test('groupEventsByDay puts an all-day event on its own cells, never the day before', () => {
-    const cells = [9, 10, 11, 12].map(d => new Date(2026, 2, d));
-    expect(groupEventsByDay([allDay('2026-03-10', '2026-03-11')], cells).map(g => g.length)).toEqual([0, 1, 1, 0]);
+    const cells = [9, 10, 11, 12].map(d => local(new Date(2026, 2, d)));
+    expect(groupEventsByDay([allDay('2026-03-10', '2026-03-11')], cells, ZONE).map(g => g.length)).toEqual([0, 1, 1, 0]);
   });
 
   test('a timed event ending at local midnight does not reach the next cell', () => {
     const ev = timed(new Date(2026, 3, 13, 22, 0), new Date(2026, 3, 14, 0, 0));
-    const cells = [new Date(2026, 3, 13), new Date(2026, 3, 14)];
-    expect(groupEventsByDay([ev], cells).map(g => g.length)).toEqual([1, 0]);
+    const cells = [local(new Date(2026, 3, 13)), local(new Date(2026, 3, 14))];
+    expect(groupEventsByDay([ev], cells, ZONE).map(g => g.length)).toEqual([1, 0]);
   });
 
   test('a timed event just after a short DST day is not also counted on it', () => {
     // A fixed 24 h window from the midnight of a 23-hour day overlaps the next day's first hour.
     const day = dstDay(3) ?? 10;
     const ev = timed(new Date(2026, 2, day + 1, 0, 30), new Date(2026, 2, day + 1, 0, 45));
-    const cells = [new Date(2026, 2, day), new Date(2026, 2, day + 1)];
-    expect(groupEventsByDay([ev], cells).map(g => g.length)).toEqual([0, 1]);
+    const cells = [local(new Date(2026, 2, day)), local(new Date(2026, 2, day + 1))];
+    expect(groupEventsByDay([ev], cells, ZONE).map(g => g.length)).toEqual([0, 1]);
   });
 
   test('moveEvent keeps an all-day event at UTC midnight across both DST changes', () => {
@@ -135,14 +136,13 @@ describe(`calendar day helpers (${ZONE})`, () => {
     expect([new Date(moved.startAt).getDate(), new Date(moved.startAt).getHours(), moved.endAt]).toEqual([9, 23, null]);
   });
 
-  test('moveToCell reads a cell id (its local midnight) as that local date, in every zone', () => {
-    // Month and week cells are droppables keyed by `day.toISOString()` of a local-midnight cell.
+  test('moveToCell lands an all-day event on the date its cell id names, in every zone', () => {
+    // Month and week cells are droppables keyed by their calendar date.
     for (const day of [22, 24, 28]) {
-      const id = new Date(2026, 11, day).toISOString();
-      expect(moveToCell(allDay('2026-12-22'), id)).toEqual(day === 22 ? null : { startAt: `2026-12-${day}T00:00:00.000Z`, endAt: null });
+      expect(moveToCell(allDay('2026-12-22'), `2026-12-${day}`, ZONE)).toEqual(day === 22 ? null : { startAt: `2026-12-${day}T00:00:00.000Z`, endAt: null });
     }
-    // Across the spring change the cell's local midnight is still its own date.
-    expect(moveToCell(allDay('2026-03-06'), new Date(2026, 2, 30).toISOString())!.startAt).toBe('2026-03-30T00:00:00.000Z');
+    expect(moveToCell(allDay('2026-03-06'), '2026-03-30', ZONE)!.startAt).toBe('2026-03-30T00:00:00.000Z');
+    expect(moveToCell(allDay('2026-03-06'), 'not-a-date', ZONE)).toBeNull();
   });
 
   test('resizeEvent sends only the end, and shrinks an all-day event down to its first day', () => {
@@ -166,11 +166,11 @@ describe(`calendar day helpers (${ZONE})`, () => {
 
   test('hoursWithinDay clips an overnight timed event to the viewed day', () => {
     const overnight = timed(new Date(2026, 3, 13, 20, 0), new Date(2026, 3, 14, 9, 0));
-    expect(hoursWithinDay(overnight, new Date(2026, 3, 13))).toEqual([20, 24]);
-    expect(hoursWithinDay(overnight, new Date(2026, 3, 14))).toEqual([0, 9]);
+    expect(hoursWithinDay(overnight, date('2026-04-13'), ZONE)).toEqual([20, 24]);
+    expect(hoursWithinDay(overnight, date('2026-04-14'), ZONE)).toEqual([0, 9]);
     const threeDays = timed(new Date(2026, 3, 13, 20, 0), new Date(2026, 3, 15, 9, 0));
-    expect(hoursWithinDay(threeDays, new Date(2026, 3, 14))).toEqual([0, 24]);
-    expect(hoursWithinDay(timed(new Date(2026, 3, 13, 10, 30), null), new Date(2026, 3, 13))).toEqual([10.5, 11.5]);
+    expect(hoursWithinDay(threeDays, date('2026-04-14'), ZONE)).toEqual([0, 24]);
+    expect(hoursWithinDay(timed(new Date(2026, 3, 13, 10, 30), null), date('2026-04-13'), ZONE)).toEqual([10.5, 11.5]);
   });
 
   test('expandDateRangeToIsoDates lists every stored date once across either DST change', () => {
@@ -197,23 +197,19 @@ describe(`calendar day helpers (${ZONE})`, () => {
     expect(isStaleListError({ data: null })).toBe(false);
   });
 
+  test('monthStart gives the first day of the month, months later', () => {
+    expect(monthStart(date('2026-12-15'))).toBe('2026-12-01');
+    expect(monthStart(date('2026-12-31'), 1)).toBe('2027-01-01');
+    expect(monthStart(date('2026-01-31'), -1)).toBe('2025-12-01');
+    expect(monthStart(date('2026-03-01'), -14)).toBe('2025-01-01');
+  });
+
   test('getIsoWeek reads a calendar date', () => {
     expect(getIsoWeek(date('2026-03-30'))).toBe(14);
     expect(getIsoWeek(date('2026-12-31'))).toBe(53);
     expect(getIsoWeek(date('2027-01-04'))).toBe(1);
   });
 });
-
-/**
- * The reader's profile zone, never the browser's (ADR-035): Rome, or Los Angeles where the browser
- * itself is in Rome. Each instance thus reads in a zone whose offset differs from its own.
- */
-const PROFILE = sameTimeZone(ZONE, 'Europe/Rome') ? 'America/Los_Angeles' : 'Europe/Rome';
-
-/** The instant the wall clock of `zone` reads `time` on `day`. */
-function at(day: string, time: string, zone = PROFILE): Date {
-  return instantAt(date(day), time, zone);
-}
 
 describe(`calendar day helpers in a named zone (browser ${ZONE}, profile ${PROFILE})`, () => {
   test('a timed event sits on its dates in the zone passed, not in the browser zone', () => {
@@ -258,6 +254,28 @@ describe(`calendar day helpers in a named zone (browser ${ZONE}, profile ${PROFI
     expect(resizeEvent(timed(at('2026-03-05', '09:00'), at('2026-03-05', '11:00')), 10, PROFILE)).toEqual({
       endAt: at('2026-03-15', '11:00').toISOString(),
     });
+  });
+
+  test('groupEventsByDay puts a timed event in the cell of its profile date', () => {
+    for (const time of ['00:30', '23:30']) {
+      const cells = [date('2026-03-09'), date('2026-03-10'), date('2026-03-11')];
+      expect(groupEventsByDay([timed(at('2026-03-10', time), null)], cells, PROFILE).map(g => g.length)).toEqual([0, 1, 0]);
+    }
+  });
+
+  test('moveToCell lands a timed event on its cell date at the same profile wall time', () => {
+    for (const time of ['00:30', '23:30']) {
+      expect(moveToCell(timed(at('2026-12-22', time), null), '2026-12-24', PROFILE)).toEqual({ startAt: at('2026-12-24', time).toISOString(), endAt: null });
+    }
+  });
+
+  test('hoursWithinDay reads the profile wall clock, also on its 23-hour day', () => {
+    const overnight = timed(at('2026-04-13', '20:00'), at('2026-04-14', '09:00'));
+    expect(hoursWithinDay(overnight, date('2026-04-13'), PROFILE)).toEqual([20, 24]);
+    expect(hoursWithinDay(overnight, date('2026-04-14'), PROFILE)).toEqual([0, 9]);
+    // Rome springs forward on 29 March, Los Angeles on 8 March: 01:00–04:00 lasts two hours there.
+    const short = PROFILE === 'Europe/Rome' ? '2026-03-29' : '2026-03-08';
+    expect(hoursWithinDay(timed(at(short, '01:00'), at(short, '04:00')), date(short), PROFILE)).toEqual([1, 4]);
   });
 
   test('resizeEvent keeps an end on a day start where the zone skips midnight, as moveEvent does', () => {

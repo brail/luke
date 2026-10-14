@@ -1,29 +1,21 @@
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { parseCalendarDate } from '@luke/core';
+
 import { CalendarEventMonthView } from '../CalendarEventMonthView';
 
 import type { HolidayEntry, HolidayMap } from '../useHolidays';
 
 /**
- * Timezone-sensitive regression proof for the December 2026 month grid's holiday lookup — runs
- * under every zone of `vitest.browser.timezone.config.mts` (the same
- * dedicated config `dateSerialization.timezone.browser.test.tsx` uses), never under the runner's
- * ambient default.
+ * The December 2026 month grid's holiday lookup, under every zone of
+ * `vitest.browser.timezone.config.mts`. The grid's cells and the `HolidayMap` keys are both
+ * calendar dates; a cell once built at local midnight and looked up by its UTC date
+ * (`day.toISOString().slice(0, 10)`) found the 25th's holiday on the 26th in Rome.
  *
- * The bug: `holidayDates?.get(day.toISOString().slice(0, 10))` converted the LOCAL calendar cell
- * `day` (built by `mondayOf`/`addDays`, both local-getter arithmetic — see `calendar/utils.ts`) to
- * UTC before looking it up in a `HolidayMap` keyed by the holiday's OWN calendar date (see
- * `useHolidays.ts` — a plain calendar date with no attached timezone, correctly represented as UTC
- * midnight, whose UTC-ISO string numerically equals the intended 'YYYY-MM-DD'). In Europe/Rome
- * (positive UTC offset), the local-midnight December 25 cell converts to UTC December 24 — the
- * lookup misses '2026-12-25' entirely, and the cell for December 26 (whose local midnight converts
- * to UTC December 25) incorrectly picks up the holiday instead. Fixed by `toLocalIsoDate(day)`,
- * which reads `day` back with the same local getters it was built from.
- *
- * December 2026 was chosen because its 42-cell grid (Monday Nov 30 – Sunday Jan 10, verified
- * separately) contains exactly one cell showing "25" and exactly one showing "26", so the plain
- * `getByText` lookups below are unambiguous.
+ * December 2026 was chosen because its 42-cell grid (Monday Nov 30 – Sunday Jan 10) contains
+ * exactly one cell showing "25" and exactly one showing "26", so the plain `getByText` lookups
+ * below are unambiguous.
  */
 
 function makeHolidayMap(dateKey: string, entry: HolidayEntry): HolidayMap {
@@ -37,7 +29,8 @@ describe(`CalendarEventMonthView holiday lookup (${Intl.DateTimeFormat().resolve
     const screen = await render(
       <CalendarEventMonthView
         milestones={[]}
-        viewDate={new Date(2026, 11, 1)}
+        viewDate={parseCalendarDate('2026-12-01')!}
+        zone={Intl.DateTimeFormat().resolvedOptions().timeZone}
         onViewDateChange={() => {}}
         onEventClick={() => {}}
         onEventUpdate={() => {}}

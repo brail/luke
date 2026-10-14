@@ -4,12 +4,12 @@ import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, u
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'react';
 
-import { calendarDaysBetween } from '@luke/core';
+import { addCalendarDays, calendarDateIn, calendarDaysBetween, type CalendarDate, formatCalendarDate, isoWeekOf, startOfIsoWeek } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, cancelledClass } from '../constants';
-import { addDays, canEditMilestone, cellDate, eventDays, getIsoWeek, groupBadge, groupEventsByDay, groupTooltip, mondayOf, moveToCell, resolveBrandColor, sameDay } from '../utils';
+import { canEditMilestone, eventDays, groupBadge, groupEventsByDay, groupTooltip, moveToCell, resolveBrandColor } from '../utils';
 
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
@@ -17,13 +17,16 @@ import { type HolidayEntry, type HolidayMap } from './useHolidays';
 
 interface Props {
   milestones: CalendarEvent[];
-  viewDate: Date;
-  onViewDateChange: (d: Date) => void;
+  /** Any date of the week shown. */
+  viewDate: CalendarDate;
+  /** The reader zone: timed events and today are read in it. */
+  zone: string;
+  onViewDateChange: (d: CalendarDate) => void;
   onEventClick: (id: string) => void;
   onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
-  onDayClick?: (isoDate: string) => void;
-  onDayNumberClick?: (isoDate: string) => void;
+  onDayClick?: (date: CalendarDate) => void;
+  onDayNumberClick?: (date: CalendarDate) => void;
   activeBrandId?: string;
   canUpdate?: boolean;
   brandColorMap: Record<string, string>;
@@ -60,28 +63,27 @@ function WeekDayRow({ dayIso, isToday, isWeekend, isDragging, holidays, onDayCli
  * clicks navigate to the day view.
  *
  * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
- * @param onDayClick - Called with the ISO date string of an empty cell click.
- * @param onDayNumberClick - Called with the ISO date to navigate to day view.
+ * @param onDayClick - Called with the date of an empty cell click.
+ * @param onDayNumberClick - Called with the date to navigate to day view.
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  * @param holidayDates - HolidayMap used to shade holiday columns.
  */
-export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
-  const weekStart = useMemo(() => mondayOf(viewDate), [viewDate]);
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
-  const today = useMemo(() => new Date(), []);
+export function CalendarEventWeekView({ milestones, viewDate, zone, onViewDateChange, onEventClick, onEventUpdate, onNoteClick, onDayClick, onDayNumberClick, activeBrandId, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
+  const weekStart = startOfIsoWeek(viewDate);
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addCalendarDays(weekStart, i)), [weekStart]);
+  // Read at every render, not once per mount: the page may stay open past midnight.
+  const today = calendarDateIn(new Date(), zone);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
-  const byDay = useMemo(() => groupEventsByDay(milestones, days), [milestones, days]);
+  const byDay = useMemo(() => groupEventsByDay(milestones, days, zone), [milestones, days, zone]);
 
   const weekLabel = useMemo(() => {
-    const end = days[6]!;
-    const wn = getIsoWeek(cellDate(weekStart));
-    const startFmt = weekStart.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-    const endFmt = end.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
-    return `W${wn} · ${startFmt} – ${endFmt}`;
+    const startFmt = formatCalendarDate(weekStart, { day: 'numeric', month: 'short' });
+    const endFmt = formatCalendarDate(days[6]!, { day: 'numeric', month: 'short', year: 'numeric' });
+    return `W${isoWeekOf(weekStart).week} · ${startFmt} – ${endFmt}`;
   }, [weekStart, days]);
 
   const draggingEvent = useMemo(() => milestones.find(m => m.id === draggingId), [milestones, draggingId]);
@@ -92,51 +94,50 @@ export function CalendarEventWeekView({ milestones, viewDate, onViewDateChange, 
     if (!event.over || !canUpdate) return;
     const m = milestones.find(x => x.id === event.active.id as string);
     if (!m) return;
-    const moved = moveToCell(m, String(event.over.id));
+    const moved = moveToCell(m, String(event.over.id), zone);
     if (moved) onEventUpdate(m.id, moved);
-  }, [canUpdate, milestones, onEventUpdate]);
+  }, [canUpdate, milestones, onEventUpdate, zone]);
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex flex-col">
         <div className="flex items-center gap-2 px-4 py-2 border-b">
-          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
           <span className="text-sm font-medium flex-1 text-center">{weekLabel}</span>
-          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addDays(weekStart, 7))}><ChevronRight size={14} /></Button>
-          <Button variant="outline" size="xs" onClick={() => onViewDateChange(new Date())}>Oggi</Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(weekStart, 7))}><ChevronRight size={14} /></Button>
+          <Button variant="outline" size="xs" onClick={() => onViewDateChange(today)}>Oggi</Button>
         </div>
 
         <div className="flex-1">
           {days.map((day, i) => {
-            const isToday = sameDay(day, today);
+            const isToday = day === today;
             const isWeekend = i >= 5;
             const items = byDay[i] ?? [];
-            const dayKey = cellDate(day);
             return (
               <div key={i} className={cn('flex border-b last:border-b-0', isToday && 'bg-blue-50/20 dark:bg-blue-950/10')}>
                 <div className={cn('w-20 shrink-0 px-2 py-1.5 flex flex-col items-end justify-start border-r', isWeekend && 'bg-muted/20')}>
                   <span className="text-xs text-muted-foreground">{DAY_LABELS_IT[i]}</span>
                   <div className="flex items-center gap-0.5">
                     {/* 8px: below Tailwind's text-xs (12px) floor; dense holiday-code badge */}
-                    {holidayDates?.get(dayKey)?.map((h, hi) => (
+                    {holidayDates?.get(day)?.map((h, hi) => (
                       <span key={hi} className="text-[8px] font-mono font-semibold text-rose-500 leading-none" title={h.nameEn ?? h.name}>{h.countryCode}</span>
                     ))}
                     <span
                       className={cn('text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full shrink-0',
                         isToday && 'bg-blue-500 text-white', !isToday && 'text-foreground',
                         onDayNumberClick && 'cursor-pointer hover:ring-1 hover:ring-muted-foreground/40')}
-                      onClick={onDayNumberClick ? () => onDayNumberClick(day.toISOString()) : undefined}
+                      onClick={onDayNumberClick ? () => onDayNumberClick(day) : undefined}
                     >
-                      {day.getDate()}
+                      {Number(day.slice(8))}
                     </span>
                   </div>
                 </div>
-                <WeekDayRow dayIso={day.toISOString()} isToday={isToday} isWeekend={isWeekend} isDragging={!!draggingId}
-                  holidays={holidayDates?.get(dayKey)}
-                  onDayClick={canUpdate ? () => onDayClick?.(day.toISOString()) : undefined}>
+                <WeekDayRow dayIso={day} isToday={isToday} isWeekend={isWeekend} isDragging={!!draggingId}
+                  holidays={holidayDates?.get(day)}
+                  onDayClick={canUpdate ? () => onDayClick?.(day) : undefined}>
                   {items.map(m => {
-                    const [first, last] = eventDays(m);
-                    const isStart = first === dayKey;
+                    const [first, last] = eventDays(m, zone);
+                    const isStart = first === day;
                     const span = calendarDaysBetween(first, last);
                     const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
                     const hasNote = !!(m.notes?.[0]?.body);

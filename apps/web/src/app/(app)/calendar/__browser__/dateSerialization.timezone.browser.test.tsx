@@ -16,7 +16,7 @@ import { paramsFromLastReplace } from './navigationTestHelpers';
  * round-trip through `Date.prototype.toISOString()` (UTC) on write and `new Date(dateOnlyString)`
  * (also UTC, per the ISO-8601 date-only grammar) on read, while every OTHER calendar date — the
  * `previous`/`next`/`today` controls, a day/week-number click's underlying cell — is a LOCAL
- * midnight `Date` built with local getters/setters (`calendar/utils.ts`'s `startOfDay`/`addDays`).
+ * midnight `Date` (the calendar date a view sends, set at local midnight by the page's `localMidnight`).
  * Converting a local midnight to UTC and back is not the identity function except at UTC+0:
  * a positive offset (Rome) makes `toISOString().slice(0, 10)` report the PREVIOUS calendar day;
  * a negative offset (Los Angeles) makes `new Date('YYYY-MM-DD')` construct the PREVIOUS calendar

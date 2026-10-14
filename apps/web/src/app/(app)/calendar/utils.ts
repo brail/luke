@@ -8,40 +8,27 @@ import {
   initials,
   isEventDeleteLocked as isEventDeleteLockedCore,
   isoWeekOf,
+  parseCalendarDate,
   shiftEventByDays,
   startOfDayIn,
   utcMidnightOf,
+  wallTimeIn,
 } from '@luke/core';
 
 import { type CalendarEventItem } from './_components/types';
 
-/** Returns the Monday of the ISO week containing `d`, at midnight local time. */
-export function mondayOf(d: Date): Date {
-  const r = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
-  return r;
+/** The first day of the month `months` after the month of `date`. Throws a `RangeError` outside 1900–9999. */
+export function monthStart(date: CalendarDate, months = 0): CalendarDate {
+  const index = Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)) - 1 + months;
+  const first = parseCalendarDate(`${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}-01`);
+  if (!first) throw new RangeError(`Month out of range: ${date} ${months >= 0 ? '+' : ''}${months}`);
+  return first;
 }
 
-/** Returns a new Date representing midnight (00:00:00) on the same local day as `d`. */
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-/** Returns a new Date equal to `d` plus `n` calendar days. */
-export function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-/** Returns the first day of the month `n` months after `d`. */
-export function addMonths(d: Date, n: number): Date {
-  return new Date(d.getFullYear(), d.getMonth() + n, 1);
-}
-
-/** Returns true when `a` and `b` fall on the same local calendar day. */
-export function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+/** Minutes since midnight on the wall clock of `zone` at `instant` (e.g. 570 for 09:30). */
+export function wallMinutes(instant: Date, zone: string): number {
+  const time = wallTimeIn(instant, zone);
+  return Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 }
 
 /**
@@ -87,14 +74,14 @@ export function getIsoWeek(d: CalendarDate): number {
 }
 
 /**
- * The zone the browser renders in: view cells (local midnights) are read in it. The default `zone`
- * of the helpers below only until every caller passes the reader zone (ADR-035).
+ * The zone the browser renders in: a local `Date` is read in it. The default `zone` of the helpers
+ * below only until every caller passes the reader zone (ADR-035).
  */
 function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
-/** The calendar date of a view cell — any instant of that local day, usually its midnight. */
+/** The browser-zone date of a local `Date` — the navigation's view date, a local midnight. */
 export function cellDate(d: Date): CalendarDate {
   return calendarDateIn(d, browserTimeZone());
 }
@@ -157,12 +144,10 @@ export function moveEventTo(m: EventDates, date: CalendarDate, zone = browserTim
   return moveEvent(m, calendarDaysBetween(eventDays(m, zone)[0], date), zone);
 }
 
-/**
- * `m` dropped on a month/week cell, whose droppable id is the ISO string of that cell's local
- * midnight (`day.toISOString()`): the drop lands its first date on the cell's local date.
- */
-export function moveToCell(m: EventDates, droppableId: string): { startAt: string; endAt: string | null } | null {
-  return moveEventTo(m, cellDate(new Date(droppableId)));
+/** `m` dropped on a month/week cell, whose droppable id is that cell's date: its first date in `zone` lands there. */
+export function moveToCell(m: EventDates, droppableId: string, zone: string): { startAt: string; endAt: string | null } | null {
+  const date = parseCalendarDate(droppableId);
+  return date && moveEventTo(m, date, zone);
 }
 
 /**
@@ -192,17 +177,16 @@ export function resizeEvent(m: EventDates, days: number, zone = browserTimeZone(
 }
 
 /**
- * The wall-clock hours of a timed event within the local day `day`, clipped to it: `[0, 24]` when
- * it runs through the whole day (24 is the next midnight). An event with no end lasts an hour.
+ * The wall-clock hours of a timed event within `day` in `zone`, clipped to it: `[0, 24]` when it
+ * runs through the whole day (24 is the next day's start). An event with no end lasts an hour.
  */
-export function hoursWithinDay(m: Pick<CalendarEventItem, 'startAt' | 'endAt'>, day: Date): [number, number] {
+export function hoursWithinDay(m: Pick<CalendarEventItem, 'startAt' | 'endAt'>, day: CalendarDate, zone: string): [number, number] {
   // Each bound is its own day's start: where a zone skips midnight that start is 01:00.
-  const dayStart = startOfDay(day);
-  const nextDay = startOfDay(addDays(day, 1));
+  const dayStart = startOfDayIn(day, zone);
+  const nextDay = startOfDayIn(addCalendarDays(day, 1), zone);
   const start = new Date(m.startAt);
   const end = m.endAt ? new Date(m.endAt) : new Date(start.getTime() + 3_600_000);
-  const hours = (d: Date) => d.getHours() + d.getMinutes() / 60;
-  return [start < dayStart ? 0 : hours(start), end >= nextDay ? 24 : hours(end)];
+  return [start < dayStart ? 0 : wallMinutes(start, zone) / 60, end >= nextDay ? 24 : wallMinutes(end, zone) / 60];
 }
 
 const PALETTE = [
@@ -222,11 +206,11 @@ const PALETTE = [
 
 /**
  * Groups calendar events by day, returning one array per view cell in `days`: an event appears in
- * every cell whose date it occupies (`eventDays`).
+ * every cell whose date it occupies in `zone` (`eventDays`).
  */
-export function groupEventsByDay<T extends EventDates>(events: T[], days: Date[]): T[][] {
-  const spans = events.map(m => eventDays(m));
-  return days.map(cellDate).map(day => events.filter((_, i) => spans[i]![0] <= day && day <= spans[i]![1]));
+export function groupEventsByDay<T extends EventDates>(events: T[], days: CalendarDate[], zone: string): T[][] {
+  const spans = events.map(m => eventDays(m, zone));
+  return days.map(day => events.filter((_, i) => spans[i]![0] <= day && day <= spans[i]![1]));
 }
 
 /**
