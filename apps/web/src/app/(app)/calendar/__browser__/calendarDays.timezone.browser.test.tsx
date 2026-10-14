@@ -6,7 +6,6 @@ import {
   eventDays,
   expandDateRangeToIsoDates,
   expectedDates,
-  getIsoWeek,
   groupEventsByDay,
   hoursWithinDay,
   isStaleListError,
@@ -202,12 +201,6 @@ describe(`calendar day helpers (${ZONE})`, () => {
     expect(monthStart(date('2026-12-31'), 1)).toBe('2027-01-01');
     expect(monthStart(date('2026-01-31'), -1)).toBe('2025-12-01');
     expect(monthStart(date('2026-03-01'), -14)).toBe('2025-01-01');
-  });
-
-  test('getIsoWeek reads a calendar date', () => {
-    expect(getIsoWeek(date('2026-03-30'))).toBe(14);
-    expect(getIsoWeek(date('2026-12-31'))).toBe(53);
-    expect(getIsoWeek(date('2027-01-04'))).toBe(1);
   });
 });
 

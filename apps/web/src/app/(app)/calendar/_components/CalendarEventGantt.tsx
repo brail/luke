@@ -3,22 +3,24 @@
 import { StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { addCalendarDays, calendarDaysBetween, type CalendarDate, formatCalendarDate, isWorkingDate } from '@luke/core';
+import { addCalendarDays, calendarDateIn, calendarDaysBetween, type CalendarDate, formatCalendarDate, isWorkingDate } from '@luke/core';
 
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
-import { canEditMilestone, cellDate, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, parseLocalIsoDate, resizeEvent, resolveBrandColor, sortByFirstDay } from '../utils';
+import { canEditMilestone, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, resizeEvent, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
 
 interface Props {
   milestones: CalendarEvent[];
+  /** The reader zone: timed events, their moves and today are read in it. */
+  zone: string;
   onEventClick: (id: string) => void;
   /** A resize sends `endAt` alone: the start of a resized event is never rewritten. */
   onEventUpdate: (id: string, data: { startAt?: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
-  onDayClick?: (isoDate: string) => void;
+  onDayClick?: (date: CalendarDate) => void;
   activeBrandId?: string;
   functionsById: Record<string, string>;
   canUpdate?: boolean;
@@ -41,9 +43,9 @@ const FMT = (d: CalendarDate) => formatCalendarDate(d, { day: 'numeric', month: 
 
 /** The dates `m` would occupy after a drag or resize by `dayDelta` — derived from the change that
  * would be sent, so the preview can never disagree with the result. */
-function previewDays(m: CalendarEvent, dayDelta: number, mode: 'drag' | 'resize'): [CalendarDate, CalendarDate] {
-  const change = mode === 'drag' ? moveEvent(m, dayDelta) : resizeEvent(m, dayDelta);
-  return eventDays(change ? { ...m, ...change } : m);
+function previewDays(m: CalendarEvent, dayDelta: number, mode: 'drag' | 'resize', zone: string): [CalendarDate, CalendarDate] {
+  const change = mode === 'drag' ? moveEvent(m, dayDelta, zone) : resizeEvent(m, dayDelta, zone);
+  return eventDays(change ? { ...m, ...change } : m, zone);
 }
 
 function dragLabel([first, last]: [CalendarDate, CalendarDate], mode: 'drag' | 'resize'): string {
@@ -62,23 +64,25 @@ type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: 
  *
  * @param functionsById - Map of function ID → name, used as row labels.
  * @param onEventUpdate - Called after a drag completes with new ISO timestamps.
- * @param onDayClick - Called with the clicked day's ISO date string.
+ * @param onDayClick - Called with the clicked day's date.
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  * @param holidayDates - HolidayMap used to shade holiday columns.
  */
-export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
+export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpdate, onNoteClick, onDayClick, activeBrandId, functionsById, canUpdate, brandColorMap, holidayDates, showGroupBadge }: Props) {
+  // Read at every render, not once per mount: the page may stay open past midnight.
+  const today = calendarDateIn(new Date(), zone);
   const sorted = useMemo(
-    () => sortByFirstDay(milestones),
-    [milestones]
+    () => sortByFirstDay(milestones, zone),
+    [milestones, zone]
   );
 
   const { rangeStart, totalDays, dayW, months } = useMemo(() => {
     // The axis is calendar dates: one column per date, whatever the length of the local day.
     if (sorted.length === 0) {
-      return { rangeStart: cellDate(new Date()), totalDays: 90, dayW: DAY_W_LARGE, months: [] as { label: string; startDay: number; width: number }[] };
+      return { rangeStart: today, totalDays: 90, dayW: DAY_W_LARGE, months: [] as { label: string; startDay: number; width: number }[] };
     }
-    const spans = sorted.map(m => eventDays(m));
+    const spans = sorted.map(m => eventDays(m, zone));
     const minDate = spans.reduce((a, [first]) => first < a ? first : a, spans[0]![0]);
     const maxDate = spans.reduce((a, [, last]) => last > a ? last : a, spans[0]![1]);
     const rangeStart = addCalendarDays(minDate, -7);
@@ -94,7 +98,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
       day += count;
     }
     return { rangeStart, totalDays, dayW, months };
-  }, [sorted]);
+  }, [sorted, today, zone]);
 
   const dayMeta = useMemo(() =>
     Array.from({ length: totalDays }, (_, i) => {
@@ -121,7 +125,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
   }, [dayMeta, dayW, holidayDates]);
 
   const totalW = totalDays * dayW;
-  const todayOffset = calendarDaysBetween(rangeStart, cellDate(new Date()));
+  const todayOffset = calendarDaysBetween(rangeStart, today);
   const showToday = todayOffset >= 0 && todayOffset < totalDays;
 
   /** Where a bar covering `[first, last]` sits on the axis, both ends included. */
@@ -132,10 +136,10 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
 
   const bars = useMemo(() =>
     sorted.map(m => {
-      const days = eventDays(m);
+      const days = eventDays(m, zone);
       const visibleFunctionNames = formatVisibleFunctions(m.visibilities, functionsById);
       return { ...m, ...box(days), days, visibleFunctionNames };
-    }), [sorted, box, functionsById]);
+    }), [sorted, box, functionsById, zone]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -158,14 +162,14 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
       if (dayDelta === 0) { setDrag(null); dragRef.current = null; return; }
       wasDraggingRef.current = true;
       const m = eventsRef.current.find(x => x.id === id);
-      const change = m && (mode === 'drag' ? moveEvent(m, dayDelta) : resizeEvent(m, dayDelta));
+      const change = m && (mode === 'drag' ? moveEvent(m, dayDelta, zone) : resizeEvent(m, dayDelta, zone));
       if (change) onEventUpdate(id, change);
       setDrag(null);
       dragRef.current = null;
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [canUpdate, dayW, onEventUpdate]);
+  }, [canUpdate, dayW, onEventUpdate, zone]);
 
   return (
     <div className="overflow-x-auto overflow-y-visible">
@@ -224,7 +228,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
             const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
             const isDragging = drag?.id === m.id;
             const dayDeltaPreview = isDragging ? Math.round(drag.deltaX / dayW) : 0;
-            const preview = isDragging && dayDeltaPreview !== 0 ? previewDays(m, dayDeltaPreview, drag.mode) : null;
+            const preview = isDragging && dayDeltaPreview !== 0 ? previewDays(m, dayDeltaPreview, drag.mode, zone) : null;
             const { left: previewLeft, width: previewWidth } = preview ? box(preview) : m;
             const barColor = resolveBrandColor(m.brandId, brandColorMap);
             const label = isDragging ? dragLabel(preview ?? m.days, drag.mode) : null;
@@ -263,7 +267,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
                     if (!onDayClick) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const dayIndex = Math.floor((e.clientX - rect.left) / dayW);
-                    if (dayIndex >= 0 && dayIndex < totalDays) onDayClick(parseLocalIsoDate(addCalendarDays(rangeStart, dayIndex))!.toISOString());
+                    if (dayIndex >= 0 && dayIndex < totalDays) onDayClick(addCalendarDays(rangeStart, dayIndex));
                   }}
                 >
                   <div style={{ width: totalW, height: ROW_H, position: 'relative', overflow: 'visible' }}>

@@ -7,7 +7,6 @@ import {
   eventCalendarDays,
   initials,
   isEventDeleteLocked as isEventDeleteLockedCore,
-  isoWeekOf,
   parseCalendarDate,
   shiftEventByDays,
   startOfDayIn,
@@ -66,11 +65,6 @@ export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[
   const last = calendarDateOf(end);
   for (let d = calendarDateOf(start); d <= last; d = addCalendarDays(d, 1)) dates.push(d);
   return dates;
-}
-
-/** Returns the ISO 8601 week number (1–53) of `d`. */
-export function getIsoWeek(d: CalendarDate): number {
-  return isoWeekOf(d).week;
 }
 
 /**

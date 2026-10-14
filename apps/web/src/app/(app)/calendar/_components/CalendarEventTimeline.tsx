@@ -3,7 +3,7 @@
 import { Plus, StickyNote } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { formatCalendarDate } from '@luke/core';
+import { type CalendarDate, formatCalendarDate, isoWeekOf } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
@@ -11,15 +11,17 @@ import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT } from '../constants';
-import { eventDays, formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, parseLocalIsoDate, resolveBrandColor, sortByFirstDay } from '../utils';
+import { eventDays, formatVisibleFunctions, groupBadge, groupTooltip, monthStart, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {
   milestones: CalendarEvent[];
+  /** The reader zone: timed events are dated in it. */
+  zone: string;
   onEventClick: (id: string) => void;
   onNoteClick?: (id: string) => void;
-  onDayClick?: (isoDate: string) => void;
+  onDayClick?: (date: CalendarDate) => void;
   onBulkDelete?: (ids: string[]) => void;
   activeBrandId?: string;
   functionsById: Record<string, string>;
@@ -42,26 +44,26 @@ interface Props {
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  */
-export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
+export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const sorted = useMemo(
-    () => sortByFirstDay(milestones),
-    [milestones]
+    () => sortByFirstDay(milestones, zone),
+    [milestones, zone]
   );
 
   const groups = useMemo(() => {
-    const map = new Map<string, { label: string; firstDay: Date; items: typeof sorted }>();
+    const map = new Map<CalendarDate, { label: string; firstDay: CalendarDate; items: typeof sorted }>();
     for (const m of sorted) {
-      // The month of the event's first date: an all-day event on the 1st belongs to that month in
-      // every zone.
-      const key = eventDays(m)[0].slice(0, 7);
-      if (!map.has(key)) map.set(key, { label: `${MONTH_NAMES_IT[Number(key.slice(5)) - 1]} ${key.slice(0, 4)}`, firstDay: parseLocalIsoDate(`${key}-01`)!, items: [] });
-      map.get(key)!.items.push(m);
+      // The month of the event's first date in `zone`: an all-day event on the 1st belongs to that
+      // month in every zone.
+      const firstDay = monthStart(eventDays(m, zone)[0]);
+      if (!map.has(firstDay)) map.set(firstDay, { label: `${MONTH_NAMES_IT[Number(firstDay.slice(5, 7)) - 1]} ${firstDay.slice(0, 4)}`, firstDay, items: [] });
+      map.get(firstDay)!.items.push(m);
     }
     return Array.from(map.values());
-  }, [sorted]);
+  }, [sorted, zone]);
 
   const allIds = useMemo(() => sorted.map(m => m.id), [sorted]);
   const allSelected = useMemo(() => allIds.length > 0 && allIds.every(id => selected.has(id)), [allIds, selected]);
@@ -111,7 +113,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
               <div className={cn('flex items-center justify-between', canUpdate ? 'col-span-7' : 'col-span-6')}>
                 <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
                 {canUpdate && onDayClick && (
-                  <button type="button" onClick={() => onDayClick(group.firstDay.toISOString())} className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 rounded" title={`Aggiungi evento in ${group.label}`}>
+                  <button type="button" onClick={() => onDayClick(group.firstDay)} className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 rounded" title={`Aggiungi evento in ${group.label}`}>
                     <Plus size={12} />
                   </button>
                 )}
@@ -120,7 +122,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
 
             {group.items.map(m => {
               const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
-              const firstDay = eventDays(m)[0];
+              const firstDay = eventDays(m, zone)[0];
               const isSelected = selected.has(m.id);
               const hasNote = !!(m.notes?.[0]?.body);
               const badge = groupBadge(showGroupBadge, m.planningGroupName);
@@ -137,7 +139,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                     </span>
                   )}
                   {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline week label */}
-                  <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{getIsoWeek(firstDay)}</span>
+                  <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{isoWeekOf(firstDay).week}</span>
                   <span className="text-muted-foreground tabular-nums">{formatCalendarDate(firstDay, { day: '2-digit', month: 'short' })}</span>
                   <span className="flex items-center gap-2 min-w-0">
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}

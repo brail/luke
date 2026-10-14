@@ -74,7 +74,7 @@ describe(`calendar views (${ZONE})`, () => {
           event('Primo aprile', '2026-04-01T00:00:00.000Z', null, true),
           event('Sera di marzo', new Date(2026, 2, 31, 20, 0).toISOString(), null, false),
         ]}
-        onEventClick={noop} functionsById={{}} brandColorMap={{}} />,
+        zone={ZONE} onEventClick={noop} functionsById={{}} brandColorMap={{}} />,
     );
     const text = screen.container.textContent ?? '';
     expect(text.indexOf('Marzo 2026')).toBeGreaterThanOrEqual(0);
@@ -89,7 +89,7 @@ describe(`calendar views (${ZONE})`, () => {
           event('Evento A', '2026-10-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z', true),
           event('Evento B', '2026-11-20T00:00:00.000Z', null, true),
         ]}
-        onEventClick={noop} onEventUpdate={noop} functionsById={{}} brandColorMap={{}}
+        zone={ZONE} onEventClick={noop} onEventUpdate={noop} functionsById={{}} brandColorMap={{}}
         holidayDates={new Map([['2026-11-02', [{ countryCode: 'FX', name: 'Fixture', nameEn: null }]]])} />,
     );
     const container = screen.container;
@@ -145,6 +145,35 @@ describe(`calendar views in the profile zone (browser ${ZONE}, profile ${PROFILE
       );
       const row = screen.getByText('Evento A', { exact: true }).element().closest('.flex.border-b');
       expect(row?.querySelector('.rounded-full')?.textContent).toBe('23');
+      await screen.unmount();
+    }
+  });
+
+  test('gantt draws a timed event in the column of its profile date', async () => {
+    for (const time of ['00:30', '23:30']) {
+      const screen = await render(
+        <CalendarEventGantt
+          milestones={[
+            // The all-day event fixes the axis: it starts on 2026-09-24, so the 10th is column 16.
+            event('Ancora', '2026-10-01T00:00:00.000Z', null, true),
+            event('Evento A', at('2026-10-10', time), null, false),
+          ]}
+          zone={PROFILE} onEventClick={noop} onEventUpdate={noop} functionsById={{}} brandColorMap={{}} />,
+      );
+      expect(screen.container.querySelector<HTMLElement>('[title^="Evento A"]')?.style.left).toBe(`${16 * 24}px`);
+      await screen.unmount();
+    }
+  });
+
+  test('timeline lists a timed event in the month of its profile date', async () => {
+    for (const [day, time, month, other] of [['2026-04-01', '00:30', 'Aprile', 'Marzo'], ['2026-03-31', '23:30', 'Marzo', 'Aprile']] as const) {
+      const screen = await render(
+        <CalendarEventTimeline milestones={[event('Evento A', at(day, time), null, false)]}
+          zone={PROFILE} onEventClick={noop} functionsById={{}} brandColorMap={{}} />,
+      );
+      const text = screen.container.textContent ?? '';
+      expect(text).toContain(`${month} 2026`);
+      expect(text).not.toContain(`${other} 2026`);
       await screen.unmount();
     }
   });

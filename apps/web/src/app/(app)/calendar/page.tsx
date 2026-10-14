@@ -51,8 +51,9 @@ export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
   const { view, viewDate, setView, setViewDate, setViewAndDate } = useCalendarViewNavigation();
-  // The month, week and day views read in the reader zone and wait for it.
-  const { zone } = useFormatDate();
+  // The calendar views read in the reader zone and wait for it.
+  const fmt = useFormatDate();
+  const { zone } = fmt;
   const viewDay = cellDate(viewDate);
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
@@ -226,12 +227,10 @@ export default function CalendarPage() {
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
   const showFreezeInBar = canFreeze && seasonState === 'planning';
 
-  const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
   const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
-  const onDayClickProp = canUpdate ? handleDayClick : undefined;
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
-  const handleCellClick = useCallback((date: CalendarDate) => handleDayClick(localMidnight(date).toISOString()), [handleDayClick]);
+  const handleCellClick = useCallback((date: CalendarDate) => { setCreateDefaultAllDay(true); setCreateDate(localMidnight(date).toISOString()); }, []);
   const onCellClickProp = canUpdate ? handleCellClick : undefined;
   const showDay = useCallback((date: CalendarDate) => setViewDate(localMidnight(date)), [setViewDate]);
 
@@ -455,7 +454,7 @@ export default function CalendarPage() {
         <span className="text-xs text-muted-foreground ml-auto">
           {syncStatus.totalSynced} sincronizzati
           {syncStatus.lastSyncedAt && (
-            <> · {new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</>
+            <> · {fmt.dateTime(syncStatus.lastSyncedAt)}</>
           )}
         </span>
       )}
@@ -532,10 +531,11 @@ export default function CalendarPage() {
           ) : view === 'gantt' ? (
             <CalendarEventGantt
               milestones={filteredMilestones}
+              zone={zone}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               activeBrandId={contextBrandId ?? undefined}
               functionsById={functionsById}
               canUpdate={canUpdate}
@@ -546,9 +546,10 @@ export default function CalendarPage() {
           ) : (
             <CalendarEventTimeline
               milestones={filteredMilestones}
+              zone={zone}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               onBulkDelete={ids => deleteEventsMutation.mutate({ ids })}
               activeBrandId={contextBrandId ?? undefined}
               functionsById={functionsById}
@@ -573,7 +574,7 @@ export default function CalendarPage() {
     },
     maintenance: {
       label: 'Congelata — manutenzione',
-      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${new Date(mostRecentFreeze).toLocaleDateString('it-IT')}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
+      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${fmt.date(mostRecentFreeze)}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
     },
   };
   const seasonStateBadge = season && (
