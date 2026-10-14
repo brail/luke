@@ -19,7 +19,7 @@ const err = [{ messageId: 'restricted' }];
 ruleTester.run('no-restricted-module-references', rule, {
   valid: [
     { name: 'the package barrel is not the restricted subpath', options, code: `import { userSchema } from '@luke/core';` },
-    { name: 'a sibling subpath is not restricted', options, code: `import { formatDate } from '@luke/core/utils/date';` },
+    { name: 'a sibling subpath is not restricted', options, code: `import { x } from '@luke/core/sibling';` },
     { name: 'a name that merely starts with the restricted one', options, code: `import x from '@luke/core/serverless';` },
     { name: 'dynamic import with an expression is not statically knowable', options, code: `export const f = (m) => import(m);` },
     { name: 'template literal with an expression is not judged', options, code: 'export const f = (s) => import(`@luke/core/${s}`);' },

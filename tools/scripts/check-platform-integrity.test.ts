@@ -496,7 +496,7 @@ test('P7 accepts a contract whose every entry point resolves into dist', () => {
 });
 
 test('P7 accepts explicit subpath exports, which are a boundary and not a leak', () => {
-  // `@luke/core` publishes three of these. Publishing more than one entry is
+  // `@luke/core` publishes two of these. Publishing more than one entry is
   // not the defect; publishing source, or publishing by pattern, is.
   expectClean(
     withApiManifest(json => {

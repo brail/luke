@@ -12,10 +12,6 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
-    },
-    "./utils/date": {
-      "types": "./dist/utils/date.d.ts",
-      "default": "./dist/utils/date.js"
     }
   },
   "files": [

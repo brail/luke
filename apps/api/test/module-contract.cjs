@@ -17,7 +17,7 @@
  *
  * Narrow on purpose, and a sibling of `packages/core/test/module-contract.cjs`
  * rather than an extension of it. That file pins an ESM-only package's
- * `require(esm)` behaviour across three subpaths; this one pins a CommonJS
+ * `require(esm)` behaviour across two subpaths; this one pins a CommonJS
  * package's single public entry and the closure of everything it refuses. The
  * two assert different things about different packages, and merging them would
  * weaken both.

@@ -16,8 +16,9 @@
  * artifact exactly as an external consumer does. A TypeScript `paths` alias
  * cannot reach it — plain `node` reads no tsconfig.
  *
- * Narrow on purpose. It pins the module format and the three advertised
- * subpaths; it is not a general package-boundary test.
+ * Narrow on purpose. It pins the module format and the two advertised
+ * subpaths (ADR-037), and that the retired date subpath no longer resolves;
+ * it is not a general package-boundary test.
  */
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -28,8 +29,10 @@ const distRoot = path.join(__dirname, '..', 'dist');
 const SUBPATHS = [
   { specifier: '@luke/core', namedExport: 'hasPermission' },
   { specifier: '@luke/core/server', namedExport: 'getMasterKey' },
-  { specifier: '@luke/core/utils/date', namedExport: 'formatDate' },
 ];
+
+// Retired by ADR-037 with the zone-less formatters it published: the exports map refuses it.
+assert.throws(() => require.resolve('@luke/core/utils/date'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
 
 for (const { specifier, namedExport } of SUBPATHS) {
   const resolved = require.resolve(specifier);

@@ -320,7 +320,7 @@ describe.each([
   describe('formatInstant', () => {
     const instant = new Date('2026-07-01T10:00:00Z');
 
-    it('writes what `utils/date.ts` writes for the same zone', () => {
+    it('writes what the retired `utils/date.ts` wrote for the same zone', () => {
       expect(formatInstant(instant, 'Europe/Rome', NUMERIC_DATE_TIME, DEFAULT_LOCALE)).toBe('01/07/2026, 12:00');
       expect(formatInstant(instant, 'Europe/Rome', NUMERIC_TIME, DEFAULT_LOCALE)).toBe('12:00');
       expect(formatInstant(instant, 'europe/rome', NUMERIC_TIME, DEFAULT_LOCALE)).toBe('12:00');

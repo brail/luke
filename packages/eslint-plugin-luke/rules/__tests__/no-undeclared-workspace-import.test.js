@@ -73,7 +73,7 @@ const PLUGIN = path.join(FIX, 'packages/eslint-plugin-luke/rules/thing.js');
 ruleTester.run('no-undeclared-workspace-import', rule, {
   valid: withOptions([
     { name: 'declared dependency', filename: WEB, code: `import { userSchema } from '@luke/core';` },
-    { name: 'declared dependency, subpath', filename: WEB, code: `import { formatDate } from '@luke/core/utils/date';` },
+    { name: 'declared dependency, subpath', filename: WEB, code: `import { getMasterKey } from '@luke/core/server';` },
     { name: 'devDependency as import type', filename: WEB, code: `import type { AppRouter } from '@luke/api';` },
     { name: 'devDependency as a type-only default import', filename: WEB, code: `import type api from '@luke/api';` },
     { name: 'devDependency as a type-only namespace import', filename: WEB, code: `import type * as api from '@luke/api';` },

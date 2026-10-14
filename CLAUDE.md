@@ -117,8 +117,8 @@ packages/
   `packages/core/src/schemas/`: check there before creating a new one.
 - **TypeScript**: strict mode — no `any`, no type assertion without an explanatory comment.
 - **URLs in frontend**: never hardcode `localhost:3001` in `apps/web/src` — use `buildApiUrl()`,
-  `buildTrpcUrl()` from `@luke/core` (the package publishes only `.`, `./server` and
-  `./utils/date`). Enforced by `.semgrep/rules/no-hardcoded-api-url.yml`.
+  `buildTrpcUrl()` from `@luke/core` (the package publishes only `.` and `./server`, ADR-037).
+  Enforced by `.semgrep/rules/no-hardcoded-api-url.yml`.
 
 ## Development Patterns — Mandatory Rules
 
@@ -187,8 +187,7 @@ packages/
 ## Dates & Time Zones
 
 Helpers in `packages/core/src/utils/dateUtils.ts`, schemas in `packages/core/src/schemas/dates.ts`.
-Rationale: ADR-035 and ADR-036. Until they move there, the instant formatters are in `utils/date.ts`:
-never rely on their fallback to the runtime zone.
+Rationale: ADR-035 and ADR-036.
 
 - Use core date helpers and schemas; keep calendar days, instants and wall times distinct.
 - Calendar days are zone-free; UTC-midnight storage is an encoding.

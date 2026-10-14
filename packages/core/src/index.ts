@@ -59,7 +59,6 @@ export * from './auth/permissions.js';
 // Re-export utilities
 export * from './utils/backoff.js';
 export * from './utils/calendarEventLock.js';
-export * from './utils/date.js';
 export * from './utils/dateUtils.js';
 export * from './utils/greeting.js';
 export * from './utils/pricing.js';

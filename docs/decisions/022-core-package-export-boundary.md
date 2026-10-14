@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [037 — Core Package Export Boundary: Two Subpaths](037-core-package-export-boundary-two-subpaths.md)
 
 ## Context
 
