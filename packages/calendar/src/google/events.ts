@@ -1,4 +1,4 @@
-import { dayAfter } from '../allDay.js';
+import { addCalendarDays, calendarDateOf } from '@luke/core';
 
 import { getClient } from './client.js';
 
@@ -19,12 +19,12 @@ export interface EventInput {
 
 /** Google's exclusive `end.date` for an all-day event's last day (see `dayAfter`). */
 export function exclusiveEndDate(lastDay: Date): string {
-  return dayAfter(lastDay).toISOString().slice(0, 10);
+  return addCalendarDays(calendarDateOf(lastDay), 1);
 }
 
 function buildEventBody(input: EventInput): calendar_v3.Schema$Event {
   const start: calendar_v3.Schema$EventDateTime = input.allDay
-    ? { date: input.startAt.toISOString().slice(0, 10) }
+    ? { date: calendarDateOf(input.startAt) }
     : { dateTime: input.startAt.toISOString(), timeZone: 'UTC' };
 
   const end: calendar_v3.Schema$EventDateTime = input.allDay

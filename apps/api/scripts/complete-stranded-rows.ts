@@ -56,7 +56,7 @@ async function main() {
       const scope = `${row.collectionLayout.brand.code}/${row.collectionLayout.season.code}`;
       const source = row.phaseHistory[0] ? 'phase history' : 'updatedAt';
       console.log(
-        `  ${dryRun ? '[dry-run] ' : ''}${scope} · "${row.line}" · ${row.phase?.label ?? '—'} → completed on ${completedAt.toISOString().slice(0, 10)} (${source})`
+        `  ${dryRun ? '[dry-run] ' : ''}${scope} · "${row.line}" · ${row.phase?.label ?? '—'} → completed at ${completedAt.toISOString()} (${source})`
       );
 
       if (!dryRun) {
