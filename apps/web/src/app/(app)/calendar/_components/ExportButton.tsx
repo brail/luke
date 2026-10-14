@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildSeasonCalendarExportUrl } from '@luke/core';
+import { buildSeasonCalendarExportUrl, type CalendarDate } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -15,13 +15,13 @@ import {
   DropdownMenuTrigger,
 } from '../../../../components/ui/dropdown-menu';
 import { triggerBlobDownload } from '../../../../lib/download';
-import { toLocalIsoDate } from '../utils';
 
 interface Props {
   seasonId: string;
   brandIds: string[];
   view: 'list' | 'week' | 'month' | 'gantt' | 'day';
-  viewDate: Date;
+  /** The day shown; without one the export uses today. */
+  viewDate?: CalendarDate;
   disabled?: boolean;
 }
 
@@ -51,7 +51,7 @@ async function downloadExport(
  * @param seasonId - Season whose calendar events are exported.
  * @param brandIds - Brand IDs included in the export scope.
  * @param view - Active calendar view name (passed to PDF export only).
- * @param viewDate - Currently visible date, sent as its local calendar date (PDF export only).
+ * @param viewDate - Currently visible date (PDF export only).
  */
 export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: Props) {
   const { data: session } = useSession();
@@ -64,7 +64,7 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       return;
     }
 
-    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate: toLocalIsoDate(viewDate) });
+    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate });
     const ext = format === 'ical' ? 'ics' : format;
     const filename = `luke-calendar-${seasonId}.${ext}`;
 

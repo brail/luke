@@ -29,7 +29,7 @@ import {
   isDevelopment,
   NUMERIC_DATE,
   parseCalendarDate,
-  utcMidnightOf,
+  startOfIsoWeek,
   type CalendarDate,
   type Role,
 } from '@luke/core';
@@ -225,14 +225,14 @@ const DAY_IT_SHORT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
 
 /** The Monday-to-Sunday week `viewDate` falls in. */
 export function weekDays(viewDate: CalendarDate): CalendarDate[] {
-  const monday = addCalendarDays(viewDate, -((utcMidnightOf(viewDate).getUTCDay() + 6) % 7));
+  const monday = startOfIsoWeek(viewDate);
   return Array.from({ length: 7 }, (_, i) => addCalendarDays(monday, i));
 }
 
 /** The month `viewDate` falls in (`'YYYY-MM'`) and its 6 × 7 grid, from the Monday on or before the 1st. */
 export function monthGrid(viewDate: CalendarDate): { month: string; cells: CalendarDate[] } {
   const firstOfMonth = addCalendarDays(viewDate, 1 - Number(viewDate.slice(8, 10)));
-  const gridStart = weekDays(firstOfMonth)[0]!;
+  const gridStart = startOfIsoWeek(firstOfMonth);
   return { month: firstOfMonth.slice(0, 7), cells: Array.from({ length: 42 }, (_, i) => addCalendarDays(gridStart, i)) };
 }
 

@@ -38,11 +38,11 @@ import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { useCalendarViewNavigation } from './useCalendarViewNavigation';
-import { assignBrandColors, cellDate, expectedDates, isStaleListError, parseLocalIsoDate, resolveBrandColor } from './utils';
+import { assignBrandColors, expectedDates, isStaleListError, parseLocalIsoDate, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
 
-/** `date` at the browser's local midnight: how the navigation still holds the day shown. A calendar date always parses. */
+/** `date` at the browser's local midnight: how the event dialog still reads a clicked day. A calendar date always parses. */
 function localMidnight(date: CalendarDate): Date {
   return parseLocalIsoDate(date)!;
 }
@@ -51,10 +51,10 @@ export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
   const { view, viewDate, setView, setViewDate, setViewAndDate } = useCalendarViewNavigation();
-  // The calendar views read in the reader zone and wait for it.
+  // The calendar views read in the reader zone and wait for it; without a `?date=` they show today there.
   const fmt = useFormatDate();
   const { zone } = fmt;
-  const viewDay = cellDate(viewDate);
+  const viewDay = viewDate ?? fmt.today;
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
@@ -232,14 +232,8 @@ export default function CalendarPage() {
 
   const handleCellClick = useCallback((date: CalendarDate) => { setCreateDefaultAllDay(true); setCreateDate(localMidnight(date).toISOString()); }, []);
   const onCellClickProp = canUpdate ? handleCellClick : undefined;
-  const showDay = useCallback((date: CalendarDate) => setViewDate(localMidnight(date)), [setViewDate]);
-
-  const handleDayNumberClick = useCallback((date: CalendarDate) => {
-    setViewAndDate('day', localMidnight(date));
-  }, [setViewAndDate]);
-  const handleWeekNumberClick = useCallback((monday: CalendarDate) => {
-    setViewAndDate('week', localMidnight(monday));
-  }, [setViewAndDate]);
+  const handleDayNumberClick = useCallback((date: CalendarDate) => setViewAndDate('day', date), [setViewAndDate]);
+  const handleWeekNumberClick = useCallback((monday: CalendarDate) => setViewAndDate('week', monday), [setViewAndDate]);
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
@@ -310,7 +304,7 @@ export default function CalendarPage() {
         <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
         <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
+      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDay} disabled={!season?.id} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" title="Altre azioni"><MoreHorizontal size={14} /></Button>
@@ -466,14 +460,14 @@ export default function CalendarPage() {
       {filterStrip}
       <Card>
         <CardContent className="p-0">
-          {calendarLoading || milestonesLoading || !zone ? (
+          {calendarLoading || milestonesLoading || !zone || !viewDay ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
           ) : view === 'week' ? (
             <CalendarEventWeekView
               milestones={filteredMilestones}
               viewDate={viewDay}
               zone={zone}
-              onViewDateChange={showDay}
+              onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
@@ -490,7 +484,7 @@ export default function CalendarPage() {
               milestones={filteredMilestones}
               viewDate={viewDay}
               zone={zone}
-              onViewDateChange={showDay}
+              onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
@@ -508,7 +502,7 @@ export default function CalendarPage() {
               milestones={filteredMilestones}
               viewDate={viewDay}
               zone={zone}
-              onViewDateChange={showDay}
+              onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}

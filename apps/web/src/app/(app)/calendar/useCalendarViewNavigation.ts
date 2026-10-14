@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
 
-import { parseLocalIsoDate, toLocalIsoDate } from './utils';
+import { type CalendarDate, parseCalendarDate } from '@luke/core';
 
 import type { Route } from 'next';
 
@@ -12,38 +12,25 @@ type CalendarView = (typeof VALID_VIEWS)[number];
 
 interface UseCalendarViewNavigationResult {
   view: CalendarView;
-  viewDate: Date;
+  /** The day the URL names (`?date=`), or `null` when it names none: the page then shows today. */
+  viewDate: CalendarDate | null;
   /** Changes only the view, keeping the current date. Used by the view-switcher toolbar. */
   setView: (v: CalendarView) => void;
   /** Changes only the date, keeping the current view. */
-  setViewDate: (d: Date) => void;
+  setViewDate: (d: CalendarDate) => void;
   /**
    * Changes view and date together in one navigation. Required whenever both change from the
    * same user action (e.g. clicking a day/week number) — calling `setView` and `setViewDate`
    * back to back would each build their `URLSearchParams` from the same pre-click snapshot, so
    * the second call's write would silently discard the first's.
    */
-  setViewAndDate: (v: CalendarView, d: Date) => void;
+  setViewAndDate: (v: CalendarView, d: CalendarDate) => void;
 }
 
 /**
  * Owns `view`/`viewDate` state for the calendar page and keeps them mirrored into the URL
- * (`?view=&date=`), read back on mount so a shared link opens on the right view/day.
- *
- * The `?date=` value is always the LOCAL calendar day the user is looking at — read with
- * `parseLocalIsoDate` and written with `toLocalIsoDate`, never `new Date(string)` /
- * `date.toISOString()`. Both of those go through UTC: parsing a date-only string anchors it to
- * UTC midnight (wrong local day in any negative-offset zone), and formatting a Date back through
- * UTC first can shift which calendar day it reports, depending on offset sign and time-of-day.
- *
- * The invariant this hook keeps is *not* "`viewDate` is always local midnight" — it isn't: the
- * initial-mount fallback (`new Date()`, when `?date=` isn't present yet) carries the real
- * current time-of-day, and nothing here stops a caller of `setViewDate`/`setViewAndDate` from
- * passing a `Date` with any time-of-day at all. The actual invariant is that `viewDate` is always
- * *serialized* through LOCAL date components — `toLocalIsoDate`'s `getFullYear()`/`getMonth()`/
- * `getDate()` — which identifies the calendar day a `Date` falls on locally regardless of what
- * time-of-day it carries. That's what makes the UTC round-trip bug avoidable without also having
- * to normalize every `Date` that reaches this hook to midnight first.
+ * (`?view=&date=`), read back on mount so a shared link opens on the right view/day. `?date=` is a
+ * calendar date, which no zone changes: it is read and written as the same `YYYY-MM-DD`.
  */
 export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
   const searchParams = useSearchParams();
@@ -53,10 +40,7 @@ export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
     const v = searchParams.get('view');
     return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
   });
-  const [viewDate, setViewDateState] = useState<Date>(() => {
-    const d = searchParams.get('date');
-    return (d && parseLocalIsoDate(d)) || new Date();
-  });
+  const [viewDate, setViewDateState] = useState<CalendarDate | null>(() => parseCalendarDate(searchParams.get('date') ?? ''));
 
   const navigate = useCallback((updates: Record<string, string>) => {
     const p = new URLSearchParams(searchParams.toString());
@@ -73,15 +57,15 @@ export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
     navigate({ view: v });
   }, [navigate]);
 
-  const setViewDate = useCallback((d: Date) => {
+  const setViewDate = useCallback((d: CalendarDate) => {
     setViewDateState(d);
-    navigate({ date: toLocalIsoDate(d) });
+    navigate({ date: d });
   }, [navigate]);
 
-  const setViewAndDate = useCallback((v: CalendarView, d: Date) => {
+  const setViewAndDate = useCallback((v: CalendarView, d: CalendarDate) => {
     setViewState(v);
     setViewDateState(d);
-    navigate({ view: v, date: toLocalIsoDate(d) });
+    navigate({ view: v, date: d });
   }, [navigate]);
 
   return { view, viewDate, setView, setViewDate, setViewAndDate };

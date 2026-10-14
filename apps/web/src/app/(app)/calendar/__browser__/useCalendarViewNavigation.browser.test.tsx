@@ -2,9 +2,9 @@ import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { useCalendarViewNavigation } from '../useCalendarViewNavigation';
-import { toLocalIsoDate } from '../utils';
 
 import { paramsFromLastReplace } from './navigationTestHelpers';
+import { date } from './zoneFixtures';
 
 /**
  * Regression test for the real `useCalendarViewNavigation` production hook (not a
@@ -21,13 +21,8 @@ import { paramsFromLastReplace } from './navigationTestHelpers';
  * The fix (and this regression) were verified by temporarily reverting `setViewAndDate` to the
  * old sequential shape and confirming these tests fail against it — that mutation was applied,
  * observed, and reverted during development; it is not, and has never been, committed here.
- *
- * Target dates below are always constructed as `new Date(y, m, d)` (local calendar components),
- * never `new Date('YYYY-MM-DD')` — the latter anchors to UTC midnight, which under a negative UTC
- * offset (e.g. America/Los_Angeles) is the PREVIOUS local calendar day, and would make `date`
- * assertions below fail depending on the host/CI runner's timezone rather than on the production
- * code under test. `new Date(y, m, d)` matches what a real click actually produces (see
- * `dateSerialization.timezone.browser.test.tsx` for the dedicated timezone-direction proof).
+ * The zone-by-zone proof that `?date=` keeps its calendar date is
+ * `dateSerialization.timezone.browser.test.tsx`.
  */
 
 const { fakeGet, fakeToString, fakeReplace } = vi.hoisted(() => ({
@@ -53,7 +48,7 @@ function Harness({ onReady }: { onReady: (nav: ReturnType<typeof useCalendarView
   return (
     <div>
       <span data-testid="view">{nav.view}</span>
-      <span data-testid="date">{toLocalIsoDate(nav.viewDate)}</span>
+      <span data-testid="date">{nav.viewDate}</span>
     </div>
   );
 }
@@ -91,7 +86,7 @@ describe('useCalendarViewNavigation (production hook)', () => {
     const { nav } = await mountHarness('view=month&date=2026-01-01');
     fakeReplace.mockClear();
 
-    nav.setViewAndDate('day', new Date(2026, 2, 5));
+    nav.setViewAndDate('day', date('2026-03-05'));
 
     expect(fakeReplace).toHaveBeenCalledTimes(1);
     const written = paramsFromLastReplace(fakeReplace);
@@ -103,7 +98,7 @@ describe('useCalendarViewNavigation (production hook)', () => {
     const { nav } = await mountHarness('view=month&date=2026-01-01');
     fakeReplace.mockClear();
 
-    nav.setViewAndDate('week', new Date(2026, 2, 9));
+    nav.setViewAndDate('week', date('2026-03-09'));
 
     expect(fakeReplace).toHaveBeenCalledTimes(1);
     const written = paramsFromLastReplace(fakeReplace);
@@ -129,7 +124,7 @@ describe('useCalendarViewNavigation (production hook)', () => {
     await h.rerenderWithUrl(afterToolbarUrl);
     fakeReplace.mockClear();
 
-    h.nav.setViewAndDate('day', new Date(2026, 2, 5));
+    h.nav.setViewAndDate('day', date('2026-03-05'));
     expect(fakeReplace).toHaveBeenCalledTimes(1);
     const finalParams = paramsFromLastReplace(fakeReplace);
     expect(finalParams.get('date')).toBe('2026-03-05');
@@ -140,7 +135,7 @@ describe('useCalendarViewNavigation (production hook)', () => {
     const { nav } = await mountHarness('view=month&date=2026-01-01&brandIds=b1,b2&fullscreen=1');
     fakeReplace.mockClear();
 
-    nav.setViewAndDate('day', new Date(2026, 2, 5));
+    nav.setViewAndDate('day', date('2026-03-05'));
 
     const written = paramsFromLastReplace(fakeReplace);
     expect(written.get('brandIds')).toBe('b1,b2');
