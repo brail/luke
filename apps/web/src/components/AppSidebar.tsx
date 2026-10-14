@@ -48,7 +48,7 @@ import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
 import { AppVersionLabel } from './AppVersionLabel';
 import { FeedbackDialog } from './FeedbackDialog';
-import Logo from './Logo';
+import LogoLockup from './LogoLockup';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import {
@@ -125,10 +125,9 @@ export default function AppSidebar() {
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center justify-between px-2 py-1">
-          <div className="flex items-center gap-3">
-            <Logo size="sm" className="text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-          </div>
+          <h2 className="text-foreground">
+            <LogoLockup variant="horizontal" />
+          </h2>
           <SidebarTrigger />
         </div>
         {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}

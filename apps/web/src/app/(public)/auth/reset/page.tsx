@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { useState, useEffect, Suspense } from 'react';
 
-import Logo from '../../../../components/Logo';
+import LogoLockup from '../../../../components/LogoLockup';
 import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
 import { Button } from '../../../../components/ui/button';
@@ -126,7 +126,7 @@ function ResetPasswordContent() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex justify-center mb-4">
-            <Logo size="xl" className="text-primary" />
+            <LogoLockup variant="stacked" />
           </div>
           <CardTitle className="text-2xl text-center">
             {token ? 'Reimposta Password' : 'Reset Password'}

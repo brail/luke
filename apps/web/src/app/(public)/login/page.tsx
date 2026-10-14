@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 
 import { AppVersionLabel } from '../../../components/AppVersionLabel';
 import { BackendStatus } from '../../../components/BackendStatus';
-import Logo from '../../../components/Logo';
+import LogoLockup from '../../../components/LogoLockup';
 import { Button } from '../../../components/ui/button';
 import {
   Card,
@@ -20,6 +20,7 @@ import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
+import { cn } from '../../../lib/utils';
 
 import { PendingApproval } from './_components/PendingApproval';
 
@@ -115,9 +116,10 @@ export default function LoginPage() {
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-1">
           <div className="flex justify-center mb-4">
-            <Logo size="xl" className="text-primary" />
+            <LogoLockup variant="stacked" />
           </div>
-          <CardTitle className="text-2xl text-center">
+          {/* The lockup names the page; `Accedi` stays the form's heading for screen readers. */}
+          <CardTitle className={cn('text-2xl text-center', !pending && 'sr-only')}>
             {pending ? 'Richiesta ricevuta' : 'Accedi'}
           </CardTitle>
           <CardDescription className="text-center">

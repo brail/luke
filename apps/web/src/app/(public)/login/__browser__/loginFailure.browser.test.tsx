@@ -52,7 +52,6 @@ vi.mock('../../../../lib/trpc', () => ({
 // Page furniture with requests and images of its own, irrelevant to the form.
 vi.mock('../../../../components/AppVersionLabel', () => ({ AppVersionLabel: () => null }));
 vi.mock('../../../../components/BackendStatus', () => ({ BackendStatus: () => null }));
-vi.mock('../../../../components/Logo', () => ({ default: () => null }));
 
 /** Fills the form and submits it; `signIn` answers as Auth.js does for a refused login. */
 async function signInRefusedWith(code: string) {
@@ -131,10 +130,14 @@ describe('an account pending approval', () => {
   test('is told so in place, with nothing to fill in; going back drops the password', async () => {
     const screen = await signInRefusedWith('pending');
 
+    // This heading is shown; the form's `Accedi` is screen-reader-only beside the wordmark
+    // (`toBeVisible` would pass on `sr-only`'s 1×1 px box).
+    await expect.element(screen.getByRole('heading', { name: 'Richiesta ricevuta' })).not.toHaveClass('sr-only');
     await expect.element(screen.getByText('Il tuo accesso è in attesa di approvazione')).toBeVisible();
     expect(screen.getByLabelText('Indirizzo email').query()).toBeNull();
     expect(router.push).not.toHaveBeenCalled();
     await backToLogin(screen);
+    await expect.element(screen.getByRole('heading', { name: 'Accedi' })).toHaveClass('sr-only');
   });
 
   test('without an address, saves the one it is given with the password just proven; going back drops it', async () => {
