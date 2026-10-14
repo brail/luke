@@ -29,7 +29,7 @@ function displayName(u: { firstName: string; lastName: string; username: string 
  */
 export function CalendarEventShareSection({ eventId, readOnly = false }: Props) {
   const utils = trpc.useUtils();
-  const { data: candidates, isLoading } = trpc.seasonCalendar.listGrantCandidates.useQuery({ eventId });
+  const { data: candidates, isLoading, error } = trpc.seasonCalendar.listGrantCandidates.useQuery({ eventId });
 
   const [localGrantedIds, setLocalGrantedIds] = useState<string[]>([]);
 
@@ -75,7 +75,9 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
       <p className="text-xs text-muted-foreground">
         Dà accesso a una persona specifica anche se non appartiene a nessuna delle funzioni sopra — solo tra chi ha già accesso a questo brand.
       </p>
-      {(candidates ?? []).length === 0 ? (
+      {error ? (
+        <p className="text-xs text-destructive">{getTrpcErrorMessage(error)}</p>
+      ) : (candidates ?? []).length === 0 ? (
         <p className="text-xs text-muted-foreground">Nessuno da aggiungere: chi ha accesso a questo brand vede già l&apos;evento.</p>
       ) : (
         <div className="max-h-40 divide-y overflow-y-auto rounded-md border">

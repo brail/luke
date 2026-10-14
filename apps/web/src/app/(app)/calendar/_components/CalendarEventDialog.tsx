@@ -370,11 +370,12 @@ export function CalendarEventDialog({
 
   const utils = trpc.useUtils();
   const updateMutation = trpc.seasonCalendar.updateMilestone.useMutation({
-    onSuccess: data => {
+    onSuccess: (data, variables) => {
       if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning);
       toast.success('Evento aggiornato');
-      // The share picker leaves out who sees the event through its functions, which may have changed.
-      void utils.seasonCalendar.listGrantCandidates.invalidate();
+      // The share picker leaves out who sees the event through its functions, which may have
+      // changed: stale for the next opening, not refetched by the dialog that is closing.
+      void utils.seasonCalendar.listGrantCandidates.invalidate({ eventId: variables.id }, { refetchType: 'none' });
       onSaved();
       onClose();
     },
