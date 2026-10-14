@@ -966,3 +966,19 @@ and the hooks reported timeouts that read like failing tests.
 pre-push hook runs the tests — in `caffeinate -i` (`caffeinate -i pnpm
 test:integration:local`, `caffeinate -i git push`). A burst of timeouts after a
 pause is a sleep until `pmset -g log` says otherwise.
+
+## Before changing a map's key, follow every use of the key (2026-10-14)
+
+**What happened.** ADR-036 lists "`groupByTimeZone` puts aliases in separate digest and maintenance
+cohorts" as a gap. I keyed the cohorts by the first spelling met among aliases (`sameTimeZone`) and
+committed it after reading only the loops over the map. `/code-review` found where the key goes
+next: the digest prints it (`Orari in …`) and stores it in `CalendarDigestDelivery.timeZone`, so a
+`Europe/Kyiv` reader could get `Europe/Kiev`; and `deps.settled` is keyed by it, while `findMany`
+has no `orderBy`, so the key could change between ticks and rebuild a settled cohort the same day.
+Grouping by spelling had been correct all along: the cohorts' members are disjoint, so the only
+cost was one extra build per alias spelling. The commit was withdrawn before the push.
+
+**Rule.** Before changing what keys a map, or what a grouping returns as its key, trace every reader
+of that key: labels shown to people, caches and memo maps, persisted columns, log fields. A key
+that becomes order-dependent breaks every cache keyed by it. And measure the "gap" first: if the
+current behaviour is correct but slower, say so before fixing it.
