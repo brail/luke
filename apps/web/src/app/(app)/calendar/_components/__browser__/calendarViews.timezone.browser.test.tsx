@@ -188,14 +188,14 @@ describe(`calendar views in the profile zone (browser ${ZONE}, profile ${PROFILE
     expect(el?.textContent).toContain('09:00 – 11:00');
   });
 
-  test('day view sends the clicked hour as that profile wall time', async () => {
-    const clicks: string[] = [];
+  test('day view sends the day shown and the clicked hour', async () => {
+    const clicks: [string, string][] = [];
     const screen = await render(
       <CalendarEventDayView milestones={[]} viewDate={date('2026-04-13')} zone={PROFILE} onViewDateChange={noop}
-        onEventClick={noop} onEventUpdate={noop} onDayClick={iso => clicks.push(iso)} brandColorMap={{}} canUpdate />,
+        onEventClick={noop} onEventUpdate={noop} onDayClick={(day, time) => clicks.push([day, time])} brandColorMap={{}} canUpdate />,
     );
     // The first hour slot of the 07:00–22:00 grid.
     screen.container.querySelector<HTMLElement>('.cursor-pointer')!.click();
-    expect(clicks).toEqual([at('2026-04-13', '07:00')]);
+    expect(clicks).toEqual([['2026-04-13', '07:00']]);
   });
 });

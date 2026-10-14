@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
-import { calendarDateIn, type CalendarDate, wallTimeIn } from '@luke/core';
+import type { CalendarDate } from '@luke/core';
 
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { Badge } from '../../../components/ui/badge';
@@ -222,9 +222,7 @@ export default function CalendarPage() {
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
   const showFreezeInBar = canFreeze && seasonState === 'planning';
 
-  const handleDayClickTimed = useCallback((iso: string) => {
-    if (zone) setCreateAt({ date: calendarDateIn(new Date(iso), zone), time: wallTimeIn(new Date(iso), zone) });
-  }, [zone]);
+  const handleDayClickTimed = useCallback((date: CalendarDate, time: string) => setCreateAt({ date, time }), []);
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
   const handleCellClick = useCallback((date: CalendarDate) => setCreateAt({ date }), []);
@@ -686,9 +684,10 @@ export default function CalendarPage() {
       )}
 
       {/* Automatic wizard, triggered right after a template is applied to a planning group */}
-      {calendar && postApplyWizard && (
+      {calendar && postApplyWizard && zone && (
         <PlanningWizard
           open
+          zone={zone}
           onClose={() => setPostApplyWizard(null)}
           onFrozen={() => { setPostApplyWizard(null); refetchAfterEventChange(); }}
           calendarId={calendar.id}
@@ -722,9 +721,10 @@ export default function CalendarPage() {
           emptyMessage={pickerAction === 'freeze' ? 'Nessun gruppo con eventi da congelare' : 'Nessun gruppo congelato'}
         />
       )}
-      {activeGroupAction?.type === 'freeze' && (
+      {activeGroupAction?.type === 'freeze' && zone && (
         <FreezePlanningGroupWizard
           open
+          zone={zone}
           onClose={() => setActiveGroupAction(null)}
           onFrozen={() => { setActiveGroupAction(null); refetchAfterEventChange(); }}
           planningGroupId={activeGroupAction.groupId}

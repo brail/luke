@@ -60,8 +60,8 @@ describe(`calendar day helpers (${ZONE})`, () => {
   });
 
   test('an all-day event occupies its own dates in every zone', () => {
-    expect(eventDays(allDay('2026-03-10', '2026-03-11'))).toEqual(['2026-03-10', '2026-03-11']);
-    expect(eventDays(allDay('2026-03-10'))).toEqual(['2026-03-10', '2026-03-10']);
+    expect(eventDays(allDay('2026-03-10', '2026-03-11'), ZONE)).toEqual(['2026-03-10', '2026-03-11']);
+    expect(eventDays(allDay('2026-03-10'), ZONE)).toEqual(['2026-03-10', '2026-03-10']);
   });
 
   test('groupEventsByDay puts an all-day event on its own cells, never the day before', () => {
@@ -85,19 +85,19 @@ describe(`calendar day helpers (${ZONE})`, () => {
 
   test('moveEvent keeps an all-day event at UTC midnight across both DST changes', () => {
     for (const [first, moved] of [['2026-03-06', '2026-03-09'], ['2026-03-27', '2026-03-30'], ['2026-10-23', '2026-10-26'], ['2026-10-30', '2026-11-02']]) {
-      expect(moveEvent(allDay(first!), 3)).toEqual({ startAt: `${moved}T00:00:00.000Z`, endAt: null });
+      expect(moveEvent(allDay(first!), 3, ZONE)).toEqual({ startAt: `${moved}T00:00:00.000Z`, endAt: null });
     }
   });
 
   test('moveEvent moves a multi-day all-day event as a whole', () => {
-    expect(moveEvent(allDay('2026-03-27', '2026-03-30'), -2)).toEqual({
+    expect(moveEvent(allDay('2026-03-27', '2026-03-30'), -2, ZONE)).toEqual({
       startAt: '2026-03-25T00:00:00.000Z',
       endAt: '2026-03-28T00:00:00.000Z',
     });
   });
 
   test('moveEvent keeps both wall times of a timed event', () => {
-    const r = moveEvent(timed(new Date(2026, 2, 26, 9, 0), new Date(2026, 2, 27, 17, 0)), 5)!;
+    const r = moveEvent(timed(new Date(2026, 2, 26, 9, 0), new Date(2026, 2, 27, 17, 0)), 5, ZONE)!;
     const start = new Date(r.startAt);
     expect([start.getDate(), start.getHours(), start.getMinutes()]).toEqual([31, 9, 0]);
     expect(new Date(r.endAt!).getTime() - start.getTime()).toBe(32 * HOUR);
@@ -109,7 +109,7 @@ describe(`calendar day helpers (${ZONE})`, () => {
     for (const [month, day] of [[3, dstDay(3)], [10, dstDay(10)], [11, dstDay(11)]] as const) {
       if (day === null) continue;
       const start = new Date(2026, month - 1, day - 1, 2, 30);
-      const r = moveEvent(timed(start, new Date(start.getTime() + HOUR / 2)), 1)!;
+      const r = moveEvent(timed(start, new Date(start.getTime() + HOUR / 2)), 1, ZONE)!;
       const movedStart = new Date(r.startAt);
       const wallEnd = new Date(2026, month - 1, day, 3, 0);
       expect(movedStart.getDate()).toBe(day);
@@ -118,20 +118,20 @@ describe(`calendar day helpers (${ZONE})`, () => {
   });
 
   test('moveEvent sends nothing for a zero delta or an inverted source, and keeps a null end null', () => {
-    expect(moveEvent(allDay('2026-03-10'), 0)).toBeNull();
-    expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), new Date(2026, 3, 13, 9, 0)), 1)).toBeNull();
-    expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), null), 1)!.endAt).toBeNull();
+    expect(moveEvent(allDay('2026-03-10'), 0, ZONE)).toBeNull();
+    expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), new Date(2026, 3, 13, 9, 0)), 1, ZONE)).toBeNull();
+    expect(moveEvent(timed(new Date(2026, 3, 13, 10, 0), null), 1, ZONE)!.endAt).toBeNull();
   });
 
   test('moveEventTo lands the first date on the target and carries the end along', () => {
-    expect(moveEventTo(allDay('2026-03-27', '2026-03-30'), date('2026-04-02'))).toEqual({
+    expect(moveEventTo(allDay('2026-03-27', '2026-03-30'), date('2026-04-02'), ZONE)).toEqual({
       startAt: '2026-04-02T00:00:00.000Z',
       endAt: '2026-04-05T00:00:00.000Z',
     });
-    expect(moveEventTo(allDay('2026-03-27'), date('2026-03-27'))).toBeNull();
+    expect(moveEventTo(allDay('2026-03-27'), date('2026-03-27'), ZONE)).toBeNull();
     // A timed event late in the UTC day: its first date is the local one, and so is the target.
     const start = new Date(2026, 2, 5, 23, 30);
-    const moved = moveEventTo(timed(start, null), date('2026-03-09'))!;
+    const moved = moveEventTo(timed(start, null), date('2026-03-09'), ZONE)!;
     expect([new Date(moved.startAt).getDate(), new Date(moved.startAt).getHours(), moved.endAt]).toEqual([9, 23, null]);
   });
 
@@ -146,20 +146,20 @@ describe(`calendar day helpers (${ZONE})`, () => {
 
   test('resizeEvent sends only the end, and shrinks an all-day event down to its first day', () => {
     const ev = allDay('2026-03-09', '2026-03-10');
-    expect(resizeEvent(ev, -1)).toEqual({ endAt: '2026-03-09T00:00:00.000Z' });
-    expect(resizeEvent(ev, -5)).toEqual({ endAt: '2026-03-09T00:00:00.000Z' });
-    expect(resizeEvent(ev, 2)).toEqual({ endAt: '2026-03-12T00:00:00.000Z' });
-    expect(resizeEvent(allDay('2026-03-09'), -1)).toBeNull();
-    expect(resizeEvent(ev, 0)).toBeNull();
+    expect(resizeEvent(ev, -1, ZONE)).toEqual({ endAt: '2026-03-09T00:00:00.000Z' });
+    expect(resizeEvent(ev, -5, ZONE)).toEqual({ endAt: '2026-03-09T00:00:00.000Z' });
+    expect(resizeEvent(ev, 2, ZONE)).toEqual({ endAt: '2026-03-12T00:00:00.000Z' });
+    expect(resizeEvent(allDay('2026-03-09'), -1, ZONE)).toBeNull();
+    expect(resizeEvent(ev, 0, ZONE)).toBeNull();
   });
 
   test('resizeEvent moves a timed end by local days and refuses one not after the start', () => {
     const start = new Date(2026, 3, 13, 10, 0);
-    expect(resizeEvent(timed(start, new Date(2026, 3, 14, 9, 0)), -1)).toBeNull();
-    const grown = new Date(resizeEvent(timed(start, new Date(2026, 3, 14, 9, 0)), 1)!.endAt);
+    expect(resizeEvent(timed(start, new Date(2026, 3, 14, 9, 0)), -1, ZONE)).toBeNull();
+    const grown = new Date(resizeEvent(timed(start, new Date(2026, 3, 14, 9, 0)), 1, ZONE)!.endAt);
     expect([grown.getDate(), grown.getHours()]).toEqual([15, 9]);
     // A null end anchors on the start instant.
-    const fromStart = new Date(resizeEvent(timed(start, null), 1)!.endAt);
+    const fromStart = new Date(resizeEvent(timed(start, null), 1, ZONE)!.endAt);
     expect([fromStart.getDate(), fromStart.getHours()]).toEqual([14, 10]);
   });
 

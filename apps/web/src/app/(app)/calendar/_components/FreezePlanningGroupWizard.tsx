@@ -28,6 +28,8 @@ interface Props {
   onClose: () => void;
   onFrozen: () => void;
   planningGroupId: string;
+  /** The reader zone: each event's first date is read in it. */
+  zone: string;
   milestones: CalendarEventItem[];
 }
 
@@ -57,7 +59,7 @@ function overlapReasonLabel(entry: { reason: 'weekend' | 'company' | 'vendor'; v
  * @param milestones - The planning group's events, used for the summary list.
  * @param onFrozen - Called after the group is successfully frozen.
  */
-export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, milestones }: Props) {
+export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, zone, milestones }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const utils = trpc.useUtils();
 
@@ -141,7 +143,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
                     <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded text-sm">
                       <span className="flex-1 truncate">{m.title}</span>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {formatCalendarDate(eventDays(m)[0], {})}
+                        {formatCalendarDate(eventDays(m, zone)[0], {})}
                       </span>
                       {overlapReasons && (
                         <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">

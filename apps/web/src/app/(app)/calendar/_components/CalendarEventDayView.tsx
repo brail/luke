@@ -3,7 +3,7 @@
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { addCalendarDays, calendarDateIn, type CalendarDate, formatCalendarDate, instantAt, wallTimeIn } from '@luke/core';
+import { addCalendarDays, calendarDateIn, type CalendarDate, formatCalendarDate, wallTimeIn } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import { cn } from '../../../../lib/utils';
@@ -21,8 +21,8 @@ interface Props {
   onEventClick: (id: string) => void;
   onEventUpdate: (id: string, data: { startAt: string; endAt?: string | null }) => void;
   onNoteClick?: (id: string) => void;
-  /** Called with the ISO instant at which the clicked hour starts in `zone`. */
-  onDayClick?: (isoInstant: string) => void;
+  /** Called with the day shown and the clicked hour's wall time (`'HH:00'`). */
+  onDayClick?: (date: CalendarDate, time: string) => void;
   activeBrandId?: string;
   brandColorMap: Record<string, string>;
   canUpdate?: boolean;
@@ -48,7 +48,7 @@ type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt
  * via `onEventUpdate` in 15-minute snaps.
  *
  * @param onEventUpdate - Called after a drag completes with the new ISO timestamps.
- * @param onDayClick - Called with the ISO instant of the clicked hour slot.
+ * @param onDayClick - Called with the day and wall time of the clicked hour slot.
  * @param onNoteClick - Called with the event ID to open the personal-note dialog.
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map from `assignBrandColors`.
@@ -193,7 +193,7 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
                   className="flex-1 cursor-pointer hover:bg-muted/20 transition-colors"
                   onClick={() => {
                     if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
-                    onDayClick(instantAt(viewDate, `${String(h).padStart(2, '0')}:00`, zone).toISOString());
+                    onDayClick(viewDate, `${String(h).padStart(2, '0')}:00`);
                   }}
                 />
               )}

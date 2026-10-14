@@ -11,6 +11,8 @@ import type { HolidayMap } from '../useHolidays';
 
 interface Props {
   event: CalendarEventItem;
+  /** The reader zone: a timed event's first date is read in it. */
+  zone: string;
   /** The event's first date as the user is moving it (`eventDays`). */
   draftDate: CalendarDate;
   onDraftDateChange: (d: CalendarDate) => void;
@@ -19,7 +21,7 @@ interface Props {
 }
 
 /** One wizard step: review/adjust a single calendar event's date. */
-export function EventStep({ event, draftDate, onDraftDateChange, holidayDates, closedDates }: Props) {
+export function EventStep({ event, zone, draftDate, onDraftDateChange, holidayDates, closedDates }: Props) {
   return (
     <div className="space-y-4">
       <div>
@@ -30,7 +32,7 @@ export function EventStep({ event, draftDate, onDraftDateChange, holidayDates, c
       </div>
 
       <EventTimelineDrag
-        anchorDate={eventDays(event)[0]}
+        anchorDate={eventDays(event, zone)[0]}
         value={draftDate}
         onChange={onDraftDateChange}
         holidayDates={holidayDates}

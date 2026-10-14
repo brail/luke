@@ -138,6 +138,7 @@ function wizardElement(onClose: () => void = () => undefined) {
         onFrozen={() => undefined}
         calendarId={CALENDAR_ID}
         planningGroupId={PLANNING_GROUP_ID}
+        zone="Europe/Rome"
         brandId={BRAND_ID}
         seasonId={SEASON_ID}
         events={EVENTS}

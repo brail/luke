@@ -4,7 +4,7 @@ import { Info } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { type CalendarDate } from '@luke/core';
+import { type CalendarDate, wallTimeIn } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Button } from '../../../../../components/ui/button';
@@ -43,6 +43,8 @@ interface Props {
   planningGroupId: string;
   brandId: string;
   seasonId: string;
+  /** The reader zone when the wizard opens: each event's first date is read in it, and moves are made in it. */
+  zone: string;
   /** Events just created by the `applyTemplate` call for `planningGroupId` — not the whole calendar. */
   events: CalendarEventItem[];
   holidayDates: HolidayMap;
@@ -59,17 +61,20 @@ interface Props {
  * Draft dates are client-only until the user advances past a step — no autosave per keystroke —
  * so back/forth navigation never leaves a half-written state.
  */
-export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, events, holidayDates }: Props) {
+export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, zone: openingZone, events, holidayDates }: Props) {
+  // The zone the wizard opened with (ADR-035): the drafts are read in it once, so a profile change
+  // while it is open neither reorders the steps nor turns a draft into an unrequested move.
+  const [zone] = useState(openingZone);
   const sortedEvents = useMemo(
-    () => sortByFirstDay(events),
-    [events]
+    () => sortByFirstDay(events, zone),
+    [events, zone]
   );
 
   const [stepIndex, setStepIndex] = useState(0);
   const [phase, setPhase] = useState<'stepping' | 'freeze'>('stepping');
   // Each event's first date as the user moves it; saving moves the whole event by the difference.
   const [draftDates, setDraftDates] = useState<Map<string, CalendarDate>>(
-    () => new Map(sortedEvents.map(m => [m.id, eventDays(m)[0]]))
+    () => new Map(sortedEvents.map(m => [m.id, eventDays(m, zone)[0]]))
   );
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
@@ -175,7 +180,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     const draft = draftDates.get(currentEvent.id);
     // The end moves with the start (an all-day event keeps its length in days, a timed one its
     // duration); a start-only write used to leave a multi-day event's end behind.
-    const moved = draft && moveEventTo(currentEvent, draft);
+    const moved = draft && moveEventTo(currentEvent, draft, zone);
     if (moved) {
       await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: moved.startAt, endAt: moved.endAt ?? undefined }, expected: expectedDates(currentEvent) });
     }
@@ -207,6 +212,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
         onClose={() => setPhase('stepping')}
         onFrozen={onFrozen}
         planningGroupId={planningGroupId}
+        zone={zone}
         milestones={sortedEvents}
       />
     );
@@ -242,7 +248,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <div className="space-y-4 py-2">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Evento {stepIndex + 1} di {sortedEvents.length}
-                {heldUntil && ` — sessione valida fino alle ${heldUntil.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
+                {heldUntil && ` — sessione valida fino alle ${wallTimeIn(heldUntil, zone)}`}
                 {heldUntil && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -258,7 +264,8 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
 
               <EventStep
                 event={currentEvent}
-                draftDate={draftDates.get(currentEvent.id) ?? eventDays(currentEvent)[0]}
+                zone={zone}
+                draftDate={draftDates.get(currentEvent.id) ?? eventDays(currentEvent, zone)[0]}
                 onDraftDateChange={d => setDraftDates(prev => new Map(prev).set(currentEvent.id, d))}
                 holidayDates={holidayDates}
                 closedDates={closedDates}

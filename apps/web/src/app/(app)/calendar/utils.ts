@@ -38,18 +38,13 @@ export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[
   return dates;
 }
 
-/** The zone the browser renders in: the default `zone` of the helpers below only until every caller passes the reader zone (ADR-035). */
-function browserTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
-}
-
 type EventDates = Pick<CalendarEventItem, 'startAt' | 'endAt' | 'allDay'>;
 
 /**
  * The first and last calendar date `m` occupies in `zone`: an all-day event its own stored dates in
  * every zone, a timed one its instants projected there, the end exclusive.
  */
-export function eventDays(m: EventDates, zone = browserTimeZone()): [CalendarDate, CalendarDate] {
+export function eventDays(m: EventDates, zone: string): [CalendarDate, CalendarDate] {
   return eventCalendarDays(new Date(m.startAt), m.endAt ? new Date(m.endAt) : null, m.allDay, zone);
 }
 
@@ -58,7 +53,7 @@ export function eventDays(m: EventDates, zone = browserTimeZone()): [CalendarDat
  * instant — so an all-day event never sorts among the previous evening's timed events west of UTC.
  * Each event's date is read once, not once per comparison.
  */
-export function sortByFirstDay<T extends EventDates>(events: T[], zone = browserTimeZone()): T[] {
+export function sortByFirstDay<T extends EventDates>(events: T[], zone: string): T[] {
   return events
     .map(m => ({ m, day: eventDays(m, zone)[0], at: new Date(m.startAt).getTime() }))
     .sort((a, b) => a.day.localeCompare(b.day) || a.at - b.at)
@@ -88,7 +83,7 @@ export function expectedDates(m: EventDates): { startAt: string; endAt: string |
  * start). All-day: both dates by calendar arithmetic. Timed: a template item stays on day starts,
  * any other event keeps the wall time of its ends; the interval never inverts.
  */
-export function moveEvent(m: EventDates, days: number, zone = browserTimeZone()): { startAt: string; endAt: string | null } | null {
+export function moveEvent(m: EventDates, days: number, zone: string): { startAt: string; endAt: string | null } | null {
   const start = new Date(m.startAt);
   const end = m.endAt ? new Date(m.endAt) : null;
   if (days === 0 || (end && end < start)) return null;
@@ -97,7 +92,7 @@ export function moveEvent(m: EventDates, days: number, zone = browserTimeZone())
 }
 
 /** `m` moved so that its first occupied date in `zone` is `date` (a drop on a cell, a wizard draft). */
-export function moveEventTo(m: EventDates, date: CalendarDate, zone = browserTimeZone()): { startAt: string; endAt: string | null } | null {
+export function moveEventTo(m: EventDates, date: CalendarDate, zone: string): { startAt: string; endAt: string | null } | null {
   return moveEvent(m, calendarDaysBetween(eventDays(m, zone)[0], date), zone);
 }
 
@@ -114,7 +109,7 @@ export function moveToCell(m: EventDates, droppableId: string, zone: string): { 
  * to the start of the day `days` later, as `moveEvent` moves a template item, any other end keeping
  * its wall time — and is refused unless it stays after the start.
  */
-export function resizeEvent(m: EventDates, days: number, zone = browserTimeZone()): { endAt: string } | null {
+export function resizeEvent(m: EventDates, days: number, zone: string): { endAt: string } | null {
   if (days === 0) return null;
   if (m.allDay) {
     const [first, last] = eventDays(m, zone);
