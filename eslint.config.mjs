@@ -819,6 +819,22 @@ export default [
     rules: { '@luke/audit-metadata-object-literal': 'error' },
   },
   {
+    // Implicit-zone date backstop (ADR-035 §Enforcement): outside core's date modules a date is read
+    // or written only in a zone the code names. Tests are outside it: they build fixtures in the
+    // zone of the process on purpose. Each exemption in source carries its reason.
+    files: ['{apps,packages}/*/src/**/*.{ts,tsx}', 'apps/api/{scripts,prisma}/**/*.ts', 'tools/**/*.ts', 'scripts/**/*.ts'],
+    ignores: [
+      'packages/core/src/utils/dateUtils.ts',
+      'packages/core/src/schemas/dates.ts',
+      '**/__tests__/**',
+      '**/__browser__/**',
+      '**/*.test.{ts,tsx}',
+      '**/*.spec.{ts,tsx}',
+    ],
+    plugins: { '@luke': lukePlugin },
+    rules: { '@luke/no-implicit-zone-date': 'error' },
+  },
+  {
     // Detached-JSDoc backstop, on every source file: a JSDoc stacked directly on another documents
     // nothing, because TypeScript keeps only the last block. See `lessons.md` (2026-09-29).
     files: ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'],

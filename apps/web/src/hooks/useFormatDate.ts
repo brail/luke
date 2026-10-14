@@ -14,6 +14,7 @@ type Instant = Date | (string & { readonly __brand?: never });
 
 /** The browser's zone, or UTC when it reports one `Intl` cannot use; a value read in it names it. */
 function browserZone(): string {
+  // eslint-disable-next-line @luke/no-implicit-zone-date -- a reader without a session has no profile zone; every value read in this one names it (ADR-035)
   const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return isValidTimeZone(zone) ? zone : 'UTC';
 }

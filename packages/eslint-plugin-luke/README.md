@@ -17,7 +17,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 ## Main Exports
 
 <!-- luke-docs:start:exports -->
-`index.js` has a single default export — `{ rules: { … } }` — holding the eleven rules below. A rule file that is not listed there is not loaded by anything.
+`index.js` has a single default export — `{ rules: { … } }` — holding the twelve rules below. A rule file that is not listed there is not loaded by anything.
 
 ### Repository-wide (every workspace TypeScript file)
 
@@ -32,6 +32,12 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 | Rule | Description |
 |------|-------------|
 | `@luke/no-detached-jsdoc` | Refuses a JSDoc block followed directly by another one, with only whitespace and no blank line between: TypeScript keeps only the last block, so the first documents nothing and the declaration it was written for is left undocumented. A blank line keeps a file header apart from the first declaration's doc. |
+
+### Date and time (TypeScript sources: apps and packages, API scripts and seeds, `tools/`, `scripts/`)
+
+| Rule | Description |
+|------|-------------|
+| `@luke/no-implicit-zone-date` | Refuses the date forms that read or write in the zone of the process or the browser (ADR-035 §Enforcement): the local getters and setters of `Date`, `getTimezoneOffset`, `toDateString`/`toTimeString`/`toLocaleDateString`/`toLocaleTimeString`, `new Date` with several arguments or with a string written or assembled in place, `Date.parse` of such a string, `Intl.DateTimeFormat`, the UTC date cut from `toISOString()` (`slice`/`substring`/`substr(0, 10)`, `split('T')[0]`) and `z.string().datetime()`/`z.iso.datetime()`. A syntax rule: `Intl.DateTimeFormatOptions` in a type is left alone, a string that names its offset (`…Z`, `…+01:00`) passes, a variable or a `+` of two names is not judged, and a method of another object named like a `Date` one is reported. Off in tests, which build fixtures in the zone of the process, and in core's `utils/dateUtils.ts` and `schemas/dates.ts`. Each exemption in source carries its reason |
 
 ### Module boundary
 
@@ -65,7 +71,7 @@ No workspace declares this package, and none may: `WORKSPACE_POLICY` in `tools/s
 - **Two rules share one view of what a module reference is.** `rules/lib/module-references.js` normalises every statically knowable form — `import`, `export … from`, `export *`, `import()`, a template literal with no interpolation, `require()`, `import x = require()`, `import('x').T` — into a single callback, marking the compiler-erased ones `typeOnly`. A rule that visits `ImportDeclaration` alone is silent on the rest, which is exactly what was measured before this existed. A specifier built from an expression is not judged: it is not statically knowable, and silence there is the honest answer.
 - **Rules that take options validate them with an object-form schema.** With ESLint's array form only the options that are present are checked, so a bare `'error'` reached `create` with no options at all and failed as a `TypeError` while loading the rule. `minItems` makes a missing option a configuration error ESLint reports as one, which is the difference between failing loudly and judging nothing.
 - **No build step, and the lint cache knows it.** Plain ESM JavaScript (`"type": "module"`, `exports` mapping `.` to `./index.js`), consumed directly through `workspace:*` — there is no `tsc`, no `dist`. Turbo's `lint` task lists `index.js` and `rules/**/*.js` as inputs, so editing a rule invalidates every workspace's cached lint result instead of leaving stale green ones behind.
-- **The rules have their own tests, and not all of them are covered.** `pnpm --filter eslint-plugin-luke test` runs `node --test` over `rules/__tests__/*.test.js` — the shared module-reference visitor, `no-restricted-module-references`, `no-undeclared-workspace-import`, `audit-metadata-object-literal`, `no-unreachable-disabled-tooltip` and `no-detached-jsdoc`. The other six rules are exercised only by the repository's own lint run.
+- **The rules have their own tests, and not all of them are covered.** `pnpm --filter eslint-plugin-luke test` runs `node --test` over `rules/__tests__/*.test.js` — the shared module-reference visitor, `no-restricted-module-references`, `no-undeclared-workspace-import`, `audit-metadata-object-literal`, `no-unreachable-disabled-tooltip`, `no-detached-jsdoc` and `no-implicit-zone-date`. The other six rules are exercised only by the repository's own lint run.
 <!-- luke-docs:end:concepts -->
 
 ## Usage Example

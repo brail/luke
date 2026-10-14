@@ -24,6 +24,7 @@ import {
 /** The browser's zone, or `null` when it cannot be read or is not one the server accepts. */
 function readBrowserZone(): string | null {
   try {
+    // eslint-disable-next-line @luke/no-implicit-zone-date -- reading the browser zone is this dialog's job: it proposes it as the profile zone (ADR-035)
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     return zone && isValidTimeZone(zone) ? zone : null;
   } catch (error) {

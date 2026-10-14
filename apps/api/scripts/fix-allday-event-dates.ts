@@ -22,6 +22,7 @@ import { createScriptPrismaClient } from './lib/prisma.js';
 
 
 function utcMidnightOfLocalDay(d: Date): Date {
+  // eslint-disable-next-line @luke/no-implicit-zone-date -- the 2.1 → 3.0 repair reads the local day in the zone its command line sets (TZ), by design (ADR-035)
   return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
 }
 
