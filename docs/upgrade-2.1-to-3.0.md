@@ -34,8 +34,10 @@ ends, and its delivery record starts empty. If 2.1.6 has already sent that day's
 digest, a 3.0 reopening later the same day sends it again: finish before 07:00
 UTC, or accept one duplicate.
 
-Users also see one change the procedure does not touch: calendar events are
-visible by brand scope (the 3.0.0 notes in `CHANGELOG.md`).
+Users also see two changes the procedure does not touch: calendar events are
+visible by brand scope (the 3.0.0 notes in `CHANGELOG.md`), and dates and
+times, the calendar's included, are read in each user's profile zone — a user
+whose browser is in another zone is offered to update the profile.
 
 ## 1. Before the day
 
