@@ -351,4 +351,17 @@ describe("share procedures — the caller's brand boundary", () => {
       await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: eventY, userId: userC } } }).catch(() => {});
     }
   });
+
+  it("answers FORBIDDEN before anything about the event's state or calendar", async () => {
+    // A cancelled event: a state check run first would answer CONFLICT and tell the caller so.
+    await prisma.calendarEvent.update({ where: { id: eventY }, data: { cancelledAt: new Date() } });
+    try {
+      const editor = createCallerWithSession(editorXSession);
+      await expectToThrow(editor.seasonCalendar.deleteMilestone({ id: eventY }), { code: 'FORBIDDEN' });
+      await expectToThrow(editor.seasonCalendar.cancelMilestone({ id: eventY, reason: 'Spostato a un altro calendario' }), { code: 'FORBIDDEN' });
+      await expectToThrow(editor.seasonCalendar.getSyncStatus({ calendarId: calY }), { code: 'FORBIDDEN' });
+    } finally {
+      await prisma.calendarEvent.update({ where: { id: eventY }, data: { cancelledAt: null } });
+    }
+  });
 });

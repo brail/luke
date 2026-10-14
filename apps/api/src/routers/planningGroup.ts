@@ -9,7 +9,6 @@
  * CalendarEvents, not the group's own identity).
  */
 
-import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { PlanningGroupInputSchema } from '@luke/core';
@@ -20,6 +19,7 @@ import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
+  resolveCalendarBrandAccess,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
 import {
@@ -60,12 +60,7 @@ export const planningGroupRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ calendarId: z.string().uuid() }).and(PlanningGroupInputSchema))
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx, calendar.brandId);
+      await resolveCalendarBrandAccess(ctx, input.calendarId);
 
       const result = await createPlanningGroup(input.calendarId, input.name, ctx.prisma);
       await logAudit(ctx, { action: 'PLANNING_GROUP_CREATE', targetType: 'PlanningGroup', targetId: result.id, result: 'SUCCESS', metadata: { name: result.name } });

@@ -9,7 +9,7 @@ rules:
       them. They were all unguarded — layouts, groups, rows, quotations,
       revisions, phase history. Use the resolvers in
       `services/brandScope.service.ts` (`resolveLayoutBrandAccess`,
-      `resolveRowBrandAccess`, …): they take the brandId from the resolved
+      `resolveRowBrandAccess`, `resolveEventBrandAccess`, …): they take the brandId from the resolved
       record, never from an input field, and throw NOT_FOUND before FORBIDDEN.
     patterns:
       - pattern-either:
@@ -20,7 +20,7 @@ rules:
       # that flags correct code gets disabled within a week.
       - metavariable-regex:
           metavariable: $KEY
-          regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId|planId|specsheetId)$'
+          regex: '^(collectionLayoutId|groupId|rowId|quotationId|revisionId|planningGroupId|calendarId|eventId|planId|specsheetId)$'
       - pattern-not-regex: '(BrandAccess|getUserAllowedBrandIds|filterAllowedBrandIds)'
     paths:
       include:

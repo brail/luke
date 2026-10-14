@@ -14,7 +14,9 @@
  *  - User visibility: listGrantCandidates, grantUserVisibility, revokeUserVisibility
  *
  * PlanningGroup CRUD (create/list/rename/delete) lives in `planningGroup.ts`.
- * Brand access is enforced per-operation via `assertBrandAccess`.
+ * Brand access is enforced per operation, before anything about the record's state: by the
+ * `resolve*BrandAccess` resolvers of `brandScope.service.ts` for a record addressed by id, by
+ * `assertBrandAccess` where the input names the brand.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -48,8 +50,11 @@ import { sseStore } from '../lib/sseStore.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
+  assertBrandAccessAll,
   filterAllowedBrandIds,
   getAllowedFunctionIds,
+  resolveCalendarBrandAccess,
+  resolveEventBrandAccess,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
 import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
@@ -137,17 +142,9 @@ export const seasonCalendarRouter = router({
       status: z.enum(SEASON_CALENDAR_STATUS),
     }))
     .mutation(async ({ input, ctx }) => {
+      await resolveCalendarBrandAccess(ctx, input.calendarId);
       const result = await ctx.prisma.$transaction(async tx => {
         const txClient = tx as unknown as PrismaClient;
-        const calendar = await txClient.seasonCalendar.findUnique({
-          where: { id: input.calendarId },
-          select: { brandId: true },
-        });
-        if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-        // Outside the transaction on purpose: memberships aren't written from
-        // here, and reading them on the pooled client is what makes the
-        // per-request cache of accessible brands usable.
-        await assertBrandAccess(ctx, calendar.brandId);
         return updateCalendarStatus(input.calendarId, input.status, txClient);
       });
       await logAudit(ctx, { action: 'SEASON_CALENDAR_STATUS_UPDATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { status: input.status } });
@@ -328,18 +325,11 @@ export const seasonCalendarRouter = router({
       expected: EventDatesExpectedSchema,
     }))
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.id },
-        include: { calendar: { select: { brandId: true, seasonId: true } }, planningGroup: { select: { frozenAt: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
       if (event.cancelledAt) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di modificarlo.' });
       }
-      await Promise.all([
-        assertBrandAccess(ctx, event.calendar.brandId),
-        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
-      ]);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       // A frozen, already-passed phase event is locked: date moves would launder a real delay out of
       // the alert engine, and renaming or reassigning the phase would rewrite what the frozen baseline
@@ -426,16 +416,9 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MilestoneRescheduleInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.id },
-        include: { calendar: { select: { brandId: true, seasonId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      const event = await resolveEventBrandAccess(ctx, input.id);
       if (event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: non può essere spostato' });
-      await Promise.all([
-        assertBrandAccess(ctx, event.calendar.brandId),
-        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
-      ]);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await rescheduleMilestone(input.id, input.startAt, input.endAt, ctx.prisma, input.allDay, datesFromExpected(input.expected));
 
@@ -474,18 +457,11 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.id },
-        include: { calendar: { select: { brandId: true, seasonId: true } }, planningGroup: { select: { frozenAt: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
       if (event.cancelledAt) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di eliminarlo.' });
       }
-      await Promise.all([
-        assertBrandAccess(ctx, event.calendar.brandId),
-        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
-      ]);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       // A frozen phase event carries a baseline commitment + variance history — hard delete would
       // destroy them. Retire it with `cancelMilestone` instead (keeps it in history).
@@ -537,10 +513,9 @@ export const seasonCalendarRouter = router({
       });
       const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
       const calendarIdsToLockCheck = [...new Set(events.map(e => e.calendarId))];
-      await Promise.all([
-        ...uniqueBrandIds.map(brandId => assertBrandAccess(ctx, brandId)),
-        ...calendarIdsToLockCheck.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)),
-      ]);
+      // The brands first: a caller outside them must not learn that a calendar is being edited.
+      await assertBrandAccessAll(ctx, uniqueBrandIds);
+      await Promise.all(calendarIdsToLockCheck.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)));
 
       // Same frozen-phase protection as single delete: block the whole batch if any is a frozen
       // commitment — those must be cancelled, not hard-deleted.
@@ -609,16 +584,9 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MilestoneCancelInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.id },
-        include: { calendar: { select: { brandId: true, seasonId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      const event = await resolveEventBrandAccess(ctx, input.id);
       if (event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento già annullato' });
-      await Promise.all([
-        assertBrandAccess(ctx, event.calendar.brandId),
-        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
-      ]);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await ctx.prisma.calendarEvent.update({
         where: { id: input.id },
@@ -656,16 +624,9 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.id },
-        include: { calendar: { select: { brandId: true, seasonId: true } }, phase: { select: { label: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+      const event = await resolveEventBrandAccess(ctx, input.id, { phase: { select: { label: true } } });
       if (!event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
-      await Promise.all([
-        assertBrandAccess(ctx, event.calendar.brandId),
-        assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma),
-      ]);
+      await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       if (event.phaseId) {
         const conflicting = await ctx.prisma.calendarEvent.findFirst({
@@ -715,12 +676,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CalendarEventPersonalNoteInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        select: { calendar: { select: { brandId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx, event.calendar.brandId);
+      await resolveEventBrandAccess(ctx, input.eventId);
 
       if (input.body.trim() === '') {
         await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
@@ -749,12 +705,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ eventId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        select: { calendar: { select: { brandId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx, event.calendar.brandId);
+      await resolveEventBrandAccess(ctx, input.eventId);
 
       await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
       return { success: true };
@@ -954,12 +905,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ calendarId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx, calendar.brandId);
+      await resolveCalendarBrandAccess(ctx, input.calendarId);
       return getSyncStatus(input.calendarId, ctx.prisma);
     }),
 
@@ -975,12 +921,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ calendarId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx, calendar.brandId);
+      await resolveCalendarBrandAccess(ctx, input.calendarId);
       return listGoogleCalendarBindings(input.calendarId, ctx.prisma, ctx.session.user.id, ctx.session.user.role as Role);
     }),
 
@@ -996,12 +937,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ calendarId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const calendar = await ctx.prisma.seasonCalendar.findUnique({
-        where: { id: input.calendarId },
-        select: { brandId: true },
-      });
-      if (!calendar) throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
-      await assertBrandAccess(ctx, calendar.brandId);
+      await resolveCalendarBrandAccess(ctx, input.calendarId);
       const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_SYNC_TRIGGERED', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { synced: syncResult.synced, errors: syncResult.errors } });
       return { triggered: true, ...syncResult };
@@ -1024,15 +960,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ eventId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        select: {
-          calendar: { select: { brandId: true } },
-          userVisibilities: { select: { userId: true } },
-        },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx, event.calendar.brandId);
+      const event = await resolveEventBrandAccess(ctx, input.eventId, { userVisibilities: { select: { userId: true } } });
 
       const [candidates, audience] = await Promise.all([
         listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma),
@@ -1067,12 +995,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CalendarEventUserVisibilityInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        select: { title: true, calendar: { select: { brandId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx, event.calendar.brandId);
+      const event = await resolveEventBrandAccess(ctx, input.eventId);
 
       await ctx.prisma.$transaction(async tx => {
         const accessMap = await resolveBrandAccess(input.userIds, tx);
@@ -1143,12 +1066,7 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(z.object({ eventId: z.string().uuid(), userIds: z.array(z.string().uuid()).min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const event = await ctx.prisma.calendarEvent.findUnique({
-        where: { id: input.eventId },
-        select: { title: true, calendar: { select: { brandId: true } } },
-      });
-      if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-      await assertBrandAccess(ctx, event.calendar.brandId);
+      const event = await resolveEventBrandAccess(ctx, input.eventId);
 
       await ctx.prisma.calendarEventUserVisibility.deleteMany({
         where: { eventId: input.eventId, userId: { in: input.userIds } },

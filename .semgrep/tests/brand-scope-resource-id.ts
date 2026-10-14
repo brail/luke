@@ -17,6 +17,13 @@ export const router = {
     .input(z.object({ rowId: z.string(), line: z.string() }))
     .mutation(async () => null),
 
+  // A calendar event reaches its brand through its calendar, like a row through its layout.
+  // ruleid: luke-brand-scope-resource-id
+  noteOnEvent: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(z.object({ eventId: z.string(), body: z.string() }))
+    .mutation(async () => null),
+
   // ok: luke-brand-scope-resource-id
   guardedRow: protectedProcedure
     .use(requirePermission('collection:update'))

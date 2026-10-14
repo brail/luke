@@ -32,7 +32,7 @@
 import { TRPCError } from '@trpc/server';
 
 import { type Role } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { getUserAllowedIds, type UserAllowedIds } from './context.service';
 
@@ -54,9 +54,9 @@ export interface BrandScopeCtx {
 /**
  * The user's team-membership access (brand IDs + function IDs), resolved once.
  *
- * Memoizes the **promise**, not the value: `seasonCalendar.deleteMilestones`
- * fires one `assertBrandAccess` per brand in parallel with `Promise.all`, and
- * with a value cache each one would start before the first had finished,
+ * Memoizes the **promise**, not the value: guards a request runs in parallel
+ * (a `Promise.all` of guards, or tRPC batching several procedures into one
+ * request) would each start before the first had finished with a value cache,
  * missing it every time. Result: one `companyTeamMembership.findMany` per
  * request instead of one per guard, and zero for admins — and, since brand
  * and function guards now share the same promise, one query even when a
@@ -172,7 +172,8 @@ export async function filterAllowedBrandIds(
 //
 // Chains: layout → `brandId` (0 hop) · group and row → `collectionLayout.brandId`
 // (1 hop, `collectionLayoutId` is denormalized on the row) · quotation →
-// `row.collectionLayout.brandId` (2 hop).
+// `row.collectionLayout.brandId` (2 hop) · season calendar → `brandId` (0 hop) · calendar event and
+// planning group → `calendar.brandId` (1 hop).
 
 /** Layout, by `collectionLayoutId`. */
 export async function resolveLayoutBrandAccess(
@@ -409,4 +410,51 @@ export async function resolvePlanningGroupBrandAccess(
 
   await assertBrandAccess(ctx, group.calendar.brandId);
   return group;
+}
+
+/** Season calendar, by `calendarId`. */
+export async function resolveCalendarBrandAccess(ctx: BrandScopeCtx, calendarId: string) {
+  const calendar = await ctx.prisma.seasonCalendar.findUnique({
+    where: { id: calendarId },
+    select: { id: true, brandId: true },
+  });
+  if (!calendar) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+  }
+
+  await assertBrandAccess(ctx, calendar.brandId);
+  return calendar;
+}
+
+/** What every event resolve loads besides the event's own fields: its calendar's brand and season. */
+const EVENT_CALENDAR = { calendar: { select: { brandId: true, seasonId: true } } } as const;
+
+/** Relations a caller may add; `calendar` is not one, `EVENT_CALENDAR` always loads it. */
+type EventInclude = Omit<Prisma.CalendarEventInclude, 'calendar'>;
+
+/** A calendar event with `EVENT_CALENDAR` and the relations in `I`. */
+type EventWith<I extends EventInclude> = Prisma.CalendarEventGetPayload<{ include: I & typeof EVENT_CALENDAR }>;
+
+/**
+ * Calendar event, by `eventId`: event → `calendar.brandId`. Returns the event's fields, its
+ * calendar's `brandId` and `seasonId`, and the relations in `include`, so a procedure checks the
+ * brand before anything about the event's state.
+ */
+export async function resolveEventBrandAccess<I extends EventInclude = Record<never, never>>(
+  ctx: BrandScopeCtx,
+  eventId: string,
+  include?: I
+): Promise<EventWith<I>> {
+  const event = await ctx.prisma.calendarEvent.findUnique({
+    where: { id: eventId },
+    include: { ...include, ...EVENT_CALENDAR },
+  });
+  if (!event) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+  }
+
+  await assertBrandAccess(ctx, event.calendar.brandId);
+  // The query's include is `{ ...include, ...EVENT_CALENDAR }`, which is `EventWith<I>`'s; TypeScript
+  // cannot resolve Prisma's payload type for a generic `I`, so it cannot see the two are equal.
+  return event as EventWith<I>;
 }
