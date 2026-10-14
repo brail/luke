@@ -6,7 +6,9 @@ import {
   DEFAULT_CLOCKS_TIMEZONES,
   DEFAULT_FOREX_PAIRS,
   DashboardTaskInputSchema,
+  DashboardWidgetsSaveSchema,
   DashboardWidgetsSchema,
+  FOREX_PAIR_PATTERN,
   FrankfurterRatesSchema,
   addCalendarDays,
   calendarDateIn,
@@ -36,6 +38,8 @@ const DEFAULT_WIDGETS: WidgetConfigItem[] = [
 export const dashboardRouter = router({
   /**
    * Returns the current user's dashboard widget configuration, merging missing default widgets.
+   * Settings a widget's schema refuses, stored before saves were checked, come back dropped
+   * (`DashboardWidgetsSchema`): the widget shows its defaults and the next save is accepted.
    *
    * @auth {authenticated}
    * @input {none}
@@ -63,11 +67,13 @@ export const dashboardRouter = router({
    * Persists the current user's dashboard widget configuration.
    *
    * @auth {authenticated}
-   * @input {{ widgets: DashboardWidgetsSchema }} — ordered widget config array.
+   * @input {{ widgets: DashboardWidgetsSaveSchema }} — ordered widget config array; clock zones and
+   *   forex pairs are validated (a zone stored in the spelling `Intl` gives it). `getConfig` drops
+   *   settings stored before that check, so the layout it returns always saves.
    * @output {{ ok: true }}
    */
   saveConfig: selfProcedure
-    .input(z.object({ widgets: DashboardWidgetsSchema }))
+    .input(z.object({ widgets: DashboardWidgetsSaveSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const widgetsJson = input.widgets as unknown as Prisma.InputJsonValue;
@@ -196,7 +202,7 @@ export const dashboardRouter = router({
    */
   getForexRates: protectedProcedure
     .use(requirePermission('dashboard:read'))
-    .input(z.object({ pairs: z.array(z.string().regex(/^[A-Z]{3}\/[A-Z]{3}$/)).min(1).max(8) }))
+    .input(z.object({ pairs: z.array(z.string().regex(FOREX_PAIR_PATTERN)).min(1).max(8) }))
     .query(async ({ ctx, input }) => {
       const byBase = new Map<string, string[]>();
       for (const pair of input.pairs) {
