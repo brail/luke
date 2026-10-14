@@ -3,10 +3,10 @@ import { render } from 'vitest-browser-react';
 
 import { type CalendarDate } from '@luke/core';
 
+import { date, ZONE } from '../../../../lib/__browser__/zoneFixtures';
 import { useCalendarViewNavigation } from '../useCalendarViewNavigation';
 
 import { paramsFromLastReplace } from './navigationTestHelpers';
-import { date, ZONE } from './zoneFixtures';
 
 /**
  * The calendar's `?date=` under every zone of `vitest.browser.timezone.config.mts`: a calendar date,

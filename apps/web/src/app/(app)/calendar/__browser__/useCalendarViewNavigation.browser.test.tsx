@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { date } from '../../../../lib/__browser__/zoneFixtures';
 import { useCalendarViewNavigation } from '../useCalendarViewNavigation';
 
 import { paramsFromLastReplace } from './navigationTestHelpers';
-import { date } from './zoneFixtures';
 
 /**
  * Regression test for the real `useCalendarViewNavigation` production hook (not a

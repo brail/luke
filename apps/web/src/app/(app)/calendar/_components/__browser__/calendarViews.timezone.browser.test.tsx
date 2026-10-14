@@ -3,7 +3,7 @@ import { render } from 'vitest-browser-react';
 
 import { type CalendarDate } from '@luke/core';
 
-import { at as atInstant, date, PROFILE, ZONE } from '../../__browser__/zoneFixtures';
+import { at as atInstant, date, PROFILE, ZONE } from '../../../../../lib/__browser__/zoneFixtures';
 import { CalendarEventDayView } from '../CalendarEventDayView';
 import { CalendarEventGantt } from '../CalendarEventGantt';
 import { CalendarEventMonthView } from '../CalendarEventMonthView';

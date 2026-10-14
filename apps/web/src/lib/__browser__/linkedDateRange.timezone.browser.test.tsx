@@ -1,42 +1,45 @@
 import { describe, expect, test } from 'vitest';
 
-import { applyLinkedEdit, rangeFromEvent, resolveIso, toDateInput, toTimeInput, UNTOUCHED_SIDES } from '../linkedDateRange';
+import { applyLinkedEdit, rangeFromEvent, resolveSide, UNTOUCHED_SIDES } from '../linkedDateRange';
+
+import { at, PROFILE, ZONE } from './zoneFixtures';
 
 /**
  * The event form's date fields under each zone of `vitest.browser.timezone.config.mts`. An all-day
  * value is a calendar date stored at UTC midnight: reading it with local getters showed the day
  * before west of UTC, and because the form always resubmits its dates, saving any other field moved
- * the event back a day. A timed value is an instant shown in the browser zone.
+ * the event back a day. A timed value is an instant read in the zone the form captured — the
+ * profile zone, never the browser's (ADR-035).
  */
-
-const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 describe(`event form date fields (${ZONE})`, () => {
   test('an all-day value reads as its own date, with no time of its own', () => {
-    expect(toDateInput('2026-03-10T00:00:00.000Z', true)).toBe('2026-03-10');
-    expect(toTimeInput('2026-03-10T00:00:00.000Z', true)).toBe('09:00');
+    expect(rangeFromEvent('2026-03-10T00:00:00.000Z', null, true, PROFILE)).toMatchObject({ startDate: '2026-03-10', startTime: '09:00' });
   });
 
   test('an all-day event loads and resubmits unchanged', () => {
     const startAt = '2026-03-10T00:00:00.000Z';
     const endAt = '2026-03-12T00:00:00.000Z';
-    const range = rangeFromEvent(startAt, endAt, true);
+    const range = rangeFromEvent(startAt, endAt, true, PROFILE);
     expect([range.startDate, range.endDate]).toEqual(['2026-03-10', '2026-03-12']);
-    expect(resolveIso(range.startDate, range.startTime, true)).toBe(startAt);
-    expect(resolveIso(range.endDate, range.endTime, true)).toBe(endAt);
+    expect(resolveSide(range.startDate, range.startTime, true, PROFILE)).toBe(startAt);
+    expect(resolveSide(range.endDate, range.endTime, true, PROFILE)).toBe(endAt);
   });
 
-  test('a timed event loads and resubmits unchanged', () => {
-    const startAt = new Date(2026, 2, 10, 9, 30).toISOString();
-    const endAt = new Date(2026, 2, 10, 11, 0).toISOString();
-    const range = rangeFromEvent(startAt, endAt, false);
-    expect([range.startTime, range.endTime]).toEqual(['09:30', '11:00']);
-    expect(resolveIso(range.startDate, range.startTime, false)).toBe(startAt);
-    expect(resolveIso(range.endDate, range.endTime, false)).toBe(endAt);
+  test('a timed event loads in the profile zone and resubmits unchanged', () => {
+    // 23:30 in the profile zone is the next day east of it, 00:30 the day before west of it.
+    for (const [startTime, endTime] of [['09:30', '11:00'], ['00:30', '01:00'], ['23:00', '23:30']]) {
+      const startAt = at('2026-03-10', startTime!).toISOString();
+      const endAt = at('2026-03-10', endTime!).toISOString();
+      const range = rangeFromEvent(startAt, endAt, false, PROFILE);
+      expect(range).toEqual({ startDate: '2026-03-10', startTime, endDate: '2026-03-10', endTime });
+      expect(resolveSide(range.startDate, range.startTime, false, PROFILE)).toBe(startAt);
+      expect(resolveSide(range.endDate, range.endTime, false, PROFILE)).toBe(endAt);
+    }
   });
 
   test('an all-day event with no end loads with the same end date and a later end time', () => {
-    const range = rangeFromEvent('2026-03-10T00:00:00.000Z', null, true);
+    const range = rangeFromEvent('2026-03-10T00:00:00.000Z', null, true, PROFILE);
     expect(range).toEqual({ startDate: '2026-03-10', startTime: '09:00', endDate: '2026-03-10', endTime: '10:00' });
   });
 

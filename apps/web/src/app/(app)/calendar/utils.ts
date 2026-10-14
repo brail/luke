@@ -30,24 +30,6 @@ export function wallMinutes(instant: Date, zone: string): number {
   return Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 }
 
-/**
- * Parses a 'YYYY-MM-DD' string as LOCAL midnight on that calendar day — never `new Date(string)`,
- * which the spec anchors to UTC midnight for a date-only ISO string: in any negative-UTC-offset
- * zone (e.g. US timezones), that instant falls on the PREVIOUS local calendar day. Returns `null`
- * for a malformed or non-existent date (e.g. '2026-02-30') rather than silently rolling it over,
- * the way `new Date(y, m, d)` would.
- */
-export function parseLocalIsoDate(s: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]) - 1;
-  const date = Number(match[3]);
-  const parsed = new Date(year, month, date);
-  const isValid = parsed.getFullYear() === year && parsed.getMonth() === month && parsed.getDate() === date;
-  return isValid ? parsed : null;
-}
-
 /** Every calendar date of a stored range (UTC midnights, both ends included), one per day. */
 export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[] {
   const dates: CalendarDate[] = [];

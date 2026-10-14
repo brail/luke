@@ -13,6 +13,7 @@ import {
   formatCalendarDate,
   MilestoneCancelInputSchema,
   MilestoneRescheduleInputSchema,
+  type CalendarDate,
   type CalendarDaysRelevance,
 } from '@luke/core';
 
@@ -43,15 +44,15 @@ import {
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Textarea } from '../../../../components/ui/textarea';
+import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import {
   UNTOUCHED_SIDES,
-  addOneHour,
   applyLinkedEdit,
   rangeFromEvent,
-  resolveIso,
-  toDateInput,
-  toTimeInput,
+  rangeFromStart,
+  resolveSide,
+  toggleAllDay,
   type DateRangeState,
   type RangeSide,
 } from '../../../../lib/linkedDateRange';
@@ -92,8 +93,10 @@ interface Props {
   functionsById?: Record<string, string>;
   event?: ExistingEvent;
   existingMilestones?: CalendarEventItem[];
-  defaultDate?: string;
-  defaultAllDay?: boolean;
+  /** The day a new event starts on. */
+  defaultDate?: CalendarDate;
+  /** The wall time a new timed event starts at; without one the new event is all-day. */
+  defaultTime?: string;
   readOnly?: boolean;
   onDeleted?: () => void;
 }
@@ -165,10 +168,10 @@ const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | u
 };
 
 /** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
-function describeBaselineDrift(event: ExistingEvent): string | null {
+function describeBaselineDrift(event: ExistingEvent, zone: string): string | null {
   if (!event.baselineStartAt) return null;
   // The baseline carries no `allDay` of its own, so it is read as the event's current kind.
-  const firstDay = (at: Date | string) => eventDays({ startAt: at, endAt: null, allDay: event.allDay })[0];
+  const firstDay = (at: Date | string) => eventDays({ startAt: at, endAt: null, allDay: event.allDay }, zone)[0];
   const diff = calendarDaysBetween(firstDay(event.baselineStartAt), firstDay(event.startAt));
   if (diff === 0) return null;
   return diff > 0 ? `Spostato di ${diff}g rispetto al piano originale` : `Anticipato di ${-diff}g rispetto al piano originale`;
@@ -185,15 +188,21 @@ function describeBaselineDrift(event: ExistingEvent): string | null {
  * @param availableFunctions - Company functions available as visibility targets.
  * @param functionsById - Map of function ID → name for display in read-only mode.
  * @param event - Existing event to edit; omit for create mode.
- * @param defaultDate - ISO date pre-filled in the start-date field on create.
+ * @param defaultDate - Date pre-filled in the start-date field on create.
+ * @param defaultTime - Wall time pre-filled on create; without one the new event is all-day.
  * @param readOnly - When true renders a read-only info card instead of the form.
  * @param onDeleted - Called after the event is successfully deleted.
  */
 export function CalendarEventDialog({
   open, onClose, onSaved, brandId, seasonId, availableFunctions, functionsById = {},
-  event, existingMilestones = [], defaultDate, defaultAllDay = true, readOnly = false, onDeleted,
+  event, existingMilestones = [], defaultDate, defaultTime, readOnly = false, onDeleted,
 }: Props) {
   const isEdit = !!event;
+  const defaultAllDay = !defaultTime;
+  // Times are typed and read in the zone the dialog opened with (ADR-035); the read-only card
+  // formats in the reader zone like the rest of the page.
+  const zone = useFormZone();
+  const fmt = useFormatDate();
   const isCancelled = !!event?.cancelledAt;
   const { can } = usePermission();
 
@@ -278,14 +287,12 @@ export function CalendarEventDialog({
   }, [isEdit, existingMilestones, event, effectivePlanningGroupId, phases]);
 
   useEffect(() => {
-    // An existing event is read so that resubmitting it unchanged writes the same instants; a new
-    // one starts on the local day the user clicked (`defaultDate` is that day's local midnight, or
-    // the clicked hour in the day view).
-    const sd = toDateInput(defaultDate);
-    const st = defaultAllDay ? '09:00' : toTimeInput(defaultDate);
+    if (!zone) return;
+    // An existing event is read in the dialog's zone so that resubmitting it unchanged writes the
+    // same instants; a new one starts on the day (and, from the day view, the hour) the user clicked.
     const range = event
-      ? rangeFromEvent(event.startAt, event.endAt, event.allDay)
-      : { startDate: sd, startTime: st, endDate: sd, endTime: addOneHour(st) };
+      ? rangeFromEvent(event.startAt, event.endAt, event.allDay, zone)
+      : rangeFromStart(defaultDate ?? '', defaultTime ?? '09:00');
     rangeTouched.current = { ...UNTOUCHED_SIDES };
     form.reset({
       title: event?.title ?? '',
@@ -300,7 +307,7 @@ export function CalendarEventDialog({
     });
     // Deliberately not depending on `form`: it is stable, and listing it would reset the fields
     // under the user on every render.
-  }, [event?.id, open, defaultDate]);
+  }, [event?.id, open, defaultDate, defaultTime, zone]);
 
   const toggleVisible = (fnId: string) => {
     const next = visibilityFunctionIds.includes(fnId)
@@ -422,9 +429,9 @@ export function CalendarEventDialog({
    * refuses comes back as a toast, which is exactly the divergence the shared schema is for.
    */
   const handleReschedule = (data: RescheduleFormData) => {
-    if (!event) return;
-    const startIso = resolveIso(data.startDate, data.startTime, data.allDay);
-    const endIso = data.endDate ? resolveIso(data.endDate, data.endTime, data.allDay) : undefined;
+    if (!event || !zone) return;
+    const startIso = resolveSide(data.startDate, data.startTime, data.allDay, zone, { at: event.startAt, allDay: event.allDay });
+    const endIso = data.endDate ? resolveSide(data.endDate, data.endTime, data.allDay, zone, { at: event.endAt, allDay: event.allDay }) : undefined;
     if (startIso === null || endIso === null) {
       rescheduleForm.setError(startIso === null ? 'startDate' : 'endDate', {
         message: 'Data e ora non formano un istante valido',
@@ -448,8 +455,12 @@ export function CalendarEventDialog({
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   const handleSubmit = (data: EventFormData) => {
-    const startIso = resolveIso(data.startDate, data.startTime, data.allDay);
-    const endIso = data.endDate ? resolveIso(data.endDate, data.endTime, data.allDay) : undefined;
+    if (!zone) return;
+    // A side the user left as it was sends the stored instant back (`resolveSide`).
+    const startIso = resolveSide(data.startDate, data.startTime, data.allDay, zone, event && { at: event.startAt, allDay: event.allDay });
+    const endIso = data.endDate
+      ? resolveSide(data.endDate, data.endTime, data.allDay, zone, event && { at: event.endAt, allDay: event.allDay })
+      : undefined;
     if (startIso === null || endIso === null) {
       form.setError(startIso === null ? 'startDate' : 'endDate', {
         message: 'Data e ora non formano un istante valido',
@@ -483,18 +494,20 @@ export function CalendarEventDialog({
     }
   };
 
+  // Until the reader zone is known nothing here can be read or typed: the page opens the dialog
+  // only from views that already waited for it.
+  if (!zone) return null;
+
   if ((readOnly || isCancelled) && event) {
-    const dateStr = formatCalendarDate(eventDays(event)[0], {
+    const dateStr = formatCalendarDate(eventDays(event, zone)[0], {
       weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     });
-    const timeStr = !event.allDay
-      ? new Date(event.startAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-      : null;
+    const timeStr = !event.allDay ? fmt.time(event.startAt) : null;
     const phaseLabel = phases.find(p => p.id === event.phaseId)?.label;
     const relevanceLabel = event.calendarDaysRelevance
       ? { COMPANY: 'gg lavorativi (azienda)', VENDOR: 'gg lavorativi (fornitore)', BOTH: 'gg lavorativi (entrambi)' }[event.calendarDaysRelevance]
       : null;
-    const baselineDrift = describeBaselineDrift(event);
+    const baselineDrift = describeBaselineDrift(event, zone);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
         <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
@@ -522,8 +535,8 @@ export function CalendarEventDialog({
               <p className="text-sm capitalize">{dateStr}{timeStr ? ` · ${timeStr}` : ''}</p>
               {event.endAt && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  → {event.allDay ? formatCalendarDate(calendarDateOf(new Date(event.endAt)), {}) : new Date(event.endAt).toLocaleDateString('it-IT')}
-                  {!event.allDay && ` · ${new Date(event.endAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
+                  → {event.allDay ? formatCalendarDate(calendarDateOf(new Date(event.endAt)), {}) : fmt.date(event.endAt)}
+                  {!event.allDay && ` · ${fmt.time(event.endAt)}`}
                 </p>
               )}
               {baselineDrift && (
@@ -568,7 +581,7 @@ export function CalendarEventDialog({
     );
   }
 
-  const editFormBaselineDrift = event ? describeBaselineDrift(event) : null;
+  const editFormBaselineDrift = event ? describeBaselineDrift(event, zone) : null;
 
   return (
     <>
@@ -689,7 +702,9 @@ export function CalendarEventDialog({
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center gap-2 space-y-0">
                   <FormControl>
-                    <Checkbox checked={field.value} onCheckedChange={v => field.onChange(!!v)} disabled={isDateLocked} />
+                    {/* The end date crosses the exclusive/inclusive change (`toggleAllDay`). */}
+                    <Checkbox checked={field.value} disabled={isDateLocked}
+                      onCheckedChange={v => { form.setValue('endDate', toggleAllDay(form.getValues(), !!v).endDate); field.onChange(!!v); }} />
                   </FormControl>
                   <FormLabel className="cursor-pointer font-normal">Tutto il giorno</FormLabel>
                 </FormItem>
@@ -738,6 +753,7 @@ export function CalendarEventDialog({
                 )}
               />
             </div>
+            {!allDay && <p className="text-xs text-muted-foreground">Orari in {zone}</p>}
 
             {isDateLocked && (
               <p className="text-xs text-amber-700">
@@ -904,7 +920,8 @@ export function CalendarEventDialog({
                     render={({ field }) => (
                       <FormItem className="flex flex-row items-center gap-2 space-y-0">
                         <FormControl>
-                          <Checkbox checked={field.value} onCheckedChange={v => field.onChange(!!v)} />
+                          <Checkbox checked={field.value}
+                            onCheckedChange={v => { rescheduleForm.setValue('endDate', toggleAllDay(rescheduleForm.getValues(), !!v).endDate); field.onChange(!!v); }} />
                         </FormControl>
                         <FormLabel className="cursor-pointer font-normal">Tutto il giorno</FormLabel>
                       </FormItem>
@@ -948,6 +965,7 @@ export function CalendarEventDialog({
                       )}
                     />
                   </div>
+                  {!rescheduleForm.watch('allDay') && <p className="text-xs text-muted-foreground">Orari in {zone}</p>}
                   <FormField
                     control={rescheduleForm.control}
                     name="reason"

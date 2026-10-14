@@ -5,7 +5,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
-import type { CalendarDate } from '@luke/core';
+import { calendarDateIn, type CalendarDate, wallTimeIn } from '@luke/core';
 
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { Badge } from '../../../components/ui/badge';
@@ -38,14 +38,9 @@ import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { useCalendarViewNavigation } from './useCalendarViewNavigation';
-import { assignBrandColors, expectedDates, isStaleListError, parseLocalIsoDate, resolveBrandColor } from './utils';
+import { assignBrandColors, expectedDates, isStaleListError, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
-
-/** `date` at the browser's local midnight: how the event dialog still reads a clicked day. A calendar date always parses. */
-function localMidnight(date: CalendarDate): Date {
-  return parseLocalIsoDate(date)!;
-}
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
@@ -60,8 +55,8 @@ export default function CalendarPage() {
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [noteEventId, setNoteEventId] = useState<string | null>(null);
-  const [createDate, setCreateDate] = useState<string | null>(null);
-  const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
+  /** The new event being created: its first day and, from the day view, its start time; `null` when none is. */
+  const [createAt, setCreateAt] = useState<{ date?: CalendarDate; time?: string } | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
@@ -227,10 +222,12 @@ export default function CalendarPage() {
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
   const showFreezeInBar = canFreeze && seasonState === 'planning';
 
-  const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
+  const handleDayClickTimed = useCallback((iso: string) => {
+    if (zone) setCreateAt({ date: calendarDateIn(new Date(iso), zone), time: wallTimeIn(new Date(iso), zone) });
+  }, [zone]);
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
-  const handleCellClick = useCallback((date: CalendarDate) => { setCreateDefaultAllDay(true); setCreateDate(localMidnight(date).toISOString()); }, []);
+  const handleCellClick = useCallback((date: CalendarDate) => setCreateAt({ date }), []);
   const onCellClickProp = canUpdate ? handleCellClick : undefined;
   const handleDayNumberClick = useCallback((date: CalendarDate) => setViewAndDate('day', date), [setViewAndDate]);
   const handleWeekNumberClick = useCallback((monday: CalendarDate) => setViewAndDate('week', monday), [setViewAndDate]);
@@ -288,7 +285,7 @@ export default function CalendarPage() {
   const actionBar = (
     <div className="flex gap-2 items-center">
       {canUpdate && (
-        <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}>
+        <Button size="sm" onClick={() => setCreateAt({})} disabled={!calendar}>
           <Plus size={14} className="mr-1" />Nuovo evento
         </Button>
       )}
@@ -517,7 +514,7 @@ export default function CalendarPage() {
               <Calendar size={32} className="mx-auto mb-2 opacity-40" />
               <p>Nessun evento per i filtri selezionati</p>
               {canUpdate && calendar && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateDate('')}>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateAt({})}>
                   <Plus size={14} className="mr-1" />Crea il primo evento
                 </Button>
               )}
@@ -638,18 +635,18 @@ export default function CalendarPage() {
       )}
 
       {/* Create dialog */}
-      {calendar && createDate !== null && (
+      {calendar && createAt && (
         <CalendarEventDialog
           open
-          onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
-          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); refetchAfterEventChange(); }}
+          onClose={() => setCreateAt(null)}
+          onSaved={() => { setCreateAt(null); refetchAfterEventChange(); }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           existingMilestones={milestones ?? []}
-          defaultDate={createDate || undefined}
-          defaultAllDay={createDefaultAllDay}
+          defaultDate={createAt.date}
+          defaultTime={createAt.time}
         />
       )}
 

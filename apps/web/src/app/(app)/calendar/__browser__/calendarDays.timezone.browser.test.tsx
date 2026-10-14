@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { addCalendarDays, calendarDateIn, startOfDayIn, type CalendarDate } from '@luke/core';
 
+import { at, date, PROFILE, ZONE } from '../../../../lib/__browser__/zoneFixtures';
 import {
   eventDays,
   expandDateRangeToIsoDates,
@@ -17,7 +18,6 @@ import {
   sortByFirstDay,
 } from '../utils';
 
-import { at, date, PROFILE, ZONE } from './zoneFixtures';
 
 /**
  * The calendar views' day logic, run in a real Chromium under each zone of
