@@ -988,7 +988,10 @@ export const seasonCalendarRouter = router({
    * Lists the candidate pool for `grantUserVisibility`'s picker: active users with access to the
    * event's brand (admins included), each flagged with whether they already have an explicit
    * grant. Deliberately not "every user" — the picker must never offer a name that
-   * `grantUserVisibility` would then reject.
+   * `grantUserVisibility` would then reject. Someone already in the event's audience
+   * (`resolveEventAudience`: through their function, or the whole brand for an event with no
+   * function) is left out unless explicitly granted, so the grant stays revocable; an admin outside
+   * it stays, since a grant is what brings them the event's notifications.
    *
    * @auth season_calendar:read
    * @input { eventId }
@@ -1007,9 +1010,15 @@ export const seasonCalendarRouter = router({
       });
       if (!event) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
 
-      const candidates = await listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma);
+      const [candidates, audience] = await Promise.all([
+        listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma),
+        resolveEventAudienceOne(input.eventId, ctx.prisma),
+      ]);
       const grantedIds = new Set(event.userVisibilities.map(v => v.userId));
-      return candidates.map(u => ({ ...u, alreadyGranted: grantedIds.has(u.id) }));
+      const seesAlready = new Set(audience);
+      return candidates
+        .filter(u => grantedIds.has(u.id) || !seesAlready.has(u.id))
+        .map(u => ({ ...u, alreadyGranted: grantedIds.has(u.id) }));
     }),
 
   /**

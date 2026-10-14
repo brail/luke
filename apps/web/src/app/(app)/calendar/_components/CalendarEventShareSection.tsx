@@ -24,7 +24,8 @@ function displayName(u: { firstName: string; lastName: string; username: string 
  * `CalendarEventUserVisibility` for individual users outside the event's visible functions.
  * The candidate pool (`listGrantCandidates`) is already scoped to users with access to the
  * event's brand, so nobody offered here can be rejected on save (see `grantUserVisibility`'s
- * own brand-access validation).
+ * own brand-access validation), and leaves out who already sees the event as saved, unless
+ * already granted.
  */
 export function CalendarEventShareSection({ eventId, readOnly = false }: Props) {
   const utils = trpc.useUtils();
@@ -75,7 +76,7 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
         Dà accesso a una persona specifica anche se non appartiene a nessuna delle funzioni sopra — solo tra chi ha già accesso a questo brand.
       </p>
       {(candidates ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nessun utente con accesso a questo brand da poter aggiungere.</p>
+        <p className="text-xs text-muted-foreground">Nessuno da aggiungere: chi ha accesso a questo brand vede già l&apos;evento.</p>
       ) : (
         <div className="max-h-40 divide-y overflow-y-auto rounded-md border">
           {(candidates ?? []).map(u => (

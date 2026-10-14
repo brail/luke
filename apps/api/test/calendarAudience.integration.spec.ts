@@ -295,3 +295,29 @@ describe('grantUserVisibility — brand validation (plan B)', () => {
     }
   });
 });
+
+describe('listGrantCandidates — the share picker', () => {
+  it('leaves out who already sees the event through their function, and keeps the rest', async () => {
+    const caller = createCallerWithSession(adminWithTeamSession);
+    const ids = (await caller.seasonCalendar.listGrantCandidates({ eventId: eventY })).map(c => c.id);
+    expect(ids).not.toContain(userY); // fnA in brandY: already in the audience
+    expect(ids).toContain(userC); // brandY through another function
+    expect(ids).toContain(adminNoTeamId); // reads everything, but is notified only once shared
+  });
+
+  it('offers nobody on an event with no function: the whole brand already sees it', async () => {
+    const caller = createCallerWithSession(adminWithTeamSession);
+    await expect(caller.seasonCalendar.listGrantCandidates({ eventId: eventNoVis })).resolves.toEqual([]);
+  });
+
+  it('keeps someone already shared with, so the share can be revoked', async () => {
+    await prisma.calendarEventUserVisibility.create({ data: { eventId: eventY, userId: userC } });
+    try {
+      const caller = createCallerWithSession(adminWithTeamSession);
+      const candidates = await caller.seasonCalendar.listGrantCandidates({ eventId: eventY });
+      expect(candidates.find(c => c.id === userC)?.alreadyGranted).toBe(true);
+    } finally {
+      await prisma.calendarEventUserVisibility.delete({ where: { eventId_userId: { eventId: eventY, userId: userC } } });
+    }
+  });
+});
