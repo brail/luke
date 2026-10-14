@@ -78,7 +78,7 @@ export function CalendarEventGantt({ milestones, onEventClick, onEventUpdate, on
     if (sorted.length === 0) {
       return { rangeStart: cellDate(new Date()), totalDays: 90, dayW: DAY_W_LARGE, months: [] as { label: string; startDay: number; width: number }[] };
     }
-    const spans = sorted.map(eventDays);
+    const spans = sorted.map(m => eventDays(m));
     const minDate = spans.reduce((a, [first]) => first < a ? first : a, spans[0]![0]);
     const maxDate = spans.reduce((a, [, last]) => last > a ? last : a, spans[0]![1]);
     const rangeStart = addCalendarDays(minDate, -7);

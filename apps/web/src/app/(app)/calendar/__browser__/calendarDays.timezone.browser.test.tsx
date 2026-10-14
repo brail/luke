@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseCalendarDate, type CalendarDate } from '@luke/core';
+import { addCalendarDays, instantAt, parseCalendarDate, sameTimeZone, startOfDayIn, type CalendarDate } from '@luke/core';
 
 import {
   eventDays,
@@ -14,6 +14,7 @@ import {
   moveEventTo,
   moveToCell,
   resizeEvent,
+  sortByFirstDay,
 } from '../utils';
 
 /**
@@ -95,7 +96,7 @@ describe(`calendar day helpers (${ZONE})`, () => {
     });
   });
 
-  test('moveEvent keeps a timed start on its wall clock and the end at the original duration', () => {
+  test('moveEvent keeps both wall times of a timed event', () => {
     const r = moveEvent(timed(new Date(2026, 2, 26, 9, 0), new Date(2026, 2, 27, 17, 0)), 5)!;
     const start = new Date(r.startAt);
     expect([start.getDate(), start.getHours(), start.getMinutes()]).toEqual([31, 9, 0]);
@@ -103,14 +104,16 @@ describe(`calendar day helpers (${ZONE})`, () => {
   });
 
   test('moveEvent never inverts an interval moved into the spring-forward gap or the autumn fold', () => {
-    // Rome, 28 Mar 02:30–03:00 + 1 day: moving both ends by wall clock gave 03:30–03:00.
-    // The autumn change is in October in Rome, in November in Los Angeles.
+    // Rome, 28 Mar 02:30–03:00 + 1 day by wall clock gives 03:30–03:00: the end then follows at the
+    // original duration, else keeps 03:00 (ADR-036). Autumn: October in Rome, November in Los Angeles.
     for (const [month, day] of [[3, dstDay(3)], [10, dstDay(10)], [11, dstDay(11)]] as const) {
       if (day === null) continue;
       const start = new Date(2026, month - 1, day - 1, 2, 30);
       const r = moveEvent(timed(start, new Date(start.getTime() + HOUR / 2)), 1)!;
-      expect(new Date(r.endAt!).getTime() - new Date(r.startAt).getTime()).toBe(HOUR / 2);
-      expect(new Date(r.startAt).getDate()).toBe(day);
+      const movedStart = new Date(r.startAt);
+      const wallEnd = new Date(2026, month - 1, day, 3, 0);
+      expect(movedStart.getDate()).toBe(day);
+      expect(new Date(r.endAt!)).toEqual(wallEnd > movedStart ? wallEnd : new Date(movedStart.getTime() + HOUR / 2));
     }
   });
 
@@ -198,5 +201,91 @@ describe(`calendar day helpers (${ZONE})`, () => {
     expect(getIsoWeek(date('2026-03-30'))).toBe(14);
     expect(getIsoWeek(date('2026-12-31'))).toBe(53);
     expect(getIsoWeek(date('2027-01-04'))).toBe(1);
+  });
+});
+
+/**
+ * The reader's profile zone, never the browser's (ADR-035): Rome, or Los Angeles where the browser
+ * itself is in Rome. Each instance thus reads in a zone whose offset differs from its own.
+ */
+const PROFILE = sameTimeZone(ZONE, 'Europe/Rome') ? 'America/Los_Angeles' : 'Europe/Rome';
+
+/** The instant the wall clock of `zone` reads `time` on `day`. */
+function at(day: string, time: string, zone = PROFILE): Date {
+  return instantAt(date(day), time, zone);
+}
+
+describe(`calendar day helpers in a named zone (browser ${ZONE}, profile ${PROFILE})`, () => {
+  test('a timed event sits on its dates in the zone passed, not in the browser zone', () => {
+    // Half past midnight falls on the day before west of the profile zone, half past eleven on the
+    // day after east of it: one of the two leaves the profile date in every instance.
+    for (const time of ['00:30', '23:30']) {
+      expect(eventDays(timed(at('2026-03-10', time), null), PROFILE)).toEqual(['2026-03-10', '2026-03-10']);
+    }
+  });
+
+  test('sortByFirstDay orders by the first date in the zone passed', () => {
+    // 02:00 in Rome is the evening before in Los Angeles, 20:00 in Los Angeles the next morning in
+    // Rome: the timed event sorts against the all-day one by its profile date.
+    const isRome = PROFILE === 'Europe/Rome';
+    const allDayEvent = allDay('2026-03-10');
+    const timedEvent = timed(isRome ? at('2026-03-10', '02:00') : at('2026-03-09', '20:00'), null);
+    const expected = isRome ? [allDayEvent, timedEvent] : [timedEvent, allDayEvent];
+    expect(sortByFirstDay([timedEvent, allDayEvent], PROFILE)).toEqual(expected);
+    expect(sortByFirstDay([allDayEvent, timedEvent], PROFILE)).toEqual(expected);
+  });
+
+  test('moveEvent keeps the wall clock of the zone passed, across its own DST change', () => {
+    // Los Angeles changes on 8 March, Rome on 29 March: each move crosses one zone's change only.
+    for (const [days, target] of [[10, '2026-03-15'], [26, '2026-03-31']] as const) {
+      expect(moveEvent(timed(at('2026-03-05', '09:00'), at('2026-03-05', '11:00')), days, PROFILE)).toEqual({
+        startAt: at(target, '09:00').toISOString(),
+        endAt: at(target, '11:00').toISOString(),
+      });
+    }
+  });
+
+  test('moveEventTo lands the first date on the target in the zone passed', () => {
+    for (const time of ['00:30', '23:30']) {
+      expect(moveEventTo(timed(at('2026-03-05', time), null), date('2026-03-09'), PROFILE)).toEqual({
+        startAt: at('2026-03-09', time).toISOString(),
+        endAt: null,
+      });
+    }
+  });
+
+  test('resizeEvent moves a timed end by days of the zone passed', () => {
+    expect(resizeEvent(timed(at('2026-03-05', '09:00'), at('2026-03-05', '11:00')), 10, PROFILE)).toEqual({
+      endAt: at('2026-03-15', '11:00').toISOString(),
+    });
+  });
+
+  test('resizeEvent keeps an end on a day start where the zone skips midnight, as moveEvent does', () => {
+    // Santiago skips 00:00–01:00 on 6 September 2026: that day starts at 01:00, the next at 00:00.
+    // Keeping the wall time, an end at 01:00 resized onto the 7th covered one more day.
+    const zone = 'America/Santiago';
+    const dayStart = (day: string) => startOfDayIn(date(day), zone).toISOString();
+    const item = timed(new Date(dayStart('2026-09-05')), new Date(dayStart('2026-09-06')));
+    expect(resizeEvent(item, 1, zone)).toEqual({ endAt: dayStart('2026-09-07') });
+    expect(resizeEvent({ ...item, endAt: dayStart('2026-09-07') }, -1, zone)).toEqual({ endAt: dayStart('2026-09-06') });
+  });
+
+  test('moveEvent keeps a day-aligned timed event (a template item) on day starts across DST (ADR-036)', () => {
+    // A timed template item runs from the start of its day to the start of the next. Moved onto a
+    // 23- or 25-hour day at the original duration, its end landed at 01:00 or 23:00 instead.
+    const cases = [
+      ['Europe/Rome', '2026-03-28'], ['Europe/Rome', '2026-10-24'],
+      ['America/Los_Angeles', '2026-03-07'], ['America/Los_Angeles', '2026-10-31'],
+    ] as const;
+    for (const [zone, day] of cases) {
+      const first = date(day);
+      const item = timed(startOfDayIn(first, zone), startOfDayIn(addCalendarDays(first, 1), zone));
+      const moved = moveEvent(item, 1, zone);
+      expect(moved).toEqual({
+        startAt: startOfDayIn(addCalendarDays(first, 1), zone).toISOString(),
+        endAt: startOfDayIn(addCalendarDays(first, 2), zone).toISOString(),
+      });
+      expect(eventDays({ ...item, ...moved! }, zone)).toEqual([addCalendarDays(first, 1), addCalendarDays(first, 1)]);
+    }
   });
 });

@@ -7,6 +7,9 @@ import {
   eventCalendarDays,
   initials,
   isEventDeleteLocked as isEventDeleteLockedCore,
+  isoWeekOf,
+  shiftEventByDays,
+  startOfDayIn,
   utcMidnightOf,
 } from '@luke/core';
 
@@ -80,13 +83,13 @@ export function expandDateRangeToIsoDates(start: Date, end: Date): CalendarDate[
 
 /** Returns the ISO 8601 week number (1–53) of `d`. */
 export function getIsoWeek(d: CalendarDate): number {
-  const date = utcMidnightOf(d);
-  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return isoWeekOf(d).week;
 }
 
-/** The zone the browser renders in: view cells and timed events are read in it. */
+/**
+ * The zone the browser renders in: view cells (local midnights) are read in it. The default `zone`
+ * of the helpers below only until every caller passes the reader zone (ADR-035).
+ */
 function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
@@ -99,21 +102,21 @@ export function cellDate(d: Date): CalendarDate {
 type EventDates = Pick<CalendarEventItem, 'startAt' | 'endAt' | 'allDay'>;
 
 /**
- * The first and last calendar date `m` occupies in the browser zone: an all-day event its own
- * stored dates in every zone, a timed one its instants projected here, the end exclusive.
+ * The first and last calendar date `m` occupies in `zone`: an all-day event its own stored dates in
+ * every zone, a timed one its instants projected there, the end exclusive.
  */
-export function eventDays(m: EventDates): [CalendarDate, CalendarDate] {
-  return eventCalendarDays(new Date(m.startAt), m.endAt ? new Date(m.endAt) : null, m.allDay, browserTimeZone());
+export function eventDays(m: EventDates, zone = browserTimeZone()): [CalendarDate, CalendarDate] {
+  return eventCalendarDays(new Date(m.startAt), m.endAt ? new Date(m.endAt) : null, m.allDay, zone);
 }
 
 /**
- * `events` in the order the views list them: by first occupied date, then by start instant — so an
- * all-day event never sorts among the previous evening's timed events west of UTC. Each event's
- * date is read once, not once per comparison.
+ * `events` in the order the views list them: by first occupied date in `zone`, then by start
+ * instant — so an all-day event never sorts among the previous evening's timed events west of UTC.
+ * Each event's date is read once, not once per comparison.
  */
-export function sortByFirstDay<T extends EventDates>(events: T[]): T[] {
+export function sortByFirstDay<T extends EventDates>(events: T[], zone = browserTimeZone()): T[] {
   return events
-    .map(m => ({ m, day: eventDays(m)[0], at: new Date(m.startAt).getTime() }))
+    .map(m => ({ m, day: eventDays(m, zone)[0], at: new Date(m.startAt).getTime() }))
     .sort((a, b) => a.day.localeCompare(b.day) || a.at - b.at)
     .map(({ m }) => m);
 }
@@ -136,30 +139,22 @@ export function expectedDates(m: EventDates): { startAt: string; endAt: string |
 }
 
 /**
- * `m` moved by `days` calendar days, or `null` when there is nothing to send (no move, or a source
- * whose end is before its start). All-day: both dates by calendar arithmetic, so they stay at UTC
- * midnight. Timed: the start keeps its wall clock — a time the zone skips resolves forward, a
- * repeated one to its first occurrence — and the end follows at the original elapsed duration, so
- * the interval can never invert across a DST change (its end's wall clock may move by that hour).
+ * `m` moved by `days` calendar days of `zone` by the one shift contract (`shiftEventByDays`,
+ * ADR-036), or `null` when there is nothing to send (no move, or a source whose end is before its
+ * start). All-day: both dates by calendar arithmetic. Timed: a template item stays on day starts,
+ * any other event keeps the wall time of its ends; the interval never inverts.
  */
-export function moveEvent(m: EventDates, days: number): { startAt: string; endAt: string | null } | null {
+export function moveEvent(m: EventDates, days: number, zone = browserTimeZone()): { startAt: string; endAt: string | null } | null {
   const start = new Date(m.startAt);
   const end = m.endAt ? new Date(m.endAt) : null;
   if (days === 0 || (end && end < start)) return null;
-  if (m.allDay) {
-    const shift = (d: Date) => utcMidnightOf(addCalendarDays(calendarDateOf(d), days)).toISOString();
-    return { startAt: shift(start), endAt: end ? shift(end) : null };
-  }
-  const newStart = addDays(start, days);
-  return {
-    startAt: newStart.toISOString(),
-    endAt: end ? new Date(newStart.getTime() + end.getTime() - start.getTime()).toISOString() : null,
-  };
+  const moved = shiftEventByDays({ startAt: start, endAt: end, allDay: m.allDay }, days, zone);
+  return { startAt: moved.startAt.toISOString(), endAt: moved.endAt ? moved.endAt.toISOString() : null };
 }
 
-/** `m` moved so that its first occupied date is `date` (a drop on a cell, a wizard draft). */
-export function moveEventTo(m: EventDates, date: CalendarDate): { startAt: string; endAt: string | null } | null {
-  return moveEvent(m, calendarDaysBetween(eventDays(m)[0], date));
+/** `m` moved so that its first occupied date in `zone` is `date` (a drop on a cell, a wizard draft). */
+export function moveEventTo(m: EventDates, date: CalendarDate, zone = browserTimeZone()): { startAt: string; endAt: string | null } | null {
+  return moveEvent(m, calendarDaysBetween(eventDays(m, zone)[0], date), zone);
 }
 
 /**
@@ -173,19 +168,26 @@ export function moveToCell(m: EventDates, droppableId: string): { startAt: strin
 /**
  * The new end of `m` after a Gantt resize by `days`, or `null` when nothing changes or the result
  * is not valid; the start is never part of it. All-day: the last date moves, never before the
- * first. Timed: the end (the start when there is none) moves by `days` local days, the same wall
- * clock semantics as `moveEvent`, and is refused unless it stays after the start.
+ * first. Timed: the end (the start when there is none) moves by `days` days of `zone` — a day start
+ * to the start of the day `days` later, as `moveEvent` moves a template item, any other end keeping
+ * its wall time — and is refused unless it stays after the start.
  */
-export function resizeEvent(m: EventDates, days: number): { endAt: string } | null {
+export function resizeEvent(m: EventDates, days: number, zone = browserTimeZone()): { endAt: string } | null {
   if (days === 0) return null;
   if (m.allDay) {
-    const [first, last] = eventDays(m);
+    const [first, last] = eventDays(m, zone);
     const moved = addCalendarDays(last, days);
     const newLast = moved < first ? first : moved;
     return newLast === last ? null : { endAt: utcMidnightOf(newLast).toISOString() };
   }
   const start = new Date(m.startAt);
-  const newEnd = addDays(m.endAt ? new Date(m.endAt) : start, days);
+  const end = m.endAt ? new Date(m.endAt) : start;
+  // A day start stays one, as `shiftEventByDays` keeps a template item's: not always 00:00 (a zone
+  // that skips midnight starts that day at 01:00), so keeping the wall time could add or drop a day.
+  const endDay = calendarDateIn(end, zone);
+  const newEnd = startOfDayIn(endDay, zone).getTime() === end.getTime()
+    ? startOfDayIn(addCalendarDays(endDay, days), zone)
+    : shiftEventByDays({ startAt: end, endAt: null, allDay: false }, days, zone).startAt;
   return newEnd > start ? { endAt: newEnd.toISOString() } : null;
 }
 
@@ -223,7 +225,7 @@ const PALETTE = [
  * every cell whose date it occupies (`eventDays`).
  */
 export function groupEventsByDay<T extends EventDates>(events: T[], days: Date[]): T[][] {
-  const spans = events.map(eventDays);
+  const spans = events.map(m => eventDays(m));
   return days.map(cellDate).map(day => events.filter((_, i) => spans[i]![0] <= day && day <= spans[i]![1]));
 }
 
