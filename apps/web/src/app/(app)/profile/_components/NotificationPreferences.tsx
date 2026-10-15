@@ -4,8 +4,9 @@ import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { CALENDAR_EVENT_KEYS, type CalendarEventKey } from '@luke/core';
+import { CALENDAR_CHANGE_KEYS, CALENDAR_DEADLINE_KEYS, CALENDAR_DIGEST_KEY, type CalendarEventKey } from '@luke/core';
 
+import { PermissionButton } from '../../../../components/PermissionButton';
 import { Button } from '../../../../components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../../../components/ui/collapsible';
 import { Skeleton } from '../../../../components/ui/skeleton';
@@ -27,19 +28,28 @@ const CALENDAR_EVENT_LABELS: Record<CalendarEventKey, string> = {
   CALENDAR_UNCANCEL: 'Evento ripristinato',
   CALENDAR_APPLY_TEMPLATE: 'Template applicato',
   CALENDAR_CLONE: 'Calendario clonato',
+  CALENDAR_DEADLINE_UPCOMING: 'Evento in scadenza',
+  CALENDAR_DEADLINE_OVERDUE: 'Evento scaduto',
+  CALENDAR_PHASE_OVERDUE: 'Righe in ritardo su una fase',
+  CALENDAR_DIGEST: 'Recap email giornaliero',
 };
 
+/** The switches of the "Personalizza" section, by kind; the digest has its own switch above it. */
+const CALENDAR_OVERRIDE_GROUPS: { label: string; keys: readonly CalendarEventKey[] }[] = [
+  { label: 'Modifiche', keys: CALENDAR_CHANGE_KEYS },
+  { label: 'Scadenze', keys: CALENDAR_DEADLINE_KEYS },
+];
+
 /**
- * Expandable "Personalizza notifiche calendario" section — per-event overrides on top of
- * the coarser CALENDAR category toggle above. Only fetches when expanded.
+ * The CALENDAR event-key switches under the category toggle, each showing the state senders apply
+ * (`listCalendarEventOverrides`): the digest's own switch — muting a kind of change or deadline
+ * leaves the email alone — and an expandable "Personalizza" section with the others. The category is
+ * the master switch: with it off, every kind is off and its switch is disabled.
  */
-function CalendarEventOverrides() {
+function CalendarEventSwitches({ categoryEnabled }: { categoryEnabled: boolean }) {
   const [open, setOpen] = useState(false);
   const utils = trpc.useUtils();
-  const { data: overrides, isLoading } = trpc.notifications.preferences.listCalendarEventOverrides.useQuery(
-    undefined,
-    { enabled: open }
-  );
+  const { data: overrides, isError } = trpc.notifications.preferences.listCalendarEventOverrides.useQuery();
   const updateMutation = trpc.notifications.preferences.updateCalendarEventOverride.useMutation({
     onSuccess: () => {
       void utils.notifications.preferences.listCalendarEventOverrides.invalidate();
@@ -50,34 +60,49 @@ function CalendarEventOverrides() {
     },
   });
 
+  if (isError) return <p className="mt-3 text-xs text-destructive">Impossibile caricare le preferenze del calendario.</p>;
+  if (!overrides) return <Skeleton className="mt-3 h-10 w-full" />;
+
+  const keySwitch = (eventKey: CalendarEventKey) => (
+    <Switch
+      checked={overrides.find(o => o.eventKey === eventKey)?.enabled ?? false}
+      disabled={!categoryEnabled || updateMutation.isPending}
+      onCheckedChange={checked => updateMutation.mutate({ eventKey, enabled: checked })}
+      aria-label={CALENDAR_EVENT_LABELS[eventKey]}
+    />
+  );
+
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground">
-          <ChevronDown className={cn('h-3 w-3 mr-1 transition-transform', open && 'rotate-180')} />
-          Personalizza notifiche calendario
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-2 pt-3">
-        {isLoading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : (
-          CALENDAR_EVENT_KEYS.map(eventKey => {
-            const enabled = overrides?.find(o => o.eventKey === eventKey)?.enabled ?? true;
-            return (
-              <div key={eventKey} className="flex items-center justify-between pl-4">
-                <p className="text-xs text-muted-foreground">{CALENDAR_EVENT_LABELS[eventKey]}</p>
-                <Switch
-                  checked={enabled}
-                  disabled={updateMutation.isPending}
-                  onCheckedChange={checked => updateMutation.mutate({ eventKey, enabled: checked })}
-                />
-              </div>
-            );
-          })
-        )}
-      </CollapsibleContent>
-    </Collapsible>
+    <>
+      <div className="mt-3 flex items-center justify-between">
+        <div className="space-y-0.5">
+          <p className="text-sm">{CALENDAR_EVENT_LABELS[CALENDAR_DIGEST_KEY]}</p>
+          <p className="text-xs text-muted-foreground">Un&apos;email al giorno con le modifiche ai calendari che vedi</p>
+        </div>
+        {keySwitch(CALENDAR_DIGEST_KEY)}
+      </div>
+      <Collapsible open={open} onOpenChange={setOpen} className="mt-2">
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground">
+            <ChevronDown className={cn('h-3 w-3 mr-1 transition-transform', open && 'rotate-180')} />
+            Personalizza notifiche calendario
+          </Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-2 pt-3">
+          {CALENDAR_OVERRIDE_GROUPS.map(group => (
+            <div key={group.label} className="space-y-2">
+              <p className="pl-4 text-xs font-medium">{group.label}</p>
+              {group.keys.map(eventKey => (
+                <div key={eventKey} className="flex items-center justify-between pl-4">
+                  <p className="text-xs text-muted-foreground">{CALENDAR_EVENT_LABELS[eventKey]}</p>
+                  {keySwitch(eventKey)}
+                </div>
+              ))}
+            </div>
+          ))}
+        </CollapsibleContent>
+      </Collapsible>
+    </>
   );
 }
 
@@ -94,6 +119,8 @@ export function NotificationPreferences() {
   const updateMutation = trpc.notifications.preferences.update.useMutation({
     onSuccess: () => {
       void utils.notifications.preferences.list.invalidate();
+      // A key without its own switch follows the category.
+      void utils.notifications.preferences.listCalendarEventOverrides.invalidate();
     },
     onError: () => {
       toast.error('Errore nel salvataggio delle preferenze');
@@ -123,14 +150,16 @@ export function NotificationPreferences() {
                 <p className="text-xs text-muted-foreground">{meta?.description}</p>
               </div>
               <div className="flex items-center gap-3">
-                {pref.category === 'CALENDAR' && can('config:update') && (
-                  <Button
+                {pref.category === 'CALENDAR' && (
+                  <PermissionButton
+                    hasPermission={can('season_calendar:read')}
+                    tooltip="Non hai il permesso di inviare il recap del calendario"
                     variant="outline"
                     size="sm"
                     onClick={() => setDigestDialogOpen(true)}
                   >
                     Invia Recap
-                  </Button>
+                  </PermissionButton>
                 )}
                 <Switch
                   checked={pref.enabled}
@@ -141,7 +170,7 @@ export function NotificationPreferences() {
                 />
               </div>
             </div>
-            {pref.category === 'CALENDAR' && <CalendarEventOverrides />}
+            {pref.category === 'CALENDAR' && <CalendarEventSwitches categoryEnabled={pref.enabled} />}
           </div>
         );
       })}

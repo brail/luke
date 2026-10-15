@@ -29,7 +29,8 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
- * Dialog letting an admin manually send the calendar digest recap for an arbitrary date range.
+ * Dialog letting a calendar reader send themselves the calendar digest recap for a date range of
+ * at most `CALENDAR_DIGEST_MAX_DAYS` days.
  *
  * The server reads the range in the caller's zone as `me.get` resolves it, so "today" is taken in
  * that same zone, never the browser's: the fields stay empty and sending stays disabled until it

@@ -130,8 +130,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 4,
   },
   notifications: {
-    reason: '`list` and its cursor from the notifications spec; the rest is untested, including the preferences and the SSE ticket',
-    uncovered: 9,
+    reason: '`list` and its cursor from the notifications spec, the CALENDAR preference procedures (`preferences.update`, `listCalendarEventOverrides`, `updateCalendarEventOverride`) from the preferences spec; the rest is untested, including the SSE ticket',
+    uncovered: 6,
   },
   dashboard: {
     reason:

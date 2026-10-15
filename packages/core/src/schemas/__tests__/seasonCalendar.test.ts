@@ -39,6 +39,7 @@ describe('manual digest range', () => {
   it('accepts an existing range of calendar dates, one day included', () => {
     expect(CalendarDigestRangeInputSchema.parse({ from: '2026-10-01', to: '2026-10-01' })).toEqual({ from: '2026-10-01', to: '2026-10-01' });
     expect(CalendarDigestRangeInputSchema.safeParse({ from: '2024-02-29', to: '2024-03-01' }).success).toBe(true);
+    expect(CalendarDigestRangeInputSchema.safeParse({ from: '2026-10-01', to: '2026-10-31' }).success).toBe(true);
   });
 
   it.each([
@@ -47,6 +48,7 @@ describe('manual digest range', () => {
     ['a year outside 1900–9999', { from: '1899-12-31', to: '1900-01-01' }],
     ['not a date', { from: '01/10/2026', to: '2026-10-01' }],
     ['an end before the start', { from: '2026-10-02', to: '2026-10-01' }],
+    ['a range longer than 31 days', { from: '2026-10-01', to: '2026-11-01' }],
   ])('refuses %s', (_label, value) => {
     expect(CalendarDigestRangeInputSchema.safeParse(value).success).toBe(false);
   });

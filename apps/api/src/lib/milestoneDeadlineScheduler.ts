@@ -43,6 +43,7 @@ async function notifyMilestone(
     notifyDeduped(prisma, `milestone:${userId}:${m.id}:${type}`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
       userId,
       category: 'CALENDAR',
+      eventKey: type === 'upcoming' ? 'CALENDAR_DEADLINE_UPCOMING' : 'CALENDAR_DEADLINE_OVERDUE',
       title: type === 'upcoming' ? 'Milestone in scadenza' : 'Milestone scaduta',
       message,
       link: '/calendar',
@@ -94,6 +95,7 @@ async function checkRowPhaseOverdue(prisma: PrismaClient, now: Date, alert: Aler
         notifyDeduped(prisma, `milestone:${userId}:${r.rowId}:phase_overdue`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
           userId,
           category: 'CALENDAR',
+          eventKey: 'CALENDAR_PHASE_OVERDUE',
           title: 'Fase scaduta',
           message: `"${line}" non ha completato "${r.eventTitle}" entro la scadenza`,
           // Deep-links to the specific row (page.tsx opens its edit drawer on load) instead of

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { CALENDAR_EVENT_KEYS, CalendarInstantSchema, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
 
+import { preferencesOf, receives } from '../lib/notifications';
 import { sseStore } from '../lib/sseStore';
 import { selfProcedure, router } from '../lib/trpc';
 
@@ -170,8 +171,9 @@ export const notificationsRouter = router({
       }),
 
     /**
-     * Lists the current user's per-event overrides within the CALENDAR category
-     * (defaults to enabled for any event key without a stored row).
+     * Lists, for every CALENDAR event key, whether the current user receives it — the rule senders
+     * apply (`receives`): the CALENDAR category is the master switch, and a key switched off mutes
+     * that kind too. A switch therefore never shows on what is effectively off.
      *
      * @auth {authenticated}
      * @input {none}
@@ -179,18 +181,8 @@ export const notificationsRouter = router({
      */
     listCalendarEventOverrides: selfProcedure.query(async ({ ctx }) => {
       const userId = ctx.session.user.id;
-
-      const stored = await ctx.prisma.notificationPreference.findMany({
-        where: { userId, category: 'CALENDAR', eventKey: { in: [...CALENDAR_EVENT_KEYS] } },
-        select: { eventKey: true, enabled: true },
-      });
-
-      const storedMap = new Map(stored.map(p => [p.eventKey, p.enabled]));
-
-      return CALENDAR_EVENT_KEYS.map(eventKey => ({
-        eventKey,
-        enabled: storedMap.get(eventKey) ?? true,
-      }));
+      const prefs = await preferencesOf(ctx.prisma, [userId], 'CALENDAR', [...CALENDAR_EVENT_KEYS]);
+      return CALENDAR_EVENT_KEYS.map(eventKey => ({ eventKey, enabled: receives(prefs, userId, eventKey) }));
     }),
 
     /**

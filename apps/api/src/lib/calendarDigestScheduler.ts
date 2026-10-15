@@ -19,7 +19,9 @@
  * Missed days are never back-filled.
  *
  * Recipients for created/updated events: `resolveEventAudience()` — brand-scoped, per-function
- * or per-user grant, admins included only via their own team membership (no automatic fan-out).
+ * or per-user grant; admins only through their own team membership, except for an event with no
+ * visibility rows at all (no function, no per-user grant), which reaches everyone with access to its
+ * brand, every admin included.
  * Recipients for deleted events: the snapshot in `AuditLog.metadata.visibleUserIds` (captured by
  * the pre-fix resolver, so wider than it should be) re-filtered at read time through
  * `resolveBrandAccess` — the invariant holds even against audit rows written before this fix.
@@ -35,7 +37,7 @@ import {
   addCalendarDays,
   calendarDateIn,
   calendarDateOf,
-  CATEGORY_LEVEL_EVENT_KEY,
+  CALENDAR_DIGEST_KEY,
   DEFAULT_LOCALE,
   eventCalendarDays,
   formatCalendarDate,
@@ -55,6 +57,7 @@ import { isRedactedValue } from './auditLog';
 import { getConfigOrDefault } from './configManager';
 import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
+import { recipientsOf } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 import { groupByTimeZone, resolveUserTimeZone } from './userTimeZone';
 
@@ -220,7 +223,8 @@ export interface DigestBuildOptions {
   /** IANA zone every date and time in the email is written in. */
   timeZone: string;
   /**
-   * Manual "send to me": only this user's slice, bypassing relevance and their category opt-out.
+   * Manual "send to me": only this user's slice, bypassing their digest opt-out (and, for an admin,
+   * relevance — `addManualBypassRecipient`).
    * Scheduled runs never set it.
    */
   onlyUserId?: string;
@@ -233,11 +237,11 @@ export interface DigestBuildOptions {
 export interface EmailTask { userId: string; calendarId: string; email: string; subject: string; html: string; text: string }
 
 /**
- * Adds `onlyUserId` to `recipients` when the manual "send to me" trigger is bypassing
- * `P_relevance` (function/grant visibility) for a user who wouldn't otherwise be in the
- * audience — e.g. an admin belonging to no team. `P_access` (brand) still applies: bypassing it
- * too would let the test button send someone a digest for a brand `listMilestones` won't show
- * them. `onlyUserAccess === undefined` means the user is inactive/pending — no bypass.
+ * Adds `onlyUserId` to `recipients` on the manual "send to me" run when their read path is
+ * unrestricted (`onlyUserAccess === null`, an admin): they see every event in `listMilestones`, so
+ * the digest may show them one they are not in the audience of — e.g. an admin belonging to no
+ * team. Anyone else gets exactly their audience: function/grant visibility (`P_relevance`) is what
+ * hides an event from them in the calendar, and their digest must not show it either.
  */
 function addManualBypassRecipient(
   recipients: Set<string>,
@@ -246,7 +250,7 @@ function addManualBypassRecipient(
   onlyUserAccess: Set<string> | null | undefined,
 ): void {
   if (!onlyUserId || !brandId) return;
-  if (hasBrandAccess(onlyUserAccess, brandId)) recipients.add(onlyUserId);
+  if (onlyUserAccess === null) recipients.add(onlyUserId);
 }
 
 /**
@@ -498,21 +502,21 @@ export async function buildDigestTasks(
   const allCalendarIds = Array.from(calendarDigests.keys());
   const allUserIds = [...new Set(Array.from(calendarDigests.values()).flatMap(m => [...m.keys()]))];
 
-  const [calendars, users, disabledPrefs, baseUrl] = await Promise.all([
+  const [calendars, users, receiving, baseUrl] = await Promise.all([
     prisma.seasonCalendar.findMany({
       where: { id: { in: allCalendarIds } },
       select: { id: true, brand: { select: { name: true } }, season: { select: { name: true } } },
     }),
     prisma.user.findMany({ where: { id: { in: allUserIds }, isActive: true }, select: { id: true, email: true } }),
-    // Scoped to eventKey:'' (category-level rows only) — an event-level mute on one calendar
-    // event must not silently drop the entire aggregated digest email for the user.
-    prisma.notificationPreference.findMany({ where: { userId: { in: allUserIds }, category: 'CALENDAR', eventKey: CATEGORY_LEVEL_EVENT_KEY, enabled: false }, select: { userId: true } }),
+    // The CALENDAR category, then the digest's own switch (`receives`): muting one kind of change or
+    // of deadline notice leaves the email alone.
+    recipientsOf(prisma, allUserIds, 'CALENDAR', CALENDAR_DIGEST_KEY),
     getConfigOrDefault(prisma, 'app.baseUrl'),
   ]);
 
   const calendarLabelMap = new Map(calendars.map(c => [c.id, `${c.brand.name} · ${c.season.name}`]));
   const userEmailMap = new Map(users.map(u => [u.id, u.email]));
-  const disabledSet = new Set(disabledPrefs.map(p => p.userId));
+  const receivingSet = new Set(receiving);
   const calendarUrl = `${baseUrl}/calendar`;
 
   const tasks: EmailTask[] = [];
@@ -526,8 +530,8 @@ export async function buildDigestTasks(
       : [...userDigestMap];
 
     for (const [userId, digest] of recipients) {
-      // Manual "send to me" runs bypass the CALENDAR notification-preference opt-out — it's an explicit request.
-      if (!onlyUserId && disabledSet.has(userId)) continue;
+      // Manual "send to me" runs bypass the digest opt-out — it's an explicit request.
+      if (!onlyUserId && !receivingSet.has(userId)) continue;
       const email = userEmailMap.get(userId);
       if (!email) continue;
       const total = digest.created.length + digest.updated.length + digest.deleted.length;
@@ -810,7 +814,7 @@ export async function runDigestTick(
 
 /**
  * Sends the requesting user their own digest slice for `days` (inclusive), read in their zone,
- * bypassing their CALENDAR preference opt-out — the manual "send to me" run. Records no delivery:
+ * bypassing their digest opt-out — the manual "send to me" run. Records no delivery:
  * it is an explicit re-send.
  */
 export async function runDigestNow(
@@ -824,7 +828,8 @@ export async function runDigestNow(
   const timeZone = await resolveUserTimeZone(prisma, user, log);
   const range = { start: startOfDayIn(days.from, timeZone), end: startOfDayIn(addCalendarDays(days.to, 1), timeZone) };
 
-  const { tasks, calendarCount } = await buildDigestTasks(prisma, log, { range, timeZone, onlyUserId: userId });
+  // `include`: the caller's digest only, without building everyone else's on the way.
+  const { tasks, calendarCount } = await buildDigestTasks(prisma, log, { range, timeZone, onlyUserId: userId, include: uid => uid === userId });
   if (tasks.length === 0) return;
 
   const { sent, failed } = await sendBulkEmail(tasks, task =>

@@ -13,7 +13,7 @@
  *    current audience on old rows, get re-filtered by brand at read time
  *  - the opt-out query only honors a category-level mute, not an unrelated event-level one
  *    (the secondary bug found alongside the main one)
- *  - the manual "send to me" trigger bypasses P_relevance but not P_access
+ *  - the manual "send to me" trigger bypasses P_relevance for an admin only, never P_access
  */
 
 import { randomUUID } from 'crypto';
@@ -239,6 +239,24 @@ describe('buildDigestTasks — event created', () => {
     const { tasks } = await buildDigestTasks(prisma, log, { ...justNow(), onlyUserId: adminNoTeamId });
     expect(tasks.map(t => t.email)).toContain(adminNoTeamEmail);
 
+    await prisma.calendarEvent.delete({ where: { id: created.id } });
+  });
+
+  it('a manual run sends a non-admin only the events their functions see', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    const fnOther = await prisma.companyFunction.create({ data: { slug: `dig_other_${randomUUID().slice(0, 6)}`, name: 'Digest other', order: 96, isActive: true } });
+    const reader = await createTestUser('viewer');
+    await grantBrandAccess(prisma, { functionId: fnOther.id, brandIds: [brandDX], userIds: [reader.user.id], label: 'Digest other' });
+    const created = await caller.seasonCalendar.createMilestone({
+      planningGroupId: planningGroupDX,
+      title: `Other Function Event ${randomUUID().slice(0, 6)}`,
+      startAt: todayAllDay(),
+      allDay: true,
+      publishExternally: false,
+      visibilityFunctionIds: [fnD],
+    });
+    const { tasks } = await buildDigestTasks(prisma, log, { ...justNow(), onlyUserId: reader.user.id });
+    expect(tasks.map(t => t.userId)).not.toContain(reader.user.id);
     await prisma.calendarEvent.delete({ where: { id: created.id } });
   });
 });

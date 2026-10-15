@@ -474,6 +474,54 @@ describe('retries and abandonment', () => {
     expect((await rowOf(to)).status).toBe('ABANDONED');
     expect(sentTo(sent, to)).toHaveLength(0);
   });
+
+  it('sends nothing to a recipient who turned the digest off, the calendar category still on', async () => {
+    const d = day('10-12');
+    const to = await recipientWithChange(ROME, instantAt(addCalendarDays(d, -1), '10:00', ROME));
+    await prisma.notificationPreference.create({
+      data: { userId: to.userId, category: 'CALENDAR', eventKey: 'CALENDAR_DIGEST', enabled: false },
+    });
+    const { sent, send } = recorder();
+
+    await runDigestTick(prisma, log, deps(instantAt(d, '07:10', ROME), send));
+
+    expect(sentTo(sent, to)).toHaveLength(0);
+  });
+
+  it('abandons a failed email whose recipient has turned the digest off since', async () => {
+    const d = day('10-14');
+    const to = await recipientWithChange(ROME, instantAt(addCalendarDays(d, -1), '10:00', ROME));
+    let smtpDown = true;
+    const { sent, send } = recorder(task => task.userId === to.userId && smtpDown);
+    const t0 = instantAt(d, '07:10', ROME);
+    await runDigestTick(prisma, log, deps(t0, send));
+    expect((await rowOf(to)).status).toBe('FAILED');
+
+    smtpDown = false;
+    await prisma.notificationPreference.create({
+      data: { userId: to.userId, category: 'CALENDAR', eventKey: 'CALENDAR_DIGEST', enabled: false },
+    });
+    await runDigestTick(prisma, log, deps(plusMinutes(t0, 31), send));
+
+    expect((await rowOf(to)).status).toBe('ABANDONED');
+    expect(sentTo(sent, to)).toHaveLength(0);
+  });
+
+  it('sends no digest to a recipient who muted the calendar category, even with the digest switched on', async () => {
+    const d = day('10-13');
+    const to = await recipientWithChange(ROME, instantAt(addCalendarDays(d, -1), '10:00', ROME));
+    await prisma.notificationPreference.createMany({
+      data: [
+        { userId: to.userId, category: 'CALENDAR', eventKey: '', enabled: false },
+        { userId: to.userId, category: 'CALENDAR', eventKey: 'CALENDAR_DIGEST', enabled: true },
+      ],
+    });
+    const { sent, send } = recorder();
+
+    await runDigestTick(prisma, log, deps(instantAt(d, '07:10', ROME), send));
+
+    expect(sentTo(sent, to)).toHaveLength(0);
+  });
 });
 
 describe('manual run', () => {

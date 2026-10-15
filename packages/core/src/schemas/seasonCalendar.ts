@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { calendarDaysBetween } from '../utils/dateUtils.js';
+
 import { CalendarDateSchema, CalendarInstantSchema } from './dates.js';
 import { MandatoryReasonSchema } from './reason.js';
 
@@ -74,6 +76,9 @@ export const CalendarEventBaseSchema = z.object({
 
 export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
 
+/** The longest range, in days, a digest can be re-sent for (`CalendarDigestRangeInputSchema`). */
+export const CALENDAR_DIGEST_MAX_DAYS = 31;
+
 /**
  * Inclusive date range for a manually triggered calendar digest.
  *
@@ -88,6 +93,11 @@ export const CalendarDigestRangeInputSchema = z
   .refine(value => value.to >= value.from, {
     path: ['to'],
     message: 'La data finale non può precedere quella iniziale',
+  })
+  // A digest re-sent on request rebuilds every change in the range from the audit log: bounded.
+  .refine(value => calendarDaysBetween(value.from, value.to) < CALENDAR_DIGEST_MAX_DAYS, {
+    path: ['to'],
+    message: `Al massimo ${CALENDAR_DIGEST_MAX_DAYS} giorni`,
   });
 export type CalendarDigestRangeInput = z.infer<typeof CalendarDigestRangeInputSchema>;
 
