@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { deadlineDay, deadlineReachedAt, isEventDateLocked } from '../calendarEventLock.js';
+import { deadlineDay, deadlineReachedAt, eventDeleteBlock, isEventDateLocked } from '../calendarEventLock.js';
 
 const ROME = 'Europe/Rome';
 const iso = (d: Date) => d.toISOString();
@@ -78,5 +78,24 @@ describe('isEventDateLocked', () => {
     const after = new Date('2026-11-01T00:00:00.000Z');
     expect(isEventDateLocked({ ...dueFriday, phaseId: null }, ROME, after)).toBe(false);
     expect(isEventDateLocked({ ...dueFriday, frozenAt: null }, ROME, after)).toBe(false);
+  });
+});
+
+describe('eventDeleteBlock', () => {
+  const frozenAt = new Date('2026-10-01T00:00:00.000Z');
+
+  it('lets a plain event, or a phase event in an unfrozen group, be deleted', () => {
+    expect(eventDeleteBlock({})).toBeNull();
+    expect(eventDeleteBlock({ phaseId: 'p1', frozenAt: null })).toBeNull();
+    expect(eventDeleteBlock({ phaseId: null, frozenAt })).toBeNull();
+  });
+
+  it('blocks a phase event in a frozen group as frozen', () => {
+    expect(eventDeleteBlock({ phaseId: 'p1', frozenAt })).toBe('frozen');
+  });
+
+  it('blocks a cancelled event as cancelled, frozen or not', () => {
+    expect(eventDeleteBlock({ cancelledAt: frozenAt })).toBe('cancelled');
+    expect(eventDeleteBlock({ cancelledAt: frozenAt, phaseId: 'p1', frozenAt })).toBe('cancelled');
   });
 });

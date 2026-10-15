@@ -69,11 +69,21 @@ export function isEventDateLocked(event: LockableCalendarEvent, timeZone: string
   return now >= deadlineReachedAt(event, timeZone);
 }
 
+/** Why an event cannot be hard-deleted; see `eventDeleteBlock`. */
+export type EventDeleteBlock = 'cancelled' | 'frozen';
+
 /**
- * A phase-tagged event in a frozen planning group must not be hard-deleted (it would destroy its
- * frozen baseline and scheduling-variance history) — it can only be cancelled. Unlike the date lock
- * this applies whether the event is past or future: the frozen commitment exists either way.
+ * Why `event` cannot be hard-deleted, or `null` when it can. A cancelled event is read-only, kept for
+ * audit. A phase event in a frozen planning group would take its frozen baseline and
+ * scheduling-variance history with it, so it can only be cancelled — past or future, the frozen
+ * commitment exists either way. The single rule for both delete procedures and the calendar UI; the
+ * API's `DELETABLE_EVENT_WHERE` is its database form.
  */
-export function isEventDeleteLocked(event: { phaseId?: string | null; frozenAt?: Date | string | null }): boolean {
-  return !!event.phaseId && !!event.frozenAt;
+export function eventDeleteBlock(event: {
+  cancelledAt?: Date | string | null;
+  phaseId?: string | null;
+  frozenAt?: Date | string | null;
+}): EventDeleteBlock | null {
+  if (event.cancelledAt) return 'cancelled';
+  return event.phaseId && event.frozenAt ? 'frozen' : null;
 }

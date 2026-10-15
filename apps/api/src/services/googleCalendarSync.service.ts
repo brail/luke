@@ -216,32 +216,25 @@ export async function syncOneMilestone(
 }
 
 /**
- * Deletes all Google Calendar events mapped to the given milestone and removes
- * the local mapping records. No-ops if the integration is disabled.
+ * Deletes the Google Calendar copies of events already deleted from Luke — the mappings went with
+ * them (cascade), so the caller reads `copies` before its delete (`deleteEvents`). Best effort: a
+ * copy Google refuses to delete is logged and stays in Google. No-ops if the integration is disabled.
  */
-export async function cleanupMilestoneEvents(
-  milestoneId: string,
+export async function deleteGoogleCopies(
+  copies: { googleCalendarId: string; googleEventId: string }[],
   prisma: PrismaClient,
   logger: SyncLogger
 ): Promise<void> {
+  if (copies.length === 0) return;
   const creds = await getConfiguredGoogleClient(prisma);
   if (!creds) return;
 
-  const mappings = await prisma.googleEventMapping.findMany({ where: { eventId: milestoneId } });
-
-  const results = await Promise.allSettled(
-    mappings.map(m => deleteEvent(m.googleCalendarId, m.googleEventId))
-  );
+  const results = await Promise.allSettled(copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId)));
   const failed = results.filter(r => r.status === 'rejected').length;
   if (failed > 0) {
-    logger.warn(
-      { milestoneId, failed, total: mappings.length },
-      'Some Google Calendar events were not deleted — the local mapping is removed anyway'
-    );
+    logger.warn({ failed, total: copies.length }, 'Some Google Calendar copies of deleted events were not deleted');
   }
-
-  await prisma.googleEventMapping.deleteMany({ where: { eventId: milestoneId } });
-  logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');
+  logger.info({ count: copies.length - failed }, 'Google Calendar copies of deleted events removed');
 }
 
 /**

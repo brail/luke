@@ -6,8 +6,8 @@ import {
   calendarDateOf,
   deadlineDay,
   deadlineReachedAt,
+  eventDeleteBlock,
   isEventDateLocked as isEventDateLockedCore,
-  isEventDeleteLocked as isEventDeleteLockedCore,
   isInstantInRange,
   shiftEventByDays,
   startOfDayIn,
@@ -156,6 +156,7 @@ export async function resolveMissingPhasesForGroup(
  */
 export async function freezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
+    await acquireCalendarFreezeLock(tx);
     const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
     if (!group) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
@@ -291,9 +292,83 @@ export function isEventDateLocked(event: LockableEvent, timeZone: string, now: D
   return isEventDateLockedCore({ ...event, frozenAt: event.planningGroup.frozenAt }, timeZone, now);
 }
 
-/** Thin adapter over the shared `@luke/core` predicate — see `isEventDateLocked` above. */
-export function isEventDeleteLocked(event: LockableEvent): boolean {
-  return isEventDeleteLockedCore({ phaseId: event.phaseId, frozenAt: event.planningGroup.frozenAt });
+
+// ─── Delete ──────────────────────────────────────────────────────────────────
+
+const CALENDAR_FREEZE_LOCK_KEY = 'calendar-freeze';
+
+/**
+ * Serializes freezing a planning group with deleting events, and deletes with each other. Freeze
+ * writes every event's baseline (row locks) before it sets the group's `frozenAt`; a delete waiting
+ * on one of those rows is re-checked by Postgres against the event row alone, so without this it
+ * would delete a phase event of a group that froze meanwhile. Raw SQL by exception (CLAUDE.md): a transaction-scoped
+ * advisory lock, so it must run inside a `$transaction` callback.
+ */
+// ponytail: one lock for every calendar; key it by planning group if freezes and deletes contend.
+async function acquireCalendarFreezeLock(tx: Prisma.TransactionClient): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${CALENDAR_FREEZE_LOCK_KEY}))`;
+}
+
+/** The database form of `eventDeleteBlock(event) === null`: not cancelled, not a phase event of a frozen group. */
+const DELETABLE_EVENT_WHERE = {
+  cancelledAt: null,
+  NOT: { phaseId: { not: null }, planningGroup: { frozenAt: { not: null } } },
+} satisfies Prisma.CalendarEventWhereInput;
+
+/**
+ * Refuses a delete of `events` before it runs: a cancelled one is CONFLICT (an admin may restore it),
+ * a frozen phase one PRECONDITION_FAILED (cancel it instead). Worded for one event or a selection.
+ */
+export function assertEventsDeletable(
+  events: { cancelledAt: Date | null; phaseId: string | null; planningGroup: { frozenAt: Date | null } }[],
+): void {
+  const blocks = events.map(e => eventDeleteBlock({ cancelledAt: e.cancelledAt, phaseId: e.phaseId, frozenAt: e.planningGroup.frozenAt }));
+  const cancelled = blocks.filter(b => b === 'cancelled').length;
+  const frozen = blocks.filter(b => b === 'frozen').length;
+  const single = events.length === 1;
+  if (cancelled > 0) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: single
+        ? 'Evento annullato: non si elimina finché resta annullato.'
+        : `${cancelled} evento/i annullati nella selezione: non si eliminano finché restano annullati.`,
+    });
+  }
+  if (frozen > 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: single
+        ? 'Evento di fase congelato: usa Annulla invece di Elimina per conservarne lo storico.'
+        : `${frozen} evento/i di fase congelati nella selezione: annullali invece di eliminarli.`,
+    });
+  }
+}
+
+/**
+ * Hard-deletes those of `eventIds` still present (cascade) only while every one of them is still
+ * deletable — the condition is in the delete itself, so a cancel landing after the caller's
+ * `assertEventsDeletable` is refused, not deleted. Ids another delete removed meanwhile are skipped:
+ * deletes are serialized by the lock, so what is present after it is what this one deletes. Returns
+ * the deleted ids and the Google Calendar copies to remove once committed (the mappings go with the
+ * events).
+ *
+ * @throws {TRPCError} CONFLICT if an event was cancelled or frozen after it was checked.
+ */
+export async function deleteEvents(prisma: PrismaClient, eventIds: string[]) {
+  return prisma.$transaction(async tx => {
+    await acquireCalendarFreezeLock(tx);
+    const present = await tx.calendarEvent.findMany({ where: { id: { in: eventIds } }, select: { id: true } });
+    const deletedIds = present.map(e => e.id);
+    const googleCopies = await tx.googleEventMapping.findMany({
+      where: { eventId: { in: deletedIds } },
+      select: { googleCalendarId: true, googleEventId: true },
+    });
+    const { count } = await tx.calendarEvent.deleteMany({ where: { id: { in: deletedIds }, ...DELETABLE_EVENT_WHERE } });
+    if (count !== deletedIds.length) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Evento/i cambiati nel frattempo: aggiorna e riprova.' });
+    }
+    return { deletedIds, googleCopies };
+  });
 }
 
 /** An event's stored dates, as a write reads them before changing them. */
@@ -479,7 +554,7 @@ export async function listMilestonesDb(
     ...e,
     brandId: calendarBrandMap.get(e.calendarId) ?? null,
     planningGroupName: planningGroup.name,
-    // Surfaced for the client's delete-lock mirror (`isEventDeleteLocked`).
+    // Surfaced for the client's mirror of the delete rule (`eventDeleteBlock`).
     planningGroupFrozenAt: planningGroup.frozenAt,
     // The date lock, evaluated here in the business zone so the client never needs the zone. It is
     // a snapshot: the list refetches on window focus and after a lock rejection, and every
@@ -580,13 +655,6 @@ export async function updateMilestone(
 
     return updated;
   }).catch(onStaleDates);
-}
-
-/**
- * Hard-deletes a calendar event and its related records (cascade).
- */
-export async function deleteMilestone(eventId: string, prisma: PrismaClient): Promise<void> {
-  await prisma.calendarEvent.delete({ where: { id: eventId } });
 }
 
 // ─── Note ────────────────────────────────────────────────────────────────────

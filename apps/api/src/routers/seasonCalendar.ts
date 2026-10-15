@@ -61,7 +61,7 @@ import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, res
 import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
-  cleanupMilestoneEvents,
+  deleteGoogleCopies,
   reconcileCalendar,
   listGoogleCalendarBindings,
 } from '../services/googleCalendarSync.service.js';
@@ -76,11 +76,11 @@ import {
   listMilestonesDb,
   createMilestone,
   updateMilestone,
-  deleteMilestone,
+  assertEventsDeletable,
+  deleteEvents,
   rescheduleMilestone,
   datesFromExpected,
   isEventDateLocked,
-  isEventDeleteLocked,
   detectPhaseOrderWarning,
   upsertNote,
   deleteNote,
@@ -446,7 +446,9 @@ export const seasonCalendarRouter = router({
     }),
 
   /**
-   * Deletes a calendar event and cleans up any associated Google Calendar events.
+   * Deletes a calendar event, then its Google Calendar copies. Refused while the event is cancelled
+   * (CONFLICT) or a phase event of a frozen group (PRECONDITION_FAILED), and when that changes
+   * between the check and the delete (`deleteEvents`).
    *
    * @auth season_calendar:update
    * @input { id }
@@ -458,24 +460,14 @@ export const seasonCalendarRouter = router({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
-      if (event.cancelledAt) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di eliminarlo.' });
-      }
+      assertEventsDeletable([event]);
       await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
-
-      // A frozen phase event carries a baseline commitment + variance history — hard delete would
-      // destroy them. Retire it with `cancelMilestone` instead (keeps it in history).
-      if (isEventDeleteLocked(event)) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Evento di fase congelato: usa Annulla invece di Elimina per conservarne lo storico.',
-        });
-      }
 
       // Snapshot visibility before delete so digest and notification can use it afterward
       const visibleUserIds = await resolveEventAudienceOne(input.id, ctx.prisma);
-      await cleanupMilestoneEvents(input.id, ctx.prisma, ctx.logger);
-      await deleteMilestone(input.id, ctx.prisma);
+      const { deletedIds, googleCopies } = await deleteEvents(ctx.prisma, [input.id]);
+      // Deleted meanwhile by someone else: the end state is reached, but this call did not reach it.
+      if (deletedIds.length === 0) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await logAudit(ctx, {
         action: 'CALENDAR_MILESTONE_DELETE', targetType: 'CalendarMilestone', targetId: input.id, result: 'SUCCESS',
         metadata: {
@@ -492,15 +484,20 @@ export const seasonCalendarRouter = router({
         calendarId: event.calendarId,
         eventKey: 'CALENDAR_DELETE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on delete'));
+      // Last and not awaited: the delete is committed, a Google failure must not turn it into an error.
+      deleteGoogleCopies(googleCopies, ctx.prisma, ctx.logger)
+        .catch(err => ctx.logger.error({ err }, 'Google Calendar cleanup failed on delete'));
       return { success: true };
     }),
 
   /**
-   * Bulk-deletes up to 100 calendar events, cleaning up Google Calendar events for each.
+   * Bulk-deletes up to 100 calendar events, then their Google Calendar copies. Duplicate ids count
+   * once and ids no longer found (already deleted) are skipped; the whole selection is refused if
+   * any event is cancelled or a phase event of a frozen group, or becomes one before the delete.
    *
    * @auth season_calendar:update
    * @input { ids: string[] (1–100) }
-   * @output { success: true, count: number }
+   * @output { success: true, count: number } — the events deleted
    */
   deleteMilestones: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -508,63 +505,50 @@ export const seasonCalendarRouter = router({
     .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }))
     .mutation(async ({ input, ctx }) => {
       const events = await ctx.prisma.calendarEvent.findMany({
-        where: { id: { in: input.ids } },
+        where: { id: { in: [...new Set(input.ids)] } },
         include: { calendar: { select: { brandId: true, seasonId: true } }, planningGroup: { select: { frozenAt: true } } },
       });
-      const uniqueBrandIds = [...new Set(events.map(e => e.calendar.brandId).filter((id): id is string => id != null))];
-      const calendarIdsToLockCheck = [...new Set(events.map(e => e.calendarId))];
-      // The brands first: a caller outside them must not learn that a calendar is being edited.
-      await assertBrandAccessAll(ctx, uniqueBrandIds);
-      await Promise.all(calendarIdsToLockCheck.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)));
+      if (events.length === 0) return { success: true, count: 0 };
+      // The brands first: a caller outside them must learn nothing about the events or their calendars.
+      await assertBrandAccessAll(ctx, [...new Set(events.map(e => e.calendar.brandId))]);
+      assertEventsDeletable(events);
+      const calendarIds = [...new Set(events.map(e => e.calendarId))];
+      await Promise.all(calendarIds.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)));
 
-      // Same frozen-phase protection as single delete: block the whole batch if any is a frozen
-      // commitment — those must be cancelled, not hard-deleted.
-      const lockedCount = events.filter(isEventDeleteLocked).length;
-      if (lockedCount > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `${lockedCount} evento/i di fase congelati nella selezione: annullali invece di eliminarli.`,
-        });
-      }
       // Snapshot visibility for each event before deletion (for digest + notifications)
       const visibilityMap = await resolveEventAudience(events.map(e => e.id), ctx.prisma);
-      const visibilitySnapshots = events.map(e => ({
-        id: e.id,
-        title: e.title,
-        calendarId: e.calendarId,
-        userIds: visibilityMap.get(e.id) ?? [],
-        startAt: e.startAt.toISOString(),
-        endAt: e.endAt?.toISOString() ?? null,
-        allDay: e.allDay,
-      }));
-      await Promise.all(events.map(e => cleanupMilestoneEvents(e.id, ctx.prisma, ctx.logger)));
-      await ctx.prisma.calendarEvent.deleteMany({ where: { id: { in: input.ids } } });
+      const { deletedIds, googleCopies } = await deleteEvents(ctx.prisma, events.map(e => e.id));
+      // Ids deleted meanwhile by someone else are not this call's to report.
+      const deleted = events.filter(e => deletedIds.includes(e.id));
+      if (deleted.length === 0) return { success: true, count: 0 };
+      const ids = deleted.map(e => e.id);
       await logAudit(ctx, {
         action: 'CALENDAR_EVENT_DELETE',
         targetType: 'CalendarEvent',
-        targetId: input.ids.join(','),
+        targetId: ids.join(','),
         result: 'SUCCESS',
         metadata: {
-          count: input.ids.length,
-          snapshots: visibilitySnapshots.map(s => ({
-            id: s.id, title: s.title, calendarId: s.calendarId, visibleUserIds: s.userIds,
-            startAt: s.startAt, endAt: s.endAt, allDay: s.allDay,
+          count: ids.length,
+          snapshots: deleted.map(e => ({
+            id: e.id, title: e.title, calendarId: e.calendarId, visibleUserIds: visibilityMap.get(e.id) ?? [],
+            startAt: e.startAt.toISOString(), endAt: e.endAt?.toISOString() ?? null, allDay: e.allDay,
           })),
         },
       });
-      const uniqueSeasonIds = [...new Set(events.map(e => e.calendar.seasonId).filter((id): id is string => id != null))];
-      for (const seasonId of uniqueSeasonIds) sseStore.pushToAll({ type: 'calendar-updated', seasonId });
-      const allVisibleUserIds = [...new Set(visibilitySnapshots.flatMap(s => s.userIds))];
-      const uniqueCalendarIds = [...new Set(events.map(e => e.calendarId))];
+      for (const seasonId of new Set(deleted.map(e => e.calendar.seasonId))) sseStore.pushToAll({ type: 'calendar-updated', seasonId });
+      const deletedCalendarIds = [...new Set(deleted.map(e => e.calendarId))];
       notifyCalendarChange(ctx.prisma, {
-        preloadedUserIds: allVisibleUserIds,
+        preloadedUserIds: [...new Set(deleted.flatMap(e => visibilityMap.get(e.id) ?? []))],
         actorId: ctx.session.user.id,
-        titleSuffix: `ha rimosso ${input.ids.length} eventi`,
+        titleSuffix: ids.length === 1 ? 'ha rimosso un evento' : `ha rimosso ${ids.length} eventi`,
         message: `dal calendario`,
-        calendarId: uniqueCalendarIds.length === 1 ? uniqueCalendarIds[0] : undefined,
+        calendarId: deletedCalendarIds.length === 1 ? deletedCalendarIds[0] : undefined,
         eventKey: 'CALENDAR_BULK_DELETE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on bulk delete'));
-      return { success: true, count: input.ids.length };
+      // Last and not awaited: the delete is committed, a Google failure must not turn it into an error.
+      deleteGoogleCopies(googleCopies, ctx.prisma, ctx.logger)
+        .catch(err => ctx.logger.error({ err }, 'Google Calendar cleanup failed on bulk delete'));
+      return { success: true, count: ids.length };
     }),
 
   /**

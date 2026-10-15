@@ -12,7 +12,10 @@ import { randomUUID } from 'crypto';
 
 import { beforeAll, describe, expect, it } from 'vitest';
 
+import { eventDeleteBlock } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
+
+import { deleteEvents } from '../src/services/seasonCalendar.service';
 
 import {
   createCalendarFixture,
@@ -331,5 +334,48 @@ describe('who can move and cancel', () => {
     await expect(
       asAdmin().seasonCalendar.cancelMilestone({ id: randomUUID(), reason: 'tentativo' })
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('deleting events — only while they stay deletable', () => {
+  it('refuses a selection holding a cancelled event, and deletes none of it', async () => {
+    const [cancelled, kept] = [await createEvent(), await createEvent()];
+    await asAdmin().seasonCalendar.cancelMilestone({ id: cancelled.id, reason: 'annullata' });
+    await expect(
+      asEditor().seasonCalendar.deleteMilestones({ ids: [cancelled.id, kept.id] })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await prisma.calendarEvent.count({ where: { id: { in: [cancelled.id, kept.id] } } })).toBe(2);
+  });
+
+  it('counts the events it deleted, not the ids it was given', async () => {
+    const event = await createEvent();
+    const result = await asEditor().seasonCalendar.deleteMilestones({ ids: [event.id, event.id, randomUUID()] });
+    expect(result.count).toBe(1);
+    expect(await prisma.calendarEvent.count({ where: { id: event.id } })).toBe(0);
+    await expect(asEditor().seasonCalendar.deleteMilestones({ ids: [randomUUID()] })).resolves.toMatchObject({ count: 0 });
+  });
+
+  it.each([false, true].flatMap(cancelled => [false, true].flatMap(withPhase => [false, true].map(frozen => ({ cancelled, withPhase, frozen })))))(
+    'deletes in the database exactly what eventDeleteBlock allows: %o',
+    async ({ cancelled, withPhase, frozen }) => {
+      const group = await prisma.planningGroup.create({
+        data: { calendarId, name: `Regola ${randomUUID().slice(0, 8)}`, frozenAt: frozen ? new Date() : null },
+      });
+      const event = await createEvent({ groupId: group.id, withPhase });
+      const cancelledAt = cancelled ? new Date() : null;
+      if (cancelledAt) await prisma.calendarEvent.update({ where: { id: event.id }, data: { cancelledAt } });
+
+      const allowed = eventDeleteBlock({ cancelledAt, phaseId: withPhase ? phaseId : null, frozenAt: group.frozenAt }) === null;
+      // A refusal must be the condition's CONFLICT, nothing else, and must delete nothing.
+      const outcome = await deleteEvents(prisma, [event.id]).then(() => 'deleted', (err: { code?: string }) => err.code);
+      expect(outcome).toBe(allowed ? 'deleted' : 'CONFLICT');
+      expect(await prisma.calendarEvent.count({ where: { id: event.id } })).toBe(allowed ? 0 : 1);
+    },
+  );
+
+  it('skips an event another delete removed meanwhile, and reports only what it deleted', async () => {
+    const [kept, gone] = [await createEvent(), await createEvent()];
+    await prisma.calendarEvent.delete({ where: { id: gone.id } });
+    await expect(deleteEvents(prisma, [kept.id, gone.id])).resolves.toMatchObject({ deletedIds: [kept.id] });
   });
 });
