@@ -180,7 +180,11 @@ export default function CalendarPage() {
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
     onSuccess: () => refetchAfterEventChange(),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // Refused because the list is stale (an event cancelled or frozen meanwhile): show the current one.
+      if (isStaleListError(err)) refetchAfterEventChange();
+    },
   });
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({

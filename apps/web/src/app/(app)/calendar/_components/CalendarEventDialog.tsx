@@ -58,7 +58,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { eventDays, expectedDates, isEventDeleteLocked, isStaleListError } from '../utils';
+import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, expectedDates, isStaleListError } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
@@ -213,9 +213,10 @@ export function CalendarEventDialog({
   const isDateLocked = !!event?.dateLocked;
 
   // A phase event whose planning group is frozen can't be hard-deleted — that would destroy the
-  // frozen baseline. The backend rejects it (isEventDeleteLocked); mirror it so the button doesn't
-  // look clickable then fail with a toast. "Annulla evento" is the correct action instead.
-  const isDeleteLocked = !!event && isEventDeleteLocked(event);
+  // frozen baseline. The backend rejects it (`eventDeleteBlock`, the rule a cancelled event also
+  // falls under, which this dialog shows read-only); mirror it so the button doesn't look clickable
+  // then fail with a toast. "Annulla evento" is the correct action instead.
+  const isDeleteLocked = !!event && eventDeleteBlock(event) === 'frozen';
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
   const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
@@ -821,7 +822,7 @@ export function CalendarEventDialog({
                 {onDeleted && (
                   <PermissionButton
                     hasPermission={!isDeleteLocked}
-                    tooltip="Evento di fase congelato: non può essere eliminato, solo annullato («Annulla evento»)"
+                    tooltip={DELETE_BLOCK_REASON.frozen}
                     type="button" variant="destructive" onClick={() => setDeleteOpen(true)} disabled={isPending}>
                     Elimina
                   </PermissionButton>

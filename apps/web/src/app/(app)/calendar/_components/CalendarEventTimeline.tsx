@@ -6,12 +6,13 @@ import { useMemo, useState } from 'react';
 import { type CalendarDate, formatCalendarDate, isoWeekOf } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
+import { PermissionTooltip } from '../../../../components/PermissionTooltip';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT } from '../constants';
-import { eventDays, formatVisibleFunctions, groupBadge, groupTooltip, monthStart, resolveBrandColor, sortByFirstDay } from '../utils';
+import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, formatVisibleFunctions, groupBadge, groupTooltip, monthStart, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
@@ -65,17 +66,20 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
     return Array.from(map.values());
   }, [sorted, zone]);
 
-  const allIds = useMemo(() => sorted.map(m => m.id), [sorted]);
-  const allSelected = useMemo(() => allIds.length > 0 && allIds.every(id => selected.has(id)), [allIds, selected]);
+  // Only deletable events can be selected, and the selection is read against the current list: an
+  // event deleted, cancelled or frozen by someone else since it was ticked drops out on refresh.
+  const deletableIds = useMemo(() => sorted.filter(m => !eventDeleteBlock(m)).map(m => m.id), [sorted]);
+  const effective = useMemo(() => new Set(deletableIds.filter(id => selected.has(id))), [deletableIds, selected]);
+  const allSelected = deletableIds.length > 0 && effective.size === deletableIds.length;
 
-  const toggleAll = (checked: boolean) => setSelected(checked ? new Set(allIds) : new Set());
+  const toggleAll = (checked: boolean) => setSelected(checked ? new Set(deletableIds) : new Set());
   const toggleOne = (id: string) => setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   const handleConfirmDelete = () => {
-    const ids = [...selected];
-    setSelected(new Set());
     setConfirmOpen(false);
-    onBulkDelete?.(ids);
+    // Emptied before the outcome, so the same selection cannot be sent twice.
+    setSelected(new Set());
+    if (effective.size > 0) onBulkDelete?.([...effective]);
   };
 
   // Fixed-width columns (checkbox, badge, dates, title, function, cancelled, note) sized to their
@@ -86,11 +90,11 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
 
   return (
     <>
-      {canUpdate && selected.size > 0 && (
+      {canUpdate && effective.size > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b text-sm">
-          <span className="text-muted-foreground">{selected.size} selezionat{selected.size === 1 ? 'a' : 'e'}</span>
+          <span className="text-muted-foreground">{effective.size} selezionat{effective.size === 1 ? 'a' : 'e'}</span>
           <Button variant="destructive" size="xs" onClick={() => setConfirmOpen(true)}>
-            Elimina selezionat{selected.size === 1 ? 'a' : 'e'}
+            Elimina selezionat{effective.size === 1 ? 'a' : 'e'}
           </Button>
           <Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
         </div>
@@ -98,7 +102,7 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
 
       <div className="space-y-0">
         <div className={cn('grid gap-x-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b', colClass)}>
-          {canUpdate && <span className="flex items-center justify-center"><Checkbox checked={allSelected} onCheckedChange={(v) => toggleAll(!!v)} aria-label="Seleziona tutto" /></span>}
+          {canUpdate && <span className="flex items-center justify-center"><Checkbox checked={allSelected} disabled={deletableIds.length === 0} onCheckedChange={(v) => toggleAll(!!v)} aria-label="Seleziona tutto" /></span>}
           <span className="text-center">W</span>
           <span>Data</span>
           <span>Evento</span>
@@ -123,7 +127,8 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
             {group.items.map(m => {
               const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
               const firstDay = eventDays(m, zone)[0];
-              const isSelected = selected.has(m.id);
+              const isSelected = effective.has(m.id);
+              const deleteBlock = eventDeleteBlock(m);
               const hasNote = !!(m.notes?.[0]?.body);
               const badge = groupBadge(showGroupBadge, m.planningGroupName);
               return (
@@ -135,7 +140,10 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
                 >
                   {canUpdate && (
                     <span className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(m.id)} aria-label={`Seleziona ${m.title}`} />
+                      <PermissionTooltip hasPermission={!deleteBlock} tooltip={deleteBlock ? DELETE_BLOCK_REASON[deleteBlock] : ''}>
+                        <Checkbox checked={isSelected} disabled={!!deleteBlock} onCheckedChange={() => toggleOne(m.id)}
+                          aria-label={`Seleziona ${m.title}`} className="disabled:pointer-events-none" />
+                      </PermissionTooltip>
                     </span>
                   )}
                   {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline week label */}
@@ -173,8 +181,8 @@ export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteCl
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={(open) => { if (!open) setConfirmOpen(false); }}
-        title={`Elimina ${selected.size} event${selected.size === 1 ? 'o' : 'i'}`}
-        description={`Questa operazione è irreversibile. Vuoi eliminare ${selected.size} event${selected.size === 1 ? 'o selezionato' : 'i selezionati'}?`}
+        title={`Elimina ${effective.size} event${effective.size === 1 ? 'o' : 'i'}`}
+        description={`Questa operazione è irreversibile. Vuoi eliminare ${effective.size} event${effective.size === 1 ? 'o selezionato' : 'i selezionati'}?`}
         confirmText="Elimina"
         cancelText="Annulla"
         actionType="delete"

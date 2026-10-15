@@ -5,8 +5,9 @@ import {
   calendarDaysBetween,
   type CalendarDate,
   eventCalendarDays,
+  eventDeleteBlock as eventDeleteBlockCore,
+  type EventDeleteBlock,
   initials,
-  isEventDeleteLocked as isEventDeleteLockedCore,
   parseCalendarDate,
   shiftEventByDays,
   startOfDayIn,
@@ -166,14 +167,20 @@ export function groupEventsByDay<T extends EventDates>(events: T[], days: Calend
 }
 
 /**
- * Thin adapter over the shared `@luke/core` predicate — only reshapes the client's flattened
- * `planningGroupFrozenAt` field into `frozenAt`, so this client-side UX mirror can't drift from the
+ * Why `m` cannot be deleted, or `null` when it can: the shared `@luke/core` rule, with the client's
+ * flattened `planningGroupFrozenAt` reshaped into `frozenAt`, so this UX mirror can't drift from the
  * server's enforcement. The *date* lock has no client mirror: it depends on the business time zone,
  * so the server evaluates it and sends `dateLocked` with each event.
  */
-export function isEventDeleteLocked(m: Pick<CalendarEventItem, 'phaseId' | 'planningGroupFrozenAt'>): boolean {
-  return isEventDeleteLockedCore({ phaseId: m.phaseId, frozenAt: m.planningGroupFrozenAt });
+export function eventDeleteBlock(m: Pick<CalendarEventItem, 'cancelledAt' | 'phaseId' | 'planningGroupFrozenAt'>): EventDeleteBlock | null {
+  return eventDeleteBlockCore({ cancelledAt: m.cancelledAt, phaseId: m.phaseId, frozenAt: m.planningGroupFrozenAt });
 }
+
+/** Why an event cannot be deleted, as the calendar UI says it (`eventDeleteBlock`). */
+export const DELETE_BLOCK_REASON: Record<EventDeleteBlock, string> = {
+  cancelled: 'Evento annullato: non si elimina finché resta annullato',
+  frozen: 'Evento di fase congelato: non può essere eliminato, solo annullato («Annulla evento»)',
+};
 
 /**
  * Returns true when the current user may drag or edit a milestone.
