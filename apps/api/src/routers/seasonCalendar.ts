@@ -36,6 +36,8 @@ import {
   MilestoneTemplateItemBaseSchema,
   SEASON_CALENDAR_STATUS,
   partialWithoutDefaults,
+  CalendarLinkTargetSchema,
+  calendarLink,
   type Role,
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
@@ -43,7 +45,7 @@ import type { PrismaClient } from '@luke/db';
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
 import { isForeignKeyViolation } from '../lib/error.js';
-import { createNotification, notifyCalendarChange } from '../lib/notifications.js';
+import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
 import { sseStore } from '../lib/sseStore.js';
@@ -57,7 +59,7 @@ import {
   resolveEventBrandAccess,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
-import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
+import { eventVisibilityWhere, listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
@@ -275,6 +277,49 @@ export const seasonCalendarRouter = router({
       if (allowedBrandIds.length === 0) return [];
       const allowedFunctionIds = await getAllowedFunctionIds(ctx);
       return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId, allowedFunctionIds);
+    }),
+
+  /**
+   * Where a notification link points (`calendarLink`): the brand and season of the event or the
+   * calendar, their "brand · season" label and, for an event, what the page needs to open it. An event
+   * is found only if `listMilestones` would list it to the caller — brand access and function
+   * visibility — and only in an active brand and season, the only ones the page can be switched to.
+   * Not the brand resolvers: they answer FORBIDDEN, which would tell the caller the event exists.
+   * Missing, out of scope, hidden or retired are all NOT_FOUND.
+   *
+   * @auth season_calendar:read
+   * @input { eventId } | { calendarId }
+   * @output { brandId, seasonId, label, event: { id, title, startAt, endAt, allDay } | null }
+   */
+  locate: protectedProcedure
+    .use(requirePermission('season_calendar:read'))
+    .input(CalendarLinkTargetSchema)
+    .query(async ({ input, ctx }) => {
+      const calendarSelect = {
+        brandId: true, seasonId: true,
+        brand: { select: { name: true, isActive: true } }, season: { select: { name: true, isActive: true } },
+      } as const;
+      const event = 'eventId' in input
+        ? await ctx.prisma.calendarEvent.findFirst({
+            where: { id: input.eventId, ...eventVisibilityWhere(ctx.session.user.id, await getAllowedFunctionIds(ctx)) },
+            select: { id: true, title: true, startAt: true, endAt: true, allDay: true, calendar: { select: calendarSelect } },
+          })
+        : null;
+      const calendar = 'calendarId' in input
+        ? await ctx.prisma.seasonCalendar.findUnique({ where: { id: input.calendarId }, select: calendarSelect })
+        : event?.calendar;
+      if (
+        !calendar || !calendar.brand.isActive || !calendar.season.isActive
+        || (await filterAllowedBrandIds(ctx, [calendar.brandId])).length === 0
+      ) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Non più disponibile' });
+      }
+      return {
+        brandId: calendar.brandId,
+        seasonId: calendar.seasonId,
+        label: brandSeasonLabel(calendar),
+        event: event && { id: event.id, title: event.title, startAt: event.startAt, endAt: event.endAt, allDay: event.allDay },
+      };
     }),
 
   // ─── Calendar event mutations ───────────────────────────────────────────────
@@ -1027,7 +1072,7 @@ export const seasonCalendarRouter = router({
             category: 'USER_ACTION',
             title: 'Accesso evento concesso',
             message: `Hai accesso all'evento "${event.title}"`,
-            link: '/calendar',
+            link: calendarLink({ eventId: input.eventId }),
             data: { eventId: input.eventId },
           })
         )

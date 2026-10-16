@@ -76,6 +76,35 @@ export const CalendarEventBaseSchema = z.object({
 
 export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
 
+/** What a calendar notification link opens: an event, or a calendar (`calendarLink`). */
+export const CalendarLinkTargetSchema = z.union([
+  z.object({ eventId: z.string().uuid() }),
+  z.object({ calendarId: z.string().uuid() }),
+]);
+
+export type CalendarLinkTarget = z.infer<typeof CalendarLinkTargetSchema>;
+
+/**
+ * The `/calendar` link of a calendar notice: its event (`?event=`), else its calendar
+ * (`?calendar=`), else the page as it stands. `calendarLinkTargetOf` reads it back.
+ */
+export function calendarLink(target: { eventId?: string; calendarId?: string }): string {
+  if (target.eventId) return `/calendar?event=${encodeURIComponent(target.eventId)}`;
+  if (target.calendarId) return `/calendar?calendar=${encodeURIComponent(target.calendarId)}`;
+  return '/calendar';
+}
+
+/**
+ * The target a `/calendar` URL carries (`calendarLink`), or `null`; not validated — the server
+ * refuses one that is not a target (`CalendarLinkTargetSchema`).
+ */
+export function calendarLinkTargetOf(params: { get(name: string): string | null }): CalendarLinkTarget | null {
+  const eventId = params.get('event');
+  if (eventId) return { eventId };
+  const calendarId = params.get('calendar');
+  return calendarId ? { calendarId } : null;
+}
+
 /** The longest range, in days, a digest can be re-sent for (`CalendarDigestRangeInputSchema`). */
 export const CALENDAR_DIGEST_MAX_DAYS = 31;
 

@@ -37,6 +37,7 @@ import {
   addCalendarDays,
   calendarDateIn,
   calendarDateOf,
+  calendarLink,
   CALENDAR_DIGEST_KEY,
   DEFAULT_LOCALE,
   eventCalendarDays,
@@ -517,13 +518,13 @@ export async function buildDigestTasks(
   const calendarLabelMap = new Map(calendars.map(c => [c.id, brandSeasonLabel(c)]));
   const userEmailMap = new Map(users.map(u => [u.id, u.email]));
   const receivingSet = new Set(receiving);
-  const calendarUrl = `${baseUrl}/calendar`;
 
   const tasks: EmailTask[] = [];
 
   for (const [calId, userDigestMap] of calendarDigests) {
     const calendarLabel = calendarLabelMap.get(calId) ?? calId;
     const subject = `Recap calendario — ${calendarLabel} — ${dateLabel}`;
+    const calendarUrl = `${baseUrl}${calendarLink({ calendarId: calId })}`;
 
     const recipients = onlyUserId
       ? (userDigestMap.has(onlyUserId) ? [[onlyUserId, userDigestMap.get(onlyUserId)!]] as const : [])

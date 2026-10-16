@@ -1,5 +1,5 @@
 
-import { CATEGORY_LEVEL_EVENT_KEY, fullName, type CalendarChangeKey, type CalendarEventKey } from '@luke/core';
+import { CATEGORY_LEVEL_EVENT_KEY, calendarLink, fullName, type CalendarChangeKey, type CalendarEventKey } from '@luke/core';
 import type { PrismaClient, NotificationCategory, Prisma } from '@luke/db';
 
 import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
@@ -166,6 +166,8 @@ function addChange(entry: CalendarBufferEntry, userIds: string[], change: Buffer
  *   delete branch for the pattern)
  * - `calendarId`: optional — resolves brand·season label appended to the message
  *
+ * The link opens `eventId`, else `calendarId` (`calendarLink`).
+ *
  * Does not send immediately: enqueues into a short in-memory buffer keyed by
  * (actorId, calendarId), flushed periodically by `flushDueCalendarNotifications`.
  * Multiple calls within the buffer window collapse into a single aggregated
@@ -182,7 +184,6 @@ export async function notifyCalendarChange(
     actorId: string;
     titleSuffix: string;
     message: string;
-    link?: string;
     calendarId?: string;
     /** The change's CALENDAR event key — see `CalendarBufferEntry.heardBy`. */
     eventKey?: CalendarChangeKey;
@@ -206,7 +207,7 @@ export async function notifyCalendarChange(
   const change: BufferedChange = {
     titleSuffix: params.titleSuffix,
     message: params.message,
-    link: params.link ?? '/calendar',
+    link: calendarLink(params),
     eventKey: params.eventKey ?? CATEGORY_LEVEL_EVENT_KEY,
   };
   const key = calendarBufferKey(params.actorId, params.calendarId);
@@ -268,7 +269,7 @@ async function flushCalendarEntry(prisma: PrismaClient, entry: CalendarBufferEnt
       category: 'CALENDAR',
       title: `${entry.actorName} ha modificato ${heard.length} eventi`,
       message: `${heard.length} modifiche al calendario${label}`,
-      link: '/calendar',
+      link: calendarLink({ calendarId: entry.calendarId }),
       data: { aggregated: true, count: heard.length, calendarId: entry.calendarId ?? null },
     }];
   }));

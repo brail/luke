@@ -2,6 +2,7 @@ import {
   DEADLINE_REACH_MARGIN_MS,
   calendarDateIn,
   calendarDaysBetween,
+  calendarLink,
   deadlineDay,
   deadlineReachedAt,
   type CalendarEventKey,
@@ -96,7 +97,7 @@ export function milestoneNotice(e: { id: string; title: string; context: string 
     eventKey: upcoming ? 'CALENDAR_DEADLINE_UPCOMING' : 'CALENDAR_DEADLINE_OVERDUE',
     title: upcoming ? 'Milestone in scadenza' : 'Milestone scaduta',
     message: `"${e.title}" ${upcoming ? `scade ${UPCOMING_LABELS[state.daysLeft]}` : 'è scaduta senza essere completata'} · ${e.context}`,
-    link: '/calendar',
+    link: calendarLink({ eventId: e.id }),
     data: { milestoneId: e.id, type: `deadline_${state.type}` },
     occurrence: state.occurrence,
   };

@@ -82,11 +82,12 @@ describe('milestoneNotice', () => {
     });
   });
 
-  it('an overdue deadline is muted as overdue', () => {
+  it('an overdue deadline is muted as overdue, and links to its event', () => {
     expect(milestoneNotice(EVENT, OVERDUE)).toMatchObject({
       eventKey: 'CALENDAR_DEADLINE_OVERDUE',
       title: 'Milestone scaduta',
       message: '"Consegna" è scaduta senza essere completata · Brand · Stagione',
+      link: '/calendar?event=e1',
       occurrence: 'overdue:2026-10-02:0',
     });
   });

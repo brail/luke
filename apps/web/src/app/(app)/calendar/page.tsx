@@ -29,6 +29,7 @@ import { CalendarEventMonthView } from './_components/CalendarEventMonthView';
 import { CalendarEventNoteDialog } from './_components/CalendarEventNoteDialog';
 import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
+import { CalendarLinkOpener } from './_components/CalendarLinkOpener';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
 import { FreezePlanningGroupWizard } from './_components/FreezePlanningGroupWizard';
@@ -45,7 +46,7 @@ import type { CalendarEventItem } from './_components/types';
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const { view, viewDate, setView, setViewDate, setViewAndDate } = useCalendarViewNavigation();
+  const { view, viewDate, setView, setViewDate, setViewAndDate, linkTarget, clearLinkTarget } = useCalendarViewNavigation();
   // The calendar views read in the reader zone and wait for it; without a `?date=` they show today there.
   const fmt = useFormatDate();
   const { zone } = fmt;
@@ -83,7 +84,8 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (contextBrandId && !selectedBrandIds.includes(contextBrandId)) {
-      setSelectedBrandIds(prev => [...prev, contextBrandId]);
+      // Deduplicated: a followed link may have selected it in the same commit (`CalendarLinkOpener`).
+      setSelectedBrandIds(prev => (prev.includes(contextBrandId) ? prev : [...prev, contextBrandId]));
     }
   }, [contextBrandId]); // intentional: only seed brand on context change
 
@@ -103,7 +105,7 @@ export default function CalendarPage() {
     { enabled }
   );
 
-  const { data: rawMilestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
+  const { data: rawMilestones, isLoading: milestonesLoading, isFetching: milestonesFetching, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
     { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
     // On again for this query (off app-wide in `lib/trpc.tsx`): each event's `dateLocked` is a
     // server snapshot, and a deadline reached while the tab was in the background must lock the drag.
@@ -251,9 +253,10 @@ export default function CalendarPage() {
   const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
   const holidayDates = useHolidays(holidayCountryCodes);
 
+  // From every event, not only those the function chips show: a notification link may open a hidden one.
   const activeEvent = useMemo(
-    () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
-    [filteredMilestones, activeEventId]
+    () => milestones?.find(m => m.id === activeEventId) ?? null,
+    [milestones, activeEventId]
   );
 
   const noteEvent = useMemo(
@@ -266,6 +269,10 @@ export default function CalendarPage() {
   const allBrands = useMemo(() => brandsData?.items ?? [], [brandsData]);
   const multiBrandAvailable = allBrands.length > 1;
   const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
+
+  const selectBrand = useCallback((brandId: string) => {
+    setSelectedBrandIds(prev => (prev.includes(brandId) ? prev : [...prev, brandId]));
+  }, []);
 
   const toggleBrand = (brandId: string) => {
     setSelectedBrandIds(prev => prev.includes(brandId) ? prev.filter(id => id !== brandId) : [...prev, brandId]);
@@ -598,6 +605,21 @@ export default function CalendarPage() {
           <Button variant="outline" size="sm" onClick={() => setIsFullscreen(true)} title="Espandi"><Maximize2 size={14} /></Button>
         </div>
       </div>
+
+      {enabled && (
+        <CalendarLinkOpener
+          target={linkTarget}
+          brandId={contextBrandId}
+          seasonId={season.id}
+          selectedBrandIds={selectedBrandIds}
+          events={milestones}
+          isFetching={milestonesFetching}
+          refetch={refetch}
+          onSelectBrand={selectBrand}
+          onOpenEvent={setActiveEventId}
+          onDone={clearLinkTarget}
+        />
+      )}
 
       {!isFullscreen && calendarBody}
 

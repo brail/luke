@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-import { type CalendarDate, parseCalendarDate } from '@luke/core';
+import { calendarLinkTargetOf, parseCalendarDate, type CalendarDate, type CalendarLinkTarget } from '@luke/core';
 
 import type { Route } from 'next';
 
@@ -25,12 +25,20 @@ interface UseCalendarViewNavigationResult {
    * the second call's write would silently discard the first's.
    */
   setViewAndDate: (v: CalendarView, d: CalendarDate) => void;
+  /** The notification link the URL carries, or `null`: read live, so a second link replaces the first. */
+  linkTarget: CalendarLinkTarget | null;
+  /**
+   * Drops the link target from the URL and, given `date`, moves to that day, in one navigation: two
+   * back-to-back replaces would each start from the same snapshot, and the second would undo the first.
+   */
+  clearLinkTarget: (date?: CalendarDate) => void;
 }
 
 /**
  * Owns `view`/`viewDate` state for the calendar page and keeps them mirrored into the URL
  * (`?view=&date=`), read back on mount so a shared link opens on the right view/day. `?date=` is a
- * calendar date, which no zone changes: it is read and written as the same `YYYY-MM-DD`.
+ * calendar date, which no zone changes: it is read and written as the same `YYYY-MM-DD`. Also reads the
+ * notification link target (`?event=`, `?calendar=`) that `CalendarLinkOpener` resolves and clears.
  */
 export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
   const searchParams = useSearchParams();
@@ -42,10 +50,12 @@ export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
   });
   const [viewDate, setViewDateState] = useState<CalendarDate | null>(() => parseCalendarDate(searchParams.get('date') ?? ''));
 
-  const navigate = useCallback((updates: Record<string, string>) => {
+  /** Sets each key of `updates`, or deletes it when `null`. */
+  const navigate = useCallback((updates: Record<string, string | null>) => {
     const p = new URLSearchParams(searchParams.toString());
     for (const [key, value] of Object.entries(updates)) {
-      p.set(key, value);
+      if (value === null) p.delete(key);
+      else p.set(key, value);
     }
     // Valid at runtime (a query string on the current page) but not a statically known route, so
     // `typedRoutes` needs the same `as Route` escape hatch used elsewhere for computed paths.
@@ -68,5 +78,14 @@ export function useCalendarViewNavigation(): UseCalendarViewNavigationResult {
     navigate({ view: v, date: d });
   }, [navigate]);
 
-  return { view, viewDate, setView, setViewDate, setViewAndDate };
+  const linkTarget = useMemo(() => calendarLinkTargetOf(searchParams), [searchParams]);
+
+  // `view` and `date` too: a link followed from elsewhere replaced the URL, and they live on in state.
+  const clearLinkTarget = useCallback((d?: CalendarDate) => {
+    if (d) setViewDateState(d);
+    // The names `calendarLink` writes.
+    navigate({ event: null, calendar: null, view, date: d ?? viewDate });
+  }, [navigate, view, viewDate]);
+
+  return { view, viewDate, setView, setViewDate, setViewAndDate, linkTarget, clearLinkTarget };
 }

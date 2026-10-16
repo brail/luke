@@ -6,7 +6,17 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { ApplyTemplateInputSchema, CalendarDigestRangeInputSchema, CalendarEventBaseSchema, EventDatesExpectedSchema, MilestoneRescheduleInputSchema, VendorClosureUpsertInputSchema } from '../seasonCalendar.js';
+import {
+  ApplyTemplateInputSchema,
+  CalendarDigestRangeInputSchema,
+  CalendarEventBaseSchema,
+  CalendarLinkTargetSchema,
+  EventDatesExpectedSchema,
+  MilestoneRescheduleInputSchema,
+  VendorClosureUpsertInputSchema,
+  calendarLink,
+  calendarLinkTargetOf,
+} from '../seasonCalendar.js';
 
 const ID = '00000000-0000-4000-8000-000000000000';
 /** The dates the client read, required on every write that can move an event. */
@@ -96,5 +106,22 @@ describe('the dates a write was based on', () => {
 
   it('refuses a date with no next day', () => {
     expect(expected('9999-12-31T00:00:00.000Z').success).toBe(false);
+  });
+});
+
+describe('calendarLink / calendarLinkTargetOf', () => {
+  const read = (link: string) => calendarLinkTargetOf(new globalThis.URL(link, 'https://luke.test').searchParams);
+
+  it('links an event, else a calendar, else the page, and reads the target back', () => {
+    expect(calendarLink({ eventId: ID, calendarId: ID })).toBe(`/calendar?event=${ID}`);
+    expect(read(calendarLink({ eventId: ID }))).toEqual({ eventId: ID });
+    expect(read(calendarLink({ calendarId: ID }))).toEqual({ calendarId: ID });
+    expect(calendarLink({})).toBe('/calendar');
+    expect(read(calendarLink({}))).toBeNull();
+  });
+
+  it('accepts as a target only an event or a calendar id', () => {
+    expect(CalendarLinkTargetSchema.safeParse({ eventId: ID }).success).toBe(true);
+    expect(CalendarLinkTargetSchema.safeParse({ eventId: 'abc' }).success).toBe(false);
   });
 });

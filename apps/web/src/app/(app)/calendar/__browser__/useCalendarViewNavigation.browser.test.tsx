@@ -143,4 +143,41 @@ describe('useCalendarViewNavigation (production hook)', () => {
     expect(written.get('view')).toBe('day');
     expect(written.get('date')).toBe('2026-03-05');
   });
+
+  test('reads a notification link target, an event before a calendar', async () => {
+    const h = await mountHarness('event=e1&calendar=c1');
+    expect(h.nav.linkTarget).toEqual({ eventId: 'e1' });
+    await h.rerenderWithUrl('calendar=c1');
+    expect(h.nav.linkTarget).toEqual({ calendarId: 'c1' });
+    await h.rerenderWithUrl('view=week');
+    expect(h.nav.linkTarget).toBeNull();
+  });
+
+  test('clearLinkTarget drops the target and moves to the day in one router.replace, keeping the view', async () => {
+    // A link followed from elsewhere replaced the URL: the view survives in state only.
+    const h = await mountHarness('view=week&date=2026-01-01');
+    await h.rerenderWithUrl('event=e1');
+    fakeReplace.mockClear();
+
+    h.nav.clearLinkTarget(date('2026-03-05'));
+
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('event')).toBeNull();
+    expect(written.get('date')).toBe('2026-03-05');
+    expect(written.get('view')).toBe('week');
+    await expect.element(h.screen.getByTestId('date')).toHaveTextContent('2026-03-05');
+  });
+
+  test('clearLinkTarget without a day keeps the date the page shows, though the link replaced the URL', async () => {
+    const h = await mountHarness('view=week&date=2026-01-01');
+    await h.rerenderWithUrl('calendar=c1');
+    fakeReplace.mockClear();
+
+    h.nav.clearLinkTarget();
+
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('calendar')).toBeNull();
+    expect(written.get('date')).toBe('2026-01-01');
+  });
 });
