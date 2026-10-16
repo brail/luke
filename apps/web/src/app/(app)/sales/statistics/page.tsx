@@ -308,7 +308,7 @@ export default function StatisticsPage() {
   };
 
   // Portafoglio sync state
-  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncState?.schedule, 'nav_pf_sales_header', fmt);
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, 'nav_pf_sales_header', fmt);
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -348,7 +348,7 @@ export default function StatisticsPage() {
   };
 
   // Kimo sync state
-  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncState?.schedule, 'nav_kimo_sales_header', fmt);
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, 'nav_kimo_sales_header', fmt);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
