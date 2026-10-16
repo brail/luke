@@ -57,7 +57,7 @@ import { isRedactedValue } from './auditLog';
 import { getConfigOrDefault } from './configManager';
 import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
-import { recipientsOf } from './notifications';
+import { brandSeasonLabel, recipientsOf } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 import { groupByTimeZone, resolveUserTimeZone } from './userTimeZone';
 
@@ -514,7 +514,7 @@ export async function buildDigestTasks(
     getConfigOrDefault(prisma, 'app.baseUrl'),
   ]);
 
-  const calendarLabelMap = new Map(calendars.map(c => [c.id, `${c.brand.name} · ${c.season.name}`]));
+  const calendarLabelMap = new Map(calendars.map(c => [c.id, brandSeasonLabel(c)]));
   const userEmailMap = new Map(users.map(u => [u.id, u.email]));
   const receivingSet = new Set(receiving);
   const calendarUrl = `${baseUrl}/calendar`;

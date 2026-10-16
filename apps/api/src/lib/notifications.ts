@@ -23,6 +23,11 @@ interface CreateNotificationParams extends NotificationRow {
   eventKey?: CalendarEventKey;
 }
 
+/** How a calendar is named in a notice or an email: "brand · season". */
+export function brandSeasonLabel(calendar: { brand: { name: string }; season: { name: string } }): string {
+  return `${calendar.brand.name} · ${calendar.season.name}`;
+}
+
 /** Stored preferences, by user then event key (`CATEGORY_LEVEL_EVENT_KEY` for the category row). */
 export type Preferences = Map<string, Map<string, boolean>>;
 
@@ -234,7 +239,7 @@ export async function notifyCalendarChange(
   const entry: CalendarBufferEntry = {
     actorName: actor ? fullName(actor) : params.actorId,
     calendarId: params.calendarId,
-    calendarLabel: calendar ? `${calendar.brand.name} · ${calendar.season.name}` : null,
+    calendarLabel: calendar ? brandSeasonLabel(calendar) : null,
     heardBy: new Map(),
     firstCallAt: Date.now(),
   };
