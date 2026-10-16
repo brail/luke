@@ -179,6 +179,18 @@ describe('Type Guards', () => {
   });
 });
 
+// Admin passes through `*:*` before any allowlist, so "admin can sync" alone would hold without
+// `sales:sync` being registered: this pins the registration itself.
+describe('sales:sync', () => {
+  it('is a registered permission that only admin holds', () => {
+    expect(isPermission('sales:sync')).toBe(true);
+    expect(getAllPermissions()).toContain('sales:sync');
+    expect(expandRole('admin')).toContain('sales:sync');
+    expect(expandRole('editor')).not.toContain('sales:sync');
+    expect(expandRole('viewer')).not.toContain('sales:sync');
+  });
+});
+
 describe('Role Expansion', () => {
   describe('expandRole', () => {
     it('should expand admin role to all permissions', () => {

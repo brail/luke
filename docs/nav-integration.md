@@ -297,7 +297,8 @@ after the records have been fetched. An entity with no filter row, with
 |------------|-----|
 | `config:read` | Read the NAV configuration and sync status, run the live preview, test the connection |
 | `config:update` | Save the configuration, save filters and the sync schedule, run a manual master-data sync (`integrations.nav.sync.run`) |
-| `sales:read` | Start a manual order-portfolio or KIMO replica sync (`sales.statistics.portafoglio.triggerSync`, `sales.statistics.kimo.triggerSync`) |
+| `sales:read` | Read the order-portfolio and KIMO replica sync state (`sales.statistics.portafoglio.getSyncState`, `sales.statistics.kimo.getSyncState`) |
+| `sales:sync` | Start a manual order-portfolio or KIMO replica sync (`sales.statistics.portafoglio.triggerSync`, `sales.statistics.kimo.triggerSync`); admin-only by default |
 | `vendors:read` | List the vendors of the local NAV replica (`integrations.nav.vendors.list`) |
 | `brands:read` | List the replica's NAV brands not yet linked to a local brand, for the link picker (`integrations.nav.brands.list`) |
 | `seasons:read` | List the replica's NAV seasons not yet linked to a local season, for the link picker (`integrations.nav.seasons.list`) |

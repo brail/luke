@@ -99,8 +99,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Depend on an external system or on data the suite doesn't have ────────
   sales: {
     reason:
-      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against',
-    uncovered: 8,
+      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync by their permission spec (salesSyncPermission)',
+    uncovered: 6,
   },
   holidays: {
     reason:

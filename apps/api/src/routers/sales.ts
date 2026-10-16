@@ -157,12 +157,12 @@ const portafoglioRouter = router({
   /**
    * Triggers an immediate NAV→PG portafoglio sync; returns conflict error if a sync is already running.
    *
-   * @auth {sales:read}
+   * @auth {sales:sync} — admin-only by default: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerPortafoglioSyncNow()}
    */
   triggerSync: protectedProcedure
-    .use(requirePermission('sales:read'))
+    .use(requirePermission('sales:sync'))
     .mutation(async ({ ctx }) => {
       if (isPortafoglioSyncRunning()) {
         throw new TRPCError({
@@ -413,12 +413,12 @@ const kimoRouter = router({
   /**
    * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.
    *
-   * @auth {sales:read}
+   * @auth {sales:sync} — admin-only by default: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerKimoSyncNow()}
    */
   triggerSync: protectedProcedure
-    .use(requirePermission('sales:read'))
+    .use(requirePermission('sales:sync'))
     .mutation(async ({ ctx }) => {
       if (isKimoSyncRunning()) {
         throw new TRPCError({

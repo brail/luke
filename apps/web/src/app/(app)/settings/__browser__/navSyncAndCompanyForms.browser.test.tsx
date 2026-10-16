@@ -33,6 +33,10 @@ const h = vi.hoisted(() => {
     getFilter: vi.fn((_input: { entity: string }) => state.filter),
     saveSchedule: vi.fn(),
     saveFilter: vi.fn(),
+    syncState: vi.fn((_input: undefined, _opts: { enabled: boolean }) => ({
+      data: { isRunning: false, tables: [] },
+      refetch: () => {},
+    })),
     can: (_permission: string): boolean => true,
     preview: {} as { data?: unknown[] },
   };
@@ -46,7 +50,7 @@ vi.mock('../../../../hooks/useStorageUpload', () => ({
 }));
 vi.mock('../../../../lib/trpc', () => {
   const mutation = { useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false, isError: false }) };
-  const syncState = { useQuery: () => ({ data: { isRunning: false, tables: [] }, refetch: vi.fn() }) };
+  const syncState = { useQuery: h.syncState };
   const utils = { company: { profile: { get: { invalidate: vi.fn() } } }, config: { getMultiple: { invalidate: vi.fn() } } };
   return {
     trpc: {
@@ -93,6 +97,7 @@ beforeEach(() => {
   h.getFilter.mockClear();
   h.saveSchedule.mockClear();
   h.saveFilter.mockClear();
+  h.syncState.mockClear();
   h.state.filter = read({ entity: 'x', mode: 'all', navNos: [], autoSyncEnabled: true, intervalMinutes: 15, updatedAt: new Date() });
   h.state.profile = read({ legalName: 'Febos S.r.l.', displayName: 'Febos', updatedAt: new Date() });
   h.state.zone = read([{ key: 'app.defaultTimezone', value: 'Asia/Shanghai', found: true }]);
@@ -205,7 +210,7 @@ test('NAV sync "Stagioni": the preview shows the season days, a blank one as a d
   await expect.element(row.getByText('—')).toBeVisible();
 });
 
-test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without config:update the manual sync still follows sales:read', async tab => {
+test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without config:update the manual sync still follows sales:sync', async tab => {
   h.can = p => p !== 'config:update';
   const screen = await render(navSync());
   await screen.getByRole('tab', { name: tab }).click();
@@ -213,12 +218,13 @@ test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without confi
   await expect.element(screen.getByRole('button', { name: 'Aggiorna ora' })).toBeEnabled();
 });
 
-test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": without sales:read the manual sync is disabled', async tab => {
-  h.can = p => p !== 'sales:read';
+test.each(['Portafoglio Vendite', 'KIMO-FASHION'])('NAV sync "%s": sales:read shows the replica state, without sales:sync the manual sync is disabled', async tab => {
+  h.can = p => p !== 'sales:sync';
   const screen = await render(navSync());
   await screen.getByRole('tab', { name: tab }).click();
 
   await expect.element(screen.getByRole('button', { name: 'Aggiorna ora' })).toBeDisabled();
+  expect(h.syncState).toHaveBeenLastCalledWith(undefined, expect.objectContaining({ enabled: true }));
 });
 
 test.each(NAV_TABS)('NAV sync "%s": an emptied or out-of-range interval is refused with a message', async tab => {

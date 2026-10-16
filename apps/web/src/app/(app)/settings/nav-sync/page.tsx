@@ -227,10 +227,11 @@ function PortafoglioSyncTab() {
 
   const { can } = usePermission();
   const fmt = useFormatDate();
-  const canSync = can('sales:read');
+  // Reading the replica state takes `sales:read`; starting a sync takes `sales:sync`.
+  const canSync = can('sales:sync');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
-      enabled: canSync,
+      enabled: can('sales:read'),
       refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 
@@ -325,10 +326,11 @@ function KimoSyncTab() {
 
   const { can } = usePermission();
   const fmt = useFormatDate();
-  const canSync = can('sales:read');
+  // Reading the replica state takes `sales:read`; starting a sync takes `sales:sync`.
+  const canSync = can('sales:sync');
   const { data: syncState, refetch: refetchSyncState } =
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
-      enabled: canSync,
+      enabled: can('sales:read'),
       refetchInterval: 30_000, // SSE push handles real-time, this is just fallback
     });
 

@@ -95,7 +95,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.PRICING]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SALES]: ['read'] as const,
+  [RESOURCES.SALES]: ['read', 'sync'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
