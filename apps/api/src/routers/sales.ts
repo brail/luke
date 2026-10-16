@@ -67,12 +67,35 @@ async function resolveSalespersonNames(
 
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
-/** A replica's automatic sync schedule: only the two fields a `sales:read` page shows, never the filter. */
-function replicaSchedule(prisma: PrismaClient, entity: 'portafoglio' | 'kimo') {
-  return prisma.navSyncFilter.findUnique({
-    where: { entity },
-    select: { autoSyncEnabled: true, intervalMinutes: true },
-  });
+/** The prefix of a replica's tables: both replicas record their tables in `navPfSyncState`. */
+const REPLICA_TABLE_PREFIX = { portafoglio: 'nav_pf_', kimo: 'nav_kimo_' } as const;
+
+/**
+ * A replica's sync state: its tables, and the two fields of its automatic sync schedule a
+ * `sales:read` page shows — never the NAV sync filter itself, which takes `config:read`.
+ */
+async function replicaSyncState(prisma: PrismaClient, entity: keyof typeof REPLICA_TABLE_PREFIX, isRunning: boolean) {
+  const [rows, schedule] = await Promise.all([
+    prisma.navPfSyncState.findMany({
+      where: { tableName: { startsWith: REPLICA_TABLE_PREFIX[entity] } },
+      orderBy: { tableName: 'asc' },
+    }),
+    prisma.navSyncFilter.findUnique({
+      where: { entity },
+      select: { autoSyncEnabled: true, intervalMinutes: true },
+    }),
+  ]);
+
+  return {
+    isRunning,
+    schedule,
+    tables: rows.map(r => ({
+      tableName: r.tableName,
+      lastSyncedAt: r.lastSyncedAt,
+      rowCount: r.rowCount,
+      lastDurationMs: r.lastDurationMs,
+    })),
+  };
 }
 
 const portafoglioRouter = router({
@@ -202,23 +225,7 @@ const portafoglioRouter = router({
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
-    .query(async ({ ctx }) => {
-      const [rows, schedule] = await Promise.all([
-        ctx.prisma.navPfSyncState.findMany({ orderBy: { tableName: 'asc' } }),
-        replicaSchedule(ctx.prisma, 'portafoglio'),
-      ]);
-
-      return {
-        isRunning: isPortafoglioSyncRunning(),
-        schedule,
-        tables: rows.map(r => ({
-          tableName: r.tableName,
-          lastSyncedAt: r.lastSyncedAt,
-          rowCount: r.rowCount,
-          lastDurationMs: r.lastDurationMs,
-        })),
-      };
-    }),
+    .query(({ ctx }) => replicaSyncState(ctx.prisma, 'portafoglio', isPortafoglioSyncRunning())),
 
   /**
    * Generates and returns the order portfolio XLSX for a brand+season (base64-encoded); uses PG replica with NAV direct fallback.
@@ -404,26 +411,7 @@ const kimoRouter = router({
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
-    .query(async ({ ctx }) => {
-      const [rows, schedule] = await Promise.all([
-        ctx.prisma.navPfSyncState.findMany({
-          where: { tableName: { startsWith: 'nav_kimo_' } },
-          orderBy: { tableName: 'asc' },
-        }),
-        replicaSchedule(ctx.prisma, 'kimo'),
-      ]);
-
-      return {
-        isRunning: isKimoSyncRunning(),
-        schedule,
-        tables: rows.map(r => ({
-          tableName:     r.tableName,
-          lastSyncedAt:  r.lastSyncedAt,
-          rowCount:      r.rowCount,
-          lastDurationMs: r.lastDurationMs,
-        })),
-      };
-    }),
+    .query(({ ctx }) => replicaSyncState(ctx.prisma, 'kimo', isKimoSyncRunning())),
 
   /**
    * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.

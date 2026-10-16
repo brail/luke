@@ -76,3 +76,17 @@ describe('getSyncState carries the replica schedule', () => {
     await expectUnauthorized(() => caller.integrations.nav.sync.getFilter({ entity: 'portafoglio' }));
   });
 });
+
+// Both replicas record their tables in the same sync-state table, told apart by prefix.
+it('each replica reports only its own tables', async () => {
+  await prisma.navPfSyncState.createMany({
+    data: [{ tableName: 'nav_pf_sales_header' }, { tableName: 'nav_kimo_sales_header' }],
+  });
+  const statistics = (await createCallerAs('viewer')).sales.statistics;
+
+  const portafoglio = await statistics.portafoglio.getSyncState();
+  const kimo = await statistics.kimo.getSyncState();
+
+  expect(portafoglio.tables.map(t => t.tableName)).toEqual(['nav_pf_sales_header']);
+  expect(kimo.tables.map(t => t.tableName)).toEqual(['nav_kimo_sales_header']);
+});
