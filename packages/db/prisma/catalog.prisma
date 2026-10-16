@@ -224,6 +224,13 @@ model Vendor {
   /// Messaging/chat contact (e.g. WhatsApp, WeChat).
   chat        String?
   notes       String?
+  /// Minimum order quantity per line, in pairs. Null until recorded; the NAV sync never writes it.
+  moqPerLine  Int?
+  /// Minimum order quantity per model, in pairs. Null until recorded; the NAV sync never writes it.
+  moqPerModel Int?
+  /// Minimum order quantity per colour, in pairs. Required on every save from the vendor dialog, null
+  /// until recorded (NAV-created and pre-existing vendors); the NAV sync never writes it.
+  moqPerColor Int?
   /// FK to NavVendor (optional). SetNull on NAV record deletion.
   navVendorId String?    @unique
   /// NAV vendor replica linked to this vendor, if matched.

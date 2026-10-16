@@ -8,6 +8,14 @@ import { z } from 'zod';
 import { partialWithoutDefaults } from '../utils/zod.js';
 
 import { HardDeleteConfirmSchema } from './confirmation.js';
+import { intInRange } from './number.js';
+
+/** The largest minimum order quantity a vendor can record, in pairs. */
+const VENDOR_MOQ_MAX = 100_000;
+
+/** A minimum order quantity in pairs: one message for an empty field, a decimal or a value out of range. */
+const moq = (per: string) =>
+  intInRange(1, VENDOR_MOQ_MAX, `Inserisci il minimo per ${per}: un numero intero di paia tra 1 e ${VENDOR_MOQ_MAX}`);
 
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({
@@ -23,6 +31,11 @@ export const VendorInputSchema = z.object({
   phone: z.string().max(32).trim().optional().nullable(),
   chat: z.string().max(128).trim().optional().nullable(),
   notes: z.string().max(2000).trim().optional().nullable(),
+  // Minimum order quantities, in pairs (#124): the colour one is required on every save from the
+  // dialog; an update may omit it but, not being nullable, never clear it.
+  moqPerLine: moq('linea').nullable().optional(),
+  moqPerModel: moq('modello').nullable().optional(),
+  moqPerColor: moq('colore'),
   navVendorId: z.string().optional().nullable(),
   enabledParameterSetIds: z.array(z.string().uuid()).optional(),
 });
@@ -60,6 +73,9 @@ export const VendorSchema = z.object({
   phone: z.string().nullable(),
   chat: z.string().nullable(),
   notes: z.string().nullable(),
+  moqPerLine: z.number().int().nullable(),
+  moqPerModel: z.number().int().nullable(),
+  moqPerColor: z.number().int().nullable(),
   navVendorId: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: z.date(),

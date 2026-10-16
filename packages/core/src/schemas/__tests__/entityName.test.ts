@@ -16,7 +16,7 @@ const nameOf = {
   'brand update': (name: string) => BrandUpdateInputSchema.safeParse({ id: ID, data: { name } }),
   'season create': (name: string) => SeasonInputSchema.safeParse({ code: 'FW26', name }),
   'season update': (name: string) => SeasonUpdateInputSchema.safeParse({ id: ID, data: { name } }),
-  'vendor create': (name: string) => VendorInputSchema.safeParse({ name }),
+  'vendor create': (name: string) => VendorInputSchema.safeParse({ name, moqPerColor: 300 }),
   'vendor update': (name: string) => VendorUpdateInputSchema.safeParse({ id: ID, data: { name } }),
 };
 
@@ -37,11 +37,11 @@ describe('vendor nickname', () => {
   // The label everywhere is `nickname ?? name`: a nickname stored as '' would replace the name
   // with an empty label.
   it.each(['', '   '])('stores %j as no nickname', nickname => {
-    expect(VendorInputSchema.parse({ name: 'Acme', nickname }).nickname).toBeNull();
+    expect(VendorInputSchema.parse({ name: 'Acme', moqPerColor: 300, nickname }).nickname).toBeNull();
     expect(VendorUpdateInputSchema.parse({ id: ID, data: { nickname } }).data.nickname).toBeNull();
   });
 
   it('stores a nickname trimmed', () => {
-    expect(VendorInputSchema.parse({ name: 'Acme', nickname: '  Ac  ' }).nickname).toBe('Ac');
+    expect(VendorInputSchema.parse({ name: 'Acme', moqPerColor: 300, nickname: '  Ac  ' }).nickname).toBe('Ac');
   });
 });

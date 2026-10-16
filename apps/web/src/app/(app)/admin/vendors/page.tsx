@@ -38,7 +38,7 @@ export default function VendorsPage() {
     { staleTime: 30 * 1000 },
   );
 
-  const vendors = (data?.items ?? []) as VendorItem[];
+  const vendors = data?.items ?? [];
 
   const invalidate = () => { void utils.vendors.list.invalidate(); invalidateContext(); };
 

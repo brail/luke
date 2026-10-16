@@ -12,7 +12,7 @@ Four changes in 3.0 make this more than a redeploy:
   old MinIO volume until they are copied across. A stored `storage.type = minio`
   makes every storage call fail with an error naming the key, never a silent
   fallback.
-- **Data repairs.** Eight migrations run at boot, and three one-shot scripts repair
+- **Data repairs.** The new migrations run at boot, and three one-shot scripts repair
   data that 2.1.x wrote: all-day event dates, the photos of automatic revisions
   and the image thumbnails. Two of them must run before users edit anything.
 - **Networks.** 3.0 splits the stack over separate networks: `edge` for the web
@@ -178,7 +178,7 @@ Expected:
 
   The web may need a minute to start: repeat the first command until it answers.
 
-- `docker logs "$(svc api)"` shows `prisma migrate deploy` applying the eight new
+- `docker logs "$(svc api)"` shows `prisma migrate deploy` applying the new
   migrations, then the server starting; the container becomes healthy;
 - the log also reports that the temporary-file cleanup failed with an error naming
   `storage.type` and `minio`: expected until step 6;

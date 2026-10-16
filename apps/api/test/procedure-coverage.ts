@@ -133,11 +133,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       '`getSeasonProgress` from the brand-scope spec, `upsertTask` from the dashboard-tasks spec, `getForexRates` (with Frankfurter stubbed) from the forex spec; config, the other task procedures, KPIs and weekly sales remain',
     uncovered: 6,
   },
-  vendors: {
-    reason:
-      'hardDelete by hardDeleteAdminOnly; create, update, remove, restore and unlink by masterDataEditorReadOnly; list has no test yet',
-    uncovered: 1,
-  },
   season: {
     reason:
       'hardDelete by hardDeleteAdminOnly; create, update, remove, restore and unlink by masterDataEditorReadOnly; list has no test yet',
