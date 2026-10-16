@@ -63,6 +63,7 @@ export const ACTIONS = {
   BACKUP_EXPORT: 'backup_export',
   MODE_MANAGE: 'mode_manage',
   READ_ALL: 'read_all',
+  CONFIGURE: 'configure',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -93,11 +94,11 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'backup_export', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
-  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
+  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions', 'configure'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read', 'sync'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel', 'configure'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.PHASE_CATALOG]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_ALERT]: ['read'] as const,

@@ -68,7 +68,7 @@ type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode:
 
 export default function CollectionCatalogPage() {
   const { can } = usePermission();
-  const canWrite = can('collection_layout:update');
+  const canWrite = can('collection_layout:configure');
 
   const [activeTab, setActiveTab] = useState<CollectionCatalogType>('strategy');
   const [itemDialog, setItemDialog] = useState<ItemDialogState | null>(null);

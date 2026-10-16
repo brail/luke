@@ -99,7 +99,7 @@ export const SECTION_TO_PERMISSION: Record<Section, string> = {
   'admin.brands': 'brands:read',
   'admin.seasons': 'seasons:read',
   'admin.vendors': 'vendors:read',
-  'admin.collection_layout_configuration': 'collection_layout:read',
+  'admin.collection_layout_configuration': 'collection_layout:configure',
   'admin.calendar_configuration': 'milestone_template:read',
   'admin.phase_catalog': 'phase_catalog:read',
   sales: 'sales:read',

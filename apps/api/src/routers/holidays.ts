@@ -266,13 +266,13 @@ export const holidaysRouter = router({
    * overlapping the season's year and the one before, when its planning starts, or of every year for
    * a season without one (as NAV creates them).
    *
-   * @auth {season_calendar:update}
+   * @auth {season_calendar:configure} — admin-only: vendor closures are configured on an admin page
    * @input {{ vendorId: string, seasonId: string, countryCodes: string[] }}
    * @output {{ created: number }}
    * @throws {TRPCError} NOT_FOUND for a vendor or season that does not exist.
    */
   prefillVendorClosures: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
+    .use(requirePermission('season_calendar:configure'))
     .input(z.object({
       vendorId: z.string().uuid(),
       seasonId: z.string().uuid(),
@@ -314,14 +314,14 @@ export const holidaysRouter = router({
   /**
    * Creates or updates a vendor closure period for a given vendor/season.
    *
-   * @auth {season_calendar:update}
+   * @auth {season_calendar:configure} — admin-only: vendor closures are configured on an admin page
    * @input {{ id?, vendorId, seasonId, countryCode, name, startDate, endDate, type, notes? }}
    * @output {VendorClosurePeriod}
    * @throws {TRPCError} NOT_FOUND for an `id` that is no closure of that vendor and season, or for a
    *   vendor or season that does not exist.
    */
   upsertVendorClosure: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
+    .use(requirePermission('season_calendar:configure'))
     .input(VendorClosureUpsertInputSchema)
     .mutation(async ({ input, ctx }) => {
       const data = {
@@ -356,13 +356,13 @@ export const holidaysRouter = router({
   /**
    * Hard-deletes a vendor closure period by ID.
    *
-   * @auth {season_calendar:update}
+   * @auth {season_calendar:configure} — admin-only: vendor closures are configured on an admin page
    * @input {{ id: string }}
    * @output {{ success: true }}
    * @throws {TRPCError} NOT_FOUND for a closure already deleted.
    */
   deleteVendorClosure: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
+    .use(requirePermission('season_calendar:configure'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
       const deleted = await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } }).catch(rethrowClosureNotFound);
@@ -374,13 +374,13 @@ export const holidaysRouter = router({
    * Marks the unconfirmed closure periods among `ids` as confirmed by the current user; one already
    * confirmed keeps its author and time.
    *
-   * @auth {season_calendar:update}
+   * @auth {season_calendar:configure} — admin-only: vendor closures are configured on an admin page
    * @input {{ ids: string[] }} — UUIDs of closure periods to confirm.
    * @output {{ confirmed: number }} — the rows this call confirmed; an id deleted or already confirmed
    *   is not counted.
    */
   confirmVendorClosures: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
+    .use(requirePermission('season_calendar:configure'))
     .input(z.object({
       ids: z.array(z.string().uuid()).min(1),
     }))

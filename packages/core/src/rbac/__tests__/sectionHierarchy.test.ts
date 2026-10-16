@@ -131,6 +131,21 @@ describe('static SECTION_ACCESS_DEFAULTS', () => {
   });
 });
 
+describe('the collection catalog configuration section', () => {
+  it('falls back to who can configure the catalog, so only admin sees it under auto', () => {
+    for (const role of Roles) {
+      const visible = effectiveSectionAccess({
+        role,
+        sectionAccessDefaults: { [role]: { 'admin.collection_layout_configuration': 'auto' } },
+        userOverrides: null,
+        section: 'admin.collection_layout_configuration',
+        disabledSections: [],
+      });
+      expect(visible, role).toBe(role === 'admin');
+    }
+  });
+});
+
 describe('role grants against default section visibility', () => {
   const LEAVES = SECTIONS.filter(s => childSectionsOf(s).length === 0);
   const resourceOf = (permission: string) => permission.split(':')[0];

@@ -43,12 +43,12 @@ export const collectionCatalogRouter = router({
   /**
    * Lists all collection catalog items including inactive ones, for admin management.
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:read}
    * @input {{ type?: CatalogTypeSchema }} — optional type filter.
    * @output {CollectionCatalogItem[]} — all items sorted by type then order.
    */
   listAll: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:read'))
     .input(z.object({ type: CatalogTypeSchema.optional() }))
     .query(async ({ input, ctx }) => {
       return ctx.prisma.collectionCatalogItem.findMany({
@@ -60,12 +60,12 @@ export const collectionCatalogRouter = router({
   /**
    * Creates a new collection catalog item for the specified type.
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
    * @input {CollectionCatalogItemInputSchema} — type, value (unique per type), label, optional order.
    * @output {CollectionCatalogItem} — the newly created item.
    */
   create: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
     .input(CollectionCatalogItemInputSchema)
     .mutation(async ({ input, ctx }) => {
@@ -108,12 +108,12 @@ export const collectionCatalogRouter = router({
   /**
    * Updates mutable fields of a collection catalog item (label, order, code, iso9001Categories, etc.).
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
    * @input {{ id: string, data: Partial<CollectionCatalogItemInputSchema without type> }}
    * @output {CollectionCatalogItem} — the updated item.
    */
   update: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
@@ -153,12 +153,12 @@ export const collectionCatalogRouter = router({
   /**
    * Soft-deletes a collection catalog item (isActive=false).
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
    * @input {{ id: string }} — UUID of the item to deactivate.
    * @output {{ success: true }}
    */
   remove: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
@@ -188,12 +188,12 @@ export const collectionCatalogRouter = router({
   /**
    * Restores a soft-deleted collection catalog item (isActive=true).
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
    * @input {{ id: string }} — UUID of the item to restore.
    * @output {{ success: true }}
    */
   restore: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
@@ -223,12 +223,12 @@ export const collectionCatalogRouter = router({
   /**
    * Reorders collection catalog items of a given type by assigning new position indices.
    *
-   * @auth {collection_layout:update}
+   * @auth {collection_layout:configure} — admin-only: the catalog is configured on an admin page
    * @input {{ type: CatalogTypeSchema, orderedIds: string[] }} — type and full ordered array of UUIDs.
    * @output {{ success: true }}
    */
   reorder: protectedProcedure
-    .use(requirePermission('collection_layout:update'))
+    .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
     .input(
       z.object({

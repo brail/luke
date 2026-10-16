@@ -149,8 +149,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 1,
   },
   collectionCatalog: {
-    reason: 'no tests written on the configurable option lists',
-    uncovered: 7,
+    reason: 'the writes and listAll by their permission spec (adminConfigurationWrites); list, the read the product pages use, has no test yet',
+    uncovered: 1,
   },
   collectionLayoutRevision: {
     reason:

@@ -92,7 +92,7 @@ const ClosureFormSchema: z.ZodType<ClosureForm, ClosureForm> = VendorClosureUpse
  */
 export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountryCode }: Props) {
   const { can } = usePermission();
-  const canUpdate = can('season_calendar:update');
+  const canUpdate = can('season_calendar:configure');
   const { season } = useAppContext();
 
   const [editTarget, setEditTarget] = useState<string | null>(null);
