@@ -4,6 +4,8 @@
  * so logic lives in one place and all four access layers are applied correctly.
  */
 
+import 'server-only';
+
 import { TRPCClientError } from '@trpc/client';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';

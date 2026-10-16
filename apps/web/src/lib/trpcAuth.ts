@@ -2,6 +2,8 @@
  * Lightweight tRPC client for server-side use (no React Query dependency).
  */
 
+import 'server-only';
+
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 
 import type { AppRouter } from '@luke/api';
