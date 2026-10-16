@@ -159,10 +159,13 @@ export async function createCallerAs(
  */
 export function grantEditor(permission: Permission) {
   ROLE_PERMISSIONS.editor.push(permission);
-  // A grant that silently stopped taking effect would leave every refusal test green.
+  // The API's permission checks call this same `hasPermission`: a grant it stopped seeing (a frozen
+  // or precomputed table) would leave every refusal test green.
   expect(hasPermission({ role: 'editor' }, permission)).toBe(true);
   onTestFinished(() => {
-    ROLE_PERMISSIONS.editor.splice(ROLE_PERMISSIONS.editor.indexOf(permission), 1);
+    // The entry pushed above is the last one; an earlier copy of the same grant stays.
+    const index = ROLE_PERMISSIONS.editor.lastIndexOf(permission);
+    if (index !== -1) ROLE_PERMISSIONS.editor.splice(index, 1);
   });
 }
 

@@ -41,7 +41,8 @@ export const collectionCatalogRouter = router({
     }),
 
   /**
-   * Lists all collection catalog items including inactive ones, for admin management.
+   * Lists all collection catalog items including inactive ones, for the admin catalog page; a read like
+   * `list`, so `collection_layout:read` suffices.
    *
    * @auth {collection_layout:read}
    * @input {{ type?: CatalogTypeSchema }} — optional type filter.

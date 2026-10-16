@@ -78,7 +78,7 @@ export const holidaysRouter = router({
   /**
    * Returns the list of country codes derived from active vendors and the company profile.
    *
-   * @auth {config:read}
+   * @auth {season_calendar:read}
    * @input {none}
    * @output {Array<{ code: string, name: string }>} — country codes relevant to the company.
    */

@@ -179,25 +179,16 @@ describe('Type Guards', () => {
   });
 });
 
-// Admin passes through `*:*` before any allowlist, so "admin can sync" alone would hold without
-// `sales:sync` being registered: this pins the registration itself.
-describe('sales:sync', () => {
-  it('is a registered permission that only admin holds', () => {
-    expect(isPermission('sales:sync')).toBe(true);
-    expect(getAllPermissions()).toContain('sales:sync');
-    expect(expandRole('admin')).toContain('sales:sync');
-    expect(expandRole('editor')).not.toContain('sales:sync');
-    expect(expandRole('viewer')).not.toContain('sales:sync');
-  });
-});
-
-// The configuration writes of the collection catalog and of vendor closures: admin-only, while
-// editors keep `update` on both resources for the product and planning pages.
-describe('configure', () => {
-  it.each(['collection_layout:configure', 'season_calendar:configure'])(
+// The admin-only actions: `sales:sync` starts a NAV replica, `configure` writes the collection catalog
+// and vendor closures while editors keep `update` for the product and planning pages. Admin passes
+// through `*:*` before any allowlist, so "admin can do it" alone would hold without the action being
+// registered: this pins the registration itself.
+describe('admin-only actions', () => {
+  it.each(['sales:sync', 'collection_layout:configure', 'season_calendar:configure'])(
     '%s is a registered permission that only admin holds',
     permission => {
       expect(isPermission(permission)).toBe(true);
+      expect(getAllPermissions()).toContain(permission);
       expect(expandRole('admin')).toContain(permission);
       expect(expandRole('editor')).not.toContain(permission);
       expect(expandRole('viewer')).not.toContain(permission);

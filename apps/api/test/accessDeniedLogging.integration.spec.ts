@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { Permission } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { createToken, requireSessionWithPermission } from '../src/lib/auth';
@@ -42,6 +43,12 @@ async function callerAs(role: 'admin' | 'editor' | 'viewer') {
   return { user, warn, caller: appRouter.createCaller(ctx) };
 }
 
+/** Narrows `can` to refuse `denied` and answer everything else as before. */
+function denyOnly(denied: Permission) {
+  const real = permissions.can;
+  vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === denied ? false : real(ctx, permission)));
+}
+
 /** The one denial line, for `user`, naming what was missing. */
 function denial(user: { id: string; role: string }, missing: object) {
   return [expect.objectContaining({ userId: user.id, userRole: user.role, ...missing }), 'Permission denied'];
@@ -50,10 +57,7 @@ function denial(user: { id: string; role: string }, missing: object) {
 describe('a manual permission guard logs the denial', () => {
   // `can` is narrowed to make a `users:update` holder without `*:*`, whichever roles hold it.
   describe('users.update, by a users:update holder without *:*', () => {
-    beforeEach(() => {
-      const real = permissions.can;
-      vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
-    });
+    beforeEach(() => denyOnly('*:*'));
 
     it('users.update: a password reset by someone without *:*', async () => {
       const { user, warn, caller } = await callerAs('admin');
@@ -87,12 +91,7 @@ describe('a manual permission guard logs the denial', () => {
 
   // No role holds `config:read` without `config:update` today: `can` is narrowed to make one.
   describe('config, a raw value without config:update', () => {
-    beforeEach(() => {
-      const real = permissions.can;
-      vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) =>
-        permission === 'config:update' ? false : real(ctx, permission),
-      );
-    });
+    beforeEach(() => denyOnly('config:update'));
 
     it('viewValue in raw mode', async () => {
       const { user, warn, caller } = await callerAs('admin');
@@ -107,8 +106,7 @@ describe('a manual permission guard logs the denial', () => {
 
 describe('nothing is logged as a denial when nothing was denied', () => {
   it('a users:update holder without *:* updating an ordinary field', async () => {
-    const real = permissions.can;
-    vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
+    denyOnly('*:*');
     const { warn, caller } = await callerAs('admin');
     const { user: target } = await createTestUser('viewer');
 

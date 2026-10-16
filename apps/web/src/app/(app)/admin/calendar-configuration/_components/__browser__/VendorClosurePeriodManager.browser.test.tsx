@@ -70,7 +70,9 @@ test('closures are configured with season_calendar:configure: season_calendar:up
   const screen = await render(<VendorClosurePeriodManager vendorId="v1" vendorName="Fornitore" />);
 
   await expect.element(screen.getByRole('cell', { name: 'Ferie' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Aggiungi' }).query()).toBeNull();
+  // Absent or disabled: either way the closure cannot be added (CLAUDE.md asks for disabled).
+  const add = screen.getByRole('button', { name: 'Aggiungi' }).query();
+  expect(add === null || add.hasAttribute('disabled')).toBe(true);
   await screen.getByRole('cell', { name: 'Ferie' }).click();
   expect(screen.getByLabelText('Data inizio').query()).toBeNull();
 });
