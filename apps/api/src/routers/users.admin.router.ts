@@ -258,9 +258,9 @@ export const usersAdminRouter = router({
    * via the existing password-reset flow (`/auth/reset`): the placeholder credential created here
    * is random and never usable on its own.
    *
-   * @auth {users:update} + `*:*` — bypassing an external auth provider is admin-only despite
-   *   `users:update` being granted to editor, same restriction as the password field in
-   *   `users.update` (users.core.router.ts)
+   * @auth {users:update} + `*:*` — bypassing an external auth provider is admin-only even for a
+   *   `users:update` holder, same restriction as the password field in `users.update`
+   *   (users.core.router.ts)
    * @input {UserIdSchema}
    * @output {{ success: true, message: string }}
    */
@@ -377,7 +377,7 @@ export const usersAdminRouter = router({
    * invalidate any session already authenticated via the removed local credential.
    *
    * @auth {users:update} + `*:*` — same class of action as `forceLocalAccess`, admin-only
-   *   despite `users:update` being granted to editor
+   *   even for a `users:update` holder
    * @input {UserIdSchema}
    * @output {{ success: true, message: string }}
    */

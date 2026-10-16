@@ -81,15 +81,18 @@ type UserUpdatableField = Exclude<keyof UpdateUserInput, 'id' | 'password'>;
  *
  * Everything else in `UpdateUserInputSchema` is privileged **by derivation**
  * (`privilegedUserUpdateFields`), not by enumeration. That direction is the
- * whole point: a field added to the schema tomorrow is denied to editors by
- * default, instead of being writable until somebody remembers to classify it.
+ * whole point: a field added to the schema tomorrow is denied to such a caller
+ * by default, instead of being writable until somebody remembers to classify it.
+ *
+ * No built-in role is such a caller today — `users:update` is admin-only — so
+ * the list holds only for a future role granted `users:update` without `*:*`.
  *
  * The first version of this fix named the sensitive fields instead — which
  * closed the concrete email takeover while leaving the defect class intact,
  * since every future field would still have defaulted to permitted.
  *
- * `isActive` is here as a deliberate product decision, not by omission: an
- * editor deactivating a user is an existing capability, already bounded by the
+ * `isActive` is here as a deliberate product decision, not by omission: such a
+ * caller deactivating a user was an existing capability, bounded by the
  * self-deactivation guard and `assertNotLastAdminWithSettingsAccess`. It is
  * account state, not authentication identity. Removing it from this list would
  * be a behavioural change to make on its own merits.
@@ -100,7 +103,7 @@ export const USER_EDITOR_UPDATABLE_FIELDS = [
   'isActive',
 ] as const satisfies readonly UserUpdatableField[];
 
-/** A field an `editor` may change on another account. */
+/** A field a `users:update` holder without `*:*` may change on another account. */
 export type UserEditorUpdatableField = (typeof USER_EDITOR_UPDATABLE_FIELDS)[number];
 
 /** A field whose mutation on another account requires `*:*`. */

@@ -7,7 +7,9 @@ import { randomUUID } from 'crypto';
 
 import helmet from '@fastify/helmet';
 import Fastify from 'fastify';
+import { onTestFinished } from 'vitest';
 
+import { ROLE_PERMISSIONS, type Permission } from '@luke/core';
 import { PrismaClient } from '@luke/db';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
@@ -149,6 +151,17 @@ export async function createCallerAs(
   const { session } = await createTestUser(role);
   const ctx = createTestContext(session);
   return appRouter.createCaller(ctx);
+}
+
+/**
+ * Grants the editor `permission` until the current test ends. For a guard that must refuse a
+ * holder of `permission` without `*:*`, a caller no built-in non-admin role is any more.
+ */
+export function grantEditor(permission: Permission) {
+  ROLE_PERMISSIONS.editor.push(permission);
+  onTestFinished(() => {
+    ROLE_PERMISSIONS.editor.splice(ROLE_PERMISSIONS.editor.indexOf(permission), 1);
+  });
 }
 
 /**

@@ -140,13 +140,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   vendors: {
     reason:
-      'only hardDelete has tests (hardDeleteAdminOnly). The rest is the same CRUD + soft-delete pattern as brand, which is covered',
-    uncovered: 6,
+      'hardDelete by hardDeleteAdminOnly, create and update by masterDataEditorReadOnly. The rest is the same CRUD + soft-delete pattern as brand, which is covered',
+    uncovered: 4,
   },
   season: {
     reason:
-      'only hardDelete has tests (hardDeleteAdminOnly). The rest is the same CRUD + soft-delete pattern as brand, which is covered',
-    uncovered: 6,
+      'hardDelete by hardDeleteAdminOnly, create and update by masterDataEditorReadOnly. The rest is the same CRUD + soft-delete pattern as brand, which is covered',
+    uncovered: 4,
   },
   phase: {
     reason:

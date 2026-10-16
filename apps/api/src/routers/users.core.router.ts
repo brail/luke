@@ -347,8 +347,8 @@ export const usersCoreRouter = router({
       }
 
       // Protection: password reset restricted to admin (`*:*`) — `users:update` (the
-      // permission for this entire procedure) is also granted to `editor`; without this
-      // guard an editor could take over any account, including an admin's, by resetting
+      // permission for this entire procedure) can be held without `*:*`; without this
+      // guard such a holder could take over any account, including an admin's, by resetting
       // its password and authenticating as it.
       if (
         password !== undefined &&

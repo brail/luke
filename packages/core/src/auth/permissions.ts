@@ -109,19 +109,19 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
 /**
  * Base permission set for each role. Admin receives `*:*` wildcard; editor and viewer
  * receive explicit resource:action grants. Used by `hasPermission` and `expandRole`.
+ *
+ * A non-admin role writes only to a resource it sees through a default-visible section;
+ * `sectionHierarchy.test.ts` pins it.
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
     '*:*', // Complete wildcard - full access
   ],
   editor: [
-    // Brands: full access
-    'brands:*',
-    // Seasons: full access
-    'seasons:*',
-    // Users: read and update (no delete)
+    // Brands, seasons, users: read-only — their sections are admin-only by default
+    'brands:read',
+    'seasons:read',
     'users:read',
-    'users:update',
     // Config: none. `config:update` gates 27 endpoints — SMTP, LDAP, the auth strategy, Google
     // OAuth and S3 credentials, the password policy — and only one of them also checks section
     // access, so the `settings: false` an editor has in SECTION_ACCESS_DEFAULTS only ever hid the
@@ -138,8 +138,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'collection_layout:update',
     'collection_layout:revise',
     'collection_layout:view_revisions',
-    // Vendors: full access
-    'vendors:*',
+    // Vendors: read-only, same reason as brands
+    'vendors:read',
     // Sales: read statistics
     'sales:read',
     // Merchandising Plan: read and update
@@ -210,8 +210,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  *
  * @example
  * ```typescript
- * hasPermission({role: 'editor'}, 'brands:create') // true
- * hasPermission({role: 'viewer'}, 'brands:delete') // false
+ * hasPermission({role: 'editor'}, 'collection_layout:update') // true
+ * hasPermission({role: 'editor'}, 'brands:create') // false
  * hasPermission({role: 'admin'}, 'users:read') // true (wildcard)
  * ```
  */
@@ -251,7 +251,7 @@ export function hasPermission(
  *
  * @example
  * ```typescript
- * expandRole('editor')
+ * expandRole('admin')
  * // ['brands:create', 'brands:read', 'brands:update', 'brands:delete', ...]
  * ```
  */

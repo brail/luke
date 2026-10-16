@@ -75,7 +75,7 @@ const input = BrandInputSchema.parse({
   name: 'Luke',
 });
 
-if (hasPermission({ role: 'editor' }, 'brands:create')) {
+if (hasPermission({ role: 'admin' }, 'brands:create')) {
   const endpoint = buildApiUrl('/trpc/brand.create');
   void endpoint;
 }

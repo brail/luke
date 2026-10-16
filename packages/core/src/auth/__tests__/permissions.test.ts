@@ -205,23 +205,13 @@ describe('Role Expansion', () => {
     it('should expand editor role to specific permissions', () => {
       const expanded = expandRole('editor');
 
-      // Should contain all brand actions
-      expect(expanded).toContain('brands:create');
-      expect(expanded).toContain('brands:read');
-      expect(expanded).toContain('brands:update');
-      expect(expanded).toContain('brands:delete');
-
-      // Should contain all season actions
-      expect(expanded).toContain('seasons:create');
-      expect(expanded).toContain('seasons:read');
-      expect(expanded).toContain('seasons:update');
-      expect(expanded).toContain('seasons:delete');
-
-      // Should contain only read and update for users
-      expect(expanded).toContain('users:read');
-      expect(expanded).toContain('users:update');
-      expect(expanded).not.toContain('users:create');
-      expect(expanded).not.toContain('users:delete');
+      // Master data and users: read-only, their sections are admin-only by default
+      for (const resource of ['brands', 'seasons', 'vendors', 'users'] as const) {
+        expect(expanded).toContain(`${resource}:read`);
+        for (const action of ['create', 'update', 'delete'] as const) {
+          expect(expanded).not.toContain(`${resource}:${action}`);
+        }
+      }
 
       // No config access at all: `config:update` gates SMTP, LDAP, the auth strategy, storage
       // credentials and the password policy, and almost none of those endpoints also check section
@@ -321,21 +311,23 @@ describe('Permission Checking', () => {
     it('should grant editor specific permissions', () => {
       const editorUser = { role: 'editor' as Role };
 
-      // Brands: all actions
-      expect(hasPermission(editorUser, 'brands:create')).toBe(true);
+      // Brands, seasons, vendors, users: read-only
       expect(hasPermission(editorUser, 'brands:read')).toBe(true);
-      expect(hasPermission(editorUser, 'brands:update')).toBe(true);
-      expect(hasPermission(editorUser, 'brands:delete')).toBe(true);
-
-      // Seasons: all actions
-      expect(hasPermission(editorUser, 'seasons:create')).toBe(true);
-      expect(hasPermission(editorUser, 'seasons:update')).toBe(true);
-
-      // Users: only read and update
+      expect(hasPermission(editorUser, 'brands:create')).toBe(false);
+      expect(hasPermission(editorUser, 'brands:update')).toBe(false);
+      expect(hasPermission(editorUser, 'brands:delete')).toBe(false);
+      expect(hasPermission(editorUser, 'seasons:read')).toBe(true);
+      expect(hasPermission(editorUser, 'seasons:create')).toBe(false);
+      expect(hasPermission(editorUser, 'seasons:update')).toBe(false);
+      expect(hasPermission(editorUser, 'vendors:read')).toBe(true);
+      expect(hasPermission(editorUser, 'vendors:update')).toBe(false);
       expect(hasPermission(editorUser, 'users:read')).toBe(true);
-      expect(hasPermission(editorUser, 'users:update')).toBe(true);
+      expect(hasPermission(editorUser, 'users:update')).toBe(false);
       expect(hasPermission(editorUser, 'users:create')).toBe(false);
       expect(hasPermission(editorUser, 'users:delete')).toBe(false);
+
+      // Product work: collection layout updates
+      expect(hasPermission(editorUser, 'collection_layout:update')).toBe(true);
 
       // Config: none — see the expansion test above.
       expect(hasPermission(editorUser, 'config:read')).toBe(false);
@@ -372,14 +364,6 @@ describe('Permission Checking', () => {
 
       // No access to maintenance
       expect(hasPermission(viewerUser, 'maintenance:read')).toBe(false);
-    });
-
-    it('should use wildcard resource matching', () => {
-      const editorUser = { role: 'editor' as Role };
-
-      // Editor has brands:* so all brand actions should work
-      expect(hasPermission(editorUser, 'brands:create')).toBe(true);
-      expect(hasPermission(editorUser, 'brands:delete')).toBe(true);
     });
 
     it('should deny unknown roles', () => {
@@ -698,11 +682,14 @@ describe('CSV Export', () => {
     it('should show correct permissions for editor', () => {
       const csv = permissionMatrixToCSV();
 
-      // Check editor column for brands
-      const brandsCreateLine = csv
-        .split('\n')
-        .find(line => line.includes('"brands"') && line.includes('"create"'));
-      expect(brandsCreateLine).toContain('Yes'); // Editor should have brands:create
+      // Check editor column (Resource,Action,Admin,Editor,Viewer) for brands and the collection layout
+      const editorColumn = (resource: string, action: string) =>
+        csv
+          .split('\n')
+          .find(line => line.startsWith(`"${resource}","${action}",`))
+          ?.split(',')[3];
+      expect(editorColumn('brands', 'create')).toBe('No');
+      expect(editorColumn('collection_layout', 'update')).toBe('Yes');
 
       // Check editor column for audit actions
       const auditCreateLine = csv
@@ -823,12 +810,13 @@ describe('Utilities', () => {
 });
 
 describe('Integration Tests', () => {
-  it('should allow editor to manage brands but not delete users', () => {
+  it('should allow editor to plan collections but not manage brands or users', () => {
     const editorUser = { role: 'editor' as Role };
 
-    // Can do brand operations
-    expect(hasPermission(editorUser, 'brands:create')).toBe(true);
-    expect(hasPermission(editorUser, 'brands:update')).toBe(true);
+    // Can do collection work, not brand operations
+    expect(hasPermission(editorUser, 'collection_layout:update')).toBe(true);
+    expect(hasPermission(editorUser, 'brands:create')).toBe(false);
+    expect(hasPermission(editorUser, 'brands:update')).toBe(false);
 
     // Cannot delete users
     expect(hasPermission(editorUser, 'users:delete')).toBe(false);

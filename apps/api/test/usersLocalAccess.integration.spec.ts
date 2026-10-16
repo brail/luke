@@ -5,8 +5,8 @@
  * one (never removing it); `revokeLocalAccess` reverses that, refusing to remove a user's only
  * remaining identity.
  *
- * Covers the guards specific to these two procedures (admin-only despite `users:update` being
- * granted to editor, self-lockout on revoke, the "only identity" refusal) and the two
+ * Covers the guards specific to these two procedures (admin-only even for a `users:update`
+ * holder, self-lockout on revoke, the "only identity" refusal) and the two
  * correctness fixes applied during code review:
  *  - `forceLocalAccess` cleans up the orphaned RESET token if the email send fails, instead of
  *    leaving an unusable LOCAL identity with no way to reach it
@@ -34,6 +34,7 @@ import {
   createTestUser,
   expectToThrow,
   expectUnauthorized,
+  grantEditor,
   setupTestDb,
 } from './helpers';
 
@@ -94,6 +95,7 @@ async function createDualIdentityUser() {
 
 describe('users.forceLocalAccess', () => {
   it('editor with users:update but without *:* → FORBIDDEN', async () => {
+    grantEditor('users:update');
     const target = await createLdapUser();
     await expectUnauthorized(() => usersAs('editor').forceLocalAccess({ id: target.id }));
   });
@@ -222,6 +224,7 @@ describe('users.forceLocalAccess', () => {
 
 describe('users.revokeLocalAccess', () => {
   it('editor with users:update but without *:* → FORBIDDEN', async () => {
+    grantEditor('users:update');
     const target = await createDualIdentityUser();
     await expectUnauthorized(() => usersAs('editor').revokeLocalAccess({ id: target.id }));
   });

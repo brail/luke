@@ -702,31 +702,22 @@ describe('Brand Router', () => {
       expect(Array.isArray(result.items)).toBe(true);
     });
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s can create a brand',
-      async role => {
-        const code = `${role.toUpperCase()}_BRAND`;
-        const result = await brandAs(role).create({
-          code,
-          name: `${role} Brand`,
-          isActive: true,
-        });
-        expect(result.id).toBeDefined();
-        expect(result.code).toBe(code);
-      }
-    );
+    it('admin can create a brand', async () => {
+      const result = await brandAs('admin').create({
+        code: 'ADMIN_BRAND',
+        name: 'admin Brand',
+        isActive: true,
+      });
+      expect(result.code).toBe('ADMIN_BRAND');
+    });
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s can update a brand',
-      async role => {
-        const name = `Updated by ${role}`;
-        const result = await brandAs(role).update({
-          id: testBrand.id,
-          data: { name },
-        });
-        expect(result.name).toBe(name);
-      }
-    );
+    it('admin can update a brand', async () => {
+      const result = await brandAs('admin').update({
+        id: testBrand.id,
+        data: { name: 'Updated by admin' },
+      });
+      expect(result.name).toBe('Updated by admin');
+    });
 
     it('admin can permanently delete a brand', async () => {
       await expect(
@@ -734,16 +725,13 @@ describe('Brand Router', () => {
       ).resolves.toEqual({ success: true });
     });
 
-    // brands:delete archives; a permanent delete takes `*:*`, which editor's `brands:*` is not.
-    it('editor cannot permanently delete a brand', async () => {
-      await expectUnauthorized(
-        () => brandAs('editor').hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE }),
-        'FORBIDDEN'
-      );
-    });
-
-    it.each(MUTATIONS)('viewer: %s → FORBIDDEN', async (_label, invoke) => {
-      await expectUnauthorized(() => invoke(brandAs('viewer')), 'FORBIDDEN');
+    // Brands are admin-only master data: editor reads them like viewer.
+    it.each(
+      (['editor', 'viewer'] as const).flatMap(role =>
+        MUTATIONS.map(([label, invoke]) => [role, label, invoke] as const)
+      )
+    )('%s: %s → FORBIDDEN', async (role, _label, invoke) => {
+      await expectUnauthorized(() => invoke(brandAs(role)), 'FORBIDDEN');
     });
 
     it.each(OPERATIONS)(

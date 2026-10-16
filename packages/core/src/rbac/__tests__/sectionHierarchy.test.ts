@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { expandRole } from '../../auth/permissions.js';
 import { Roles } from '../../rbac.js';
-import { SECTION_ACCESS_DEFAULTS, sectionEnum, type Section } from '../../schemas/rbac.js';
+import {
+  SECTION_ACCESS_DEFAULTS,
+  SECTION_TO_PERMISSION,
+  sectionEnum,
+  type Section,
+} from '../../schemas/rbac.js';
 import { effectiveSectionAccess } from '../effectiveAccess.js';
 import { ancestorSectionsOf, childSectionsOf, parentSectionOf } from '../sectionHierarchy.js';
 
@@ -121,6 +127,33 @@ describe('static SECTION_ACCESS_DEFAULTS', () => {
         });
         expect(derived, `${role} ${section}`).toBe(SECTION_ACCESS_DEFAULTS[role][section]);
       }
+    }
+  });
+});
+
+describe('role grants against default section visibility', () => {
+  const LEAVES = SECTIONS.filter(s => childSectionsOf(s).length === 0);
+  const resourceOf = (permission: string) => permission.split(':')[0];
+  /** Actions that change nothing: reads, the audit-wide read, revision history, exports. */
+  const NON_MUTATING_ACTIONS = new Set(['read', 'read_all', 'view_revisions', 'export']);
+
+  it.each(Roles)('%s writes only to resources it sees through a default-visible leaf', role => {
+    for (const permission of expandRole(role)) {
+      const [resource, action] = permission.split(':');
+      const leaves = LEAVES.filter(leaf => resourceOf(SECTION_TO_PERMISSION[leaf]) === resource);
+      // A resource no leaf maps to (company functions and teams) has no section to agree with.
+      if (leaves.length === 0 || NON_MUTATING_ACTIONS.has(action)) continue;
+      expect(
+        leaves.some(leaf => SECTION_ACCESS_DEFAULTS[role][leaf]),
+        `${role} ${permission}`
+      ).toBe(true);
+    }
+  });
+
+  it.each(Roles)('%s holds the permission of every leaf it sees by default', role => {
+    const held = new Set<string>(expandRole(role));
+    for (const leaf of LEAVES.filter(leaf => SECTION_ACCESS_DEFAULTS[role][leaf])) {
+      expect(held.has(SECTION_TO_PERMISSION[leaf]), `${role} ${leaf}`).toBe(true);
     }
   });
 });

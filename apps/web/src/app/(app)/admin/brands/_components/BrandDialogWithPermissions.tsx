@@ -95,7 +95,7 @@ export function BrandDialogWithPermissions({
   const { can, session } = usePermission();
   const canUpdate = can('brands:update');
   const canEdit = can('brands:create') || canUpdate;
-  // Reads brands but cannot create them: the viewer's case.
+  // Reads brands but cannot create them: every role but admin.
   const isReadOnly = can('brands:read') && !can('brands:create');
 
   // Synced NAV brands (for linking)

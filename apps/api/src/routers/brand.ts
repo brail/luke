@@ -376,8 +376,8 @@ export const brandRouter = router({
    * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
    * body and never reaches the audit log — the same as any other malformed field.
    *
-   * @auth {*:*} — admin only. `brands:delete` is not enough: editor holds `brands:*`, and a
-   *   permanent delete is not the archive that permission is for.
+   * @auth {*:*} — admin only. `brands:delete` is not enough: a permanent delete is not the
+   *   archive that permission is for.
    * @input {BrandHardDeleteInputSchema} — brand UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
