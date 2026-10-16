@@ -170,12 +170,12 @@ export const holidaysRouter = router({
   /**
    * Lists stored public holidays, optionally filtered by country codes and/or year.
    *
-   * @auth {config:read}
+   * @auth {season_calendar:read} — the planning calendar marks holidays for everyone who reads it
    * @input {{ countryCodes?: string[], year?: number }}
    * @output {Holiday[]}
    */
   listHolidays: protectedProcedure
-    .use(requirePermission('config:read'))
+    .use(requirePermission('season_calendar:read'))
     .input(z.object({
       countryCodes: z.array(z.string().length(2)).optional(),
       year: z.number().int().min(2020).max(2040).optional(),

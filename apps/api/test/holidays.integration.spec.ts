@@ -47,6 +47,15 @@ describe('holidays.listHolidays — year', () => {
     expect(await namesIn(2031)).toEqual(['Chiusura invernale']);
     expect(await namesIn(2029)).toEqual(['Festa 2029']);
   });
+
+  // The planning calendar marks holidays for everyone who sees it, not only who can configure them.
+  it.each(['editor', 'viewer'] as const)('lists holidays to %s, who reads the planning calendar', async role => {
+    const { session } = await createTestUser(role);
+
+    const holidays = await createCallerWithSession(session).holidays.listHolidays({ countryCodes: ['ZZ'], year: 2029 });
+
+    expect(holidays.map(h => h.name)).toEqual(['Festa 2029']);
+  });
 });
 
 /** A vendor and a season of their own, and the fields of a closure between them. */
