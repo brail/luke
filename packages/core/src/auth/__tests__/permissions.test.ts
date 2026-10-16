@@ -191,6 +191,22 @@ describe('sales:sync', () => {
   });
 });
 
+// No built-in role holds a `resource:*` grant: a temporary one keeps the branch tested.
+describe('resource wildcard grant', () => {
+  it('covers every valid action of its resource and nothing else', () => {
+    ROLE_PERMISSIONS.viewer.push('brands:*');
+    try {
+      expect(hasPermission({ role: 'viewer' }, 'brands:delete')).toBe(true);
+      expect(hasPermission({ role: 'viewer' }, 'seasons:delete')).toBe(false);
+      expect(new Set(expandRole('viewer').filter(p => p.startsWith('brands:')))).toEqual(
+        new Set(VALID_RESOURCE_ACTIONS.brands.map(action => `brands:${action}`))
+      );
+    } finally {
+      ROLE_PERMISSIONS.viewer.pop();
+    }
+  });
+});
+
 describe('Role Expansion', () => {
   describe('expandRole', () => {
     it('should expand admin role to all permissions', () => {

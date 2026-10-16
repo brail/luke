@@ -7,9 +7,9 @@ import { randomUUID } from 'crypto';
 
 import helmet from '@fastify/helmet';
 import Fastify from 'fastify';
-import { onTestFinished } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 
-import { ROLE_PERMISSIONS, type Permission } from '@luke/core';
+import { hasPermission, ROLE_PERMISSIONS, type Permission } from '@luke/core';
 import { PrismaClient } from '@luke/db';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
@@ -159,6 +159,8 @@ export async function createCallerAs(
  */
 export function grantEditor(permission: Permission) {
   ROLE_PERMISSIONS.editor.push(permission);
+  // A grant that silently stopped taking effect would leave every refusal test green.
+  expect(hasPermission({ role: 'editor' }, permission)).toBe(true);
   onTestFinished(() => {
     ROLE_PERMISSIONS.editor.splice(ROLE_PERMISSIONS.editor.indexOf(permission), 1);
   });

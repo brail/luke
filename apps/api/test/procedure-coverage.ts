@@ -65,11 +65,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'login, refreshToken, confirmPasswordReset and requestPasswordReset covered (rate limit, idempotency, role demotion, password policy on the reset token, the SEC-A takeover chain), submitPendingEmail (password proof, conditional write), requestEmailVerification (own account only), requestEmailVerificationAdmin for an unknown user; confirmEmailVerification remains',
     uncovered: 1,
   },
-  brand: {
-    reason:
-      'create/list/update/hardDelete covered; the soft-delete cycle (remove, restore) and unlink from NAV remain',
-    uncovered: 3,
-  },
   company: {
     reason:
       'structure and teams covered on the main path; getById, reorder, restore and updateMemberRole remain',
@@ -140,13 +135,13 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   vendors: {
     reason:
-      'hardDelete by hardDeleteAdminOnly, create and update by masterDataEditorReadOnly. The rest is the same CRUD + soft-delete pattern as brand, which is covered',
-    uncovered: 4,
+      'hardDelete by hardDeleteAdminOnly; create, update, remove, restore and unlink by masterDataEditorReadOnly; list has no test yet',
+    uncovered: 1,
   },
   season: {
     reason:
-      'hardDelete by hardDeleteAdminOnly, create and update by masterDataEditorReadOnly. The rest is the same CRUD + soft-delete pattern as brand, which is covered',
-    uncovered: 4,
+      'hardDelete by hardDeleteAdminOnly; create, update, remove, restore and unlink by masterDataEditorReadOnly; list has no test yet',
+    uncovered: 1,
   },
   phase: {
     reason:

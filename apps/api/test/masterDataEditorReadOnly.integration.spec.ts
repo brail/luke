@@ -27,45 +27,63 @@ type Caller = Awaited<ReturnType<typeof createCallerAs>>;
 const uid = () => randomUUID().slice(0, 6).toUpperCase();
 const NON_ADMIN = ['editor', 'viewer'] as const;
 
-/** One master-data resource: a stored row, and a create and a rename through its router. */
+/** One master-data resource: a stored row, and its router's writes. */
 const MASTER_DATA = [
   {
     resource: 'brand',
     seed: () => prisma.brand.create({ data: { code: `B${uid()}`, name: `Brand ${uid()}` } }),
     count: () => prisma.brand.count(),
-    nameOf: async (id: string) => (await prisma.brand.findUniqueOrThrow({ where: { id } })).name,
+    find: (id: string) => prisma.brand.findUniqueOrThrow({ where: { id } }),
     create: (c: Caller) => c.brand.create({ code: `B${uid()}`, name: `New ${uid()}`, isActive: true }),
     rename: (c: Caller, id: string, name: string) => c.brand.update({ id, data: { name } }),
+    archiving: (c: Caller, id: string) => [
+      () => c.brand.remove({ id }),
+      () => c.brand.restore({ id }),
+      () => c.brand.unlink({ id }),
+    ],
   },
   {
     resource: 'season',
     seed: () => prisma.season.create({ data: { code: `S${uid()}`, name: `Season ${uid()}` } }),
     count: () => prisma.season.count(),
-    nameOf: async (id: string) => (await prisma.season.findUniqueOrThrow({ where: { id } })).name,
+    find: (id: string) => prisma.season.findUniqueOrThrow({ where: { id } }),
     create: (c: Caller) => c.season.create({ code: `S${uid()}`, name: `New ${uid()}`, isActive: true }),
     rename: (c: Caller, id: string, name: string) => c.season.update({ id, data: { name } }),
+    archiving: (c: Caller, id: string) => [
+      () => c.season.remove({ id }),
+      () => c.season.restore({ id }),
+      () => c.season.unlink({ id }),
+    ],
   },
   {
     resource: 'vendor',
     seed: () => prisma.vendor.create({ data: { name: `Vendor ${uid()}` } }),
     count: () => prisma.vendor.count(),
-    nameOf: async (id: string) => (await prisma.vendor.findUniqueOrThrow({ where: { id } })).name,
+    find: (id: string) => prisma.vendor.findUniqueOrThrow({ where: { id } }),
     create: (c: Caller) => c.vendors.create({ name: `New ${uid()}` }),
     rename: (c: Caller, id: string, name: string) => c.vendors.update({ id, data: { name } }),
+    archiving: (c: Caller, id: string) => [
+      () => c.vendors.remove({ id }),
+      () => c.vendors.restore({ id }),
+      () => c.vendors.unlink({ id }),
+    ],
   },
 ];
 
 describe.each(MASTER_DATA)('$resource', r => {
-  it.each(NON_ADMIN)('%s cannot create or rename one, and nothing is written', async role => {
+  it.each(NON_ADMIN)('%s cannot create, rename, archive, restore or unlink one, and nothing is written', async role => {
     const row = await r.seed();
     const before = await r.count();
     const caller = await createCallerAs(role);
 
     await expectUnauthorized(() => r.create(caller));
     await expectUnauthorized(() => r.rename(caller, row.id, `Renamed ${uid()}`));
+    for (const write of r.archiving(caller, row.id)) {
+      await expectUnauthorized(write);
+    }
 
     expect(await r.count()).toBe(before);
-    expect(await r.nameOf(row.id)).toBe(row.name);
+    expect(await r.find(row.id)).toEqual(row);
   });
 
   it('admin can create and rename one', async () => {
@@ -78,7 +96,7 @@ describe.each(MASTER_DATA)('$resource', r => {
     await r.rename(caller, row.id, name);
 
     expect(await r.count()).toBe(before + 1);
-    expect(await r.nameOf(row.id)).toBe(name);
+    expect((await r.find(row.id)).name).toBe(name);
   });
 });
 
