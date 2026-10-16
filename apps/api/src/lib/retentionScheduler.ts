@@ -115,7 +115,11 @@ async function sweepNotifications(prisma: PrismaClient, log: FastifyInstance['lo
   log.info({ deleted }, 'Retention sweep: read notifications removed');
 }
 
-/** Deletes expired dedup markers. Table is small/bounded by stable keys — no batching needed. */
+/**
+ * Deletes expired dedup markers. Keys may name an occurrence (`milestoneDeadlineScheduler.ts`), so
+ * the table is bounded by the retention window, not by a fixed key set — still small enough for one
+ * unbatched delete.
+ */
 async function sweepDedupKeys(prisma: PrismaClient, log: FastifyInstance['log'], dedupRetentionDays: number): Promise<void> {
   const { count } = await prisma.notificationDedupKey.deleteMany({
     where: { lastSentAt: { lt: cutoffDaysAgo(dedupRetentionDays) } },

@@ -232,10 +232,13 @@ notification (`checkRowPhaseOverdue`) fires when the deadline is `reached`,
 which does not depend on the count.
 
 The calendar milestone notifications in `milestoneDeadlineScheduler.ts`
-(`milestoneNotice`) do not use the working-day count. They are measured on the
-deadline (`endAt ?? startAt`) in the business zone: `in scadenza` while it is
-not reached and its day is at most two calendar days away (`oggi`, `domani`,
-`tra 2 giorni`), `scaduta` for three days after it is reached.
+(`deadlineState`) do not use the working-day count. They are measured on the
+deadline (`endAt ?? startAt`) in the business zone, for events of a calendar
+that is not `ARCHIVED`: `in scadenza` while it is not reached and its day is at most two
+calendar days away (`oggi`, `domani`, `tra 2 giorni`); `scaduta` once on days
+0–2 after the day it is reached and once more on days 3–5, then nothing. The
+row-phase-overdue notification follows the same two stages, one notice per
+event listing its late rows.
 
 ## Holiday sources
 

@@ -8,7 +8,7 @@ import { sseStore } from './sseStore';
 
 
 /** A notification as every sender stores it. */
-interface NotificationRow {
+export interface NotificationRow {
   userId: string;
   category: NotificationCategory;
   title: string;
@@ -97,8 +97,8 @@ export async function bulkNotify(
   await insertNotifications(prisma, toNotify.map(userId => ({ userId, ...params })));
 }
 
-/** Inserts `rows` in one statement and pings each recipient's connected clients over SSE. */
-async function insertNotifications(prisma: PrismaClient, rows: NotificationRow[]): Promise<void> {
+/** Inserts `rows` in one statement and pings each recipient over SSE. No preference check (`recipientsOf`). */
+export async function insertNotifications(prisma: PrismaClient, rows: NotificationRow[]): Promise<void> {
   if (rows.length === 0) return;
   await prisma.notification.createMany({
     data: rows.map(r => ({

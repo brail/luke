@@ -4,173 +4,242 @@ import {
   calendarDaysBetween,
   deadlineDay,
   deadlineReachedAt,
+  type CalendarEventKey,
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service';
+import { resolveEventAudience } from '../services/calendarAudience.service';
 import { createRevisionsForReachedEvents } from '../services/collectionLayoutAutoRevision.service';
 import { computeCriticalityForLayout, resolveAlertContext, type AlertContext } from '../services/phaseAlert.service';
 
 import { guardMaintenance } from './maintenanceMode';
-import { createNotification, notifyDeduped } from './notifications';
+import { brandSeasonLabel, insertNotifications, notifyDeduped, recipientsOf } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-// At most one notification per user+entity+type per ~day. DB-backed via notifyDeduped (see
-// notifications.ts) so the dedup ledger survives process restarts — kept just under 24h to
-// avoid missing a day while minimizing drift across repeated sends.
-const MILESTONE_DEDUP_MS = 23 * 60 * 60 * 1000;
+/**
+ * Dedup keys name the occurrence (`Notice.occurrence`), so this only has to outlive one overdue
+ * stage, three days — as must `notification.dedupRetentionDays`, or a stage is repeated.
+ */
+const NOTICE_DEDUP_MS = 7 * DAY_MS;
 
-type DeadlineType = 'upcoming' | 'overdue';
-
-/** How far back a reached deadline is still notified as overdue. */
-const OVERDUE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+/** An overdue deadline is notified on days 0–2 after the day it is reached, and again on days 3–5. */
+const OVERDUE_SECOND_STAGE = 3;
+const OVERDUE_DAYS = 2 * OVERDUE_SECOND_STAGE;
 
 /** "scade …" by calendar days to the deadline's day (0, 1, 2); further out is not notified yet. */
 const UPCOMING_LABELS = ['oggi', 'domani', 'tra 2 giorni'];
 
-async function notifyMilestone(
-  prisma: PrismaClient,
-  m: { id: string; title: string },
-  type: DeadlineType,
-  message: string,
-): Promise<void> {
-  const userIds = await resolveEventAudienceOne(m.id, prisma);
-  await Promise.all(userIds.map(userId =>
-    notifyDeduped(prisma, `milestone:${userId}:${m.id}:${type}`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
-      userId,
-      category: 'CALENDAR',
-      eventKey: type === 'upcoming' ? 'CALENDAR_DEADLINE_UPCOMING' : 'CALENDAR_DEADLINE_OVERDUE',
-      title: type === 'upcoming' ? 'Milestone in scadenza' : 'Milestone scaduta',
-      message,
-      link: '/calendar',
-      data: { milestoneId: m.id, type: `deadline_${type}` },
-    }))
+/** Rows a phase-overdue notice names before "e altre N". */
+const PHASE_ROWS_LISTED = 10;
+
+export type DeadlineState =
+  | { type: 'upcoming'; daysLeft: number; occurrence: string }
+  | { type: 'overdue'; occurrence: string };
+
+/** A notice about one event, sent once per recipient and occurrence (`sendNotice`). */
+interface Notice {
+  eventKey: CalendarEventKey;
+  title: string;
+  message: string;
+  link: string;
+  data: Record<string, unknown>;
+  /** Which occurrence of the notice this is: the dedup ledger's key. */
+  occurrence: string;
+}
+
+/** An event of a calendar not archived, with something to notify (`deadlineState`). */
+interface DueEvent {
+  id: string;
+  title: string;
+  phaseId: string | null;
+  calendar: { brandId: string; seasonId: string };
+  /** Its calendar's "brand · season", for the message. */
+  context: string;
+  state: DeadlineState;
+}
+
+/**
+ * Where an event's deadline stands at `now`, or nothing to notify. Measured on the deadline
+ * (`endAt ?? startAt`) in the business zone the way every other consumer measures it: upcoming
+ * while it is not reached and its day is at most two calendar days away, one occurrence a day;
+ * overdue from the day it is reached (`deadlineReachedAt`, the day after an all-day deadline), one
+ * occurrence on days 0–2 and one on days 3–5, then nothing — a tick missed on the first day of a
+ * stage catches up later in it. Pure.
+ */
+export function deadlineState(
+  m: { startAt: Date; endAt: Date | null; allDay: boolean },
+  now: Date,
+  timeZone: string,
+): DeadlineState | null {
+  const today = calendarDateIn(now, timeZone);
+  const reachedAt = deadlineReachedAt(m, timeZone);
+  if (reachedAt <= now) {
+    const reachedDay = calendarDateIn(reachedAt, timeZone);
+    const days = calendarDaysBetween(reachedDay, today);
+    if (days >= OVERDUE_DAYS) return null;
+    return { type: 'overdue', occurrence: `overdue:${reachedDay}:${days < OVERDUE_SECOND_STAGE ? 0 : OVERDUE_SECOND_STAGE}` };
+  }
+  const due = deadlineDay(m, timeZone);
+  const daysLeft = calendarDaysBetween(today, due);
+  return daysLeft < UPCOMING_LABELS.length ? { type: 'upcoming', daysLeft, occurrence: `upcoming:${due}:${daysLeft}` } : null;
+}
+
+/** The notice about event `e`'s own deadline in `state`. Pure. */
+export function milestoneNotice(e: { id: string; title: string; context: string }, state: DeadlineState): Notice {
+  const upcoming = state.type === 'upcoming';
+  return {
+    eventKey: upcoming ? 'CALENDAR_DEADLINE_UPCOMING' : 'CALENDAR_DEADLINE_OVERDUE',
+    title: upcoming ? 'Milestone in scadenza' : 'Milestone scaduta',
+    message: `"${e.title}" ${upcoming ? `scade ${UPCOMING_LABELS[state.daysLeft]}` : 'è scaduta senza essere completata'} · ${e.context}`,
+    link: '/calendar',
+    data: { milestoneId: e.id, type: `deadline_${state.type}` },
+    occurrence: state.occurrence,
+  };
+}
+
+/**
+ * The notice that the rows `lines` have not completed event `e`'s phase by its deadline, in
+ * `state`: one per event, naming the first `PHASE_ROWS_LISTED` rows after the event and its
+ * calendar, which a reader clamped to two lines still sees. Pure.
+ */
+export function phaseOverdueNotice(e: { id: string; title: string; context: string }, lines: string[], state: DeadlineState): Notice {
+  const more = lines.length > PHASE_ROWS_LISTED ? ` e altre ${lines.length - PHASE_ROWS_LISTED}` : '';
+  return {
+    eventKey: 'CALENDAR_PHASE_OVERDUE',
+    title: 'Fase scaduta',
+    message: lines.length === 1
+      ? `"${lines[0]}" non ha completato "${e.title}" entro la scadenza · ${e.context}`
+      : `${lines.length} righe non hanno completato "${e.title}" entro la scadenza · ${e.context}: ${lines.slice(0, PHASE_ROWS_LISTED).join(', ')}${more}`,
+    link: '/product/collection-layout',
+    data: { eventId: e.id, type: 'phase_overdue' },
+    occurrence: `phase_${state.occurrence}`,
+  };
+}
+
+/**
+ * Sends `notice` about event `eventId` to those of `userIds` who receive its kind, each once per
+ * occurrence. Those who muted it are left out before the dedup ledger, so unmuting it brings the
+ * occurrence still running.
+ */
+async function sendNotice(prisma: PrismaClient, eventId: string, userIds: string[], notice: Notice): Promise<void> {
+  const { occurrence, eventKey, ...row } = notice;
+  const recipients = await recipientsOf(prisma, userIds, 'CALENDAR', eventKey);
+  await Promise.all(recipients.map(userId =>
+    notifyDeduped(prisma, `milestone:${userId}:${eventId}:${occurrence}`, NOTICE_DEDUP_MS, () =>
+      insertNotifications(prisma, [{ userId, category: 'CALENDAR', ...row }]))
   ));
 }
 
 /**
- * Notifies once per row+event+day when a collection row's current phase has slipped past its
- * calendar deadline (`reached`, per `computeCriticalityForLayout` — same criticality engine as the
- * Controllo dashboards, no new calculation: an all-day deadline at the end of its day in the
- * business zone). Recipients are the event's visible users, same resolution as milestone deadline
- * notifications.
- *
- * Rows marked as concluded are skipped (`state === 'active'` guard): they carry a frozen outcome
- * instead of a countdown, and nagging about a deadline on work someone already closed is noise.
+ * One phase-overdue notice per overdue event of `overdue`, naming the rows still at its phase —
+ * `computeCriticalityForLayout`, the engine behind the Controllo dashboards, no new calculation —
+ * on the occurrences of the event's own overdue notice; nothing for an event no row is late on.
+ * Concluded rows are left out: they carry a frozen outcome instead of a countdown, and nagging
+ * about a deadline on work someone already closed is noise.
  */
-async function checkRowPhaseOverdue(prisma: PrismaClient, now: Date, alert: AlertContext): Promise<void> {
-  const layouts = await prisma.collectionLayout.findMany({ select: { id: true } });
-
-  const overdueRows = (
-    await Promise.all(
-      layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, alert))
-    )
+async function checkRowPhaseOverdue(
+  prisma: PrismaClient,
+  now: Date,
+  alert: AlertContext,
+  overdue: DueEvent[],
+  audience: Map<string, string[]>,
+): Promise<void> {
+  if (overdue.length === 0) return;
+  // One calendar and one layout per brand and season: the layouts these events drive.
+  const layouts = await prisma.collectionLayout.findMany({
+    where: { OR: overdue.map(e => ({ brandId: e.calendar.brandId, seasonId: e.calendar.seasonId })) },
+    select: { id: true },
+  });
+  const overdueIds = new Set(overdue.map(e => e.id));
+  const lateRows = (
+    await Promise.all(layouts.map(l => computeCriticalityForLayout(l.id, now, prisma, alert, { activeOnly: true })))
   )
     .flat()
     // Type predicate, not a plain boolean: the criticality result is a union and only the 'active'
-    // arm carries `eventId`/`eventTitle`, which the notification below needs.
-    .filter((r): r is Extract<typeof r, { state: 'active' }> => r.state === 'active' && r.reached);
-  if (overdueRows.length === 0) return;
+    // arm carries `eventId`.
+    .filter((r): r is Extract<typeof r, { state: 'active' }> => r.state === 'active' && overdueIds.has(r.eventId));
+  if (lateRows.length === 0) return;
 
-  const rowIds = overdueRows.map(r => r.rowId);
-  const uniqueEventIds = [...new Set(overdueRows.map(r => r.eventId))];
-  const [rows, visibilityMap] = await Promise.all([
-    prisma.collectionLayoutRow.findMany({
-      where: { id: { in: rowIds } },
-      select: { id: true, line: true },
-    }),
-    resolveEventAudience(uniqueEventIds, prisma),
-  ]);
+  const rows = await prisma.collectionLayoutRow.findMany({
+    where: { id: { in: lateRows.map(r => r.rowId) } },
+    select: { id: true, line: true },
+  });
   const lineByRowId = new Map(rows.map(r => [r.id, r.line]));
+  const linesByEvent = new Map<string, string[]>();
+  for (const r of lateRows) {
+    const line = lineByRowId.get(r.rowId) ?? r.rowId;
+    const lines = linesByEvent.get(r.eventId);
+    if (lines) lines.push(line);
+    else linesByEvent.set(r.eventId, [line]);
+  }
 
-  await Promise.all(
-    overdueRows.map(async r => {
-      const userIds = visibilityMap.get(r.eventId) ?? [];
-      const line = lineByRowId.get(r.rowId) ?? r.rowId;
-      await Promise.all(userIds.map(userId =>
-        notifyDeduped(prisma, `milestone:${userId}:${r.rowId}:phase_overdue`, MILESTONE_DEDUP_MS, () => createNotification(prisma, {
-          userId,
-          category: 'CALENDAR',
-          eventKey: 'CALENDAR_PHASE_OVERDUE',
-          title: 'Fase scaduta',
-          message: `"${line}" non ha completato "${r.eventTitle}" entro la scadenza`,
-          // Deep-links to the specific row (page.tsx opens its edit drawer on load) instead of
-          // dropping the user on the generic layout page to search for it manually. Only works
-          // if the user's currently-selected brand/season already matches the row's — the page
-          // doesn't switch context from the link, since that's driven by a separate, server-side
-          // user preference (no URL-param override exists for it today).
-          link: `/product/collection-layout?rowId=${encodeURIComponent(r.rowId)}`,
-          data: { rowId: r.rowId, eventId: r.eventId, type: 'phase_overdue' },
-        }))
-      ));
-    })
-  );
+  await Promise.all(overdue.flatMap(e => {
+    const lines = linesByEvent.get(e.id);
+    // Natural order, so "Linea 2" comes before "Linea 10" and the ten named are the first ten.
+    return lines
+      ? [sendNotice(prisma, e.id, audience.get(e.id) ?? [], phaseOverdueNotice(e, lines.sort((a, b) => a.localeCompare(b, 'it', { numeric: true })), e.state))]
+      : [];
+  }));
 }
 
 /**
- * What to notify about one event's deadline at `now`, or nothing — the whole rule of
- * `checkDeadlines`. Measured on the deadline (`endAt ?? startAt`) the way every other consumer
- * measures it: "in scadenza" while it is not reached and its day is at most two calendar days away
- * in the business zone, "scaduta" for three days after it is reached. Pure.
+ * One tick: the deadline notices of calendars not archived — an archived calendar is over; a draft
+ * one is live in practice, nothing in the app moves a calendar to ACTIVE — and the layout
+ * auto-revisions. Exported for its integration test.
  */
-export function milestoneNotice(
-  m: { title: string; startAt: Date; endAt: Date | null; allDay: boolean },
-  now: Date,
-  timeZone: string,
-): { type: DeadlineType; message: string } | null {
-  const reachedAt = deadlineReachedAt(m, timeZone);
-  if (reachedAt <= now) {
-    return reachedAt.getTime() >= now.getTime() - OVERDUE_WINDOW_MS
-      ? { type: 'overdue', message: `"${m.title}" è scaduta senza essere completata` }
-      : null;
-  }
-  const label = UPCOMING_LABELS[calendarDaysBetween(calendarDateIn(now, timeZone), deadlineDay(m, timeZone))];
-  return label ? { type: 'upcoming', message: `"${m.title}" scade ${label}` } : null;
-}
-
-async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstance['log']): Promise<void> {
-  const now = new Date();
+export async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstance['log'], now = new Date()): Promise<void> {
   const alert = await resolveAlertContext(prisma);
   const { timeZone } = alert;
 
-  // A superset of stored deadlines: reached no earlier than the overdue window (minus the reach
-  // margin), and on a day no later than today + 2 — within three days of now, plus a day of slack
-  // for a DST change in between. Exact rules below.
-  const storedFrom = new Date(now.getTime() - OVERDUE_WINDOW_MS - DEADLINE_REACH_MARGIN_MS);
-  const storedTo = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
+  // A superset of stored deadlines: reached no earlier than the first day of the overdue window
+  // (a day back for a DST change, then the reach margin), and on a day no later than today + 2
+  // (plus a day of slack). Exact rules in `deadlineState`.
+  const storedFrom = new Date(now.getTime() - (OVERDUE_DAYS + 1) * DAY_MS - DEADLINE_REACH_MARGIN_MS);
+  const storedTo = new Date(now.getTime() + 4 * DAY_MS);
   const events = await prisma.calendarEvent.findMany({
     where: {
       cancelledAt: null,
+      calendar: { status: { not: 'ARCHIVED' } },
       OR: [
         { endAt: { gte: storedFrom, lte: storedTo } },
         { endAt: null, startAt: { gte: storedFrom, lte: storedTo } },
       ],
     },
-    select: { id: true, title: true, startAt: true, endAt: true, allDay: true },
+    select: {
+      id: true, title: true, startAt: true, endAt: true, allDay: true, phaseId: true,
+      calendar: { select: { brandId: true, seasonId: true, brand: { select: { name: true } }, season: { select: { name: true } } } },
+    },
   });
 
-  const notifications = events.flatMap(m => {
-    const notice = milestoneNotice(m, now, timeZone);
-    return notice ? [notifyMilestone(prisma, m, notice.type, notice.message)] : [];
+  const due = events.flatMap((e): DueEvent[] => {
+    const state = deadlineState(e, now, timeZone);
+    return state ? [{ ...e, context: brandSeasonLabel(e.calendar), state }] : [];
   });
+  const notify = async () => {
+    const audience = await resolveEventAudience(due.map(e => e.id), prisma);
+    await Promise.all([
+      ...due.map(e => sendNotice(prisma, e.id, audience.get(e.id) ?? [], milestoneNotice(e, e.state))),
+      // Only an event with a phase can be the phase a row is at.
+      checkRowPhaseOverdue(prisma, now, alert, due.filter(e => e.state.type === 'overdue' && e.phaseId), audience),
+    ]);
+  };
 
   await Promise.all([
-    ...notifications,
-    checkRowPhaseOverdue(prisma, now, alert),
-    // Auto-revision of the collection layout for every phase-linked event whose deadline was reached.
+    notify(),
+    // Auto-revision of the collection layout for every phase-linked event whose deadline was reached:
+    // beside the notices, not after their audience, so a failure there does not skip it.
     createRevisionsForReachedEvents(prisma, now, timeZone, logger),
   ]);
 }
 
 /**
- * Registers the milestone deadline notification scheduler as a Fastify plugin.
- * Checks for upcoming (due within two calendar days) and overdue (reached within 3 days) calendar
- * events on an hourly tick and creates per-user notifications with per-day deduplication.
- * The first check runs 60 seconds after server ready to avoid boot-time noise.
+ * Registers the milestone deadline notification scheduler as a Fastify plugin: an hourly
+ * `checkDeadlines`. The first check runs 60 seconds after server ready to avoid boot-time noise.
  */
 export function registerMilestoneDeadlineScheduler(
   fastify: FastifyInstance,
