@@ -146,7 +146,7 @@ describe('the collection catalog configuration section', () => {
   });
 });
 
-describe('role grants against default section visibility', () => {
+describe('role grants against default section visibility (ADR-038)', () => {
   const LEAVES = SECTIONS.filter(s => childSectionsOf(s).length === 0);
   const resourceOf = (permission: string) => permission.split(':')[0];
   /** Actions that change nothing: reads, the audit-wide read, revision history, exports. */
@@ -156,7 +156,7 @@ describe('role grants against default section visibility', () => {
     for (const permission of expandRole(role)) {
       const [resource, action] = permission.split(':');
       const leaves = LEAVES.filter(leaf => resourceOf(SECTION_TO_PERMISSION[leaf]) === resource);
-      // A resource no leaf maps to (company functions and teams) has no section to agree with.
+      // A resource no leaf maps to (settings, company functions and teams) has no section to agree with.
       if (leaves.length === 0 || NON_MUTATING_ACTIONS.has(action)) continue;
       expect(
         leaves.some(leaf => SECTION_ACCESS_DEFAULTS[role][leaf]),

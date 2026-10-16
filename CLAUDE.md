@@ -250,8 +250,9 @@ Two distinct layers that must stay in sync.
 
 - Always `hasPermission(user, 'resource:action')` — never inline `user.role === 'admin'`
 - Every protected tRPC endpoint: Development Patterns rule 5
-- An admin-only operation on a resource `editor` holds through `resource:*` (e.g. a hard delete), or
-  one that acts on authorization itself (section access management), requires `*:*` (ADR-029)
+- An admin-only operation on a resource another role holds through `resource:*`, a permanent
+  delete, or one that acts on authorization itself (section access management) requires `*:*`
+  (ADR-029, ADR-038)
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 
@@ -261,6 +262,10 @@ Two distinct layers that must stay in sync.
   `rbac.sectionAccessDefaults` merged over it per section (ADR-027)
 - **New section = update THREE places in sync**: `sectionEnum`, `SECTION_TO_PERMISSION`,
   `SECTION_ACCESS_DEFAULTS` (all three roles)
+- For resources mapped to leaf sections, every role holding a mutating permission must have at
+  least one mapped leaf visible in `SECTION_ACCESS_DEFAULTS`; every default-visible leaf must
+  have its mapped permission granted. `sectionHierarchy.test.ts` enforces this static invariant;
+  runtime section overrides never grant resource permissions (ADR-038)
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
 - `saveConfig`, `saveConfigs` and `deleteConfig` invalidate the RBAC cache when they write an

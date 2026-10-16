@@ -80,3 +80,4 @@ Appended under [ADR-030](030-documentation-architecture-canonical-language-and-h
 - **2026-10-05 — Revocation triggers, self revoke.** `auth.logoutAll` was removed in `a3a7a9a2`; `me.revokeAllSessions` is the self-revoke path.
 - **2026-10-05 — Observed gaps, code from earlier designs.** `useSessionInvalidation` and the `/session-events` rewrite were removed in `ec0955a0`.
 - **2026-10-05 — Observed gaps, drifted comments.** The `SessionVerification` comment says 10 seconds since `60e857ec`. The 7-day comment on `verifyTokenVersion` and the `'7d'` default it describes are unchanged.
+- **2026-10-16 — Revocation triggers, other-user revocation.** "It requires `users:update`, which `editor` holds": `editor` no longer holds `users:update` since [ADR-038](038-resource-action-permissions-grants-follow-section-visibility.md), so only `admin` reaches `users.revokeUserSessions`.

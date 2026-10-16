@@ -134,7 +134,7 @@ const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
  * administration would lock everyone — admins included — out of the only
  * in-app place to undo it. Guarded here, the single chokepoint every write to
  * this key goes through (generic `config.set`/`config.update`, gated only by
- * the editor-shared `config:update` permission — no admin check upstream).
+ * `config:update` — no `*:*` check upstream).
  *
  * The guard asks that question directly, through the same recovery count the
  * other last-admin guards use, rather than looking for `'settings'` in the

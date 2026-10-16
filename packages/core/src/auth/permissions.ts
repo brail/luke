@@ -111,8 +111,8 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
  * Base permission set for each role. Admin receives `*:*` wildcard; editor and viewer
  * receive explicit resource:action grants. Used by `hasPermission` and `expandRole`.
  *
- * A non-admin role writes only to a resource it sees through a default-visible section;
- * `sectionHierarchy.test.ts` pins it.
+ * A role writes only to a resource it sees through a default-visible section;
+ * `sectionHierarchy.test.ts` pins it (ADR-038).
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [

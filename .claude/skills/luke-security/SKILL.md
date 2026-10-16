@@ -79,7 +79,7 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 5. **Password reset token entropy**: token generation using `Math.random()` or tokens shorter than 32 bytes (64 hex chars) — CRITICAL
 6. **Missing auth on tRPC procedures**: public procedures (no `requirePermission`) returning or modifying non-public data. Check especially: `getById` procedures, anything under `product.*` or `admin.*` routers
 7. **Privilege escalation via role assignment**: user update procedures — can non-admin change their own role or another user's role?
-8. **Admin-only endpoints reachable by editor**: every operation ADR-029 lists under "Admin-only operations" and "Maintenance" (`docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`) — verify not reachable by editor through any code path
+8. **Admin-only endpoints reachable by editor**: every operation ADR-038 lists under "Admin-only operations" (`docs/decisions/038-resource-action-permissions-grants-follow-section-visibility.md`) and ADR-029 under "Admin-only operations" and "Maintenance" (`docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`), plus any procedure called only from a page hidden to editor by default — verify not reachable by editor through any code path
 
 ---
 

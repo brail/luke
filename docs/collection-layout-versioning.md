@@ -151,6 +151,7 @@ caveat about verifying it against the actual backend.
 |------------|------|-----------|
 | `collection_layout:revise` | editor, admin | Create revisions manually |
 | `collection_layout:view_revisions` | editor, viewer, admin | View history and details |
+| `collection_layout:configure` | admin | Manage revision types and the other catalog options ([ADR-038](decisions/038-resource-action-permissions-grants-follow-section-visibility.md)) |
 
 ---
 

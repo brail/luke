@@ -165,7 +165,7 @@ const portafoglioRouter = router({
   /**
    * Triggers an immediate NAV→PG portafoglio sync; returns conflict error if a sync is already running.
    *
-   * @auth {sales:sync} — admin-only by default: it starts a NAV replica, not a read
+   * @auth {sales:sync} — only admin holds it: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerPortafoglioSyncNow()}
    */
@@ -428,7 +428,7 @@ const kimoRouter = router({
   /**
    * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.
    *
-   * @auth {sales:sync} — admin-only by default: it starts a NAV replica, not a read
+   * @auth {sales:sync} — only admin holds it: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerKimoSyncNow()}
    */

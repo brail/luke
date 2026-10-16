@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [038 — Resource:Action Permissions: Role Grants Follow Default Section Visibility](038-resource-action-permissions-grants-follow-section-visibility.md)
 
 ## Context
 

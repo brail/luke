@@ -31,7 +31,7 @@
 | [026](026-resource-action-permissions-enforced.md) | Resource:Action Permissions: Enforced Coverage, Own-Data Procedures and Admin-Only Operations | Superseded by [029](029-resource-action-permissions-one-builder-logged-refusals.md) |
 | [027](027-section-access-leaf-overrides-and-validated-defaults.md) | Section Access: Leaf Overrides, Validated Role Defaults and Migrated Legacy Data | Accepted |
 | [028](028-runtime-images-carry-runtime-dependencies-only.md) | Runtime Images Carry Runtime Dependencies Only, and Prove It | Accepted |
-| [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Accepted |
+| [029](029-resource-action-permissions-one-builder-logged-refusals.md) | Resource:Action Permissions: One Protected Builder, Admin-Only Operations and Logged Refusals | Superseded by [038](038-resource-action-permissions-grants-follow-section-visibility.md) |
 | [030](030-documentation-architecture-canonical-language-and-historical-records.md) | Documentation Architecture, Canonical Language and Historical Records | Accepted |
 | [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) | Key-Based Storage, Two-Phase Upload and Presigned Upload Buckets | Accepted |
 | [032](032-outbound-boundary-for-sensitive-data-and-permission-gated-configuration.md) | Outbound Boundary for Sensitive Data and Permission-Gated Configuration Values | Superseded by [034](034-outbound-boundary-for-sensitive-data-and-masked-configuration-reads.md) |
@@ -40,6 +40,7 @@
 | [035](035-date-and-time-model-calendar-days-instants-and-two-zone-roles.md) | Date and Time Model: Calendar Days, Instants and Two Zone Roles | Superseded by [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) |
 | [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
+| [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Accepted |
 
-_Last updated: 2026-10-14_
+_Last updated: 2026-10-16_
 <!-- luke-docs:end:adr-index -->
