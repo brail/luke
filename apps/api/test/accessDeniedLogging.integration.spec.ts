@@ -48,24 +48,32 @@ function denial(user: { id: string; role: string }, missing: object) {
 }
 
 describe('a manual permission guard logs the denial', () => {
-  it('users.update: a password reset by someone without *:*', async () => {
-    const { user, warn, caller } = await callerAs('editor');
-    const { user: target } = await createTestUser('viewer');
-
-    await expect(caller.users.update({ id: target.id, password: 'Another-passw0rd!' })).rejects.toMatchObject({
-      code: 'FORBIDDEN',
+  // `can` is narrowed to make a `users:update` holder without `*:*`, whichever roles hold it.
+  describe('users.update, by a users:update holder without *:*', () => {
+    beforeEach(() => {
+      const real = permissions.can;
+      vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
     });
-    expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['*:*'] }));
-  });
 
-  it('users.update: a privileged field changed by someone without *:*', async () => {
-    const { user, warn, caller } = await callerAs('editor');
-    const { user: target } = await createTestUser('viewer');
+    it('users.update: a password reset by someone without *:*', async () => {
+      const { user, warn, caller } = await callerAs('admin');
+      const { user: target } = await createTestUser('viewer');
 
-    await expect(caller.users.update({ id: target.id, email: 'elsewhere@example.com' })).rejects.toMatchObject({
-      code: 'FORBIDDEN',
+      await expect(caller.users.update({ id: target.id, password: 'Another-passw0rd!' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['*:*'] }));
     });
-    expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['*:*'] }));
+
+    it('users.update: a privileged field changed by someone without *:*', async () => {
+      const { user, warn, caller } = await callerAs('admin');
+      const { user: target } = await createTestUser('viewer');
+
+      await expect(caller.users.update({ id: target.id, email: 'elsewhere@example.com' })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      expect(warn).toHaveBeenCalledWith(...denial(user, { deniedPermissions: ['*:*'] }));
+    });
   });
 
   it('editLock.acquireMany: every permission is required, and the missing ones are named', async () => {
@@ -98,8 +106,10 @@ describe('a manual permission guard logs the denial', () => {
 });
 
 describe('nothing is logged as a denial when nothing was denied', () => {
-  it('an editor updating a field editors may change', async () => {
-    const { warn, caller } = await callerAs('editor');
+  it('a users:update holder without *:* updating an ordinary field', async () => {
+    const real = permissions.can;
+    vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
+    const { warn, caller } = await callerAs('admin');
     const { user: target } = await createTestUser('viewer');
 
     await caller.users.update({ id: target.id, firstName: 'Renamed' });

@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { acquireLastAdminLock } from '../src/lib/lastAdminGuard';
+import { acquireLastAdminLock, assertNotLastAdmin } from '../src/lib/lastAdminGuard';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
@@ -37,24 +37,36 @@ beforeEach(async () => {
 });
 
 describe('lastAdminGuard — real enforcement', () => {
-  it('an editor with users:update CANNOT deactivate the only remaining admin', async () => {
-    const { session: editorSession } = await createTestUser('editor');
+  // Only an admin manages users, so the caller is one too: what makes the target the last is that the
+  // caller cannot reach `settings.users`, the only way back from a wrong RBAC setting.
+  it('an admin without settings.users CANNOT deactivate the only admin who has it', async () => {
+    const { user: caller, session: callerSession } = await createTestUser('admin');
+    await prisma.userSectionAccess.create({ data: { userId: caller.id, section: 'settings.users', enabled: false } });
     const { user: admin } = await createTestUser('admin');
 
     await expect(
-      callerFor(editorSession).update({ id: admin.id, isActive: false })
+      callerFor(callerSession).update({ id: admin.id, isActive: false })
     ).rejects.toMatchObject({ code: 'FORBIDDEN', message: LAST_ADMIN_MESSAGE });
 
     const refreshed = await prisma.user.findUniqueOrThrow({ where: { id: admin.id } });
     expect(refreshed.isActive).toBe(true);
   });
 
-  it('an editor with users:update CAN deactivate an admin if at least one other stays active', async () => {
-    const { session: editorSession } = await createTestUser('editor');
-    const { user: admin1 } = await createTestUser('admin');
-    await createTestUser('admin'); // second admin: keeps the system above the threshold
+  // No endpoint reaches the role count any more: its caller manages users, so is an active admin itself.
+  // The count stays as defence in depth, proven on the guard directly.
+  it('the role count alone refuses a change that would leave no active admin', async () => {
+    await createTestUser('admin');
 
-    await callerFor(editorSession).update({ id: admin1.id, isActive: false });
+    await expect(
+      prisma.$transaction(tx => assertNotLastAdmin(tx, LAST_ADMIN_MESSAGE))
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: LAST_ADMIN_MESSAGE });
+  });
+
+  it('an admin CAN deactivate another admin while one able to manage users stays active', async () => {
+    const { session: callerSession } = await createTestUser('admin');
+    const { user: admin1 } = await createTestUser('admin');
+
+    await callerFor(callerSession).update({ id: admin1.id, isActive: false });
 
     const refreshed = await prisma.user.findUniqueOrThrow({ where: { id: admin1.id } });
     expect(refreshed.isActive).toBe(false);

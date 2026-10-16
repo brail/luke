@@ -7,11 +7,13 @@
  * (tokenVersion, audit) on the admin-to-admin path.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { USER_EDITOR_UPDATABLE_FIELDS, UpdateUserInputSchema, privilegedUserUpdateFields } from '@luke/core';
 import type { PrivilegedUserUpdateField, UserEditorUpdatableField } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
+
+import * as permissions from '../src/lib/permissions';
 
 import {
   createCallerWithIP,
@@ -22,9 +24,10 @@ import {
   TEST_USER_PASSWORD,
 } from './helpers';
 
+
 import type { UserSession } from '../src/lib/auth';
 
-type Role = 'admin' | 'editor' | 'viewer';
+type Role = 'admin' | 'viewer';
 
 let prisma: PrismaClient;
 
@@ -34,16 +37,27 @@ function usersAs(role: Role) {
   return createCallerWithSession(sessions[role]).users;
 }
 
+/**
+ * A caller holding `users:update` without `*:*`, whichever roles are that: an admin with `*:*`
+ * denied by narrowing `can`, as in `accessDeniedLogging.integration.spec.ts`.
+ */
+function usersWithoutWildcard() {
+  const real = permissions.can;
+  vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
+  return usersAs('admin');
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 const NEW_PASSWORD = 'BrandNewPassw0rd!42';
 
 beforeAll(async () => {
   prisma = await setupTestDb();
 
-  const [admin, editor, viewer] = await Promise.all(
-    (['admin', 'editor', 'viewer'] as Role[]).map(role => createTestUser(role))
-  );
+  const [admin, viewer] = await Promise.all((['admin', 'viewer'] as Role[]).map(role => createTestUser(role)));
   sessions.admin = admin.session;
-  sessions.editor = editor.session;
   sessions.viewer = viewer.session;
 });
 
@@ -53,11 +67,11 @@ async function createTargetUser() {
 }
 
 describe('users.update — reset password admin', () => {
-  it('editor with users:update but without *:* → FORBIDDEN', async () => {
+  it('a users:update holder without *:* → FORBIDDEN', async () => {
     const { user: target } = await createTargetUser();
 
     await expectUnauthorized(() =>
-      usersAs('editor').update({ id: target.id, password: NEW_PASSWORD })
+      usersWithoutWildcard().update({ id: target.id, password: NEW_PASSWORD })
     );
   });
 
@@ -229,13 +243,13 @@ const EDITOR_SAMPLE: Record<UserEditorUpdatableField, unknown> = {
 
 describe('users.update — cross-user field authorization (SEC-A)', () => {
   it.each(privilegedUserUpdateFields())(
-    'editor with users:update but without *:* cannot change %s of an admin',
+    'a users:update holder without *:* cannot change %s of an admin',
     async field => {
       const { user: adminTarget } = await createTestUser('admin');
       const before = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
 
       await expectUnauthorized(() =>
-        usersAs('editor').update({ id: adminTarget.id, [field]: PRIVILEGED_SAMPLE[field] })
+        usersWithoutWildcard().update({ id: adminTarget.id, [field]: PRIVILEGED_SAMPLE[field] })
       );
 
       // The rejection must also mean the write did not happen. An endpoint that
@@ -249,13 +263,13 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
   );
 
   it.each(USER_EDITOR_UPDATABLE_FIELDS)(
-    'editor keeps the legitimate ability to change %s',
+    'a users:update holder without *:* keeps the legitimate ability to change %s',
     async field => {
       // The other half of the boundary. A guard that froze the whole procedure
       // for editors would pass every test above and get reverted in a week.
       const { user: target } = await createTargetUser();
 
-      await usersAs('editor').update({ id: target.id, [field]: EDITOR_SAMPLE[field] });
+      await usersWithoutWildcard().update({ id: target.id, [field]: EDITOR_SAMPLE[field] });
 
       const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
       expect(after[field]).toBe(EDITOR_SAMPLE[field]);
@@ -278,7 +292,7 @@ describe('users.update — cross-user field authorization (SEC-A)', () => {
     const attackerEmail = `chain-${Date.now()}@evil.test`;
 
     await expectUnauthorized(() =>
-      usersAs('editor').update({ id: adminTarget.id, email: attackerEmail })
+      usersWithoutWildcard().update({ id: adminTarget.id, email: attackerEmail })
     );
 
     // No user carries the attacker's address, so the public reset flow has

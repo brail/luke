@@ -19,7 +19,7 @@ import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { createNotification } from '../lib/notifications';
 import { hashPassword } from '../lib/password';
-import { logAccessDenied, requirePermission } from '../lib/permissions';
+import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
@@ -352,7 +352,7 @@ export const usersCoreRouter = router({
       // its password and authenticating as it.
       if (
         password !== undefined &&
-        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+        !can(ctx, '*:*')
       ) {
         logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
         throw new TRPCError({
@@ -390,7 +390,7 @@ export const usersCoreRouter = router({
       );
       if (
         attemptedPrivilegedFields.length > 0 &&
-        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+        !can(ctx, '*:*')
       ) {
         logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
         throw new TRPCError({
@@ -461,7 +461,7 @@ export const usersCoreRouter = router({
           if (
             updateData.role !== undefined &&
             updateData.role !== current?.role &&
-            !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+            !can(ctx, '*:*')
           ) {
             logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
             throw new TRPCError({
