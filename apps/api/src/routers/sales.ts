@@ -67,6 +67,14 @@ async function resolveSalespersonNames(
 
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
 
+/** A replica's automatic sync schedule: only the two fields a `sales:read` page shows, never the filter. */
+function replicaSchedule(prisma: PrismaClient, entity: 'portafoglio' | 'kimo') {
+  return prisma.navSyncFilter.findUnique({
+    where: { entity },
+    select: { autoSyncEnabled: true, intervalMinutes: true },
+  });
+}
+
 const portafoglioRouter = router({
   /**
    * Returns available filter options (salespersons) for the order portfolio of a brand+season, reading from PG replica with NAV direct fallback.
@@ -185,21 +193,24 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables.
+   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables,
+   * and the replica's automatic sync schedule, which the statistics page shows to `sales:read` holders.
    *
    * @auth {sales:read}
    * @input {none}
-   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
+   * @output {{ isRunning: boolean, schedule: { autoSyncEnabled, intervalMinutes } | null, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
     .query(async ({ ctx }) => {
-      const rows = await ctx.prisma.navPfSyncState.findMany({
-        orderBy: { tableName: 'asc' },
-      });
+      const [rows, schedule] = await Promise.all([
+        ctx.prisma.navPfSyncState.findMany({ orderBy: { tableName: 'asc' } }),
+        replicaSchedule(ctx.prisma, 'portafoglio'),
+      ]);
 
       return {
         isRunning: isPortafoglioSyncRunning(),
+        schedule,
         tables: rows.map(r => ({
           tableName: r.tableName,
           lastSyncedAt: r.lastSyncedAt,
@@ -385,22 +396,26 @@ const kimoRouter = router({
     }),
 
   /**
-   * Returns the sync state for all nav_kimo_* replica tables.
+   * Returns the sync state for all nav_kimo_* replica tables, and the replica's automatic sync schedule.
    *
    * @auth {sales:read}
    * @input {none}
-   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
+   * @output {{ isRunning: boolean, schedule: { autoSyncEnabled, intervalMinutes } | null, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
     .query(async ({ ctx }) => {
-      const rows = await ctx.prisma.navPfSyncState.findMany({
-        where: { tableName: { startsWith: 'nav_kimo_' } },
-        orderBy: { tableName: 'asc' },
-      });
+      const [rows, schedule] = await Promise.all([
+        ctx.prisma.navPfSyncState.findMany({
+          where: { tableName: { startsWith: 'nav_kimo_' } },
+          orderBy: { tableName: 'asc' },
+        }),
+        replicaSchedule(ctx.prisma, 'kimo'),
+      ]);
 
       return {
         isRunning: isKimoSyncRunning(),
+        schedule,
         tables: rows.map(r => ({
           tableName:     r.tableName,
           lastSyncedAt:  r.lastSyncedAt,

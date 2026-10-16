@@ -6,6 +6,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import * as kimoScheduler from '../src/lib/kimoSyncScheduler';
 import * as portafoglioScheduler from '../src/lib/portafoglioSyncScheduler';
 
@@ -13,8 +15,10 @@ import { createCallerAs, expectUnauthorized, setupTestDb } from './helpers';
 
 type Caller = Awaited<ReturnType<typeof createCallerAs>>;
 
+let prisma: PrismaClient;
+
 beforeEach(async () => {
-  await setupTestDb();
+  prisma = await setupTestDb();
 });
 
 afterEach(() => {
@@ -51,5 +55,24 @@ describe.each(TRIGGERS)('sales.statistics.$name.triggerSync', t => {
       code: 'PRECONDITION_FAILED',
     });
     expect(sync).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The statistics page shows when the next automatic sync is due. Its schedule comes with the sync
+// state (`sales:read`), not from the NAV sync configuration (`config:read`), which editors and
+// viewers do not hold.
+describe('getSyncState carries the replica schedule', () => {
+  it.each(['editor', 'viewer'] as const)('to %s, each replica its own', async role => {
+    await prisma.navSyncFilter.create({
+      data: { entity: 'portafoglio', mode: 'all', navNos: [], autoSyncEnabled: true, intervalMinutes: 45 },
+    });
+    const caller = await createCallerAs(role);
+
+    const portafoglio = await caller.sales.statistics.portafoglio.getSyncState();
+    const kimo = await caller.sales.statistics.kimo.getSyncState();
+
+    expect(portafoglio.schedule).toEqual({ autoSyncEnabled: true, intervalMinutes: 45 });
+    expect(kimo.schedule).toBeNull();
+    await expectUnauthorized(() => caller.integrations.nav.sync.getFilter({ entity: 'portafoglio' }));
   });
 });

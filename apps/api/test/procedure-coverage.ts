@@ -87,15 +87,15 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, and nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection; everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 14,
+      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission); everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 13,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
   sales: {
     reason:
-      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync by their permission spec (salesSyncPermission)',
-    uncovered: 6,
+      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync and the two getSyncState by their permission spec (salesSyncPermission)',
+    uncovered: 4,
   },
   holidays: {
     reason:

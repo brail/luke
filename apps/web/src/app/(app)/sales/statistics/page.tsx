@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components
 import { useAppContext } from '../../../../contexts/AppContextProvider';
 import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { triggerDownload } from '../../../../lib/download';
+import { syncStatusInfo } from '../../../../lib/navSyncStatus';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -33,29 +34,6 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * The "last sync" and "next sync" labels of a NAV sync card: when the header table last synced,
- * and, with auto-sync on, when it is due next, written by the reader-zone formatters of
- * `useFormatDate`.
- */
-function syncStatusInfo(
-  state: { tables: { tableName: string; lastSyncedAt: Date | string | null }[] } | null | undefined,
-  schedule: { autoSyncEnabled: boolean; intervalMinutes: number } | null | undefined,
-  tableName: string,
-  fmt: Pick<ReturnType<typeof useFormatDate>, 'dateTime' | 'relative'>,
-): { lastSyncLabel: string; nextSyncLabel: string | null } | null {
-  const lastSyncedAt = state?.tables.find(t => t.tableName === tableName)?.lastSyncedAt;
-  if (!lastSyncedAt) return null;
-  const lastSync = new Date(lastSyncedAt);
-  const lastSyncLabel = `${fmt.dateTime(lastSync)} (${fmt.relative(lastSync)})`;
-  if (!schedule?.autoSyncEnabled || !schedule.intervalMinutes) return { lastSyncLabel, nextSyncLabel: null };
-  const nextSync = new Date(lastSync.getTime() + schedule.intervalMinutes * 60_000);
-  const nextSyncLabel = nextSync.getTime() - Date.now() < 60_000 ? 'imminente' : fmt.relative(nextSync, { ahead: true });
-  return { lastSyncLabel, nextSyncLabel };
-}
 
 // ─── Progress bar hook ────────────────────────────────────────────────────────
 
@@ -305,12 +283,6 @@ export default function StatisticsPage() {
       refetchInterval: 60_000,
     });
 
-  const { data: pfSyncSchedule } =
-    trpc.integrations.nav.sync.getFilter.useQuery(
-      { entity: 'portafoglio' },
-      { refetchOnWindowFocus: false },
-    );
-
   const pfDownloadMutation = trpc.sales.statistics.portafoglio.download.useMutation({
     onSuccess: result => {
       triggerDownload(result.data, result.filename, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -336,7 +308,7 @@ export default function StatisticsPage() {
   };
 
   // Portafoglio sync state
-  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncSchedule, 'nav_pf_sales_header', fmt);
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, pfSyncState?.schedule, 'nav_pf_sales_header', fmt);
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -350,12 +322,6 @@ export default function StatisticsPage() {
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
       refetchInterval: 60_000,
     });
-
-  const { data: kimoSyncSchedule } =
-    trpc.integrations.nav.sync.getFilter.useQuery(
-      { entity: 'kimo' },
-      { refetchOnWindowFocus: false },
-    );
 
   const kimoDownloadMutation = trpc.sales.statistics.kimo.download.useMutation({
     onSuccess: result => {
@@ -382,7 +348,7 @@ export default function StatisticsPage() {
   };
 
   // Kimo sync state
-  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncSchedule, 'nav_kimo_sales_header', fmt);
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, kimoSyncState?.schedule, 'nav_kimo_sales_header', fmt);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
