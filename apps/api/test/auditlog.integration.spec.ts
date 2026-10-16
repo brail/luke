@@ -98,6 +98,21 @@ describe('AuditLog Integration', () => {
     });
   });
 
+  describe('EMAIL_VERIFICATION_FORCED', () => {
+    it('records whether the address was verified or cleared', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const { user: target } = await createTestUser('viewer');
+
+      await createCallerWithSession(session).users.forceVerifyEmail({ userId: target.id, verified: false });
+
+      const log = await testPrisma.auditLog.findFirstOrThrow({
+        where: { action: 'EMAIL_VERIFICATION_FORCED', actorId: admin.id },
+      });
+      expect(log.result).toBe('SUCCESS');
+      expect(log.metadata).toMatchObject({ input: { userId: target.id, verified: false } });
+    });
+  });
+
   describe('USER_DELETE (soft delete)', () => {
     it('should log an entry for a soft delete', async () => {
       const { user: admin, session } = await createTestUser('admin');

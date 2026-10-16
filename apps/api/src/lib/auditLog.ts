@@ -78,6 +78,8 @@ const SAFE_KEY_LIST = [
   'firstName',
   'lastName',
   'isActive',
+  // `users.forceVerifyEmail`: whether the address was force-verified or cleared.
+  'verified',
   'strategy',
   'userAgent',
   'createdAt',
