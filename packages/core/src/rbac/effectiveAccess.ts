@@ -1,4 +1,4 @@
-import { hasPermission, type Permission } from '../auth/permissions.js';
+import { hasPermission } from '../auth/permissions.js';
 import { SECTION_TO_PERMISSION, type Section, type SectionDefault } from '../schemas/rbac.js';
 
 import { ancestorSectionsOf, childSectionsOf } from './sectionHierarchy.js';
@@ -91,7 +91,5 @@ function leafSectionAccess({
   if (defaultForSection === 'enabled') return true;
 
   // 3) RBAC role fallback — uses the new Resource:Action system
-  const permission = SECTION_TO_PERMISSION[section];
-  if (!permission) return false;
-  return hasPermission({ role: role as Role }, permission as Permission);
+  return hasPermission({ role: role as Role }, SECTION_TO_PERMISSION[section]);
 }

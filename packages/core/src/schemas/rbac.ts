@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import { Roles, type Role } from '../rbac.js';
 
+import type { Permission } from '../auth/permissions.js';
+
 /**
  * All navigable sections in the system, including sub-sections expressed in dot-notation
  * (e.g. `'settings.ldap'`, `'product.pricing'`). Used as access-control keys throughout the RBAC layer.
@@ -73,7 +75,7 @@ export type SectionAccessDefaults = z.infer<typeof sectionAccessDefaultsSchema>;
  * Only leaf entries are consulted: a parent section is derived from its children (ADR-025),
  * and its entry is kept because the map is exhaustive over `sectionEnum`.
  */
-export const SECTION_TO_PERMISSION: Record<Section, string> = {
+export const SECTION_TO_PERMISSION: Record<Section, Permission> = {
   dashboard: 'dashboard:read',
   settings: 'settings:read',
   'settings.users': 'users:read',
