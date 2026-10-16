@@ -51,13 +51,23 @@ async function ensureDefaultPlanningGroup(
   calendarId: string,
   prisma: PrismaClient | Prisma.TransactionClient
 ): Promise<string> {
-  const existing = await prisma.planningGroup.findFirst({
-    where: { calendarId, isDefault: true },
-  });
+  const where = { calendarId, isDefault: true };
+  const existing = await prisma.planningGroup.findFirst({ where, select: { id: true } });
   if (existing) return existing.id;
-  const created = await prisma.planningGroup.create({
-    data: { calendarId, name: 'Predefinito', isDefault: true },
+  // ON CONFLICT DO NOTHING: two first calls may both get here, and the loser's error would leave a
+  // caller's transaction aborted — a caught P2002 could not be read past. Either way one row stands.
+  await prisma.planningGroup.createMany({
+    data: [{ calendarId, name: 'Predefinito', isDefault: true }],
+    skipDuplicates: true,
   });
+  const created = await prisma.planningGroup.findFirst({ where, select: { id: true } });
+  // Nothing inserted and no default: the name is taken by a group the user made.
+  if (!created) {
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: 'Un gruppo di pianificazione chiamato "Predefinito" impedisce di creare quello predefinito: rinominalo',
+    });
+  }
   return created.id;
 }
 

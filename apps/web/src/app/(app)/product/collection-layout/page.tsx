@@ -120,10 +120,9 @@ export default function CollectionLayoutPage() {
       },
       onError: (err: unknown) =>
         toast.error(
-          getTrpcErrorMessage(err, {
-            CONFLICT: 'Un layout esiste già per questa stagione',
-            NOT_FOUND: 'Nessun layout trovato nella stagione di partenza',
-          })
+          // The server's own words: a CONFLICT may be an existing layout or a reference changed during
+          // the copy, a NOT_FOUND the source layout or the target brand/season.
+          getTrpcErrorMessage(err, { CONFLICT: true, NOT_FOUND: true })
         ),
     });
 

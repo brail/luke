@@ -295,8 +295,16 @@ export function EmptyCollectionLayoutState({
 
               <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
-                  Il campo <strong>fase</strong> verrà azzerato in tutte le righe copiate. Le foto non vengono copiate.
+                <AlertDescription className="space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                  <p>
+                    Vengono copiati gruppi, righe, le quotazioni scelte e le colonne nascoste. Non vengono
+                    copiati <strong>fase</strong>, foto, stato concluso e revisione, budget SKU.
+                  </p>
+                  <p>
+                    Ogni riga va nel gruppo di pianificazione con lo stesso nome nella stagione di destinazione,
+                    altrimenti in quello predefinito; ogni quotazione nel set di parametri con lo stesso nome,
+                    altrimenti in nessuno. Un prezzo resta solo se il set di destinazione ha la stessa valuta.
+                  </p>
                 </AlertDescription>
               </Alert>
 

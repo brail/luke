@@ -131,6 +131,15 @@ test('a copy sends the rows and quotations chosen', async () => {
   });
 });
 
+test('the row step says what is copied, what is not, and how references are matched', async () => {
+  const screen = await render(<CollectionLayoutPage />);
+
+  await openRowStep(screen, 'FW 2026');
+  const dialog = screen.getByRole('dialog');
+  await expect.element(dialog.getByText(/Non vengono copiati fase, foto, stato concluso e revisione, budget SKU/)).toBeVisible();
+  await expect.element(dialog.getByText(/Un prezzo resta solo se il set di destinazione ha la stessa valuta/)).toBeVisible();
+});
+
 test('going back to pick another season copies that season\'s rows', async () => {
   const screen = await render(<CollectionLayoutPage />);
 
