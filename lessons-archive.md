@@ -124,3 +124,19 @@ produce — in CI's `images` job on every push and pull request, and in
 `release.yml` on the exact image before its tags are pushed. Decision and
 rejected alternatives:
 [ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md).
+
+---
+
+## A doc block left above another one documents nothing (2026-09-29)
+
+**What happened.** In X25 T4c I inserted a documented constant (`DAY_ONLY`) between
+`formatCriticalityTooltip` and its JSDoc. TypeScript attaches only the last of two stacked blocks,
+so the exported function lost its doc; tsc, lint and every test stayed green and the documentation
+audit caught it. The same shape had sat in `tools/scripts/check-platform-integrity.ts`: the doc of
+`PRISMA_GENERATE_SITE` stacked on another constant's, fifty lines from its declaration.
+
+**Rule.** A doc comment moves with its declaration. Enforced by ESLint `@luke/no-detached-jsdoc`
+(error, every linted TypeScript and JavaScript file). A corollary of "A new lint rule must be probed
+on a bait file": the rule first went into a config block that does not reach `tools/`, and reported
+zero on the repository while the known occurrence was still there — the per-area bait probe (one
+stacked and one blank-line-separated block, expected exactly 1 finding) is what exposed the scope.
