@@ -4,6 +4,229 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.0-rc.3] - 2026-10-17
+
+### Added
+- **deploy**: Pin the image version through the LUKE_VERSION stack variable ⚠️ **BREAKING**
+- **api**: Export the audit log as XLSX
+- **core**: Add the shared date helpers the date model needs
+- **web**: Show the LUKE wordmark in the navigation and on the auth screens
+- **calendar**: Open the notified event from a notification, in its own brand and season
+- **sourcing**: Record vendor minimum order quantities
+- **merch**: Add cluster MOQ coverage tab to Control
+- **release**: Publish a GitHub Release for every stable tag
+
+### CI
+- **release**: Title GitHub Releases "Luke X.Y.Z"
+
+### Changed
+- **web**: Forward the API's Cache-Control on served uploads
+- **api**: Let exceljs and Prisma do what two helpers redid
+- **web**: One relative-time helper for every sync label
+- **api**: Build the audit log XLSX like the other exports
+- **api**: Tidy the shutdown timeout and the storage test doubles
+- **web**: Drop the unused import and export from useConfigQuery
+- Drop the one-entry input set and split the wheel cases
+- **web**: Share the copy selection reset and the dialog test steps
+- **web**: Define the public API URL for browser tests
+- Send each import key once and drop a stale comment
+- **core**: One schema for time zones and one for wall times
+- **api**: Read the backup schedule defaults from the registry
+- **api**: Format maintenance and digest instants through core
+- **api**: Read the greeting hour and export stamps through core
+- **core**: Share the time-of-day greeting between the API and the web
+- **core**: Retire the @luke/core/utils/date subpath (ADR-037)
+- **calendar**: Take all-day dates from core
+- **api**: Name a calendar "brand · season" in one place
+- **api**: Check the users.update admin guards through can()
+- **web**: Read the next-sync schedule from the sync state
+- **core**: Type section permissions as permissions
+- **sourcing**: Format and tidy the vendor minimums
+- **web**: Satisfy the React Compiler lint in three hooks
+
+### Documentation
+- **lessons**: Write versions as X.Y.Z; read the running stack first
+- **deploy**: Release by LUKE_VERSION and move the proxy in the upgrade
+- **deploy**: Deploy each stack from Git at its release tag
+- State the licence: all rights reserved
+- **deploy**: Move production to a Git stack in the 2.1.6 upgrade
+- **deploy**: Say why the stack files stay self-contained
+- **adr**: Supersede ADR-032 with ADR-034 for masked config reads
+- **adr**: Record the date and time model as ADR-035
+- **adr**: Record the date bounds and schemas now in core as ADR-035 errata
+- **lessons**: Run the full integration suite after a test changes the procedures it calls
+- **adr**: Record the shared date helpers in ADR-035's errata
+- **adr**: Record the strict config reader in ADR-018's errata
+- **adr**: Record the reader-zone hook in ADR-035's errata
+- **adr**: Record the closure days in ADR-035's errata
+- **adr**: Record the template dates in ADR-035's errata
+- **adr**: Record the bounded date inputs in ADR-035's errata
+- **adr**: Record the calendar clone in ADR-035's errata
+- **adr**: Supersede ADR-035 to move both ends of a timed event by calendar days
+- Record the validated holiday import in ADR-036 and the working-days guide
+- Record the core wall-time readers in ADR-036 and list every API email
+- **adr**: Record the export zones in ADR-036's errata
+- **adr**: Record the storage keys, email year and forex fixings in ADR-036's errata
+- Record the user zone and date bounds in ADR-036's errata, and the psql read-only lesson
+- Record the NAV blank date in ADR-036's errata and the NAV docs
+- **adr**: Record the reader zone of the maintenance and admin pages in ADR-036's errata
+- **adr**: Record the web's reader zone outside the calendar in ADR-036's errata
+- Record the calendar's reader zone in ADR-036's errata
+- Close ADR-036's calendar-package, lint-rule and clocks gaps in its errata
+- Add the map-key lesson from the withdrawn cohort fix
+- **adr**: Record ADR-038, role grants follow default section visibility
+- **skills**: Replace the protocol's score rule with a no-score rule
+- **skills**: Give baseline entries a review date or a decision
+- **skills**: Stop luke-fix, luke-deps and luke-test on an unknown mode
+- **skills**: Move luke-deps' toolchain and security procedures to references
+- **skills**: Drop luke-deps' repeated rules and hand-run checks
+- **skills**: Move luke-deps' platform and evaluate procedures to references
+- **skills**: Write the README templates as tables
+- File every lesson under the category its readers need
+- **skills**: Route lessons to the skills that need them
+- Archive the detached-doc lesson, now enforced by ESLint
+- Name the GitHub Release in the release flow
+- Roll up the audit items left open at the closure
+- **skills**: Stop luke-audit asking about rule 8 on every run
+
+### Fixed
+- **deploy**: Stop the deploy on every missing required stack variable
+- **deploy**: Reach the web only through the reverse proxy's network ⚠️ **BREAKING**
+- **deps**: Bump next to 16.3.8 for the 2026-10-07 advisories
+- **web**: Keep the app shell from scrolling the document
+- **api**: Keep audit-log CSV cells from being read as formulas
+- **web**: Keep served uploads out of shared caches
+- **api**: Quote every audit-log CSV field
+- **api**: Drop the custom JSON body parser
+- **api**: Fill LDAP filter templates with a function replacer
+- **api**: Fill mail text templates with a function replacer
+- **api**: Fill mail text templates in a single pass
+- **web**: Let Intl word durations and relative times
+- **api**: Page the audit log export by keyset
+- **api**: Settle every stream chain instead of crashing the process
+- **api**: Keep the NAV sync schedulers alive when a tick fails
+- **api**: Run the server's shutdown on SIGTERM
+- **api**: Do not log a client that leaves after a download's source ended
+- **api**: Refuse the config export placeholder as a value
+- **api**: Rate-limit config.importJson like the other config writers
+- **web**: Import the config file with the schema the API shares
+- **web**: Name skipped import rows and a failed existence check
+- **web**: Keep pricing parameter edits across a session refetch
+- **web**: Stop wheel scrolls from editing pricing parameter numbers
+- **web**: Blur every number input on wheel, not only NumberInput's
+- **web**: Blur a number input only on the turn that steps it
+- **web**: Send the empty layout's genders and copied rows
+- **web**: Restart the copy selection when the source season changes
+- **api**: Refuse a copy selection outside the source layout
+- Bind collection layout genders to COLLECTION_GENDER
+- **web**: Type collection genders end to end and drop vanished rows
+- **api**: Refuse repeated copy rows and duplicate layout genders
+- **web**: Send the session token with specsheet image uploads
+- **web**: Map upload rate limits and keep upload errors Italian
+- **api**: Search users regardless of case
+- **api**: List a holiday range in every year it overlaps
+- **web**: Filter the audit log by whole days in the profile zone
+- **web**: Read the mail and NAV settings by their own key prefix
+- **api**: Trim the user search and type the holiday filter
+- **web**: Fill the mail form without the base URL and refresh after saving
+- Read the audit log date filter in the reader's zone on the server
+- Share the date schemas and refetch after a time zone change
+- **api**: Make getMultiple report stored keys and mask encrypted values
+- Check config keys uncached and keep masking in one place
+- **core**: Hold event dates to the range the date helpers read
+- **web**: Show the backup schedule form only for the stored settings
+- **web**: Show settings forms only after their stored values are read
+- **web**: Wait for the stored values in NAV sync and company forms
+- **web**: Disable NAV sync actions without the permission they need
+- **core**: Read integer settings only from plain decimal strings
+- **web**: Refuse an emptied number field instead of saving a default
+- **web**: Refuse an invalid NAV sync interval instead of replacing it
+- **api**: Skip a scheduled backup whose stored scope is invalid
+- **web**: Format dates in the profile zone and the default locale
+- **calendar**: Take vendor closure dates as calendar days
+- **api**: Make vendor closure writes atomic and answer missing rows
+- **core**: Read a timed deadline's end as exclusive
+- **calendar**: Anchor templates on a day and range-check their dates
+- **core**: Bound the remaining date inputs and keep a task's due day
+- **calendar**: Clone events by calendar days in the business zone
+- **core**: Move both ends of a timed event by calendar days
+- **api**: Validate a holiday import before writing and prefill by season year
+- **api**: Name the reader zone in the export PDF headers
+- **api**: Write KIMO datetimes in the reader zone and name it
+- **api**: Partition storage keys by the UTC day in one place
+- **api**: Compare ECB fixings, validate the notification cursor, drop the email year
+- **db**: Give new users the business zone and bound calendar dates in the database
+- **nav**: Store NAV's blank date as null and send season days in the preview
+- **web**: Show the record dates of three admin tables in the profile zone
+- **web**: Date backups and scheduled maintenance in the reader's zone
+- **web**: Schedule maintenance in the reader's zone
+- **dashboard**: Read today, the week and the greeting in the reader's zone
+- Show the completion day the lateness counts from
+- **web**: Count relative days and NAV sync times in the reader's zone
+- **web**: Read the holiday year, the daily greeting day and the last login in the reader's zone
+- **web**: Take today from the reader zone hook and write instants in one format
+- **web**: Show and keep any stored zone, and prompt for the browser zone once
+- Validate the dashboard widget settings on save and drop stale ones on read
+- **web**: Move calendar events by the ADR-036 shift contract in a named zone
+- **web**: Read the calendar month, week and day views in the reader zone
+- **web**: Read the calendar Gantt and timeline in the reader zone
+- **web**: Navigate the calendar by calendar date
+- **web**: Type and save calendar events in the reader zone
+- **web**: Pass the reader zone to the planning wizards and drop the browser zone
+- **calendar**: Leave people who already see an event out of its share picker
+- **calendar**: Check the caller's brand access on the share and note procedures
+- **web**: Show a share picker that failed to load, and refresh only the saved event's
+- **calendar**: Resolve an event's brand access in one place, before its state
+- **calendar**: Delete events only while they stay deletable, and count what was deleted
+- **web**: Offer only deletable events for bulk deletion
+- **calendar**: Let each kind of calendar notice, and the digest, be muted on its own
+- **calendar**: Send overdue notices in two stages, late rows in one notice per event
+- **collection-layout**: Copy a season's layout into the target season's planning groups and parameter sets
+- **api**: Record whether users.forceVerifyEmail verified or cleared the address
+- **rbac**: Make editors read-only on brands, seasons, vendors and users
+- **sales**: Require sales:sync to start a manual NAV replica sync
+- **rbac**: Make catalog and vendor-closure configuration admin-only
+- **calendar**: Show holidays on the planning calendar to editors and viewers
+- **sales**: Show the next sync on the statistics page to editors and viewers
+- **api**: Keep KIMO tables out of the order-portfolio sync state
+- **web**: Keep the closure form from submitting the vendor dialog
+- **web**: Stop nested-form submits at the vendor form
+- **tools**: Harden the new skill checks from review
+- **pricing**: Refuse to delete a parameter set still in use
+- **core**: Band retail rounding on integer cents
+- **pricing**: Show the calculator margin of the prices it produces
+- **pricing**: Margin views round and classify alike
+
+### Maintenance
+- Drop dead eslint disables and fix sanitizeFileName's examples
+- **core**: Say which characters sanitizeFileName replaces
+- **semgrep**: Flag a replacement string that is not a literal
+- **eslint**: Refuse zone-implicit date forms outside core's date modules
+- Tighten tests and procedure comments after the #81 review
+- **web**: Mark the session and header modules server-only
+- **web**: Drop the vendor dialog's stale lint suppressions
+- **web**: Escape quotes and apostrophes in JSX text
+- **tools**: Fail a SKILL.md over 500 lines
+- **tools**: Read the Explore declaration from the frontmatter
+- **tools**: Check skill invocations, writer §7 citations and version-free templates
+
+### Performance
+- **db**: Index the audit log by creation time
+
+### Tests
+- **api**: Assert the audit-log CSV rows verbatim
+- **api**: Signal the shutdown fixture without the tsx CLI in between
+- **api**: Count audit export reads when they start, not when they return
+- Fold the skipped-row import cases and split the placeholder refusal
+- **web**: Wait for the blur before checking a wheel-scrolled field
+- **web**: Trim the parameter-set dialog fixtures
+- **web**: Build the settings forms mock from a literal
+- **api**: Count getScheduleConfig among the covered maintenance procedures
+- Pin grant effect, master-data archive refusals and resource wildcards
+- **tools**: Run the skill checker on a temporary repository
+- **web**: Stop pre-bundling zod in the browser tier
+- **api**: Share the held-transaction helper
+
 ## [3.0.0-rc.2] - 2026-10-07
 
 ### Documentation
