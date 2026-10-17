@@ -19,6 +19,7 @@ import { hasPermission, type Permission, type Role } from '@luke/core';
  */
 export function usePermission() {
   const { data: session } = useSession();
+  const role = session?.user?.role;
 
   /**
    * Returns `true` if the current user holds the given permission.
@@ -27,13 +28,14 @@ export function usePermission() {
    */
   const can = useCallback(
     (permission: Permission): boolean => {
-      if (!session?.user?.role) {
+      if (!role) {
         return false;
       }
 
-      return hasPermission({ role: session.user.role as Role }, permission);
+      // next-auth types the session role as a string; it is copied from `User.role`, a `Role` enum.
+      return hasPermission({ role: role as Role }, permission);
     },
-    [session?.user?.role]
+    [role]
   );
 
   /**

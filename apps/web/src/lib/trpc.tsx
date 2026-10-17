@@ -40,6 +40,7 @@ export function narrowRouterOutput<T>(value: unknown): T {
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
+  const accessToken = session?.accessToken;
 
   const [queryClient] = useState(
     () =>
@@ -76,8 +77,8 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
               };
 
               // Add the JWT token if available
-              if (session?.accessToken) {
-                headers.authorization = `Bearer ${session.accessToken}`;
+              if (accessToken) {
+                headers.authorization = `Bearer ${accessToken}`;
               }
 
               return headers;
@@ -85,7 +86,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
           }),
         ],
       }),
-    [session?.accessToken]
+    [accessToken]
   );
 
   return (

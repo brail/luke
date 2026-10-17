@@ -43,9 +43,6 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
   const referenceOptimalMargin = getReferenceOptimalMargin(parameterSets);
 
   const { chartData, overallEfficiency } = useMemo(() => {
-    let totalQty = 0;
-    let totalSku = 0;
-
     const data = groupRowsByVendor(rows)
       .map(v => {
         let qty = 0;
@@ -54,13 +51,12 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
           if (row.qtyForecast != null && row.skuForecast != null && row.skuForecast > 0) {
             qty += row.qtyForecast;
             sku += row.skuForecast;
-            totalQty += row.qtyForecast;
-            totalSku += row.skuForecast;
           }
         }
         const margin = computeWeightedMargin(v.rows, parameterSets);
         return {
           vendor: v.name,
+          qty,
           sku,
           efficiency: sku > 0 ? Math.round((qty / sku) * 100) / 100 : 0,
           margin,
@@ -69,6 +65,10 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
       })
       .filter(v => v.sku > 0)
       .sort((a, b) => b.efficiency - a.efficiency);
+
+    // Vendors left out above counted no rows, so summing the kept ones covers every counted row.
+    const totalQty = data.reduce((sum, v) => sum + v.qty, 0);
+    const totalSku = data.reduce((sum, v) => sum + v.sku, 0);
 
     return {
       chartData: data,

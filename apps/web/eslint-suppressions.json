@@ -39,11 +39,6 @@
       "count": 1
     }
   },
-  "src/app/(app)/product/control/_components/VendorEfficiencyCard.tsx": {
-    "react-hooks/immutability": {
-      "count": 1
-    }
-  },
   "src/app/(app)/product/merchandising-plan/_components/SpecsheetModal.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
@@ -139,15 +134,7 @@
       "count": 1
     }
   },
-  "src/hooks/usePermission.ts": {
-    "react-hooks/preserve-manual-memoization": {
-      "count": 1
-    }
-  },
   "src/lib/trpc.tsx": {
-    "react-hooks/preserve-manual-memoization": {
-      "count": 1
-    },
     "react-hooks/purity": {
       "count": 2
     }
