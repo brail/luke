@@ -202,7 +202,7 @@ function DownloadSection({
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Sync non disponibile</AlertTitle>
           <AlertDescription>
-            I dati non sono stati sincronizzati. Contatta l'amministratore.
+            I dati non sono stati sincronizzati. Contatta l&apos;amministratore.
           </AlertDescription>
         </Alert>
       )}

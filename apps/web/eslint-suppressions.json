@@ -2,22 +2,11 @@
   "src/app/(app)/admin/brands/_components/BrandDialogWithPermissions.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 2
-    },
-    "react/no-unescaped-entities": {
-      "count": 2
     }
   },
   "src/app/(app)/admin/calendar-configuration/_components/TemplateItemDialog.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    },
-    "react/no-unescaped-entities": {
-      "count": 3
-    }
-  },
-  "src/app/(app)/admin/seasons/_components/SeasonDialog.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 2
     }
   },
   "src/app/(app)/calendar/_components/CalendarEventNoteDialog.tsx": {
@@ -30,11 +19,6 @@
       "count": 1
     }
   },
-  "src/app/(app)/calendar/_components/FreezePlanningGroupWizard.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 2
-    }
-  },
   "src/app/(app)/calendar/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 2
@@ -45,11 +29,6 @@
       "count": 2
     }
   },
-  "src/app/(app)/product/collection-layout/_components/CollectionLayoutTable.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 1
-    }
-  },
   "src/app/(app)/product/collection-layout/_components/CollectionRowSections.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
@@ -58,11 +37,6 @@
   "src/app/(app)/product/collection-layout/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    }
-  },
-  "src/app/(app)/product/collection-layout/revisions/page.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 2
     }
   },
   "src/app/(app)/product/control/_components/VendorEfficiencyCard.tsx": {
@@ -85,11 +59,6 @@
       "count": 2
     }
   },
-  "src/app/(app)/sales/statistics/page.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 1
-    }
-  },
   "src/app/(app)/settings/collection-control/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
@@ -108,9 +77,6 @@
   "src/app/(app)/settings/company/_components/ProfileTab.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
-    },
-    "react/no-unescaped-entities": {
-      "count": 1
     }
   },
   "src/app/(app)/settings/company/_components/TeamDialog.tsx": {
@@ -121,21 +87,6 @@
   "src/app/(app)/settings/nav-sync/page.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 4
-    }
-  },
-  "src/app/(app)/settings/storage/page.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 4
-    }
-  },
-  "src/app/(app)/settings/users/_components/SendVerificationDialog.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 2
-    }
-  },
-  "src/app/(app)/settings/users/_components/UserAccessDialog.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 1
     }
   },
   "src/app/(public)/auth/verify/page.tsx": {

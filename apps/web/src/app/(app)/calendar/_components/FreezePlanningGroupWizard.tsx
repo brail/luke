@@ -109,7 +109,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
               Salva uno snapshot immutabile delle date correnti di tutti gli eventi ({milestones.length}) del
-              gruppo di pianificazione come baseline "in teoria". Le date degli eventi restano modificabili dopo
+              gruppo di pianificazione come baseline &quot;in teoria&quot;. Le date degli eventi restano modificabili dopo
               il congelamento — solo lo snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
             </p>
 

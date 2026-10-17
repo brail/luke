@@ -327,7 +327,7 @@ export function ProfileTab() {
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">Determina il paese di default per l'importazione festività.</p>
+              <p className="text-xs text-muted-foreground">Determina il paese di default per l&apos;importazione festività.</p>
             </div>
           </div>
         </SectionCard>

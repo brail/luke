@@ -52,7 +52,7 @@ export default function CollectionLayoutRevisionsPage() {
             <p className="text-sm text-muted-foreground text-center py-8">Caricamento…</p>
           ) : revisions.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">
-              Nessuna revisione creata. Usa il bottone "Crea revisione" nella pagina Collection Layout.
+              Nessuna revisione creata. Usa il bottone &quot;Crea revisione&quot; nella pagina Collection Layout.
             </p>
           ) : (
             <div className="space-y-2">

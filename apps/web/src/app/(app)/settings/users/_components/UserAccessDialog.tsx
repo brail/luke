@@ -90,7 +90,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
             <div className="flex items-start gap-2 rounded-md border bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
               <Info className="h-4 w-4 mt-0.5 shrink-0" />
               <p>
-                L'accesso ai brand è gestito tramite la membership ai team aziendali.
+                L&apos;accesso ai brand è gestito tramite la membership ai team aziendali.
                 Configura i team dalla pagina <strong>Impostazioni → Azienda</strong>.
               </p>
             </div>

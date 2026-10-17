@@ -250,9 +250,9 @@ export default function StoragePage() {
                         <FormLabel>Proxy Next.js</FormLabel>
                         <FormDescription>
                           Se attivo, i file vengono serviti tramite <code>/api/uploads/…</code> — il server
-                          Next.js fa da proxy verso l'API. Nella topologia standard di produzione (unico
+                          Next.js fa da proxy verso l&apos;API. Nella topologia standard di produzione (unico
                           ingress pubblico sul container web, API non esposta direttamente) va lasciato
-                          attivo. Disabilitarlo solo se l'API è raggiungibile direttamente dal browser
+                          attivo. Disabilitarlo solo se l&apos;API è raggiungibile direttamente dal browser
                           (Public Base URL configurato).
                         </FormDescription>
                       </div>
@@ -387,7 +387,7 @@ export default function StoragePage() {
                         </FormControl>
                         <FormDescription>
                           URL base per i bucket pubblici (brand-logos, collection-row-pictures).
-                          Se vuoto, viene costruito dall'endpoint e porta.
+                          Se vuoto, viene costruito dall&apos;endpoint e porta.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -448,7 +448,7 @@ export default function StoragePage() {
                       <div className="mt-1 text-xs opacity-80">
                         URL presigned generati da: <code className="font-mono">{testResult.presignedUrlBase}</code>
                         {!testResult.publicBaseUrlConfigured && (
-                          <span className="ml-2 text-amber-700 dark:text-amber-400">⚠ Public Base URL non impostato — l'endpoint sopra potrebbe non essere raggiungibile dal browser</span>
+                          <span className="ml-2 text-amber-700 dark:text-amber-400">⚠ Public Base URL non impostato — l&apos;endpoint sopra potrebbe non essere raggiungibile dal browser</span>
                         )}
                       </div>
                     )}

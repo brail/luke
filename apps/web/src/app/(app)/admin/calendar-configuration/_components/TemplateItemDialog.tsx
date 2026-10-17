@@ -160,7 +160,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               )}
             />
             <p className="text-xs text-muted-foreground">
-              Propagata all'evento generato quando il template viene applicato al calendario.
+              Propagata all&apos;evento generato quando il template viene applicato al calendario.
             </p>
           </div>
 
@@ -174,7 +174,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               )}
             />
             <p className="text-xs text-muted-foreground">
-              Propagato all'evento generato quando il template viene applicato al calendario.
+              Propagato all&apos;evento generato quando il template viene applicato al calendario.
             </p>
           </div>
 
@@ -186,7 +186,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 type="number"
                 {...register('offsetDays', { required: true, valueAsNumber: true })}
               />
-              <p className="text-xs text-muted-foreground">Giorni dall'anchor date (negativo = prima)</p>
+              <p className="text-xs text-muted-foreground">Giorni dall&apos;anchor date (negativo = prima)</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="durationDays">Durata giorni</Label>

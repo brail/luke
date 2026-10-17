@@ -267,7 +267,7 @@ export function CollectionLayoutTable({
               </div>
               {visibleCount >= COLLECTION_COLUMNS_MAX_VISIBLE && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Massimo {COLLECTION_COLUMNS_MAX_VISIBLE} colonne. Deselezionane una per aggiungerne un'altra.
+                  Massimo {COLLECTION_COLUMNS_MAX_VISIBLE} colonne. Deselezionane una per aggiungerne un&apos;altra.
                 </p>
               )}
             </PopoverContent>

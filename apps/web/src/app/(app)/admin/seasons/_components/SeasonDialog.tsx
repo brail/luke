@@ -195,7 +195,7 @@ export function SeasonDialog({
                 {season.navSeasonId}
               </div>
               <p className="text-xs text-muted-foreground">
-                Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                Collegamento bloccato. Usa &quot;Scollega da NAV&quot; per rimuoverlo.
               </p>
             </div>
           ) : navSeasons.length > 0 && (

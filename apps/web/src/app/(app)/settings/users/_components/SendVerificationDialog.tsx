@@ -45,7 +45,7 @@ export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Utente creato con successo</DialogTitle>
           <DialogDescription>
-            Vuoi inviare un'email di verifica all'utente?
+            Vuoi inviare un&apos;email di verifica all&apos;utente?
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
