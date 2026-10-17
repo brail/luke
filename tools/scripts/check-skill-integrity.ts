@@ -475,6 +475,85 @@ export function checkNoFanOut(
   }
 }
 
+/**
+ * A skill named as an invocation (`/luke-x`) or a child call (`Skill(luke-x)`)
+ * must exist: an orchestrator that names a removed skill fails at run time,
+ * not here. A path such as `.claude/skills/luke-shared/` is not an invocation.
+ */
+export function checkSkillInvocations(
+  relPath: string,
+  content: string,
+  skills: ReadonlySet<string>,
+  problems: Problem[]
+): void {
+  content.split('\n').forEach((line, index) => {
+    if (line.includes(IGNORE_MARKER)) return;
+    const names = [
+      ...line.matchAll(/(?<![\w./-])\/(luke-[a-z][a-z-]*)/g),
+      ...line.matchAll(/\bSkill\((luke-[a-z][a-z-]*)\)/g),
+    ].map(match => match[1]!);
+    for (const name of names) {
+      if (!skills.has(name)) {
+        problems.push({
+          file: relPath,
+          line: index + 1,
+          message: `names the skill \`${name}\`, which has no SKILL.md under .claude/skills/.`,
+        });
+      }
+    }
+  });
+}
+
+/**
+ * A skill that keeps the `Write` tool can write files, so it must follow the
+ * concurrent-session rules in audit-protocol.md §7 and say so: two sessions
+ * writing one file is the failure that section exists for.
+ */
+export function checkWriterCitesConcurrency(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  const disallowed = frontmatter(content)?.match(/^disallowed-tools:\s*(.+)$/m)?.[1] ?? '';
+  if (/\bWrite\b/.test(disallowed) || content.includes('§7')) return;
+  problems.push({
+    file: relPath,
+    line: 1,
+    message:
+      'keeps the Write tool but never cites audit-protocol.md §7. A skill that ' +
+      'writes files must follow the concurrent-session rules there.',
+  });
+}
+
+/**
+ * These files become generated documentation, where a version must be read
+ * live from its manifest (CLAUDE.md: no version numbers in prose). A literal
+ * here would be copied into every README written from it.
+ */
+export const VERSION_FREE_FILES = ['.claude/skills/luke-docs/references/readme-templates.md'];
+
+export function checkVersionFree(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  if (!VERSION_FREE_FILES.includes(relPath)) return;
+  content.split('\n').forEach((line, index) => {
+    if (line.includes(IGNORE_MARKER)) return;
+    // A section reference such as §12.6 is not a version.
+    const match = line.match(/(?<![§\w.])\d+\.\d+(?:\.\d+)?\b/);
+    if (match) {
+      problems.push({
+        file: relPath,
+        line: index + 1,
+        message:
+          `version literal \`${match[0]}\` in a template. Name the manifest that ` +
+          'holds the version instead; a copied number goes stale in every README.',
+      });
+    }
+  });
+}
+
 function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
@@ -490,10 +569,17 @@ function main(): void {
   let symbolRefs = 0;
   let contracts = 0;
 
+  const skills = new Set(
+    files.filter(file => basename(file) === 'SKILL.md').map(file => basename(dirname(file)))
+  );
+
   for (const file of files) {
     const relPath = relative(REPO_ROOT, file);
     const content = readFileSync(file, 'utf8');
     const lines = content.split('\n');
+
+    checkSkillInvocations(relPath, content, skills, problems);
+    checkVersionFree(relPath, content, problems);
 
     // Only SKILL.md carries an execution contract. `audit-protocol.md` quotes
     // the read-only marker while documenting it, and is not a skill.
@@ -503,6 +589,7 @@ function main(): void {
       checkArgumentBinding(relPath, content, problems);
       checkSizeBudget(relPath, content, problems);
       checkNoFanOut(relPath, content, problems);
+      checkWriterCitesConcurrency(relPath, content, problems);
     }
 
     lines.forEach((line, index) => {

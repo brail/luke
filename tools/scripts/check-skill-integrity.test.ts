@@ -35,10 +35,14 @@ import {
   checkExecutionContract,
   checkNoFanOut,
   checkSizeBudget,
+  checkSkillInvocations,
+  checkVersionFree,
+  checkWriterCitesConcurrency,
   IGNORE_MARKER,
   isRepoPath,
   isSymbolRef,
   SKILL_LINE_BUDGET,
+  VERSION_FREE_FILES,
 } from './check-skill-integrity';
 import { type Problem } from './lib/report';
 
@@ -350,4 +354,59 @@ test('an Explore line in the body is not a declaration', () => {
 
 test('an Explore skill without fan-out instructions passes', () => {
   assert.deepEqual(runFanOut('agent: Explore\n', 'Read each changed file once.\n'), []);
+});
+
+// ── Skill invocations, writer §7, version-free templates (§12.6) ────────────
+
+const SKILLS = new Set(['luke-audit', 'luke-full']);
+
+function runInvocations(content: string): Problem[] {
+  const problems: Problem[] = [];
+  checkSkillInvocations(FIXTURE, content, SKILLS, problems);
+  return problems;
+}
+
+test('an invocation of a skill that does not exist fails', () => {
+  assertFailsWith(runInvocations('Then run `/luke-gone apps/api`.\n'), 'names the skill `luke-gone`');
+});
+
+test('a child call of a skill that does not exist fails', () => {
+  assertFailsWith(runInvocations('- `bugs` → use Skill(luke-gone)\n'), 'names the skill `luke-gone`');
+});
+
+test('existing skills and skill paths are not reported', () => {
+  const content =
+    'Run `/luke-audit`, then Skill(luke-full).\n' +
+    'Read `.claude/skills/luke-shared/audit-protocol.md` first.\n';
+  assert.deepEqual(runInvocations(content), []);
+});
+
+function runWriter(frontmatterLines: string, body: string): Problem[] {
+  const problems: Problem[] = [];
+  checkWriterCitesConcurrency(FIXTURE, `---\nname: fixture\n${frontmatterLines}---\n${body}`, problems);
+  return problems;
+}
+
+test('a skill that keeps Write and never cites §7 fails', () => {
+  assertFailsWith(runWriter('', 'Edit the files.\n'), 'never cites audit-protocol.md §7');
+});
+
+test('a writer citing §7, and a skill without Write, both pass', () => {
+  assert.deepEqual(runWriter('', 'Follow protocol §7 before writing.\n'), []);
+  assert.deepEqual(runWriter('disallowed-tools: Edit, Write, NotebookEdit\n', 'Read only.\n'), []);
+});
+
+function runVersionFree(content: string, file = VERSION_FREE_FILES[0]!): Problem[] {
+  const problems: Problem[] = [];
+  checkVersionFree(file, content, problems);
+  return problems;
+}
+
+test('a version literal in a version-free template fails', () => {
+  assertFailsWith(runVersionFree('Built on Next.js 16.3 and Node 24.\n'), 'version literal `16.3`');
+});
+
+test('a section reference is not a version, and other files may carry versions', () => {
+  assert.deepEqual(runVersionFree('See §12.6 and ADR-030.\n'), []);
+  assert.deepEqual(runVersionFree('fastify 5.12 regressed.\n', FIXTURE), []);
 });
