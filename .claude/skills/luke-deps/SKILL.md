@@ -48,6 +48,15 @@ value is the review mode. What follows is that mode's own argument, as its
 section defines it — a workspace filter for `apply` and `security`, the
 proposal for `evaluate`.
 
+**Any other first token fails closed.** Matching is exact and case-sensitive.
+Print
+
+```
+luke-deps: usage — [platform | apply [<path>] | security [<path>] | toolchain | evaluate <proposal>]
+```
+
+and stop, having read nothing and written nothing.
+
 **This skill is deliberately not forked.** `apply`, `security` and `toolchain`
 run an approve-per-cycle loop with the user, and a forked context breaks it.
 The fork/background contract in `tools/scripts/check-skill-integrity.ts`

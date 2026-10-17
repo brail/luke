@@ -37,6 +37,16 @@ The remainder is the scope selector, resolved per `audit-protocol.md` §1 — an
 explicit form wins, and an empty selector derives the default diff vs
 merge-base.
 
+**Any other first token fails closed.** Matching is exact and case-sensitive,
+and the scope always follows the mode (`/luke-test assess apps/api`, never
+`/luke-test apps/api`). Print
+
+```
+luke-test: usage — [assess|write|verify] [<scope>]
+```
+
+and stop, having read nothing and written nothing.
+
 **Bare `/luke-test` is `assess`.** The default QA action is to decide what
 proof is required, not to mutate the repository. `write` is one word away and
 the assessment names the command.

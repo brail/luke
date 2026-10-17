@@ -33,6 +33,16 @@ The first token of the bound value above selects which audit to use:
 - `security` → use Skill(luke-security)
 - `full` → use Skill(luke-full)
 
+**Any other first token fails closed.** Matching is exact and case-sensitive,
+and the scope always follows the audit name (`/luke-fix audit apps/api`, never
+`/luke-fix apps/api`). Print
+
+```
+luke-fix: usage — [audit|bugs|security|full] [<scope>]
+```
+
+and stop, having invoked nothing.
+
 Store the chosen audit skill as AUDIT_SKILL for use throughout the loop.
 Store the second token, if present, as the scope path (e.g. `/luke-fix bugs apps/api`).
 

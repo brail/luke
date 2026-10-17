@@ -830,13 +830,10 @@ plausibly why the writer was missed.
 - A skill's fallthrough must be its **narrowest** behaviour. `luke-docs`' widest
   write set was reachable from an empty value and from any typo, because an
   unknown token had no branch; it now declares its accepted grammar and prints
-  usage for everything else, before reading a file. **That is one skill, not a
-  property of the family:** `luke-fix`, `luke-deps` and `luke-test` still have
-  no branch for an unrecognised first token — `/luke-fix apps/api` treats
-  `apps/api` as an unrecognised mode token and does not fail closed; what it
-  does next is undefined, not a documented default — and hardening those three
-  parsers is pending work, deliberately left out of the cycle that fixed
-  `luke-docs`.
+  usage for everything else, before reading a file. `luke-fix`, `luke-deps` and
+  `luke-test` followed: every mode-bearing skill now prints its usage and stops
+  on an unrecognised first token, so `/luke-fix apps/api` is an error, not an
+  undefined default.
 - Ownership belongs to the mode, not to the skill. Three modes sharing one
   "all levels" scope and one report template naming every mode is an invitation:
   `docs/decisions/README.md` matched readme's stated criteria in every word,
