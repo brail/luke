@@ -13,20 +13,25 @@
  * half of `audit-protocol.md`'s own rule that a checker never seen red is only
  * assumed to block.
  *
- * ## Why no temporary repository here
+ * ## Strings first, one temporary repository last
  *
- * Unlike the platform and docs suites, these cases need no `git init` and no
- * `mkdtemp`: the checks read a string and append to an array. Passing synthetic
- * frontmatter directly is the whole fixture. Nothing in this file touches
- * `.claude/skills/` — the real skills are never mutated, which is what made the
- * original one-time proof unrepeatable. The corpus is proven by running the
- * checker itself: `pnpm check:drift` discovers every `SKILL.md` and each must
- * carry its binding, so no separate liveness test is maintained here.
+ * Most cases need no `git init` and no `mkdtemp`: each check reads a string
+ * and appends to an array, so synthetic frontmatter is the whole fixture.
+ * Nothing in this file touches `.claude/skills/` — the real skills are never
+ * mutated, which is what made the original one-time proof unrepeatable.
+ *
+ * What a string cannot reach is `checkSkills()` itself: discovery, the
+ * zero-discovery guards and path resolution. The last section runs it on a
+ * temporary repository, as the platform and docs suites do.
  *
  * Run: `pnpm test:tools`
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -34,6 +39,7 @@ import {
   checkArgumentBinding,
   checkExecutionContract,
   checkNoFanOut,
+  checkSkills,
   checkSizeBudget,
   checkSkillInvocations,
   checkVersionFree,
@@ -409,4 +415,51 @@ test('a version literal in a version-free template fails', () => {
 test('a section reference is not a version, and other files may carry versions', () => {
   assert.deepEqual(runVersionFree('See §12.6 and ADR-030.\n'), []);
   assert.deepEqual(runVersionFree('fastify 5.12 regressed.\n', FIXTURE), []);
+});
+
+// ── checkSkills on a temporary repository ───────────────────────────────────
+//
+// `isGitIgnored` still asks the real repository, so these fixtures cite only
+// paths it does not ignore.
+
+/** A git repository holding `files`, removed after `body` runs. */
+function withRepo(files: Record<string, string>, body: (root: string) => void): void {
+  const root = mkdtempSync(join(tmpdir(), 'luke-skills-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), content);
+    }
+    body(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const SKILL_PATH = '.claude/skills/fixture/SKILL.md';
+const skillCiting = (path: string) =>
+  `---\nname: fixture\n---\n\n${ARGUMENT_BINDING}\n\nFollow protocol §7. Read \`${path}\` first.\n`;
+
+test('a repository without skills fails rather than passing', () => {
+  withRepo({}, root => assert.throws(() => checkSkills(root), /no \.md file found below \.claude\/skills/));
+});
+
+test('skills citing nothing trip the zero-discovery guard', () => {
+  withRepo(
+    { [SKILL_PATH]: `---\nname: fixture\n---\n\n${ARGUMENT_BINDING}\n\nFollow protocol §7.\n` },
+    root => assert.throws(() => checkSkills(root), /zero references extracted/)
+  );
+});
+
+test('a path that does not exist is reported with its file and line', () => {
+  withRepo({ [SKILL_PATH]: skillCiting('docs/missing-guide.md') }, root =>
+    assert.throws(() => checkSkills(root), /SKILL\.md:7 — path `docs\/missing-guide\.md` does not exist/)
+  );
+});
+
+test('a valid repository passes and counts what it verified', () => {
+  withRepo({ [SKILL_PATH]: skillCiting('docs/guide.md'), 'docs/guide.md': '# Guide\n' }, root =>
+    assert.deepEqual(checkSkills(root), { files: 1, pathRefs: 1, symbolRefs: 0, contracts: 1 })
+  );
 });

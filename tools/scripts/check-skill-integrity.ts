@@ -30,7 +30,6 @@ import { basename, dirname, join, relative } from 'path';
 import { isGitIgnored } from './lib/gitPaths';
 import { formatProblems, REPO_ROOT, type Problem } from './lib/report';
 
-const SKILLS_DIR = join(REPO_ROOT, '.claude', 'skills');
 export const IGNORE_MARKER = '<!-- skill-check-ignore -->';
 
 /** Top-level directories that make a token a repository path. */
@@ -62,11 +61,12 @@ const FILE_EXTENSIONS = [
 ];
 
 /** All Markdown files belonging to skills. */
-function skillFiles(): string[] {
-  if (!existsSync(SKILLS_DIR)) return [];
-  return readdirSync(SKILLS_DIR, { recursive: true, withFileTypes: true })
+function skillFiles(root: string): string[] {
+  const skillsDir = join(root, '.claude', 'skills');
+  if (!existsSync(skillsDir)) return [];
+  return readdirSync(skillsDir, { recursive: true, withFileTypes: true })
     .filter(entry => entry.isFile() && entry.name.endsWith('.md'))
-    .map(entry => join(entry.parentPath ?? SKILLS_DIR, entry.name))
+    .map(entry => join(entry.parentPath ?? skillsDir, entry.name))
     .sort();
 }
 
@@ -101,28 +101,30 @@ export function isSymbolRef(token: string): boolean {
  * every real frame is less fragile than demanding a single convention in a
  * prose file.
  */
-const PATH_ROOTS = [
-  '',
-  // Package roots are not listed by hand: the previous list omitted
-  // `packages/eslint-plugin-luke`, so every path cited relative to that package
-  // was reported as broken — a false positive in a CI-blocking check, exactly
-  // the pressure that makes ignore markers proliferate. As with
-  // `trackedMarkdown()`, git declares the world.
-  ...execFileSync('git', ['ls-files', '*/package.json'], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-  })
-    .split('\n')
-    .filter(Boolean)
-    .map(p => dirname(p)),
-  // This is not a package root, but it is a frame skills actually use
-  // (`lib/debug.ts` is relative to it).
-  'apps/web/src',
-];
+function pathRoots(root: string): string[] {
+  return [
+    '',
+    // Package roots are not listed by hand: the previous list omitted
+    // `packages/eslint-plugin-luke`, so every path cited relative to that package
+    // was reported as broken — a false positive in a CI-blocking check, exactly
+    // the pressure that makes ignore markers proliferate. As with
+    // `trackedMarkdown()`, git declares the world.
+    ...execFileSync('git', ['ls-files', '*/package.json'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean)
+      .map(p => dirname(p)),
+    // This is not a package root, but it is a frame skills actually use
+    // (`lib/debug.ts` is relative to it).
+    'apps/web/src',
+  ];
+}
 
-function pathResolves(token: string, skillDir: string): boolean {
+function pathResolves(token: string, skillDir: string, root: string, frames: string[]): boolean {
   if (existsSync(join(skillDir, token))) return true;
-  if (PATH_ROOTS.some(root => existsSync(join(REPO_ROOT, root, token)))) {
+  if (frames.some(frame => existsSync(join(root, frame, token)))) {
     return true;
   }
   // Not found. If git ignores it — `.planning/ROADMAP.md`, cited by
@@ -139,49 +141,44 @@ function pathResolves(token: string, skillDir: string): boolean {
  * but the skill's assertion about it is true). What matters is catching a
  * reference to something that no longer exists.
  */
-let declaredSymbols: Set<string> | null = null;
-
-function symbolExists(name: string): boolean {
-  // Scan the corpus once, not once per symbol. The previous version ran a
-  // recursive `grep -q` over apps/ and packages/ for every cited token,
+function declaredSymbols(root: string): Set<string> {
+  // Scan the corpus once per run, not once per symbol. The previous version
+  // ran a recursive `grep -q` over apps/ and packages/ for every cited token,
   // including duplicates: about 5s of the script's roughly 5.7s total, with
   // cost growing linearly with the number of skills. Extracting every
   // declaration at once takes about 70ms and reduces later checks to Set
   // lookups.
-  if (!declaredSymbols) {
-    const output = execFileSync(
-      'grep',
-      [
-        '-rhoE',
-        '--include=*.ts',
-        '--include=*.tsx',
-        '(function|const|class|type|interface) [a-zA-Z_$][a-zA-Z0-9_$]*',
-        'apps',
-        'packages',
-      ],
-      { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
-    );
+  const output = execFileSync(
+    'grep',
+    [
+      '-rhoE',
+      '--include=*.ts',
+      '--include=*.tsx',
+      '(function|const|class|type|interface) [a-zA-Z_$][a-zA-Z0-9_$]*',
+      'apps',
+      'packages',
+    ],
+    { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+  );
 
-    declaredSymbols = new Set(
-      output
-        .split('\n')
-        .filter(Boolean)
-        .map(match => match.slice(match.indexOf(' ') + 1))
-    );
+  const symbols = new Set(
+    output
+      .split('\n')
+      .filter(Boolean)
+      .map(match => match.slice(match.indexOf(' ') + 1))
+  );
 
-    // Same zero-discovery guard as the rest of the file: an empty corpus means
-    // the grep no longer matches, not that no symbols exist. Without this
-    // guard, every reference would be reported as broken at once.
-    if (declaredSymbols.size === 0) {
-      throw new Error(
-        '[skill-integrity] no declaration extracted from apps/ and packages/. ' +
-          'The pattern no longer matches anything: continuing would report ' +
-          'every symbol cited by the skills as broken.'
-      );
-    }
+  // Same zero-discovery guard as the rest of the file: an empty corpus means
+  // the grep no longer matches, not that no symbols exist. Without this
+  // guard, every reference would be reported as broken at once.
+  if (symbols.size === 0) {
+    throw new Error(
+      '[skill-integrity] no declaration extracted from apps/ and packages/. ' +
+        'The pattern no longer matches anything: continuing would report ' +
+        'every symbol cited by the skills as broken.'
+    );
   }
-
-  return declaredSymbols.has(name);
+  return symbols;
 }
 
 /**
@@ -554,8 +551,20 @@ export function checkVersionFree(
   });
 }
 
-function main(): void {
-  const files = skillFiles();
+export interface SkillCheckSummary {
+  files: number;
+  pathRefs: number;
+  symbolRefs: number;
+  contracts: number;
+}
+
+/**
+ * Runs every check over the skills of the repository at `root`, and throws on
+ * the first failure class. Taking the root, rather than reading `REPO_ROOT`,
+ * is what lets the suite run it on a temporary repository.
+ */
+export function checkSkills(root: string): SkillCheckSummary {
+  const files = skillFiles(root);
   if (files.length === 0) {
     throw new Error(
       '[skill-integrity] no .md file found below .claude/skills/. Skills are ' +
@@ -565,6 +574,8 @@ function main(): void {
   }
 
   const problems: Problem[] = [];
+  const frames = pathRoots(root);
+  let symbols: Set<string> | null = null;
   let pathRefs = 0;
   let symbolRefs = 0;
   let contracts = 0;
@@ -574,7 +585,7 @@ function main(): void {
   );
 
   for (const file of files) {
-    const relPath = relative(REPO_ROOT, file);
+    const relPath = relative(root, file);
     const content = readFileSync(file, 'utf8');
     const lines = content.split('\n');
 
@@ -598,7 +609,7 @@ function main(): void {
       for (const [, token] of line.matchAll(/`([^`\n]+)`/g)) {
         if (isRepoPath(token)) {
           pathRefs++;
-          if (!pathResolves(token, dirname(file))) {
+          if (!pathResolves(token, dirname(file), root, frames)) {
             problems.push({
               file: relPath,
               line: index + 1,
@@ -608,7 +619,8 @@ function main(): void {
         } else if (isSymbolRef(token)) {
           symbolRefs++;
           const name = token.slice(0, -2);
-          if (!symbolExists(name)) {
+          symbols ??= declaredSymbols(root);
+          if (!symbols.has(name)) {
             problems.push({
               file: relPath,
               line: index + 1,
@@ -653,8 +665,13 @@ function main(): void {
     );
   }
 
+  return { files: files.length, pathRefs, symbolRefs, contracts };
+}
+
+function main(): void {
+  const { files, pathRefs, symbolRefs, contracts } = checkSkills(REPO_ROOT);
   console.log(
-    `[skill-integrity] ok — ${files.length} skills, ${pathRefs} paths, ` +
+    `[skill-integrity] ok — ${files} skills, ${pathRefs} paths, ` +
       `${symbolRefs} symbols, and ${contracts} execution contracts verified.`
   );
 }
