@@ -53,7 +53,12 @@ import {
 } from '../../../../../components/ui/tooltip';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
-import { computeRowMargin, computeWeightedMargin, resolveVendorName } from '../../_shared/pricingCalc';
+import {
+  MARGIN_STATUS_TEXT_CLASS,
+  computeRowMargin,
+  computeWeightedMargin,
+  resolveVendorName,
+} from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalityBandBadge, formatCompletionTooltip, formatCriticalityTooltip } from './CriticalityBadge';
@@ -922,11 +927,7 @@ export function CollectionGroupSection({
                             const m = computeRowMargin(row, parameterSets);
                             if (!m) return <span className="text-muted-foreground/40">—</span>;
                             return (
-                              <span className={
-                                m.marginStatus === 'green' ? 'text-green-700 dark:text-green-400'
-                                : m.marginStatus === 'yellow' ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-destructive'
-                              }>
+                              <span className={MARGIN_STATUS_TEXT_CLASS[m.marginStatus]}>
                                 {(m.margin * 100).toFixed(1)}%
                               </span>
                             );

@@ -37,6 +37,7 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
@@ -1109,10 +1110,8 @@ export function PricingFooterSection({
                             <Badge
                               variant="outline"
                               className={cn(
-                                'text-xs px-1.5',
-                                calc.marginStatus === 'green' && 'border-green-500 text-green-700 bg-green-50 dark:bg-green-950/20 dark:text-green-400',
-                                calc.marginStatus === 'yellow' && 'border-amber-500 text-amber-700 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400',
-                                calc.marginStatus === 'red' && 'border-red-500 text-red-700 bg-red-50 dark:bg-red-950/20 dark:text-red-400'
+                                'text-xs px-1.5 border-current bg-current/10',
+                                MARGIN_STATUS_TEXT_CLASS[calc.marginStatus]
                               )}
                             >
                               {calc.marginPct.toFixed(1)}%

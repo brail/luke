@@ -5,13 +5,15 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import type { PricingMode } from '@luke/core';
+import { classifyMargin, type PricingMode } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import { trpc } from '../../../../../lib/trpc';
+import { cn } from '../../../../../lib/utils';
+import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
 
 type PricingParameterSet =
   RouterOutputs['pricing']['parameterSets']['list'][number];
@@ -20,24 +22,18 @@ interface PricingCalculatorProps {
   parameterSet: PricingParameterSet | null;
 }
 
+type CalcResult = RouterOutputs['pricing']['calculate'];
 
-interface CalcResult {
-  mode: PricingMode;
-  [key: string]: unknown;
-}
-
-function getMarginColor(margin: number, target: number): string {
-  const diff = margin * 100 - target;
-  if (diff >= 0) return 'bg-green-500';
-  if (diff >= -2) return 'bg-green-400';
-  if (diff >= -3) return 'bg-yellow-500';
-  return 'bg-red-500';
+/** A margin fraction as a percentage to one decimal, rounded as the collection layout row rounds it. */
+function roundMarginPct(margin: number): number {
+  const marginPct = margin * 100;
+  return Math.round(marginPct * 10) / 10;
 }
 
 function getMarginLabel(margin: number, target: number): string {
-  const diff = (margin * 100 - target).toFixed(1);
-  const pct = (margin * 100).toFixed(1);
-  return `${pct}% (${Number(diff) >= 0 ? '+' : ''}${diff}pp vs target ${target}%)`;
+  const pct = roundMarginPct(margin);
+  const diff = Math.round((pct - target) * 10) / 10;
+  return `${pct.toFixed(1)}% (${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp vs target ${target}%)`;
 }
 
 function fmt(value: number, currency: string) {
@@ -69,7 +65,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
   const [showDetails, setShowDetails] = useState(false);
 
   const calcMutation = trpc.pricing.calculate.useMutation({
-    onSuccess: data => setResult(data as CalcResult),
+    onSuccess: setResult,
     onError: err => toast.error(`Errore calcolo: ${err.message}`),
   });
 
@@ -118,7 +114,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
       retailPrice: retailPrice ? Number(retailPrice) : undefined,
     };
 
-    calcMutation.mutate(input as Parameters<typeof calcMutation.mutate>[0]);
+    calcMutation.mutate(input);
   };
 
   const buttonLabel = () => {
@@ -128,27 +124,21 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
     return 'Calcola margine';
   };
 
-  const companyMargin =
-    result &&
-    typeof (result as Record<string, unknown>).companyMargin === 'number'
-      ? ((result as Record<string, unknown>).companyMargin as number)
+  // Classified unrounded, as every margin view does.
+  const marginStatusClass =
+    result && parameterSet
+      ? MARGIN_STATUS_TEXT_CLASS[
+          classifyMargin(result.companyMargin * 100, parameterSet.optimalMargin)
+        ]
       : null;
 
   // Update the computed value in the matching field
   if (result && !calcMutation.isPending) {
-    if (
-      result.mode === 'forward' &&
-      typeof (result as Record<string, unknown>).retailPrice === 'number'
-    ) {
-      const r = (result as Record<string, unknown>).retailPrice as number;
-      if (retailPrice !== String(r)) setRetailPrice(String(r));
+    if (result.mode === 'forward' && retailPrice !== String(result.retailPrice)) {
+      setRetailPrice(String(result.retailPrice));
     }
-    if (
-      result.mode === 'inverse' &&
-      typeof (result as Record<string, unknown>).purchasePrice === 'number'
-    ) {
-      const p = (result as Record<string, unknown>).purchasePrice as number;
-      if (purchasePrice !== String(p)) setPurchasePrice(String(p));
+    if (result.mode === 'inverse' && purchasePrice !== String(result.purchasePrice)) {
+      setPurchasePrice(String(result.purchasePrice));
     }
   }
 
@@ -262,22 +252,22 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
       </Button>
 
       {/* Margin indicator */}
-      {companyMargin !== null && parameterSet && (
+      {result && parameterSet && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Margine aziendale</span>
             <Badge
               variant="outline"
-              className={`text-white ${getMarginColor(companyMargin, parameterSet.optimalMargin)}`}
+              className={cn('border-current bg-current/10', marginStatusClass)}
             >
-              {getMarginLabel(companyMargin, parameterSet.optimalMargin)}
+              {getMarginLabel(result.companyMargin, parameterSet.optimalMargin)}
             </Badge>
           </div>
           <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${getMarginColor(companyMargin, parameterSet.optimalMargin)}`}
+              className={cn('h-full rounded-full transition-all bg-current', marginStatusClass)}
               style={{
-                width: `${Math.min(100, Math.max(0, ((companyMargin * 100) / parameterSet.optimalMargin) * 100))}%`,
+                width: `${Math.min(100, Math.max(0, ((result.companyMargin * 100) / parameterSet.optimalMargin) * 100))}%`,
               }}
             />
           </div>
@@ -300,29 +290,9 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
             )}
           </button>
 
-          {showDetails && parameterSet && (
+          {showDetails && (
             <div className="px-4 pb-4 space-y-1 text-sm border-t">
-              {result.mode === 'forward' && (
-                <ResultRows
-                  result={result}
-                  parameterSet={parameterSet}
-                  mode="forward"
-                />
-              )}
-              {result.mode === 'inverse' && (
-                <ResultRows
-                  result={result}
-                  parameterSet={parameterSet}
-                  mode="inverse"
-                />
-              )}
-              {result.mode === 'margin' && (
-                <ResultRows
-                  result={result}
-                  parameterSet={parameterSet}
-                  mode="margin"
-                />
-              )}
+              <ResultRows result={result} />
             </div>
           )}
         </div>
@@ -340,125 +310,51 @@ function ResultRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ResultRows({
-  result,
-  parameterSet,
-  mode,
-}: {
-  result: Record<string, unknown>;
-  parameterSet: PricingParameterSet;
-  mode: PricingMode;
-}) {
-  const pc = parameterSet.purchaseCurrency;
-  const sc = parameterSet.sellingCurrency;
-
-  if (mode === 'forward') {
-    return (
-      <>
-        <ResultRow
-          label="Prezzo acquisto"
-          value={fmt(result.purchasePrice as number, pc)}
-        />
-        <ResultRow
-          label="CQ"
-          value={fmt(result.qualityControlCost as number, pc)}
-        />
-        <ResultRow
-          label="+ Stampi → Totale"
-          value={fmt(result.priceWithQC as number, pc)}
-        />
-        <ResultRow
-          label="+ Trasporto"
-          value={fmt(result.priceWithTransport as number, pc)}
-        />
-        <ResultRow
-          label="+ Dazio"
-          value={fmt(result.priceWithDuty as number, pc)}
-        />
-        <ResultRow
-          label="Landed cost (in EUR)"
-          value={fmt(result.landedCost as number, sc)}
-        />
-        <ResultRow
-          label="× Molt. aziendale (×{result.companyMultiplier})"
-          value={fmt(result.wholesalePrice as number, sc)}
-        />
-        <ResultRow
-          label="× Molt. retail"
-          value={fmt(result.retailPriceRaw as number, sc)}
-        />
-        <ResultRow
-          label="Prezzo retail (arrotondato)"
-          value={fmt(result.retailPrice as number, sc)}
-        />
-        <ResultRow
-          label="Margine aziendale reale"
-          value={`${((result.companyMargin as number) * 100).toFixed(2)}%`}
-        />
-      </>
-    );
-  }
-
-  if (mode === 'inverse') {
-    return (
-      <>
-        <ResultRow
-          label="Prezzo retail"
-          value={fmt(result.retailPrice as number, sc)}
-        />
-        <ResultRow
-          label="÷ Molt. retail → Wholesale"
-          value={fmt(result.wholesalePrice as number, sc)}
-        />
-        <ResultRow
-          label="÷ Molt. aziendale → Landed"
-          value={fmt(result.landedCost as number, sc)}
-        />
-        <ResultRow
-          label="− Costi Italia"
-          value={fmt(result.priceWithoutDuty as number, sc)}
-        />
-        <ResultRow
-          label="− Dazio"
-          value={fmt(result.priceWithoutTransport as number, pc)}
-        />
-        <ResultRow
-          label="− Trasporto"
-          value={fmt(result.purchasePriceRaw as number, pc)}
-        />
-        <ResultRow
-          label="Prezzo acquisto max"
-          value={fmt(result.purchasePrice as number, pc)}
-        />
-        <ResultRow
-          label="Margine aziendale reale"
-          value={`${((result.companyMargin as number) * 100).toFixed(2)}%`}
-        />
-      </>
-    );
-  }
+function ResultRows({ result }: { result: CalcResult }) {
+  const pc = result.purchaseCurrency;
+  const sc = result.sellingCurrency;
 
   return (
     <>
-      <ResultRow
-        label="Prezzo acquisto"
-        value={fmt(result.purchasePrice as number, pc)}
-      />
-      <ResultRow
-        label="Landed cost"
-        value={fmt(result.landedCost as number, sc)}
-      />
-      <ResultRow
-        label="Prezzo retail"
-        value={fmt(result.retailPrice as number, sc)}
-      />
-      <ResultRow
-        label="Wholesale"
-        value={fmt(result.wholesalePrice as number, sc)}
-      />
+      {result.mode === 'forward' && (
+        <>
+          <ResultRow label="Prezzo acquisto" value={fmt(result.purchasePrice, pc)} />
+          <ResultRow label="CQ" value={fmt(result.qualityControlCost, pc)} />
+          <ResultRow label="+ Stampi → Totale" value={fmt(result.priceWithQC, pc)} />
+          <ResultRow label="+ Trasporto" value={fmt(result.priceWithTransport, pc)} />
+          <ResultRow label="+ Dazio" value={fmt(result.priceWithDuty, pc)} />
+          <ResultRow label={`Landed cost (in ${sc})`} value={fmt(result.landedCost, sc)} />
+          <ResultRow
+            label={`× Molt. aziendale (×${result.companyMultiplier})`}
+            value={fmt(result.wholesalePrice, sc)}
+          />
+          <ResultRow label="× Molt. retail" value={fmt(result.retailPriceRaw, sc)} />
+          <ResultRow label="Prezzo retail (arrotondato)" value={fmt(result.retailPrice, sc)} />
+        </>
+      )}
+      {result.mode === 'inverse' && (
+        <>
+          <ResultRow label="Prezzo retail" value={fmt(result.retailPrice, sc)} />
+          <ResultRow label="÷ Molt. retail → Wholesale" value={fmt(result.wholesalePrice, sc)} />
+          <ResultRow label="÷ Molt. aziendale → Landed" value={fmt(result.landedCost, sc)} />
+          <ResultRow label="− Costi Italia" value={fmt(result.priceWithoutAccessories, sc)} />
+          <ResultRow label="− Dazio" value={fmt(result.priceWithoutDuty, sc)} />
+          <ResultRow label="× Cambio − Trasporto" value={fmt(result.priceWithoutTransport, pc)} />
+          <ResultRow label="− Stampi ÷ CQ" value={fmt(result.purchasePriceRaw, pc)} />
+          <ResultRow label="Prezzo acquisto max" value={fmt(result.purchasePrice, pc)} />
+        </>
+      )}
+      {result.mode === 'margin' && (
+        <>
+          <ResultRow label="Prezzo acquisto" value={fmt(result.purchasePrice, pc)} />
+          <ResultRow label="Landed cost" value={fmt(result.landedCost, sc)} />
+          <ResultRow label="Prezzo retail" value={fmt(result.retailPrice, sc)} />
+          <ResultRow label="Wholesale" value={fmt(result.wholesalePrice, sc)} />
+        </>
+      )}
       <ResultRow
         label="Margine aziendale reale"
-        value={`${((result.companyMargin as number) * 100).toFixed(2)}%`}
+        value={`${roundMarginPct(result.companyMargin).toFixed(1)}%`}
       />
     </>
   );

@@ -6,6 +6,7 @@
 import { TRPCError } from '@trpc/server';
 
 import {
+  calcMaxSupplierCost,
   calculateCompanyMultiplier,
   priceForward,
   priceInverse,
@@ -91,13 +92,15 @@ export interface MarginResult {
  * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail
  * (`priceForward`).
  *
- * @returns Breakdown of every intermediate step plus the rounded retail price.
+ * @returns Breakdown of every intermediate step plus the rounded retail price, and the margin that
+ *   price leaves over the purchase price.
  */
 export function calculateForward(
   purchasePrice: number,
   params: CalcParams
 ): ForwardResult {
   const f = priceForward(purchasePrice, params);
+  const retailPrice = roundRetailPrice(f.retailPriceRaw);
 
   return {
     mode: 'forward',
@@ -113,8 +116,8 @@ export function calculateForward(
     companyMultiplier: f.companyMultiplier,
     wholesalePrice: round2(f.wholesalePrice),
     retailPriceRaw: round2(f.retailPriceRaw),
-    retailPrice: roundRetailPrice(f.retailPriceRaw),
-    companyMargin: round4(f.companyMargin),
+    retailPrice,
+    companyMargin: priceMargin(purchasePrice, retailPrice, params).companyMargin,
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
@@ -124,13 +127,15 @@ export function calculateForward(
  * Inverse calculation: given a retail price, computes the maximum allowable purchase price
  * while maintaining the target margin (`priceInverse`).
  *
- * @returns Breakdown of every intermediate step plus the floor-rounded purchase price.
+ * @returns Breakdown of every intermediate step plus the floor-rounded purchase price, and the
+ *   margin the retail price leaves over it.
  */
 export function calculateInverse(
   retailPrice: number,
   params: CalcParams
 ): InverseResult {
   const i = priceInverse(retailPrice, params);
+  const purchasePrice = calcMaxSupplierCost(retailPrice, params);
 
   return {
     mode: 'inverse',
@@ -143,9 +148,8 @@ export function calculateInverse(
     priceWithoutTransport: round2(i.priceWithoutTransport),
     qualityControlCost: round2(i.qualityControlCost),
     purchasePriceRaw: round2(i.purchasePriceRaw),
-    // Down, 1 decimal: rounding the maximum payable price up would erode the margin.
-    purchasePrice: Math.floor(i.purchasePriceRaw * 10) / 10,
-    companyMargin: round4(i.companyMargin),
+    purchasePrice,
+    companyMargin: priceMargin(purchasePrice, retailPrice, params).companyMargin,
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
@@ -169,21 +173,19 @@ export function calculateMarginOnly(
     retailPrice,
     landedCost: round2(m.landedCost),
     wholesalePrice: round2(m.wholesalePrice),
-    companyMargin: round4(m.companyMargin),
+    companyMargin: m.companyMargin,
     companyMultiplier: calculateCompanyMultiplier(params.optimalMargin),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
 }
 
-/** Presentation rounding of a money amount. */
+/**
+ * Presentation rounding of a money amount. Margins are left unrounded: views classify them with
+ * `classifyMargin` before rounding them for display.
+ */
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
-}
-
-/** Presentation rounding of a margin fraction (two decimals of a percentage). */
-function round4(value: number): number {
-  return Math.round(value * 10000) / 10000;
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -62,9 +62,10 @@ export interface MarginBreakdown {
  * The company margin a retail price leaves over a purchase price (margin mode): the landed cost
  * forward from one, the wholesale backward from the other, and the margin between them.
  *
- * Not forward mode's margin, whose wholesale is landed cost × company multiplier. No guards:
- * callers decide what a missing or non-positive price means, and a zero wholesale is theirs to
- * rule out.
+ * Every view's margin, the calculator's forward and inverse modes included: they apply it to the
+ * prices they produce (the rounded retail price, the floored BT), not to the unrounded chain built
+ * with the rounded company multiplier. No guards: callers decide what a missing or non-positive
+ * price means, and a zero wholesale is theirs to rule out.
  */
 export function priceMargin(
   purchasePrice: number,
@@ -108,8 +109,6 @@ export interface ForwardBreakdown extends LandedCostBreakdown {
   companyMultiplier: number;
   wholesalePrice: number;
   retailPriceRaw: number;
-  /** (wholesale − landed) / wholesale: the target margin, give or take the multiplier's rounding. */
-  companyMargin: number;
 }
 
 /** The retail price a purchase price reaches at the target margin, every step (forward mode). */
@@ -122,7 +121,6 @@ export function priceForward(purchasePrice: number, ps: InverseCalcParams): Forw
     companyMultiplier,
     wholesalePrice,
     retailPriceRaw: wholesalePrice * ps.retailMultiplier,
-    companyMargin: (wholesalePrice - breakdown.landedCost) / wholesalePrice,
   };
 }
 
@@ -137,7 +135,6 @@ export interface InverseBreakdown {
   priceWithoutTransport: number;
   qualityControlCost: number;
   purchasePriceRaw: number;
-  companyMargin: number;
 }
 
 /**
@@ -167,7 +164,6 @@ export function priceInverse(retailPrice: number, ps: InverseCalcParams): Invers
     priceWithoutTransport,
     qualityControlCost: purchasePriceRaw * (ps.qualityControlPercent / 100),
     purchasePriceRaw,
-    companyMargin: (wholesalePrice - landedCost) / wholesalePrice,
   };
 }
 

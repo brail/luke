@@ -15,6 +15,8 @@
 
 import { describe, it, expect } from 'vitest';
 
+import { calculateCompanyMultiplier, classifyMargin } from '@luke/core';
+
 import {
   calculateForward,
   calculateInverse,
@@ -37,22 +39,17 @@ const PARAMS: CalcParams = {
 };
 
 describe('calculateForward', () => {
-  it('hits the company margin declared in the parameters', () => {
-    const result = calculateForward(100, PARAMS);
+  it('builds the wholesale price at the margin declared in the parameters', () => {
+    const r = calculateForward(100, PARAMS);
 
     // This is the parameter set's promise: `optimalMargin` isn't an aspiration,
     // it's what the company multiplier must produce. If one day they
     // diverge, the retail price no longer holds up the promised margin.
-    expect(result.companyMargin * 100).toBeCloseTo(PARAMS.optimalMargin, 1);
-  });
-
-  it('the margin depends only on optimalMargin, not on the purchase price', () => {
-    const cheap = calculateForward(10, PARAMS);
-    const expensive = calculateForward(1000, PARAMS);
-
-    // The margin is a property of the parameter set. If it scales with the price,
-    // someone has moved a fixed cost into the multiplicative part.
-    expect(cheap.companyMargin).toBeCloseTo(expensive.companyMargin, 4);
+    // The reported margin is another number: the rounded retail price's.
+    expect(((r.wholesalePrice - r.landedCost) / r.wholesalePrice) * 100).toBeCloseTo(
+      PARAMS.optimalMargin,
+      1
+    );
   });
 
   it('the cost chain is monotonic: no step lowers the price', () => {
@@ -99,7 +96,6 @@ describe('calculateInverse', () => {
 
     expect(back.wholesalePrice).toBeCloseTo(forward.wholesalePrice, 1);
     expect(back.landedCost).toBeCloseTo(forward.landedCost, 1);
-    expect(back.companyMargin).toBeCloseTo(forward.companyMargin, 3);
     // QC is charged on the purchase price alone, tools excluded.
     expect(back.qualityControlCost).toBeCloseTo(forward.qualityControlCost, 2);
   });
@@ -112,17 +108,41 @@ describe('calculateInverse', () => {
     // numerical detail.
     expect(back.purchasePrice).toBeLessThanOrEqual(back.purchasePriceRaw);
   });
+
+  it.each([39.9, 79.9, 129.9, 299.9, 1000])(
+    'at retail %s the margin is at least what the company multiplier leaves',
+    retail => {
+      // The purchase price is floored: paying it leaves at least the unrounded chain's margin.
+      const floor = 1 - 1 / calculateCompanyMultiplier(PARAMS.optimalMargin);
+      expect(calculateInverse(retail, PARAMS).companyMargin).toBeGreaterThanOrEqual(floor - 1e-12);
+    }
+  );
 });
 
 describe('calculateMarginOnly', () => {
-  it('confirms the declared margin when the prices come from forward', () => {
-    const forward = calculateForward(100, PARAMS);
-    const margin = calculateMarginOnly(100, forward.retailPriceRaw, PARAMS);
+  // The three modes must tell the same story on the same numbers: forward and inverse report the
+  // margin of the prices they produce, the one a collection layout row shows for them.
+  it.each([10, 37.41, 100, 137.5, 1000])(
+    'agrees with forward on its purchase price %s and the retail price it suggests',
+    purchase => {
+      const forward = calculateForward(purchase, PARAMS);
+      const margin = calculateMarginOnly(purchase, forward.retailPrice, PARAMS);
 
-    // The three modes must tell the same story on the same numbers.
-    expect(margin.companyMargin).toBeCloseTo(forward.companyMargin, 3);
-    expect(margin.landedCost).toBeCloseTo(forward.landedCost, 1);
-  });
+      expect(margin.companyMargin).toBe(forward.companyMargin);
+      expect(margin.landedCost).toBe(forward.landedCost);
+    }
+  );
+
+  it.each([39.9, 79.9, 129.9, 299.9, 1000])(
+    'agrees with inverse on its retail price %s and the purchase price it suggests',
+    retail => {
+      const inverse = calculateInverse(retail, PARAMS);
+
+      expect(calculateMarginOnly(inverse.purchasePrice, retail, PARAMS).companyMargin).toBe(
+        inverse.companyMargin
+      );
+    }
+  );
 
   it('a lower retail price at equal cost squeezes the margin', () => {
     const full = calculateMarginOnly(100, 800, PARAMS);
@@ -143,7 +163,8 @@ describe('calculateMarginOnly', () => {
 /**
  * Every field of the three modes, pinned at two margins whose company multipliers round in opposite
  * directions (52 %: 2.0833 → 2.08; 65 %: 2.857 → 2.86). Captured before the engine moved to core:
- * a refactor of the chain must leave every one of them where it is.
+ * a refactor of the chain must leave every one of them where it is. `companyMargin` alone moved
+ * since (#79): it is the unrounded margin of the prices each mode produces.
  */
 describe('pricing modes, field by field', () => {
   const GOLDEN = [
@@ -164,7 +185,7 @@ describe('pricing modes, field by field', () => {
         wholesalePrice: 304.2,
         retailPriceRaw: 790.92,
         retailPrice: 789.9,
-        companyMargin: 0.5192,
+        companyMargin: 0.5186099506266616,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -180,7 +201,7 @@ describe('pricing modes, field by field', () => {
         qualityControlCost: 0.97,
         purchasePriceRaw: 48.49,
         purchasePrice: 48.4,
-        companyMargin: 0.5192,
+        companyMargin: 0.5199839946648883,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -190,7 +211,7 @@ describe('pricing modes, field by field', () => {
         retailPrice: 299.9,
         landedCost: 146.25,
         wholesalePrice: 115.35,
-        companyMargin: -0.2679,
+        companyMargin: -0.2679226408802933,
         companyMultiplier: 2.08,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
@@ -213,7 +234,7 @@ describe('pricing modes, field by field', () => {
         wholesalePrice: 418.27,
         retailPriceRaw: 1087.51,
         retailPrice: 1089.9,
-        companyMargin: 0.6503,
+        companyMargin: 0.6511147811725847,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -229,7 +250,7 @@ describe('pricing modes, field by field', () => {
         qualityControlCost: 0.67,
         purchasePriceRaw: 33.66,
         purchasePrice: 33.6,
-        companyMargin: 0.6503,
+        companyMargin: 0.6508596198732911,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -239,7 +260,7 @@ describe('pricing modes, field by field', () => {
         retailPrice: 299.9,
         landedCost: 146.25,
         wholesalePrice: 115.35,
-        companyMargin: -0.2679,
+        companyMargin: -0.2679226408802933,
         companyMultiplier: 2.86,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
@@ -252,5 +273,31 @@ describe('pricing modes, field by field', () => {
     expect(calculateForward(137.5, params)).toEqual(forward);
     expect(calculateInverse(299.9, params)).toEqual(inverse);
     expect(calculateMarginOnly(137.5, 299.9, params)).toEqual(margin);
+  });
+});
+
+describe('the calculator and the collection layout row', () => {
+  // A "CINA 8%" set (#79): retail 129.90 showed margin 51.9 in the calculator, 52.0 on the row.
+  const CHINA_8: CalcParams = {
+    qualityControlPercent: 5,
+    transportInsuranceCost: 2.5,
+    duty: 8,
+    exchangeRate: 1.07,
+    italyAccessoryCosts: 0.3,
+    tools: 1,
+    retailMultiplier: 2.48,
+    optimalMargin: 52,
+    purchaseCurrency: 'USD',
+    sellingCurrency: 'EUR',
+  };
+
+  it('show the same BT, margin and status for the same retail price', () => {
+    const inverse = calculateInverse(129.9, CHINA_8);
+    const marginPct = inverse.companyMargin * 100;
+
+    expect(inverse.purchasePrice).toBe(20.1);
+    // Rounded as the row rounds it, classified unrounded as every view does.
+    expect(Math.round(marginPct * 10) / 10).toBe(52);
+    expect(classifyMargin(marginPct, CHINA_8.optimalMargin)).toBe('green');
   });
 });

@@ -12,6 +12,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 
+import { classifyMargin, priceMargin } from '@luke/core';
 import { PrismaClient } from '@luke/db';
 
 import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
@@ -213,12 +214,13 @@ describe('Bootstrap & Seed', () => {
       const result = calculateForward(100, set);
 
       // Doesn't assert the exact number — that would be a tautological test of the
-      // formula. Asserts the two properties that make the seed *usable*: retail
-      // exceeds the purchase cost, and the margin hits the declared target. A set
-      // with inconsistent values would still pass the two tests above and would
-      // only break the smoke test, downstream.
+      // formula. Asserts what makes the seed *usable*: retail exceeds the purchase
+      // cost, and the margin it leaves (the one a collection row shows for these
+      // prices) is not red against the declared target. A set with inconsistent values would still pass
+      // the two tests above and would only break the smoke test, downstream.
       expect(result.retailPrice).toBeGreaterThan(100);
-      expect(result.companyMargin * 100).toBeCloseTo(set.optimalMargin, 1);
+      expect(result.companyMargin).toBe(priceMargin(100, result.retailPrice, set).companyMargin);
+      expect(classifyMargin(result.companyMargin * 100, set.optimalMargin)).not.toBe('red');
     });
   });
 });

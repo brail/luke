@@ -6,6 +6,7 @@ import {
   classifyMargin,
   retailMargin,
   skuWeightedAverage,
+  type MarginStatus,
 } from '@luke/core';
 
 /** Pricing parameter set as returned by the router. */
@@ -34,7 +35,7 @@ export function getReferenceOptimalMargin(parameterSets: PricingParameterSet[]):
 export function computeRowMargin(
   row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
-): { margin: number; isAboveTarget: boolean; marginStatus: 'green' | 'yellow' | 'red' } | null {
+): { margin: number; isAboveTarget: boolean; marginStatus: MarginStatus } | null {
   const computed: Array<{ value: number; sku: number | null }> = [];
   let refOptimalMargin = DEFAULT_OPTIMAL_MARGIN;
 
@@ -79,21 +80,24 @@ export function computeWeightedMargin(
   return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
 }
 
-/** Tailwind text class for the margin status — the same mapping used in CollectionGroupSection. */
-export const MARGIN_STATUS_TEXT_CLASS: Record<'green' | 'yellow' | 'red', string> = {
-  green: 'text-green-700 dark:text-green-400',
-  yellow: 'text-amber-600 dark:text-amber-400',
+/**
+ * Text colour of a margin status, on the theme's status tokens: the one colour map for margins.
+ * A badge or bar takes its border and fill from it with `border-current`/`bg-current`.
+ */
+export const MARGIN_STATUS_TEXT_CLASS: Record<MarginStatus, string> = {
+  green: 'text-status-good',
+  yellow: 'text-status-warning',
   red: 'text-destructive',
 };
 
 /** Chart fill colour (recharts) — the same hues as MARGIN_STATUS_TEXT_CLASS via CSS var. */
-export const MARGIN_STATUS_CHART_COLOR: Record<'green' | 'yellow' | 'red', string> = {
+export const MARGIN_STATUS_CHART_COLOR: Record<MarginStatus, string> = {
   green: 'hsl(var(--status-good))',
   yellow: 'hsl(var(--status-warning))',
   red: 'hsl(var(--destructive))',
 };
 
-export const MARGIN_STATUS_LABEL: Record<'green' | 'yellow' | 'red', string> = {
+export const MARGIN_STATUS_LABEL: Record<MarginStatus, string> = {
   green: 'In target',
   yellow: 'Vicino al target',
   red: 'Sotto target',
