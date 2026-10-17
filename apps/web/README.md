@@ -25,7 +25,7 @@ Authenticated group `(app)/`:
 - `/product/collection-layout` — collection plan (groups and rows, quotations, drag-and-drop ordering)
 - `/product/collection-layout/revisions` — revision history, ISO 9001:2015 quality record
 - `/product/collection-layout/revisions/[revisionId]` — a single immutable revision snapshot
-- `/product/control` — phase planning and collection layout statistics
+- `/product/control` — phase planning, collection layout statistics and cluster MOQ coverage (`Criticità cluster`)
 - `/product/merchandising-plan` — merchandising plan with specsheets and images
 - `/product/pricing` — costs and prices engine (forward / inverse / margin)
 - `/sales/statistics` — order portfolio statistics and KIMO sales extraction, served from the NAV replica

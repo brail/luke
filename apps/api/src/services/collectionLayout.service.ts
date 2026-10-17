@@ -23,7 +23,6 @@ import type {
   CollectionLayoutRow,
   CollectionRowQuotation,
   PricingParameterSet,
-  Vendor,
 } from '@luke/db';
 
 import { isForeignKeyViolation } from '../lib/error.js';
@@ -41,7 +40,8 @@ export type QuotationWithParamSet = CollectionRowQuotation & {
 };
 
 export type RowWithVendor = CollectionLayoutRow & {
-  vendor: (Pick<Vendor, 'id' | 'name' | 'nickname'> & { enabledParameterSets: Pick<PricingParameterSet, 'id'>[] }) | null;
+  // Derived from the select, so the casts in `getLayout` cannot hide a field the select drops.
+  vendor: Prisma.CollectionLayoutRowGetPayload<{ include: typeof ROW_VENDOR_INCLUDE }>['vendor'];
   quotations: QuotationWithParamSet[];
   pictureUrl?: string | null;
 };
@@ -91,7 +91,12 @@ export type CollectionLayoutWithRelations = CollectionLayout & {
 // ─────────────────────────────────────────────────────────────────
 
 const ROW_VENDOR_INCLUDE = {
-  vendor: { select: { id: true, name: true, nickname: true, enabledParameterSets: { select: { id: true } } } },
+  // `moqPerColor` feeds Control's cluster MOQ coverage. Exposing it here relies on every role
+  // holding `collection_layout:read` also holding `vendors:read` (`collection layout payload` in
+  // packages/core/src/auth/__tests__/permissions.test.ts).
+  vendor: {
+    select: { id: true, name: true, nickname: true, moqPerColor: true, enabledParameterSets: { select: { id: true } } },
+  },
   quotations: {
     orderBy: { order: 'asc' as const },
     include: { pricingParameterSet: true },

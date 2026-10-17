@@ -196,6 +196,16 @@ describe('admin-only actions', () => {
   );
 });
 
+// `collectionLayout.get` returns each row vendor's `moqPerColor` (`ROW_VENDOR_INCLUDE` in apps/api),
+// so a role that reads collection layouts must also read vendors.
+describe('collection layout payload', () => {
+  // Object.keys widens the `Record<Role, …>` keys to string.
+  it.each(Object.keys(ROLE_PERMISSIONS) as Role[])('%s reads vendors if it reads collection layouts', role => {
+    const user = { role };
+    expect(!hasPermission(user, 'collection_layout:read') || hasPermission(user, 'vendors:read')).toBe(true);
+  });
+});
+
 // No built-in role holds a `resource:*` grant: a temporary one keeps the branch tested.
 describe('resource wildcard grant', () => {
   it('covers every valid action of its resource and nothing else', () => {

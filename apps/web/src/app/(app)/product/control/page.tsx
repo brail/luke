@@ -1,6 +1,5 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { formatCalendarDate, NUMERIC_DATE } from '@luke/core';
@@ -15,23 +14,26 @@ import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
 
+import { ClusterMoqCoverage } from './_components/ClusterMoqCoverage';
 import { CollectionStatistics } from './_components/CollectionStatistics';
 import { EmptyContextCard } from './_components/EmptyContextCard';
+import { QueryStateMessage } from './_components/QueryStateMessage';
 import { useControlLayout } from './_hooks/useControlLayout';
 
 import type { ReactNode } from 'react';
 
 /**
- * Control: phase planning (Saturazione/Strozzatura/Stagnazione) and collection statistics
- * brought together on one page, separated by a top-level switch — they are two different
- * readings of the data (process health vs. collection content).
+ * Control: phase planning (Saturazione/Strozzatura/Stagnazione), collection statistics and the
+ * cluster MOQ coverage brought together on one page, separated by a top-level switch — they are
+ * different readings of the data (process health, collection content, forecast against vendor
+ * minimums).
  */
 export default function ControlloPage() {
   return (
     <>
       <PageHeader
         title="Controllo"
-        description="Pianificazione fasi e statistiche del Collection Layout"
+        description="Pianificazione fasi, statistiche e criticità cluster del Collection Layout"
       />
 
       <div className="p-6">
@@ -39,6 +41,7 @@ export default function ControlloPage() {
           <TabsList>
             <TabsTrigger value="fasi">Pianificazione Fasi</TabsTrigger>
             <TabsTrigger value="statistiche">Statistiche Collezione</TabsTrigger>
+            <TabsTrigger value="cluster">Criticità cluster</TabsTrigger>
           </TabsList>
           <TabsContent value="fasi" className="space-y-6">
             <Tabs defaultValue="saturation">
@@ -61,27 +64,13 @@ export default function ControlloPage() {
           <TabsContent value="statistiche">
             <CollectionStatistics />
           </TabsContent>
+          <TabsContent value="cluster">
+            <ClusterMoqCoverage />
+          </TabsContent>
         </Tabs>
       </div>
     </>
   );
-}
-
-/**
- * Loading/empty/error placeholder for a tab's main query. `error` is visually distinct
- * (destructive color + icon) from `empty` (plain muted text) — a failed fetch defaults `data` to
- * `[]` same as a genuinely empty result, so without this the two were indistinguishable.
- */
-function QueryStateMessage({ variant, message }: { variant: 'loading' | 'empty' | 'error'; message: string }) {
-  if (variant === 'error') {
-    return (
-      <div className="py-12 flex flex-col items-center gap-1.5 text-sm text-destructive">
-        <AlertTriangle className="h-5 w-5" />
-        {message}
-      </div>
-    );
-  }
-  return <div className="py-12 text-center text-muted-foreground">{message}</div>;
 }
 
 /**

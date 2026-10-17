@@ -8,10 +8,10 @@ export function useControlLayout() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const enabled = !!brand?.id && !!season?.id;
 
-  const { data: layout } = trpc.collectionLayout.get.useQuery(
+  const { data: layout, isError } = trpc.collectionLayout.get.useQuery(
     { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
     { enabled }
   );
 
-  return { layout, enabled, contextLoading };
+  return { layout, isError, enabled, contextLoading };
 }

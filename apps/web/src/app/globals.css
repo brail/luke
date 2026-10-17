@@ -28,6 +28,7 @@
     --chart-5: 158.5 73.3% 39.6%;
     --status-good: 142.4 71.8% 29.2%;
     --status-warning: 32.1 94.6% 43.7%;
+    --status-critical: 0 73.7% 41.8%;
     --radius: 0.5rem;
     --skeleton: 35 8% 94%;
     --sidebar-background: 35 8% 92%;
@@ -69,6 +70,7 @@
     --chart-5: 159.2 72.7% 35.9%;
     --status-good: 141.9 69.2% 58%;
     --status-warning: 43.3 96.4% 56.3%;
+    --status-critical: 0 72.2% 50.6%;
     --skeleton: 30 6% 16%;
     --sidebar-background: 30 6% 14%;
     --sidebar-foreground: 30 6% 88%;
@@ -111,6 +113,7 @@
   --color-chart-5: hsl(var(--chart-5));
   --color-status-good: hsl(var(--status-good));
   --color-status-warning: hsl(var(--status-warning));
+  --color-status-critical: hsl(var(--status-critical));
   --color-skeleton: hsl(var(--skeleton));
   --color-sidebar: hsl(var(--sidebar-background));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));

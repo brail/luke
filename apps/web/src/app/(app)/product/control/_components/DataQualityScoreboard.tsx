@@ -21,12 +21,13 @@ import type { CollectionStatsCardProps } from './CollectionStatistics';
 export function DataQualityScoreboard({ rows, parameterSets }: CollectionStatsCardProps) {
   const fields = useMemo(() => {
     const total = rows.length;
-    let vendor = 0, phase = 0, positioning = 0, retail = 0, margin = 0, sku = 0, qty = 0;
+    let vendor = 0, phase = 0, positioning = 0, strategy = 0, retail = 0, margin = 0, sku = 0, qty = 0;
 
     for (const row of rows) {
       if (!row.vendorId) vendor++;
       if (!row.phaseId) phase++;
       if (!row.pricePositioning) positioning++;
+      if (!row.strategy) strategy++;
       if (computeRowRetailPrice(row, parameterSets) === null) retail++;
       if (computeRowMargin(row, parameterSets) === null) margin++;
       if (row.skuForecast == null) sku++;
@@ -37,6 +38,7 @@ export function DataQualityScoreboard({ rows, parameterSets }: CollectionStatsCa
       { key: 'vendor', label: 'Fornitore', missing: vendor },
       { key: 'phase', label: 'Fase', missing: phase },
       { key: 'positioning', label: 'Posizionamento prezzo', missing: positioning },
+      { key: 'strategy', label: 'Strategy', missing: strategy },
       { key: 'retail', label: 'Prezzo retail', missing: retail },
       { key: 'margin', label: 'Margine calcolabile', missing: margin },
       { key: 'sku', label: 'SKU Forecast', missing: sku },
