@@ -83,9 +83,54 @@ the owner for RC and production. Rule: `docker exec -e PGOPTIONS='-c
 default_transaction_read_only=on' -i <container> psql …`, and try a command meant
 for the owner on a throwaway Postgres first.
 
+### A data migration translates from the old reader, not from a summary of it (2026-10-01)
+
+**What happened.** Planning the migration of pre-ADR-025 section overrides (R2), I described the old
+role default as "stored value, or the permission fallback when absent". The old reader has two
+different absences: a section missing from a role the stored map contains falls to the permission
+fallback, but a role the map does not contain keeps the whole static table. With a map that omits
+the viewer role, the plan would have inserted `admin.brands = true` for a viewer whose parent
+override was `true` — widening access in a migration meant to preserve it. Codex found it in the
+first review round, by reading `getRbacConfig`'s per-role spread next to the plan.
+
+**Rule.** Before writing a migration that preserves behaviour, derive its "before" value as one
+function from the old reader's code, branch by branch (which key is absent, which value is invalid,
+which flag it ignores), and use that single function everywhere the migration needs the old value.
+Test each absence separately, including the one where the containing object itself is missing.
+
 ---
 
 ## tRPC & Fastify
+
+### A wrapper that forwards `err.message` forwards everything its `try` can throw (2026-09-26)
+
+**What happened.** Planning X15 (let 4xx tRPC messages reach clients in
+production), I cleared the three backup-restore preflight sites that turn a
+caught error into `PRECONDITION_FAILED` with the caught message. Two arguments:
+the audience is an admin, and "the same texts already reach the admin through
+the `Backup.errorMessage` tooltip". Both were wrong. The review traced the `try`
+blocks: they also catch a Prisma driver error, filesystem errors carrying local
+paths, and `pg_restore` stderr. And the tooltip path belongs to the backup job;
+the restore has no record of its own, so this response was the only exit.
+
+**Rule.** Before accepting a site that puts a caught error's message into a
+client-visible response, list what the `try` block can actually throw — every
+awaited call, down to the driver, the filesystem and child processes — not what
+its authors wrote it to throw. A refusal written for the reader gets its own
+error type and keeps its code; anything else is a server fault. "Only an admin
+sees it" limits the exposure, it does not make the text safe. And a claim that a
+text "already reaches" some surface is a path claim: trace that path for this
+caller, not for a neighbouring one.
+
+---
+
+## Dependencies
+
+### Don't duplicate libraries for the same purpose
+
+If a library is already installed in the project (e.g. `pdfmake`), use it —
+never add another one that does the same thing (e.g. `pdfkit`). Always check
+`package.json` before installing new dependencies.
 
 ### tRPC 11.18 + Fastify: UNSUPPORTED_MEDIA_TYPE / Unable to transform
 
@@ -107,16 +152,6 @@ The custom `application/json` parser in `apps/api/src/server.ts` is gone
 (#95): tRPC's Fastify adapter registers its own parser in its own plugin
 scope, which covers its routes, and Fastify 5's built-in one already accepts
 a `charset` suffix.
-
----
-
-## Dependencies
-
-### Don't duplicate libraries for the same purpose
-
-If a library is already installed in the project (e.g. `pdfmake`), use it —
-never add another one that does the same thing (e.g. `pdfkit`). Always check
-`package.json` before installing new dependencies.
 
 ---
 
@@ -159,6 +194,8 @@ which every public endpoint verifying the account's current password calls (`aut
 `auth.submitPendingEmail`, `auth.resendVerification`), not via `withRateLimit()`, because the key
 (username) lives in the procedure's input, not in `ctx`.
 
+---
+
 ## Pentest / External Security
 
 ### Strix (or other) scans must be pointed ONLY at real deployed hostnames
@@ -179,6 +216,26 @@ apps/web/server.js`); no real deploy path can ever serve dev mode.
 hostname (`rc.luke.febos.local`, prod domain), never at
 `localhost`/`host.docker.internal`. A "development mode disclosure" against
 either of these is a false positive by construction, not a finding to triage.
+
+### An absolute security claim over an external system cannot be defended with machinery (2026-09-30)
+
+**What happened.** Planning the LDAP outage reporting (an unreachable directory was answered as
+"invalid credentials"), I wrote the requirement as "the public answer never depends on which
+username was typed" and then defended it across three review rounds by adding mechanism: an answer
+chosen per phase, a login-wide circuit breaker, a decoy bind for absent users. Each round found a
+way around it, because the property is not Luke's to guarantee: authentication is delegated to a
+directory that may treat one entry differently from another, and every public availability signal
+fed by an operation that carries the candidate — the 503, and the shared breaker's state — is a
+possible channel.
+
+**Rule.** For behaviour delegated to a system Luke does not control, claim only what holds by
+construction, and take the rest to the owner as an explicit decision instead of engineering around
+it. Here the constructible boundary was "what happens before the candidate is sent": the
+configuration check and the service-account bind. Driving the 503 and the breaker from that alone
+made the design smaller than the one it replaced. A second failed review round on the same
+requirement is the signal to reopen the requirement, not to add a third mechanism.
+
+---
 
 ## Integration Tests
 
@@ -225,6 +282,48 @@ spec alone after, and CI failed on "9 uninvoked procedures declared, 8 measured"
 **Rule:** when a unit adds, removes or changes which procedures an integration spec calls, the last gate
 before the commit is a full `pnpm test:integration:local` (dev stopped); a changed count is updated with
 its reason in `procedure-coverage.ts`, in the same commit.
+
+### A test that starts from a sub-router skips composition
+
+`brand.integration.spec.ts` used `brandRouter.createCaller(ctx)`. But
+`router({ brand: brandRouter })` does **not** preserve `brandRouter`:
+`createRouterFactory` rebuilds an aggregate from it, and the imported
+sub-router keeps its own separate `_def.procedures` map. The test was
+therefore exercising a path production never takes — production always
+enters through `appRouter`.
+
+Found by the procedure-coverage gate, which measures invocations against
+`appRouter`: the best-tested router in the repo showed up as 7/7 not invoked.
+
+**Rule**: in tRPC tests, build the caller from `appRouter` and descend to
+the namespace (`appRouter.createCaller(ctx).brand`), never from the
+imported sub-router. Call-site shape stays identical.
+
+### `vi.mock` doesn't always intercept: assert on the effect, not on the spy
+
+In the company logo test, `vi.mock('../src/storage', ...)` never reached the
+import of `deleteObjectByKey` done by `routers/company.ts` — not with that
+specifier nor with `'../src/storage/index.js'`. The router called the real
+function, the best-effort `catch` swallowed it, and the spy stayed at zero
+calls. Diagnosed only by putting `(fn as any)._isMockFunction` inside a
+temporary throw.
+
+**Rule**: when a module mock doesn't intercept, before fighting resolution
+it's worth asking whether the effect is observable elsewhere.
+`deleteObjectByKey` also deletes the `FileObject` row, so
+
+```ts
+expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
+```
+
+is shorter than fighting the mock **and** stronger: it proves the real
+function ran, not that a stub was called.
+
+Only applies when the effect is real and observable. If the collaborator is
+genuinely external (network, SMTP), the mock remains the only way and has
+to be made to work.
+
+---
 
 ## CI / Security Gates
 
@@ -304,24 +403,6 @@ doesn't match `/`:
    `git check-ignore -q <file>` — 0 = ignored, 1 = trackable.
 3. Final cross-check: `git add -An <dir>` lists exactly what would be staged.
 
-### A skill with `agent: Explore` cannot invoke subagents — enforced by `tools/scripts/check-skill-integrity.ts` (blocking in CI/pre-push). See `lessons-archive.md`.
-
-### A test that starts from a sub-router skips composition
-
-`brand.integration.spec.ts` used `brandRouter.createCaller(ctx)`. But
-`router({ brand: brandRouter })` does **not** preserve `brandRouter`:
-`createRouterFactory` rebuilds an aggregate from it, and the imported
-sub-router keeps its own separate `_def.procedures` map. The test was
-therefore exercising a path production never takes — production always
-enters through `appRouter`.
-
-Found by the procedure-coverage gate, which measures invocations against
-`appRouter`: the best-tested router in the repo showed up as 7/7 not invoked.
-
-**Rule**: in tRPC tests, build the caller from `appRouter` and descend to
-the namespace (`appRouter.createCaller(ctx).brand`), never from the
-imported sub-router. Call-site shape stays identical.
-
 ### A checker that reads local state passes locally and fails in CI
 
 `check-skill-integrity.ts` checked the existence of paths cited by the
@@ -371,101 +452,35 @@ reads only the packages that lockfile resolves, so a missing or stale install
 fails it instead of passing it. A package absent from an otherwise matching store
 goes unseen; the check runs after an install completes, never during one.
 
----
+### A push is not done until its CI run is green (2026-09-27)
 
-### A new lint rule must be probed on a bait file, not on the repo
+**What happened.** During the backlog-by-severity run on develop-2.2 I checked
+CI after the first few pushes, then stopped. Two pushes (`7a6b875a`,
+`54951a1f`) went red in the unit-test step and the owner found them, not me.
+The failure was a latent race in `getMasterKey`: parallel test workers on a
+fresh home created `~/.luke/secret.key` concurrently, one read it empty, and
+"Unable to derive secret" failed whichever spec happened to import
+`downloadToken` at that moment — so the red looked unrelated to the commits.
 
-Wrote `brand-scope-required.yml`, ran it on `apps/api/src`, zero findings,
-declared done. Wrong three times in a row, and each time the zero looked
-like proof it worked.
+**Rule.** After every push, wait for the CI and security runs of that SHA and
+report their result before moving to the next unit; a red run stops the queue
+until it is explained. A failure that moves between unrelated spec files is a
+shared-state race, not the last commit's bug: reproduce it under the conditions
+CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
+blaming or retrying.
 
-1. *Invalid YAML.* The pattern contained an unquoted
-   `{ ..., brandId: $Z, ... }`, and the colon breaks the scalar. Semgrep
-   responded `invalid configuration file found` on stderr and exited **0**:
-   the command looked like it passed and the rule wasn't running at all.
-2. *A `pattern-not` that doesn't exclude.* With
-   `<... assertBrandAccess(...) ...>` semgrep also flagged procedures that
-   were already correctly guarded. `metavariable-pattern` changed nothing.
-   `pattern-not-regex`, textual on the matched region, worked.
-3. *A literal alternative instead of the family.* `assertBrandAccess` as an
-   exact string kept flagging code guarded by `resolveRowBrandAccess`.
-   Needed `BrandAccess`.
+### A rule written only in prose gets broken — `pnpm dev` during a push (2026-09-27)
 
-Points 2 and 3 are the worst variant: **false positives on a blocking
-rule**. A rule that flags correct code gets disabled within a week, so it's
-worse than not having one.
+**What happened.** CLAUDE.md said not to run the pre-push hook while `pnpm dev`
+is up; I pushed three units with dev running anyway. The hook's `typecheck`
+rebuilt every dependency (`rm -rf dist && tsc`) under the dev watchers. Every
+build completed, so `dist` stayed whole — luck, not design.
 
-**Rule**: before considering a semgrep rule finished, probe it on a bait
-file that contains *both* cases — the vulnerable one and the already-fixed
-one — and it must give exactly 1 finding and 0. Zero findings on the real
-repo doesn't distinguish "no violation" from "the rule isn't running".
-
-```bash
-mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
-cd /tmp/probe && semgrep --config <rule> .    # expected: 1 finding, on the broken case
-```
-
-**Enforced for semgrep since 2026-09-27**: `scripts/semgrep-test.sh`, a
-blocking step in `security.yml`, runs `semgrep --test` (which does fail on
-a broken rule file) and requires a `ruleid:` and an `ok:` fixture for every
-rule id in `.semgrep/tests/`. The lesson stays for ESLint rules and plugin
-bumps, which that script does not cover.
-
-Corollary that paid off immediately: as soon as the rule started actually
-working it found five procedures in `merchandisingPlan.ts` and
-`phaseAlert.ts` that neither the audit nor the plan had enumerated.
-
----
-
-### `vi.mock` doesn't always intercept: assert on the effect, not on the spy
-
-In the company logo test, `vi.mock('../src/storage', ...)` never reached the
-import of `deleteObjectByKey` done by `routers/company.ts` — not with that
-specifier nor with `'../src/storage/index.js'`. The router called the real
-function, the best-effort `catch` swallowed it, and the spy stayed at zero
-calls. Diagnosed only by putting `(fn as any)._isMockFunction` inside a
-temporary throw.
-
-**Rule**: when a module mock doesn't intercept, before fighting resolution
-it's worth asking whether the effect is observable elsewhere.
-`deleteObjectByKey` also deletes the `FileObject` row, so
-
-```ts
-expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
-```
-
-is shorter than fighting the mock **and** stronger: it proves the real
-function ran, not that a stub was called.
-
-Only applies when the effect is real and observable. If the collaborator is
-genuinely external (network, SMTP), the mock remains the only way and has
-to be made to work.
-
-### A `cd dir && command` changes the cwd for the commands that follow too
-
-After `cd apps/api && npx tsc -b`, the bash cwd stayed `apps/api/` for the
-next command (`grep -r apps/api ...`), which then searched
-`apps/api/apps/api` — a nonexistent path, silenced by `2>/dev/null`, and the
-"0 matches" result got read as "cleanup complete". Reported back to the user
-"apps/api: 0 leftovers, work complete" when in reality ~30 files remained
-with untranslated Italian comments — discovered only because the user
-manually opened `server.ts` and found Italian comments in it.
-
-**Rule**: never `cd dir && command`. Use `(cd dir && command)` in a
-subshell, or pass the path directly to the tool (`npx tsc -b apps/api`), or
-return to root immediately after. Every verification check that follows a
-`cd`-containing command must use absolute paths, not paths relative to the
-assumed cwd — especially before declaring a piece of work "complete" to the
-user.
-
-**Recurrence (2026-10-04).** The rule above was in this file and was still
-broken four times in one session (`cd apps/web/src && …`, `cd apps/api/src &&
-…`, `cd apps/api && …`, a leading `cd <root>;`). The harness keeps the shell's
-cwd between calls, so each one silently moved every later relative path;
-nothing went wrong only because the commands after it happened to use absolute
-paths. Knowing the rule is not enough: never type `cd` at all — use absolute
-paths, `git -C <root>`, `pnpm -C <root>` or `--filter`, or a `( … )` subshell.
-A PreToolUse hook refusing a top-level `cd` would make it mechanical.
+**Rule.** `scripts/assert-no-dev.sh` now refuses, from the pre-push hook and
+the root emitting scripts, while a dev watcher runs in the same worktree. Before
+what it does not cover (`pnpm --filter <pkg> build`, a bare `turbo run`),
+run `sh scripts/assert-no-dev.sh` yourself. A mechanical rule that exists only in
+prose will be broken; when one is, enforce it rather than restate it.
 
 ---
 
@@ -528,6 +543,8 @@ have left production unreachable after the update, and its rollback would
 have restored a file production never ran (found 2026-10-08, before the
 upgrade).
 
+---
+
 ## Branch management
 
 ### A graduated `develop-X.Y` is dead — never reactivate it
@@ -563,7 +580,9 @@ is an owner operation — see CLAUDE.md § Versioning & Release.
 
 ---
 
-## Audit log: a silent allowlist drift (2026-08-27)
+## Audit Log
+
+### Audit log: a silent allowlist drift (2026-08-27)
 
 Two bugs reported on the audit log page — empty `metadata`, and `Sistema` as
 the author with no email on logins and password changes. Both were real; the
@@ -624,7 +643,9 @@ certified in the first place.
 
 ---
 
-## Commit approval is per commit, and a long debugging chain does not suspend it
+## Working Practice
+
+### Commit approval is per commit, and a long debugging chain does not suspend it
 
 **What happened.** Over one session I made 12 commits on `develop-2.2` and asked
 for approval on 3 of them. The first batch was done right — diff shown, approval
@@ -654,39 +675,7 @@ rule 3 says.
   together and ask once. What is not fine is committing first and reporting
   after.
 
-## A Radix close-button cannot double as a form's submit button
-
-**What happened.** Migrating `ConfigDeleteDialog` to a real `<form>`, I gave its
-`AlertDialogAction` `type="submit"` and dropped the `onClick` that used to do the
-work. The dialog then closed on click and on Enter without ever deleting
-anything. The user found it by testing; typecheck, lint and the suite were all
-green, because nothing about it is a type error.
-
-**Why.** `AlertDialogAction` renders a Radix `DialogClose`, whose `onClick`
-closes the dialog. React flushes that state update synchronously for discrete
-events, so the component unmounts *within the click*, and the browser then skips
-the submit button's default action — a form detached from the document does not
-submit. The submit handler never ran. Enter behaves identically: it activates
-the same default button.
-
-The shared `ConfirmDialog` gets away with `AlertDialogAction` only because it
-uses `onClick`, which `composeEventHandlers` runs *before* Radix's close.
-
-**Rules.**
-
-- Never put `type="submit"` on `AlertDialogAction`, `DialogClose`, or anything
-  else that closes an overlay as a side effect of being clicked. Use a plain
-  `Button type="submit"` and let the submit handler (or its caller) close the
-  dialog once the work resolves.
-- Inside a `<form>`, give every non-submitting button an explicit
-  `type="button"` — `AlertDialogCancel` included. A button's default type is
-  `submit`, so a Cancel button silently becomes a second submit trigger.
-- A green typecheck says nothing about whether an interaction fires. Any change
-  that moves *what triggers* a mutation — button type, event handler, wrapping
-  element — needs the flow exercised in the running app before it is called
-  done, or the uncertainty stated plainly to the user.
-
-## A grep is evidence about text, not about the thing you are claiming
+### A grep is evidence about text, not about the thing you are claiming
 
 **What happened.** Over one session I made five confident claims from `grep`
 output, and four of them were wrong.
@@ -760,7 +749,131 @@ existed. The classification had been written from memory of the table, not
 from the table. Build the verdict column from the evidence column mechanically,
 and next to every "no caller" name the search that established it.
 
-## A Turbo `dev` task that emits must depend on its own `build` (2026-09-03)
+### Before changing a map's key, follow every use of the key (2026-10-14)
+
+**What happened.** ADR-036 lists "`groupByTimeZone` puts aliases in separate digest and maintenance
+cohorts" as a gap. I keyed the cohorts by the first spelling met among aliases (`sameTimeZone`) and
+committed it after reading only the loops over the map. `/code-review` found where the key goes
+next: the digest prints it (`Orari in …`) and stores it in `CalendarDigestDelivery.timeZone`, so a
+`Europe/Kyiv` reader could get `Europe/Kiev`; and `deps.settled` is keyed by it, while `findMany`
+has no `orderBy`, so the key could change between ticks and rebuild a settled cohort the same day.
+Grouping by spelling had been correct all along: the cohorts' members are disjoint, so the only
+cost was one extra build per alias spelling. The commit was withdrawn before the push.
+
+**Rule.** Before changing what keys a map, or what a grouping returns as its key, trace every reader
+of that key: labels shown to people, caches and memo maps, persisted columns, log fields. A key
+that becomes order-dependent breaks every cache keyed by it. And measure the "gap" first: if the
+current behaviour is correct but slower, say so before fixing it.
+
+### A new lint rule must be probed on a bait file, not on the repo
+
+Wrote `brand-scope-required.yml`, ran it on `apps/api/src`, zero findings,
+declared done. Wrong three times in a row, and each time the zero looked
+like proof it worked.
+
+1. *Invalid YAML.* The pattern contained an unquoted
+   `{ ..., brandId: $Z, ... }`, and the colon breaks the scalar. Semgrep
+   responded `invalid configuration file found` on stderr and exited **0**:
+   the command looked like it passed and the rule wasn't running at all.
+2. *A `pattern-not` that doesn't exclude.* With
+   `<... assertBrandAccess(...) ...>` semgrep also flagged procedures that
+   were already correctly guarded. `metavariable-pattern` changed nothing.
+   `pattern-not-regex`, textual on the matched region, worked.
+3. *A literal alternative instead of the family.* `assertBrandAccess` as an
+   exact string kept flagging code guarded by `resolveRowBrandAccess`.
+   Needed `BrandAccess`.
+
+Points 2 and 3 are the worst variant: **false positives on a blocking
+rule**. A rule that flags correct code gets disabled within a week, so it's
+worse than not having one.
+
+**Rule**: before considering a semgrep rule finished, probe it on a bait
+file that contains *both* cases — the vulnerable one and the already-fixed
+one — and it must give exactly 1 finding and 0. Zero findings on the real
+repo doesn't distinguish "no violation" from "the rule isn't running".
+
+```bash
+mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
+cd /tmp/probe && semgrep --config <rule> .    # expected: 1 finding, on the broken case
+```
+
+**Enforced for semgrep since 2026-09-27**: `scripts/semgrep-test.sh`, a
+blocking step in `security.yml`, runs `semgrep --test` (which does fail on
+a broken rule file) and requires a `ruleid:` and an `ok:` fixture for every
+rule id in `.semgrep/tests/`. The lesson stays for ESLint rules and plugin
+bumps, which that script does not cover.
+
+Corollary that paid off immediately: as soon as the rule started actually
+working it found five procedures in `merchandisingPlan.ts` and
+`phaseAlert.ts` that neither the audit nor the plan had enumerated.
+
+### A `cd dir && command` changes the cwd for the commands that follow too
+
+After `cd apps/api && npx tsc -b`, the bash cwd stayed `apps/api/` for the
+next command (`grep -r apps/api ...`), which then searched
+`apps/api/apps/api` — a nonexistent path, silenced by `2>/dev/null`, and the
+"0 matches" result got read as "cleanup complete". Reported back to the user
+"apps/api: 0 leftovers, work complete" when in reality ~30 files remained
+with untranslated Italian comments — discovered only because the user
+manually opened `server.ts` and found Italian comments in it.
+
+**Rule**: never `cd dir && command`. Use `(cd dir && command)` in a
+subshell, or pass the path directly to the tool (`npx tsc -b apps/api`), or
+return to root immediately after. Every verification check that follows a
+`cd`-containing command must use absolute paths, not paths relative to the
+assumed cwd — especially before declaring a piece of work "complete" to the
+user.
+
+**Recurrence (2026-10-04).** The rule above was in this file and was still
+broken four times in one session (`cd apps/web/src && …`, `cd apps/api/src &&
+…`, `cd apps/api && …`, a leading `cd <root>;`). The harness keeps the shell's
+cwd between calls, so each one silently moved every later relative path;
+nothing went wrong only because the commands after it happened to use absolute
+paths. Knowing the rule is not enough: never type `cd` at all — use absolute
+paths, `git -C <root>`, `pnpm -C <root>` or `--filter`, or a `( … )` subshell.
+A PreToolUse hook refusing a top-level `cd` would make it mechanical.
+
+---
+
+## React & UI
+
+### A Radix close-button cannot double as a form's submit button
+
+**What happened.** Migrating `ConfigDeleteDialog` to a real `<form>`, I gave its
+`AlertDialogAction` `type="submit"` and dropped the `onClick` that used to do the
+work. The dialog then closed on click and on Enter without ever deleting
+anything. The user found it by testing; typecheck, lint and the suite were all
+green, because nothing about it is a type error.
+
+**Why.** `AlertDialogAction` renders a Radix `DialogClose`, whose `onClick`
+closes the dialog. React flushes that state update synchronously for discrete
+events, so the component unmounts *within the click*, and the browser then skips
+the submit button's default action — a form detached from the document does not
+submit. The submit handler never ran. Enter behaves identically: it activates
+the same default button.
+
+The shared `ConfirmDialog` gets away with `AlertDialogAction` only because it
+uses `onClick`, which `composeEventHandlers` runs *before* Radix's close.
+
+**Rules.**
+
+- Never put `type="submit"` on `AlertDialogAction`, `DialogClose`, or anything
+  else that closes an overlay as a side effect of being clicked. Use a plain
+  `Button type="submit"` and let the submit handler (or its caller) close the
+  dialog once the work resolves.
+- Inside a `<form>`, give every non-submitting button an explicit
+  `type="button"` — `AlertDialogCancel` included. A button's default type is
+  `submit`, so a Cancel button silently becomes a second submit trigger.
+- A green typecheck says nothing about whether an interaction fires. Any change
+  that moves *what triggers* a mutation — button type, event handler, wrapping
+  element — needs the flow exercised in the running app before it is called
+  done, or the uncertainty stated plainly to the user.
+
+---
+
+## Turbo & Build
+
+### A Turbo `dev` task that emits must depend on its own `build` (2026-09-03)
 
 While simplifying the Cycle 9 build lifecycle, the first prototype relaxed
 `dev.dependsOn` from `["^build", "build"]` to `["^build"]`. The dry graph then
@@ -788,7 +901,11 @@ emitting `tsc --watch` without `build` in the `dependsOn` Turbo applies. The
 dry-run and timestamp advice above stays: ordering beyond that one edge is not
 checked.
 
-## An inline `$ARGUMENTS` renders into its sentence — bind it alone, and a writing skill fails closed on a missing mode (2026-09-07)
+---
+
+## Skills & Agents
+
+### An inline `$ARGUMENTS` renders into its sentence — bind it alone, and a writing skill fails closed on a missing mode (2026-09-07)
 
 `/luke-docs readme` was observed also running ADR work and rewriting
 `docs/decisions/README.md` (audit Appendix R §R.7). The dispatch instruction was
@@ -840,57 +957,13 @@ plausibly why the writer was missed.
   while being adr's only output. Each mode now names the paths it writes, and
   anything else it notices is reported as `owned by <mode>, not touched`.
 
-## A wrapper that forwards `err.message` forwards everything its `try` can throw (2026-09-26)
+### A skill with `agent: Explore` cannot invoke subagents — enforced by `tools/scripts/check-skill-integrity.ts` (blocking in CI/pre-push). See `lessons-archive.md`.
 
-**What happened.** Planning X15 (let 4xx tRPC messages reach clients in
-production), I cleared the three backup-restore preflight sites that turn a
-caught error into `PRECONDITION_FAILED` with the caught message. Two arguments:
-the audience is an admin, and "the same texts already reach the admin through
-the `Backup.errorMessage` tooltip". Both were wrong. The review traced the `try`
-blocks: they also catch a Prisma driver error, filesystem errors carrying local
-paths, and `pg_restore` stderr. And the tooltip path belongs to the backup job;
-the restore has no record of its own, so this response was the only exit.
+---
 
-**Rule.** Before accepting a site that puts a caught error's message into a
-client-visible response, list what the `try` block can actually throw — every
-awaited call, down to the driver, the filesystem and child processes — not what
-its authors wrote it to throw. A refusal written for the reader gets its own
-error type and keeps its code; anything else is a server fault. "Only an admin
-sees it" limits the exposure, it does not make the text safe. And a claim that a
-text "already reaches" some surface is a path claim: trace that path for this
-caller, not for a neighbouring one.
+## Documentation & Comments
 
-## A push is not done until its CI run is green (2026-09-27)
-
-**What happened.** During the backlog-by-severity run on develop-2.2 I checked
-CI after the first few pushes, then stopped. Two pushes (`7a6b875a`,
-`54951a1f`) went red in the unit-test step and the owner found them, not me.
-The failure was a latent race in `getMasterKey`: parallel test workers on a
-fresh home created `~/.luke/secret.key` concurrently, one read it empty, and
-"Unable to derive secret" failed whichever spec happened to import
-`downloadToken` at that moment — so the red looked unrelated to the commits.
-
-**Rule.** After every push, wait for the CI and security runs of that SHA and
-report their result before moving to the next unit; a red run stops the queue
-until it is explained. A failure that moves between unrelated spec files is a
-shared-state race, not the last commit's bug: reproduce it under the conditions
-CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
-blaming or retrying.
-
-## A rule written only in prose gets broken — `pnpm dev` during a push (2026-09-27)
-
-**What happened.** CLAUDE.md said not to run the pre-push hook while `pnpm dev`
-is up; I pushed three units with dev running anyway. The hook's `typecheck`
-rebuilt every dependency (`rm -rf dist && tsc`) under the dev watchers. Every
-build completed, so `dist` stayed whole — luck, not design.
-
-**Rule.** `scripts/assert-no-dev.sh` now refuses, from the pre-push hook and
-the root emitting scripts, while a dev watcher runs in the same worktree. Before
-what it does not cover (`pnpm --filter <pkg> build`, a bare `turbo run`),
-run `sh scripts/assert-no-dev.sh` yourself. A mechanical rule that exists only in
-prose will be broken; when one is, enforce it rather than restate it.
-
-## A doc block left above another one documents nothing (2026-09-29)
+### A doc block left above another one documents nothing (2026-09-29)
 
 **What happened.** In X25 T4c I inserted a documented constant (`DAY_ONLY`) between
 `formatCriticalityTooltip` and its JSDoc. TypeScript attaches only the last of two stacked blocks,
@@ -904,40 +977,11 @@ on a bait file": the rule first went into a config block that does not reach `to
 zero on the repository while the known occurrence was still there — the per-area bait probe (one
 stacked and one blank-line-separated block, expected exactly 1 finding) is what exposed the scope.
 
-## An absolute security claim over an external system cannot be defended with machinery (2026-09-30)
+---
 
-**What happened.** Planning the LDAP outage reporting (an unreachable directory was answered as
-"invalid credentials"), I wrote the requirement as "the public answer never depends on which
-username was typed" and then defended it across three review rounds by adding mechanism: an answer
-chosen per phase, a login-wide circuit breaker, a decoy bind for absent users. Each round found a
-way around it, because the property is not Luke's to guarantee: authentication is delegated to a
-directory that may treat one entry differently from another, and every public availability signal
-fed by an operation that carries the candidate — the 503, and the shared breaker's state — is a
-possible channel.
+## Browser & Local Test Runs
 
-**Rule.** For behaviour delegated to a system Luke does not control, claim only what holds by
-construction, and take the rest to the owner as an explicit decision instead of engineering around
-it. Here the constructible boundary was "what happens before the candidate is sent": the
-configuration check and the service-account bind. Driving the 503 and the breaker from that alone
-made the design smaller than the one it replaced. A second failed review round on the same
-requirement is the signal to reopen the requirement, not to add a third mechanism.
-
-## A data migration translates from the old reader, not from a summary of it (2026-10-01)
-
-**What happened.** Planning the migration of pre-ADR-025 section overrides (R2), I described the old
-role default as "stored value, or the permission fallback when absent". The old reader has two
-different absences: a section missing from a role the stored map contains falls to the permission
-fallback, but a role the map does not contain keeps the whole static table. With a map that omits
-the viewer role, the plan would have inserted `admin.brands = true` for a viewer whose parent
-override was `true` — widening access in a migration meant to preserve it. Codex found it in the
-first review round, by reading `getRbacConfig`'s per-role spread next to the plan.
-
-**Rule.** Before writing a migration that preserves behaviour, derive its "before" value as one
-function from the old reader's code, branch by branch (which key is absent, which value is invalid,
-which flag it ignores), and use that single function everywhere the migration needs the old value.
-Test each absence separately, including the one where the containing object itself is missing.
-
-## A browser test that fails only on its first local run fails every CI run (2026-10-04)
+### A browser test that fails only on its first local run fails every CI run (2026-10-04)
 
 **What happened.** The first `VendorCombobox` browser test (`5203f1b4`) failed on its first local
 run with an invalid hook call inside Popover and passed on the rerun; I took it for the known flake
@@ -951,9 +995,7 @@ test that mounts a library no earlier browser test mounted lists it in `optimize
 the push, and the suite runs once with `apps/web/node_modules/.vite` moved aside, which is what CI
 sees.
 
----
-
-## A long local suite runs under `caffeinate -i` (2026-10-04)
+### A long local suite runs under `caffeinate -i` (2026-10-04)
 
 **What happened.** During block D an integration run froze from 18:45 to 18:49:
 the Mac went into idle sleep (`pmset -g log` shows it), Node stopped mid-suite,
@@ -963,19 +1005,3 @@ and the hooks reported timeouts that read like failing tests.
 pre-push hook runs the tests — in `caffeinate -i` (`caffeinate -i pnpm
 test:integration:local`, `caffeinate -i git push`). A burst of timeouts after a
 pause is a sleep until `pmset -g log` says otherwise.
-
-## Before changing a map's key, follow every use of the key (2026-10-14)
-
-**What happened.** ADR-036 lists "`groupByTimeZone` puts aliases in separate digest and maintenance
-cohorts" as a gap. I keyed the cohorts by the first spelling met among aliases (`sameTimeZone`) and
-committed it after reading only the loops over the map. `/code-review` found where the key goes
-next: the digest prints it (`Orari in …`) and stores it in `CalendarDigestDelivery.timeZone`, so a
-`Europe/Kyiv` reader could get `Europe/Kiev`; and `deps.settled` is keyed by it, while `findMany`
-has no `orderBy`, so the key could change between ticks and rebuild a settled cohort the same day.
-Grouping by spelling had been correct all along: the cohorts' members are disjoint, so the only
-cost was one extra build per alias spelling. The commit was withdrawn before the push.
-
-**Rule.** Before changing what keys a map, or what a grouping returns as its key, trace every reader
-of that key: labels shown to people, caches and memo maps, persisted columns, log fields. A key
-that becomes order-dependent breaks every cache keyed by it. And measure the "gap" first: if the
-current behaviour is correct but slower, say so before fixing it.
