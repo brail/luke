@@ -23,15 +23,6 @@
  * checker itself: `pnpm check:drift` discovers every `SKILL.md` and each must
  * carry its binding, so no separate liveness test is maintained here.
  *
- * ## What is deliberately NOT covered
- *
- * The fan-out check (`agent: Explore` + forbidden subagent patterns) is left
- * untested here on purpose. It is gated behind the very declaration it
- * protects, so removing `agent: Explore` disables it silently while the gate
- * stays green. That is a known open finding awaiting owner classification;
- * pinning the current semantics with a passing test would make it look
- * settled. It is not.
- *
  * Run: `pnpm test:tools`
  */
 
@@ -42,6 +33,7 @@ import {
   ARGUMENT_BINDING,
   checkArgumentBinding,
   checkExecutionContract,
+  checkNoFanOut,
   checkSizeBudget,
   IGNORE_MARKER,
   isRepoPath,
@@ -324,4 +316,38 @@ test('a SKILL.md of exactly the budget passes', () => {
 
 test('one line over the budget fails, naming the count', () => {
   assertFailsWith(runSize(SKILL_LINE_BUDGET + 1), `${SKILL_LINE_BUDGET + 1} lines, over the ${SKILL_LINE_BUDGET}-line`);
+});
+
+// ── No fan-out in Explore skills ────────────────────────────────────────────
+//
+// The owner classified this gate as blocking (2026-10-17): the declaration is
+// read from the frontmatter, so a quoted or differently-cased value cannot
+// slip past it, and a skill that drops the declaration is no longer an
+// Explore skill, which is the point of the rule.
+
+const FAN_OUT_BODY = 'Run 3 agents in parallel.\n';
+
+/** Runs the fan-out check over one synthetic SKILL.md. */
+function runFanOut(frontmatterLines: string, body = FAN_OUT_BODY): Problem[] {
+  const problems: Problem[] = [];
+  checkNoFanOut(FIXTURE, `---\nname: fixture\n${frontmatterLines}---\n${body}`, problems);
+  return problems;
+}
+
+test('an Explore skill that asks for parallel agents fails', () => {
+  assertFailsWith(runFanOut('agent: Explore\n'), 'declares `agent: Explore` but contains "agents in parallel"');
+});
+
+test('the declaration is read ignoring case and quotes', () => {
+  for (const declaration of ['agent: explore', 'agent: "Explore"', "agent: 'EXPLORE'"]) {
+    assert.equal(runFanOut(`${declaration}\n`).length, 1, declaration);
+  }
+});
+
+test('an Explore line in the body is not a declaration', () => {
+  assert.deepEqual(runFanOut('', `agent: Explore\n${FAN_OUT_BODY}`), []);
+});
+
+test('an Explore skill without fan-out instructions passes', () => {
+  assert.deepEqual(runFanOut('agent: Explore\n', 'Read each changed file once.\n'), []);
 });

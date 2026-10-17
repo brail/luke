@@ -438,6 +438,43 @@ export function checkSizeBudget(
   }
 }
 
+const FAN_OUT_PATTERNS = [
+  /agents? in parallel/i,
+  /^###\s+Agent \d/m,
+  /\bTask\(/,
+  /\bAgent tool\b/,
+];
+
+/**
+ * Capability constraint: an Explore agent has no Agent tool, so it cannot
+ * invoke subagents (audit-protocol.md section 6). The declaration is read from
+ * the frontmatter alone, ignoring case and quotes. Matching the literal line
+ * anywhere in the file let `agent: "explore"` through and would have counted a
+ * quoted example in the body as a declaration.
+ */
+export function checkNoFanOut(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  const agent = frontmatter(content)?.match(/^agent:\s*["']?([^"'\s]+)["']?\s*$/m)?.[1];
+  if (agent?.toLowerCase() !== 'explore') return;
+
+  for (const pattern of FAN_OUT_PATTERNS) {
+    const match = content.match(pattern);
+    if (match) {
+      problems.push({
+        file: relPath,
+        line: content.slice(0, match.index).split('\n').length,
+        message:
+          `declares \`agent: ${agent}\` but contains "${match[0].trim()}". ` +
+          'An Explore agent has no Agent tool: this is a promise the ' +
+          'runtime cannot keep. See audit-protocol.md section 6.',
+      });
+    }
+  }
+}
+
 function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
@@ -465,31 +502,7 @@ function main(): void {
       checkExecutionContract(relPath, content, problems);
       checkArgumentBinding(relPath, content, problems);
       checkSizeBudget(relPath, content, problems);
-    }
-
-    // Capability constraint: an Explore agent has no Agent tool and therefore
-    // cannot invoke subagents. See audit-protocol.md section 6.
-    const declaresExplore = /^agent:\s*Explore\s*$/m.test(content);
-    if (declaresExplore) {
-      const forbidden = [
-        /agents? in parallel/i,
-        /^###\s+Agent \d/m,
-        /\bTask\(/,
-        /\bAgent tool\b/,
-      ];
-      for (const pattern of forbidden) {
-        const match = content.match(pattern);
-        if (match) {
-          problems.push({
-            file: relPath,
-            line: content.slice(0, match.index).split('\n').length,
-            message:
-              `declares \`agent: Explore\` but contains "${match[0].trim()}". ` +
-              'An Explore agent has no Agent tool: this is a promise the ' +
-              'runtime cannot keep. See audit-protocol.md section 6.',
-          });
-        }
-      }
+      checkNoFanOut(relPath, content, problems);
     }
 
     lines.forEach((line, index) => {
