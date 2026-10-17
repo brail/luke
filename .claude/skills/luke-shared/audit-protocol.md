@@ -116,7 +116,14 @@ treat it as empty (no suppression).
     {
       "key": "luke-audit:apps/api/src/lib/foo.ts:raw-sql-outside-nav",
       "reason": "DISTINCT ON query not expressible in Prisma, documented exception in CLAUDE.md",
-      "addedAt": "2026-07-29"
+      "addedAt": "2026-07-29",
+      "decisionRef": "CLAUDE.md"
+    },
+    {
+      "key": "luke-bugs:apps/web/src/hooks/useFoo.ts:stale-closure",
+      "reason": "Fixed with the hook rewrite planned for the next minor",
+      "addedAt": "2026-10-17",
+      "reviewBy": "2026-12-31"
     }
   ]
 }
@@ -125,13 +132,22 @@ treat it as empty (no suppression).
 `key` = `<skill>:<relative path>:<rule slug>`. **Never include the line
 number**: it drifts on every edit and would make the suppression useless.
 
+An accepted exception has a lifecycle, so every entry carries at least one of:
+
+- `reviewBy`: a calendar day after which the exception must be looked at again;
+- `decisionRef`: the repository path of the ADR or document that accepts it
+  for good.
+
 Rules:
 
 1. Compute the `key` for every finding before reporting it.
-2. If the `key` is in the baseline, **do not report it** in the report body.
+2. If the `key` is in the baseline, **do not report it** in the report body,
+   unless its `reviewBy` has passed: an expired entry suppresses nothing, and
+   the finding is reported marked `baseline expired <reviewBy>`.
 3. At the end of the report, show only the count: `N findings suppressed by baseline`.
 4. **Never write** the baseline file yourself. Propose the lines to add in a
-   separate block; it's the user's decision what to accept.
+   separate block, each with a `reviewBy` or a `decisionRef`; it's the user's
+   decision what to accept.
 
 The point: a finding that keeps resurfacing on every run and gets ignored
 every time teaches people to ignore the report. Either it gets fixed, or it
