@@ -2062,3 +2062,21 @@ The operative consequence: **absence of a finding is not evidence of absence.** 
 **Persistence of adjudication.** `luke-full` today synthesizes ephemeral prose; every run re-derives from zero, so an adjudicated disposition can be silently replaced by a later stochastic re-derivation. The direction is for confirmed and adjudicated findings to persist across runs in structured run state, with one rule governing reopening: **a subsequent run may reopen an adjudicated finding only on explicit new evidence, not on a differing re-derivation.** The `status` field in `result-contract.md` is the seed of this; a finding ledger is its natural extension.
 
 **Model diversity is for independence, not voting.** Running a review under a different model is useful because it re-derives from the code rather than inheriting a prior conclusion — which is how three successive architectural hypotheses were falsified during the Cycle 5A argument-binding investigation. It is not a quorum mechanism. Findings are settled by repository evidence and human adjudication, never by agreement between models.
+
+## A.6 Corrections and the open items' disposition (2026-10-17)
+
+Appended; nothing above is modified. A census at `376f5d9c` (2026-10-05) found two statements in A.2
+that did not hold and seven items left open:
+
+- **§12.4.** A.2 records the largest skill at 495 of 500 lines. `luke-deps/SKILL.md` crossed 500 at
+  `6237e56d` and stood at 524; nothing enforced the budget. The owner made it a blocker
+  (2026-10-17): `971148e7` fails a `SKILL.md` over 500 lines, and `luke-deps/SKILL.md` is 307 lines.
+- **§12.6.** A.2 marks it DONE, but three of its checker increments were never built: every skill an
+  orchestrator names exists, every writer cites the concurrent-session rules, no version literal in
+  the README templates. `1c8febbe` and `4da5e60e` built them. The fourth increment, read-only prose
+  consistency, was not chosen and is not built.
+
+The seven open items — baseline entry lifecycle, `lessons.md` progressive disclosure, `CLAUDE.md`
+rule 8 breadth, the skill size budget, the §12.6 increments, the skill-checker `main()` fixtures
+and the Explore fan-out gate — are decided and closed; the decisions and commits are in the monorepo
+audit ledger, [Appendix Z.7](LUKE_MONOREPO_AUDIT_2026-08-30.md#z7-roll-up-of-the-items-left-open-at-the-closure-2026-10-17).

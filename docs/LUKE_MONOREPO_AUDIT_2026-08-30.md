@@ -5136,3 +5136,59 @@ split · the commit that adds Z.5 and Z.6.
   the governance audit (Z.4).
 - This record neither executes nor authorizes the order's next step: synchronizing `main` into the
   train and cutting `v3.0.0-rc.1` remain the owner's decisions.
+
+## Z.7 Roll-up of the items left open at the closure (2026-10-17)
+
+A census of both audits at `376f5d9c` (2026-10-05) found 22 items open with no disposition: 15 in
+this ledger that Z left untracked, and 7 in the governance audit
+([v3](LUKE_AGENT_PLATFORM_GOVERNANCE_AUDIT_2026-08-30_v3.md), Appendix A). The owner decided them on
+2026-10-05 and revised the skill size budget on 2026-10-17. This section records each decision and
+where it stands on `develop-2.2` at `8dab041e`. The governance items stay items of that audit (Z.4);
+they are listed here so the roll-up is one table, and its Appendix A.6 points back here. No earlier
+appendix is modified.
+
+**This ledger.**
+
+| Item | Origin | Decision | State |
+| --- | --- | --- | --- |
+| Per-runtime globals: the isomorphic web bucket keeps both global sets | P0-02b | accepted as a limitation, no file split | closed |
+| pnpm `trustPolicy`, the "optional hardening" never dispositioned | P0/P1-03 | evaluate it at the next `/luke-deps` review | open, next `/luke-deps` |
+| The second audit pass (twelve questions) | §11 | answered by a `/luke-full` after v3.0.0 graduates, not before | open, after the graduation |
+| Web lint debt: 68 suppressed errors, 30 warnings | D.4, P.2 | clean it to zero as a dedicated block | U1–U3 done (`1a3f02c3`, `556d0a2b`, `f50af817`, `2a8f404d`): 36 suppressed errors left, 29 warnings; U4–U10 open in [#133](https://github.com/brail/luke/issues/133), 3.1.0 |
+| The domain seed cannot run inside the API runtime image | N.11 | no in-image seeding | closed |
+| Can an editor deactivate another user? | B.3 | editors are read-only on users | closed by `ce13d7ca`: editors no longer hold `users:update`, so `USER_EDITOR_UPDATABLE_FIELDS` (`packages/core/src/schemas/user.ts`) binds only a future role granted it without `*:*` |
+| `@types/pdfmake` loads `lib.dom` into the API programs | J.6, M.12 | accepted; the lint globals already refuse DOM use | closed |
+| `sideEffects: false` and barrel tree-shaking | H.11 | not needed | closed |
+| The `zod` pre-bundle coupling in the browser test config | H.11 | check it on a cold cache, drop it if unneeded | closed by `4552c014` |
+| An unknown first token does not stop luke-fix, luke-deps or luke-test | U.9 | stop on it | closed by `fb2c1706` |
+| `.claude/commands/ux-audit.md` argument binding | U.9 | bind it when the command is first used | open, at first use |
+| Lockfile deduplication candidate | S.6 | joins Z.3's "next `/luke-deps` review" row | open, next `/luke-deps` |
+| Module-identity headers naming unpublished subpaths | H.12 | join Z.3's comment unit | open, with that unit |
+| CHANGELOG versus GitHub Releases | T.8 | generate the Release from the CHANGELOG section | closed by `f06df275`, `1093ed18` and `1e33918c`: `release.yml` publishes "Luke X.Y.Z" for every stable tag |
+| ADR-004 cites schema lines that the split moved | O.9 | left: the ADR is superseded | closed |
+
+Closed in fact, recorded here because no appendix did: P1-06, the neutral tsconfig (J
+`5a1987e`, L `00c21b0`); §H.11's `next build` in CI (`7cd71c94`) and dist-staleness ergonomics
+(L, `ef53ae2f`); D.7's lint-cache inputs (`7cacf08a`); O.9's `STORAGE_CONFIG` reference (`9daad4ac`);
+the stale web `lib/README.md` of V.9 and W.1 (`127f83b2`); W.1's AppConfig key counts (`17e854ed`,
+`48529a8c`); K.13's web `APP_VERSION` (`53346490`); the procedure-coverage teardown of O.7 and V.9
+(`420be145`).
+
+**The governance audit.**
+
+| Item | Governance § | Decision | State |
+| --- | --- | --- | --- |
+| Baseline entry lifecycle (`reviewBy` / `decisionRef`) | 9E.2 | add both | closed by `2cdf6c31` |
+| `lessons.md` progressive disclosure | 9E.3 | file every lesson under a category and slim the file | closed by `c5afc474`, `29a39e3d` and `a3ddb0fe`: each lesson sits under the category its readers need, and each skill reads its categories plus the "Always" set |
+| `CLAUDE.md` rule 8 breadth (indexes on FKs and filtered columns) | 9G, A.4 | keep the rule as written | closed: luke-audit no longer raises it as `NEEDS DECISION` on every run |
+| Skill size budget, regressed to 524 lines in `luke-deps` | 12.4 | 2026-10-05: a warning; 2026-10-17: a blocker at 500 | closed by `971148e7` (the checker fails a `SKILL.md` over 500 lines); `luke-deps/SKILL.md` is 307 lines after `e227e684`, `b6ce9c6b` and `2a9e180c` |
+| §12.6 checker increments | 12.6 | build the three cheap checks | closed by `1c8febbe` and `4da5e60e`: every skill an orchestrator names exists, every writer cites the concurrent-session rules, the README templates carry no version literal. The fourth increment the audit listed, read-only prose consistency, was not chosen and is not built |
+| Skill-checker `main()`: zero discovery, path and symbol resolution | 12.7 | fixture it on a temporary repository | closed by `191c5fce` |
+| The Explore fan-out gate fails open | A.4 | read the declaration from the frontmatter; blocking (2026-10-17) | closed by `93a8207b` |
+
+Outside the 22: the protocol's dead "Score honesty" rule, which contradicted luke-full's categorical
+health, is replaced by a no-score rule (`18f3686f`).
+
+Open after this section: the trust policy, the lockfile and the H.12 headers wait for their next
+unit as stated; the second audit pass waits for the graduation; the ux-audit binding waits for
+first use; the web lint units are #133. Every residual in Z.2, Z.3 and Z.5 keeps its disposition.
