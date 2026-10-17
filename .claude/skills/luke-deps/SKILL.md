@@ -95,6 +95,8 @@ into a skill, a reference or `CLAUDE.md`.
    §7.4). To undo a bump: edit the version back and re-run pnpm.
 6. **A hold is a deliverable.** A major you decided not to take is only useful
    if the reason and the unblock condition are written down (§7).
+7. **Never add a second library** for a job an installed one already does
+   (`lessons.md`, "Don't duplicate libraries for the same purpose").
 
 ---
 
@@ -160,8 +162,9 @@ Before planning anything, look up every candidate in
 packages this repo actually depends on to **the invariant they can silently
 break** and **the command that proves they did not**.
 
-A package in that table is never verified by types alone. A package not in the
-table gets levels 0–2 and, if it is a runtime dependency of `apps/api`, level 3.
+A package in that table is never verified by types alone: level 4 or it did
+not happen. A package not in the table gets levels 0–2 and, if it is a runtime
+dependency of `apps/api`, level 3.
 
 ---
 
@@ -176,14 +179,11 @@ table gets levels 0–2 and, if it is a runtime dependency of `apps/api`, level 
 | 4   | targeted runtime proof (see the matrix)                | **same shape, different behavior**                   |
 | 5   | `pnpm check:drift` · `pnpm security:deps`              | skill/doc drift, new advisories                      |
 
-**Level 4 is the only level that catches the failures that matter most, and it
-is the only one no CI job runs for you.** The fastify 5.12 `trustProxy`
-regression passed levels 0–3 clean: numeric hop counts silently stopped being
-honored, `req.ip` would have collapsed to the `apps/web` container address, and
-the CRITICAL rate-limit bypass fixed on 2026-08-07 would have come back. The
-types were identical. The unit tests were green. The rate-limit integration
-suite was green too, because it stubbed `req.ip` on a fake context and never
-went through fastify's own resolution.
+**Level 4 is the only level that catches the failures that matter most, and no
+CI job runs it for you.** The fastify 5.12 `trustProxy` regression passed levels
+0–3: numeric hop counts stopped being honored, so `req.ip` would have collapsed
+to the `apps/web` container and reopened the rate-limit bypass fixed on
+2026-08-07, with identical types and a rate-limit suite that stubbed `req.ip`.
 
 Three rules follow from that:
 
@@ -262,42 +262,26 @@ resolved 10.1.1. A revert is an **exact pin plus a comment naming the version it
 excludes and why** — otherwise the next install silently undoes it.
 
 **Overrides are debt with an expiry date** (`lessons.md`). Pin a _range_, never
-an exact version: an exact pin keeps forcing the vulnerable version even after
-the patch ships, and `pnpm update` cannot outrank it — that is how
-GHSA-mh99-v99m-4gvg stayed live behind a `brace-expansion` pin. Cap the range
-when an uncapped one would drag transitive consumers onto a new major
-(`js-yaml: '>=4.3.2 <5'`) — but first check with `pnpm why -r <pkg>` that no
-consumer already declares that major: a cap below a declared range forces the
-consumer off it, which is how `fast-json-stringify@7` (`fast-uri ^4`) ran on
-fast-uri 3.x for a month behind a `<4` cap written before it existed;
-`check-override-consumers` (in `check:drift`) now refuses such a cap against the
-installed consumers. Every
-override carries a comment with its GHSA or CVE id and its reason. P15 in
-`check-platform-integrity` refuses an exact pin and an entry whose own comment
-names no advisory; whether a cap or an upward unlock is right, and whether an
-override has expired, stays this review.
+an exact version: an exact pin keeps forcing the vulnerable version after the
+patch ships (GHSA-mh99-v99m-4gvg stayed live behind a `brace-expansion` pin).
+Cap the range only when an uncapped one would drag consumers onto a new major
+(`js-yaml: '>=4.3.2 <5'`), and only after `pnpm why -r <pkg>` shows no consumer
+already declares it: a `<4` cap ran `fast-json-stringify@7` on fast-uri 3.x for
+a month. Every override comments its GHSA or CVE id and its reason.
+`check:drift` enforces the mechanical half — P15 in `check-platform-integrity`
+(no exact pin, an advisory id in the comment) and `check-override-consumers`
+(no cap below an installed consumer). Whether a cap or an upward unlock is
+right, and whether an override has expired, stays this review.
 
 On every run, review the whole `overrides` block: an override whose upstream has
 since published a clean version in the natural range is dead weight — propose
 removing it, then confirm resolution with `pnpm why <pkg>`.
 
 **Version alignment across the workspace is CLAUDE.md rule 9, and this skill
-owns it** (`.claude/skills/luke-shared/governance-map.md` §2). It has an
-automated gate: `checkVersionAlignment` in
-`tools/scripts/check-platform-integrity.ts`, wired into `pnpm check:drift` and
-run on every push. For a manual look during a dependency pass, the same check
-by hand:
-
-```bash
-jq -r '(.dependencies // {}) + (.devDependencies // {}) | to_entries[] | "\(.key)\t\(.value)"' \
-  $(git ls-files '*package.json') | sort -u \
-  | awk -F'\t' '{v[$1]=v[$1]" "$2; n[$1]++} END{for(p in n) if(n[p]>1) print p":"v[p]}' \
-  | grep -v workspace
-```
-
-Empty output means aligned. Any line is a package carried at two versions —
-fix it in the same cycle; the gate above will fail the push otherwise.
-`luke-audit` must not carry a second copy of either the gate or this command.
+owns it** (`.claude/skills/luke-shared/governance-map.md` §2).
+`checkVersionAlignment` in `tools/scripts/check-platform-integrity.ts` enforces
+it in `pnpm check:drift` on every push: a package carried at two versions is
+fixed in the same cycle. `luke-audit` must not carry a second copy of the gate.
 
 ---
 
@@ -389,15 +373,11 @@ internally coherent without triggering an upgrade review.
    - is a lifecycle commitment (Node LTS, override expiry, held decision) overdue?
    - is a platform version duplicated as prose anywhere it can drift?
 
-The agent runtime contract is **not** re-checked here. `check-skill-integrity`
-already owns the project's frontmatter invariants — fork/background/agent and
-the read-only write restriction — and `claude plugin validate` was measured
-against the installed CLI in Cycle 2: it expects a plugin manifest directory
-this repo deliberately does not have, and errors on a bare skills directory, so
-it would report a missing manifest rather than anything about skill quality. When a change actually
-depends on Claude Code runtime semantics, inspect the installed runtime and its
-frontmatter schema deliberately, as that cycle did. Do not put a speculative CLI
-gate in this path, and do not make CI depend on the Claude CLI.
+The agent runtime contract is **not** re-checked here: `check-skill-integrity`
+owns the frontmatter invariants, and `claude plugin validate` does not apply (it
+expects a plugin manifest this repo does not have). When a change depends on
+Claude Code runtime semantics, inspect the installed runtime deliberately; never
+make CI depend on the Claude CLI.
 
 ### Report
 
@@ -462,19 +442,3 @@ Every verdict carries:
 
 A hold without a written unblock condition is not a decision, it is a deferral
 that gets re-argued from scratch next quarter.
-
----
-
-## Hard rules
-
-- NEVER commit. Show the diff, propose the message, wait for the go-ahead.
-- NEVER batch two majors into one verification cycle.
-- NEVER conclude "it works" from types plus unit tests for a package in the
-  matrix. Level 4 or it did not happen.
-- NEVER hand-edit `pnpm-lock.yaml`, and never `git checkout` a file to undo a
-  bump (protocol §7.4).
-- NEVER add a second library for a job an installed one already does
-  (`lessons.md`, "Don't duplicate libraries for the same purpose").
-- NEVER add an exact-version override. A range, capped where §6 requires, commented with its GHSA or CVE id (P15 enforces the pin and the id).
-- NEVER drop a held package silently — reason and unblock condition, or it will
-  be re-evaluated from scratch next quarter.
