@@ -10,6 +10,11 @@ on:
     tags:
       - 'v*'
 
+# Read by default, stated here rather than left to the repository setting; the
+# image jobs and the GitHub Release job raise their own scope.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   API_IMAGE: ghcr.io/brail/luke-api
@@ -48,6 +53,7 @@ jobs:
       publish_series: ${{ steps.gate.outputs.publish_series }}
       publish_latest: ${{ steps.gate.outputs.publish_latest }}
       publish_rc_latest: ${{ steps.gate.outputs.publish_rc_latest }}
+      notes: ${{ steps.tree.outputs.notes }}
 
     steps:
       - name: Checkout
@@ -99,13 +105,18 @@ jobs:
       # tag: the tree read here is exactly the tree the gate authorized. It
       # travels through `env` because a `${{ }}` expression pasted into a shell
       # is a value the shell then parses.
+      #
+      # Its `notes` output is the tag's CHANGELOG section, written only for a
+      # tree it accepted; the GitHub Release job publishes it.
       - name: Check release tree
+        id: tree
         env:
           GATE_SHA: ${{ steps.gate.outputs.sha }}
         run: |
           pnpm exec tsx tools/scripts/check-release-tree.ts \
             --tag "$GITHUB_REF_NAME" \
-            --rev "$GATE_SHA"
+            --rev "$GATE_SHA" \
+            --github-output "$GITHUB_OUTPUT"
 
   # ── Gate: no image unless CI is green ────────────────────────────────────────
   # Reuses ci.yml instead of duplicating its steps: every ci.yml job, the same
@@ -277,3 +288,53 @@ jobs:
         run: |
           docker push "$VERSION_TAG"
           for tag in $TAGS; do [ "$tag" = "$VERSION_TAG" ] || docker push "$tag"; done
+
+  # ── GitHub Release: stable tags only ─────────────────────────────────────────
+  # A graduation's CHANGELOG section covers the whole train since the previous
+  # stable (release-prepare.sh renders it ignoring the rc tags), so one release
+  # per stable tag loses no notes and a candidate publishes none. It runs after
+  # both images are pushed, so a release always names images that exist.
+  #
+  # The only job with `contents: write`, and it runs no repository code: the
+  # notes arrive as the provenance job's output, the tool is the runner's `gh`.
+  github-release:
+    name: GitHub Release
+    needs: [provenance, build-api, build-web]
+    if: needs.provenance.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          NOTES: ${{ needs.provenance.outputs.notes }}
+          PUBLISH_LATEST: ${{ needs.provenance.outputs.publish_latest }}
+        run: |
+          # The runner drops an output that looks like a secret with only a
+          # warning; an empty body is the blank release the tree check refuses.
+          if [ -z "$NOTES" ]; then
+            echo "::error::no release notes reached this job from the provenance gate"
+            exit 1
+          fi
+          printf '%s\n' "$NOTES" > notes.md
+          # The same values for create and edit, so a re-run converges on the
+          # CHANGELOG. `--latest` follows the image's `latest` tag decision.
+          args=(--title "$TAG" --notes-file notes.md --latest="$PUBLISH_LATEST")
+          # Branch on the API's status, not on gh's wording: 404 creates, 200
+          # edits, and anything else (auth, rate limit, network) stops here.
+          status=$(gh api --include "repos/$GH_REPO/releases/tags/$TAG" 2>/dev/null \
+            | head -n 1 | cut -d ' ' -f 2) || true
+          case "$status" in
+            200) gh release edit "$TAG" "${args[@]}" ;;
+            404) gh release create "$TAG" --verify-tag "${args[@]}" ;;
+            *)
+              echo "::error::looking up the release of $TAG returned HTTP ${status:-no response}"
+              exit 1
+              ;;
+          esac

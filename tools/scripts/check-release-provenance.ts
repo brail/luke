@@ -64,7 +64,8 @@
  */
 
 import { execFileSync } from 'child_process';
-import { appendFileSync } from 'fs';
+
+import { appendGithubOutput } from './lib/githubOutput';
 
 /** The two release lines. Nothing else can be published. */
 export type ReleaseChannel = 'rc' | 'stable';
@@ -397,12 +398,7 @@ function main(): void {
 
   const outputFile = flag('github-output');
   if (outputFile !== undefined && outputFile !== '') {
-    appendFileSync(
-      outputFile,
-      Object.entries(outputs)
-        .map(([k, v]) => `${k}=${v}\n`)
-        .join('')
-    );
+    appendGithubOutput(outputFile, outputs);
   }
 
   console.log(

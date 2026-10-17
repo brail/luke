@@ -78,6 +78,9 @@
  *   (`--rev` with a stable tag also applies the graduation rule; `--worktree`
  *   never does — no commit exists yet for a tag to name)
  *   (optional: --repo <path>, defaults to the current directory)
+ *   (optional: --github-output <file> appends the section, heading excluded,
+ *   as a `notes` output, written only once every check has passed;
+ *   `release.yml` publishes it as a stable tag's GitHub Release)
  *
  * Run by `release.yml` after the provenance gate (authoritative), by
  * `.husky/pre-push` on the object being pushed (early feedback, not
@@ -90,6 +93,7 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
+import { appendGithubOutput } from './lib/githubOutput';
 
 /** A rejection. Distinct type so the tests assert on the gate, not on any throw. */
 export class ReleaseTreeError extends Error {}
@@ -240,8 +244,15 @@ const CHANGELOG = 'CHANGELOG.md';
  */
 const UNRELEASED = /^##[ \t]+\[unreleased\]/i;
 
+export interface ChangelogSection {
+  /** `- ` entries under the heading. */
+  entries: number;
+  /** The section's text, heading excluded and blank edges trimmed: the release notes. */
+  notes: string;
+}
+
 /**
- * Entries under the `## [version]` section, or a rejection saying why not.
+ * The `## [version]` section, or a rejection saying why not.
  *
  * Pure, and separated from every file and git concern, because this is the part
  * with the interesting failure modes. The awk program it replaces accepted two
@@ -250,7 +261,10 @@ const UNRELEASED = /^##[ \t]+\[unreleased\]/i;
  * because only `## [` terminated a section. Both are release notes that ship
  * blank or wrong.
  */
-export function changelogSection(text: string, version: string): number {
+export function changelogSection(
+  text: string,
+  version: string
+): ChangelogSection {
   const lines = text.split(/\r?\n/);
 
   const unreleased = lines.findIndex(line => UNRELEASED.test(line));
@@ -302,8 +316,9 @@ export function changelogSection(text: string, version: string): number {
   }
 
   let entries = 0;
-  for (let i = headings[0] + 1; i < lines.length; i++) {
-    const line = lines[i];
+  let end = headings[0] + 1;
+  for (; end < lines.length; end++) {
+    const line = lines[end];
     // Every following heading ends the section, not merely another `## [`
     // version: `## Pre-1.9.0 history` is a heading too and its bullets are not
     // this release's. `---` ends it for the same reason.
@@ -318,7 +333,11 @@ export function changelogSection(text: string, version: string): number {
         'empty, and it ships blank release notes.'
     );
   }
-  return entries;
+  const notes = lines
+    .slice(headings[0] + 1, end)
+    .join('\n')
+    .replace(/^\s*\n|\s+$/g, '');
+  return { entries, notes };
 }
 
 export interface ReleaseTreeInput {
@@ -334,6 +353,8 @@ export interface ReleaseTreeResult {
   source: string;
   /** Entries found under the version's CHANGELOG heading. */
   entries: number;
+  /** The section's text: what a GitHub Release for the tag publishes. */
+  notes: string;
 }
 
 export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
@@ -342,9 +363,9 @@ export function checkReleaseTree(input: ReleaseTreeInput): ReleaseTreeResult {
   if (!tree.has(CHANGELOG)) {
     throw new ReleaseTreeError(`${CHANGELOG} is not in ${tree.describe}.`);
   }
-  const entries = changelogSection(tree.read(CHANGELOG), version);
+  const { entries, notes } = changelogSection(tree.read(CHANGELOG), version);
 
-  return { version, source: tree.describe, entries };
+  return { version, source: tree.describe, entries, notes };
 }
 
 /**
@@ -492,6 +513,11 @@ function main(): void {
   // Only a committed tree can be the tree a tag names; `--worktree` runs after
   // the validator has already proved HEAD and before any commit exists.
   const graduated = rev === undefined ? null : checkGraduation(repo, tag, rev);
+
+  const outputFile = flag('github-output');
+  if (outputFile !== undefined) {
+    appendGithubOutput(outputFile, { notes: result.notes });
+  }
 
   console.log(
     `[release-tree] ok — ${tag} is claimed by ${result.source}: ` +

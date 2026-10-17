@@ -4,8 +4,8 @@
  * The checker refuses to publish a tree that does not claim its own tag, so
  * "it has always been green" is not evidence it refuses anything. Each case
  * materializes a throwaway repository with a real workspace shape — root
- * manifest, `apps/*` and `packages/*` members, a nested manifest that is *not*
- * a member, a CHANGELOG with a footer — and asserts the verdict.
+ * manifest, `apps/*` and `packages/*` members, a CHANGELOG with a footer — and
+ * asserts the verdict.
  *
  * Both directions carry the same weight. A gate that rejects a legitimate
  * release is discovered with the tag already pushed, so every accepting case is
@@ -13,7 +13,8 @@
  *
  * The last suite runs the checker against this repository at HEAD. That is the
  * liveness half: the real `[2.0.0]` hand-curated rollup, the real footer and the
- * real workspace must all be accepted, at every commit, before and after a bump.
+ * real workspace must all be accepted, at every commit, before and after a
+ * release is prepared.
  *
  * Run: `pnpm test:tools`
  */
@@ -40,6 +41,7 @@ import {
   revTree,
   worktreeTree,
 } from './check-release-tree';
+import { githubOutputBlock } from './lib/githubOutput';
 import { REPO_ROOT } from './lib/report';
 
 const created: string[] = [];
@@ -527,7 +529,7 @@ test('every form of an Unreleased heading is rejected, and only headings are', (
     '## Unreleased notes were never a section here',
   ]) {
     assert.equal(
-      changelogSection(`${section}${line}\n`, '2.2.0'),
+      changelogSection(`${section}${line}\n`, '2.2.0').entries,
       1,
       `expected ${JSON.stringify(line)} to be left alone`
     );
@@ -553,7 +555,29 @@ test('changelogSection isolates the heading by literal prefix, then validates it
     () => changelogSection('# C\n\n## [2.2.0-rc.1]\n\n- entry\n', '2.2.0'),
     reason(/has no "## \[2\.2\.0\]"/)
   );
-  assert.equal(changelogSection('# C\n\n## [2.2.0]\n\n- a\n- b\n', '2.2.0'), 2);
+  assert.equal(changelogSection('# C\n\n## [2.2.0]\n\n- a\n- b\n', '2.2.0').entries, 2);
+});
+
+test('changelogSection returns the section as notes: groups kept, heading and edges dropped', () => {
+  const text =
+    '# Changelog\n\n## [2.2.0] - 2026-09-06\n\n### Features\n\n- **api**: a thing\n\n' +
+    '### Bug Fixes\n\n- **web**: another\n\n## [2.1.0]\n\n- older\n\n---\n\n## Pre-1.9.0 history\n';
+  assert.equal(
+    changelogSection(text, '2.2.0').notes,
+    '### Features\n\n- **api**: a thing\n\n### Bug Fixes\n\n- **web**: another'
+  );
+  // `---` ends a final section exactly as a heading does.
+  assert.equal(changelogSection(text, '2.1.0').notes, '- older');
+});
+
+test('githubOutputBlock round-trips a multiline value the way the runner reads it', () => {
+  const notes = '- one\nEOF\n- two';
+  const block = githubOutputBlock('notes', notes, 'DELIM');
+  // The runner takes the header, then every line up to the exact delimiter.
+  const [header, ...rest] = block.split('\n');
+  assert.equal(header, 'notes<<DELIM');
+  assert.equal(rest.slice(0, rest.indexOf('DELIM')).join('\n'), notes);
+  assert.throws(() => githubOutputBlock('notes', 'x\nDELIM\ny', 'DELIM'), /contains its own delimiter/);
 });
 
 // ── The tree that is read, and the tree that is not ──────────────────────────
