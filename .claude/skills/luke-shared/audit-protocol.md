@@ -31,7 +31,7 @@ all — despite writing files.
 | 2   | Baseline                           | audit, bugs, security, full; docs in `audit` mode only                                                 |
 | 3   | Escalation to a deterministic rule | audit, bugs, security, full, deps; docs in `audit` mode only                                           |
 | 4   | `lessons.md` as a check input      | audit, bugs, security, full, deps                                                                      |
-| 5   | Score honesty                      | audit, bugs, security, full; docs in `audit` mode only                                                 |
+| 5   | No score                           | audit, bugs, security, full; docs in `audit` mode only                                                 |
 | 6   | No fan-out                         | whoever declares `agent: Explore`                                                                      |
 | 7   | Concurrent sessions                | all — §7.2 only for operations that write files (test, fix, docs write modes, deps)                    |
 | 8   | Constraint vs heuristic            | audit, bugs, security, deps; docs in `audit` mode only — anyone turning a pattern into a finding      |
@@ -205,13 +205,12 @@ A lesson nobody checks is documentation, not a control.
 
 ---
 
-## 5. Score honesty
+## 5. No score
 
-If the skill produces a score, it must be computed **only on new findings**
-(post-baseline). A score that includes accepted findings isn't comparable
-across runs and drops for reasons unrelated to the code just written.
-
-Always show, next to the score, the number of suppressed findings.
+No skill produces a score, a percentage or a grade. A report states its
+findings and, where it has one, a categorical state that names the rule that
+fired. `.claude/skills/luke-full/SKILL.md` explains why a number computed from
+LLM-produced counts is not auditable.
 
 ---
 
