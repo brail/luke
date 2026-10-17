@@ -54,7 +54,9 @@ the assessment names the command.
 **Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply the
 sections its applicability table assigns to `/luke-test`: §1 scoping
 (default: diff vs merge-base) and §7 concurrent sessions — in `write` mode you
-are a skill that writes files, so §7.2 applies.
+are a skill that writes files, so §7.2 applies. Read `lessons.md` per §4 too —
+the Always row and the rows naming `luke-test` — as guidance on how tests here
+fail, not as a checklist to promote into rules.
 
 **Read `.claude/skills/luke-test/references/evidence-matrix.md`** before
 selecting evidence in any mode. It holds the tiers, the change→evidence table,

@@ -126,8 +126,8 @@ Three things `pnpm outdated` will not tell you, and you must check by hand:
   there turns a still-present advisory into a clean scan until it expires,
   and hides its fixed version. Retire an entry as soon as one ships.
 
-Then read `lessons.md` (protocol §4) — its `## Dependencies` and
-`## CI / Security Gates` sections are direct inputs here.
+Then read `lessons.md` per protocol §4 — the Always row and the rows naming
+`luke-deps`.
 
 ---
 

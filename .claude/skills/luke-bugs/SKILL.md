@@ -36,7 +36,7 @@ Then read:
 - `packages/db/prisma/*.prisma` — understand models and relations (multi-file schema, split by domain; `schema.prisma` itself holds only `generator`/`datasource`)
 - `packages/core/src/auth/permissions.ts` — permission model
 - `apps/api/src/lib/` — middleware: requirePermission, auditLog, context
-- `lessons.md` — regressions already paid for, to re-check on every run
+- `lessons.md` — regressions already paid for: the part routed to this skill, per protocol §4
 
 **Invocation arguments:** $ARGUMENTS
 

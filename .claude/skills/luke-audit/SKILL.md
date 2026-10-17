@@ -36,7 +36,7 @@ it. Several checks that used to live here now have a deterministic owner in
 Then read these files:
 
 - `CLAUDE.md` (project root)
-- `lessons.md` (project root, if it exists)
+- `lessons.md` (project root) — the part routed to this skill, per protocol §4
 - `packages/core/src/schemas/config.ts` (AppConfigRegistry)
 - `packages/core/src/schemas/rbac.ts` (sectionEnum, SECTION_TO_PERMISSION, SECTION_ACCESS_DEFAULTS)
 - `packages/core/src/auth/permissions.ts` (RESOURCES, ROLE_PERMISSIONS)

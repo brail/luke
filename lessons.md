@@ -1,20 +1,44 @@
 # Lessons Log
 
 Rules born from corrections received during development. Every time Claude
-gets corrected, it adds a rule here to avoid repeating the mistake
-(see CLAUDE.md → Rules of engagement).
+gets corrected, it adds a rule here to avoid repeating the mistake.
 
-Format: `## <rule in one line>` under the right category, with context,
-root cause and fix. New categories allowed when needed.
+Format: `### <rule in one line>` under the `##` category whose **readers** need
+it — file by audience, not topic — with context, root cause and fix. New
+categories allowed when needed.
+
+**Who reads what.** The `luke-*` skills read the Always row plus their own
+rows, never the whole file (`.claude/skills/luke-shared/audit-protocol.md` §4).
+A category missing from this table is read by every reader until it gets a row.
+
+| Category                    | Read by                                                      |
+| --------------------------- | ------------------------------------------------------------ |
+| Working Practice            | **Always** — every reader                                    |
+| TypeScript & Next.js        | luke-audit, luke-bugs                                        |
+| Prisma & PostgreSQL         | luke-audit, luke-bugs, luke-security                         |
+| tRPC & Fastify              | luke-audit, luke-bugs, luke-security                         |
+| Dependencies                | luke-deps                                                    |
+| Rate Limiting               | luke-audit, luke-bugs, luke-security                         |
+| Pentest / External Security | luke-security                                                |
+| Integration Tests           | luke-audit, luke-bugs, luke-test                             |
+| CI / Security Gates         | luke-deps                                                    |
+| Release / Docker            | luke-deps                                                    |
+| Branch management           | luke-deps                                                    |
+| Audit Log                   | luke-audit, luke-bugs, luke-security                         |
+| React & UI                  | luke-audit, luke-bugs                                        |
+| Turbo & Build               | luke-deps                                                    |
+| Skills & Agents             | no skill — whoever edits `.claude/skills/`                   |
+| Documentation & Comments    | luke-audit                                                   |
+| Browser & Local Test Runs   | luke-deps, luke-test                                         |
 
 **Archival policy**: once a lesson becomes fully covered by a deterministic
 check (an ESLint/semgrep rule, or a blocking CI/pre-push script — control
 hierarchy level 1-2 in `.claude/skills/luke-shared/audit-protocol.md` §3),
 trim it here to one line: `### <one line> — enforced by <mechanism>. See
 lessons-archive.md.` and move the full narrative to `lessons-archive.md`,
-which the `luke-*` audit skills don't read. This file is read in full on
-every audit run (§4 of the protocol); a lesson a machine already blocks on
-every push shouldn't also cost tokens on every audit.
+which the `luke-*` audit skills don't read. Each audit run reads the lessons
+routed to it (§4 of the protocol); a lesson a machine already blocks on every
+push shouldn't also cost tokens there.
 
 ---
 

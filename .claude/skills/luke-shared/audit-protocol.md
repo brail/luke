@@ -30,7 +30,7 @@ all — despite writing files.
 | 1   | Diff scoping                       | all except deps — its input is the registry, not the diff; a path argument there is a workspace filter |
 | 2   | Baseline                           | audit, bugs, security, full; docs in `audit` mode only                                                 |
 | 3   | Escalation to a deterministic rule | audit, bugs, security, full, deps; docs in `audit` mode only                                           |
-| 4   | `lessons.md` as a check input      | audit, bugs, security, full, deps                                                                      |
+| 4   | `lessons.md` as a check input      | audit, bugs, security, full, deps; test reads its rows as guidance, without §3                         |
 | 5   | No score                           | audit, bugs, security, full; docs in `audit` mode only                                                 |
 | 6   | No fan-out                         | whoever declares `agent: Explore`                                                                      |
 | 7   | Concurrent sessions                | all — §7.2 only for operations that write files (test, fix, docs write modes, deps)                    |
@@ -98,7 +98,7 @@ Merge the three lists. If the result is empty, say so and stop — don't fall
 back to a full scan without asking.
 
 **Context beyond the diff**: still read the source-of-truth files
-(`CLAUDE.md`, `lessons.md`, schemas in `packages/core/src/schemas/`) and the
+(`CLAUDE.md`, `lessons.md` per §4, schemas in `packages/core/src/schemas/`) and the
 files directly imported by the changed ones. The diff limits _what you
 report_, not _what you read_.
 
@@ -203,9 +203,13 @@ If no class is promotable: `No promotable class in this run.`
 
 `lessons.md` at the root logs regressions already paid for — for example a
 `keyBy: 'ip'` bucket on a server-to-server call, silently shared by every
-user. It must be **read on every run** and used as a checklist:
+user. Every run reads the part routed to it and uses it as a checklist:
 
-1. Read `lessons.md`.
+1. Read the routing table at the top of `lessons.md`, then the **Always**
+   categories and every category whose row names your skill
+   (`grep -n '^## ' lessons.md` gives the line ranges). A category with no row
+   is read by every reader. That table is the only place a category's readers
+   are written; a skill names no category itself.
 2. For every lesson with a mechanically verifiable shape, check that the code
    in scope doesn't violate it.
 3. If a lesson is expressible as a semgrep/eslint rule and isn't yet, include
