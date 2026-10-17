@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 
-import { classifyMargin } from '@luke/core';
+import { classifyMargin, formatMarginPct } from '@luke/core';
 
 import {
   Card,
@@ -86,7 +86,7 @@ export function PositioningMarginCrosstab({ rows, parameterSets }: CollectionSta
                   <td className="py-1.5 font-medium">{d.label}</td>
                   <td className="py-1.5 text-right tabular-nums text-muted-foreground">{d.count}</td>
                   <td className={`py-1.5 text-right tabular-nums font-medium ${d.marginStatus ? MARGIN_STATUS_TEXT_CLASS[d.marginStatus] : 'text-muted-foreground/40'}`}>
-                    {d.margin !== null ? `${(d.margin * 100).toFixed(1)}%` : '—'}
+                    {d.margin !== null ? formatMarginPct(d.margin) : '—'}
                   </td>
                 </tr>
               ))}

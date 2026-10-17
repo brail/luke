@@ -11,6 +11,7 @@ import {
   priceForward,
   priceInverse,
   priceMargin,
+  retailMargin,
   roundRetailPrice,
   type PricingParameterSetInput,
 } from '@luke/core';
@@ -117,7 +118,7 @@ export function calculateForward(
     wholesalePrice: round2(f.wholesalePrice),
     retailPriceRaw: round2(f.retailPriceRaw),
     retailPrice,
-    companyMargin: priceMargin(purchasePrice, retailPrice, params).companyMargin,
+    companyMargin: retailMargin(purchasePrice, retailPrice, params),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
@@ -129,6 +130,8 @@ export function calculateForward(
  *
  * @returns Breakdown of every intermediate step plus the floor-rounded purchase price, and the
  *   margin the retail price leaves over it.
+ * @throws {TRPCError} BAD_REQUEST if the retail price does not cover the fixed costs: no positive
+ *   purchase price reaches it.
  */
 export function calculateInverse(
   retailPrice: number,
@@ -136,6 +139,12 @@ export function calculateInverse(
 ): InverseResult {
   const i = priceInverse(retailPrice, params);
   const purchasePrice = calcMaxSupplierCost(retailPrice, params);
+  if (purchasePrice === null) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'Il prezzo retail non copre i costi fissi: nessun prezzo di acquisto lo raggiunge',
+    });
+  }
 
   return {
     mode: 'inverse',
@@ -149,7 +158,7 @@ export function calculateInverse(
     qualityControlCost: round2(i.qualityControlCost),
     purchasePriceRaw: round2(i.purchasePriceRaw),
     purchasePrice,
-    companyMargin: priceMargin(purchasePrice, retailPrice, params).companyMargin,
+    companyMargin: retailMargin(purchasePrice, retailPrice, params),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };

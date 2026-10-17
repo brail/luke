@@ -181,6 +181,19 @@ export function classifyMargin(marginPct: number, optimalMargin: number): Margin
 }
 
 /**
+ * A margin fraction as every view shows it: a percentage rounded to one decimal. For display only:
+ * `classifyMargin` reads the unrounded value.
+ */
+export function roundMarginPct(margin: number): number {
+  return Math.round(margin * 1000) / 10;
+}
+
+/** `roundMarginPct` as text: `0.51996` → `52.0%`. */
+export function formatMarginPct(margin: number): string {
+  return `${roundMarginPct(margin).toFixed(1)}%`;
+}
+
+/**
  * Derives the company multiplier from the target margin percentage.
  *
  * @example calculateCompanyMultiplier(52) // → 2.08
@@ -191,10 +204,12 @@ export function calculateCompanyMultiplier(optimalMargin: number): number {
 
 /**
  * The maximum acceptable FOB supplier cost (the BT) for a retail target price: inverse mode's
- * purchase price, floored to one decimal — paying more would erode the margin.
+ * purchase price, floored to one decimal — paying more would erode the margin. `null` when the
+ * retail price does not cover the fixed costs: no positive purchase price reaches it.
  */
-export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams): number {
-  return Math.floor(priceInverse(retailPrice, ps).purchasePriceRaw * 10) / 10;
+export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams): number | null {
+  const bt = Math.floor(priceInverse(retailPrice, ps).purchasePriceRaw * 10) / 10;
+  return bt > 0 ? bt : null;
 }
 
 /**
@@ -214,8 +229,8 @@ export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): nu
 
 /**
  * Rounds a raw price to a commercial retail threshold ending in `4.9` or `9.9`, by where it falls
- * within its ten: below x2.50 to the previous ten's `9.9`, below x7.50 to `x4.9`, from x7.50 to
- * `x9.9`. Never below 9.9.
+ * within its ten once rounded to the cent: below x2.50 to the previous ten's `9.9`, below x7.50 to
+ * `x4.9`, from x7.50 to `x9.9`. Never below 9.9.
  *
  * @example
  * roundRetailPrice(21.43) // → 19.9

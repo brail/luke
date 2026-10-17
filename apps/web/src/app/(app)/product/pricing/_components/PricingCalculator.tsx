@@ -5,13 +5,20 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
-import { classifyMargin, type PricingMode } from '@luke/core';
+import {
+  classifyMargin,
+  formatMarginPct,
+  roundMarginPct,
+  type PricingMode,
+} from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
+import { Progress } from '../../../../../components/ui/progress';
 import { trpc } from '../../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 import { cn } from '../../../../../lib/utils';
 import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
 
@@ -24,16 +31,21 @@ interface PricingCalculatorProps {
 
 type CalcResult = RouterOutputs['pricing']['calculate'];
 
-/** A margin fraction as a percentage to one decimal, rounded as the collection layout row rounds it. */
-function roundMarginPct(margin: number): number {
-  const marginPct = margin * 100;
-  return Math.round(marginPct * 10) / 10;
-}
+/** What each mode's margin is computed on. */
+const MARGIN_LABEL: Record<PricingMode, string> = {
+  forward: 'Margine reale sul retail arrotondato',
+  inverse: 'Margine reale sul prezzo acquisto max',
+  margin: 'Margine aziendale reale',
+};
 
+/**
+ * The gap is signed by the margin's status (just below target reads -0.0) and sized on the
+ * percentage shown, so the two add up for a target with one decimal.
+ */
 function getMarginLabel(margin: number, target: number): string {
-  const pct = roundMarginPct(margin);
-  const diff = Math.round((pct - target) * 10) / 10;
-  return `${pct.toFixed(1)}% (${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp vs target ${target}%)`;
+  const sign = classifyMargin(margin * 100, target) === 'green' ? '+' : '-';
+  const gap = Math.abs(roundMarginPct(margin) - target).toFixed(1);
+  return `${formatMarginPct(margin)} (${sign}${gap}pp vs target ${target}%)`;
 }
 
 function fmt(value: number, currency: string) {
@@ -66,7 +78,7 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
 
   const calcMutation = trpc.pricing.calculate.useMutation({
     onSuccess: setResult,
-    onError: err => toast.error(`Errore calcolo: ${err.message}`),
+    onError: err => toast.error(`Errore calcolo: ${getTrpcErrorMessage(err)}`),
   });
 
   // When the active parameter set changes, clear the result
@@ -263,14 +275,11 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
               {getMarginLabel(result.companyMargin, parameterSet.optimalMargin)}
             </Badge>
           </div>
-          <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-            <div
-              className={cn('h-full rounded-full transition-all bg-current', marginStatusClass)}
-              style={{
-                width: `${Math.min(100, Math.max(0, ((result.companyMargin * 100) / parameterSet.optimalMargin) * 100))}%`,
-              }}
-            />
-          </div>
+          <Progress
+            className={cn('h-2', marginStatusClass)}
+            indicatorClassName="bg-current"
+            value={Math.min(100, Math.max(0, ((result.companyMargin * 100) / parameterSet.optimalMargin) * 100))}
+          />
         </div>
       )}
 
@@ -352,10 +361,7 @@ function ResultRows({ result }: { result: CalcResult }) {
           <ResultRow label="Wholesale" value={fmt(result.wholesalePrice, sc)} />
         </>
       )}
-      <ResultRow
-        label="Margine aziendale reale"
-        value={`${roundMarginPct(result.companyMargin).toFixed(1)}%`}
-      />
+      <ResultRow label={MARGIN_LABEL[result.mode]} value={formatMarginPct(result.companyMargin)} />
     </>
   );
 }

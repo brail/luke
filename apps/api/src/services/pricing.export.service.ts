@@ -125,7 +125,7 @@ export async function buildPricingGridXlsx(
     const rowVals: (number | string)[] = [retail, Math.round(wholesale * 10) / 10];
     for (const set of sets) {
       const fob = calcMaxSupplierCost(retail, set);
-      rowVals.push(fob > 0 ? fob : '');
+      rowVals.push(fob ?? '');
     }
     const dataRow = ws.addRow(rowVals);
     dataRow.font = { size: 9, name: 'Calibri' };
@@ -210,7 +210,7 @@ export async function buildPricingGridPdf(
     ];
     for (const set of sets) {
       const fob = calcMaxSupplierCost(retail, set);
-      row.push({ text: fob > 0 ? fmt1(fob) : '—', fontSize: 7, color: fob > 0 ? '#000000' : '#999999' });
+      row.push({ text: fob !== null ? fmt1(fob) : '—', fontSize: 7, color: fob !== null ? '#000000' : '#999999' });
     }
     gridBody.push(row);
   }

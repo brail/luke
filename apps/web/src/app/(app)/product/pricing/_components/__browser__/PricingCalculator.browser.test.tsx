@@ -103,10 +103,12 @@ function detail(screen: Awaited<ReturnType<typeof calculate>>, label: string) {
 
 test.each([
   { margin: 0.52, pct: '52.0', diff: '+0.0', colour: 'text-status-good' },
-  // Shown as 52.0 but below target: classified unrounded, as on the row.
-  { margin: 0.51996, pct: '52.0', diff: '+0.0', colour: 'text-status-warning' },
+  // Shown as 52.0 but below target: classified and signed unrounded, as on the row.
+  { margin: 0.51996, pct: '52.0', diff: '-0.0', colour: 'text-status-warning' },
   { margin: 0.49, pct: '49.0', diff: '-3.0', colour: 'text-status-warning' },
-  { margin: 0.4899, pct: '49.0', diff: '-3.0', colour: 'text-destructive' },
+  { margin: 0.4899, pct: '49.0', diff: '-3.0', colour: 'text-status-critical' },
+  // The gap is sized on the percentage shown: 40.3 − 52, not 40.25 − 52.
+  { margin: 0.4025, pct: '40.3', diff: '-11.7', colour: 'text-status-critical' },
 ])('margin $margin reads $pct in the badge and the details, $colour', async ({ margin, pct, diff, colour }) => {
   const screen = await calculate(
     {
@@ -141,7 +143,7 @@ test('inverse mode shows each step beside its own label, in its own currency', a
   expect(detail(screen, '× Cambio − Trasporto')).toBe(money(22.15, 'USD'));
   expect(detail(screen, '− Stampi ÷ CQ')).toBe(money(20.14, 'USD'));
   expect(detail(screen, 'Prezzo acquisto max')).toBe(money(20.1, 'USD'));
-  expect(detail(screen, 'Margine aziendale reale')).toBe('52.0%');
+  expect(detail(screen, 'Margine reale sul prezzo acquisto max')).toBe('52.0%');
 });
 
 test('forward mode names the company multiplier it applied', async () => {
@@ -171,4 +173,5 @@ test('forward mode names the company multiplier it applied', async () => {
   await expect.element(screen.getByLabelText(/^Prezzo retail/)).toHaveValue(129.9);
   expect(detail(screen, '× Molt. aziendale (×2.08)')).toBe(money(52.29, 'EUR'));
   expect(detail(screen, 'Landed cost (in EUR)')).toBe(money(25.14, 'EUR'));
+  expect(detail(screen, 'Margine reale sul retail arrotondato')).toBe('52.0%');
 });

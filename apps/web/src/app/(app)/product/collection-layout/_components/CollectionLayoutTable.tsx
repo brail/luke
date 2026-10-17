@@ -8,6 +8,7 @@ import {
   COLLECTION_COLUMNS_DEFAULT_HIDDEN,
   COLLECTION_COLUMNS_MAX_VISIBLE,
   COLLECTION_TABLE_COLUMNS,
+  formatMarginPct,
 } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
@@ -200,7 +201,7 @@ export function CollectionLayoutTable({
         {totalWeightedMargin !== null && (
           <>
             <span className="text-muted-foreground">·</span>
-            <span className="font-medium">mrg {(totalWeightedMargin * 100).toFixed(1)}%</span>
+            <span className="font-medium">mrg {formatMarginPct(totalWeightedMargin)}</span>
           </>
         )}
 

@@ -13,6 +13,7 @@ import {
   landedCostBreakdown,
   NUMERIC_DATE_TIME,
   priceMargin,
+  type MarginStatus,
 } from '@luke/core';
 import type { PrismaClient,
   Brand,
@@ -61,7 +62,7 @@ type MarginResult = {
   ws: number | null;
   margin: number | null;
   targetMargin: number | null;
-  status: 'green' | 'yellow' | 'red' | null;
+  status: MarginStatus | null;
 };
 
 function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
@@ -91,7 +92,7 @@ function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
   const status = classifyMargin(margin, ps.optimalMargin);
 
   return {
-    bt:          Math.round(bt! * 100) / 100,
+    bt,
     lc:          Math.round(m.landedCost * 100) / 100,
     ws:          Math.round(m.wholesalePrice * 100) / 100,
     margin:      Math.round(margin * 100) / 100,

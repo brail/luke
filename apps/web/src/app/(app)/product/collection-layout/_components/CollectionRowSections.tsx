@@ -7,10 +7,12 @@ import type { RouterOutputs } from '@luke/api';
 import {
   calcMaxSupplierCost,
   classifyMargin,
+  formatMarginPct,
   formatPhaseLabel,
   priceMargin,
   type CollectionGender,
   type CollectionLayoutRowInput,
+  type MarginStatus,
 } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
@@ -117,8 +119,8 @@ type QuotationCalc = {
   bt: number | null;
   lc: number | null;
   ws: number | null;
-  marginPct: number | null;
-  marginStatus: 'green' | 'yellow' | 'red' | null;
+  margin: number | null;
+  marginStatus: MarginStatus | null;
   targetMargin: number;
 };
 
@@ -126,24 +128,21 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
   if (!ps) return null;
 
   // BT only needs retail + param set
-  const bt = q.retailPrice && q.retailPrice > 0
-    ? Math.round(calcMaxSupplierCost(q.retailPrice, ps) * 100) / 100
-    : null;
+  const bt = q.retailPrice && q.retailPrice > 0 ? calcMaxSupplierCost(q.retailPrice, ps) : null;
 
   // LC / WS / margin need supplier quotation too
   if (!q.supplierQuotation || q.supplierQuotation <= 0 || !q.retailPrice || q.retailPrice <= 0) {
-    return { bt, lc: null, ws: null, marginPct: null, marginStatus: null, targetMargin: ps.optimalMargin };
+    return { bt, lc: null, ws: null, margin: null, marginStatus: null, targetMargin: ps.optimalMargin };
   }
 
   // One call: the landed cost and wholesale shown are the margin's own inputs.
   const m = priceMargin(q.supplierQuotation, q.retailPrice, ps);
-  const marginPct = m.companyMargin * 100;
-  const marginStatus = classifyMargin(marginPct, ps.optimalMargin);
+  const marginStatus = classifyMargin(m.companyMargin * 100, ps.optimalMargin);
   return {
     bt,
     lc: Math.round(m.landedCost * 100) / 100,
     ws: Math.round(m.wholesalePrice * 100) / 100,
-    marginPct: Math.round(marginPct * 10) / 10,
+    margin: m.companyMargin,
     marginStatus,
     targetMargin: ps.optimalMargin,
   };
@@ -887,8 +886,8 @@ interface PricingFooterSectionProps {
  * and the tooling quotation field.
  *
  * Only parameter sets enabled for the selected vendor are available for
- * selection. Margin is computed live via `computeRowMargin` and displayed as a
- * colour-coded indicator.
+ * selection. Each quotation's BT, landed cost and margin are computed live
+ * (`calcQuotationFields`) and the margin displayed as a colour-coded badge.
  *
  * @param quotations - Current quotation list managed by the parent drawer.
  * @param enabledParameterSetIds - IDs of parameter sets enabled for the vendor.
@@ -1106,7 +1105,7 @@ export function PricingFooterSection({
 
                         {/* M% */}
                         <td className="px-3 py-1.5 text-center">
-                          {calc?.marginPct != null && calc.marginStatus ? (
+                          {calc?.margin != null && calc.marginStatus ? (
                             <Badge
                               variant="outline"
                               className={cn(
@@ -1114,7 +1113,7 @@ export function PricingFooterSection({
                                 MARGIN_STATUS_TEXT_CLASS[calc.marginStatus]
                               )}
                             >
-                              {calc.marginPct.toFixed(1)}%
+                              {formatMarginPct(calc.margin)}
                             </Badge>
                           ) : (
                             <span className="text-muted-foreground/40 text-xs">—</span>

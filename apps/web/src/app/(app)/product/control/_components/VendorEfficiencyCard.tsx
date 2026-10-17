@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, XAxis, YAxis } from 'recharts';
 
-import { classifyMargin } from '@luke/core';
+import { classifyMargin, formatMarginPct } from '@luke/core';
 
 import {
   Card,
@@ -133,7 +133,7 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
             <div key={v.vendor} className="flex items-center justify-between text-sm gap-2">
               <span className="truncate text-muted-foreground">{v.vendor}</span>
               <span className={v.marginStatus ? MARGIN_STATUS_TEXT_CLASS[v.marginStatus] : 'text-muted-foreground/40'}>
-                {v.margin !== null ? `${(v.margin * 100).toFixed(1)}%` : '—'}
+                {v.margin !== null ? formatMarginPct(v.margin) : '—'}
               </span>
             </div>
           ))}

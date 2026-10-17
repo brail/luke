@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { calculateCompanyMultiplier, classifyMargin } from '@luke/core';
+import { calculateCompanyMultiplier, classifyMargin, formatMarginPct } from '@luke/core';
 
 import {
   calculateForward,
@@ -45,11 +45,23 @@ describe('calculateForward', () => {
     // This is the parameter set's promise: `optimalMargin` isn't an aspiration,
     // it's what the company multiplier must produce. If one day they
     // diverge, the retail price no longer holds up the promised margin.
+    // Within the multiplier's 2-decimal rounding (52 %: 2.08 → 51.92), under half a point.
     // The reported margin is another number: the rounded retail price's.
     expect(((r.wholesalePrice - r.landedCost) / r.wholesalePrice) * 100).toBeCloseTo(
       PARAMS.optimalMargin,
-      1
+      0
     );
+  });
+
+  it('the wholesale margin depends only on optimalMargin, not on the purchase price', () => {
+    const wholesaleMargin = (p: number) => {
+      const r = calculateForward(p, PARAMS);
+      return (r.wholesalePrice - r.landedCost) / r.wholesalePrice;
+    };
+
+    // A property of the parameter set. If it scales with the price, someone has moved a fixed
+    // cost into the multiplicative part. To within the 2-decimal rounding of the amounts.
+    expect(wholesaleMargin(10)).toBeCloseTo(wholesaleMargin(1000), 3);
   });
 
   it('the cost chain is monotonic: no step lowers the price', () => {
@@ -109,7 +121,13 @@ describe('calculateInverse', () => {
     expect(back.purchasePrice).toBeLessThanOrEqual(back.purchasePriceRaw);
   });
 
-  it.each([39.9, 79.9, 129.9, 299.9, 1000])(
+  it.each([9.9, 39.9])('refuses retail %s, which does not cover the fixed costs', retail => {
+    // The chain's fixed costs (tools, transport, Italy costs) leave no positive purchase price:
+    // a margin on a zero or negative one would read as a valid, even green, answer.
+    expect(() => calculateInverse(retail, PARAMS)).toThrow(/non copre i costi fissi/);
+  });
+
+  it.each([59.9, 79.9, 129.9, 299.9, 1000])(
     'at retail %s the margin is at least what the company multiplier leaves',
     retail => {
       // The purchase price is floored: paying it leaves at least the unrounded chain's margin.
@@ -133,7 +151,7 @@ describe('calculateMarginOnly', () => {
     }
   );
 
-  it.each([39.9, 79.9, 129.9, 299.9, 1000])(
+  it.each([59.9, 79.9, 129.9, 299.9, 1000])(
     'agrees with inverse on its retail price %s and the purchase price it suggests',
     retail => {
       const inverse = calculateInverse(retail, PARAMS);
@@ -293,11 +311,10 @@ describe('the calculator and the collection layout row', () => {
 
   it('show the same BT, margin and status for the same retail price', () => {
     const inverse = calculateInverse(129.9, CHINA_8);
-    const marginPct = inverse.companyMargin * 100;
 
     expect(inverse.purchasePrice).toBe(20.1);
-    // Rounded as the row rounds it, classified unrounded as every view does.
-    expect(Math.round(marginPct * 10) / 10).toBe(52);
-    expect(classifyMargin(marginPct, CHINA_8.optimalMargin)).toBe('green');
+    // Shown as every view shows it, classified unrounded as every view does.
+    expect(formatMarginPct(inverse.companyMargin)).toBe('52.0%');
+    expect(classifyMargin(inverse.companyMargin * 100, CHINA_8.optimalMargin)).toBe('green');
   });
 });

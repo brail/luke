@@ -18,6 +18,7 @@ import {
   COLLECTION_GENDER,
   COLLECTION_STATUS,
   COLLECTION_STRATEGY,
+  formatMarginPct,
   formatPhaseLabel,
 } from '@luke/core';
 
@@ -630,7 +631,7 @@ export function CollectionGroupSection({
           <span className="text-xs text-muted-foreground">· {qtyTotal} paia</span>
           {groupWeightedMargin !== null && (
             <span className="text-xs text-muted-foreground">
-              · mrg {(groupWeightedMargin * 100).toFixed(1)}%
+              · mrg {formatMarginPct(groupWeightedMargin)}
             </span>
           )}
         </button>
@@ -928,7 +929,7 @@ export function CollectionGroupSection({
                             if (!m) return <span className="text-muted-foreground/40">—</span>;
                             return (
                               <span className={MARGIN_STATUS_TEXT_CLASS[m.marginStatus]}>
-                                {(m.margin * 100).toFixed(1)}%
+                                {formatMarginPct(m.margin)}
                               </span>
                             );
                           })()}

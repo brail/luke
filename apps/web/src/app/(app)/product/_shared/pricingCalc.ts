@@ -31,7 +31,10 @@ export function getReferenceOptimalMargin(parameterSets: PricingParameterSet[]):
   return (parameterSets.find(p => p.isDefault) ?? parameterSets[0])?.optimalMargin ?? DEFAULT_OPTIMAL_MARGIN;
 }
 
-/** SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average. */
+/**
+ * SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average.
+ * Unrounded, as every margin is until `formatMarginPct` shows it.
+ */
 export function computeRowMargin(
   row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
@@ -55,14 +58,14 @@ export function computeRowMargin(
   const marginStatus = classifyMargin(avg * 100, refOptimalMargin);
 
   return {
-    margin: Math.round(avg * 10000) / 10000,
+    margin: avg,
     isAboveTarget: marginStatus === 'green',
     marginStatus,
   };
 }
 
 /**
- * Quantity-weighted average margin across multiple collection rows.
+ * Quantity-weighted average margin across multiple collection rows, unrounded.
  * Returns null when no row has computable margin data.
  */
 export function computeWeightedMargin(
@@ -77,7 +80,7 @@ export function computeWeightedMargin(
     weightedSum += m.margin * (row.qtyForecast ?? 0);
     totalQty += row.qtyForecast ?? 0;
   }
-  return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
+  return totalQty > 0 ? weightedSum / totalQty : null;
 }
 
 /**
@@ -87,14 +90,14 @@ export function computeWeightedMargin(
 export const MARGIN_STATUS_TEXT_CLASS: Record<MarginStatus, string> = {
   green: 'text-status-good',
   yellow: 'text-status-warning',
-  red: 'text-destructive',
+  red: 'text-status-critical',
 };
 
 /** Chart fill colour (recharts) — the same hues as MARGIN_STATUS_TEXT_CLASS via CSS var. */
 export const MARGIN_STATUS_CHART_COLOR: Record<MarginStatus, string> = {
   green: 'hsl(var(--status-good))',
   yellow: 'hsl(var(--status-warning))',
-  red: 'hsl(var(--destructive))',
+  red: 'hsl(var(--status-critical))',
 };
 
 export const MARGIN_STATUS_LABEL: Record<MarginStatus, string> = {

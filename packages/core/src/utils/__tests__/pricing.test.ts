@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calcMaxSupplierCost,
   classifyMargin,
+  formatMarginPct,
   generateRetailPriceRange,
   landedCostBreakdown,
   priceForward,
@@ -126,8 +127,16 @@ describe('calcMaxSupplierCost', () => {
     };
     expect(calcMaxSupplierCost(79.9, ps)).toBe(8.6);
     for (const retail of generateRetailPriceRange()) {
-      expect(calcMaxSupplierCost(retail, ps)).toBe(Math.floor(priceInverse(retail, ps).purchasePriceRaw * 10) / 10);
+      const floored = Math.floor(priceInverse(retail, ps).purchasePriceRaw * 10) / 10;
+      expect(calcMaxSupplierCost(retail, ps)).toBe(floored > 0 ? floored : null);
     }
+  });
+
+  it('is null when the retail price does not cover the fixed costs', () => {
+    // 9.9 at 2.6 → wholesale 3.81, landed 1.83: less than the 2 of Italy costs alone.
+    const ps = { ...PS, optimalMargin: 52, italyAccessoryCosts: 2, retailMultiplier: 2.6 };
+    expect(priceInverse(9.9, ps).purchasePriceRaw).toBeLessThan(0);
+    expect(calcMaxSupplierCost(9.9, ps)).toBeNull();
   });
 });
 
@@ -174,18 +183,20 @@ describe('roundRetailPrice', () => {
     [12.4, 9.9],
     [12.49, 9.9],
     [12.494, 9.9],
+    [12.4949, 9.9],
     [20, 19.9],
     [21.43, 19.9],
     [52.43, 49.9],
     [102.45, 99.9],
     // From x2.50 to below x7.50: x4.9.
-    [12.495, 14.9],
+    [12.4951, 14.9],
     [12.5, 14.9],
     [45.6, 44.9],
     [17.49, 14.9],
     [17.494, 14.9],
+    [17.4949, 14.9],
     // From x7.50: x9.9.
-    [17.495, 19.9],
+    [17.4951, 19.9],
     [17.5, 19.9],
     [67.8, 69.9],
     [19.99, 19.9],
@@ -195,6 +206,19 @@ describe('roundRetailPrice', () => {
     [0.1 * 175, 19.9],
   ])('%s → %s', (price, expected) => {
     expect(roundRetailPrice(price)).toBe(expected);
+  });
+});
+
+describe('formatMarginPct', () => {
+  it.each([
+    [0.52, '52.0%'],
+    [0.51996, '52.0%'],
+    [0.51952, '52.0%'],
+    [0.5194, '51.9%'],
+    [0.4025, '40.3%'],
+    [-0.2679, '-26.8%'],
+  ])('%s → %s', (margin, shown) => {
+    expect(formatMarginPct(margin)).toBe(shown);
   });
 });
 
