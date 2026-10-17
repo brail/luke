@@ -18,11 +18,11 @@ import { execFileSync } from 'child_process';
 
 import { REPO_ROOT } from './report';
 
-function checkIgnore(path: string): boolean {
+function checkIgnore(path: string, root: string): boolean {
   try {
     // Exit 0 means ignored, 1 means not ignored, and >1 is an error treated as not ignored.
     execFileSync('git', ['check-ignore', '-q', '--', path], {
-      cwd: REPO_ROOT,
+      cwd: root,
       stdio: 'ignore',
     });
     return true;
@@ -48,8 +48,9 @@ function checkIgnore(path: string): boolean {
  * broken.
  *
  * @param path - Relative to the repository root, or absolute within it.
+ * @param root - The repository whose ignore rules apply; the real one by default.
  */
-export function isGitIgnored(path: string): boolean {
-  if (checkIgnore(path)) return true;
-  return path.endsWith('/') ? false : checkIgnore(`${path}/`);
+export function isGitIgnored(path: string, root = REPO_ROOT): boolean {
+  if (checkIgnore(path, root)) return true;
+  return path.endsWith('/') ? false : checkIgnore(`${path}/`, root);
 }

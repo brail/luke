@@ -130,7 +130,7 @@ function pathResolves(token: string, skillDir: string, root: string, frames: str
   // Not found. If git ignores it — `.planning/ROADMAP.md`, cited by
   // `luke-docs` — the repository cannot make a claim: it exists on a
   // developer's disk but not in a clean checkout. See `lib/gitPaths.ts`.
-  return isGitIgnored(token);
+  return isGitIgnored(token, root);
 }
 
 /**
@@ -148,15 +148,15 @@ function declaredSymbols(root: string): Set<string> {
   // cost growing linearly with the number of skills. Extracting every
   // declaration at once takes about 70ms and reduces later checks to Set
   // lookups.
-  const output = execFileSync(
+  const corpus = ['apps', 'packages'].filter(dir => existsSync(join(root, dir)));
+  const output = corpus.length === 0 ? '' : execFileSync(
     'grep',
     [
       '-rhoE',
       '--include=*.ts',
       '--include=*.tsx',
       '(function|const|class|type|interface) [a-zA-Z_$][a-zA-Z0-9_$]*',
-      'apps',
-      'packages',
+      ...corpus,
     ],
     { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
   );
@@ -219,6 +219,18 @@ const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---/;
 function frontmatter(content: string): string | null {
   const match = content.match(FRONTMATTER_RE);
   return match ? match[1] : null;
+}
+
+/** A scalar frontmatter value, without quotes or a trailing comment. */
+function frontmatterValue(fm: string, key: string): string | undefined {
+  const raw = fm.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))?.[1];
+  return raw?.replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2');
+}
+
+/** The direct write tools a skill's frontmatter does not remove. */
+function keptWriteTools(fm: string): string[] {
+  const declared = frontmatterValue(fm, 'disallowed-tools') ?? '';
+  return DIRECT_WRITE_TOOLS.filter(tool => !new RegExp(`\\b${tool}\\b`).test(declared));
 }
 
 /** 0-based index of the first body line: everything after the frontmatter. */
@@ -285,10 +297,7 @@ export function checkExecutionContract(
 
   // readonly-skill-disallows-direct-write-tools
   if (content.includes(READONLY_MARKER)) {
-    const declared = fm.match(/^disallowed-tools:\s*(.+)$/m)?.[1] ?? '';
-    const missing = DIRECT_WRITE_TOOLS.filter(
-      tool => !new RegExp(`\\b${tool}\\b`).test(declared)
-    );
+    const missing = keptWriteTools(fm);
     if (missing.length > 0) {
       problems.push({
         file: relPath,
@@ -445,16 +454,15 @@ const FAN_OUT_PATTERNS = [
 /**
  * Capability constraint: an Explore agent has no Agent tool, so it cannot
  * invoke subagents (audit-protocol.md section 6). The declaration is read from
- * the frontmatter alone, ignoring case and quotes. Matching the literal line
- * anywhere in the file let `agent: "explore"` through and would have counted a
- * quoted example in the body as a declaration.
+ * the frontmatter only, ignoring case, quotes and a trailing comment.
  */
 export function checkNoFanOut(
   relPath: string,
   content: string,
   problems: Problem[]
 ): void {
-  const agent = frontmatter(content)?.match(/^agent:\s*["']?([^"'\s]+)["']?\s*$/m)?.[1];
+  const fm = frontmatter(content);
+  const agent = fm === null ? undefined : frontmatterValue(fm, 'agent');
   if (agent?.toLowerCase() !== 'explore') return;
 
   for (const pattern of FAN_OUT_PATTERNS) {
@@ -486,8 +494,8 @@ export function checkSkillInvocations(
   content.split('\n').forEach((line, index) => {
     if (line.includes(IGNORE_MARKER)) return;
     const names = [
-      ...line.matchAll(/(?<![\w./-])\/(luke-[a-z][a-z-]*)/g),
-      ...line.matchAll(/\bSkill\((luke-[a-z][a-z-]*)\)/g),
+      ...line.matchAll(/(?<![\w./-])\/(luke-[a-z0-9]+(?:-[a-z0-9]+)*)/g),
+      ...line.matchAll(/\bSkill\((luke-[a-z0-9]+(?:-[a-z0-9]+)*)(?=[)\s,])/g),
     ].map(match => match[1]!);
     for (const name of names) {
       if (!skills.has(name)) {
@@ -502,23 +510,24 @@ export function checkSkillInvocations(
 }
 
 /**
- * A skill that keeps the `Write` tool can write files, so it must follow the
- * concurrent-session rules in audit-protocol.md §7 and say so: two sessions
- * writing one file is the failure that section exists for.
+ * A skill that keeps a direct write tool can write files, so it must cite
+ * audit-protocol.md §7.2, the concurrent-session rule for writers: two sessions
+ * writing one file is the failure that rule exists for. "Keeps" is defined as
+ * `checkExecutionContract` defines it, so the two checks cannot disagree.
  */
 export function checkWriterCitesConcurrency(
   relPath: string,
   content: string,
   problems: Problem[]
 ): void {
-  const disallowed = frontmatter(content)?.match(/^disallowed-tools:\s*(.+)$/m)?.[1] ?? '';
-  if (/\bWrite\b/.test(disallowed) || content.includes('§7')) return;
+  const kept = keptWriteTools(frontmatter(content) ?? '');
+  if (kept.length === 0 || /§7\.2(?!\d)/.test(content)) return;
   problems.push({
     file: relPath,
     line: 1,
     message:
-      'keeps the Write tool but never cites audit-protocol.md §7. A skill that ' +
-      'writes files must follow the concurrent-session rules there.',
+      `keeps ${kept.join(', ')} but never cites audit-protocol.md §7.2. A skill ` +
+      'that writes files must follow the concurrent-session rule there.',
   });
 }
 
@@ -527,7 +536,7 @@ export function checkWriterCitesConcurrency(
  * live from its manifest (CLAUDE.md: no version numbers in prose). A literal
  * here would be copied into every README written from it.
  */
-export const VERSION_FREE_FILES = ['.claude/skills/luke-docs/references/readme-templates.md'];
+const VERSION_FREE_FILES = ['.claude/skills/luke-docs/references/readme-templates.md'];
 
 export function checkVersionFree(
   relPath: string,
@@ -537,8 +546,8 @@ export function checkVersionFree(
   if (!VERSION_FREE_FILES.includes(relPath)) return;
   content.split('\n').forEach((line, index) => {
     if (line.includes(IGNORE_MARKER)) return;
-    // A section reference such as §12.6 is not a version.
-    const match = line.match(/(?<![§\w.])\d+\.\d+(?:\.\d+)?\b/);
+    // A section reference such as §12.6 is not a version; `v24.1` is one.
+    const match = line.match(/(?<![§\w.])v?\d+\.\d+(?:\.\d+)?\b/);
     if (match) {
       problems.push({
         file: relPath,
@@ -583,6 +592,17 @@ export function checkSkills(root: string): SkillCheckSummary {
   const skills = new Set(
     files.filter(file => basename(file) === 'SKILL.md').map(file => basename(dirname(file)))
   );
+
+  // A renamed template would turn its version check off without a word.
+  for (const path of VERSION_FREE_FILES) {
+    if (!existsSync(join(root, path))) {
+      problems.push({
+        file: path,
+        line: 1,
+        message: 'is listed in VERSION_FREE_FILES but does not exist. Update the list.',
+      });
+    }
+  }
 
   for (const file of files) {
     const relPath = relative(root, file);
@@ -671,7 +691,7 @@ export function checkSkills(root: string): SkillCheckSummary {
 function main(): void {
   const { files, pathRefs, symbolRefs, contracts } = checkSkills(REPO_ROOT);
   console.log(
-    `[skill-integrity] ok — ${files} skills, ${pathRefs} paths, ` +
+    `[skill-integrity] ok — ${files} skill files, ${pathRefs} paths, ` +
       `${symbolRefs} symbols, and ${contracts} execution contracts verified.`
   );
 }

@@ -48,7 +48,6 @@ import {
   isRepoPath,
   isSymbolRef,
   SKILL_LINE_BUDGET,
-  VERSION_FREE_FILES,
 } from './check-skill-integrity';
 import { type Problem } from './lib/report';
 
@@ -311,116 +310,104 @@ test('isSymbolRef matches identifier() and nothing else', () => {
   assert.equal(isSymbolRef('()'), false);
 });
 
-// ── Size budget ─────────────────────────────────────────────────────────────
+// ── Helpers for the checks below ────────────────────────────────────────────
 
-/** Runs the size check over one synthetic SKILL.md of `lines` lines. */
-function runSize(lines: number): Problem[] {
+/** Runs one check and returns what it reported. */
+function collect(check: (problems: Problem[]) => void): Problem[] {
   const problems: Problem[] = [];
-  checkSizeBudget(FIXTURE, 'x\n'.repeat(lines), problems);
+  check(problems);
   return problems;
 }
 
+/** A SKILL.md with the given frontmatter lines and body. */
+const withFrontmatter = (lines: string, body: string) => `---\nname: fixture\n${lines}---\n${body}`;
+
+// ── Size budget ─────────────────────────────────────────────────────────────
+
 test('a SKILL.md of exactly the budget passes', () => {
-  assert.deepEqual(runSize(SKILL_LINE_BUDGET), []);
+  assert.deepEqual(collect(p => checkSizeBudget(FIXTURE, 'x\n'.repeat(SKILL_LINE_BUDGET), p)), []);
 });
 
 test('one line over the budget fails, naming the count', () => {
-  assertFailsWith(runSize(SKILL_LINE_BUDGET + 1), `${SKILL_LINE_BUDGET + 1} lines, over the ${SKILL_LINE_BUDGET}-line`);
+  assertFailsWith(
+    collect(p => checkSizeBudget(FIXTURE, 'x\n'.repeat(SKILL_LINE_BUDGET + 1), p)),
+    `${SKILL_LINE_BUDGET + 1} lines, over the ${SKILL_LINE_BUDGET}-line`
+  );
 });
 
 // ── No fan-out in Explore skills ────────────────────────────────────────────
 //
-// The owner classified this gate as blocking (2026-10-17): the declaration is
-// read from the frontmatter, so a quoted or differently-cased value cannot
-// slip past it, and a skill that drops the declaration is no longer an
-// Explore skill, which is the point of the rule.
+// Blocking: the declaration is read from the frontmatter, so no spelling of it
+// slips past, and a skill without it is not an Explore skill.
 
-const FAN_OUT_BODY = 'Run 3 agents in parallel.\n';
-
-/** Runs the fan-out check over one synthetic SKILL.md. */
-function runFanOut(frontmatterLines: string, body = FAN_OUT_BODY): Problem[] {
-  const problems: Problem[] = [];
-  checkNoFanOut(FIXTURE, `---\nname: fixture\n${frontmatterLines}---\n${body}`, problems);
-  return problems;
-}
+const FAN_OUT = 'Run 3 agents in parallel.\n';
+const fanOut = (lines: string, body = FAN_OUT) =>
+  collect(p => checkNoFanOut(FIXTURE, withFrontmatter(lines, body), p));
 
 test('an Explore skill that asks for parallel agents fails', () => {
-  assertFailsWith(runFanOut('agent: Explore\n'), 'declares `agent: Explore` but contains "agents in parallel"');
+  assertFailsWith(fanOut('agent: Explore\n'), 'declares `agent: Explore` but contains "agents in parallel"');
 });
 
-test('the declaration is read ignoring case and quotes', () => {
-  for (const declaration of ['agent: explore', 'agent: "Explore"', "agent: 'EXPLORE'"]) {
-    assert.equal(runFanOut(`${declaration}\n`).length, 1, declaration);
+test('the declaration is read ignoring case, quotes and a trailing comment', () => {
+  for (const declaration of ['agent: explore', 'agent: "Explore"', "agent: 'EXPLORE'", 'agent: Explore  # read-only']) {
+    assert.equal(fanOut(`${declaration}\n`).length, 1, declaration);
   }
 });
 
 test('an Explore line in the body is not a declaration', () => {
-  assert.deepEqual(runFanOut('', `agent: Explore\n${FAN_OUT_BODY}`), []);
+  assert.deepEqual(fanOut('', `agent: Explore\n${FAN_OUT}`), []);
 });
 
 test('an Explore skill without fan-out instructions passes', () => {
-  assert.deepEqual(runFanOut('agent: Explore\n', 'Read each changed file once.\n'), []);
+  assert.deepEqual(fanOut('agent: Explore\n', 'Read each changed file once.\n'), []);
 });
 
-// ── Skill invocations, writer §7, version-free templates (§12.6) ────────────
+// ── Skill invocations, writer §7.2, version-free templates (§12.6) ──────────
 
-const SKILLS = new Set(['luke-audit', 'luke-full']);
+const invocations = (content: string) =>
+  collect(p => checkSkillInvocations(FIXTURE, content, new Set(['luke-audit', 'luke-full']), p));
 
-function runInvocations(content: string): Problem[] {
-  const problems: Problem[] = [];
-  checkSkillInvocations(FIXTURE, content, SKILLS, problems);
-  return problems;
-}
-
-test('an invocation of a skill that does not exist fails', () => {
-  assertFailsWith(runInvocations('Then run `/luke-gone apps/api`.\n'), 'names the skill `luke-gone`');
+test('an invocation or a child call of a missing skill fails', () => {
+  assertFailsWith(invocations('Then run `/luke-gone apps/api`.\n'), 'names the skill `luke-gone`');
+  assertFailsWith(invocations('- `bugs` → use Skill(luke-gone)\n'), 'names the skill `luke-gone`');
+  assertFailsWith(invocations('Call Skill(luke-gone apps/api).\n'), 'names the skill `luke-gone`');
 });
 
-test('a child call of a skill that does not exist fails', () => {
-  assertFailsWith(runInvocations('- `bugs` → use Skill(luke-gone)\n'), 'names the skill `luke-gone`');
-});
-
-test('existing skills and skill paths are not reported', () => {
+test('existing skills, skill paths and a trailing dash are not reported', () => {
   const content =
     'Run `/luke-audit`, then Skill(luke-full).\n' +
-    'Read `.claude/skills/luke-shared/audit-protocol.md` first.\n';
-  assert.deepEqual(runInvocations(content), []);
+    'Read `.claude/skills/luke-shared/audit-protocol.md` first.\n' +
+    'Last comes /luke-audit-, which closes the loop.\n';
+  assert.deepEqual(invocations(content), []);
 });
 
-function runWriter(frontmatterLines: string, body: string): Problem[] {
-  const problems: Problem[] = [];
-  checkWriterCitesConcurrency(FIXTURE, `---\nname: fixture\n${frontmatterLines}---\n${body}`, problems);
-  return problems;
-}
+const writer = (lines: string, body: string) =>
+  collect(p => checkWriterCitesConcurrency(FIXTURE, withFrontmatter(lines, body), p));
 
-test('a skill that keeps Write and never cites §7 fails', () => {
-  assertFailsWith(runWriter('', 'Edit the files.\n'), 'never cites audit-protocol.md §7');
+test('a skill that can write and never cites §7.2 fails, even citing another §7', () => {
+  assertFailsWith(writer('', 'Edit the files (§7).\n'), 'keeps Edit, Write, NotebookEdit but never cites audit-protocol.md §7.2');
+  assertFailsWith(writer('disallowed-tools: Write, NotebookEdit\n', 'Edit files.\n'), 'keeps Edit but never cites');
 });
 
-test('a writer citing §7, and a skill without Write, both pass', () => {
-  assert.deepEqual(runWriter('', 'Follow protocol §7 before writing.\n'), []);
-  assert.deepEqual(runWriter('disallowed-tools: Edit, Write, NotebookEdit\n', 'Read only.\n'), []);
+test('a writer citing §7.2, and a skill without write tools, both pass', () => {
+  assert.deepEqual(writer('', 'Follow protocol §7.2 before writing.\n'), []);
+  assert.deepEqual(writer('disallowed-tools: Edit, Write, NotebookEdit\n', 'Read only.\n'), []);
 });
 
-function runVersionFree(content: string, file = VERSION_FREE_FILES[0]!): Problem[] {
-  const problems: Problem[] = [];
-  checkVersionFree(file, content, problems);
-  return problems;
-}
+const TEMPLATES = '.claude/skills/luke-docs/references/readme-templates.md';
+const versionFree = (content: string, file = TEMPLATES) => collect(p => checkVersionFree(file, content, p));
 
-test('a version literal in a version-free template fails', () => {
-  assertFailsWith(runVersionFree('Built on Next.js 16.3 and Node 24.\n'), 'version literal `16.3`');
+test('a version literal in a version-free template fails, with or without a v', () => {
+  assertFailsWith(versionFree('Built on Next.js 16.3.\n'), 'version literal `16.3`');
+  assertFailsWith(versionFree('Requires Node v24.1.\n'), 'version literal `v24.1`');
 });
 
 test('a section reference is not a version, and other files may carry versions', () => {
-  assert.deepEqual(runVersionFree('See §12.6 and ADR-030.\n'), []);
-  assert.deepEqual(runVersionFree('fastify 5.12 regressed.\n', FIXTURE), []);
+  assert.deepEqual(versionFree('See §12.6 and ADR-030.\n'), []);
+  assert.deepEqual(versionFree('fastify 5.12 regressed.\n', FIXTURE), []);
 });
 
 // ── checkSkills on a temporary repository ───────────────────────────────────
-//
-// `isGitIgnored` still asks the real repository, so these fixtures cite only
-// paths it does not ignore.
 
 /** A git repository holding `files`, removed after `body` runs. */
 function withRepo(files: Record<string, string>, body: (root: string) => void): void {
@@ -438,28 +425,48 @@ function withRepo(files: Record<string, string>, body: (root: string) => void): 
 }
 
 const SKILL_PATH = '.claude/skills/fixture/SKILL.md';
-const skillCiting = (path: string) =>
-  `---\nname: fixture\n---\n\n${ARGUMENT_BINDING}\n\nFollow protocol §7. Read \`${path}\` first.\n`;
+const skillSaying = (text: string) =>
+  `---\nname: fixture\n---\n\n${ARGUMENT_BINDING}\n\nFollow protocol §7.2. ${text}\n`;
+/** The files every valid fixture needs besides its skill. */
+const BASE = { [TEMPLATES]: '# Templates\n', 'docs/guide.md': '# Guide\n' };
 
 test('a repository without skills fails rather than passing', () => {
   withRepo({}, root => assert.throws(() => checkSkills(root), /no \.md file found below \.claude\/skills/));
 });
 
 test('skills citing nothing trip the zero-discovery guard', () => {
-  withRepo(
-    { [SKILL_PATH]: `---\nname: fixture\n---\n\n${ARGUMENT_BINDING}\n\nFollow protocol §7.\n` },
-    root => assert.throws(() => checkSkills(root), /zero references extracted/)
+  withRepo({ ...BASE, [SKILL_PATH]: skillSaying('Nothing to cite.') }, root =>
+    assert.throws(() => checkSkills(root), /zero references extracted/)
   );
 });
 
 test('a path that does not exist is reported with its file and line', () => {
-  withRepo({ [SKILL_PATH]: skillCiting('docs/missing-guide.md') }, root =>
-    assert.throws(() => checkSkills(root), /SKILL\.md:7 — path `docs\/missing-guide\.md` does not exist/)
+  withRepo({ ...BASE, [SKILL_PATH]: skillSaying('Read `docs/missing.md` first.') }, root =>
+    assert.throws(() => checkSkills(root), /SKILL\.md:7 — path `docs\/missing\.md` does not exist/)
+  );
+});
+
+test('a missing path is accepted when the repository being checked ignores it', () => {
+  withRepo(
+    { ...BASE, '.gitignore': 'notes/\n', [SKILL_PATH]: skillSaying('Read `docs/guide.md` and `notes/plan.md`.') },
+    root => assert.equal(checkSkills(root).pathRefs, 2)
+  );
+});
+
+test('a cited symbol in a repository without apps or packages hits the guard, not grep', () => {
+  withRepo({ ...BASE, [SKILL_PATH]: skillSaying('Call `buildThing()`.') }, root =>
+    assert.throws(() => checkSkills(root), /no declaration extracted from apps\/ and packages\//)
+  );
+});
+
+test('a renamed version-free template turns the check red', () => {
+  withRepo({ 'docs/guide.md': '# Guide\n', [SKILL_PATH]: skillSaying('Read `docs/guide.md`.') }, root =>
+    assert.throws(() => checkSkills(root), /readme-templates\.md:1 — is listed in VERSION_FREE_FILES/)
   );
 });
 
 test('a valid repository passes and counts what it verified', () => {
-  withRepo({ [SKILL_PATH]: skillCiting('docs/guide.md'), 'docs/guide.md': '# Guide\n' }, root =>
-    assert.deepEqual(checkSkills(root), { files: 1, pathRefs: 1, symbolRefs: 0, contracts: 1 })
+  withRepo({ ...BASE, [SKILL_PATH]: skillSaying('Read `docs/guide.md` first.') }, root =>
+    assert.deepEqual(checkSkills(root), { files: 2, pathRefs: 1, symbolRefs: 0, contracts: 1 })
   );
 });
