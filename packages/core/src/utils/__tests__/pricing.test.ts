@@ -9,6 +9,7 @@ import {
   priceInverse,
   priceMargin,
   retailMargin,
+  roundRetailPrice,
   skuWeightedAverage,
 } from '../pricing.js';
 
@@ -160,6 +161,40 @@ describe('retailMargin', () => {
 
   it('goes negative when the landed cost exceeds wholesale', () => {
     expect(retailMargin(10, 25, PS)).toBeCloseTo(-0.5, 12);
+  });
+});
+
+describe('roundRetailPrice', () => {
+  it.each([
+    // Never below 9.9.
+    [0.5, 9.9],
+    [9.99, 9.9],
+    // Below x2.50: the previous ten's 9.9.
+    [10, 9.9],
+    [12.4, 9.9],
+    [12.49, 9.9],
+    [12.494, 9.9],
+    [20, 19.9],
+    [21.43, 19.9],
+    [52.43, 49.9],
+    [102.45, 99.9],
+    // From x2.50 to below x7.50: x4.9.
+    [12.495, 14.9],
+    [12.5, 14.9],
+    [45.6, 44.9],
+    [17.49, 14.9],
+    [17.494, 14.9],
+    // From x7.50: x9.9.
+    [17.495, 19.9],
+    [17.5, 19.9],
+    [67.8, 69.9],
+    [19.99, 19.9],
+    [19.999, 19.9],
+    // Float noise on a band edge.
+    [0.1 * 124, 9.9],
+    [0.1 * 175, 19.9],
+  ])('%s → %s', (price, expected) => {
+    expect(roundRetailPrice(price)).toBe(expected);
   });
 });
 

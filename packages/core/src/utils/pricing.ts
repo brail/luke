@@ -217,7 +217,9 @@ export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): nu
 }
 
 /**
- * Rounds a raw price to the nearest commercial retail threshold (`.9` or `.4`).
+ * Rounds a raw price to a commercial retail threshold ending in `4.9` or `9.9`, by where it falls
+ * within its ten: below x2.50 to the previous ten's `9.9`, below x7.50 to `x4.9`, from x7.50 to
+ * `x9.9`. Never below 9.9.
  *
  * @example
  * roundRetailPrice(21.43) // → 19.9
@@ -225,18 +227,11 @@ export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): nu
  * roundRetailPrice(67.80) // → 69.9
  */
 export function roundRetailPrice(price: number): number {
-  if (price < 10) return 9.9;
-
-  const integerPart = Math.floor(price);
-  const decimalPart = price - integerPart;
-  const tens = Math.floor(integerPart / 10) * 10;
-  const finalPart = (integerPart % 10) + decimalPart;
-
-  if (finalPart >= 0.0 && finalPart <= 2.4) {
-    return Math.max(9.9, tens - 10 + 9.9);
-  } else if (finalPart >= 2.5 && finalPart <= 7.4) {
-    return tens + 4.9;
-  } else {
-    return tens + 9.9;
-  }
+  // Integer cents and half-open bands: no price falls between two bands. On floats, 12.4 left a
+  // last digit of 2.4000000000000004, past a `<= 2.4` bound.
+  const cents = Math.round(price * 100);
+  const withinTen = cents % 1000;
+  const ten = cents - withinTen;
+  const threshold = withinTen < 250 ? ten - 10 : withinTen < 750 ? ten + 490 : ten + 990;
+  return Math.max(990, threshold) / 100;
 }
