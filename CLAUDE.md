@@ -441,9 +441,9 @@ Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; 
 
 **Release flow**: push or PR → CI (`CI gate`; images built, never published); tag → provenance gate
 → tagged-tree check → CI → images → `ghcr.io` (`rc-latest` from the train, `latest` + `X.Y` from
-`main`) → GitHub Release (stable tags only: the tag's CHANGELOG section) → manual redeploy of the
-stack (nothing redeploys it automatically). The repository
-variables `PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME` must be set (`OPERATIONS.md`). Runtime images carry
+`main`) → GitHub Release `Luke X.Y.Z` (stable tags only: the tag's CHANGELOG section) → manual
+redeploy of the stack (nothing redeploys it automatically). The repository variables
+`PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME` must be set (`OPERATIONS.md`). Runtime images carry
 runtime dependencies only (ADR-028). `main` does not carry these release gates yet: Appendix Z of
 `docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`. **NEVER delete the `luke_api_data` volume** — the master
 key lives there.

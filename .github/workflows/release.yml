@@ -324,8 +324,10 @@ jobs:
           fi
           printf '%s\n' "$NOTES" > notes.md
           # The same values for create and edit, so a re-run converges on the
-          # CHANGELOG. `--latest` follows the image's `latest` tag decision.
-          args=(--title "$TAG" --notes-file notes.md --latest="$PUBLISH_LATEST")
+          # CHANGELOG. The title is the product name, written "Luke", and the
+          # version without the tag's `v`; `--latest` follows the image's
+          # `latest` tag decision.
+          args=(--title "Luke ${TAG#v}" --notes-file notes.md --latest="$PUBLISH_LATEST")
           # Branch on the API's status, not on gh's wording: 404 creates, 200
           # edits, and anything else (auth, rate limit, network) stops here.
           status=$(gh api --include "repos/$GH_REPO/releases/tags/$TAG" 2>/dev/null \
