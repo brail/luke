@@ -30,6 +30,7 @@ import { uploadSpecsheetImage } from '../src/services/specsheetImage.service';
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerWithSession, createTestContext, createTestUser, setupTestDb } from './helpers';
+import { whileHeld } from './helpers/heldTransaction';
 import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
 
 import type { UserSession } from '../src/lib/auth';
@@ -74,63 +75,13 @@ async function image(order: number, isDefault: boolean) {
   });
 }
 
-/**
- * Takes the specsheet's lock on a connection of its own, runs `writer`, waits until that writer
- * blocks on the lock, applies `meanwhile` inside the holding transaction, and commits. Returns the
- * writer's outcome. The connection is always rolled back or committed and closed, and the writer
- * always drained, timeouts included.
- */
-async function whileLocked<T>(
-  writer: () => Promise<T>,
-  meanwhile: (holder: Client) => Promise<void>
-): Promise<PromiseSettledResult<T>> {
-  const holder = new Client({ connectionString: process.env.TEST_DATABASE_URL });
-  await holder.connect();
-  let running: Promise<PromiseSettledResult<T>> | undefined;
-  let committed = false;
-  try {
-    await holder.query('BEGIN');
-    await holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`merchandising-specsheet-images:${specsheetId}`]);
-    const { rows: [held] } = await holder.query<{ pid: number; database: number; classid: number; objid: number; objsubid: number }>(
-      `SELECT pid, database, classid, objid, objsubid FROM pg_locks
-        WHERE pid = pg_backend_pid() AND locktype = 'advisory' AND granted`
-    );
-    // Every backend waiting on that very lock (database and full lock identity), with its blockers.
-    const waiters = async () =>
-      (await holder.query<{ pid: number; blockers: number[] }>(
-        `SELECT pid, pg_blocking_pids(pid) AS blockers FROM pg_locks
-          WHERE locktype = 'advisory' AND NOT granted
-            AND database = $1 AND classid = $2 AND objid = $3 AND objsubid = $4`,
-        [held!.database, held!.classid, held!.objid, held!.objsubid]
-      )).rows;
-    expect(await waiters()).toEqual([]);
-
-    running = writer().then(
-      value => ({ status: 'fulfilled', value }) as const,
-      reason => ({ status: 'rejected', reason }) as const
-    );
-
-    const deadline = Date.now() + 5000;
-    for (;;) {
-      const now = await waiters();
-      if (now.length === 1 && now[0]!.blockers.includes(held!.pid)) break;
-      if (now.length > 1) throw new Error(`more than one backend waits on the lock: ${JSON.stringify(now)}`);
-      if (Date.now() > deadline) throw new Error('no writer waited on the specsheet image lock within 5 s');
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-
-    await meanwhile(holder);
-    await holder.query('COMMIT');
-    committed = true;
-    const outcome = await running;
-    expect(await waiters()).toEqual([]);
-    return outcome;
-  } finally {
-    if (!committed) await holder.query('ROLLBACK').catch(() => undefined);
-    await holder.end();
-    if (running) await running;
-  }
-}
+/** Takes the specsheet's lock in a held transaction; see `helpers/heldTransaction.ts`. */
+const whileLocked = <T>(writer: () => Promise<T>, meanwhile: (holder: Client) => Promise<unknown>) =>
+  whileHeld(
+    holder => holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`merchandising-specsheet-images:${specsheetId}`]),
+    writer,
+    meanwhile
+  );
 
 const upload = () =>
   uploadSpecsheetImage(createTestContext(session), {
