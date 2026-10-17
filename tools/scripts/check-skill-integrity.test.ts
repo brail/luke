@@ -42,9 +42,11 @@ import {
   ARGUMENT_BINDING,
   checkArgumentBinding,
   checkExecutionContract,
+  checkSizeBudget,
   IGNORE_MARKER,
   isRepoPath,
   isSymbolRef,
+  SKILL_LINE_BUDGET,
 } from './check-skill-integrity';
 import { type Problem } from './lib/report';
 
@@ -305,4 +307,21 @@ test('isSymbolRef matches identifier() and nothing else', () => {
   assert.equal(isSymbolRef('Skill(luke-audit)'), false, 'arguments — not a bare reference');
   assert.equal(isSymbolRef('apps/api'), false);
   assert.equal(isSymbolRef('()'), false);
+});
+
+// ── Size budget ─────────────────────────────────────────────────────────────
+
+/** Runs the size check over one synthetic SKILL.md of `lines` lines. */
+function runSize(lines: number): Problem[] {
+  const problems: Problem[] = [];
+  checkSizeBudget(FIXTURE, 'x\n'.repeat(lines), problems);
+  return problems;
+}
+
+test('a SKILL.md of exactly the budget passes', () => {
+  assert.deepEqual(runSize(SKILL_LINE_BUDGET), []);
+});
+
+test('one line over the budget fails, naming the count', () => {
+  assertFailsWith(runSize(SKILL_LINE_BUDGET + 1), `${SKILL_LINE_BUDGET + 1} lines, over the ${SKILL_LINE_BUDGET}-line`);
 });

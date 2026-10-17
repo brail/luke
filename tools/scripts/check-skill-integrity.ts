@@ -412,6 +412,32 @@ export function checkArgumentBinding(
   }
 }
 
+/**
+ * Anthropic's skill authoring guidance keeps a SKILL.md under 500 lines: past
+ * that, procedure detail belongs in `references/` files the skill reads when a
+ * mode needs them. The budget regressed once without anyone noticing
+ * (`luke-deps` reached 533 lines), so it is enforced, counted as `wc -l` does.
+ */
+export const SKILL_LINE_BUDGET = 500;
+
+export function checkSizeBudget(
+  relPath: string,
+  content: string,
+  problems: Problem[]
+): void {
+  const lines = (content.match(/\n/g) ?? []).length;
+  if (lines > SKILL_LINE_BUDGET) {
+    problems.push({
+      file: relPath,
+      line: SKILL_LINE_BUDGET + 1,
+      message:
+        `${lines} lines, over the ${SKILL_LINE_BUDGET}-line SKILL.md budget. Move ` +
+        'procedure detail into a `references/` file and leave a pointer that ' +
+        'says when to read it.',
+    });
+  }
+}
+
 function main(): void {
   const files = skillFiles();
   if (files.length === 0) {
@@ -438,6 +464,7 @@ function main(): void {
       contracts++;
       checkExecutionContract(relPath, content, problems);
       checkArgumentBinding(relPath, content, problems);
+      checkSizeBudget(relPath, content, problems);
     }
 
     // Capability constraint: an Explore agent has no Agent tool and therefore
