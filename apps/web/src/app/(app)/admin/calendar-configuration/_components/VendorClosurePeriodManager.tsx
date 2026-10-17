@@ -336,15 +336,7 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
             <DialogTitle>{editTarget ? 'Modifica periodo' : 'Aggiungi periodo'}</DialogTitle>
           </DialogHeader>
           <Form {...form}>
-            {/* The dialog renders through a portal, but React bubbles its submit to the vendor form
-                that hosts this manager: stop it here. */}
-            <form
-              onSubmit={e => {
-                e.stopPropagation();
-                void form.handleSubmit(handleSave)(e);
-              }}
-              className="grid gap-4"
-            >
+            <form onSubmit={form.handleSubmit(handleSave)} className="grid gap-4">
               <div className="space-y-4">
                 <FormField
                   control={form.control}

@@ -62,7 +62,8 @@ async function renderDialog(forVendor: VendorItem | null) {
 afterEach(() => upsertClosure.mockReset());
 
 test('saving a closure does not submit the vendor', async () => {
-  const { onSubmit, screen } = await renderDialog(vendor);
+  // A valid vendor: an invalid one would be refused anyway, and the test would prove nothing.
+  const { onSubmit, screen } = await renderDialog({ ...vendor, moqPerColor: 300 });
 
   await screen.getByRole('tab', { name: 'Chiusure' }).click();
   await screen.getByRole('cell', { name: 'Ferie' }).click();

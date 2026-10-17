@@ -148,7 +148,12 @@ export function VendorDialog({
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(handleSubmit, () => setTab('dati'))}
+            onSubmit={e => {
+              // A form rendered through a portal inside this one — the closures' dialog — bubbles
+              // its submit here: only a submit of this form saves the vendor.
+              if (e.target !== e.currentTarget) return;
+              void form.handleSubmit(handleSubmit, () => setTab('dati'))(e);
+            }}
             className="flex flex-col min-h-0 flex-1"
           >
             <Tabs value={tab} onValueChange={setTab} className="flex flex-col min-h-0 flex-1">
