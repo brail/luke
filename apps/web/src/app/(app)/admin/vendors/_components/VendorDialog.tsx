@@ -29,7 +29,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../../compone
 import { Textarea } from '../../../../../components/ui/textarea';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../../hooks/usePermission';
-import { nullableNumberInputProps, numberInputProps } from '../../../../../lib/numberInput';
+import { nullableNumberInputProps } from '../../../../../lib/numberInput';
 import { trpc } from '../../../../../lib/trpc';
 import { VendorClosurePeriodManager } from '../../calendar-configuration/_components/VendorClosurePeriodManager';
 
@@ -355,6 +355,7 @@ export function VendorDialog({
                     [
                       ['moqPerLine', 'Minimo per linea'],
                       ['moqPerModel', 'Minimo per modello'],
+                      ['moqPerColor', 'Minimo per colore *'],
                     ] as const
                   ).map(([name, label]) => (
                     <FormField
@@ -366,6 +367,8 @@ export function VendorDialog({
                           <FormLabel>{label}</FormLabel>
                           <div className="flex items-center gap-2">
                             <FormControl>
+                              {/* Emptied, even the required colour minimum is `null`: the schema refuses it
+                                  with the same message as an empty new vendor's. */}
                               <Input
                                 type="number"
                                 disabled={!canEdit || isLoading}
@@ -380,27 +383,6 @@ export function VendorDialog({
                       )}
                     />
                   ))}
-                  <FormField
-                    control={form.control}
-                    name="moqPerColor"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Minimo per colore *</FormLabel>
-                        <div className="flex items-center gap-2">
-                          <FormControl>
-                            <Input
-                              type="number"
-                              disabled={!canEdit || isLoading}
-                              {...field}
-                              {...numberInputProps(field.value, field.onChange)}
-                            />
-                          </FormControl>
-                          <span className="text-sm text-muted-foreground">paia</span>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
               </fieldset>
 

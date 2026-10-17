@@ -188,8 +188,8 @@ export function VendorTable({
               <TableCell className="text-sm text-muted-foreground">{vendor.referente ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.email ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.phone ?? '—'}</TableCell>
-              <TableCell className="text-sm text-muted-foreground">
-                {vendor.moqPerColor === null ? '—' : `${vendor.moqPerColor} paia`}
+              <TableCell className="text-sm text-muted-foreground tabular-nums">
+                {vendor.moqPerColor === null ? '—' : `${vendor.moqPerColor.toLocaleString('it-IT')} paia`}
               </TableCell>
               <TableCell className="text-sm font-mono text-muted-foreground">{vendor.navVendorId ?? '—'}</TableCell>
               <TableCell>

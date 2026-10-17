@@ -1,9 +1,13 @@
 import type { ChangeEvent } from 'react';
 
+/** What a number input shows: nothing for a missing or unparseable value. */
+const shown = (value: number | null | undefined) =>
+  value === null || value === undefined || Number.isNaN(value) ? '' : value;
+
 /** `<Input type="number">` props: empty or unparseable is `NaN` (the schema refuses it, not `parseInt || fallback`), shown empty. */
 export function numberInputProps(value: number, onChange: (value: number) => void) {
   return {
-    value: Number.isNaN(value) ? '' : value,
+    value: shown(value),
     onChange: (e: ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber),
   };
 }
@@ -17,7 +21,7 @@ export function nullableNumberInputProps(
   onChange: (value: number | null) => void,
 ) {
   return {
-    value: value === null || value === undefined || Number.isNaN(value) ? '' : value,
+    value: shown(value),
     onChange: (e: ChangeEvent<HTMLInputElement>) =>
       onChange(e.target.value === '' && !e.target.validity.badInput ? null : e.target.valueAsNumber),
   };

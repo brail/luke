@@ -15,7 +15,11 @@ const VENDOR_MOQ_MAX = 100_000;
 
 /** A minimum order quantity in pairs: one message for an empty field, a decimal or a value out of range. */
 const moq = (per: string) =>
-  intInRange(1, VENDOR_MOQ_MAX, `Inserisci il minimo per ${per}: un numero intero di paia tra 1 e ${VENDOR_MOQ_MAX}`);
+  intInRange(
+    1,
+    VENDOR_MOQ_MAX,
+    `Inserisci il minimo per ${per}: un numero intero di paia tra 1 e ${VENDOR_MOQ_MAX.toLocaleString('it-IT')}`,
+  );
 
 /** Input schema for creating an internal vendor record. */
 export const VendorInputSchema = z.object({

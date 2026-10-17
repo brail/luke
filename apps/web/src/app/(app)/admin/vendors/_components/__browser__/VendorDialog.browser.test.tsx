@@ -49,7 +49,7 @@ const vendor: VendorItem = {
   moqPerLine: null, moqPerModel: null, moqPerColor: null,
   createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', enabledParameterSets: [],
 };
-const COLOUR_REQUIRED = 'Inserisci il minimo per colore: un numero intero di paia tra 1 e 100000';
+const COLOUR_REQUIRED = 'Inserisci il minimo per colore: un numero intero di paia tra 1 e 100.000';
 
 async function renderDialog(forVendor: VendorItem | null) {
   const onSubmit = vi.fn(async () => undefined);

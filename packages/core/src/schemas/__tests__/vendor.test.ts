@@ -17,9 +17,9 @@ describe('vendor minimum order quantities', () => {
     const emptied = VendorInputSchema.safeParse({ name: 'Acme', moqPerColor: Number.NaN });
 
     expect(missing.success).toBe(false);
-    expect(emptied.success).toBe(false);
-    expect(message(emptied.error!.issues)).toEqual([
-      'Inserisci il minimo per colore: un numero intero di paia tra 1 e 100000',
+    if (emptied.success) throw new Error('an emptied colour minimum must be refused');
+    expect(message(emptied.error.issues)).toEqual([
+      'Inserisci il minimo per colore: un numero intero di paia tra 1 e 100.000',
     ]);
   });
 
