@@ -198,7 +198,8 @@ const parameterSetsRouter = router({
     }),
 
   /**
-   * Deletes a pricing parameter set; auto-promotes the next set as default if needed.
+   * Deletes a pricing parameter set that no quotation or merchandising row uses; auto-promotes the
+   * next set as default if needed. A set still in use is refused with CONFLICT.
    *
    * @auth {pricing:update}
    * @input {{ id: string, brandId: string, seasonId: string }}

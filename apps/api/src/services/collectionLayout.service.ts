@@ -747,6 +747,8 @@ export async function deleteRow(
  * subsequent rows down by 1. Quotations are copied; picture key is not (shared references avoided).
  *
  * @throws {TRPCError} NOT_FOUND if the source row does not exist.
+ * @throws {TRPCError} CONFLICT if a copied quotation's parameter set was deleted meanwhile; the
+ *   copy rolls back whole.
  */
 export async function duplicateRow(
   rowId: string,
@@ -771,39 +773,51 @@ export async function duplicateRow(
   }
   await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
-  return prisma.$transaction(async tx => {
-    // Shift rows below source by +1
-    await tx.collectionLayoutRow.updateMany({
-      where: {
-        groupId: row.groupId,
-        order: { gt: row.order },
-      },
-      data: { order: { increment: 1 } },
+  try {
+    return await prisma.$transaction(async tx => {
+      // Shift rows below source by +1
+      await tx.collectionLayoutRow.updateMany({
+        where: {
+          groupId: row.groupId,
+          order: { gt: row.order },
+        },
+        data: { order: { increment: 1 } },
+      });
+
+      const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
+
+      const newRow = await tx.collectionLayoutRow.create({
+        data: {
+          ...rowData,
+          order: row.order + 1,
+          pictureKey: null, // picture not duplicated, to avoid shared references
+        },
+      });
+
+      // Duplicate quotations
+      for (const q of quotations) {
+        const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
+        await tx.collectionRowQuotation.create({
+          data: { ...qData, rowId: newRow.id },
+        });
+      }
+
+      return tx.collectionLayoutRow.findUniqueOrThrow({
+        where: { id: newRow.id },
+        include: ROW_VENDOR_INCLUDE,
+      }) as Promise<RowWithVendor>;
     });
-
-    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
-
-    const newRow = await tx.collectionLayoutRow.create({
-      data: {
-        ...rowData,
-        order: row.order + 1,
-        pictureKey: null, // picture not duplicated, to avoid shared references
-      },
-    });
-
-    // Duplicate quotations
-    for (const q of quotations) {
-      const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
-      await tx.collectionRowQuotation.create({
-        data: { ...qData, rowId: newRow.id },
+  } catch (err) {
+    // `removeParameterSet` refuses a set in use, so a set deleted between the read above and the
+    // copy is the only way a quotation's foreign key can refuse here.
+    if (isForeignKeyViolation(err, 'collection_row_quotations_pricingParameterSetId_fkey')) {
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'Un set di parametri della riga è stato eliminato durante la duplicazione: riprova',
       });
     }
-
-    return tx.collectionLayoutRow.findUniqueOrThrow({
-      where: { id: newRow.id },
-      include: ROW_VENDOR_INCLUDE,
-    }) as Promise<RowWithVendor>;
-  });
+    throw err;
+  }
 }
 
 /**

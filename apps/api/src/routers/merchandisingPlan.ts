@@ -61,7 +61,8 @@ async function assertParameterSetOfPlan(
  * Runs a row write whose parameter set `assertParameterSetOfPlan` has checked. A set never changes
  * brand or season and a row never changes plan, so the check can go stale only by the set's
  * deletion: a write naming a deleted set is refused by the foreign key, and that refusal gets the
- * check's answer, not a 500 (a deletion after the write nulls the reference, `onDelete: SetNull`).
+ * check's answer, not a 500 (a deletion after the write is refused: `removeParameterSet` will not
+ * delete a set a row uses).
  * No transaction around the check and the write — under READ COMMITTED it would not hold the check;
  * the foreign key does.
  */

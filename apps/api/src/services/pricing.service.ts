@@ -13,6 +13,7 @@ import {
   roundRetailPrice,
   type PricingParameterSetInput,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 // ─────────────────────────────────────────────────────────────────
@@ -410,10 +411,15 @@ export async function updateParameterSet(
 }
 
 /**
- * Deletes a pricing parameter set. If it was the default, automatically promotes
- * the next set (by orderIndex then createdAt) to default.
+ * Deletes a pricing parameter set that nothing uses. If it was the default, promotes the next set
+ * (by orderIndex then createdAt) to default.
+ *
+ * A set still linked to a collection quotation or a merchandising row is refused: both foreign keys
+ * are `onDelete: SetNull`, so deleting it would silently unlink those rows and drop their purchase
+ * price and margin.
  *
  * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
+ * @throws {TRPCError} CONFLICT if a quotation or a merchandising row still uses the set.
  */
 export async function removeParameterSet(
   id: string,
@@ -421,32 +427,64 @@ export async function removeParameterSet(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  const target = await prisma.pricingParameterSet.findFirst({
-    where: { id, brandId, seasonId },
-  });
-
-  if (!target) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Set parametri non trovato',
-    });
-  }
-
-  await prisma.$transaction(async tx => {
-    await tx.pricingParameterSet.delete({ where: { id } });
-
-    // If it was the default, promote the first one remaining
-    if (target.isDefault) {
-      const next = await tx.pricingParameterSet.findFirst({
-        where: { brandId, seasonId },
-        orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-      });
-      if (next) {
-        await tx.pricingParameterSet.update({
-          where: { id: next.id },
-          data: { isDefault: true },
+  await prisma.$transaction(
+    async tx => {
+      // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL"). A write that links a
+      // quotation or a merchandising row to this set takes FOR KEY SHARE on it for its foreign-key
+      // check, and FOR UPDATE is the only row lock that excludes it. So the counts below, read after
+      // the lock, see every link committed before it, and a link attempted after it waits, then
+      // fails its foreign key once the set is gone. This guards the references only: concurrent
+      // changes to the default flag are not serialised here.
+      const locked = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT id FROM pricing_parameter_sets
+        WHERE id = ${id} AND "brandId" = ${brandId} AND "seasonId" = ${seasonId}
+        FOR UPDATE
+      `);
+      if (locked.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Set parametri non trovato',
         });
       }
-    }
-  });
+
+      const [quotations, merchandisingRows] = await Promise.all([
+        tx.collectionRowQuotation.count({
+          where: { pricingParameterSetId: id },
+        }),
+        tx.merchandisingPlanRow.count({ where: { pricingParameterSetId: id } }),
+      ]);
+      if (quotations + merchandisingRows > 0) {
+        const uses = [
+          quotations > 0 &&
+            `${quotations} ${quotations === 1 ? 'quotazione' : 'quotazioni'}`,
+          merchandisingRows > 0 &&
+            `${merchandisingRows} ${merchandisingRows === 1 ? 'riga' : 'righe'} di merchandising`,
+        ].filter(Boolean);
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `Set parametri in uso da ${uses.join(' e ')}: ${
+            quotations + merchandisingRows === 1 ? 'riassegnala' : 'riassegnale'
+          } prima di eliminarlo`,
+        });
+      }
+
+      // `isDefault` is read here, under the lock, not before the transaction.
+      const deleted = await tx.pricingParameterSet.delete({ where: { id } });
+      if (deleted.isDefault) {
+        const next = await tx.pricingParameterSet.findFirst({
+          where: { brandId, seasonId },
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+        });
+        if (next) {
+          await tx.pricingParameterSet.update({
+            where: { id: next.id },
+            data: { isDefault: true },
+          });
+        }
+      }
+    },
+    // Stated rather than inherited: the reasoning above holds under READ COMMITTED, where each
+    // statement reads what was committed before it started.
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  );
 }
