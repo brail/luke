@@ -37,8 +37,6 @@ export default defineConfig({
       'react/jsx-dev-runtime',
       'react-dom/client',
       'react-hook-form',
-      '@hookform/resolvers/zod',
-      'zod',
       '@radix-ui/react-alert-dialog',
       '@radix-ui/react-tooltip',
       '@radix-ui/react-label',
