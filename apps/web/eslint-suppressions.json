@@ -20,11 +20,6 @@
       "count": 2
     }
   },
-  "src/app/(app)/admin/vendors/_components/VendorDialog.tsx": {
-    "react/no-unescaped-entities": {
-      "count": 2
-    }
-  },
   "src/app/(app)/calendar/_components/CalendarEventNoteDialog.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1
