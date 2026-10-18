@@ -32,7 +32,7 @@ env:
   # The active release train — the one name in this file that changes per
   # cycle, because the weekly job below has to check out a specific branch. The
   # `push` filter above already covers it by pattern and needs no edit.
-  RELEASE_TRAIN_BRANCH: develop-2.2
+  RELEASE_TRAIN_BRANCH: develop-3.1
 
 jobs:
   semgrep:
