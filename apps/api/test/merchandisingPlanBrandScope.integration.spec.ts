@@ -23,7 +23,7 @@ import type { PrismaClient } from '@luke/db';
 import specsheetImageRoutes from '../src/routes/specsheetImage.routes';
 import { resetStorageProvider } from '../src/storage';
 
-import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { createCallerWithSession, createTestUser, expectUnauthorized, setupTestDb } from './helpers';
 import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
 
 import type { UserSession } from '../src/lib/auth';
@@ -41,6 +41,12 @@ let prisma: PrismaClient;
 let editorSession: UserSession;
 /** Viewer in the same team. */
 let viewerSession: UserSession;
+let inBrandId: string;
+let outBrandId: string;
+let seasonId: string;
+/** Seasons with no plan yet: one a viewer looks at, one an editor creates. */
+let viewerEmptySeasonId: string;
+let editorEmptySeasonId: string;
 
 interface PlanFixture {
   planId: string;
@@ -67,16 +73,23 @@ beforeAll(async () => {
   prisma = await setupTestDb();
   const uid = randomUUID().substring(0, 6).toUpperCase();
 
-  const [editor, viewer, admin, inBrand, outBrand, season] = await Promise.all([
+  const [editor, viewer, admin, inBrand, outBrand, season, viewerEmpty, editorEmpty] = await Promise.all([
     createTestUser('editor'),
     createTestUser('viewer'),
     createTestUser('admin'),
     prisma.brand.create({ data: { code: `MIN${uid}`, name: `In ${uid}`, isActive: true } }),
     prisma.brand.create({ data: { code: `MOUT${uid}`, name: `Out ${uid}`, isActive: true } }),
     prisma.season.create({ data: { code: `M${uid}`, name: `Season ${uid}`, year: 2032, isActive: true } }),
+    prisma.season.create({ data: { code: `MV${uid}`, name: `Viewer season ${uid}`, year: 2033, isActive: true } }),
+    prisma.season.create({ data: { code: `ME${uid}`, name: `Editor season ${uid}`, year: 2034, isActive: true } }),
   ]);
   editorSession = editor.session;
   viewerSession = viewer.session;
+  inBrandId = inBrand.id;
+  outBrandId = outBrand.id;
+  seasonId = season.id;
+  viewerEmptySeasonId = viewerEmpty.id;
+  editorEmptySeasonId = editorEmpty.id;
 
   const fn = await prisma.companyFunction.create({
     data: { slug: `merch_fn_${uid.toLowerCase()}`, name: `Merch Fn ${uid}`, order: 95, isActive: true },
@@ -154,6 +167,46 @@ async function outState() {
     }),
   };
 }
+
+describe('merchandising plan — the page\'s reads, for each role that sees it (ADR-038)', () => {
+  // Viewers see the merchandising plan page by default, so its reads must answer them; only creating
+  // a missing plan takes `:update` (#146).
+  const callerOf = (role: 'editor' | 'viewer') => createCallerWithSession(role === 'editor' ? editorSession : viewerSession);
+
+  it.each(['editor', 'viewer'] as const)('%s reads the plan and its rows', async role => {
+    const caller = callerOf(role);
+
+    expect((await caller.merchandisingPlan.get({ brandId: inBrandId, seasonId }))?.id).toBe(inRes.planId);
+    await expect(caller.merchandisingPlan.listRows({ planId: inRes.planId })).resolves.toBeInstanceOf(Array);
+  });
+
+  it('a viewer on a season with no plan reads null, cannot create one, and nothing is written', async () => {
+    const caller = callerOf('viewer');
+
+    await expect(caller.merchandisingPlan.get({ brandId: inBrandId, seasonId: viewerEmptySeasonId })).resolves.toBeNull();
+    await expectUnauthorized(
+      () => caller.merchandisingPlan.getOrCreate({ brandId: inBrandId, seasonId: viewerEmptySeasonId }),
+      'FORBIDDEN'
+    );
+    expect(await prisma.merchandisingPlan.count({ where: { brandId: inBrandId, seasonId: viewerEmptySeasonId } })).toBe(0);
+  });
+
+  it('an editor creates the missing plan once, and the creation is audited', async () => {
+    const caller = callerOf('editor');
+    const input = { brandId: inBrandId, seasonId: editorEmptySeasonId };
+
+    const created = await caller.merchandisingPlan.getOrCreate(input);
+    await expect(caller.merchandisingPlan.getOrCreate(input)).resolves.toMatchObject({ id: created.id });
+
+    expect(await prisma.merchandisingPlan.count({ where: input })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: 'MERCHANDISING_PLAN_GET_OR_CREATE', targetId: created.id } })).toBeGreaterThan(0);
+    await expect(caller.merchandisingPlan.get(input)).resolves.toMatchObject({ id: created.id });
+  });
+
+  it('get on an out-of-scope brand → FORBIDDEN', async () => {
+    await expectUnauthorized(() => callerOf('viewer').merchandisingPlan.get({ brandId: outBrandId, seasonId }), 'FORBIDDEN');
+  });
+});
 
 describe('merchandising plan — out-of-scope brand', () => {
   const editorCalls = {

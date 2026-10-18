@@ -77,9 +77,39 @@ async function writeCheckedRow<T>(write: () => Promise<T>): Promise<T> {
   }
 }
 
+const PLAN_SUMMARY_SELECT = {
+  id: true, brandId: true, seasonId: true, status: true, createdAt: true, updatedAt: true,
+} as const;
+
+const planPairInput = z.object({
+  brandId: z.string().uuid(),
+  seasonId: z.string().uuid(),
+});
+
 export const merchandisingPlanRouter = router({
   /**
-   * Returns the merchandising plan for a brand/season pair, creating one atomically if it does not exist.
+   * Returns the merchandising plan for a brand/season pair, or `null` if none exists yet. The page's
+   * read: every role that sees the page holds `:read` (ADR-038).
+   *
+   * @auth merchandising_plan:read
+   * @input { brandId, seasonId }
+   * @output MerchandisingPlan summary (id, status, timestamps), or null
+   */
+  get: protectedProcedure
+    .use(requirePermission('merchandising_plan:read'))
+    .input(planPairInput)
+    .query(async ({ input, ctx }) => {
+      await assertBrandAccess(ctx, input.brandId);
+
+      return ctx.prisma.merchandisingPlan.findUnique({
+        where: { brandId_seasonId: { brandId: input.brandId, seasonId: input.seasonId } },
+        select: PLAN_SUMMARY_SELECT,
+      });
+    }),
+
+  /**
+   * Returns the merchandising plan for a brand/season pair, creating one atomically if it does not
+   * exist. A write, so a mutation: the page calls it only when `get` found no plan.
    *
    * @auth merchandising_plan:update
    * @input { brandId, seasonId }
@@ -87,21 +117,25 @@ export const merchandisingPlanRouter = router({
    */
   getOrCreate: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
-    .input(
-      z.object({
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
-      })
-    )
-    .query(async ({ input, ctx }) => {
+    .use(withRateLimit('configMutations'))
+    .input(planPairInput)
+    .mutation(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
 
-      return ctx.prisma.merchandisingPlan.upsert({
+      const plan = await ctx.prisma.merchandisingPlan.upsert({
         where: { brandId_seasonId: { brandId: input.brandId, seasonId: input.seasonId } },
         create: { brandId: input.brandId, seasonId: input.seasonId },
         update: {},
-        select: { id: true, brandId: true, seasonId: true, status: true, createdAt: true, updatedAt: true },
+        select: PLAN_SUMMARY_SELECT,
       });
+      await logAudit(ctx, {
+        action: 'MERCHANDISING_PLAN_GET_OR_CREATE',
+        targetType: 'MerchandisingPlan',
+        targetId: plan.id,
+        result: 'SUCCESS',
+        metadata: { brandId: input.brandId, seasonId: input.seasonId },
+      });
+      return plan;
     }),
 
   /**

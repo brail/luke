@@ -16,6 +16,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { MerchandisingPlanTable } from './_components/MerchandisingPlanTable';
 import { MerchandisingRowDialog } from './_components/MerchandisingRowDialog';
 import { SpecsheetModal } from './_components/SpecsheetModal';
+import { useEnsurePlan } from './useEnsurePlan';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
@@ -27,7 +28,7 @@ export default function MerchandisingPlanPage() {
   const enabled = !!brand?.id && !!season?.id;
 
   const { data: plan, isLoading: planLoading } =
-    trpc.merchandisingPlan.getOrCreate.useQuery(
+    trpc.merchandisingPlan.get.useQuery(
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
@@ -40,6 +41,14 @@ export default function MerchandisingPlanPage() {
 
   const utils = trpc.useUtils();
 
+  // A season without a plan gets one on the first visit of a user who may create it (#146).
+  const ensurePlanMutation = trpc.merchandisingPlan.getOrCreate.useMutation();
+  useEnsurePlan(brand?.id, season?.id, plan, canUpdate, {
+    create: ensurePlanMutation.mutateAsync,
+    store: (pair, created) => utils.merchandisingPlan.get.setData(pair, created),
+    onError: err => toast.error(getTrpcErrorMessage(err)),
+  });
+
   const invalidateRows = () => {
     if (!plan?.id) return;
     utils.merchandisingPlan.listRows.invalidate({ planId: plan.id });
@@ -47,7 +56,7 @@ export default function MerchandisingPlanPage() {
 
   const invalidatePlan = () => {
     if (!brand?.id || !season?.id) return;
-    utils.merchandisingPlan.getOrCreate.invalidate({
+    utils.merchandisingPlan.get.invalidate({
       brandId: brand.id,
       seasonId: season.id,
     });
@@ -97,7 +106,7 @@ export default function MerchandisingPlanPage() {
   });
 
   // ─── Render ─────────────────────────────────────────────────────
-  const isLoading = contextLoading || planLoading || rowsLoading;
+  const isLoading = contextLoading || planLoading || rowsLoading || ensurePlanMutation.isPending;
 
   if (isLoading) {
     return (
@@ -141,6 +150,12 @@ export default function MerchandisingPlanPage() {
             />
           </CardContent>
         </Card>
+      ) : !canUpdate ? (
+        <SectionCard title="Nessun piano per questa stagione">
+          <p className="text-sm text-muted-foreground">
+            Il Merchandising Plan di questo brand e stagione non è ancora stato creato.
+          </p>
+        </SectionCard>
       ) : null}
 
       {/* Add / edit row form */}
