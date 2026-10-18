@@ -4,6 +4,28 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.1] - 2026-10-18
+
+### CI
+- Switch the release train to develop-3.1
+
+### Dependencies
+- **deps**: Bump google/osv-scanner-action
+- **deps**: Renew the two osv-scanner ignores until 2026-12-03
+
+### Documentation
+- Bring the release instructions up to the graduated main
+- Align the docs with the 3.0.1 fixes
+
+### Fixed
+- **api**: Narrow the saturation heatmap to the caller's brands
+- **api**: Rate-limit every export and cap tRPC batches
+- **nav**: Report failed portafoglio and KIMO syncs as failures
+- **auth**: Refuse an LDAP login onto an account without its identity
+- **merch**: Let viewers open the merchandising plan
+- **calendar**: Bind the Google OAuth exchange to the flow that started it
+- **api**: Follow-ups from the 3.0.1 review
+
 ## [3.0.0] - 2026-10-18
 
 ### Added
