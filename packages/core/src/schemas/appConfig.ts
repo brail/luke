@@ -44,6 +44,8 @@ export const RateLimitConfigSchema = z.object({
   navSyncTrigger: RateLimitPolicySchema.optional(),
   /** Policy for export generation (PDF/XLSX): CPU and memory bound operation */
   exportGeneration: RateLimitPolicySchema.optional(),
+  /** Policy for the Google OAuth code exchange, per IP (its account bucket is `configMutations`) */
+  googleOAuthExchange: RateLimitPolicySchema.optional(),
 });
 
 /**

@@ -95,14 +95,16 @@ export function getWorkspaceDomain(): string {
  * Generates a Google OAuth 2.0 authorization URL that requests offline access
  * and forces the consent screen to always appear (ensuring a refresh token is returned).
  *
+ * @param state - The flow's `state`, which Google sends back with the code (RFC 6749 §10.12)
  * @returns The URL to redirect the user to for Google authorization
  */
-export function generateOAuthUrl(clientId: string, clientSecret: string, redirectUri: string): string {
+export function generateOAuthUrl(clientId: string, clientSecret: string, redirectUri: string, state: string): string {
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: [CALENDAR_SCOPE],
     prompt: 'consent',
+    state,
   });
 }
 

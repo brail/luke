@@ -88,6 +88,13 @@ export const RATE_LIMIT_CONFIG = {
     windowMs: 600_000, // 10 minutes — 1 sync per entity per window (keyed in integrations.nav.router.ts), prevents connection pool exhaustion
     keyBy: 'userId' as const,
   },
+  googleOAuthExchange: {
+    // The IP half of the OAuth code exchange's pair (CLAUDE.md rule 12): it checks a `state`.
+    // The account half is `configMutations`, since the exchange writes configuration.
+    max: 10,
+    windowMs: 900_000, // 15 minutes
+    keyBy: 'ip' as const,
+  },
   exportGeneration: {
     // Generating a PDF is the API's most expensive operation: pdfmake keeps the whole
     // document in memory, and the export also loads logos as Buffers. Without a
