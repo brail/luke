@@ -67,6 +67,11 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
     timeWindow: '10m',
     keyBy: 'userId',
   },
+  googleOAuthExchange: {
+    max: isDevelopment() ? 100 : 10,
+    timeWindow: '15m',
+    keyBy: 'ip',
+  },
   exportGeneration: {
     max: isDevelopment() ? 100 : 10,
     timeWindow: '1m',

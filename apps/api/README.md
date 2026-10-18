@@ -60,6 +60,7 @@ been sent to the directory yet:
 | From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
 | From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
 | LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| After the directory verified the password: the username belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `account_refused` |
 | After the directory verified the password: the user record could not be written | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 
 The answer is decided by what happens before the username is on the wire, and
@@ -244,7 +245,9 @@ depends on the sending domain's SPF, DKIM and DMARC records, an operator task.
 An LDAP login creates the Luke user on first sign-in and, on every later one,
 updates only `firstName` and `lastName` from the directory
 (`src/lib/ldapAuth.ts`); the email and the role are never overwritten after
-creation. For an LDAP account `users.update` refuses changes to the fields the
+creation. It creates the account only when no Luke account holds the username:
+an existing account without that LDAP identity, or a deactivated one, is refused
+(`account_refused`) and never linked. For an LDAP account `users.update` refuses changes to the fields the
 directory owns — username, first and last name, password (`getLockedFields` in
 `src/services/users.service.ts`). There is no separate sync job.
 

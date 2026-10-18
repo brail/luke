@@ -19,10 +19,11 @@ rules:
       # `fromBrandId`/`toBrandId` and `cloneFromBrandSeason` takes
       # `sourceBrandId`/`targetBrandId`, and with a fixed key they were
       # invisible — exactly the two procedures that clone across brands, where
-      # a mistake costs the most.
+      # a mistake costs the most. The plural is a brand list (`brandIds`), and a list
+      # out of scope is as much a leak as a single id.
       - metavariable-regex:
           metavariable: $KEY
-          regex: '^\w*[Bb]randId$'
+          regex: '^\w*[Bb]randIds?$'
       # Textual on the matched region, not a structural `pattern-not`: with
       # `<... f(...) ...>` semgrep kept flagging correctly guarded procedures
       # too, and a blocking rule that produces false positives ends up

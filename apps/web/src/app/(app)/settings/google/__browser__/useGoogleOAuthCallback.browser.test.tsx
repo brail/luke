@@ -45,7 +45,7 @@ function freshSearchParams(values: Record<string, string>) {
   return { get: (key: string) => values[key] ?? null };
 }
 
-function freshMutation(isPending: boolean, mutate: (input: { code: string; redirectUri: string }) => void) {
+function freshMutation(isPending: boolean, mutate: (input: { code: string; state: string; redirectUri: string }) => void) {
   // A NEW object every call — matches the real, verified-unstable useMutation() shape.
   return { isPending, mutate };
 }
@@ -62,7 +62,7 @@ function Harness({
   isPending = false,
 }: {
   values: Record<string, string>;
-  mutate: (input: { code: string; redirectUri: string }) => void;
+  mutate: (input: { code: string; state: string; redirectUri: string }) => void;
   toastError: (message: string) => void;
   isPending?: boolean;
 }) {
@@ -74,11 +74,11 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
   test('exchanges a present code exactly once, even across re-renders with brand-new object identities', async () => {
     const mutateSpy = vi.fn();
     const toastErrorSpy = vi.fn();
-    const values = { oauth_code: 'one-time-code' };
+    const values = { oauth_code: 'one-time-code', oauth_state: 'flow-state' };
 
     const screen = await render(<Harness values={values} mutate={mutateSpy} toastError={toastErrorSpy} />);
     await vi.waitFor(() => expect(mutateSpy).toHaveBeenCalledTimes(1));
-    expect(mutateSpy).toHaveBeenCalledWith({ code: 'one-time-code', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
+    expect(mutateSpy).toHaveBeenCalledWith({ code: 'one-time-code', state: 'flow-state', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
     expect(replaceStateSpy).toHaveBeenCalled();
 
     // Re-render several times with brand-new searchParams/mutation/toast objects each time
@@ -114,6 +114,19 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
     expect(toastErrorSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('never exchanges a code that arrives without its flow\'s state, and says so once', async () => {
+    const mutateSpy = vi.fn();
+    const toastErrorSpy = vi.fn();
+    const values = { oauth_code: 'code-from-elsewhere' };
+
+    const screen = await render(<Harness values={values} mutate={mutateSpy} toastError={toastErrorSpy} />);
+    await vi.waitFor(() => expect(toastErrorSpy).toHaveBeenCalledTimes(1));
+    await screen.rerender(<Harness values={values} mutate={mutateSpy} toastError={toastErrorSpy} />);
+
+    expect(toastErrorSpy).toHaveBeenCalledTimes(1);
+    expect(mutateSpy).not.toHaveBeenCalled();
+  });
+
   test('does nothing when neither oauth_code nor oauth_error is present, across re-renders', async () => {
     const mutateSpy = vi.fn();
     const toastErrorSpy = vi.fn();
@@ -134,12 +147,12 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
     expect(mutateSpy).not.toHaveBeenCalled();
 
     // The code "arrives" — e.g. the router finished resolving query params after mount.
-    await screen.rerender(<Harness values={{ oauth_code: 'late-code' }} mutate={mutateSpy} toastError={toastErrorSpy} />);
+    await screen.rerender(<Harness values={{ oauth_code: 'late-code', oauth_state: 'flow-state' }} mutate={mutateSpy} toastError={toastErrorSpy} />);
     await vi.waitFor(() => expect(mutateSpy).toHaveBeenCalledTimes(1));
-    expect(mutateSpy).toHaveBeenCalledWith({ code: 'late-code', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
+    expect(mutateSpy).toHaveBeenCalledWith({ code: 'late-code', state: 'flow-state', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
 
     // And still only once after that.
-    await screen.rerender(<Harness values={{ oauth_code: 'late-code' }} mutate={mutateSpy} toastError={toastErrorSpy} />);
+    await screen.rerender(<Harness values={{ oauth_code: 'late-code', oauth_state: 'flow-state' }} mutate={mutateSpy} toastError={toastErrorSpy} />);
     await vi.waitFor(() => expect(mutateSpy).toHaveBeenCalledTimes(1));
     expect(mutateSpy).toHaveBeenCalledTimes(1);
   });
@@ -147,7 +160,7 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
   test('a code seen while the mutation is already pending is exchanged once it frees up, not dropped', async () => {
     const mutateSpy = vi.fn();
     const toastErrorSpy = vi.fn();
-    const values = { oauth_code: 'code-during-pending' };
+    const values = { oauth_code: 'code-during-pending', oauth_state: 'flow-state' };
 
     // First render: the mutation is already in flight (e.g. a prior unrelated call). The guard
     // must NOT close here, or this code would never get exchanged once the mutation frees up.
@@ -158,7 +171,7 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
     // useMutation() transitioning isPending: true -> false.
     await screen.rerender(<Harness values={values} mutate={mutateSpy} toastError={toastErrorSpy} isPending={false} />);
     await vi.waitFor(() => expect(mutateSpy).toHaveBeenCalledTimes(1));
-    expect(mutateSpy).toHaveBeenCalledWith({ code: 'code-during-pending', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
+    expect(mutateSpy).toHaveBeenCalledWith({ code: 'code-during-pending', state: 'flow-state', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
 
     // And still only once after that.
     await screen.rerender(<Harness values={values} mutate={mutateSpy} toastError={toastErrorSpy} isPending={false} />);
@@ -174,7 +187,7 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
     // `exchangeMutation.mutate` a second time.
     const mutateSpy = vi.fn();
     const toastErrorSpy = vi.fn();
-    const values = { oauth_code: 'strict-mode-code' };
+    const values = { oauth_code: 'strict-mode-code', oauth_state: 'flow-state' };
 
     await render(
       <StrictMode>
@@ -183,7 +196,7 @@ describe('useGoogleOAuthCallback (production hook) — idempotency guard', () =>
     );
 
     await vi.waitFor(() => expect(mutateSpy).toHaveBeenCalledTimes(1));
-    expect(mutateSpy).toHaveBeenCalledWith({ code: 'strict-mode-code', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
+    expect(mutateSpy).toHaveBeenCalledWith({ code: 'strict-mode-code', state: 'flow-state', redirectUri: expect.stringContaining('/api/google/oauth/callback') });
     expect(mutateSpy).toHaveBeenCalledTimes(1);
   });
 });

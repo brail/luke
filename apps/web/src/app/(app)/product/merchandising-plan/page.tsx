@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
 
+import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Card, CardContent } from '../../../../components/ui/card';
@@ -16,6 +17,7 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 import { MerchandisingPlanTable } from './_components/MerchandisingPlanTable';
 import { MerchandisingRowDialog } from './_components/MerchandisingRowDialog';
 import { SpecsheetModal } from './_components/SpecsheetModal';
+import { useEnsurePlan, type PlanPair } from './useEnsurePlan';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
@@ -27,7 +29,7 @@ export default function MerchandisingPlanPage() {
   const enabled = !!brand?.id && !!season?.id;
 
   const { data: plan, isLoading: planLoading } =
-    trpc.merchandisingPlan.getOrCreate.useQuery(
+    trpc.merchandisingPlan.get.useQuery(
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled }
     );
@@ -40,6 +42,18 @@ export default function MerchandisingPlanPage() {
 
   const utils = trpc.useUtils();
 
+  // A season without a plan gets one on the first visit of a user who may create it (#146); the
+  // empty state's button retries a creation that failed.
+  const ensurePlanMutation = trpc.merchandisingPlan.getOrCreate.useMutation();
+  const storePlan = (pair: PlanPair, created: NonNullable<typeof plan>) =>
+    utils.merchandisingPlan.get.setData(pair, created);
+  const notifyPlanError = (err: unknown) => toast.error(getTrpcErrorMessage(err));
+  useEnsurePlan(brand?.id, season?.id, plan, canUpdate, {
+    create: ensurePlanMutation.mutateAsync,
+    store: storePlan,
+    onError: notifyPlanError,
+  });
+
   const invalidateRows = () => {
     if (!plan?.id) return;
     utils.merchandisingPlan.listRows.invalidate({ planId: plan.id });
@@ -47,7 +61,7 @@ export default function MerchandisingPlanPage() {
 
   const invalidatePlan = () => {
     if (!brand?.id || !season?.id) return;
-    utils.merchandisingPlan.getOrCreate.invalidate({
+    utils.merchandisingPlan.get.invalidate({
       brandId: brand.id,
       seasonId: season.id,
     });
@@ -97,7 +111,7 @@ export default function MerchandisingPlanPage() {
   });
 
   // ─── Render ─────────────────────────────────────────────────────
-  const isLoading = contextLoading || planLoading || rowsLoading;
+  const isLoading = contextLoading || planLoading || rowsLoading || ensurePlanMutation.isPending;
 
   if (isLoading) {
     return (
@@ -141,6 +155,26 @@ export default function MerchandisingPlanPage() {
             />
           </CardContent>
         </Card>
+      ) : plan === null ? (
+        <SectionCard title="Nessun piano per questa stagione">
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Il Merchandising Plan di questo brand e stagione non è ancora stato creato.
+            </p>
+            <CreateActionButton
+              label="Crea piano"
+              resourceName="il piano"
+              canCreate={canUpdate}
+              isLoading={ensurePlanMutation.isPending}
+              onClick={() =>
+                ensurePlanMutation.mutate(
+                  { brandId: brand.id, seasonId: season.id },
+                  { onSuccess: (created, pair) => storePlan(pair, created), onError: notifyPlanError }
+                )
+              }
+            />
+          </div>
+        </SectionCard>
       ) : null}
 
       {/* Add / edit row form */}

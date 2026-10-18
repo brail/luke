@@ -87,15 +87,15 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, whose missing-configuration refusal comes before any URL is built, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission); everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, which builds the URL and its state without contacting Google, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission); everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
     uncovered: 13,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
   sales: {
     reason:
-      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync and the two getSyncState by their permission spec (salesSyncPermission)',
-    uncovered: 4,
+      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync and the two getSyncState by their permission spec (salesSyncPermission), the two download exports by the export rate-limit spec (ratelimit.integration)',
+    uncovered: 2,
   },
   holidays: {
     reason:
@@ -147,15 +147,10 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     reason: 'the writes and listAll by their permission spec (adminConfigurationWrites); list, the read the product pages use, has no test yet',
     uncovered: 1,
   },
-  collectionLayoutRevision: {
-    reason:
-      'list, getDetail, getLayoutAsOf and export.xlsx invoked by the brand-scope spec, `create` by the one on the automatic-types guard; export.pdf remains',
-    uncovered: 1,
-  },
   phaseAlert: {
     reason:
-      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index); the two aggregate reads and the thresholds get/update pair remain uncovered',
-    uncovered: 4,
+      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec; criticalityForLayout and the thresholds get/update pair remain uncovered',
+    uncovered: 3,
   },
   planningGroup: {
     reason: 'no tests written, even though it is the scope of events and layout rows',

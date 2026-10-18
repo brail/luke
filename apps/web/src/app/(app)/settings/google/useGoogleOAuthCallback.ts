@@ -8,7 +8,7 @@ interface SearchParamsLike {
 
 interface ExchangeMutationLike {
   isPending: boolean;
-  mutate: (input: { code: string; redirectUri: string }) => void;
+  mutate: (input: { code: string; state: string; redirectUri: string }) => void;
 }
 
 interface ToastLike {
@@ -16,10 +16,12 @@ interface ToastLike {
 }
 
 /**
- * Consumes the one-time `oauth_code`/`oauth_error` query params left by the Google OAuth
- * redirect, exchanges the code at most once, and scrubs the URL. Takes `searchParams` as a
- * parameter (rather than calling `useSearchParams()` itself) so it stays framework-agnostic and
- * directly testable — the caller (`page.tsx`) is where the real `next/navigation` hook belongs.
+ * Consumes the one-time `oauth_code`/`oauth_state`/`oauth_error` query params left by the Google
+ * OAuth redirect, exchanges the code at most once, and scrubs the URL. A code without its flow's
+ * state is never exchanged (#143): the API would refuse it anyway, and it is no flow this page
+ * started. Takes `searchParams` as a parameter (rather than calling `useSearchParams()` itself) so
+ * it stays framework-agnostic and directly testable — the caller (`page.tsx`) is where the real
+ * `next/navigation` hook belongs.
  *
  * `handledRef` — not the dependency array — is what makes this idempotent, which is why the
  * array below can be complete and honest instead of pinned to `[]`:
@@ -63,6 +65,14 @@ export function useGoogleOAuthCallback(
     }
     if (!code) return;
 
+    const state = searchParams.get('oauth_state');
+    if (!state) {
+      handledRef.current = true;
+      toast.error("Autorizzazione Google non valida: ricollega l'account");
+      window.history.replaceState({}, '', '/settings/google');
+      return;
+    }
+
     // If a mutation happens to already be in flight, wait — don't mark this handled, or the
     // code would never get exchanged once the mutation frees up. `exchangeMutation` changing
     // identity when `isPending` flips is exactly what re-runs this effect for that retry.
@@ -70,7 +80,7 @@ export function useGoogleOAuthCallback(
 
     handledRef.current = true; // before mutate(): its own state change must not re-enter this
     const redirectUri = `${window.location.origin}/api/google/oauth/callback`;
-    exchangeMutation.mutate({ code, redirectUri });
+    exchangeMutation.mutate({ code, state, redirectUri });
     // Clean URL
     window.history.replaceState({}, '', '/settings/google');
   }, [searchParams, exchangeMutation, toast]);

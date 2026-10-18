@@ -18,7 +18,7 @@ import {
 import { cn } from '../../../../../lib/utils';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
-type MerchandisingPlan = RouterOutputs['merchandisingPlan']['getOrCreate'];
+type MerchandisingPlan = NonNullable<RouterOutputs['merchandisingPlan']['get']>;
 
 const GENDER_LABELS: Record<string, string> = {
   MAN: 'Uomo',

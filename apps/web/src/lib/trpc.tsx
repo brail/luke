@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
+import { TRPC_MAX_BATCH_SIZE } from '@luke/core';
 
 /**
  * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
@@ -66,6 +67,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
             // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
             // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
             url: '/trpc',
+            maxItems: TRPC_MAX_BATCH_SIZE,
             // Headers for authentication, Content-Type and trace correlation
             headers() {
               // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back

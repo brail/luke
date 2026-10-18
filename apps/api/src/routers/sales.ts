@@ -30,6 +30,7 @@ import {
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getUserTimeZone, resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedBrandIds } from '../services/context.service';
@@ -211,6 +212,10 @@ const portafoglioRouter = router({
           message: 'NAV non configurato o sync non disponibile',
         });
       }
+      // The scheduler has logged it and told the admins; the caller only needs to know it failed.
+      if (result.error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Sync portafoglio non riuscito' });
+      }
 
       return result;
     }),
@@ -236,6 +241,7 @@ const portafoglioRouter = router({
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
@@ -439,6 +445,10 @@ const kimoRouter = router({
           message: 'NAV non configurato o sync non disponibile',
         });
       }
+      // The scheduler has logged it and told the admins; the caller only needs to know it failed.
+      if (result.error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Sync KIMO non riuscito' });
+      }
 
       return result;
     }),
@@ -452,6 +462,7 @@ const kimoRouter = router({
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;

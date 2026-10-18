@@ -1,3 +1,5 @@
+import { randomBytes, timingSafeEqual } from 'crypto';
+
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -7,7 +9,39 @@ import { googleWorkspaceConfigSchema } from '@luke/core';
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * The pending OAuth flow of each user: the `state` its authorization URL carries. A code is
+ * exchanged only with it, so a code from a flow somebody else started — a link that lands an admin
+ * on the settings page with an attacker's code — binds nothing (#143). A new URL replaces the
+ * pending flow.
+ */
+// ponytail: per-process store, fine for the single API instance (ADR-011); a shared store if the
+// API ever scales out. A restart in the middle of a flow only means connecting again.
+const pendingOAuthStates = new Map<string, { state: string; expiresAt: number }>();
+
+/**
+ * Whether `state` is the user's pending one; a match consumes it. Synchronous from the read to the
+ * delete, so two concurrent exchanges of one state cannot both pass. A mismatch leaves the pending
+ * flow in place: a stale tab must not end the current one.
+ */
+function consumeOAuthState(userId: string, state: string): boolean {
+  const pending = pendingOAuthStates.get(userId);
+  if (!pending) return false;
+  if (pending.expiresAt <= Date.now()) {
+    pendingOAuthStates.delete(userId);
+    return false;
+  }
+  const expected = Buffer.from(pending.state);
+  const received = Buffer.from(state);
+  if (expected.length !== received.length || !timingSafeEqual(expected, received)) return false;
+  pendingOAuthStates.delete(userId);
+  return true;
+}
 
 export const googleRouter = router({
   /**
@@ -114,7 +148,8 @@ export const googleRouter = router({
     }),
 
   /**
-   * Generates the Google OAuth2 authorization URL for the user to grant access.
+   * Generates the Google OAuth2 authorization URL for the user to grant access, starting the user's
+   * pending flow: the URL carries a new `state`, valid ten minutes, that the code exchange requires.
    *
    * @auth {config:update}
    * @input {{ redirectUri: string }} — OAuth redirect URI.
@@ -134,20 +169,26 @@ export const googleRouter = router({
           message: 'Client ID e Client Secret obbligatori prima di avviare OAuth',
         });
       }
-      const url = generateOAuthUrl(clientId, clientSecret, input.redirectUri);
+      const state = randomBytes(32).toString('base64url');
+      pendingOAuthStates.set(ctx.session.user.id, { state, expiresAt: Date.now() + OAUTH_STATE_TTL_MS });
+      const url = generateOAuthUrl(clientId, clientSecret, input.redirectUri, state);
       return { url };
     }),
 
   /**
-   * Exchanges the OAuth authorization code for a refresh token and stores it encrypted.
+   * Exchanges the OAuth authorization code for a refresh token and stores it encrypted — only with the
+   * `state` of the flow the same user started through `getOAuthUrl`, checked before any call to Google.
    *
    * @auth {config:update}
-   * @input {{ code: string, redirectUri: string }}
+   * @input {{ code: string, state: string, redirectUri: string }}
    * @output {{ userEmail: string | null }}
    */
   exchangeOAuthCode: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ code: z.string().min(1), redirectUri: z.string().url() }))
+    // Rule 12: it checks a `state`, so an IP bucket and an account bucket, both before the check.
+    .use(withRateLimit('googleOAuthExchange'))
+    .use(withRateLimit('configMutations'))
+    .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: z.string().url() }))
     .mutation(async ({ input, ctx }) => {
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId', false),
@@ -155,6 +196,9 @@ export const googleRouter = router({
       ]);
       if (!clientId || !clientSecret) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Client ID e Client Secret non configurati' });
+      }
+      if (!consumeOAuthState(ctx.session.user.id, input.state)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: "Autorizzazione scaduta o non valida: ricollega l'account" });
       }
       let exchanged: Awaited<ReturnType<typeof exchangeOAuthCode>>;
       try {

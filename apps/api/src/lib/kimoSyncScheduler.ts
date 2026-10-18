@@ -14,6 +14,7 @@ import type { PrismaClient } from '@luke/db';
 import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke/nav';
 
 import { getConfig } from './configManager';
+import { toErrorMessage } from './error';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
@@ -35,6 +36,16 @@ let _logger: Logger | null = null;
 
 // ─── Internal runner ──────────────────────────────────────────────────────────
 
+/** Tells the admins a sync failed, at most once per `SYSTEM_FAILURE_DEDUP_MS`. */
+async function notifyFailure(prisma: PrismaClient, log: Logger, message: string): Promise<void> {
+  await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+    category: 'SYSTEM',
+    title: 'KIMO sync fallito',
+    message,
+    data: { type: 'kimo_sync_failure' },
+  })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
+}
+
 async function _runSync(): Promise<KimoSyncResult | null> {
   if (_isRunning || !_prisma || !_logger) return null;
 
@@ -48,15 +59,15 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     const navConfig = await getNavDbConfig(prisma, getConfig);
     const pool = await getPool(navConfig);
     const result = await syncKimoNow(pool, navConfig.company, prisma, log);
+    // A failed table comes back as a value, not a throw: it is a failed run all the same.
+    if (result.error) {
+      log.error({ error: result.error }, 'Kimo sync scheduler: sync failed');
+      await notifyFailure(prisma, log, result.error);
+    }
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync failed');
-    await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
-      category: 'SYSTEM',
-      title: 'KIMO sync fallito',
-      message: (err as Error).message ?? 'Errore sconosciuto',
-      data: { type: 'kimo_sync_failure' },
-    })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
+    await notifyFailure(prisma, log, toErrorMessage(err));
     return null;
   } finally {
     _isRunning = false;

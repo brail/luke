@@ -105,6 +105,7 @@ Code defaults at the time of writing; the source of truth is
 | `companyStructureMutations` | user | 1m | 30 | 100 |
 | `navSyncTrigger` | user and NAV entity | 10m | 1 | 1 |
 | `exportGeneration` | user | 1m | 10 | 100 |
+| `googleOAuthExchange` | IP | 15m | 10 | 100 |
 
 `auth.login` applies two buckets to the same attempt: `login` by IP and
 `loginByUsername` by the submitted username, so a password spray spread across
@@ -112,7 +113,9 @@ many addresses is still limited per account. The other public endpoints that
 verify the account's current password pair an IP bucket with the same
 `loginByUsername` bucket, so their attempts count against the account's login
 limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
-(`passwordReset`).
+(`passwordReset`). `integrations.google.exchangeOAuthCode`, which checks the
+OAuth `state`, pairs `googleOAuthExchange` by IP with `configMutations` by
+account.
 
 ### Store
 
@@ -143,6 +146,11 @@ download files without a rate ceiling. It is not configurable through the
 `rateLimit` key, and `skipOnError` lets requests through when the limiter itself
 fails. Its 429 has its own body — `{ statusCode, error, message, retryAfter }` —
 and no `error.data.code`.
+
+A tRPC batch is one request to this limiter, whatever the number of calls in
+it. The tRPC adapter refuses a batch of more than `TRPC_MAX_BATCH_SIZE` calls
+(`@luke/core`, 20) with a 400, before any procedure runs, and the web's links
+split at the same number, so a busy page sends a second request instead.
 
 ---
 

@@ -1,10 +1,11 @@
 /**
  * The NAV, KIMO and portafoglio sync schedulers log a tick or a sync that cannot start — the
  * maintenance check or the scheduler lock failing because the database is down — and keep
- * ticking: an unhandled rejection would stop the process (#87).
+ * ticking: an unhandled rejection would stop the process (#87). A KIMO or portafoglio sync that
+ * returns an error, rather than throwing one, reaches the admins too (#147).
  *
  * Mocked: the maintenance guard and the scheduler lock, each with a check the test can fail;
- * configuration; the NAV package (the sync itself).
+ * configuration; the NAV package (the sync itself); the admin notification.
  */
 
 import Fastify from 'fastify';
@@ -13,13 +14,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@luke/db';
 import { runNavSync, syncKimoNow, syncPortafoglioNow } from '@luke/nav';
 
-import { registerKimoSyncScheduler } from '../src/lib/kimoSyncScheduler';
+import { registerKimoSyncScheduler, triggerKimoSyncNow } from '../src/lib/kimoSyncScheduler';
 import { registerNavSyncScheduler } from '../src/lib/navSyncScheduler';
-import { registerPortafoglioSyncScheduler } from '../src/lib/portafoglioSyncScheduler';
+import { registerPortafoglioSyncScheduler, triggerPortafoglioSyncNow } from '../src/lib/portafoglioSyncScheduler';
 
-const { maintenanceCheck, lockCheck } = vi.hoisted(() => ({
+const { maintenanceCheck, lockCheck, notifyAdmins } = vi.hoisted(() => ({
   maintenanceCheck: vi.fn(async () => false),
   lockCheck: vi.fn(async () => {}),
+  notifyAdmins: vi.fn(async () => {}),
+}));
+
+vi.mock('../src/lib/notifications', () => ({
+  SYSTEM_FAILURE_DEDUP_MS: 0,
+  notifyAdmins,
+  notifyDeduped: (_prisma: unknown, _key: string, _ms: number, send: () => Promise<unknown>) => send(),
 }));
 
 vi.mock('../src/lib/maintenanceMode', () => ({
@@ -87,5 +95,38 @@ describe.each(SCHEDULERS)('$name sync scheduler', ({ register, sync }) => {
     lockCheck.mockResolvedValue(undefined); // the database is back
     await vi.advanceTimersByTimeAsync(TICK_MS);
     await vi.waitFor(() => expect(sync).toHaveBeenCalled());
+  });
+});
+
+describe('a sync that returns an error', () => {
+  // No automatic sync: the first tick finds no schedule, so only the manual trigger runs one.
+  const prisma = { navSyncFilter: { findUnique: async () => null } } as unknown as PrismaClient;
+  let fastify: ReturnType<typeof Fastify>;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fastify = Fastify();
+  });
+  afterEach(async () => {
+    await fastify.close();
+  });
+
+  it('KIMO notifies the admins', async () => {
+    registerKimoSyncScheduler(fastify, prisma);
+    await fastify.ready();
+    vi.mocked(syncKimoNow).mockResolvedValueOnce({ stats: [], totalDurationMs: 1, error: 'a table failed' });
+
+    await triggerKimoSyncNow();
+
+    expect(notifyAdmins).toHaveBeenCalledWith(prisma, expect.objectContaining({ title: 'KIMO sync fallito', message: 'a table failed' }));
+  });
+
+  it('portafoglio notifies the admins', async () => {
+    registerPortafoglioSyncScheduler(fastify, prisma);
+    await fastify.ready();
+    vi.mocked(syncPortafoglioNow).mockResolvedValueOnce({ stats: [], totalDurationMs: 1, seasonCodes: [], error: 'a table failed' });
+
+    await triggerPortafoglioSyncNow();
+
+    expect(notifyAdmins).toHaveBeenCalledWith(prisma, expect.objectContaining({ title: 'Portafoglio sync fallito', message: 'a table failed' }));
   });
 });

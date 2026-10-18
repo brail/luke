@@ -222,6 +222,14 @@ export function buildTrpcUrl(
 }
 
 /**
+ * The most calls one tRPC batch request may carry. Each call in a batch runs its own procedure, so
+ * an unbounded batch lets one request start any number of them. The API refuses a larger batch
+ * (`maxBatchSize`) and every client link splits at it (`maxItems`): a busy page sends a second
+ * request instead of being refused.
+ */
+export const TRPC_MAX_BATCH_SIZE = 20;
+
+/**
  * Builds the export download URL for a season calendar.
  *
  * Authenticated with a Bearer token by the caller (`fetch`), not a signed query token — these

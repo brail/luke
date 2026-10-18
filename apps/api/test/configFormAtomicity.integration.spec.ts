@@ -279,9 +279,12 @@ describe('every form writes through exactly one saveConfigs call', () => {
     await saveConfig(prisma, 'integrations.google.oauth.clientSecret', 'shh', true);
     vi.spyOn(calendar, 'exchangeOAuthCode').mockResolvedValue({ refreshToken: 'token', userEmail: null });
     const caller = await createCallerAs('admin');
+    // A code is exchanged only with the state of a flow this user started (#143).
+    const { url } = await caller.integrations.google.getOAuthUrl({ redirectUri: 'https://luke.example.com/cb' });
+    const state = new URL(url).searchParams.get('state') ?? '';
 
     let batch = spyBatches();
-    await caller.integrations.google.exchangeOAuthCode({ code: 'c', redirectUri: 'https://luke.example.com/cb' });
+    await caller.integrations.google.exchangeOAuthCode({ code: 'c', state, redirectUri: 'https://luke.example.com/cb' });
     expect(batch()).toEqual([
       ['integrations.google.oauth.refreshToken', 'encrypted'], ['integrations.google.oauth.userEmail', 'delete'],
     ]);

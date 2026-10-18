@@ -503,11 +503,13 @@ async function syncDdtPicking(
 
 /**
  * Runs a full NAV → PostgreSQL sync cycle for all order portfolio tables.
- * Skips the run if no active seasons are found and returns an error result.
+ * Skips the run, with no error, if no active seasons are found. A table that fails does not stop
+ * the others, but fails the run: its message is in `error`.
  *
  * @param pool - Already-connected mssql connection pool.
  * @param company - Raw NAV company name (e.g. 'NewEra') — sanitized internally.
- * @returns Sync stats per table, active season codes, total duration, and optional error string.
+ * @returns Sync stats per table, active season codes, total duration, and an error string when the
+ *   run failed as a whole or any table did.
  */
 export async function syncPortafoglioNow(
   pool: mssql.ConnectionPool,
@@ -527,13 +529,17 @@ export async function syncPortafoglioNow(
   });
   const seasonCodes = activeSeasonsRaw.map(s => s.code);
 
+  // Nothing to sync is not a failed sync: no error, or every interval would alert the admins.
   if (!seasonCodes.length) {
     log.warn('No active season — portfolio sync skipped');
-    return { stats: [], totalDurationMs: 0, seasonCodes: [], error: 'No active season' };
+    return { stats: [], totalDurationMs: 0, seasonCodes: [] };
   }
 
   log.info({ seasonCodes }, 'nav-pf sync start');
   const stats: TableSyncStats[] = [];
+  // Tables that failed while the others went on (CLAUDE.md rule 2): the run still fails.
+  const failures: string[] = [];
+  const failed = (reason: unknown) => failures.push(reason instanceof Error ? reason.message : String(reason));
 
   try {
     // 1. Sales Header first (the others depend on the doc_nos)
@@ -568,6 +574,7 @@ export async function syncPortafoglioNow(
         stats.push(r.value);
       } else {
         log.error({ err: r.reason }, 'nav-pf parallel sync error');
+        failed(r.reason);
       }
     }
 
@@ -581,9 +588,15 @@ export async function syncPortafoglioNow(
       syncDdtPicking(pool, co, prisma, docNos, log),
     ]);
     if (prenotDate.status === 'fulfilled') stats.push(prenotDate.value);
-    else log.error({ err: prenotDate.reason }, 'nav-pf date_prenotazione sync error');
+    else {
+      log.error({ err: prenotDate.reason }, 'nav-pf date_prenotazione sync error');
+      failed(prenotDate.reason);
+    }
     if (ddt.status === 'fulfilled') stats.push(ddt.value);
-    else log.error({ err: ddt.reason }, 'nav-pf ddt_picking sync error');
+    else {
+      log.error({ err: ddt.reason }, 'nav-pf ddt_picking sync error');
+      failed(ddt.reason);
+    }
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -593,6 +606,10 @@ export async function syncPortafoglioNow(
 
   const total = Date.now() - t0;
   const totalRows = stats.reduce((s, x) => s + x.rowsUpserted, 0);
+  if (failures.length > 0) {
+    log.error({ totalRows, ms: total, tables: stats.length, failures }, 'nav-pf sync completed with failed tables');
+    return { stats, totalDurationMs: total, seasonCodes, error: `${failures.length} tabelle non sincronizzate: ${failures.join('; ')}` };
+  }
   log.info({ totalRows, ms: total, tables: stats.length }, 'nav-pf sync completed');
 
   return { stats, totalDurationMs: total, seasonCodes };
