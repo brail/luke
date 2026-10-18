@@ -390,7 +390,7 @@ creating it again under the same name finds them. Stop at any check that fails.
     docker cp "portainer:/data/compose/$STACK_ID/docker-compose.yml" luke-3.0-editor-stack.yml
     docker cp "portainer:/data/compose/$STACK_ID/stack.env" luke-3.0-editor-stack.env
     chmod 600 luke-3.0-editor-stack.yml luke-3.0-editor-stack.env)
-   grep -n 'image: ghcr.io/brail/luke-' luke-3.0-editor-stack.yml   # both end in :3.0.0
+   grep '^LUKE_VERSION=' luke-3.0-editor-stack.env   # LUKE_VERSION=3.0.0: the image lines read ${LUKE_VERSION…}
    ```
 
    Portainer reads variables from a file on your workstation, not on the host.

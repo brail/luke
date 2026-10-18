@@ -66,10 +66,9 @@
  *   pinned `shell: bash`. That name is what the ruleset on `main` now requires
  *   in place of the individual job names, together with `Security gate`, since
  *   the transition recorded in Appendix X §X.7 of the monorepo audit. That is
- *   enforcement on `main`; this checker is the coverage on `develop-2.2`, and
- *   the two are separate — `main` carries no copy of it, so the gates there
- *   are required without their `needs` lists being pinned. The list this gate
- *   stands for must therefore be ci.yml's own,
+ *   remote enforcement on `main`; this checker validates the workflow copies
+ *   in the checkout where it runs, including on `main`. The two are separate.
+ *   The list this gate stands for must therefore be ci.yml's own,
  *   compared against the file's jobs rather than a constant here, which makes
  *   a newly added job a missing `needs` entry instead of a silently unguarded
  *   one. The current remote context list is deliberately not encoded here:
@@ -124,7 +123,8 @@ export const CI_DOCUMENTATION_PATHS_IGNORE = [
  * everything else is meant to replace a list nobody can keep in step. The
  * ruleset on `main` now names exactly this context and `Security gate`, in
  * place of the individual job names it used to list; that enforcement is
- * remote state, while this checker pins only `develop-2.2`'s copies.
+ * remote state, while this checker pins the workflow copies in the checkout
+ * where it runs, including on `main`.
  * Deliberately not paired with a pinned list of job names here
  * — neither ci.yml's, which is read from the file, nor the ruleset's, which is
  * not this checker's to know.
