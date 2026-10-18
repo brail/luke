@@ -57,7 +57,7 @@ const outRes = {
 };
 
 /** The same resources on the in-scope brand, for the positive cases. */
-const inRes = { layoutId: '', rowId: '' };
+const inRes = { layoutId: '', groupId: '', rowId: '' };
 
 beforeAll(async () => {
   prisma = await setupTestDb();
@@ -150,6 +150,7 @@ beforeAll(async () => {
 
   const inBuilt = await buildLayout(inScopeBrandId);
   inRes.layoutId = inBuilt.layoutId;
+  inRes.groupId = inBuilt.groupId;
   inRes.rowId = inBuilt.rowId;
 });
 
@@ -213,6 +214,44 @@ describe('brand scope — collectionLayout and dashboard', () => {
         }),
       'FORBIDDEN'
     );
+  });
+});
+
+describe('brand scope — saturation heatmap', () => {
+  // The heatmap counts rows into criticality bands. A completed row always lands in one, with or
+  // without calendar events, so one per brand is enough for each brand to show up in the cells.
+  beforeAll(async () => {
+    const asAdmin = createCallerWithSession(adminSession);
+    for (const groupId of [inRes.groupId, outRes.groupId]) {
+      const row = await asAdmin.collectionLayout.rows.create({
+        groupId,
+        gender: 'MAN',
+        line: 'Heatmap',
+        status: COLLECTION_STATUS[0],
+        productCategory: 'HEATMAP',
+        skuForecast: null,
+        qtyForecast: null,
+      });
+      await prisma.collectionLayoutRow.update({ where: { id: row.id }, data: { completedAt: new Date() } });
+    }
+  });
+
+  const heatmapBrandIds = async (session: UserSession, brandIds: string[]) => {
+    const cells = await createCallerWithSession(session).phaseAlert.saturationHeatmap({ seasonId, brandIds });
+    return [...new Set(cells.map(cell => cell.brandId))].sort();
+  };
+
+  it('drops a requested brand outside the caller\'s scope', async () => {
+    expect(await heatmapBrandIds(scopedSession, [inScopeBrandId, outOfScopeBrandId])).toEqual([inScopeBrandId]);
+  });
+
+  it('answers empty when no requested brand is in scope', async () => {
+    expect(await heatmapBrandIds(scopedSession, [outOfScopeBrandId])).toEqual([]);
+  });
+
+  it('an admin is not bound by team scopes', async () => {
+    expect(await heatmapBrandIds(adminSession, [inScopeBrandId, outOfScopeBrandId]))
+      .toEqual([inScopeBrandId, outOfScopeBrandId].sort());
   });
 });
 

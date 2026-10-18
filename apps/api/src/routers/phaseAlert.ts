@@ -12,6 +12,7 @@ import { saveConfig } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
+  filterAllowedBrandIds,
   resolveLayoutBrandAccess,
   resolveRowBrandAccess,
 } from '../services/brandScope.service';
@@ -129,17 +130,20 @@ export const phaseAlertRouter = router({
 
   /**
    * Saturation heatmap (Phase 6.1): row counts per criticality band, grouped by brand and
-   * product category, across every brand's layout for the given season.
+   * product category, across the requested brands' layouts for the given season. Brands outside the
+   * caller's scope are dropped, as in a filterable view (`seasonCalendar.listMilestones`).
    *
    * @auth {collection_alert:read}
-   * @input {{ seasonId: string, brandIds: string[] }}
+   * @input {{ seasonId: string, brandIds: string[] }} — at most 100, the page's `brand.list` limit.
    * @output {{ brandId, productCategory, label, color, emphasis, count }[]}
    */
   saturationHeatmap: protectedProcedure
     .use(requirePermission('collection_alert:read'))
-    .input(z.object({ seasonId: z.string().uuid(), brandIds: z.array(z.string().uuid()).min(1) }))
+    .input(z.object({ seasonId: z.string().uuid(), brandIds: z.array(z.string().uuid()).min(1).max(100) }))
     .query(async ({ input, ctx }) => {
-      return computeSaturationHeatmap(input.seasonId, input.brandIds, new Date(), ctx.prisma);
+      const brandIds = await filterAllowedBrandIds(ctx, input.brandIds);
+      if (brandIds.length === 0) return [];
+      return computeSaturationHeatmap(input.seasonId, brandIds, new Date(), ctx.prisma);
     }),
 
   /**
