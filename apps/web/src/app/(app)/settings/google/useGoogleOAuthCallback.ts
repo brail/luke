@@ -18,9 +18,10 @@ interface ToastLike {
 /**
  * Consumes the one-time `oauth_code`/`oauth_state`/`oauth_error` query params left by the Google
  * OAuth redirect, exchanges the code at most once, and scrubs the URL. A code without its flow's
- * state is never exchanged (#143): the API would refuse it anyway, and it is no flow this page started. Takes `searchParams` as a
- * parameter (rather than calling `useSearchParams()` itself) so it stays framework-agnostic and
- * directly testable — the caller (`page.tsx`) is where the real `next/navigation` hook belongs.
+ * state is never exchanged (#143): the API would refuse it anyway, and it is no flow this page
+ * started. Takes `searchParams` as a parameter (rather than calling `useSearchParams()` itself) so
+ * it stays framework-agnostic and directly testable — the caller (`page.tsx`) is where the real
+ * `next/navigation` hook belongs.
  *
  * `handledRef` — not the dependency array — is what makes this idempotent, which is why the
  * array below can be complete and honest instead of pinned to `[]`:

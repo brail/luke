@@ -14,6 +14,7 @@ import type { PrismaClient } from '@luke/db';
 import { getNavDbConfig, getPool, syncKimoNow, type KimoSyncResult } from '@luke/nav';
 
 import { getConfig } from './configManager';
+import { toErrorMessage } from './error';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
@@ -66,7 +67,7 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync failed');
-    await notifyFailure(prisma, log, (err as Error).message ?? 'Errore sconosciuto');
+    await notifyFailure(prisma, log, toErrorMessage(err));
     return null;
   } finally {
     _isRunning = false;

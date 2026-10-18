@@ -2,7 +2,7 @@
  * tRPC router for merchandising plan management.
  *
  * Exposes:
- *  - merchandisingPlan.getOrCreate
+ *  - merchandisingPlan.get (the page's read) / getOrCreate (creates a missing plan)
  *  - merchandisingPlan.updateStatus
  *  - merchandisingPlan.listRows
  *  - merchandisingPlan.createRow / updateRow / deleteRow / reorderRows

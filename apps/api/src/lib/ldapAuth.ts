@@ -46,11 +46,13 @@ export function fillLdapFilter(template: string, placeholder: 'username' | 'user
 /**
  * What an LDAP login that did not authenticate tells the caller. `ldap_unavailable` means the
  * directory never judged the credentials — a step got no usable answer, or could not be carried
- * out — and is for the audit trail only: the public answer to a refusal is the same either way.
+ * out — and `account_refused` that it verified them for an account Luke refuses (deactivated, or
+ * without this LDAP identity). Both are for the audit trail only: the public answer to a refusal is
+ * the same either way.
  */
 export interface LdapRefusal {
   user: null;
-  reason: 'invalid_credentials' | 'ldap_unavailable';
+  reason: 'invalid_credentials' | 'ldap_unavailable' | 'account_refused';
   errorCode?: string;
 }
 
@@ -128,7 +130,7 @@ export async function authenticateViaLdap(
 
     // Create or update the user in the database; an account it may not sign in is a refusal.
     const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
-    if (!user) return REFUSED;
+    if (!user) return { user: null, reason: 'account_refused' };
 
     logger.info({ username, role }, 'LDAP authentication successful');
     return { user };

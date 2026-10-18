@@ -71,6 +71,12 @@ function login(username: string, password: string) {
   return appRouter.createCaller(ctx).auth.login({ username, password });
 }
 
+async function lastRefusalReason() {
+  const row = await prisma.auditLog.findFirst({ where: { action: 'AUTH_LOGIN_FAILED' }, orderBy: { createdAt: 'desc' } });
+  // `metadata` is JSON; the failed-login audit always writes `reason` (`auth.service.ts`).
+  return (row?.metadata as { reason?: string } | null)?.reason;
+}
+
 async function lastLoginProvider() {
   const row = await prisma.auditLog.findFirst({ where: { action: 'AUTH_LOGIN' }, orderBy: { createdAt: 'desc' } });
   // `metadata` is JSON; the login audit always writes `provider` (`auth.service.ts`).
@@ -157,7 +163,7 @@ describe('an account that carries the LDAP identity', () => {
   });
 });
 
-describe('refused as a wrong password, with nothing written', () => {
+describe('refused as a wrong password, with nothing written, and audited as a refused account', () => {
   it('an LDAP identity under another directory name', async () => {
     await configure('ldap-first');
     const { user } = await createTestUser('editor');
@@ -165,6 +171,7 @@ describe('refused as a wrong password, with nothing written', () => {
 
     await expect(login(user.username, DIRECTORY_PASSWORD)).rejects.toMatchObject(INVALID);
 
+    expect(await lastRefusalReason()).toBe('account_refused');
     expect(await ldapIdentities(user.id)).toBe(1);
     expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({ firstName: user.firstName, lastName: user.lastName });
   });
@@ -177,6 +184,7 @@ describe('refused as a wrong password, with nothing written', () => {
 
     await expect(login(user.username, DIRECTORY_PASSWORD)).rejects.toMatchObject(INVALID);
 
+    expect(await lastRefusalReason()).toBe('account_refused');
     expect(await prisma.user.count({ where: { username: user.username } })).toBe(1);
   });
 });
