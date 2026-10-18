@@ -3,23 +3,28 @@
  *
  * `getStatus` is public by design: it must be readable even pre-login (login screen,
  * "maintenance in progress" banner) — no sensitive data in the state, only status/time/message.
- * All other mutations are `adminProcedure` (permission `maintenance:update`, same schema
- * as the other `maintenance` domain endpoints).
+ * Every mutation requires `maintenance:mode_manage` on `protectedProcedure`, so the maintenance
+ * guard runs first: while maintenance is active only whoever bypasses it (`maintenance:update`)
+ * reaches them — the admin who has to end it.
  */
 
 import { TRPCError } from '@trpc/server';
 
 import {
+  DEFAULT_LOCALE,
+  formatInstant,
   MaintenanceModeActivateInputSchema,
   MaintenanceModeScheduleInputSchema,
 } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getConfigOrDefault } from '../lib/configManager';
 import { sendBulkEmail, sendMaintenanceEndedEmail, sendMaintenanceScheduledEmail } from '../lib/mailer';
 import { forceLogoutNonAdmins, getMaintenanceState, writeMaintenanceState } from '../lib/maintenanceMode';
 import { bulkNotify } from '../lib/notifications';
-import { adminProcedure, publicProcedure, router } from '../lib/trpc';
+import { requirePermission } from '../lib/permissions';
+import { protectedProcedure, publicProcedure, router } from '../lib/trpc';
+import { groupByTimeZone } from '../lib/userTimeZone';
 
 import type { MaintenanceModeState } from '../lib/maintenanceMode';
 import type { Context } from '../lib/trpc';
@@ -39,20 +44,20 @@ const INACTIVE_RESET: MaintenanceModeState = {
 
 /** Resolves the app base URL used in email CTAs — same fallback used elsewhere for local dev. */
 async function getBaseUrl(ctx: Context): Promise<string> {
-  return (await getConfig(ctx.prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
+  return getConfigOrDefault(ctx.prisma, 'app.baseUrl');
 }
 
 /**
- * Fire-and-forget fan-out of `send` to `emails` (via `sendBulkEmail`) — the admin's mutation
+ * Fire-and-forget fan-out of `send` to `recipients` (via `sendBulkEmail`) — the admin's mutation
  * response shouldn't block on however long SMTP takes for a potentially large user base.
  * Failures are logged in aggregate, never thrown.
  */
-function emailUsers(ctx: Context, emails: string[], send: (email: string) => Promise<void>): void {
-  void sendBulkEmail(emails, send)
+function emailUsers<T>(ctx: Context, recipients: T[], send: (recipient: T) => Promise<void>): void {
+  void sendBulkEmail(recipients, send)
     .then(({ failed }) => {
-      if (failed > 0) ctx.logger.error({ failed, total: emails.length }, 'Maintenance mode: invio email fallito per alcuni utenti');
+      if (failed > 0) ctx.logger.error({ failed, total: recipients.length }, 'Maintenance mode: email send failed for some users');
     })
-    .catch(err => ctx.logger.error({ err }, 'Maintenance mode: invio email fallito'));
+    .catch(err => ctx.logger.error({ err }, 'Maintenance mode: email send failed'));
 }
 
 export const maintenanceModeRouter = router({
@@ -71,11 +76,12 @@ export const maintenanceModeRouter = router({
    * (in-app notification + SSE push) at each `warningLeadMinutes` threshold beforehand.
    * Can be called again while already `SCHEDULED` to reschedule.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input `{ scheduledAt, message?, forceLogout, warningLeadMinutes, notifyByEmail }`
    * @output The updated `MaintenanceModeState` (status `SCHEDULED`).
    */
-  schedule: adminProcedure
+  schedule: protectedProcedure
+    .use(requirePermission('maintenance:mode_manage'))
     .input(MaintenanceModeScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
       // A threshold farther out than the total time available can never fire as a real
@@ -103,24 +109,31 @@ export const maintenanceModeRouter = router({
       // A single user query, reused for both the in-app notification and the optional email
       // (previously there were two identical fetches on `isActive:true`, one inside `notifyAllUsers`, one
       // inside the email fan-out).
-      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true } });
+      const users = await ctx.prisma.user.findMany({ where: { isActive: true }, select: { id: true, email: true, timezone: true } });
+      const scheduledAt = new Date(input.scheduledAt);
+      const usersByZone = await groupByTimeZone(ctx.prisma, users, ctx.logger);
 
       // Immediate notice to everyone, regardless of the configured threshold ladder (which
       // only fires as the countdown crosses each one) — someone scheduling well in advance wants
-      // users to know right away, not just 15/5/1 minute before.
-      void bulkNotify(ctx.prisma, users.map(u => u.id), {
-        category: 'SYSTEM',
-        title: 'Manutenzione programmata',
-        message: input.message
-          ? `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}. ${input.message}`
-          : `Prevista per ${new Date(input.scheduledAt).toLocaleString('it-IT', { dateStyle: 'medium', timeStyle: 'short' })}.`,
-        data: { type: 'maintenance_mode_scheduled' },
-      }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: notifica pianificazione fallita'));
+      // users to know right away, not just 15/5/1 minute before. One notice per zone: the time is
+      // written in each reader's zone, with the zone's short name.
+      for (const [timeZone, group] of usersByZone) {
+        const when = formatInstant(scheduledAt, timeZone, {
+          day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+        }, DEFAULT_LOCALE);
+        void bulkNotify(ctx.prisma, group.map(u => u.id), {
+          category: 'SYSTEM',
+          title: 'Manutenzione programmata',
+          message: input.message ? `Prevista per ${when}. ${input.message}` : `Prevista per ${when}.`,
+          data: { type: 'maintenance_mode_scheduled' },
+        }).catch(err => ctx.logger.error({ err }, 'Maintenance mode: schedule notification failed'));
+      }
 
       if (input.notifyByEmail) {
         const baseUrl = await getBaseUrl(ctx);
-        emailUsers(ctx, users.map(u => u.email), email =>
-          sendMaintenanceScheduledEmail(ctx.prisma, email, new Date(input.scheduledAt), input.message ?? null, baseUrl)
+        const recipients = [...usersByZone].flatMap(([timeZone, group]) => group.map(u => ({ email: u.email, timeZone })));
+        emailUsers(ctx, recipients, recipient =>
+          sendMaintenanceScheduledEmail(ctx.prisma, recipient.email, scheduledAt, input.message ?? null, baseUrl, recipient.timeZone)
         );
       }
 
@@ -142,11 +155,12 @@ export const maintenanceModeRouter = router({
    * Activates maintenance mode immediately (no warning ladder — this is already a deliberate,
    * immediate action, e.g. right before a restore).
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input `{ message?, forceLogout }`
    * @output The updated `MaintenanceModeState` (status `ACTIVE`).
    */
-  activateNow: adminProcedure
+  activateNow: protectedProcedure
+    .use(requirePermission('maintenance:mode_manage'))
     .input(MaintenanceModeActivateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const state = await writeMaintenanceState(ctx.prisma, {
@@ -178,12 +192,12 @@ export const maintenanceModeRouter = router({
   /**
    * Cancels a pending schedule, returning to `INACTIVE`. Only valid while `SCHEDULED`.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input None
    * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if nothing
    * is scheduled.
    */
-  cancelScheduled: adminProcedure.mutation(async ({ ctx }) => {
+  cancelScheduled: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
     if (current.status !== 'SCHEDULED') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessuna manutenzione pianificata da annullare' });
@@ -206,12 +220,12 @@ export const maintenanceModeRouter = router({
    * explicitly, after verifying the system is healthy again. Emails the "concluded" notice to
    * everyone if the admin opted into email notifications when this window was scheduled/activated.
    *
-   * @auth {admin}
+   * @auth {maintenance:mode_manage}
    * @input None
    * @output The updated `MaintenanceModeState` (status `INACTIVE`), or `BAD_REQUEST` if
    * maintenance mode isn't active.
    */
-  end: adminProcedure.mutation(async ({ ctx }) => {
+  end: protectedProcedure.use(requirePermission('maintenance:mode_manage')).mutation(async ({ ctx }) => {
     const current = await getMaintenanceState(ctx.prisma);
     if (current.status !== 'ACTIVE') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'La modalità manutenzione non è attiva' });

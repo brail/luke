@@ -1,0 +1,381 @@
+/**
+ * `seasonCalendar.rescheduleMilestone` and `cancelMilestone` — the two reasoned exits from an
+ * event's lifecycle.
+ *
+ * Both were uncovered: the input schemas were shared with the dialog without anything able to
+ * prove what they accept. This pins the rule on the reason (mandatory, trimmed, max 500) and the
+ * two properties that justify the procedures existing: reschedule is the only way to move a
+ * frozen event, cancel is the only way to retire it without destroying its history.
+ */
+
+import { randomUUID } from 'crypto';
+
+import { beforeAll, describe, expect, it } from 'vitest';
+
+import { eventDeleteBlock } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
+
+import { deleteEvents } from '../src/services/seasonCalendar.service';
+
+import {
+  createCalendarFixture,
+  createCallerWithSession,
+  createAnonymousCaller,
+  createTestUser,
+  expectedOf,
+  expectUnauthorized,
+  grantBrandAccess,
+  setupTestDb,
+} from './helpers';
+
+import type { UserSession } from '../src/lib/auth';
+
+let prisma: PrismaClient;
+let adminSession: UserSession;
+let editorSession: UserSession;
+let viewerSession: UserSession;
+
+let brandId: string;
+let seasonId: string;
+let calendarId: string;
+let planningGroupId: string;
+let phaseId: string;
+
+const asAdmin = () => createCallerWithSession(adminSession);
+const asEditor = () => createCallerWithSession(editorSession);
+const asViewer = () => createCallerWithSession(viewerSession);
+
+/**
+ * A group with `frozenAt` set, new on every call: the partial unique index
+ * `(planningGroupId, phaseId) WHERE cancelledAt IS NULL` allows only one active event with a phase
+ * per group, so sharing one would make the tests collide with each other instead of with the code.
+ */
+async function createFrozenGroup(): Promise<string> {
+  const group = await prisma.planningGroup.create({
+    data: { calendarId, name: `Congelato ${randomUUID().slice(0, 8)}`, frozenAt: new Date() },
+  });
+  return group.id;
+}
+
+/** A new event in the given group. Every test creates one: the mutations are destructive. */
+async function createEvent(
+  opts: { groupId?: string; startAt?: Date; endAt?: Date | null; withPhase?: boolean; allDay?: boolean } = {}
+) {
+  const { groupId = planningGroupId, startAt = new Date('2099-06-01'), endAt = null, withPhase = false, allDay = false } = opts;
+  return prisma.calendarEvent.create({
+    data: {
+      calendarId,
+      planningGroupId: groupId,
+      title: `Milestone ${randomUUID().slice(0, 8)}`,
+      startAt,
+      endAt,
+      allDay,
+      ...(withPhase ? { phaseId } : {}),
+    },
+  });
+}
+
+beforeAll(async () => {
+  prisma = await setupTestDb();
+
+  const [admin, editor, viewer] = await Promise.all([
+    createTestUser('admin'),
+    createTestUser('editor'),
+    createTestUser('viewer'),
+  ]);
+  adminSession = admin.session;
+  editorSession = editor.session;
+  viewerSession = viewer.session;
+
+  const fixture = await createCalendarFixture(prisma, { prefix: 'MIL', groupName: 'Main group' });
+  brandId = fixture.brandId;
+  seasonId = fixture.seasonId;
+  calendarId = fixture.calendarId;
+  planningGroupId = fixture.planningGroupId;
+
+  // Without this, `assertBrandAccess` would answer FORBIDDEN to editor and viewer before even
+  // looking at the permissions, and the role tests would pass for the wrong reason.
+  await grantBrandAccess(prisma, {
+    brandIds: [fixture.brandId],
+    userIds: [editor.user.id, viewer.user.id],
+    label: 'Milestone',
+  });
+
+  const phase = await prisma.phase.create({
+    data: { value: `MPH_${fixture.uid}`, label: 'Fase milestone', order: 210, isActive: true },
+  });
+  phaseId = phase.id;
+});
+
+describe('rescheduleMilestone — the reason', () => {
+  it('is mandatory', async () => {
+    const event = await createEvent();
+    await expect(
+      // @ts-expect-error -- mandatory in the schema: this checks that it is at runtime too,
+      // for a client that bypasses the types.
+      asAdmin().seasonCalendar.rescheduleMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString() })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('cannot be whitespace only, and arrives trimmed', async () => {
+    const event = await createEvent();
+    await expect(
+      asAdmin().seasonCalendar.rescheduleMilestone({
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: '   ',
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await asAdmin().seasonCalendar.rescheduleMilestone({
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: '  slitta la consegna  ',
+    });
+    const log = await prisma.auditLog.findFirst({
+      where: { targetId: event.id, action: 'CALENDAR_EVENT_RESCHEDULE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect((log!.metadata as { reason?: string }).reason).toBe('slitta la consegna');
+  });
+
+  it('is capped at 500 characters', async () => {
+    const event = await createEvent();
+    await expect(
+      asAdmin().seasonCalendar.rescheduleMilestone({
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(501),
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await expect(
+      asAdmin().seasonCalendar.rescheduleMilestone({
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), reason: 'x'.repeat(500),
+      })
+    ).resolves.toMatchObject({ id: event.id });
+  });
+});
+
+describe('rescheduleMilestone — the only way out of a frozen event', () => {
+  it('moves an event that updateMilestone would reject', async () => {
+    // Phase + frozen group + past deadline = `isEventDateLocked`. It is the situation the
+    // procedure exists for: the date is a commitment, it moves only by stating why.
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+
+    await expect(
+      asAdmin().seasonCalendar.updateMilestone({
+        id: locked.id, expected: await expectedOf(prisma, locked.id), data: { startAt: new Date('2020-02-01').toISOString() },
+      })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+
+    await expect(
+      asAdmin().seasonCalendar.rescheduleMilestone({
+        id: locked.id, expected: await expectedOf(prisma, locked.id), startAt: new Date('2020-02-01').toISOString(), reason: 'fornitore in ritardo',
+      })
+    ).resolves.toMatchObject({ id: locked.id });
+  });
+
+  // No phase on this event, so it is not locked: this measures only that the move leaves the
+  // baseline alone, not the way out of the freeze.
+  it('does not rewrite the baseline: variance keeps measuring against the original plan', async () => {
+    const baselineStart = new Date('2099-06-01');
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId, planningGroupId: await createFrozenGroup(), title: `Baseline ${randomUUID().slice(0, 8)}`,
+        startAt: baselineStart, baselineStartAt: baselineStart,
+      },
+    });
+
+    await asAdmin().seasonCalendar.rescheduleMilestone({
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-09-01').toISOString(), reason: 'ripianificato',
+    });
+
+    const after = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } });
+    expect(after.startAt.toISOString()).toBe(new Date('2099-09-01').toISOString());
+    expect(after.baselineStartAt?.toISOString()).toBe(baselineStart.toISOString());
+  });
+
+  it('records the allDay change in the clear', async () => {
+    // `oldAllDay`/`newAllDay` arrived as `[REDACTED]`: the conditional spread that adds them
+    // hides the keys from the type check on `AuditMetadata`, so nobody had noticed.
+    const event = await createEvent({ allDay: false });
+    await asAdmin().seasonCalendar.rescheduleMilestone({
+      id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-01').toISOString(), allDay: true, reason: 'diventa giornata intera',
+    });
+
+    const log = await prisma.auditLog.findFirst({
+      where: { targetId: event.id, action: 'CALENDAR_EVENT_RESCHEDULE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    const metadata = log!.metadata as { oldAllDay?: unknown; newAllDay?: unknown };
+    expect(metadata.oldAllDay).toBe(false);
+    expect(metadata.newAllDay).toBe(true);
+  });
+});
+
+describe('the post-freeze lock', () => {
+  it('treats an allDay change like a date change: it moves the deadline', async () => {
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+
+    await expect(
+      asAdmin().seasonCalendar.updateMilestone({ id: locked.id, expected: await expectedOf(prisma, locked.id), data: { allDay: true } })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+  });
+
+  it('is evaluated by the server and reported per event, so the client never needs the zone', async () => {
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+    const future = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2099-01-01'), withPhase: true });
+
+    const list = await asAdmin().seasonCalendar.listMilestones({ seasonId, brandIds: [brandId] });
+
+    expect(list.find(e => e.id === locked.id)?.dateLocked).toBe(true);
+    expect(list.find(e => e.id === future.id)?.dateLocked).toBe(false);
+  });
+});
+
+describe('cancelMilestone — retiring without destroying', () => {
+  it('records who, when and why', async () => {
+    const event = await createEvent();
+    await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: '  campionatura annullata  ' });
+
+    const after = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } });
+    expect(after.cancelledAt).not.toBeNull();
+    expect(after.cancelReason).toBe('campionatura annullata');
+    expect(after.cancelledByUserId).toBe(adminSession.user.id);
+  });
+
+  it('the reason is mandatory, not whitespace only and under 500 characters', async () => {
+    // The two procedures share `MandatoryReasonSchema`, but sharing it is not what the test has
+    // to prove: replacing it here with a bare `z.string()` must not have stayed green.
+    const event = await createEvent();
+    await expect(
+      // @ts-expect-error -- mandatory in the schema, this checks that it is at runtime.
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: '   ' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'x'.repeat(501) })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('cancelling again is a conflict', async () => {
+    const event = await createEvent();
+    await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'annullata' });
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'di nuovo' })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('a cancelled event can no longer be moved', async () => {
+    const event = await createEvent();
+    await asAdmin().seasonCalendar.cancelMilestone({ id: event.id, reason: 'annullata' });
+    await expect(
+      asAdmin().seasonCalendar.rescheduleMilestone({
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-08-01').toISOString(), reason: 'tentativo',
+      })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+  });
+
+  it('frees the phase+group slot the partial unique index kept occupied', async () => {
+    const group = await prisma.planningGroup.create({
+      data: { calendarId, name: `Slot ${randomUUID().slice(0, 8)}` },
+    });
+    const first = await createEvent({ groupId: group.id, withPhase: true });
+
+    await expect(createEvent({ groupId: group.id, withPhase: true })).rejects.toThrow();
+
+    await asAdmin().seasonCalendar.cancelMilestone({ id: first.id, reason: 'sostituita' });
+    await expect(createEvent({ groupId: group.id, withPhase: true })).resolves.toMatchObject({
+      planningGroupId: group.id,
+    });
+  });
+
+  it('is allowed on a frozen event, where deleteMilestone is not', async () => {
+    // The reason cancel exists: a past commitment is retired, not deleted.
+    const locked = await createEvent({ groupId: await createFrozenGroup(), startAt: new Date('2020-01-01'), withPhase: true });
+
+    await expect(
+      asAdmin().seasonCalendar.deleteMilestone({ id: locked.id })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: locked.id, reason: 'ritirata' })
+    ).resolves.toBeTruthy();
+  });
+});
+
+describe('who can move and cancel', () => {
+  it('an editor with access to the brand can', async () => {
+    const event = await createEvent();
+    await expect(
+      asEditor().seasonCalendar.rescheduleMilestone({
+        id: event.id, expected: await expectedOf(prisma, event.id), startAt: new Date('2099-07-15').toISOString(), reason: 'riorganizzazione',
+      })
+    ).resolves.toMatchObject({ id: event.id });
+  });
+
+  it('a viewer cannot', async () => {
+    const event = await createEvent();
+    await expectUnauthorized(
+      () => asViewer().seasonCalendar.cancelMilestone({ id: event.id, reason: 'tentativo' }),
+      'FORBIDDEN'
+    );
+  });
+
+  it('nor can an anonymous caller', async () => {
+    const event = await createEvent();
+    const anon = await createAnonymousCaller();
+    await expectUnauthorized(
+      () => anon.seasonCalendar.cancelMilestone({ id: event.id, reason: 'tentativo' }),
+      'UNAUTHORIZED'
+    );
+  });
+
+  it('a nonexistent event is NOT_FOUND, not a generic error', async () => {
+    await expect(
+      asAdmin().seasonCalendar.cancelMilestone({ id: randomUUID(), reason: 'tentativo' })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('deleting events — only while they stay deletable', () => {
+  it('refuses a selection holding a cancelled event, and deletes none of it', async () => {
+    const [cancelled, kept] = [await createEvent(), await createEvent()];
+    await asAdmin().seasonCalendar.cancelMilestone({ id: cancelled.id, reason: 'annullata' });
+    await expect(
+      asEditor().seasonCalendar.deleteMilestones({ ids: [cancelled.id, kept.id] })
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await prisma.calendarEvent.count({ where: { id: { in: [cancelled.id, kept.id] } } })).toBe(2);
+  });
+
+  it('counts the events it deleted, not the ids it was given', async () => {
+    const event = await createEvent();
+    const result = await asEditor().seasonCalendar.deleteMilestones({ ids: [event.id, event.id, randomUUID()] });
+    expect(result.count).toBe(1);
+    expect(await prisma.calendarEvent.count({ where: { id: event.id } })).toBe(0);
+    await expect(asEditor().seasonCalendar.deleteMilestones({ ids: [randomUUID()] })).resolves.toMatchObject({ count: 0 });
+  });
+
+  it.each([false, true].flatMap(cancelled => [false, true].flatMap(withPhase => [false, true].map(frozen => ({ cancelled, withPhase, frozen })))))(
+    'deletes in the database exactly what eventDeleteBlock allows: %o',
+    async ({ cancelled, withPhase, frozen }) => {
+      const group = await prisma.planningGroup.create({
+        data: { calendarId, name: `Regola ${randomUUID().slice(0, 8)}`, frozenAt: frozen ? new Date() : null },
+      });
+      const event = await createEvent({ groupId: group.id, withPhase });
+      const cancelledAt = cancelled ? new Date() : null;
+      if (cancelledAt) await prisma.calendarEvent.update({ where: { id: event.id }, data: { cancelledAt } });
+
+      const allowed = eventDeleteBlock({ cancelledAt, phaseId: withPhase ? phaseId : null, frozenAt: group.frozenAt }) === null;
+      // A refusal must be the condition's CONFLICT, nothing else, and must delete nothing.
+      const outcome = await deleteEvents(prisma, [event.id]).then(() => 'deleted', (err: { code?: string }) => err.code);
+      expect(outcome).toBe(allowed ? 'deleted' : 'CONFLICT');
+      expect(await prisma.calendarEvent.count({ where: { id: event.id } })).toBe(allowed ? 0 : 1);
+    },
+  );
+
+  it('skips an event another delete removed meanwhile, and reports only what it deleted', async () => {
+    const [kept, gone] = [await createEvent(), await createEvent()];
+    await prisma.calendarEvent.delete({ where: { id: gone.id } });
+    await expect(deleteEvents(prisma, [kept.id, gone.id])).resolves.toMatchObject({ deletedIds: [kept.id] });
+  });
+});

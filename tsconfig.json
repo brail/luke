@@ -1,31 +1,37 @@
 {
+  // The repository-root TypeScript project owns exactly one surface: the
+  // operational scripts under `scripts/`. It is a Node configuration, not a
+  // repository-wide one — the runtime-neutral half lives in
+  // `tsconfig.base.json`, which every project here extends.
+  //
+  // Until this cycle this file was a Next project configuration (DOM libs, JSX,
+  // bundler resolution, the Next plugin) that `apps/api` extended, which is how
+  // a Fastify server came to have `HTMLElement` in scope. It also declared an
+  // `include` of `**/*.ts` that nothing ever compiled: `pnpm typecheck` is
+  // `turbo run typecheck`, turbo runs per-workspace scripts, and no root task
+  // is declared. `scripts/rc-prod-clone.ts` sat inside that phantom program and
+  // was checked by nothing. `pnpm typecheck:root` now compiles it for real.
+  //
+  // A solution-style config (`files: []` plus `references`) was rejected: `tsc
+  // -b` requires every referenced project to be composite, and the web, tools
+  // and test projects are not. A bare `extends` with no `module` was rejected
+  // too — an editor opening a file under it would fall back to
+  // `moduleResolution: classic` and fail to resolve any import.
+  //
+  // `scripts/rc-prod-clone.ts` imports `@luke/api` for its `AppRouter` type.
+  // That import used to drag the API's 129 source files into this program,
+  // because the package's manifest pointed `main`/`types` at `./src/index.ts`.
+  // It now resolves through an `exports` map to `dist/index.d.ts`, so this
+  // program reads the built contract instead. Which is still a property of that
+  // package's manifest rather than of this config — but `pnpm typecheck:root`
+  // has to build it first, and does.
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["dom", "dom.iterable", "es6"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@luke/core": ["./packages/core/src"],
-      "@luke/core/*": ["./packages/core/src/*"]
-    },
-    "typeRoots": ["./node_modules/@types", "./types"]
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["scripts/**/*.ts"],
   "exclude": ["node_modules", "dist", ".next", "build"]
 }

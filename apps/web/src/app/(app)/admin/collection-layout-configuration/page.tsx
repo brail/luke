@@ -1,11 +1,15 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { GripVertical, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import {
   COLLECTION_CATALOG_TYPES,
+  CollectionCatalogItemInputSchema,
   ISO9001_CATEGORIES,
   type CollectionCatalogType,
   type Iso9001Category,
@@ -13,6 +17,8 @@ import {
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
+import { PermissionButton } from '../../../../components/PermissionButton';
+import { PermissionTooltip } from '../../../../components/PermissionTooltip';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
@@ -23,15 +29,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
-import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../components/ui/tooltip';
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
+import { Input } from '../../../../components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -60,7 +68,7 @@ type ItemDialogState = { mode: 'create'; type: CollectionCatalogType } | { mode:
 
 export default function CollectionCatalogPage() {
   const { can } = usePermission();
-  const canWrite = can('collection_layout:update');
+  const canWrite = can('collection_layout:configure');
 
   const [activeTab, setActiveTab] = useState<CollectionCatalogType>('strategy');
   const [itemDialog, setItemDialog] = useState<ItemDialogState | null>(null);
@@ -126,26 +134,15 @@ export default function CollectionCatalogPage() {
                 <TabsTrigger key={t} value={t}>{TYPE_LABELS[t]}</TabsTrigger>
               ))}
             </TabsList>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      size="sm"
-                      disabled={!canWrite}
-                      className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                      onClick={() => canWrite && setItemDialog({ mode: 'create', type: activeTab })}
-                    >
-                      <Plus className="mr-1 h-4 w-4" />
-                      Aggiungi opzione
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {!canWrite && (
-                  <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>
-                )}
-              </Tooltip>
-            </TooltipProvider>
+            <PermissionButton
+              hasPermission={canWrite}
+              tooltip="Non hai i permessi per modificare il catalog"
+              size="sm"
+              onClick={() => setItemDialog({ mode: 'create', type: activeTab })}
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              Aggiungi opzione
+            </PermissionButton>
           </div>
 
           {COLLECTION_CATALOG_TYPES.map(type => (
@@ -200,66 +197,48 @@ export default function CollectionCatalogPage() {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-1">
-                              {!item.isActive ? (
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span>
-                                        <Button
-                                          size="icon-sm"
-                                          variant="ghost"
-                                          className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                          disabled={!canWrite || restoreMutation.isPending}
-                                          onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
-                                        >
-                                          <RotateCcw className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </span>
-                                    </TooltipTrigger>
-                                    {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
-                                <>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Button
-                                            size="icon-sm"
-                                            variant="ghost"
-                                            className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                            disabled={!canWrite || isMutating}
-                                            onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
-                                          >
-                                            <Pencil className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                    </Tooltip>
-                                  </TooltipProvider>
+                              {/* One tooltip for the whole actions cell: the controls are disabled
+                                  for the same single reason, so one tab stop and one message beat
+                                  the same sentence on every button of every row.
+                                  `cursor-not-allowed` sits on the span, which is where the pointer
+                                  lands — the buttons under it are `pointer-events-none`. */}
+                              <PermissionTooltip
+                                hasPermission={canWrite}
+                                tooltip="Non hai i permessi per modificare il catalog"
+                                className="items-center gap-1 cursor-not-allowed"
+                              >
+                                {!item.isActive ? (
+                                  <Button
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    disabled={!canWrite || restoreMutation.isPending}
+                                    onClick={() => restoreMutation.mutate({ id: item.id })}
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : (
+                                  <>
+                                    <Button
+                                      size="icon-sm"
+                                      variant="ghost"
+                                      disabled={!canWrite || isMutating}
+                                      onClick={() => setItemDialog({ mode: 'edit', item })}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
 
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <span>
-                                          <Button
-                                            size="icon-sm"
-                                            variant="ghost"
-                                            className={cn('text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
-                                            disabled={!canWrite || isMutating}
-                                            onClick={() => canWrite && setDeletingItem(item)}
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
-                                        </span>
-                                      </TooltipTrigger>
-                                      {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalog</TooltipContent>}
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </>
-                              )}
+                                    <Button
+                                      size="icon-sm"
+                                      variant="ghost"
+                                      className="text-destructive"
+                                      disabled={!canWrite || isMutating}
+                                      onClick={() => setDeletingItem(item)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </PermissionTooltip>
                             </div>
                           </td>
                         </tr>
@@ -297,8 +276,7 @@ export default function CollectionCatalogPage() {
         description={`Disattivare "${deletingItem?.label}"? Non sarà più disponibile nei nuovi record, ma i dati esistenti non vengono modificati.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingItem) removeMutation.mutate({ id: deletingItem.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -307,6 +285,25 @@ export default function CollectionCatalogPage() {
 }
 
 // ─── Item Dialog ──────────────────────────────────────────────────────────────
+
+/**
+ * The three fields the dialog collects, out of the catalog item input. The messages are spelled
+ * out here: the core schema carries no copy, and Zod's default for `min(1)` talks about string
+ * length rather than about the field being required.
+ */
+const CatalogFormBaseSchema = CollectionCatalogItemInputSchema
+  .pick({ value: true, label: true })
+  .extend({
+    value: z.string().min(1, 'Il valore è obbligatorio').max(100, 'Massimo 100 caratteri'),
+    label: z.string().min(1, 'La label è obbligatoria').max(200, 'Massimo 200 caratteri'),
+    iso9001Categories: z.array(z.enum(ISO9001_CATEGORIES)),
+  });
+
+interface CatalogFormData {
+  value: string;
+  label: string;
+  iso9001Categories: Iso9001Category[];
+}
 
 type DialogSubmitData = {
   value: string;
@@ -328,35 +325,53 @@ function CatalogItemDialog({
   const initial = state.mode === 'edit' ? state.item : null;
   const activeType = state.mode === 'create' ? state.type : state.item.type;
 
-  const [value, setValue] = useState(initial?.value ?? '');
-  const [label, setLabel] = useState(initial?.label ?? '');
-  const [selectedCategories, setSelectedCategories] = useState<Iso9001Category[]>(
-    (initial?.iso9001Categories ?? []) as Iso9001Category[]
-  );
-
   const isRevisionType = activeType === 'revisionType';
 
-  const canSubmit =
-    value.trim().length > 0 &&
-    label.trim().length > 0 &&
-    (!isRevisionType || selectedCategories.length > 0);
+  // The ISO categories are required only on a revision type; every other catalog type never
+  // renders the checkboxes, so validating them would reject a submit with a message that has
+  // nowhere to appear.
+  const schema = useMemo<z.ZodType<CatalogFormData, CatalogFormData>>(
+    () =>
+      isRevisionType
+        ? CatalogFormBaseSchema.extend({
+            iso9001Categories: z
+              .array(z.enum(ISO9001_CATEGORIES))
+              .min(1, 'Selezionare almeno una categoria'),
+          })
+        : CatalogFormBaseSchema,
+    [isRevisionType]
+  );
+
+  // The caller mounts this dialog only while it is open, so the defaults are seeded once per
+  // opening and need no reset effect.
+  const form = useForm<CatalogFormData>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      value: initial?.value ?? '',
+      label: initial?.label ?? '',
+      iso9001Categories: (initial?.iso9001Categories ?? []) as Iso9001Category[],
+    },
+  });
+
+  const selectedCategories = form.watch('iso9001Categories');
 
   const toggleCategory = (cat: Iso9001Category) => {
-    setSelectedCategories(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
-    );
+    const next = selectedCategories.includes(cat)
+      ? selectedCategories.filter(c => c !== cat)
+      : [...selectedCategories, cat];
+    form.setValue('iso9001Categories', next, { shouldValidate: true });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (data: CatalogFormData) => {
     onSubmit({
-      value: value.trim(),
-      label: label.trim(),
-      iso9001Categories: isRevisionType ? selectedCategories : null,
+      value: data.value.trim(),
+      label: data.label.trim(),
+      iso9001Categories: isRevisionType ? data.iso9001Categories : null,
     });
   };
 
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={open => { if (!open && !isLoading) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>
@@ -365,65 +380,82 @@ function CatalogItemDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="cat-value">Valore (chiave)</Label>
-            <Input
-              id="cat-value"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder="es. CORE"
-              disabled={state.mode === 'edit'}
-              autoFocus
-            />
-            {state.mode === 'create' && (
-              <p className="text-xs text-muted-foreground">Stringa identificativa, non modificabile dopo la creazione.</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="cat-label">Label visualizzata</Label>
-            <Input
-              id="cat-label"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="es. Core"
-            />
-          </div>
-
-          {isRevisionType && (
-            <>
-              <div className="space-y-2">
-                <Label>Categorie ISO 9001:2015 <span className="text-destructive">*</span></Label>
-                <div className="space-y-1.5">
-                  {ISO9001_CATEGORIES.map(cat => (
-                    <div key={cat} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`cat-iso-${cat}`}
-                        checked={selectedCategories.includes(cat)}
-                        onCheckedChange={() => toggleCategory(cat)}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="value"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Valore (chiave)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. CORE"
+                        disabled={state.mode === 'edit' || isLoading}
+                        autoFocus
+                        {...field}
                       />
-                      <label htmlFor={`cat-iso-${cat}`} className="text-sm cursor-pointer">{cat}</label>
-                    </div>
-                  ))}
-                </div>
-                {selectedCategories.length === 0 && (
-                  <p className="text-xs text-destructive">Selezionare almeno una categoria</p>
+                    </FormControl>
+                    {state.mode === 'create' && (
+                      <FormDescription className="text-xs">
+                        Stringa identificativa, non modificabile dopo la creazione.
+                      </FormDescription>
+                    )}
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </div>
-            </>
-          )}
-        </div>
+              />
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={!canSubmit || isLoading}
-          >
-            {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
-          </Button>
-        </DialogFooter>
+              <FormField
+                control={form.control}
+                name="label"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Label visualizzata</FormLabel>
+                    <FormControl>
+                      <Input placeholder="es. Core" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {isRevisionType && (
+                <FormField
+                  control={form.control}
+                  name="iso9001Categories"
+                  render={() => (
+                    <FormItem className="space-y-2">
+                      <FormLabel>Categorie ISO 9001:2015 <span className="text-destructive">*</span></FormLabel>
+                      <div className="space-y-1.5">
+                        {ISO9001_CATEGORIES.map(cat => (
+                          <div key={cat} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`cat-iso-${cat}`}
+                              checked={selectedCategories.includes(cat)}
+                              onCheckedChange={() => toggleCategory(cat)}
+                              disabled={isLoading}
+                            />
+                            <label htmlFor={`cat-iso-${cat}`} className="text-sm cursor-pointer">{cat}</label>
+                          </div>
+                        ))}
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

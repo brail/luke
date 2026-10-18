@@ -18,17 +18,18 @@ import { randomUUID } from 'crypto';
 import { describe, it, expect, beforeAll } from 'vitest';
 
 import { COLLECTION_STATUS } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import {
   createAnonymousCaller,
   createCallerWithSession,
   createTestUser,
   expectUnauthorized,
+  grantBrandAccess,
   setupTestDb,
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;
@@ -57,8 +58,8 @@ async function createRow(planningGroupId?: string) {
   return asAdmin().collectionLayout.rows.create({
     groupId,
     planningGroupId,
-    gender: 'UOMO',
-    line: `Riga ${randomUUID().slice(0, 8)}`,
+    gender: 'MAN',
+    line: `Row ${randomUUID().slice(0, 8)}`,
     status: COLLECTION_STATUS[0],
     productCategory: 'TEST',
     skuForecast: null,
@@ -85,25 +86,16 @@ beforeAll(async () => {
     prisma.season.create({ data: { code: `CS${uid}`, name: `Compl Season ${uid}`, year: 2034, isActive: true } }),
   ]);
 
-  // Editor and viewer must be able to see the brand, otherwise `assertBrandAccess` would respond
-  // FORBIDDEN before even checking permissions -- and the role tests would pass for the
-  // wrong reason.
-  const fn = await prisma.companyFunction.create({
-    data: { slug: `compl_fn_${uid.toLowerCase()}`, name: `Compl Fn ${uid}`, order: 93, isActive: true },
+  await grantBrandAccess(prisma, {
+    brandIds: [brand.id],
+    userIds: [editor.user.id, viewer.user.id],
+    label: 'Compl',
   });
-  const team = await prisma.companyTeam.create({
-    data: { functionId: fn.id, name: `Compl Team ${uid}`, isActive: true },
-  });
-  await Promise.all([
-    prisma.companyTeamMembership.create({ data: { teamId: team.id, userId: editor.user.id } }),
-    prisma.companyTeamMembership.create({ data: { teamId: team.id, userId: viewer.user.id } }),
-    prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId: brand.id } }),
-  ]);
 
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   layoutId = layout.id;
   const group = await asAdmin().collectionLayout.groups.create({
@@ -113,7 +105,7 @@ beforeAll(async () => {
   groupId = group.id;
 
   const [phase, retiredPhase, finalPhase] = await Promise.all([
-    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Fase attiva', order: 200, isActive: true } }),
+    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Active phase', order: 200, isActive: true } }),
     prisma.phase.create({ data: { value: `CPHR_${uid}`, label: 'Fase ritirata', order: 201, isActive: false } }),
     prisma.phase.create({ data: { value: `CPHF_${uid}`, label: 'Fase finale', order: 202, isActive: true } }),
   ]);
@@ -169,8 +161,8 @@ function createRowAtEarlierPhase() {
   return createRow(skipGroupId);
 }
 
-describe('rows.setCompleted — permessi', () => {
-  it('un viewer non può concludere una riga', async () => {
+describe('rows.setCompleted — permissions', () => {
+  it('a viewer cannot complete a row', async () => {
     const row = await createRow();
     await expectUnauthorized(
       () => asViewer().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' }),
@@ -178,7 +170,7 @@ describe('rows.setCompleted — permessi', () => {
     );
   });
 
-  it('un anonimo non può concludere una riga', async () => {
+  it('an anonymous caller cannot complete a row', async () => {
     const row = await createRow();
     const anon = await createAnonymousCaller();
     await expectUnauthorized(
@@ -187,15 +179,15 @@ describe('rows.setCompleted — permessi', () => {
     );
   });
 
-  it('un editor può concludere: è la stessa scrittura di rows.update, non un privilegio admin', async () => {
+  it('an editor can complete: it is the same write as rows.update, not an admin privilege', async () => {
     const row = await createRow();
     const result = await asEditor().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
     expect(result.completedAt).toBeInstanceOf(Date);
   });
 });
 
-describe('rows.setCompleted — stato e audit', () => {
-  it('scrive una riga di audit distinta per conclusione e riapertura', async () => {
+describe('rows.setCompleted — state and audit', () => {
+  it('writes a distinct audit row for completion and reopening', async () => {
     const row = await createRow();
 
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
@@ -218,7 +210,7 @@ describe('rows.setCompleted — stato e audit', () => {
     expect((reopenLogs[0].metadata as { completedAt: string | null }).completedAt).toBeNull();
   });
 
-  it('concludere due volte non riscrive la data della prima conclusione', async () => {
+  it('completing twice does not rewrite the date of the first completion', async () => {
     // This is the data point the outcome is measured against: a double click, or two open tabs, must not
     // push forward the moment at which the row closed.
     const row = await createRow();
@@ -227,14 +219,14 @@ describe('rows.setCompleted — stato e audit', () => {
     expect(second.completedAt).toEqual(first.completedAt);
   });
 
-  it('la riapertura azzera lo stato di conclusione', async () => {
+  it('reopening clears the completion state', async () => {
     const row = await createRow();
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
     const reopened = await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: false, note: 'motivazione di test' });
     expect(reopened.completedAt).toBeNull();
   });
 
-  it('la motivazione è obbligatoria', async () => {
+  it('the reason is mandatory', async () => {
     const row = await createRow();
     await expect(
       // @ts-expect-error -- the note is required in the schema: the test verifies that it is also
@@ -243,7 +235,24 @@ describe('rows.setCompleted — stato e audit', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('la motivazione ha un tetto di 500 caratteri', async () => {
+  it('a whitespace-only reason does not pass, and the edges are trimmed', async () => {
+    // `MandatoryReasonSchema` trims before it measures the length. With the two steps in the other
+    // order the trim is a no-op on the check, `'   '` passes as `''`, and the form — which shares
+    // this schema — accepts a note the server then refuses in a toast.
+    const row = await createRow();
+    await expect(
+      asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: '   ' })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: '  chiusa  ' });
+    const log = await prisma.auditLog.findFirst({
+      where: { targetId: row.id, action: 'COLLECTION_ROW_COMPLETE' },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect((log!.metadata as { completionNote?: string }).completionNote).toBe('chiusa');
+  });
+
+  it('the reason is capped at 500 characters', async () => {
     // The limit is the one from `phaseChangeNote` in @luke/core: the audit log is not a note field.
     const row = await createRow();
     await expect(
@@ -255,7 +264,7 @@ describe('rows.setCompleted — stato e audit', () => {
     ).resolves.toMatchObject({ id: row.id });
   });
 
-  it('la motivazione finisce in chiaro nell\'audit, su conclusione e riapertura', async () => {
+  it('the reason reaches the audit in the clear, on completion and on reopening', async () => {
     // `completionNote` must be among the SAFE_KEYS of `sanitizeMetadata`, otherwise the only data
     // that explains the reason would arrive as `[REDACTED]`.
     const row = await createRow();
@@ -271,15 +280,15 @@ describe('rows.setCompleted — stato e audit', () => {
   });
 });
 
-describe('fasi ritirate — smetti di misurare', () => {
-  it('una milestone su fase ritirata non produce più alcuna criticità', async () => {
+describe('retired phases — stop measuring', () => {
+  it('a milestone on a retired phase no longer produces any criticality', async () => {
     // `isActive: false` is a soft delete: the phase drops out of the process, so it stops providing
     // deadlines. Verified end-to-end, not just on the pure function: it's the wiring that matters.
     const row = await createRow(onlyRetiredGroupId);
     await expect(asAdmin().phaseAlert.criticalityForRow({ rowId: row.id })).resolves.toBeNull();
   });
 
-  it('una fase ritirata non entra nemmeno fra le fasi mancanti alla conclusione', async () => {
+  it('a retired phase does not even count among the phases missing at completion', async () => {
     // Asking for it before completion would be noise: nothing can bring the row there anymore.
     const row = await createRow(onlyRetiredGroupId);
     await expect(asAdmin().phaseAlert.completionPreview({ rowId: row.id })).resolves.toEqual({
@@ -288,14 +297,14 @@ describe('fasi ritirate — smetti di misurare', () => {
   });
 });
 
-describe('phaseAlert.completionPreview — permessi', () => {
-  it('un anonimo non può leggerla', async () => {
+describe('phaseAlert.completionPreview — permissions', () => {
+  it('an anonymous caller cannot read it', async () => {
     const row = await createRow();
     const anon = await createAnonymousCaller();
     await expectUnauthorized(() => anon.phaseAlert.completionPreview({ rowId: row.id }), 'UNAUTHORIZED');
   });
 
-  it('un viewer non può leggerla: serve il permesso di chi può concludere', async () => {
+  it('a viewer cannot read it: it takes the permission of whoever can complete', async () => {
     // Deliberately aligned with `setCompleted` (collection_layout:update) -- if it followed the
     // alert-read permission instead, the two could diverge via an RBAC override in AppConfig.
     const row = await createRow();
@@ -305,7 +314,7 @@ describe('phaseAlert.completionPreview — permessi', () => {
     );
   });
 
-  it('un editor può leggerla', async () => {
+  it('an editor can read it', async () => {
     const row = await createRow();
     await expect(asEditor().phaseAlert.completionPreview({ rowId: row.id })).resolves.toMatchObject({
       missingPhases: expect.any(Array),
@@ -313,8 +322,8 @@ describe('phaseAlert.completionPreview — permessi', () => {
   });
 });
 
-describe('rows.setCompleted — fasi saltate', () => {
-  it('riga già all\'ultima milestone: nessuna forzatura richiesta, nessuna forzatura registrata', async () => {
+describe('rows.setCompleted — skipped phases', () => {
+  it('a row already at its last milestone: no forcing needed, no forcing recorded', async () => {
     const row = await createRow(futureDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'ok' });
 
@@ -324,7 +333,7 @@ describe('rows.setCompleted — fasi saltate', () => {
     expect(log.metadata).not.toHaveProperty('completionForced');
   });
 
-  it('con fasi mancanti e senza force → CONFLICT, con le fasi nel messaggio', async () => {
+  it('with missing phases and no force → CONFLICT, with the phases in the message', async () => {
     const row = await createRowAtEarlierPhase();
     await expect(
       asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'chiudo comunque' })
@@ -337,7 +346,7 @@ describe('rows.setCompleted — fasi saltate', () => {
     expect(after.completedAt).toBeNull();
   });
 
-  it('con force → conclude e registra quali fasi sono state saltate', async () => {
+  it('with force → completes and records which phases were skipped', async () => {
     // Forcing is not forbidden (it could be worked around by jumping to the last phase) but it stays legible
     // in retrospect: it's the difference between a report that's all green and one that's true.
     const row = await createRowAtEarlierPhase();
@@ -353,7 +362,7 @@ describe('rows.setCompleted — fasi saltate', () => {
     expect(metadata.skippedPhases).toEqual([finalPhaseValue]);
   });
 
-  it('l\'anteprima elenca le stesse fasi che la mutation pretende di forzare', async () => {
+  it('the preview lists the same phases the mutation claims to force', async () => {
     // Both reads go through the same helper: if they diverged, the user would confirm one
     // list and the server would record a different one.
     const row = await createRowAtEarlierPhase();
@@ -366,8 +375,8 @@ describe('rows.setCompleted — fasi saltate', () => {
   });
 });
 
-describe('riga conclusa — campi congelati', () => {
-  it('cambiare fase su una riga conclusa è rifiutato', async () => {
+describe('completed row — frozen fields', () => {
+  it('changing the phase of a completed row is rejected', async () => {
     // The outcome is measured against the group's phase and milestones: moving them without reopening
     // would change it after the fact.
     const row = await createRow();
@@ -382,7 +391,7 @@ describe('riga conclusa — campi congelati', () => {
     expect(after.phaseId).toBe(phaseId);
   });
 
-  it('cambiare gruppo di pianificazione su una riga conclusa è rifiutato', async () => {
+  it('changing the planning group of a completed row is rejected', async () => {
     const row = await createRow(futureDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -391,7 +400,7 @@ describe('riga conclusa — campi congelati', () => {
     ).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
-  it('gli altri campi restano modificabili: la conclusione riguarda l\'avanzamento, non l\'anagrafica', async () => {
+  it('the other fields stay editable: completion is about progress, not master data', async () => {
     const row = await createRow();
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -399,7 +408,7 @@ describe('riga conclusa — campi congelati', () => {
     expect(updated.line).toBe('Rinominata');
   });
 
-  it('dopo la riapertura il cambio fase torna possibile', async () => {
+  it('after reopening, a phase change is possible again', async () => {
     const row = await createRow();
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: false, note: 'motivazione di test' });
@@ -409,7 +418,7 @@ describe('riga conclusa — campi congelati', () => {
     ).resolves.toMatchObject({ phaseId: null });
   });
 
-  it('l\'assegnazione bulk del gruppo rifiuta se la selezione contiene righe concluse', async () => {
+  it('bulk group assignment refuses if the selection contains completed rows', async () => {
     // Silently filtering them out would return a partial count that looks like an intended success.
     const open = await createRow(futureDeadlineGroupId);
     const closed = await createRow(futureDeadlineGroupId);
@@ -438,8 +447,8 @@ function completedOutcome(
   return criticality;
 }
 
-describe('criticità di una riga conclusa', () => {
-  it('conclusa prima della scadenza → esito "in tempo" con delta positivo', async () => {
+describe('criticality of a completed row', () => {
+  it('completed before the deadline → "on time" outcome with a positive delta', async () => {
     const row = await createRow(futureDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -449,7 +458,7 @@ describe('criticità di una riga conclusa', () => {
     expect(criticality!.band.label).toBe('Concluso');
   });
 
-  it('conclusa dopo la scadenza → esito "in ritardo" con delta negativo', async () => {
+  it('completed after the deadline → "late" outcome with a negative delta', async () => {
     const row = await createRow(pastDeadlineGroupId);
     await asAdmin().collectionLayout.rows.setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' });
 
@@ -459,7 +468,7 @@ describe('criticità di una riga conclusa', () => {
     expect(criticality!.band.label).toBe('Concluso in ritardo');
   });
 
-  it('la scadenza di chiusura è l\'ultima milestone su fase attiva, non la più lontana in assoluto', async () => {
+  it('the closing deadline is the last milestone on an active phase, not the farthest one overall', async () => {
     // The group has a milestone in 2099 attached to a deactivated phase: measuring against
     // that one would say "early" for a row that has actually overrun the last phase in use.
     const row = await createRow(retiredPhaseGroupId);
@@ -470,7 +479,7 @@ describe('criticità di una riga conclusa', () => {
     expect(criticality!.band.label).toBe('Concluso in ritardo');
   });
 
-  it('una riga conclusa esce dall\'indice di strozzatura, dove una riga attiva sullo stesso evento resta', async () => {
+  it('a completed row leaves the bottleneck index, where an active row on the same event stays', async () => {
     // No event holds onto it anymore: counting it would inflate the milestone it stopped at.
     const active = await createRow(pastDeadlineGroupId);
     const completed = await createRow(pastDeadlineGroupId);
@@ -495,7 +504,7 @@ describe('criticità di una riga conclusa', () => {
 });
 
 describe('phaseHistory.completionLeadTime', () => {
-  it('un anonimo non può leggerlo', async () => {
+  it('an anonymous caller cannot read it', async () => {
     const anon = await createAnonymousCaller();
     await expectUnauthorized(
       () => anon.phaseHistory.completionLeadTime({ collectionLayoutId: layoutId }),
@@ -503,19 +512,19 @@ describe('phaseHistory.completionLeadTime', () => {
     );
   });
 
-  it('un viewer può leggerlo: è una statistica, non una scrittura', async () => {
+  it('a viewer can read it: it is a statistic, not a write', async () => {
     await expect(
       asViewer().phaseHistory.completionLeadTime({ collectionLayoutId: layoutId })
     ).resolves.toMatchObject({ sampleCount: expect.any(Number) });
   });
 
-  it('una riga conclusa senza storico di fase non entra nel campione', async () => {
+  it('a completed row with no phase history does not enter the sample', async () => {
     // Without a first transition there is no point to start the count from: inventing a
     // start (the row's creation) would give a duration that does not measure the process.
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Senza storico',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -529,11 +538,11 @@ describe('phaseHistory.completionLeadTime', () => {
     ).resolves.toEqual({ avgDays: null, medianDays: null, sampleCount: 0 });
   });
 
-  it('misura dalla prima transizione di fase alla conclusione', async () => {
+  it('measures from the first phase transition to completion', async () => {
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Con storico',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -557,11 +566,11 @@ describe('phaseHistory.completionLeadTime', () => {
     expect(stats.medianDays).toBeCloseTo(10, 1);
   });
 
-  it('le righe ancora aperte restano fuori dal campione', async () => {
+  it('rows still open stay out of the sample', async () => {
     const layout = await createIsolatedLayout();
     const row = await asAdmin().collectionLayout.rows.create({
       groupId: layout.groupId,
-      gender: 'UOMO',
+      gender: 'MAN',
       line: 'Ancora aperta',
       status: COLLECTION_STATUS[0],
       productCategory: 'TEST',
@@ -591,7 +600,7 @@ async function createIsolatedLayout(): Promise<{ layoutId: string; groupId: stri
   const layout = await asAdmin().collectionLayout.getOrCreate({
     brandId: brand.id,
     seasonId: season.id,
-    availableGenders: ['UOMO'],
+    availableGenders: ['MAN'],
   });
   const group = await asAdmin().collectionLayout.groups.create({
     collectionLayoutId: layout.id,

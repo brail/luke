@@ -9,11 +9,11 @@
 import { Client } from 'ldapts';
 
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
+import type { PrismaClient } from '@luke/db';
 
 import { getLdapConfig } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyLoggerInstance } from 'fastify';
 
 
@@ -50,7 +50,7 @@ export async function checkSecrets(): Promise<{
   message?: string;
 }> {
   try {
-    deriveSecret('api.jwt'); // Test derivazione
+    deriveSecret('api.jwt'); // Derivation probe
     return { ok: true };
   } catch {
     return { ok: false, message: 'Secret derivation failed' };
@@ -108,8 +108,8 @@ export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
     { name: 'database', check: () => checkDatabase(prisma) },
     { name: 'secrets', check: () => checkSecrets() },
     { name: 'ldap', check: () => checkLdap(prisma) },
-    // Futuro: { name: 'sap', check: () => checkSap(prisma) }
-    // Futuro: { name: 'external-api', check: () => checkExternalApi(prisma) }
+    // Future: { name: 'sap', check: () => checkSap(prisma) }
+    // Future: { name: 'external-api', check: () => checkExternalApi(prisma) }
   ];
 }
 
@@ -163,11 +163,11 @@ export async function checkBootstrapDependencies(
   try {
     // Test database connection
     await prisma.$connect();
-    logger.info('Connessione database stabilita');
+    logger.info('Database connection established');
 
     // Test master key availability
     if (!validateMasterKey()) {
-      const error = new Error('Master key non disponibile o invalida');
+      const error = new Error('Master key unavailable or invalid');
       logger.error(error.message);
       throw error;
     }
@@ -175,10 +175,10 @@ export async function checkBootstrapDependencies(
     // Test secret derivation
     try {
       deriveSecret('api.jwt');
-      logger.info('Segreti JWT derivati con successo');
+      logger.info('JWT secrets derived successfully');
     } catch (error: unknown) {
       const secretError = new Error(
-        `Impossibile derivare segreti JWT: ${toErrorMessage(error)}`
+        `Failed to derive JWT secrets: ${toErrorMessage(error)}`
       );
       logger.error(secretError.message);
       throw secretError;
@@ -190,7 +190,7 @@ export async function checkBootstrapDependencies(
     );
     logger.error(
       { error: bootstrapError },
-      'Errore verifica dipendenze bootstrap'
+      'Bootstrap dependency check error'
     );
     throw bootstrapError;
   }

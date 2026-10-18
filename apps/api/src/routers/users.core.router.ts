@@ -3,28 +3,29 @@
  * list, getById, create, update, softDelete, hardDelete
  */
 
-import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
-import argon2 from 'argon2';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema, hasPermission } from '@luke/core';
+import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
+import { getConfigOrDefault } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { createNotification } from '../lib/notifications';
 import { hashPassword } from '../lib/password';
-import { requirePermission } from '../lib/permissions';
+import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { getOnlineUserIds, updatePresence } from '../lib/presenceStore';
 import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
-import { router, protectedProcedure } from '../lib/trpc';
-import { deleteUserHandler, getLockedFields, UserIdSchema } from '../services/users.service';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
+import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
+import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
 
 export const usersCoreRouter = router({
   /**
@@ -53,6 +54,7 @@ export const usersCoreRouter = router({
               'isActive',
               'emailVerifiedAt',
               'createdAt',
+              'lastLoginAt',
               'provider',
             ])
             .default('createdAt'),
@@ -73,12 +75,13 @@ export const usersCoreRouter = router({
 
       const where: Prisma.UserWhereInput = { pendingApproval: false };
 
-      if (search && search.trim()) {
+      const term = search?.trim();
+      if (term) {
         where.OR = [
-          { email: { contains: search } },
-          { username: { contains: search } },
-          { firstName: { contains: search } },
-          { lastName: { contains: search } },
+          { email: { contains: term, mode: 'insensitive' } },
+          { username: { contains: term, mode: 'insensitive' } },
+          { firstName: { contains: term, mode: 'insensitive' } },
+          { lastName: { contains: term, mode: 'insensitive' } },
         ];
       }
 
@@ -97,6 +100,9 @@ export const usersCoreRouter = router({
         emailVerifiedAt: true,
         createdAt: true,
         updatedAt: true,
+        // Null means the account has never completed a login — the users table renders that
+        // as an explicit "Mai" rather than an empty cell.
+        lastLoginAt: true,
         identities: {
           select: {
             id: true,
@@ -117,8 +123,10 @@ export const usersCoreRouter = router({
         // already-extracted page, not globally.
         const all = await ctx.prisma.user.findMany({ where, select: selectFields });
         all.sort((a, b) => {
-          const providerA = a.identities?.[0]?.provider || 'LOCAL';
-          const providerB = b.identities?.[0]?.provider || 'LOCAL';
+          // A user may hold more than one identity (e.g. after `forceLocalAccess`) — sort/display
+          // by the effective (external-first) provider, not an arbitrary/unordered `[0]`.
+          const providerA = resolveEffectiveProvider(a.identities ?? []);
+          const providerB = resolveEffectiveProvider(b.identities ?? []);
           const comparison = providerA.localeCompare(providerB);
           return sortOrder === 'asc' ? comparison : -comparison;
         });
@@ -131,7 +139,12 @@ export const usersCoreRouter = router({
             skip,
             take: limit,
             select: selectFields,
-            orderBy: { [sortBy]: sortOrder },
+            // `lastLoginAt` is nullable and Postgres sorts NULLs first on DESC, which would
+            // put every never-logged-in account above the most recently active ones.
+            orderBy:
+              sortBy === 'lastLoginAt'
+                ? { lastLoginAt: { sort: sortOrder, nulls: 'last' } }
+                : { [sortBy]: sortOrder },
           }),
           ctx.prisma.user.count({ where }),
         ]);
@@ -148,60 +161,6 @@ export const usersCoreRouter = router({
         limit,
         totalPages: Math.ceil(total / limit),
       };
-    }),
-
-  /**
-   * Returns a user by ID; non-admin users may only fetch their own profile.
-   *
-   * @auth {users:read}
-   * @input {UserIdSchema}
-   * @output {User with identities}
-   */
-  getById: protectedProcedure
-    .use(requirePermission('users:read'))
-    .input(UserIdSchema)
-    .query(async ({ input, ctx }) => {
-      // RBAC: self-profile or admin only
-      if (
-        input.id !== ctx.session.user.id &&
-        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
-      ) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Puoi visualizzare solo il tuo profilo',
-        });
-      }
-
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-        select: {
-          id: true,
-          email: true,
-          username: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          identities: {
-            select: {
-              id: true,
-              provider: true,
-              providerId: true,
-            },
-          },
-        },
-      });
-
-      if (!user) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente non trovato',
-        });
-      }
-
-      return user;
     }),
 
   /**
@@ -235,13 +194,11 @@ export const usersCoreRouter = router({
         });
       }
 
-      // Hash the password with argon2id
-      const passwordHash = await argon2.hash(input.password, {
-        type: argon2.argon2id,
-        timeCost: 3,
-        memoryCost: 65536,
-        parallelism: 1,
-      });
+      await assertPasswordMeetsPolicy(ctx.prisma, input.password);
+
+      const passwordHash = await hashPassword(input.password);
+      // A new user reads dates in the business zone until they choose another (ADR-035 §New users).
+      const timezone = await getConfigOrDefault(ctx.prisma, 'app.defaultTimezone');
 
       // Create user, identity, and credential in a transaction
       let result;
@@ -255,6 +212,7 @@ export const usersCoreRouter = router({
               firstName: input.firstName || '',
               lastName: input.lastName || '',
               role: input.role,
+              timezone,
               isActive: true,
               pendingApproval: true,
             },
@@ -351,7 +309,10 @@ export const usersCoreRouter = router({
           message: 'User has no identity record — data integrity error',
         });
       }
-      const lockedFields = getLockedFields(existingUser.identities[0].provider);
+      // `existingUser` may hold more than one identity (e.g. after `forceLocalAccess` granted a
+      // LOCAL identity alongside an existing LDAP one) — `resolveEffectiveProvider` picks the
+      // external one deterministically instead of trusting an arbitrary/unordered `identities[0]`.
+      const lockedFields = getLockedFields(resolveEffectiveProvider(existingUser.identities));
       const attemptedLockedFields = Object.keys(updateData).filter(field =>
         lockedFields.includes(field as LockedFields)
       );
@@ -386,13 +347,14 @@ export const usersCoreRouter = router({
       }
 
       // Protection: password reset restricted to admin (`*:*`) — `users:update` (the
-      // permission for this entire procedure) is also granted to `editor`; without this
-      // guard an editor could take over any account, including an admin's, by resetting
+      // permission for this entire procedure) can be held without `*:*`; without this
+      // guard such a holder could take over any account, including an admin's, by resetting
       // its password and authenticating as it.
       if (
         password !== undefined &&
-        !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+        !can(ctx, '*:*')
       ) {
+        logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Solo un amministratore può reimpostare la password di un utente',
@@ -407,6 +369,33 @@ export const usersCoreRouter = router({
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Usa "Cambia password" nel tuo profilo per modificare la tua password',
+        });
+      }
+
+      // Protection: on someone else's account, `users:update` alone may change
+      // only the fields explicitly classified as editor-permitted. Everything
+      // else in the update schema is privileged and needs `*:*`.
+      //
+      // The privileged set is *derived* from the schema, not enumerated here, so
+      // a field added to `UpdateUserInputSchema` is denied by default rather than
+      // writable until someone classifies it. That default is the point: this
+      // guard originally named the sensitive fields, which fixed the email
+      // takeover but left every future field permit-by-omission.
+      //
+      // Compared against the stored value rather than tested for presence: the
+      // edit dialog submits the whole record, so an unchanged field must remain
+      // an ordinary save.
+      const attemptedPrivilegedFields = privilegedUserUpdateFields().filter(
+        field => updateData[field] !== undefined && updateData[field] !== existingUser[field]
+      );
+      if (
+        attemptedPrivilegedFields.length > 0 &&
+        !can(ctx, '*:*')
+      ) {
+        logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `Solo un amministratore può modificare: ${attemptedPrivilegedFields.join(', ')}`,
         });
       }
 
@@ -444,10 +433,11 @@ export const usersCoreRouter = router({
         }
       }
 
+      if (password !== undefined) await assertPasswordMeetsPolicy(ctx.prisma, password);
+
       // Hash outside the transaction (argon2 is CPU-bound, it must not hold a
-      // DB transaction open). `password` here is already guaranteed to be
-      // `undefined` or valid (Zod already applied `.min(12)` upstream, during
-      // input parsing).
+      // DB transaction open). Zod has applied the static prefilter and the line
+      // above the configured policy, so `password` is `undefined` or acceptable.
       const passwordHash =
         password !== undefined ? await hashPassword(password) : undefined;
 
@@ -471,19 +461,27 @@ export const usersCoreRouter = router({
           if (
             updateData.role !== undefined &&
             updateData.role !== current?.role &&
-            !hasPermission({ role: ctx.session.user.role as Role }, '*:*')
+            !can(ctx, '*:*')
           ) {
+            logAccessDenied(ctx, { deniedPermissions: ['*:*'] });
             throw new TRPCError({
               code: 'FORBIDDEN',
               message: 'Solo un amministratore può modificare il ruolo di un utente',
             });
           }
 
+          // An identity change revokes sessions for the same reason a role or
+          // password change does: after it, the account is reachable by a
+          // different person through account recovery, so tokens issued to the
+          // previous holder must stop being honoured.
+          const changesIdentity = attemptedPrivilegedFields.length > 0;
+
           const revokesSessions =
             (updateData.role !== undefined && updateData.role !== current?.role) ||
             (updateData.isActive !== undefined &&
               updateData.isActive !== current?.isActive) ||
-            passwordHash !== undefined;
+            passwordHash !== undefined ||
+            changesIdentity;
 
           const removesAdminPrivilege =
             current?.role === 'admin' &&
@@ -498,12 +496,20 @@ export const usersCoreRouter = router({
             );
           }
 
-          // The guard above + `getLockedFields` guarantee that, if we get here with
-          // `passwordHash` set, the provider is LOCAL — `identities[0]` is therefore
-          // the LOCAL credential to update.
+          // The guard above + `getLockedFields`/`resolveEffectiveProvider` guarantee that, if we
+          // get here with `passwordHash` set, the user has no external identity — but look up the
+          // LOCAL identity explicitly rather than indexing `identities[0]`, since that assumption
+          // no longer holds for every user (see `resolveEffectiveProvider`).
           if (passwordHash !== undefined) {
+            const localIdentity = existingUser.identities.find(i => i.provider === 'LOCAL');
+            if (!localIdentity) {
+              throw new TRPCError({
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'User has no LOCAL identity record — data integrity error',
+              });
+            }
             await tx.localCredential.update({
-              where: { identityId: existingUser.identities[0].id },
+              where: { identityId: localIdentity.id },
               data: { passwordHash, updatedAt: new Date() },
             });
           }
@@ -513,6 +519,16 @@ export const usersCoreRouter = router({
             data: {
               ...updateData,
               updatedAt: new Date(),
+              // A new address inherits nothing from the one it replaces: the
+              // recovery flow trusts `email`, and `requireEmailVerification`
+              // gates on this column, so carrying the old timestamp over would
+              // leave the account verified for an address nobody proved.
+              // `me.update` and `me.changeEmail` already do this on the
+              // self-service paths; this was the one cross-user path that did
+              // not.
+              ...(updateData.email !== undefined && updateData.email !== existingUser.email
+                ? { emailVerifiedAt: null }
+                : {}),
               ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
             },
           });
@@ -552,7 +568,21 @@ export const usersCoreRouter = router({
             data: { oldRole: current?.role, newRole: updateData.role },
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio ruolo fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Role change notification failed after a successful update');
+        }
+      }
+
+      if (updateData.email !== undefined && updateData.email !== existingUser.email) {
+        try {
+          await createNotification(ctx.prisma, {
+            userId: input.id,
+            category: 'WORKFLOW',
+            title: 'Email aggiornata',
+            message: `L'indirizzo email del tuo account è stato cambiato in "${updateData.email}" da un amministratore`,
+            data: { newEmail: updateData.email },
+          });
+        } catch (err) {
+          ctx.logger.error({ err, userId: input.id }, 'Email change notification failed after a successful update');
         }
       }
 
@@ -566,7 +596,7 @@ export const usersCoreRouter = router({
             data: { isActive: updateData.isActive },
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica cambio stato attivo fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Active status change notification failed after a successful update');
         }
       }
 
@@ -591,7 +621,7 @@ export const usersCoreRouter = router({
             message: 'La tua password è stata reimpostata da un amministratore',
           });
         } catch (err) {
-          ctx.logger.error({ err, userId: input.id }, 'Notifica reset password fallita dopo update riuscito');
+          ctx.logger.error({ err, userId: input.id }, 'Password reset notification failed after a successful update');
         }
       }
 
@@ -631,7 +661,7 @@ export const usersCoreRouter = router({
    * @input {none}
    * @output {{ ok: true }}
    */
-  heartbeat: protectedProcedure.mutation(({ ctx }) => {
+  heartbeat: selfProcedure.mutation(({ ctx }) => {
     updatePresence(ctx.session.user.id);
     return { ok: true };
   }),
@@ -639,14 +669,17 @@ export const usersCoreRouter = router({
   /**
    * Permanently deletes a user and all cascade relations; blocked for self or last remaining admin.
    *
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
    * @auth {users:delete}
-   * @input {UserIdSchema}
+   * @input {UserHardDeleteInputSchema} — user UUID plus the typed confirmation.
    * @output {{ success: true, message: string }}
    */
   hardDelete: protectedProcedure
     .use(requirePermission('users:delete'))
     .use(withRateLimit('userMutations'))
-    .input(UserIdSchema)
+    .input(UserHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.user.findUnique({
         where: { id: input.id },

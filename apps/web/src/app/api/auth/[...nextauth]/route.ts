@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { handlers } from '../../../../auth';
-import { isLimited, loginThrottleContext } from '../../../../lib/loginThrottleContext';
+import { isLimited, loginThrottleContext, throttledSignIn } from '../../../../lib/loginThrottleContext';
 
 import type { LoginThrottleState } from '../../../../lib/loginThrottleContext';
 import type { NextRequest } from 'next/server';
@@ -20,11 +20,12 @@ export const { GET } = handlers;
  * for being rate-limited (it collapses every failure into the same generic
  * `CredentialsSignin` result) — there is no way to change that status code from inside
  * `authorize()`. This wrapper runs the real handler inside an `AsyncLocalStorage` scope;
- * `callTRPCAuth()` (`../../../../auth.ts`) writes into that store when `auth.login` responds
- * `TOO_MANY_REQUESTS`, and if it did, we replace NextAuth's 200 with a real `429` +
- * `Retry-After` — same response body NextAuth would have returned, so `next-auth/react`'s
- * `signIn()` on the client parses it exactly as before (no UI change, only the HTTP layer
- * becomes observable to monitoring/scanners, per the Strix RC finding).
+ * `callTRPCAuth()` (`../../../../lib/loginAuthorize.ts`) writes into that store when `auth.login`
+ * responds `TOO_MANY_REQUESTS`, and if it did, we replace NextAuth's 200 with a real `429` +
+ * `Retry-After`, which makes the throttle observable to monitoring and scanners (the Strix RC
+ * finding). The body keeps the shape NextAuth would have returned, so `next-auth/react`'s
+ * `signIn()` parses it as before; its `code` is `throttled` instead of NextAuth's `credentials`,
+ * and that is what lets the login page say "too many attempts" rather than "wrong credentials".
  */
 export async function POST(req: NextRequest): Promise<Response> {
   const throttleState: LoginThrottleState = {};
@@ -34,10 +35,6 @@ export async function POST(req: NextRequest): Promise<Response> {
     return response;
   }
 
-  const redirectUrl = new URL('/login?error=CredentialsSignin&code=credentials', req.url);
-
-  return NextResponse.json(
-    { url: redirectUrl.toString() },
-    { status: 429, headers: { 'Retry-After': String(throttleState.retryAfterSeconds) } }
-  );
+  const { body, init } = throttledSignIn(req.url, throttleState.retryAfterSeconds);
+  return NextResponse.json(body, init);
 }

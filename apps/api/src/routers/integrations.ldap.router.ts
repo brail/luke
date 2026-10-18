@@ -5,18 +5,18 @@
 
 import { TRPCError } from '@trpc/server';
 import { Client } from 'ldapts';
-import { z } from 'zod';
 
-import { ldapConfigSchema } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema, validateConfigValue, type AppConfigKey } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, encryptValue } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { SecureLogger } from '../lib/errorHandler';
-import { escapeLdapFilter } from '../lib/ldapAuth';
+import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { countBreakGlassAdmins } from '../services/auth.service';
 
 export const ldapRouter = router({
   /**
@@ -33,27 +33,14 @@ export const ldapRouter = router({
       try {
         const logger = new SecureLogger(ctx.logger);
 
-        // Validate that roleMapping is valid JSON (only if present)
-        if (input.roleMapping && input.roleMapping.trim() !== '') {
-          try {
-            JSON.parse(input.roleMapping);
-          } catch {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'Role Mapping deve essere un JSON valido',
-            });
-          }
-        }
-
         // Save each field in AppConfig
-        const configMappings = [
+        const configMappings: { key: AppConfigKey; value: string | undefined; encrypt: boolean }[] = [
           {
             key: 'auth.ldap.enabled',
             value: input.enabled.toString(),
             encrypt: false,
           },
           { key: 'auth.ldap.url', value: input.url, encrypt: true },
-          { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
           {
             key: 'auth.ldap.searchBase',
             value: input.searchBase,
@@ -82,23 +69,51 @@ export const ldapRouter = router({
           { key: 'auth.strategy', value: input.strategy, encrypt: false },
         ];
 
-        await ctx.prisma.$transaction(async (tx) => {
-          for (const mapping of configMappings) {
-            if (mapping.value !== undefined) {
-              const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
-              await tx.appConfig.upsert({
-                where: { key: mapping.key },
-                update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
-                create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
-              });
-            }
+        // The two write-only credentials. `getLdapConfig` answers only whether each is stored, so
+        // the form cannot send back what it holds and sends them empty on every save: for these
+        // an empty field keeps the stored value, and removing one is `config.delete`. Never
+        // trimmed — a password is stored as typed.
+        const credentials: typeof configMappings = [
+          { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
+          { key: 'auth.ldap.bindPassword', value: input.bindPassword, encrypt: true },
+        ];
+        const writes = [...configMappings, ...credentials.filter(({ value }) => value)];
+
+        // Every value answers to the registry, as through `saveConfig`: checked on the plaintext,
+        // all of them before the transaction writes any. An empty optional field is "not
+        // configured", which is an absent key, never `''` (the reader already defaults absent ones).
+        for (const { key, value } of writes) {
+          if (!value) continue;
+          const check = validateConfigValue(key, value);
+          if (!check.success) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: `Valore non valido per '${key}': ${check.message}` });
           }
-          if (input.bindPassword != null && input.bindPassword !== '') {
-            const encryptedPassword = encryptValue(input.bindPassword);
+        }
+
+        // `ldap-only` leaves the local administrators as the only way in when LDAP authenticates
+        // nobody. Refused when none could use it — checked now, not guaranteed later.
+        if (input.strategy === 'ldap-only' && (await countBreakGlassAdmins(ctx.prisma)) === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "La strategia ldap-only richiede almeno un amministratore attivo e approvato con una password locale, " +
+              "che è l'accesso di emergenza quando LDAP non autentica nessuno. Un accesso locale forzato conta solo " +
+              'dopo che il link per impostare la password è stato usato.',
+          });
+        }
+
+        await ctx.prisma.$transaction(async (tx) => {
+          for (const mapping of writes) {
+            if (mapping.value === undefined) continue;
+            if (mapping.value === '') {
+              await tx.appConfig.deleteMany({ where: { key: mapping.key } });
+              continue;
+            }
+            const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
             await tx.appConfig.upsert({
-              where: { key: 'auth.ldap.bindPassword' },
-              update: { value: encryptedPassword, isEncrypted: true, updatedAt: new Date() },
-              create: { key: 'auth.ldap.bindPassword', value: encryptedPassword, isEncrypted: true },
+              where: { key: mapping.key },
+              update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
+              create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
             });
           }
         });
@@ -322,13 +337,13 @@ export const ldapRouter = router({
    * Tests the LDAP user search using the configured searchFilter with the given username.
    *
    * @auth {config:update}
-   * @input {{ username: string }} — username to search for (LDAP-escaped to prevent injection).
+   * @input {ldapSearchTestSchema} — username to search for (LDAP-escaped to prevent injection).
    * @output {{ success: true, message: string, results: Array<{ dn, attributes }> }}
    */
   testLdapSearch: protectedProcedure
     .use(requirePermission('config:update'))
     .use(withRateLimit('ldapTest'))
-    .input(z.object({ username: z.string().min(1).max(256) }))
+    .input(ldapSearchTestSchema)
     .mutation(async ({ input, ctx }) => {
       let client: Client | null = null;
 
@@ -339,6 +354,15 @@ export const ldapRouter = router({
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'LDAP non è abilitato',
+          });
+        }
+
+        // Everything the bind and the search below use; without it the attempt fails as a 5xx,
+        // whose text production masks.
+        if (!config.url || !config.bindDN || !config.bindPassword || !config.searchBase || !config.searchFilter) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Configurazione LDAP incompleta per il test',
           });
         }
 
@@ -360,10 +384,7 @@ export const ldapRouter = router({
         }
 
         // Test user search (input.username escaped against LDAP injection — RFC 4515)
-        const searchFilter = config.searchFilter.replace(
-          /\$\{username\}/g,
-          escapeLdapFilter(input.username)
-        );
+        const searchFilter = fillLdapFilter(config.searchFilter, 'username', input.username);
         ctx.logger.info(
           {
             username: input.username,

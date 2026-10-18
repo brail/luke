@@ -31,8 +31,9 @@ import { MaintenanceLockScreen } from './MaintenanceLockScreen';
  */
 export function MaintenanceGate() {
   const { state } = useMaintenanceStatus();
-  const { getUserRole } = usePermission();
-  const isAdmin = getUserRole() === 'admin';
+  const { can } = usePermission();
+  // Whoever bypasses maintenance keeps working through it — the server's rule (`bypassesMaintenance`).
+  const bypasses = can('maintenance:update');
 
   const isScheduled = state?.status === 'SCHEDULED';
 
@@ -74,9 +75,14 @@ export function MaintenanceGate() {
   return (
     <>
       {state.status !== 'INACTIVE' && (
-        <MaintenanceBanner state={state} isAdmin={isAdmin} msRemaining={msRemaining} />
+        <MaintenanceBanner
+          state={state}
+          isAdmin={bypasses}
+          canEnd={can('maintenance:mode_manage')}
+          msRemaining={msRemaining}
+        />
       )}
-      {state.status === 'ACTIVE' && !isAdmin && <MaintenanceLockScreen message={state.message} />}
+      {state.status === 'ACTIVE' && !bypasses && <MaintenanceLockScreen message={state.message} />}
 
       <AlertDialog open={activeThreshold !== null} onOpenChange={() => { /* dismiss only via "Ho capito" below */ }}>
         <AlertDialogContent>

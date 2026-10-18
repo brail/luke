@@ -1,89 +1,55 @@
 /**
  * @luke/core/storage — Zod schemas for storage provider configuration.
- * Covers local filesystem and MinIO (S3-compatible) providers.
+ * Covers local filesystem and S3-compatible providers (MinIO, SeaweedFS, Ceph RGW, ...).
  */
 
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, type StorageBucket } from './types';
+import { intInRange, PortSchema } from '../schemas/number.js';
+
+import { APP_STORAGE_BUCKETS, type StorageBucket } from './types.js';
 
 /**
- * Schema per configurazione storage locale (filesystem)
+ * What `LocalFsProvider` needs to run: nothing more.
+ *
+ * `publicBaseUrl` and `enableProxy` are not here even though both are `storage.local.*` keys — the
+ * provider never reads them. They belong to URL building, which reads them from AppConfig directly
+ * in `lib/storageUrl.ts`. Carrying them here made the schema look like "the local storage config"
+ * while guarding two fields nothing downstream consumed.
  */
 export const localStorageConfigSchema = z.object({
   /**
-   * Path base dove salvare i file
-   * Esempio: /var/lib/luke/storage
-   * Default: /tmp/luke-storage (solo per dev)
+   * Base path where files are saved.
+   * Example: /var/lib/luke/storage
+   * Default: /tmp/luke-storage (dev only)
    */
   basePath: z.string().min(1),
 
   /**
-   * Dimensione massima file in MB
+   * Maximum file size in MB
    * Default: 50 MB
    * Range: 1-1000 MB
    */
   maxFileSizeMB: z.number().int().positive().min(1).max(1000).default(50),
 
-  /**
-   * Bucket abilitati
-   * Default: ['uploads', 'exports', 'assets', 'brand-logos', 'collection-row-pictures', 'merchandising-specsheet-images']
-   */
-  buckets: z
-    .array(
-      z.enum([
-        'uploads',
-        'exports',
-        'assets',
-        'brand-logos',
-        'collection-row-pictures',
-        'collection-row-pictures-revisions',
-        'merchandising-specsheet-images',
-        'company-assets',
-      ])
-    )
-    .default([
-      'uploads',
-      'exports',
-      'assets',
-      'brand-logos',
-      'collection-row-pictures',
-      'collection-row-pictures-revisions',
-      'merchandising-specsheet-images',
-      'company-assets',
-    ]),
-
-  /**
-   * URL base pubblico per accesso diretto ai file
-   * Esempio: http://localhost:3001 (DEV) o https://api.example.com (PROD)
-   * Opzionale: se non fornito, usa proxy Next.js
-   */
-  publicBaseUrl: z.string().url().optional(),
-
-  /**
-   * Abilita proxy Next.js per file serving
-   * Default: true (DEV), false (PROD)
-   * Se true, genera URL /api/uploads/... invece di URL assoluti
-   */
-  enableProxy: z.boolean().default(true),
 });
 
 /**
- * Tipo inferito per configurazione storage locale
+ * Inferred type for the local storage configuration.
  */
 export type LocalStorageConfig = z.infer<typeof localStorageConfigSchema>;
 
 /**
- * Schema per configurazione MinIO (S3-compatible)
+ * Schema for the S3-compatible storage configuration (MinIO, SeaweedFS, Ceph RGW, ...).
  */
-export const minioStorageConfigSchema = z.object({
+export const s3StorageConfigSchema = z.object({
   endpoint: z.string().min(1),
-  port: z.number().int().min(1).max(65535).default(9000),
+  port: z.number().int().min(1).max(65535).default(8333),
   useSSL: z.boolean().default(false),
   accessKey: z.string().min(1),
   secretKey: z.string().min(1),
   region: z.string().default('us-east-1'),
-  /** Public base URL for public-read buckets (e.g. https://minio.example.com) */
+  /** Public base URL for public-read buckets (e.g. https://s3.example.com) */
   publicBaseUrl: z.string().url().optional(),
   /** TTL in seconds for presigned PUT URLs */
   presignedPutTtl: z.number().int().min(60).max(86400).default(3600),
@@ -91,15 +57,59 @@ export const minioStorageConfigSchema = z.object({
   presignedGetTtl: z.number().int().min(60).max(86400).default(3600),
 });
 
-export type MinioStorageConfig = z.infer<typeof minioStorageConfigSchema>;
+export type S3StorageConfig = z.infer<typeof s3StorageConfigSchema>;
 
 /**
- * Schema per tipo di storage (estensibile per futuri provider)
+ * What `storage.saveConfig` accepts for a local provider.
+ *
+ * Deliberately separate from `localStorageConfigSchema`: that one parses what is already in
+ * AppConfig and lets `.default()` fill the gaps, while a save has to state every value it writes —
+ * an omitted field there would mean "reset to default", which is never what a settings form means.
+ *
+ * `basePath` must be absolute or `~`-relative. A relative path resolves against whatever directory
+ * the API process happens to have started in, which is not a configuration anyone means to write;
+ * the settings form has always refused one, the endpoint used to accept it.
  */
-export const storageTypeSchema = z.enum(['local', 'minio']);
+export const localStorageSaveConfigSchema = z.object({
+  type: z.literal('local'),
+  basePath: z
+    .string()
+    .min(1, 'Path richiesto')
+    .regex(/^(\/|~\/)[a-zA-Z0-9_./-]*$/, 'Path deve iniziare con / oppure ~/'),
+  maxFileSizeMB: intInRange(1, 1000, 'Inserisci una dimensione tra 1 e 1000 MB'),
+  enableProxy: z.boolean(),
+});
+
+/** What `storage.saveConfig` accepts for an S3-compatible provider. */
+export const s3StorageSaveConfigSchema = z.object({
+  type: z.literal('s3'),
+  endpoint: z.string().min(1, 'Endpoint richiesto'),
+  port: PortSchema,
+  useSSL: z.boolean(),
+  accessKey: z.string().min(1, 'Access key richiesta'),
+  // Blank keeps the stored secret: the settings page is never sent it (`storage.getConfig` reports
+  // `hasSecretKey`), so it can only send a new one. `saveConfig` refuses blank when none is stored.
+  secretKey: z.string().trim().optional(),
+  region: z.string().min(1, 'Region richiesta'),
+  publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
+  presignedPutTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
+  presignedGetTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
+});
+
+/** The `storage.saveConfig` input. */
+export const storageSaveConfigSchema = z.discriminatedUnion('type', [
+  localStorageSaveConfigSchema,
+  s3StorageSaveConfigSchema,
+]);
+export type StorageSaveConfig = z.infer<typeof storageSaveConfigSchema>;
 
 /**
- * Tipo per identificare il provider di storage
+ * Schema for the storage type (extensible for future providers).
+ */
+export const storageTypeSchema = z.enum(['local', 's3']);
+
+/**
+ * Type that identifies the storage provider.
  */
 export type StorageType = z.infer<typeof storageTypeSchema>;
 
@@ -110,3 +120,24 @@ export type StorageType = z.infer<typeof storageTypeSchema>;
 export function isValidBucket(bucket: string): bucket is StorageBucket {
   return ([...APP_STORAGE_BUCKETS, 'backups'] as readonly string[]).includes(bucket);
 }
+
+/**
+ * Legacy SMB provider configuration, stored as a single JSON blob under `storage.smb`.
+ *
+ * Lives here rather than in the router that writes it because `AppConfigRegistry` has to name a
+ * schema for the key: a registry entry that could not describe its own value would leave the write
+ * path unvalidated for exactly the two keys built from a variable.
+ */
+export const smbStorageProviderConfigSchema = z.object({
+  host: z.string().min(1, 'Host è obbligatorio'),
+  path: z.string().min(1, 'Path è obbligatorio'),
+  username: z.string().optional(),
+  password: z.string().optional(),
+});
+
+/** Legacy Google Drive OAuth provider configuration, stored as a JSON blob under `storage.drive`. */
+export const driveStorageProviderConfigSchema = z.object({
+  clientId: z.string().min(1, 'Client ID è obbligatorio'),
+  clientSecret: z.string().min(1, 'Client Secret è obbligatorio'),
+  refreshToken: z.string().min(1, 'Refresh Token è obbligatorio'),
+});

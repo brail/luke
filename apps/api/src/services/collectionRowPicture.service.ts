@@ -1,19 +1,9 @@
-import { Readable } from 'stream';
-
-import { TRPCError } from '@trpc/server';
-
 import { logAudit } from '../lib/auditLog';
-import { streamToBuffer, validateMagicBytes, validateImageFile } from '../lib/imageUpload';
-import { resolvePublicUrl } from '../lib/storageUrl';
-import { putObject } from '../storage';
+
+import { ingestImageAsset } from './asset.service';
+import { resolveRowBrandAccess } from './brandScope.service';
 
 import type { Context } from '../lib/trpc';
-
-const IMAGE_CONFIG = {
-  allowedMimes: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp'] as const,
-  maxSizeBytes: 5 * 1024 * 1024,
-  allowedExtensions: ['.png', '.jpg', '.jpeg', '.webp'] as const,
-};
 
 type FileParams = {
   filename: string;
@@ -22,32 +12,6 @@ type FileParams = {
   size: number;
 };
 
-// Upload file to storage without any DB update — key must be saved via form submit.
-async function storeCollectionRowPicture(
-  ctx: Context,
-  file: FileParams,
-  pending = false
-): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
-  const sanitizedFilename = validateImageFile(file, IMAGE_CONFIG);
-  const buffer = await streamToBuffer(file.stream);
-
-  if (!validateMagicBytes(buffer, file.mimetype)) {
-    throw new TRPCError({ code: 'BAD_REQUEST', message: 'File corrotto o tipo non valido' });
-  }
-
-  const fileObject = await putObject(ctx, {
-    bucket: 'collection-row-pictures',
-    originalName: sanitizedFilename,
-    contentType: file.mimetype,
-    size: file.size,
-    stream: Readable.from(buffer),
-    ...(pending && { pending: true }),
-  });
-
-  const publicUrl = await resolvePublicUrl(ctx.prisma, 'collection-row-pictures', fileObject.key);
-  return { publicUrl, bucket: 'collection-row-pictures', key: fileObject.key, fileObjectId: fileObject.id };
-}
-
 // Upload for an existing row — validates row exists, then stores file (pending).
 // Does NOT update the DB: the pictureKey is confirmed when the form saves via tRPC.
 /**
@@ -55,6 +19,7 @@ async function storeCollectionRowPicture(
  * is persisted only when the row is saved via the tRPC update mutation.
  *
  * @throws {TRPCError} NOT_FOUND if the row does not exist.
+ * @throws {TRPCError} FORBIDDEN if the row's brand is outside the user's scope.
  * @throws {TRPCError} BAD_REQUEST if the file type or magic bytes are invalid.
  */
 export async function uploadCollectionRowPicture(
@@ -64,13 +29,14 @@ export async function uploadCollectionRowPicture(
     file: FileParams;
   }
 ): Promise<{ publicUrl: string; bucket: string; key: string; fileObjectId: string }> {
-  const row = await ctx.prisma.collectionLayoutRow.findUnique({ where: { id: params.rowId } });
+  // Existence and brand scope before storing anything: the row's layout decides the brand.
+  await resolveRowBrandAccess(ctx, params.rowId);
 
-  if (!row) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
-  }
-
-  const result = await storeCollectionRowPicture(ctx, params.file, true);
+  const result = await ingestImageAsset(ctx, {
+    kind: 'collection-row-picture',
+    file: params.file,
+    pending: true,
+  });
 
   try {
     await logAudit(ctx, {
@@ -79,7 +45,7 @@ export async function uploadCollectionRowPicture(
       targetId: params.rowId,
       result: 'SUCCESS',
       metadata: {
-        filename: params.file.filename,
+        filename: result.originalName,
         size: params.file.size,
         contentType: params.file.mimetype,
       },
@@ -88,7 +54,12 @@ export async function uploadCollectionRowPicture(
     ctx.logger?.warn({ auditError }, 'Audit log failed for row picture upload');
   }
 
-  return result;
+  return {
+    publicUrl: result.publicUrl,
+    bucket: result.bucket,
+    key: result.key,
+    fileObjectId: result.fileObjectId,
+  };
 }
 
 // Upload without a row — used in create mode before the row exists.
@@ -103,6 +74,10 @@ export async function uploadTempCollectionRowPicture(
   ctx: Context,
   params: { file: FileParams }
 ): Promise<{ publicUrl: string; fileObjectId: string }> {
-  const result = await storeCollectionRowPicture(ctx, params.file, true);
+  const result = await ingestImageAsset(ctx, {
+    kind: 'collection-row-picture',
+    file: params.file,
+    pending: true,
+  });
   return { publicUrl: result.publicUrl, fileObjectId: result.fileObjectId };
 }

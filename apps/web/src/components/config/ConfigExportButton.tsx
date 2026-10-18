@@ -2,8 +2,12 @@ import { Download, LoaderCircle } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { CONFIG_SECRET_PLACEHOLDER } from '@luke/core';
+
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { generateExportFileName } from '../../lib/configHelpers';
 import { debugError } from '../../lib/debug';
+import { triggerBlobDownload } from '../../lib/download';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
 
@@ -15,24 +19,27 @@ interface ConfigExportButtonProps {
 /**
  * Button that exports all AppConfig entries as a JSON file download.
  *
- * Encrypted values are replaced with `[ENCRYPTED]` in the export for security.
+ * Encrypted values are replaced with `CONFIG_SECRET_PLACEHOLDER` in the export for security; the
+ * import skips the rows that carry it.
  * Triggers a browser download via a temporary object URL.
  */
 export function ConfigExportButton({ className, disabled }: ConfigExportButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
+  // The file is named in the reader zone, like every export but the audit log's: it waits for it.
+  const { zone } = useFormatDate();
 
   const exportMutation = trpc.config.exportJson.useMutation();
 
   const handleExport = async () => {
+    if (!zone) return;
     setIsExporting(true);
 
     try {
-      // Usa il nuovo endpoint exportJson
       const result = await exportMutation.mutateAsync({
-        includeValues: true, // Include valori ma i cifrati mostrano [ENCRYPTED]
+        includeValues: true, // Includes values, but encrypted ones show CONFIG_SECRET_PLACEHOLDER
       });
 
-      // Prepara i dati per l'export
+      // Prepare the data for the export
       const exportData = {
         configs: result.configs.map(config => ({
           key: config.key,
@@ -42,26 +49,17 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
         })),
         exportedAt: result.exportedAt,
         version: '1.0',
-        note: 'I valori cifrati sono sostituiti con [ENCRYPTED] per sicurezza',
+        note: `I valori cifrati sono sostituiti con ${CONFIG_SECRET_PLACEHOLDER} per sicurezza`,
       };
 
-      // Crea e scarica il file
       const blob = new Blob([JSON.stringify(exportData, null, 2)], {
         type: 'application/json',
       });
-
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = generateExportFileName();
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      triggerBlobDownload(blob, generateExportFileName(result.exportedAt, zone));
 
       toast.success(`Esportate ${result.count} configurazioni`);
     } catch (error) {
-      debugError("Errore durante l'export:", error);
+      debugError("Error during export:", error);
       toast.error("Errore durante l'esportazione");
     } finally {
       setIsExporting(false);
@@ -73,7 +71,7 @@ export function ConfigExportButton({ className, disabled }: ConfigExportButtonPr
       variant="outline"
       size="sm"
       onClick={handleExport}
-      disabled={isExporting || disabled}
+      disabled={isExporting || disabled || !zone}
       className={className}
     >
       {isExporting ? (

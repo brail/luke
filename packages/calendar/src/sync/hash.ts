@@ -25,6 +25,9 @@ export function computeContentHash(milestone: MilestoneForSync): string {
     cancelled: milestone.cancelled,
     visibilityFunctionIds: [...milestone.visibilityFunctionIds].sort(),
     groupInitials: initials(milestone.planningGroupName),
+    // Present on all-day events only: they were sent with an inclusive end date until 2026-09-27,
+    // and this changes their hash once, so the next sync rewrites them — timed events keep theirs.
+    allDayEnd: milestone.allDay ? 'exclusive' : undefined,
   });
   return createHash('sha256').update(payload).digest('hex').slice(0, 32);
 }

@@ -1,7 +1,8 @@
 /**
  * tRPC router for Storage
  *
- * Procedures for storage file management with RBAC and AuditLog
+ * Upload slots (`requestUpload`/`confirmUpload`), the S3 connection test and the storage
+ * configuration.
  */
 
 import { randomUUID } from 'crypto';
@@ -11,51 +12,21 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS, isValidBucket, localStorageConfigSchema, type StorageBucket } from '@luke/core';
+import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
-import { getConfig, saveConfig } from '../lib/configManager';
+import { logAudit } from '../lib/auditLog';
+import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
-import { getStorageBaseUrl, resolvePublicUrl } from '../lib/storageUrl';
+import { resolvePublicUrl } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { getObjectMetadata, listObjects, deleteObject, resetStorageProvider, getStorageProvider, loadMinioProvider } from '../storage';
-import { signDownloadToken, signUploadToken, verifyUploadToken } from '../utils/downloadToken';
-
-/**
- * Schema for list files
- */
-const ListFilesSchema = z.object({
-  bucket: z.string().optional(),
-  limit: z.number().int().positive().max(100).optional(),
-  cursor: z.string().optional(),
-});
-
-/**
- * Schema for delete file
- */
-const DeleteFileSchema = z.object({
-  id: z.string().uuid(),
-});
-
-/**
- * Schema for get download link
- */
-const GetDownloadLinkSchema = z.object({
-  id: z.string().uuid(),
-});
-
-/**
- * Schema for create upload
- */
-const CreateUploadSchema = z.object({
-  bucket: z.enum(APP_STORAGE_BUCKETS),
-  originalName: z.string().min(1).max(255),
-  contentType: z.string().optional(),
-  size: z.number().int().positive(),
-});
+import { resetStorageProvider, getStorageProvider, loadS3Provider } from '../storage';
+import { generateStorageKey } from '../storage/keys';
+import { signUploadToken, verifyUploadToken } from '../utils/downloadToken';
 
 const RequestUploadSchema = z.object({
-  bucket: z.enum(APP_STORAGE_BUCKETS),
+  bucket: z.enum(PRESIGNED_UPLOAD_BUCKETS),
   contentType: z.string().min(1),
   size: z.number().int().positive(),
   originalName: z.string().min(1).max(255),
@@ -70,190 +41,37 @@ const ConfirmUploadSchema = z.object({
   checksumSha256: z.string().optional(),
 });
 
-const SaveStorageConfigSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('local'),
-    basePath: z.string().min(1),
-    maxFileSizeMB: z.number().int().positive().min(1).max(1000),
-    buckets: z.array(z.enum(APP_STORAGE_BUCKETS)),
-    enableProxy: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal('minio'),
-    endpoint: z.string().min(1),
-    port: z.number().int().min(1).max(65535),
-    useSSL: z.boolean(),
-    accessKey: z.string().min(1),
-    secretKey: z.string().min(1),
-    region: z.string().min(1),
-    publicBaseUrl: z.string().url().optional().or(z.literal('')),
-    presignedPutTtl: z.number().int().min(60).max(86400),
-    presignedGetTtl: z.number().int().min(60).max(86400),
-  }),
-]);
+/**
+ * The permission each presigned bucket needs: that of the procedure which links its files. Keyed on
+ * the bucket list, so a new presigned bucket does not compile until it has one — and `confirmUpload`
+ * must then check the verified slot's bucket, since its OR gate is exact only while there is one.
+ */
+const PRESIGNED_UPLOAD_PERMISSION = {
+  'company-assets': 'company_profile:update', // company.update links the logo
+} as const satisfies Record<(typeof PRESIGNED_UPLOAD_BUCKETS)[number], Permission>;
 
 /**
  * Storage Router
  */
 export const storageRouter = router({
   /**
-   * Lists stored file objects with optional bucket filter and cursor-based pagination.
+   * Requests an upload slot; returns a presigned PUT URL for S3-compatible storage or proxy fallback info for local storage.
    *
-   * @auth {config:read}
-   * @input {ListFilesSchema} — optional: bucket, limit, cursor.
-   * @output {{ items: FileObjectMetadata[], nextCursor: string | null }}
-   */
-  list: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(ListFilesSchema)
-    .query(async ({ input, ctx }) => {
-      // Validate bucket if specified
-      if (input.bucket && !isValidBucket(input.bucket)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Bucket non valido',
-        });
-      }
-
-      const result = await listObjects(ctx.prisma, {
-        bucket: input.bucket as any, // Safe: validated by isValidBucket() guard above
-        limit: input.limit,
-        cursor: input.cursor,
-      });
-
-      return {
-        items: result.items.map(item => ({
-          id: item.id,
-          bucket: item.bucket,
-          key: item.key,
-          originalName: item.originalName,
-          size: item.size,
-          contentType: item.contentType,
-          checksumSha256: item.checksumSha256,
-          createdBy: item.createdBy,
-          createdAt: item.createdAt.toISOString(),
-        })),
-        nextCursor: result.nextCursor,
-      };
-    }),
-
-  /**
-   * Returns metadata for a single file object; enforces ownership or admin/editor role.
-   *
-   * @auth {authenticated (ownership or admin/editor)}
-   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
-   * @output {FileObjectMetadata}
-   */
-  getMetadata: protectedProcedure
-    .input(GetDownloadLinkSchema)
-    .query(async ({ input, ctx }) => {
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Verify ownership or admin/editor
-      const isOwner = metadata.createdBy === ctx.session.user.id;
-      const isAdminOrEditor = ['admin', 'editor'].includes(
-        ctx.session.user.role
-      );
-
-      if (!isOwner && !isAdminOrEditor) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Non hai i permessi per accedere a questo file',
-        });
-      }
-
-      return {
-        id: metadata.id,
-        bucket: metadata.bucket,
-        key: metadata.key,
-        originalName: metadata.originalName,
-        size: metadata.size,
-        contentType: metadata.contentType,
-        checksumSha256: metadata.checksumSha256,
-        createdBy: metadata.createdBy,
-        createdAt: metadata.createdAt.toISOString(),
-      };
-    }),
-
-  /**
-   * Issues a signed download URL (TTL 5 min) for a file object; enforces ownership or admin/editor role.
-   *
-   * @auth {authenticated (ownership or admin/editor)}
-   * @input {GetDownloadLinkSchema} — { id: string (UUID) }
-   * @output {{ url: string, expiresIn: 300 }}
-   */
-  getDownloadLink: protectedProcedure
-    .input(GetDownloadLinkSchema)
-    .mutation(async ({ input, ctx }) => {
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Verify ownership or admin/editor
-      const isOwner = metadata.createdBy === ctx.session.user.id;
-      const isAdminOrEditor = ['admin', 'editor'].includes(
-        ctx.session.user.role
-      );
-
-      if (!isOwner && !isAdminOrEditor) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Non hai i permessi per scaricare questo file',
-        });
-      }
-
-      // Generate signed token (TTL 5 minutes)
-      const token = signDownloadToken({
-        bucket: metadata.bucket,
-        key: metadata.key,
-      });
-
-      // Build URL using the same base configured for the storage proxy
-      const baseUrl = await getStorageBaseUrl(ctx.prisma);
-      const downloadUrl = `${baseUrl}/storage/download?token=${token}`;
-
-      return {
-        url: downloadUrl,
-        expiresIn: 300, // 5 minutes in seconds
-      };
-    }),
-
-  /**
-   * Requests an upload slot; returns a presigned PUT URL for MinIO or proxy fallback info for local storage.
-   *
-   * @auth {authenticated}
-   * @input {RequestUploadSchema} — bucket, contentType, size, originalName, optional key.
-   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt }}
+   * @auth {the bucket's permission in `PRESIGNED_UPLOAD_PERMISSION`}
+   * @input {RequestUploadSchema} — bucket (one of `PRESIGNED_UPLOAD_BUCKETS`), contentType, size, originalName.
+   * @output {{ method: "presigned" | "proxy", presignedUrl, key, expiresAt, uploadToken }}
    */
   requestUpload: protectedProcedure
     .input(RequestUploadSchema)
+    .use(requirePermission<z.infer<typeof RequestUploadSchema>>(input => PRESIGNED_UPLOAD_PERMISSION[input.bucket]))
     .mutation(async ({ input, ctx }) => {
       const provider = await getStorageProvider(ctx.prisma);
 
       if (provider.capabilities.supportsPresignedUpload && provider.getPresignedPutUrl) {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const ext = input.contentType === 'image/png' ? '.png'
-                  : input.contentType === 'image/webp' ? '.webp'
-                  : '.jpg';
         // The server chooses the key. It used to be `input.key ?? <generated>`, i.e.
         // the client could preallocate it — and `confirmUpload` picked it back up
         // from the input without verifying it.
-        const key = `${year}/${month}/${day}/${randomUUID()}${ext}`;
+        const key = generateStorageKey(input.contentType);
 
         const { url, expiresAt } = await provider.getPresignedPutUrl({
           bucket: input.bucket as StorageBucket,
@@ -289,13 +107,15 @@ export const storageRouter = router({
     }),
 
   /**
-   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for MinIO path.
+   * Confirms a completed presigned upload and creates the FileObject DB record; only needed for the S3 path.
    *
-   * @auth {authenticated}
-   * @input {ConfirmUploadSchema} — bucket, key, contentType, size, originalName, optional checksumSha256.
-   * @output {{ fileId: string, publicUrl: string, key: string }}
+   * @auth {any permission in `PRESIGNED_UPLOAD_PERMISSION`; the slot token binds bucket and user, and
+   *   `requestUpload` signs it only after that bucket's own check}
+   * @input {ConfirmUploadSchema} — uploadToken (carries bucket, key and user), contentType, size, originalName, optional checksumSha256.
+   * @output {{ fileObjectId: string, publicUrl: string, key: string }}
    */
   confirmUpload: protectedProcedure
+    .use(requirePermission(Object.values(PRESIGNED_UPLOAD_PERMISSION)))
     .input(ConfirmUploadSchema)
     .mutation(async ({ input, ctx }) => {
       // Bucket and key come from the signed token, not from the input. They used to be
@@ -306,6 +126,14 @@ export const storageRouter = router({
       try {
         slot = verifyUploadToken(input.uploadToken);
       } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Slot di upload non valida o scaduta, ricarica il file',
+        });
+      }
+
+      // A slot signed before the bucket list was narrowed stays valid until it expires.
+      if (!z.enum(PRESIGNED_UPLOAD_BUCKETS).safeParse(slot.bucket).success) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'Slot di upload non valida o scaduta, ricarica il file',
@@ -334,7 +162,7 @@ export const storageRouter = router({
           // Pending, not confirmed: this confirms the **transfer**, not the
           // linking to an entity. Whoever links it calls `confirmPendingFile`,
           // which requires `confirmedAt === null`. Welcome side effect: an
-          // abandoned upload ends up under the hourly reaper instead of staying
+          // abandoned upload ends up under the pending-file reaper instead of staying
           // forever.
           confirmedAt: null,
         },
@@ -348,92 +176,30 @@ export const storageRouter = router({
     }),
 
   /**
-   * Legacy upload slot endpoint — generates an uploadId and proxy URL; use requestUpload for new code.
-   *
-   * @auth {authenticated}
-   * @input {CreateUploadSchema} — bucket, originalName, contentType, size.
-   * @output {{ uploadId: string, uploadUrl: string, bucket: string, maxSizeBytes: number }}
-   */
-  createUpload: protectedProcedure
-    .input(CreateUploadSchema)
-    .mutation(async ({ input, ctx }) => {
-      const maxSizeMBStr = await getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false);
-      const maxSizeMB = parseInt(maxSizeMBStr || '50', 10);
-      const maxSizeBytes = maxSizeMB * 1024 * 1024;
-
-      if (input.size > maxSizeBytes) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `File troppo grande. Massimo ${maxSizeMB}MB`,
-        });
-      }
-
-      const uploadId = randomUUID();
-      const baseUrl = await getStorageBaseUrl(ctx.prisma);
-      const uploadUrl = `${baseUrl}/storage/upload/${uploadId}`;
-
-      return {
-        uploadId,
-        uploadUrl,
-        bucket: input.bucket,
-        maxSizeBytes,
-      };
-    }),
-
-  /**
-   * Deletes a file object and its underlying storage object.
-   *
-   * @auth {config:update}
-   * @input {DeleteFileSchema} — { id: string (UUID) }
-   * @output {{ success: true, message: string }}
-   */
-  delete: protectedProcedure
-    .use(requirePermission('config:update'))
-    .input(DeleteFileSchema)
-    .mutation(async ({ input, ctx }) => {
-      // Verify existence
-      const metadata = await getObjectMetadata(ctx.prisma, input.id);
-      if (!metadata) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'File non trovato',
-        });
-      }
-
-      // Delete file and metadata
-      await deleteObject(ctx, input.id);
-
-      return {
-        success: true,
-        message: 'File cancellato con successo',
-      };
-    }),
-
-  /**
-   * Tests the currently saved MinIO configuration by listing the uploads bucket and generating a test presigned URL.
+   * Tests the currently saved S3 configuration by listing the uploads bucket and generating a test presigned URL.
    *
    * @auth {config:read}
    * @input {none}
    * @output {{ success: true, message: string, presignedUrlBase: string }}
    */
-  testMinioConnection: protectedProcedure
+  testS3Connection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
       const storageType = await getConfig(ctx.prisma, 'storage.type', false);
-      if (storageType !== 'minio') {
+      if (storageType !== 's3') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Provider attuale non è MinIO. Salva prima la configurazione MinIO.',
+          message: 'Provider attuale non è S3. Salva prima la configurazione S3.',
         });
       }
 
       let provider;
       try {
-        provider = await loadMinioProvider(ctx.prisma);
+        provider = await loadS3Provider(ctx.prisma);
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Errore caricamento config MinIO: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Errore caricamento config storage S3: ${toErrorMessage(err)}`,
           cause: err,
         });
       }
@@ -444,7 +210,7 @@ export const storageRouter = router({
       } catch (err: unknown) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: `Connessione a MinIO fallita: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Connessione allo storage S3 fallita: ${toErrorMessage(err)}`,
           cause: err,
         });
       }
@@ -458,115 +224,136 @@ export const storageRouter = router({
       });
       const presignedUrlBase = new URL(presignResult.url).origin;
 
+      // Without a publicBaseUrl, presigned URLs fall back to the internal endpoint
+      // (see S3Provider constructor) — which is normally a Docker-internal hostname
+      // the browser can't resolve. Surface that as a known fact, not a guess the
+      // frontend has to make by pattern-matching the hostname string.
+      const publicBaseUrl = await getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false);
+
       return {
         success: true,
-        message: 'Connessione MinIO riuscita',
+        message: 'Connessione storage S3 riuscita',
         presignedUrlBase,
+        publicBaseUrlConfigured: !!publicBaseUrl,
       };
     }),
 
   /**
-   * Returns the current storage configuration (local or MinIO), with sensitive credentials decrypted.
+   * Returns the current storage configuration (local or S3): the S3 access key decrypted, and of the
+   * secret key only whether one is stored, closing the case ADR-023 records under Observed gaps.
    *
    * @auth {config:read}
    * @input {none}
-   * @output {{ type: "local" | "minio", local: {...}, minio: {...} }}
+   * @output {{ type: "local" | "s3", local: {...}, s3: {...} }}
    */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
-    .use(withSectionAccess('settings'))
+    .use(withSectionAccess('settings.storage'))
     .query(async ({ ctx }) => {
+      // Every fallback and coercion here used to be written out, and disagreed with the copy in
+      // `storage/index.ts` that opens the actual connection — the page showed `seaweedfs` while
+      // the provider dialled `localhost`. Both now read the one declaration.
       const [
-        storageType,
-        basePath, maxFileSizeMBStr, bucketsStr, enableProxyStr,
-        minioEndpoint, minioPortStr, minioUseSslStr, minioAccessKey, minioSecretKey,
-        minioRegion, minioPublicBaseUrl, minioPutTtlStr, minioGetTtlStr,
+        type,
+        basePath, maxFileSizeMB, enableProxy,
+        endpoint, port, useSSL, s3AccessKey, s3SecretKey,
+        region, s3PublicBaseUrl, presignedPutTtl, presignedGetTtl,
       ] = await Promise.all([
-        getConfig(ctx.prisma, 'storage.type', false),
+        getConfigOrDefault(ctx.prisma, 'storage.type'),
         getConfig(ctx.prisma, 'storage.local.basePath', false),
-        getConfig(ctx.prisma, 'storage.local.maxFileSizeMB', false),
-        getConfig(ctx.prisma, 'storage.local.buckets', false),
-        getConfig(ctx.prisma, 'storage.local.enableProxy', false),
-        getConfig(ctx.prisma, 'storage.minio.endpoint', false),
-        getConfig(ctx.prisma, 'storage.minio.port', false),
-        getConfig(ctx.prisma, 'storage.minio.useSSL', false),
-        getConfig(ctx.prisma, 'storage.minio.accessKey', true),
-        getConfig(ctx.prisma, 'storage.minio.secretKey', true),
-        getConfig(ctx.prisma, 'storage.minio.region', false),
-        getConfig(ctx.prisma, 'storage.minio.publicBaseUrl', false),
-        getConfig(ctx.prisma, 'storage.minio.presignedPutTtl', false),
-        getConfig(ctx.prisma, 'storage.minio.presignedGetTtl', false),
+        getConfigOrDefault(ctx.prisma, 'storage.local.maxFileSizeMB'),
+        getConfigOrDefault(ctx.prisma, 'storage.local.enableProxy'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.endpoint'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.port'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.useSSL'),
+        getConfig(ctx.prisma, 'storage.s3.accessKey', true),
+        getConfig(ctx.prisma, 'storage.s3.secretKey', false),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.region'),
+        getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.presignedPutTtl'),
+        getConfigOrDefault(ctx.prisma, 'storage.s3.presignedGetTtl'),
       ]);
 
-      let buckets: string[];
-      try {
-        buckets = bucketsStr ? JSON.parse(bucketsStr) : APP_STORAGE_BUCKETS.slice();
-      } catch {
-        buckets = ['uploads'];
-      }
-
       return {
-        type: (storageType || 'local') as 'local' | 'minio',
+        type,
         local: {
           basePath: basePath || join(homedir(), '.luke', 'storage'),
-          maxFileSizeMB: parseInt(maxFileSizeMBStr || '50', 10),
-          buckets,
-          enableProxy: enableProxyStr !== 'false',
+          maxFileSizeMB,
+          enableProxy,
         },
-        minio: {
-          endpoint: minioEndpoint || 'minio',
-          port: parseInt(minioPortStr || '9000', 10),
-          useSSL: minioUseSslStr === 'true',
-          accessKey: minioAccessKey || '',
-          secretKey: minioSecretKey || '',
-          region: minioRegion || 'us-east-1',
-          publicBaseUrl: minioPublicBaseUrl || '',
-          presignedPutTtl: parseInt(minioPutTtlStr || '3600', 10),
-          presignedGetTtl: parseInt(minioGetTtlStr || '3600', 10),
+        s3: {
+          endpoint,
+          port,
+          useSSL,
+          // Blank, not the provider's dev fallback: this feeds a settings form, and offering a
+          // credential the database does not hold invites an admin to save it as if it were real.
+          accessKey: s3AccessKey || '',
+          hasSecretKey: !!s3SecretKey,
+          region,
+          publicBaseUrl: s3PublicBaseUrl || '',
+          presignedPutTtl,
+          presignedGetTtl,
         },
       };
     }),
 
   /**
-   * Saves the storage configuration (local or MinIO) to AppConfig and resets the storage provider singleton.
+   * Saves the storage configuration (local or S3) to AppConfig and resets the storage provider singleton.
    *
    * @auth {config:update}
-   * @input {SaveStorageConfigSchema} — discriminated union of local or minio config.
+   * @input {storageSaveConfigSchema} — discriminated union of local or s3 config.
    * @output {{ success: true }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .use(withSectionAccess('settings'))
-    .input(SaveStorageConfigSchema)
+    .use(withSectionAccess('settings.storage'))
+    .input(storageSaveConfigSchema)
     .mutation(async ({ input, ctx }) => {
+      // One change: a failure leaves the stored storage settings as they were.
       if (input.type === 'local') {
-        const validated = localStorageConfigSchema.parse({
-          basePath: input.basePath,
-          maxFileSizeMB: input.maxFileSizeMB,
-          buckets: input.buckets,
-          enableProxy: input.enableProxy ?? true,
-        });
-        await Promise.all([
-          saveConfig(ctx.prisma, 'storage.type', 'local', false),
-          saveConfig(ctx.prisma, 'storage.local.basePath', validated.basePath, false),
-          saveConfig(ctx.prisma, 'storage.local.maxFileSizeMB', validated.maxFileSizeMB.toString(), false),
-          saveConfig(ctx.prisma, 'storage.local.buckets', JSON.stringify(validated.buckets), false),
-          saveConfig(ctx.prisma, 'storage.local.enableProxy', String(validated.enableProxy), false),
+        await saveConfigs(ctx.prisma, [
+          { key: 'storage.type', value: 'local' },
+          { key: 'storage.local.basePath', value: input.basePath },
+          { key: 'storage.local.maxFileSizeMB', value: input.maxFileSizeMB.toString() },
+          { key: 'storage.local.enableProxy', value: String(input.enableProxy) },
         ]);
       } else {
-        await Promise.all([
-          saveConfig(ctx.prisma, 'storage.type', 'minio', false),
-          saveConfig(ctx.prisma, 'storage.minio.endpoint', input.endpoint, false),
-          saveConfig(ctx.prisma, 'storage.minio.port', input.port.toString(), false),
-          saveConfig(ctx.prisma, 'storage.minio.useSSL', String(input.useSSL), false),
-          saveConfig(ctx.prisma, 'storage.minio.accessKey', input.accessKey, true),
-          saveConfig(ctx.prisma, 'storage.minio.secretKey', input.secretKey, true),
-          saveConfig(ctx.prisma, 'storage.minio.region', input.region, false),
-          saveConfig(ctx.prisma, 'storage.minio.publicBaseUrl', input.publicBaseUrl || '', false),
-          saveConfig(ctx.prisma, 'storage.minio.presignedPutTtl', input.presignedPutTtl.toString(), false),
-          saveConfig(ctx.prisma, 'storage.minio.presignedGetTtl', input.presignedGetTtl.toString(), false),
+        // A blank secret keeps the stored one, which the page is never sent. It is read here and
+        // written back in the same batch, so the write does not rest on a check that could go stale
+        // before it (CLAUDE.md rule 3). With none stored, saving would switch to an S3 provider that
+        // cannot connect.
+        const secretKey =
+          input.secretKey || (await getConfig(ctx.prisma, 'storage.s3.secretKey', true));
+        if (!secretKey) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
+        }
+        await saveConfigs(ctx.prisma, [
+          { key: 'storage.type', value: 's3' },
+          { key: 'storage.s3.endpoint', value: input.endpoint },
+          { key: 'storage.s3.port', value: input.port.toString() },
+          { key: 'storage.s3.useSSL', value: String(input.useSSL) },
+          { key: 'storage.s3.accessKey', value: input.accessKey, encrypt: true },
+          { key: 'storage.s3.secretKey', value: secretKey, encrypt: true },
+          { key: 'storage.s3.region', value: input.region },
+          // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
+          // two read paths in this router all treat a falsy value as "derive the URL from the
+          // endpoint". Storing `''` would be a second spelling of that, and one the registry's
+          // `z.string().url()` cannot describe.
+          { key: 'storage.s3.publicBaseUrl', value: input.publicBaseUrl || null },
+          { key: 'storage.s3.presignedPutTtl', value: input.presignedPutTtl.toString() },
+          { key: 'storage.s3.presignedGetTtl', value: input.presignedGetTtl.toString() },
         ]);
       }
+
+      await logAudit(ctx, {
+        action: 'CONFIG_STORAGE_UPDATE',
+        targetType: 'Config',
+        result: 'SUCCESS',
+        metadata: {
+          type: input.type,
+          secretKeyUpdated: input.type === 's3' ? !!input.secretKey : undefined,
+        },
+      });
 
       resetStorageProvider();
       return { success: true };

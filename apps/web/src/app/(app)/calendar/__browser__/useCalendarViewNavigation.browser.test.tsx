@@ -1,0 +1,183 @@
+import { describe, expect, test, vi } from 'vitest';
+import { render } from 'vitest-browser-react';
+
+import { date } from '../../../../lib/__browser__/zoneFixtures';
+import { useCalendarViewNavigation } from '../useCalendarViewNavigation';
+
+import { paramsFromLastReplace } from './navigationTestHelpers';
+
+/**
+ * Regression test for the real `useCalendarViewNavigation` production hook (not a
+ * reimplementation of it). Mocks only the Next navigation boundary (`useSearchParams`/
+ * `useRouter`) — the same class of boundary this codebase already mocks (tRPC, session) for
+ * component tests.
+ *
+ * The bug this guards against: `calendar/page.tsx`'s `handleDayNumberClick`/`handleWeekNumberClick`
+ * used to call `setViewDate(d)` then `setView(v)` sequentially. Both built their `URLSearchParams`
+ * from the same pre-click `searchParams` snapshot (no re-render happens between two synchronous
+ * calls in one handler), so the second call's `router.replace` silently discarded the first's. The
+ * fix is `setViewAndDate(v, d)` — one composed mutation, one `router.replace`.
+ *
+ * The fix (and this regression) were verified by temporarily reverting `setViewAndDate` to the
+ * old sequential shape and confirming these tests fail against it — that mutation was applied,
+ * observed, and reverted during development; it is not, and has never been, committed here.
+ * The zone-by-zone proof that `?date=` keeps its calendar date is
+ * `dateSerialization.timezone.browser.test.tsx`.
+ */
+
+const { fakeGet, fakeToString, fakeReplace } = vi.hoisted(() => ({
+  fakeGet: vi.fn<(key: string) => string | null>(),
+  fakeToString: vi.fn<() => string>(),
+  fakeReplace: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => ({ get: fakeGet, toString: fakeToString }),
+  useRouter: () => ({ replace: fakeReplace }),
+}));
+
+function setUrl(search: string) {
+  const params = new URLSearchParams(search);
+  fakeGet.mockImplementation((key: string) => params.get(key));
+  fakeToString.mockImplementation(() => params.toString());
+}
+
+function Harness({ onReady }: { onReady: (nav: ReturnType<typeof useCalendarViewNavigation>) => void }) {
+  const nav = useCalendarViewNavigation();
+  onReady(nav);
+  return (
+    <div>
+      <span data-testid="view">{nav.view}</span>
+      <span data-testid="date">{nav.viewDate}</span>
+    </div>
+  );
+}
+
+async function mountHarness(initialSearch: string) {
+  setUrl(initialSearch);
+  let nav!: ReturnType<typeof useCalendarViewNavigation>;
+  const onReady = (n: ReturnType<typeof useCalendarViewNavigation>) => { nav = n; };
+  const screen = await render(<Harness onReady={onReady} />);
+  return {
+    screen,
+    get nav() { return nav; },
+    /**
+     * Updates what the mocked `useSearchParams()` returns, then actually re-renders the
+     * production hook (not just the shared mock's return value) so `nav` reflects a genuinely
+     * fresh `searchParams`/`navigate` closure — the same thing a real Next.js navigation would
+     * trigger. Reading `nav` after this (not the pre-rerender reference) is what makes this a
+     * real re-render rather than a mutation of the previous render's closure out from under it.
+     */
+    async rerenderWithUrl(search: string) {
+      setUrl(search);
+      await screen.rerender(<Harness onReady={onReady} />);
+    },
+  };
+}
+
+describe('useCalendarViewNavigation (production hook)', () => {
+  test('reads initial view and date from the current URL', async () => {
+    const { screen } = await mountHarness('view=week&date=2026-03-05');
+    await expect.element(screen.getByTestId('view')).toHaveTextContent('week');
+    await expect.element(screen.getByTestId('date')).toHaveTextContent('2026-03-05');
+  });
+
+  test('setViewAndDate("day", date) performs exactly one router.replace, with both keys present', async () => {
+    const { nav } = await mountHarness('view=month&date=2026-01-01');
+    fakeReplace.mockClear();
+
+    nav.setViewAndDate('day', date('2026-03-05'));
+
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('view')).toBe('day');
+    expect(written.get('date')).toBe('2026-03-05');
+  });
+
+  test('setViewAndDate("week", date) performs exactly one router.replace, with both keys present', async () => {
+    const { nav } = await mountHarness('view=month&date=2026-01-01');
+    fakeReplace.mockClear();
+
+    nav.setViewAndDate('week', date('2026-03-09'));
+
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('view')).toBe('week');
+    expect(written.get('date')).toBe('2026-03-09');
+  });
+
+  test('a prior toolbar setView is preserved by a subsequent setViewAndDate, across a real re-render', async () => {
+    // setView() itself calls router.replace with the CURRENT searchParams snapshot — this test
+    // proves that snapshot is honored across an actual re-render of the production hook (not a
+    // mutation of the previous render's mock closure), matching what a real Next.js navigation
+    // does: useSearchParams() returns a NEW object reflecting the just-written URL.
+    const h = await mountHarness('view=month&date=2026-01-01');
+    fakeReplace.mockClear();
+
+    h.nav.setView('week');
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const afterToolbarUrl = paramsFromLastReplace(fakeReplace).toString();
+    expect(new URLSearchParams(afterToolbarUrl).get('view')).toBe('week');
+
+    // Actually re-render with the URL the toolbar write produced — `h.nav` below is read AFTER
+    // this, so it's the hook's fresh post-rerender closure, not the one captured before it.
+    await h.rerenderWithUrl(afterToolbarUrl);
+    fakeReplace.mockClear();
+
+    h.nav.setViewAndDate('day', date('2026-03-05'));
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const finalParams = paramsFromLastReplace(fakeReplace);
+    expect(finalParams.get('date')).toBe('2026-03-05');
+    expect(finalParams.get('view')).toBe('day');
+  });
+
+  test('unrelated current query parameters survive setViewAndDate', async () => {
+    const { nav } = await mountHarness('view=month&date=2026-01-01&brandIds=b1,b2&fullscreen=1');
+    fakeReplace.mockClear();
+
+    nav.setViewAndDate('day', date('2026-03-05'));
+
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('brandIds')).toBe('b1,b2');
+    expect(written.get('fullscreen')).toBe('1');
+    expect(written.get('view')).toBe('day');
+    expect(written.get('date')).toBe('2026-03-05');
+  });
+
+  test('reads a notification link target, an event before a calendar', async () => {
+    const h = await mountHarness('event=e1&calendar=c1');
+    expect(h.nav.linkTarget).toEqual({ eventId: 'e1' });
+    await h.rerenderWithUrl('calendar=c1');
+    expect(h.nav.linkTarget).toEqual({ calendarId: 'c1' });
+    await h.rerenderWithUrl('view=week');
+    expect(h.nav.linkTarget).toBeNull();
+  });
+
+  test('clearLinkTarget drops the target and moves to the day in one router.replace, keeping the view', async () => {
+    // A link followed from elsewhere replaced the URL: the view survives in state only.
+    const h = await mountHarness('view=week&date=2026-01-01');
+    await h.rerenderWithUrl('event=e1');
+    fakeReplace.mockClear();
+
+    h.nav.clearLinkTarget(date('2026-03-05'));
+
+    expect(fakeReplace).toHaveBeenCalledTimes(1);
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('event')).toBeNull();
+    expect(written.get('date')).toBe('2026-03-05');
+    expect(written.get('view')).toBe('week');
+    await expect.element(h.screen.getByTestId('date')).toHaveTextContent('2026-03-05');
+  });
+
+  test('clearLinkTarget without a day keeps the date the page shows, though the link replaced the URL', async () => {
+    const h = await mountHarness('view=week&date=2026-01-01');
+    await h.rerenderWithUrl('calendar=c1');
+    fakeReplace.mockClear();
+
+    h.nav.clearLinkTarget();
+
+    const written = paramsFromLastReplace(fakeReplace);
+    expect(written.get('calendar')).toBeNull();
+    expect(written.get('date')).toBe('2026-01-01');
+  });
+});

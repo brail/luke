@@ -48,7 +48,7 @@ import { useMenuPreferences } from '../hooks/useMenuPreferences';
 
 import { AppVersionLabel } from './AppVersionLabel';
 import { FeedbackDialog } from './FeedbackDialog';
-import Logo from './Logo';
+import LogoLockup from './LogoLockup';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import {
@@ -81,31 +81,19 @@ import {
  * Persists open/closed state for collapsible groups via `useMenuPreferences`.
  */
 
-function FeedbackTrigger() {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <DropdownMenuItem onSelect={() => setOpen(true)}>
-        <MessageSquarePlus className="mr-2 h-4 w-4" />
-        <span>Segnala / Suggerisci</span>
-      </DropdownMenuItem>
-      <FeedbackDialog open={open} onOpenChange={setOpen} />
-    </>
-  );
-}
-
 export default function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const menuAccess = useMenuAccess();
   const { menuStates, toggleMenu } = useMenuPreferences();
   const isActive = (href: string) => pathname.startsWith(href);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: '/login' });
   };
 
-  // Genera le iniziali da firstName e lastName
+  // Build the initials from firstName and lastName
   const getUserInitials = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
       return `${firstName[0]}${lastName[0]}`.toUpperCase();
@@ -119,7 +107,7 @@ export default function AppSidebar() {
     return 'U';
   };
 
-  // Genera il nome completo da firstName e lastName
+  // Build the full name from firstName and lastName
   const getFullName = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
       return `${firstName} ${lastName}`;
@@ -137,10 +125,9 @@ export default function AppSidebar() {
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center justify-between px-2 py-1">
-          <div className="flex items-center gap-3">
-            <Logo size="sm" className="text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">Luke</h2>
-          </div>
+          <h2 className="text-foreground">
+            <LogoLockup variant="horizontal" />
+          </h2>
           <SidebarTrigger />
         </div>
         {/* 10px: below Tailwind's text-xs (12px) floor; unobtrusive footer version tag */}
@@ -148,7 +135,7 @@ export default function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
 
-        {/* Menu compatto senza sezioni */}
+        {/* Compact menu without sections */}
         <SidebarMenu>
           {/* Dashboard */}
           {menuAccess.dashboard && (
@@ -162,7 +149,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Calendario (trasversale — OR su planning.*) */}
+          {/* Calendar: the `planning` section */}
           {menuAccess.calendar && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={isActive('/calendar')}>
@@ -174,7 +161,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Vendite con submenu collapsabile */}
+          {/* Sales with a collapsible submenu */}
           {menuAccess.sales && (
             <SidebarMenuItem>
               <Collapsible
@@ -210,7 +197,7 @@ export default function AppSidebar() {
             </SidebarMenuItem>
           )}
 
-          {/* Prodotto con submenu collapsabile */}
+          {/* Product with a collapsible submenu */}
           {menuAccess.product && (
             <SidebarMenuItem>
               <Collapsible
@@ -227,28 +214,32 @@ export default function AppSidebar() {
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/product/pricing')}
-                      >
-                        <Link href="/product/pricing">
-                          <TrendingUp size={16} />
-                          <span>Costi e Prezzi</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton
-                        asChild
-                        isActive={isActive('/product/collection-layout')}
-                      >
-                        <Link href="/product/collection-layout">
-                          <LayoutGrid size={16} />
-                          <span>Collection Layout</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
+                    {menuAccess.productItems.pricing && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/pricing')}
+                        >
+                          <Link href="/product/pricing">
+                            <TrendingUp size={16} />
+                            <span>Costi e Prezzi</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
+                    {menuAccess.productItems.collectionLayout && (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton
+                          asChild
+                          isActive={isActive('/product/collection-layout')}
+                        >
+                          <Link href="/product/collection-layout">
+                            <LayoutGrid size={16} />
+                            <span>Collection Layout</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    )}
                     {menuAccess.productItems?.merchandisingPlan && (
                       <SidebarMenuSubItem>
                         <SidebarMenuSubButton
@@ -283,11 +274,10 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarContent>
 
-      {/* Menu Sistema - Dropdown (utility menus) */}
+      {/* System menu - Dropdown (utility menus) */}
       {menuAccess.showSystemSection && (
         <SidebarFooter className="py-2">
           <div className="flex flex-col gap-1">
-            {/* Amministrazione */}
             {menuAccess.admin && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -352,7 +342,6 @@ export default function AppSidebar() {
               </DropdownMenu>
             )}
 
-            {/* Impostazioni */}
             {menuAccess.settings && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -366,8 +355,7 @@ export default function AppSidebar() {
                   <DropdownMenuGroup>
                     {menuAccess.settingsItems.company && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
-                        <Link href={"/settings/company" as any} className="flex items-center gap-2">
+                        <Link href="/settings/company" className="flex items-center gap-2">
                           <Building2 size={16} />
                           <span>Azienda</span>
                         </Link>
@@ -431,8 +419,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.settingsItems.collectionControl && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/company above) */}
-                        <Link href={"/settings/collection-control" as any} className="flex items-center gap-2">
+                        <Link href="/settings/collection-control" className="flex items-center gap-2">
                           <AlertTriangle size={16} />
                           <span>Alert Calendario/Fasi</span>
                         </Link>
@@ -443,7 +430,6 @@ export default function AppSidebar() {
               </DropdownMenu>
             )}
 
-            {/* Manutenzione */}
             {menuAccess.maintenance && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -473,8 +459,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.backup && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/backup" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/backup" className="flex items-center gap-2">
                           <Archive size={16} />
                           <span>Backup & Restore</span>
                         </Link>
@@ -482,8 +467,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.mode && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/mode" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/mode" className="flex items-center gap-2">
                           <ShieldAlert size={16} />
                           <span>Modalità Manutenzione</span>
                         </Link>
@@ -491,8 +475,7 @@ export default function AppSidebar() {
                     )}
                     {menuAccess.maintenanceItems.auditLog && (
                       <DropdownMenuItem asChild>
-                        {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime (mirrors settings/collection-control above) */}
-                        <Link href={"/maintenance/audit-log" as any} className="flex items-center gap-2">
+                        <Link href="/maintenance/audit-log" className="flex items-center gap-2">
                           <ScrollText size={16} />
                           <span>Audit Log</span>
                         </Link>
@@ -506,7 +489,7 @@ export default function AppSidebar() {
         </SidebarFooter>
       )}
 
-      {/* Footer con dropdown utente - sempre visibile */}
+      {/* Footer with the user dropdown - always visible */}
       <SidebarFooter>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -544,13 +527,15 @@ export default function AppSidebar() {
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              {/* `as any`: Next typedRoutes manifest regenerates on build; route exists at runtime */}
-              <Link href={"/about" as any}>
+              <Link href="/about">
                 <Info className="mr-2 h-4 w-4" />
                 <span>Info su Luke</span>
               </Link>
             </DropdownMenuItem>
-            <FeedbackTrigger />
+            <DropdownMenuItem onSelect={() => setFeedbackOpen(true)}>
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              <span>Segnala / Suggerisci</span>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={handleSignOut}
@@ -563,6 +548,7 @@ export default function AppSidebar() {
         </DropdownMenu>
       </SidebarFooter>
       <SidebarRail />
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </Sidebar>
   );
 }

@@ -6,11 +6,11 @@
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
 
-import { AppContextDefaultsSchema, type AppContextDefaults, type Role } from '@luke/core';
+import { AppContextDefaultsSchema, hasPermission, type AppContextDefaults, type Role } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { makeUrlResolver } from '../lib/storageUrl';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 /**
  * The brand scope guards live in `brandScope.service.ts` (they need the
@@ -25,7 +25,7 @@ export {
 
 const logger = pino({ level: 'info' });
 
-/** Shape of `UserPreference.data` (Json column) — see schema.prisma doc comment on the model. */
+/** Shape of `UserPreference.data` (Json column) — see the doc comment on the model in `identity.prisma`. */
 interface UserPreferenceData {
   lastBrandId?: string;
   lastSeasonId?: string;
@@ -53,6 +53,30 @@ export interface ContextResult {
 }
 
 /**
+ * Union of `brandScopes` across a set of (already active-team-filtered) team memberships. The one
+ * traversal both `getUserAllowedBrandIds` (single user) and `resolveBrandAccess`
+ * (`calendarAudience.service.ts`, batched multi-user) share — they fetch differently-shaped rows
+ * for different reasons (the batched path also filters `isActive`/`pendingApproval`, which this
+ * one deliberately doesn't do), but the "team → brandScopes → union" step itself is identical and
+ * was previously hand-written twice.
+ */
+export function unionBrandScopes(memberships: { team: { brandScopes: { brandId: string }[] } }[]): Set<string> {
+  const brandIds = new Set<string>();
+  for (const m of memberships) {
+    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
+  }
+  return brandIds;
+}
+
+/**
+ * Brand and function scope is unrestricted for whoever holds every permission (`*:*`), which only
+ * `admin` does today; everyone else is scoped by team membership. A missing role is scoped.
+ */
+function hasUnrestrictedScope(role: Role | undefined): boolean {
+  return role !== undefined && hasPermission({ role }, '*:*');
+}
+
+/**
  * Returns the set of brand IDs the user may access via team membership.
  * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
  * A team with no brand scopes contributes nothing — it does not grant unrestricted access.
@@ -64,21 +88,14 @@ export async function getUserAllowedBrandIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<string[] | null> {
-  if (userRole === 'admin') return null;
+  if (hasUnrestrictedScope(userRole)) return null;
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
-    include: { team: { include: { brandScopes: true } } },
+    select: { team: { select: { brandScopes: { select: { brandId: true } } } } },
   });
 
-  if (memberships.length === 0) return [];
-
-  const brandIds = new Set<string>();
-  for (const m of memberships) {
-    for (const bs of m.team.brandScopes) brandIds.add(bs.brandId);
-  }
-
-  return [...brandIds];
+  return [...unionBrandScopes(memberships)];
 }
 
 
@@ -93,7 +110,7 @@ export async function getUserAllowedFunctionIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<string[] | null> {
-  if (userRole === 'admin') return null;
+  if (hasUnrestrictedScope(userRole)) return null;
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
@@ -101,6 +118,32 @@ export async function getUserAllowedFunctionIds(
   });
 
   return [...new Set(memberships.map(m => m.team.functionId))];
+}
+
+/** Both halves of `getUserAllowedBrandIds`/`getUserAllowedFunctionIds`, for callers that need both
+ * in the same request (today: the calendar's `listMilestonesDb` and its export-route siblings) —
+ * one `companyTeamMembership` query instead of two identical-`where`, different-`select` ones. */
+export interface UserAllowedIds {
+  brandIds: string[] | null;
+  functionIds: string[] | null;
+}
+
+export async function getUserAllowedIds(
+  userId: string,
+  prisma: PrismaClient,
+  userRole?: Role
+): Promise<UserAllowedIds> {
+  if (hasUnrestrictedScope(userRole)) return { brandIds: null, functionIds: null };
+
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: { userId, team: { isActive: true } },
+    select: { team: { select: { functionId: true, brandScopes: { select: { brandId: true } } } } },
+  });
+
+  return {
+    brandIds: [...unionBrandScopes(memberships)],
+    functionIds: [...new Set(memberships.map(m => m.team.functionId))],
+  };
 }
 
 /**
@@ -167,7 +210,7 @@ export async function resolveContext(
       const parsed = JSON.parse(appConfig.value);
       contextDefaults = AppContextDefaultsSchema.parse(parsed);
     } catch (error) {
-      logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
+      logger.warn({ err: error }, 'Failed to parse app.context.defaults, using empty defaults');
     }
   }
 
@@ -246,31 +289,6 @@ export async function setContext(
 }
 
 /**
- * Reads the org-level context defaults (default brand and season) from AppConfig.
- *
- * @returns Parsed AppContextDefaults, or an empty object if not configured.
- */
-export async function getContextDefaults(
-  prisma: PrismaClient
-): Promise<AppContextDefaults> {
-  const appConfig = await prisma.appConfig.findUnique({
-    where: { key: 'app.context.defaults' },
-  });
-
-  if (!appConfig) {
-    return { context: {} };
-  }
-
-  try {
-    const parsed = JSON.parse(appConfig.value);
-    return AppContextDefaultsSchema.parse(parsed);
-  } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing app.context.defaults, usando default vuoto');
-    return { context: {} };
-  }
-}
-
-/**
  * Reads the sidebar menu collapsed/expanded states for a user.
  *
  * @returns A map of menu name to collapsed boolean. Empty object if no preference is saved.
@@ -288,13 +306,7 @@ export async function getMenuCollapsibleStates(
     return {};
   }
 
-  try {
-    const menuStates = (prefs.data as UserPreferenceData)?.menuStates ?? {};
-    return JSON.parse(JSON.stringify(menuStates)) as Record<string, boolean>;
-  } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates');
-    return {};
-  }
+  return (prefs.data as UserPreferenceData)?.menuStates ?? {};
 }
 
 /**
@@ -386,11 +398,5 @@ export async function setMenuCollapsibleStates(
     select: { data: true },
   });
 
-  try {
-    const saved = (updated.data as UserPreferenceData)?.menuStates ?? {};
-    return JSON.parse(JSON.stringify(saved)) as Record<string, boolean>;
-  } catch (error) {
-    logger.warn({ err: error }, 'Errore parsing menuCollapsibleStates after set');
-    return menuStates;
-  }
+  return (updated.data as UserPreferenceData)?.menuStates ?? {};
 }

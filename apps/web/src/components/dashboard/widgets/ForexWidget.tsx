@@ -2,6 +2,7 @@
 
 import { DEFAULT_FOREX_PAIRS, type ForexSettings } from '@luke/core';
 
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { trpc } from '../../../lib/trpc';
 import { cn } from '../../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -25,9 +26,8 @@ export function ForexWidget({ settings }: { settings?: Record<string, unknown> }
     { staleTime: FIFTEEN_MIN, refetchInterval: FIFTEEN_MIN }
   );
 
-  const updatedLabel = dataUpdatedAt
-    ? new Intl.DateTimeFormat('it-IT', { hour: '2-digit', minute: '2-digit' }).format(new Date(dataUpdatedAt))
-    : null;
+  const fmt = useFormatDate();
+  const updatedLabel = dataUpdatedAt ? fmt.time(new Date(dataUpdatedAt)) : null;
 
   return (
     <Card>

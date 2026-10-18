@@ -4,7 +4,7 @@ import { Plus, Settings2, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { DEFAULT_CLOCKS_TIMEZONES, DEFAULT_FOREX_PAIRS, type WidgetConfigItem } from '@luke/core';
+import { canonicalTimeZone, DEFAULT_CLOCKS_TIMEZONES, DEFAULT_FOREX_PAIRS, FOREX_PAIR_PATTERN, isValidTimeZone, type WidgetConfigItem } from '@luke/core';
 
 import { trpc } from '../../lib/trpc';
 import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
@@ -59,10 +59,13 @@ function EditableList({
         {value.map(item => (
           <div key={item} className="flex items-center justify-between text-sm">
             <span className="font-mono text-xs">{item}</span>
+            {/* The list keeps at least one entry: the widget has nothing to show without one. */}
             <Button
               variant="ghost"
               size="sm"
               className="h-5 w-5 p-0"
+              aria-label={`Rimuovi ${item}`}
+              disabled={value.length === 1}
               onClick={() => onChange(value.filter(v => v !== item))}
             >
               <X className="h-3 w-3" />
@@ -88,8 +91,6 @@ function EditableList({
     </div>
   );
 }
-
-const FOREX_RE = /^[A-Z]{3}\/[A-Z]{3}$/;
 
 /**
  * Side sheet for toggling and configuring dashboard widgets.
@@ -159,6 +160,8 @@ export function DashboardCustomizeSheet({
                           maxItems={6}
                           value={(settings as { timezones?: string[] } | undefined)?.timezones ?? [...DEFAULT_CLOCKS_TIMEZONES]}
                           onChange={timezones => updateSettings(def.id, { timezones })}
+                          validator={isValidTimeZone}
+                          normalizer={canonicalTimeZone}
                         />
                       )}
                       {def.id === 'forex' && (
@@ -168,7 +171,7 @@ export function DashboardCustomizeSheet({
                           maxItems={8}
                           value={(settings as { pairs?: string[] } | undefined)?.pairs ?? [...DEFAULT_FOREX_PAIRS]}
                           onChange={pairs => updateSettings(def.id, { pairs })}
-                          validator={s => FOREX_RE.test(s)}
+                          validator={s => FOREX_PAIR_PATTERN.test(s)}
                           normalizer={s => s.toUpperCase()}
                         />
                       )}

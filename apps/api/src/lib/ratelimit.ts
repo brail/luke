@@ -1,6 +1,7 @@
 /**
  * In-memory rate-limit store for Luke API.
- * Uses a per-route LRU Map (max 1 000 keys per route) with configurable TTL windows.
+ * Uses a per-route Map (max 1 000 keys per route, evicted in insertion order) with configurable
+ * TTL windows.
  * Key extraction is IP-based for public endpoints and user-ID-based for authenticated ones.
  * Expired entries are evicted on a 60-second cleanup interval.
  */
@@ -29,7 +30,7 @@ export const RATE_LIMIT_CONFIG = {
   },
   // Separate bucket, keyed by username (not IP): stops a password-spray distributed
   // across many IPs against a single account, which the 'login' bucket (keyBy: 'ip') doesn't cover.
-  // Applied directly in authenticateUser() with the normalized username as an
+  // Applied directly in verifyCredentials() with the normalized username as an
   // explicit key — it doesn't go through withRateLimit()/extractRateLimitKey (which
   // doesn't derive 'username' from ctx, since login is an unauthenticated public endpoint).
   loginByUsername: {
@@ -84,7 +85,7 @@ export const RATE_LIMIT_CONFIG = {
   },
   navSyncTrigger: {
     max: 1,
-    windowMs: 600_000, // 10 minutes — 1 sync per window, prevents connection pool exhaustion
+    windowMs: 600_000, // 10 minutes — 1 sync per entity per window (keyed in integrations.nav.router.ts), prevents connection pool exhaustion
     keyBy: 'userId' as const,
   },
   exportGeneration: {
@@ -110,7 +111,7 @@ interface RateLimitEntry {
 }
 
 /**
- * In-memory rate-limit store with per-route LRU maps and TTL-based window expiry.
+ * In-memory rate-limit store with per-route insertion-order (FIFO) maps and TTL-based window expiry.
  */
 class RateLimitStore {
   private stores = new Map<string, Map<string, RateLimitEntry>>();
@@ -190,7 +191,8 @@ class RateLimitStore {
       }
     }
 
-    // If the cache is full, remove the oldest entry (LRU)
+    // If the cache is full, remove the oldest inserted entry: incrementing a counter updates it in
+    // place, so a Map's insertion order is the order windows opened — FIFO, not LRU.
     if (store.size >= this.maxSize) {
       const oldestKey = store.keys().next().value;
       if (oldestKey) {
@@ -319,7 +321,7 @@ export function extractRateLimitKey(
 /**
  * Checks a key against `rateLimitStore` and either records the hit or throws
  * `TOO_MANY_REQUESTS`. Shared by `withRateLimit()` (ctx-derived key) and by call sites that
- * already have an explicit key, e.g. `loginByUsername` in `authenticateUser()`
+ * already have an explicit key, e.g. `loginByUsername` in `verifyCredentials()`
  * (`apps/api/src/services/auth.service.ts`) — username lives in the procedure input, not
  * `ctx`, so it can't go through `extractRateLimitKey()`.
  *
@@ -331,7 +333,13 @@ export function enforceRateLimit(
   config: { max: number; windowMs: number }
 ): void {
   if (rateLimitStore.isLimited(routeName, key, config)) {
-    throw buildRateLimitExceededError(routeName, config);
+    // What the client's message no longer says, for the operator — and which bucket tripped: the
+    // key is the client IP or the account, both already in the request log and the login audit.
+    logger.warn(
+      { routeName, key, max: config.max, windowMs: config.windowMs },
+      'Rate limit exceeded'
+    );
+    throw buildRateLimitExceededError(config.windowMs);
   }
   // Record BEFORE the caller proceeds so concurrent requests see the updated count.
   rateLimitStore.record(routeName, key, config);
@@ -339,7 +347,7 @@ export function enforceRateLimit(
 
 /**
  * Creates a tRPC middleware that enforces rate limiting for the specified route.
- * Policy is resolved dynamically on every request: AppConfig → ENV → static default.
+ * Policy is resolved dynamically on every request: AppConfig → built-in default.
  * Requests beyond the limit receive a `TOO_MANY_REQUESTS` tRPC error.
  *
  * @param routeName - Route name (must be a key of `RATE_LIMIT_CONFIG`).
@@ -355,11 +363,11 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
 
       if (config.keyBy === 'username') {
         // No route currently wired to withRateLimit() uses keyBy 'username' (only
-        // loginByUsername, checked directly in authenticateUser()) — if it ever
+        // loginByUsername, checked directly in verifyCredentials()) — if it ever
         // did (e.g. a malformed AppConfig override on another route), fail
         // loudly instead of silently deriving the wrong key.
         throw new Error(
-          `withRateLimit('${routeName}'): keyBy 'username' non è supportato da questo middleware — la chiave va passata esplicitamente dal chiamante`
+          `withRateLimit('${routeName}'): keyBy 'username' is not supported by this middleware — the caller must pass the key explicitly`
         );
       }
 
@@ -382,11 +390,3 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
     return next();
   });
 }
-
-/**
- * Internal rate-limit store configuration constants.
- */
-export const RATE_LIMIT_CONFIG_EXPORT = {
-  maxSize: 1000,
-  cleanupIntervalMs: 60 * 1000, // 1 minute
-} as const;

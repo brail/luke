@@ -1,54 +1,80 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Luke — RC Stack (Portainer)
 #
-# Stack parallelo alla produzione per release candidate (vX.Y.Z-rc.N).
-# Usa immagini taggate "rc-latest" costruite da GitHub Actions.
+# Stack running parallel to production, for release candidates (vX.Y.Z-rc.N).
+# Runs the candidate named by LUKE_VERSION, as release.yml publishes it to
+# ghcr.io from the rc tag.
 #
-# Porte host differenziate per coesistere con lo stack prod:
-#   web: 3010 (prod usa 3000)
+# Deployed as a Portainer Git stack (build method "Repository"), named
+# `luke-rc`: this repository, reference refs/tags/v<version>, compose path
+# docker-compose.rc.yml, GitOps updates off. A candidate changes the reference
+# and LUKE_VERSION together; afterwards both containers must run
+# ghcr.io/brail/luke-{api,web}:<LUKE_VERSION> (docker inspect … Config.Image).
+# Going back to an earlier candidate: the later candidate's migrations stay
+# applied, and an earlier one may not run on them (from rc.3, users.timezone has
+# no default, so rc.2 cannot create users). Move the stack to the earlier
+# candidate first, then run scripts/refresh-rc-db.sh, whose restart of api-rc
+# applies that candidate's migrations to the fresh clone.
 #
-# Required environment variables (set in Portainer Stack → Env):
-#   POSTGRES_PASSWORD_RC  — password DB separata dal prod
-#   NEXTAUTH_SECRET_RC    — secret separato dal prod
-#   RC_PUBLIC_HOSTNAME    — hostname RC, es. rc.luke.febos.local
-#   COOKIE_SECURE         — "true" se HTTPS, "false" se HTTP
-#   MINIO_ROOT_USER_RC    — MinIO admin username (RC)
-#   MINIO_ROOT_PASSWORD_RC — MinIO admin password (RC, 32+ chars)
+# Self-contained: the stack must deploy from this file alone. Portainer CE's Git
+# stack does not resolve relative paths (a Business Edition feature), and a
+# failed Git deploy falls back to this file pasted into the web editor, where
+# there is no checkout. No service may reference a repository path (relative
+# bind mount, `build:`, `env_file:`).
 #
-# Nginx Proxy Manager: crea un nuovo proxy host
-#   Domain: rc.luke.febos.local  →  Forward: http://localhost:3010
+# Environment variables (set in Portainer Stack → Env). Never put `$` in a value:
+# compose interpolates it. `openssl rand -hex 24` gives a safe value.
+# Required — the deploy stops without them:
+#   LUKE_VERSION          — candidate to run, without the "v", e.g. 3.0.0-rc.3
+#   POSTGRES_PASSWORD_RC  — DB password, separate from prod
+#   NEXTAUTH_SECRET_RC    — secret, separate from prod
+#   RC_PUBLIC_HOSTNAME    — RC hostname, e.g. rc.luke.febos.local
+#   S3_ROOT_USER_RC       — S3 storage admin username (RC)
+#   S3_ROOT_PASSWORD_RC   — S3 storage admin password (RC, 32+ chars)
+# Optional:
+#   COOKIE_SECURE         — "true" for HTTPS; default "false"
+#   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
+#
+# Prerequisite, once per host: the external network `luke-rc-proxy`, shared only
+# by the web service and the reverse proxy (OPERATIONS.md, "Reverse proxy"). The
+# deploy stops while it is missing. The web publishes no host port.
+#   docker network create luke-rc-proxy
+#   docker network connect luke-rc-proxy nginx-proxy-manager
+#
+# Nginx Proxy Manager: create a new proxy host
+#   Domain: rc.luke.febos.local  →  Forward: http://luke-rc-web-rc-1:3000
 # ──────────────────────────────────────────────────────────────────────────────
 
+x-logging: &logging
+  driver: local
+  options:
+    max-size: '10m'
+    max-file: '5'
+
 services:
-  # ── PostgreSQL (istanza isolata per l'RC) ────────────────────────────────────
+  # ── PostgreSQL (isolated instance for RC) ────────────────────────────────────
   postgres-rc:
-    networks:
-      - data
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: luke
       POSTGRES_USER: luke
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_RC}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_RC:?POSTGRES_PASSWORD_RC not set}
     volumes:
       - postgres_rc_data:/var/lib/postgresql/data
+    networks:
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U luke -d luke']
       interval: 5s
       timeout: 5s
       retries: 10
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
   # ── Fastify API (RC) ─────────────────────────────────────────────────────────
   api-rc:
-    networks:
-      - edge
-      - data
-    image: ghcr.io/brail/luke-api:rc-latest
+    image: ghcr.io/brail/luke-api:${LUKE_VERSION:?LUKE_VERSION not set}
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       postgres-rc:
@@ -59,111 +85,74 @@ services:
       LUKE_TRUSTED_PROXY_CIDR: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC}@postgres-rc:5432/luke
+      DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC:?POSTGRES_PASSWORD_RC not set}@postgres-rc:5432/luke
       LUKE_CORS_ALLOWED_ORIGINS: ''
     volumes:
       - api_rc_data:/root/.luke
+    networks:
+      - edge
+      - data
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3001/healthz || exit 1']
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 60s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
-  # ── Next.js web (RC) — esposta su porta 3010 ─────────────────────────────────
+  # ── Next.js web (RC) ─────────────────────────────────────────────────────────
   web-rc:
-    networks:
-      - edge
-    image: ghcr.io/brail/luke-web:rc-latest
+    image: ghcr.io/brail/luke-web:${LUKE_VERSION:?LUKE_VERSION not set}
+    pull_policy: always
     restart: unless-stopped
     depends_on:
       api-rc:
         condition: service_started
-    ports:
-      - '3010:3000'
     environment:
       NODE_ENV: production
       INTERNAL_API_URL: http://api-rc:3001
-      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME}
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC}
+      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME:?RC_PUBLIC_HOSTNAME not set}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC:?NEXTAUTH_SECRET_RC not set}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    networks:
+      - edge
+      - proxy
+    logging: *logging
 
-  # ── MinIO object storage (RC) ────────────────────────────────────────────────
-  minio-rc:
+  # ── SeaweedFS object storage (RC, S3-compatible) ──────────────────────────────
+  seaweedfs-rc:
+    # Pinned: the env-var admin identity below is verified on this version;
+    # re-verify it (anonymous request refused) before bumping.
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    # No bind mount: the stack deploys from this file alone (see the header).
+    # `weed` runs directly (the image entrypoint would add its own volume
+    # flags). -volume.max=100: the default 8 volume slots stop writes at ~8 buckets
+    # (one volume per bucket), and Luke has ~9.
+    entrypoint: ["/usr/bin/weed"]
+    command: ["server", "-dir=/data", "-s3", "-ip.bind=0.0.0.0", "-volume.max=100"]
+    environment:
+      # The S3 gateway's only identity when no -s3.config file and no filer IAM
+      # config exist. Without it the gateway would accept anonymous requests, so
+      # an unset variable stops the deploy (`:?`).
+      AWS_ACCESS_KEY_ID:     ${S3_ROOT_USER_RC:?S3_ROOT_USER_RC not set}
+      AWS_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD_RC:?S3_ROOT_PASSWORD_RC not set}
+    volumes:
+      - seaweedfs_rc_data:/data
     networks:
       - data
-    image: minio/minio:latest
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER:     ${MINIO_ROOT_USER_RC}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD_RC}
-    volumes:
-      - minio_rc_data:/data
     healthcheck:
-      test: ['CMD-SHELL', 'curl -f http://localhost:9000/minio/health/live || exit 1']
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/cluster/status"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
-
-  minio-rc-init:
-    networks:
-      - data
-    image: minio/mc:latest
-    depends_on:
-      minio-rc:
-        condition: service_healthy
-    environment:
-      MINIO_ROOT_USER_RC: ${MINIO_ROOT_USER_RC}
-      MINIO_ROOT_PASSWORD_RC: ${MINIO_ROOT_PASSWORD_RC}
-    entrypoint: >
-      /bin/sh -c "
-        mc alias set local http://minio-rc:9000 $${MINIO_ROOT_USER_RC} $${MINIO_ROOT_PASSWORD_RC} &&
-        mc mb --ignore-existing local/uploads &&
-        mc mb --ignore-existing local/exports &&
-        mc mb --ignore-existing local/assets &&
-        mc mb --ignore-existing local/brand-logos &&
-        mc mb --ignore-existing local/temp-brand-logos &&
-        mc mb --ignore-existing local/collection-row-pictures &&
-        mc mb --ignore-existing local/temp-collection-row-pictures &&
-        mc mb --ignore-existing local/merchandising-specsheet-images &&
-        mc mb --ignore-existing local/temp-merchandising-specsheet-images &&
-        mc mb --ignore-existing local/company-assets &&
-        mc anonymous set download local/brand-logos &&
-        mc anonymous set download local/collection-row-pictures &&
-        mc anonymous set download local/merchandising-specsheet-images &&
-        mc anonymous set download local/company-assets &&
-        mc ilm rule add --expire-days 1 local/temp-brand-logos &&
-        mc ilm rule add --expire-days 1 local/temp-collection-row-pictures &&
-        mc ilm rule add --expire-days 1 local/temp-merchandising-specsheet-images
-      "
-    restart: on-failure
-    logging:
-      driver: local
-      options:
-        max-size: "10m"
-        max-file: "5"
+    logging: *logging
 
 volumes:
   postgres_rc_data:
   api_rc_data:
-  minio_rc_data:
+  seaweedfs_rc_data:
 
 networks:
   # apps/web -> apps/api only. The subnet is deterministic so apps/api can be
@@ -174,10 +163,17 @@ networks:
       config:
         - subnet: ${LUKE_RC_EDGE_SUBNET:-10.254.20.0/24}
 
-  # postgres and minio live here and nowhere else. `internal: true` gives the
-  # network no gateway, so nothing on it can reach — or be reached from —
+  # postgres and seaweedfs live here and nowhere else. `internal: true` gives
+  # the network no gateway, so nothing on it can reach — or be reached from —
   # outside the stack. apps/api is the only service on both, which is what makes
   # "only apps/web can be apps/api's peer" a property of the topology rather
   # than an assumption in a comment.
   data:
     internal: true
+
+  # Shared with the reverse proxy and nothing else: the proxy reaches the web
+  # here, never apps/api, postgres or seaweedfs. External, so recreating this
+  # stack neither deletes it nor drops the proxy's connection to it.
+  proxy:
+    external: true
+    name: luke-rc-proxy

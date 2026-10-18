@@ -39,6 +39,7 @@ import {
 import { UserAvatar } from '../../../components/UserAvatar';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useFormatDate } from '../../../hooks/useFormatDate';
+import { triggerBlobDownload } from '../../../lib/download';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
 
@@ -48,8 +49,8 @@ import { NotificationPreferences } from './_components/NotificationPreferences';
 import { UserProfileForm } from './_components/UserProfileForm';
 
 /**
- * Pagina Profilo Utente Semplificata
- * Layout responsive unico senza tab, con statistiche reali e quick actions
+ * Simplified user profile page.
+ * A single responsive layout without tabs, with real statistics and quick actions.
  */
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -57,7 +58,7 @@ export default function ProfilePage() {
   const { copy } = useCopyToClipboard();
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
 
-  // Query per ottenere i dati del profilo utente
+  // Query that fetches the user profile data
   const {
     data: user,
     isLoading,
@@ -66,7 +67,7 @@ export default function ProfilePage() {
     enabled: !!session?.accessToken,
   });
 
-  // Mutation per logout globale (me.revokeAllSessions)
+  // Global logout mutation (me.revokeAllSessions)
   const revokeAllSessionsMutation = trpc.me.revokeAllSessions.useMutation({
     onSuccess: () => {
       toast.success('Tutte le sessioni sono state revocate');
@@ -78,7 +79,7 @@ export default function ProfilePage() {
     },
   });
 
-  // Mutation per richiesta email verifica
+  // Mutation to request a verification email
   const requestVerifyMutation =
     trpc.auth.requestEmailVerification.useMutation();
 
@@ -142,11 +143,6 @@ export default function ProfilePage() {
     );
   }
 
-  // Calcola statistiche da dati reali
-  const userStats = {
-    lastLogin: user.lastLoginAt || new Date(),
-  };
-
   const handleCopyEmail = () => copy(user.email, { successMessage: 'Email copiata negli appunti!' });
 
   const handleExportProfile = () => {
@@ -161,19 +157,13 @@ export default function ProfilePage() {
       timezone: user.timezone,
       provider: user.provider,
       createdAt: user.createdAt,
-      lastLogin: userStats.lastLogin,
+      lastLogin: user.lastLoginAt ?? null,
     };
 
     const blob = new Blob([JSON.stringify(profileData, null, 2)], {
       type: 'application/json',
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `profile_${user.username}.json`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerBlobDownload(blob, `profile_${user.username}.json`);
 
     toast.success('Profilo esportato con successo');
   };
@@ -191,9 +181,9 @@ export default function ProfilePage() {
 
       {/* Layout Grid Responsive */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Colonna Sinistra - Avatar e Info Base */}
+        {/* Left column - avatar and basic info */}
         <div className="lg:col-span-1 space-y-6">
-          {/* Avatar e Info Principali */}
+          {/* Avatar and main info */}
           <Card>
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
@@ -241,7 +231,7 @@ export default function ProfilePage() {
                 </span>
                 <span className="text-sm font-medium">
                   {user.lastLoginAt
-                    ? formatDate.time(userStats.lastLogin)
+                    ? formatDate.dateTime(user.lastLoginAt)
                     : 'N/A'}
                 </span>
               </div>
@@ -259,12 +249,14 @@ export default function ProfilePage() {
                     variant="outline"
                     onClick={async () => {
                       try {
-                        await requestVerifyMutation.mutateAsync({
-                          email: user.email,
-                        });
+                        await requestVerifyMutation.mutateAsync();
                         toast.success('Email di verifica inviata');
                       } catch (err: unknown) {
-                        toast.error(getTrpcErrorMessage(err));
+                        toast.error(
+                          getTrpcErrorMessage(err, {
+                            INTERNAL_SERVER_ERROR: "Impossibile inviare l'email di verifica. Riprova più tardi.",
+                          }),
+                        );
                       }
                     }}
                     disabled={requestVerifyMutation.isPending}
@@ -329,7 +321,7 @@ export default function ProfilePage() {
           </Card>
         </div>
 
-        {/* Colonna Destra - Contenuto Principale */}
+        {/* Right column - main content */}
         <div className="lg:col-span-3 space-y-6">
           <Tabs defaultValue="profile">
             <TabsList>
@@ -378,7 +370,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Modal Cambio Password */}
+      {/* Password change modal */}
       <Dialog
         open={showChangePasswordModal}
         onOpenChange={setShowChangePasswordModal}

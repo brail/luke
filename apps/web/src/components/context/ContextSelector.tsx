@@ -27,7 +27,7 @@ export function ContextSelector() {
   const { brand, season } = useAppContext();
   const { setContext, isPending } = useContextMutation();
 
-  // Brand filtrati per whitelist utente
+  // Brands filtered by the user whitelist
   const { data: brands = [], isLoading: brandsLoading } =
     trpc.catalog.brands.useQuery();
 
@@ -51,7 +51,7 @@ export function ContextSelector() {
     }
   };
 
-  // Handler per cambio Season
+  // Handler for the Season change
   const handleSeasonChange = (seasonId: string) => {
     if (brand) {
       setContext({ brandId: brand.id, seasonId });

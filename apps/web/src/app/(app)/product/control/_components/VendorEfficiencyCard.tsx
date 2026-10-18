@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, LabelList, ReferenceLine, XAxis, YAxis } from 'recharts';
 
+import { classifyMargin, formatMarginPct } from '@luke/core';
+
 import {
   Card,
   CardContent,
@@ -18,7 +20,6 @@ import {
 } from '../../../../../components/ui/chart';
 import {
   MARGIN_STATUS_TEXT_CLASS,
-  computeMarginStatus,
   computeWeightedMargin,
   getReferenceOptimalMargin,
   groupRowsByVendor,
@@ -31,20 +32,17 @@ const chartConfig: ChartConfig = {
 };
 
 /**
- * Requisito 3: efficienza teorica (qtyForecast / skuForecast) per riga, aggregata
- * per fornitore. Aggregazione come rapporto di somme (Σqty / Σsku), non media dei
- * rapporti — evita che poche righe a bassissimo SKU distorcano la media (stile
- * Simpson's paradox). Bonus: margine medio per fornitore accanto, per confronto
- * efficienza↔margine. Righe senza qtyForecast o skuForecast sono escluse dal
- * rapporto (contate altrove, vedi DataQualityScoreboard).
+ * Requirement 3: theoretical efficiency (qtyForecast / skuForecast) per row, aggregated
+ * per vendor. Aggregated as a ratio of sums (Σqty / Σsku), not a mean of ratios —
+ * it keeps a few rows with a very low SKU from skewing the mean (Simpson's paradox
+ * style). Bonus: average margin per vendor alongside, to compare
+ * efficiency↔margin. Rows without qtyForecast or skuForecast are left out of the
+ * ratio (counted elsewhere, see DataQualityScoreboard).
  */
 export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCardProps) {
   const referenceOptimalMargin = getReferenceOptimalMargin(parameterSets);
 
   const { chartData, overallEfficiency } = useMemo(() => {
-    let totalQty = 0;
-    let totalSku = 0;
-
     const data = groupRowsByVendor(rows)
       .map(v => {
         let qty = 0;
@@ -53,21 +51,24 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
           if (row.qtyForecast != null && row.skuForecast != null && row.skuForecast > 0) {
             qty += row.qtyForecast;
             sku += row.skuForecast;
-            totalQty += row.qtyForecast;
-            totalSku += row.skuForecast;
           }
         }
         const margin = computeWeightedMargin(v.rows, parameterSets);
         return {
           vendor: v.name,
+          qty,
           sku,
           efficiency: sku > 0 ? Math.round((qty / sku) * 100) / 100 : 0,
           margin,
-          marginStatus: margin !== null ? computeMarginStatus(margin * 100, referenceOptimalMargin) : null,
+          marginStatus: margin !== null ? classifyMargin(margin * 100, referenceOptimalMargin) : null,
         };
       })
       .filter(v => v.sku > 0)
       .sort((a, b) => b.efficiency - a.efficiency);
+
+    // Vendors left out above counted no rows, so summing the kept ones covers every counted row.
+    const totalQty = data.reduce((sum, v) => sum + v.qty, 0);
+    const totalSku = data.reduce((sum, v) => sum + v.sku, 0);
 
     return {
       chartData: data,
@@ -132,7 +133,7 @@ export function VendorEfficiencyCard({ rows, parameterSets }: CollectionStatsCar
             <div key={v.vendor} className="flex items-center justify-between text-sm gap-2">
               <span className="truncate text-muted-foreground">{v.vendor}</span>
               <span className={v.marginStatus ? MARGIN_STATUS_TEXT_CLASS[v.marginStatus] : 'text-muted-foreground/40'}>
-                {v.margin !== null ? `${(v.margin * 100).toFixed(1)}%` : '—'}
+                {v.margin !== null ? formatMarginPct(v.margin) : '—'}
               </span>
             </div>
           ))}

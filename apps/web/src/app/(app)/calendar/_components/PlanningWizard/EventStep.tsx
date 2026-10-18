@@ -1,5 +1,9 @@
 'use client';
 
+import { type CalendarDate, formatCalendarDate } from '@luke/core';
+
+import { eventDays } from '../../utils';
+
 import { EventTimelineDrag } from './EventTimelineDrag';
 
 import type { CalendarEventItem } from '../types';
@@ -7,25 +11,28 @@ import type { HolidayMap } from '../useHolidays';
 
 interface Props {
   event: CalendarEventItem;
-  draftDate: Date;
-  onDraftDateChange: (d: Date) => void;
+  /** The reader zone: a timed event's first date is read in it. */
+  zone: string;
+  /** The event's first date as the user is moving it (`eventDays`). */
+  draftDate: CalendarDate;
+  onDraftDateChange: (d: CalendarDate) => void;
   holidayDates: HolidayMap;
   closedDates: Set<string>;
 }
 
 /** One wizard step: review/adjust a single calendar event's date. */
-export function EventStep({ event, draftDate, onDraftDateChange, holidayDates, closedDates }: Props) {
+export function EventStep({ event, zone, draftDate, onDraftDateChange, holidayDates, closedDates }: Props) {
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-sm font-medium truncate">{event.title}</h3>
         <p className="text-xs text-muted-foreground tabular-nums">
-          {draftDate.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}
+          {formatCalendarDate(draftDate, { weekday: 'long', day: 'numeric', month: 'long' })}
         </p>
       </div>
 
       <EventTimelineDrag
-        anchorDate={new Date(event.startAt)}
+        anchorDate={eventDays(event, zone)[0]}
         value={draftDate}
         onChange={onDraftDateChange}
         holidayDates={holidayDates}

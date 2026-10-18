@@ -2,35 +2,37 @@ import path from 'path';
 
 import { expect, type Page } from '@playwright/test';
 
+import { addCalendarDays, calendarDateIn } from '@luke/core';
+
 import { dailyGreetingSeenKey } from '../../src/lib/dailyGreetingKey';
 
 /**
- * Credenziali dello smoke. Il default è l'utente creato da
- * `apps/api/prisma/seed.ts`: non è un segreto (sta in chiaro nel seed
- * versionato) e non passa da AppConfig, perché è un input del test runner —
- * stesso status di `TEST_DATABASE_URL` lato API, non configurazione applicativa.
+ * Smoke credentials. The default is the user created by `apps/api/prisma/seed.ts`: it is not
+ * a secret (it is in the clear in the versioned seed) and it does not go through AppConfig,
+ * because it is a test runner input — the same status as `TEST_DATABASE_URL` on the API side,
+ * not application configuration.
  */
 export const SMOKE_USERNAME = process.env.E2E_USERNAME ?? 'admin';
 const SMOKE_PASSWORD = process.env.E2E_PASSWORD ?? 'changeme';
 
 /**
- * storageState prodotto da `auth.setup.ts` e riusato da tutti gli spec smoke.
- * Risolto da `__dirname` e non dalla cwd, così la suite parte anche invocata
- * dalla root del monorepo.
+ * storageState produced by `auth.setup.ts` and reused by every smoke spec.
+ * Resolved from `__dirname` and not from the cwd, so the suite also starts when invoked
+ * from the monorepo root.
  */
 export const ADMIN_STORAGE_STATE = path.join(__dirname, '..', '.auth', 'admin.json');
 
 /**
- * Titolo del `PageHeader` in `app/error.tsx`. Se compare, la pagina è andata in
- * error boundary: è il segnale che uno smoke deve intercettare sempre, perché
- * un crash a runtime supera lint e typecheck indisturbato.
+ * Title of the `PageHeader` in `app/error.tsx`. If it shows, the page fell into the error
+ * boundary: it is the signal a smoke test must always catch, because a runtime crash gets
+ * past lint and typecheck undisturbed.
  */
 const ERROR_BOUNDARY_HEADING = 'Si è verificato un errore';
 
-/** Titolo del modale bloccante di `ContextGate`. */
+/** Title of the `ContextGate` blocking modal. */
 const CONTEXT_GATE_TITLE = 'Seleziona Contesto';
 
-/** Esegue il login dalla pagina `/login` compilando il form reale. */
+/** Logs in from the `/login` page by filling in the real form. */
 export async function login(
   page: Page,
   username: string = SMOKE_USERNAME,
@@ -43,20 +45,19 @@ export async function login(
 }
 
 /**
- * Il saluto giornaliero è un `Dialog` a schermo intero che intercetta ogni
- * click: senza questo, il primo spec di ogni run fallirebbe su un elemento
- * coperto. `useDailyGreeting` lo salta se trova il flag di oggi, quindi lo
- * scriviamo per oggi e per domani — così una run a cavallo di mezzanotte non lo
- * risveglia a metà. Sopprimerlo qui non lo lascia scoperto: è comportamento del
- * modale, non dei flussi che lo smoke verifica.
+ * The daily greeting is a full-screen `Dialog` that intercepts every click: without this,
+ * the first spec of every run would fail on a covered element. `useDailyGreeting` skips it
+ * if it finds today's flag, today being the profile zone's: up to a day either side of this
+ * process's UTC day, and one more for a run across midnight, so we flag all four. Suppressing it
+ * here does not leave it uncovered: it is the modal's behaviour, not that of the flows the smoke
+ * tests check.
  *
- * La chiave arriva da `dailyGreetingSeenKey`, lo stesso modulo che usa l'hook:
- * ri-derivarne il formato qui la romperebbe in silenzio al primo cambio.
+ * The key comes from `dailyGreetingSeenKey`, the same module the hook uses: re-deriving
+ * its format here would break it silently at the first change.
  */
 export async function suppressDailyGreeting(page: Page): Promise<void> {
-  const now = new Date();
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const keys = [dailyGreetingSeenKey(now), dailyGreetingSeenKey(tomorrow)];
+  const today = calendarDateIn(new Date(), 'UTC');
+  const keys = [-1, 0, 1, 2].map(offset => dailyGreetingSeenKey(addCalendarDays(today, offset)));
 
   await page.evaluate(ks => {
     for (const key of ks) {
@@ -65,7 +66,7 @@ export async function suppressDailyGreeting(page: Page): Promise<void> {
   }, keys);
 }
 
-/** Fallisce se la pagina corrente è finita nell'error boundary di Next. */
+/** Fails if the current page ended up in the Next error boundary. */
 export async function expectNoErrorBoundary(page: Page): Promise<void> {
   await expect(
     page.getByRole('heading', { name: ERROR_BOUNDARY_HEADING })
@@ -73,25 +74,25 @@ export async function expectNoErrorBoundary(page: Page): Promise<void> {
 }
 
 /**
- * Verifica che l'ambiente abbia un brand e una stagione attivi.
+ * Checks that the environment has an active brand and season.
  *
- * Senza contesto `ContextGate` apre un modale bloccante e ogni spec fallirebbe
- * su sintomi scollegati dalla causa. Distinguere qui il precondition failure dal
- * bug è l'unico modo per non perdere tempo a debuggare un DB vuoto.
+ * Without a context, `ContextGate` opens a blocking modal and every spec would fail on
+ * symptoms unrelated to the cause. Telling the precondition failure apart from a bug here
+ * is the only way not to waste time debugging an empty DB.
  */
 export async function expectContextConfigured(page: Page): Promise<void> {
   const gate = page.getByRole('dialog').filter({ hasText: CONTEXT_GATE_TITLE });
   await expect(
     gate,
-    'ContextGate aperto: l\'ambiente non ha brand/stagione attivi. ' +
-      'Lo smoke presuppone un DB seedato — non è un bug del codice in test.'
+    'ContextGate open: the environment has no active brand/season. ' +
+      'The smoke suite assumes a seeded DB — this is not a bug in the code under test.'
   ).toHaveCount(0);
 }
 
 /**
- * Codice brand univoco per run. Maiuscolo e senza caratteri fuori
- * `[A-Z0-9_ -]`, così `normalizeCode` lo lascia identico e le asserzioni sulla
- * tabella possono confrontare esattamente il valore inserito.
+ * Unique brand code per run. Uppercase and with no characters outside `[A-Z0-9_ -]`, so
+ * `normalizeCode` leaves it unchanged and the table assertions can compare exactly the
+ * value entered.
  */
 export function uniqueBrandCode(): string {
   return `SMOKE-${Date.now().toString(36).toUpperCase()}`;

@@ -1,9 +1,9 @@
 
 import { getPublicUrl, getProxyUrl, type StorageBucket, type UrlConfig } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
-import { getConfig } from './configManager';
+import { getConfig, getConfigOrDefault } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Reads the storage URL configuration from AppConfig and returns a `UrlConfig` object
@@ -12,27 +12,15 @@ import type { PrismaClient } from '@prisma/client';
 export async function getStorageUrlConfig(
   prisma: PrismaClient
 ): Promise<UrlConfig> {
-  const publicBaseUrl = await getConfig(prisma, 'storage.local.publicBaseUrl', false);
-  const enableProxyStr = await getConfig(prisma, 'storage.local.enableProxy', false);
-  const enableProxy = enableProxyStr ? enableProxyStr === 'true' : true;
+  const [publicBaseUrl, enableProxy] = await Promise.all([
+    getConfig(prisma, 'storage.local.publicBaseUrl', false),
+    getConfigOrDefault(prisma, 'storage.local.enableProxy'),
+  ]);
 
   return {
     publicBaseUrl: publicBaseUrl || undefined,
     enableProxy,
   };
-}
-
-/**
- * Resolves the absolute base URL for building storage download/upload links.
- * Fallback chain when `storage.local.publicBaseUrl` is unset: the configured
- * `app.baseUrl` from AppConfig, then the local API address (dev without seeded
- * config) — centralized here so callers don't each redefine the fallback.
- */
-export async function getStorageBaseUrl(prisma: PrismaClient): Promise<string> {
-  const { publicBaseUrl } = await getStorageUrlConfig(prisma);
-  if (publicBaseUrl) return publicBaseUrl;
-  const appBaseUrl = await getConfig(prisma, 'app.baseUrl', false);
-  return appBaseUrl || `http://localhost:${process.env.PORT || 3001}`;
 }
 
 /**
@@ -42,10 +30,10 @@ export async function getStorageBaseUrl(prisma: PrismaClient): Promise<string> {
 export async function makeUrlResolver(
   prisma: PrismaClient,
 ): Promise<(bucket: StorageBucket, key: string) => string> {
-  const storageType = (await getConfig(prisma, 'storage.type', false)) || 'local';
+  const storageType = await getConfigOrDefault(prisma, 'storage.type');
 
-  if (storageType === 'minio') {
-    // MinIO assets are served via the authenticated proxy route /api/uploads/{bucket}/{key}.
+  if (storageType === 's3') {
+    // S3-compatible assets are served via the authenticated proxy route /api/uploads/{bucket}/{key}.
     // Buckets remain private; the Next.js route handler enforces authentication.
     return (bucket, key) => getProxyUrl(bucket, key);
   }

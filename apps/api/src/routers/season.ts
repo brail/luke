@@ -8,18 +8,19 @@ import { TRPCError } from '@trpc/server';
 
 import {
   SeasonInputSchema,
+  SeasonHardDeleteInputSchema,
   SeasonIdSchema,
   SeasonListInputSchema,
   SeasonUpdateInputSchema,
   normalizeCode,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
-import type { Prisma } from '@prisma/client';
 
 const SEASON_SELECT = {
   id: true,
@@ -262,14 +263,18 @@ export const seasonRouter = router({
   /**
    * Permanently deletes a season; only allowed for seasons not linked to NAV and without active dependencies.
    *
-   * @auth {seasons:delete}
-   * @input {SeasonIdSchema}
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
+   * @auth {*:*} — admin only. `seasons:delete` is not enough: a permanent delete is not the
+   *   archive that permission is for.
+   * @input {SeasonHardDeleteInputSchema} — season UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
-    .use(requirePermission('seasons:delete'))
+    .use(requirePermission('*:*'))
     .use(withRateLimit('configMutations'))
-    .input(SeasonIdSchema)
+    .input(SeasonHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const season = await ctx.prisma.season.findUnique({ where: { id: input.id } });
 

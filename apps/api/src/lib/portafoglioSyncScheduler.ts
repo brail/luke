@@ -14,6 +14,8 @@
  */
 
 
+import { NAV_SYNC_DEFAULT_INTERVAL_MINUTES } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult } from '@luke/nav';
 
 import { getConfig } from './configManager';
@@ -22,7 +24,6 @@ import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifica
 import { withSchedulerLock } from './schedulerLock';
 import { sseStore } from './sseStore';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import type { Logger } from 'pino';
 
@@ -54,7 +55,7 @@ async function _runSync(): Promise<PortafoglioSyncResult | null> {
     const result = await syncPortafoglioNow(pool, navConfig.company, prisma, log);
     return result;
   } catch (err) {
-    log.error({ err }, 'Portafoglio sync scheduler: sync fallito');
+    log.error({ err }, 'Portafoglio sync scheduler: sync failed');
     await notifyDeduped(prisma, 'portafoglio-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
       category: 'SYSTEM',
       title: 'Portafoglio sync fallito',
@@ -112,25 +113,29 @@ export function registerPortafoglioSyncScheduler(
 
     if (!config?.autoSyncEnabled) return;
 
-    const intervalMs = (config.intervalMinutes ?? 5) * 60 * 1000;
+    const intervalMs = (config.intervalMinutes ?? NAV_SYNC_DEFAULT_INTERVAL_MINUTES.portafoglio) * 60 * 1000;
     const elapsed = _lastRunAt ? Date.now() - _lastRunAt.getTime() : Infinity;
     if (elapsed < intervalMs) return;
 
     // Locked around _runSync (not the outer tick): _runSync is fire-and-forget from here, so
     // the tick itself returns almost instantly — the lock must span the actual sync work.
-    void withSchedulerLock(prisma, 'portafoglio-sync', _runSync)();
+    withSchedulerLock(prisma, 'portafoglio-sync', _runSync)()
+      .catch(err => fastify.log.error({ err }, 'Portafoglio sync scheduler: sync could not start'));
   };
 
   const guardedTick = guardMaintenance(prisma, tick);
+  // A tick that fails (the database is down, say) is logged: left unhandled, the rejection would
+  // stop the process.
+  const run = () => guardedTick().catch(err => fastify.log.error({ err }, 'Portafoglio sync scheduler: tick failed'));
 
   fastify.addHook('onReady', async () => {
     _logger = fastify.log as unknown as Logger;
-    fastify.log.info('Portafoglio sync scheduler: avviato (tick ogni minuto, intervallo configurabile)');
+    fastify.log.info('Portafoglio sync scheduler: started (tick every minute, configurable interval)');
 
     // First execution immediately after ready (respecting DB config)
-    void guardedTick();
+    void run();
 
-    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
+    timer = setInterval(run, TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {
@@ -138,6 +143,6 @@ export function registerPortafoglioSyncScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Portafoglio sync scheduler: fermato');
+    fastify.log.info('Portafoglio sync scheduler: stopped');
   });
 }

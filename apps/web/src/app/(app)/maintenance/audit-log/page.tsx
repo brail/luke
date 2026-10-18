@@ -1,16 +1,28 @@
 'use client';
 
-import { Download } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { Fragment, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildAuditLogExportUrl, getAuditActionLabel, type AuditLogResult } from '@luke/core';
+import {
+  buildAuditLogExportUrl,
+  getAuditActionLabel,
+  CalendarDateSchema,
+  type AuditLogExportFormat,
+  type AuditLogResult,
+} from '@luke/core';
 
 import { ConfigTablePagination } from '../../../../components/config/ConfigTablePagination';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../../../components/ui/dropdown-menu';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import {
@@ -97,13 +109,15 @@ export default function AuditLogPage() {
     return () => clearTimeout(t);
   }, [targetTypeInput]);
 
+  // The days go as picked: the server reads them in the profile's zone, the one the rows are shown in.
+  // One the server would refuse is left out, as the date field holds one while its year is typed.
   const apiFilters = {
     actorId: filters.actorId || undefined,
     action: filters.action.trim() || undefined,
     targetType: filters.targetType.trim() || undefined,
     result: filters.result || undefined,
-    dateFrom: filters.dateFrom ? new Date(filters.dateFrom).toISOString() : undefined,
-    dateTo: filters.dateTo ? new Date(`${filters.dateTo}T23:59:59`).toISOString() : undefined,
+    dateFrom: CalendarDateSchema.safeParse(filters.dateFrom).data,
+    dateTo: CalendarDateSchema.safeParse(filters.dateTo).data,
   };
 
   const { data, isLoading } = trpc.auditLog.list.useQuery(
@@ -117,13 +131,11 @@ export default function AuditLogPage() {
 
   const getExportLinkMutation = trpc.auditLog.getExportLink.useMutation();
 
-  const handleDownload = async () => {
+  const handleDownload = async (format: AuditLogExportFormat) => {
     try {
       const { token } = await getExportLinkMutation.mutateAsync(apiFilters);
-      triggerUrlDownload(
-        buildAuditLogExportUrl(token),
-        `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
-      );
+      // The route names the file after the day in the profile's zone.
+      triggerUrlDownload(buildAuditLogExportUrl(format, token));
     } catch {
       toast.error('Download audit log fallito');
     }
@@ -149,10 +161,24 @@ export default function AuditLogPage() {
         title="Audit Log"
         description="Registro di tutte le operazioni di creazione, modifica ed eliminazione effettuate nel sistema."
         actions={
-          <Button variant="outline" onClick={() => void handleDownload()} disabled={getExportLinkMutation.isPending}>
-            <Download className="mr-2 h-4 w-4" />
-            Scarica CSV
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={getExportLinkMutation.isPending}>
+                <Download className="mr-2 h-4 w-4" />
+                Esporta
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => void handleDownload('xlsx')}>
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Excel (.xlsx)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void handleDownload('csv')}>
+                <FileText className="mr-2 h-4 w-4" />
+                CSV (.csv)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
 
@@ -217,13 +243,13 @@ export default function AuditLogPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label>Dal</Label>
-            <Input type="date" value={filters.dateFrom} onChange={e => updateFilter('dateFrom', e.target.value)} />
+            <Label htmlFor="audit-date-from">Dal</Label>
+            <Input id="audit-date-from" type="date" value={filters.dateFrom} onChange={e => updateFilter('dateFrom', e.target.value)} />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Al</Label>
-            <Input type="date" value={filters.dateTo} onChange={e => updateFilter('dateTo', e.target.value)} />
+            <Label htmlFor="audit-date-to">Al</Label>
+            <Input id="audit-date-to" type="date" value={filters.dateTo} onChange={e => updateFilter('dateTo', e.target.value)} />
           </div>
         </div>
       </SectionCard>
@@ -257,7 +283,15 @@ export default function AuditLogPage() {
                       onClick={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                     >
                       <TableCell>{fmt.dateTime(entry.createdAt)}</TableCell>
-                      <TableCell>{entry.actorName ?? 'Sistema'}</TableCell>
+                      <TableCell>
+                        {entry.actorName ?? entry.subjectName ?? 'Sistema'}
+                        {/* Pre-session events (login, verifica email, reset password) have no
+                            authenticated actor: the name shown is the subject the event points at,
+                            not a proven actor identity. Marked so an auditor can tell them apart. */}
+                        {!entry.actorName && entry.subjectName && (
+                          <span className="ml-1 text-xs text-muted-foreground">(soggetto)</span>
+                        )}
+                      </TableCell>
                       <TableCell>{getAuditActionLabel(entry.action)}</TableCell>
                       <TableCell>
                         {entry.targetType}
@@ -274,7 +308,11 @@ export default function AuditLogPage() {
                         <TableCell colSpan={5} className="bg-muted/30">
                           <pre className="whitespace-pre-wrap break-all text-xs">
                             {JSON.stringify(
-                              { ip: entry.ip, actorEmail: entry.actorEmail, metadata: entry.metadata },
+                              {
+                                ip: entry.ip,
+                                actorEmail: entry.actorEmail ?? entry.subjectEmail,
+                                metadata: entry.metadata,
+                              },
                               null,
                               2
                             )}

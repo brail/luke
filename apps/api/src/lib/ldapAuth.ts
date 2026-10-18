@@ -4,18 +4,22 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { Filter, SASL_MECHANISMS } from 'ldapts';
 import pino from 'pino';
 
+import { Roles, type Role } from '@luke/core';
+import type { PrismaClient, User } from '@luke/db';
+
 import {
-  getConfig,
+  getConfigOrDefault,
   getLdapConfig,
   getLdapResilienceConfig,
   type LdapConfig,
 } from './configManager';
-import { sendVerificationEmail } from './emailHelpers';
-import { ResilientLdapClient } from './ldapClient';
+import { isSyntheticLdapEmail, sendVerificationEmail } from './emailHelpers';
+import { toErrorCode, toErrorMessage } from './error';
+import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
 
-import type { PrismaClient, User } from '@prisma/client';
 import type { Entry } from 'ldapts';
 
 /**
@@ -28,43 +32,57 @@ function getAttr(entry: Entry, key: string): string[] {
   return typeof v === 'string' ? [v] : [];
 }
 
-/**
- * True if the email is the synthetic one generated for an LDAP user with no `mail` value set.
- */
-export function isSyntheticLdapEmail(email: string): boolean {
-  return email.endsWith('@ldap.local');
-}
-
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 /**
- * Escapes special characters in a value to be safely embedded in an LDAP search filter.
- * Follows RFC 4515 §3.
+ * Fills every `${placeholder}` of an LDAP filter template from the configuration with `value`,
+ * escaped by ldapts (RFC 4515). The replacement is a function: a string one would read `$&`,
+ * `` $` `` and `$'` in the value as replacement patterns.
  */
-export function escapeLdapFilter(value: string): string {
-  return value
-    .replace(/\\/g, '\\5c')
-    .replace(/\*/g, '\\2a')
-    .replace(/\(/g, '\\28')
-    .replace(/\)/g, '\\29')
-    .replace(/\0/g, '\\00');
+export function fillLdapFilter(template: string, placeholder: 'username' | 'userDN', value: string): string {
+  return template.replaceAll(`\${${placeholder}}`, () => Filter.escape(value));
 }
 
 /**
- * Authenticates a user against the configured LDAP directory.
- * Performs bind authentication, group-based role resolution, and
- * creates or updates the local user record on success.
+ * What an LDAP login that did not authenticate tells the caller. `ldap_unavailable` means the
+ * directory never judged the credentials — a step got no usable answer, or could not be carried
+ * out — and is for the audit trail only: the public answer to a refusal is the same either way.
+ */
+export interface LdapRefusal {
+  user: null;
+  reason: 'invalid_credentials' | 'ldap_unavailable';
+  errorCode?: string;
+}
+
+/** The outcome of an LDAP login: the local user it authenticated, or why it refused. */
+export type LdapLogin = { user: User } | LdapRefusal;
+
+const REFUSED: LdapRefusal = { user: null, reason: 'invalid_credentials' };
+
+/**
+ * Authenticates a user against the configured LDAP directory: service-account bind, search, bind as
+ * the user, then creation or update of the local user record.
  *
- * @param prisma - Prisma client.
- * @returns Local `User` record on success, or `null` if authentication fails
- *   (LDAP disabled, user not found, or invalid credentials).
- * @throws {TRPCError} If the LDAP configuration is incomplete or an unexpected error occurs.
+ * What it does with a failure depends on whether the username has been sent to the directory yet.
+ * Before that — incomplete configuration, the service-account bind, the circuit breaker in front of
+ * it — a failure says nothing about the person logging in, and is thrown. From the search on, a
+ * failure is returned as a refusal, whatever its cause: answering differently there would tell a
+ * caller with no password which usernames the directory knows. The one throw past that point needs
+ * the password: the user record could not be written after the directory verified it.
+ *
+ * @returns The local `User`, or a refusal with the reason for the audit trail.
+ * @throws {TRPCError} When the login could not complete for a reason independent of the username,
+ *   or the user record could not be synced after the password was verified.
  */
 export async function authenticateViaLdap(
   prisma: PrismaClient,
   username: string,
   password: string
-): Promise<User | null> {
+): Promise<LdapLogin> {
+  // A simple bind with an empty password is an unauthenticated bind, which a directory may answer
+  // with success (RFC 4513 §5.1.2): it must never count as a verified password. Not trimmed.
+  if (password === '') return REFUSED;
+
   let ldapClient: ResilientLdapClient | null = null;
 
   try {
@@ -77,7 +95,7 @@ export async function authenticateViaLdap(
     // Check that LDAP is enabled
     if (!config.enabled) {
       logger.debug('LDAP authentication disabled');
-      return null;
+      return REFUSED;
     }
 
     // Check that the configuration is complete
@@ -95,52 +113,24 @@ export async function authenticateViaLdap(
     ldapClient = new ResilientLdapClient(config, resilienceConfig, logger);
     await ldapClient.connect();
 
-    // Administrative bind to search for the user
+    // Administrative bind to search for the user. The one step behind the circuit breaker: it
+    // carries nothing about the person logging in. Without a service account there is no such
+    // step, and the directory is searched anonymously with no breaker in front of it.
     if (config.bindDN && config.bindPassword) {
-      await ldapClient.bind(config.bindDN, config.bindPassword);
+      await ldapClient.serviceBind(config.bindDN, config.bindPassword);
     }
 
-    // Search for the user
-    const userResult = await searchUser(ldapClient, config, username);
-    if (!userResult) {
-      logger.info({ username }, 'User not found in LDAP');
-      return null;
-    }
+    const verified = await verifyCandidate(ldapClient, config, username, password);
+    if (verified.user === null) return verified;
 
-    const { dn: userDN, attributes: userAttributes } = userResult;
-
-    // Verify the user's credentials
-    const isValidCredentials = await verifyUserCredentials(
-      ldapClient,
-      userDN,
-      password
-    );
-    if (!isValidCredentials) {
-      logger.info({ username }, 'Invalid credentials for user');
-      return null;
-    }
-
-    // Restore the administrative bind for the group search,
-    // since verifyUserCredentials binds the client as the end user
-    if (config.bindDN && config.bindPassword) {
-      await ldapClient.bind(config.bindDN, config.bindPassword);
-    }
-
-    // Search for the user's groups
-    const userGroups = await searchUserGroups(ldapClient, config, userDN);
-
+    const userGroups = await lookUpGroups(ldapClient, config, verified.dn);
     const role = determineUserRole(userGroups, config.roleMapping, logger);
 
     // Create or update the user in the database
-    const user = await createOrUpdateUser(
-      prisma,
-      username,
-      role,
-      userAttributes
-    );
+    const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
 
     logger.info({ username, role }, 'LDAP authentication successful');
-    return user;
+    return { user };
   } catch (error) {
     if (error instanceof TRPCError) {
       throw error;
@@ -170,6 +160,54 @@ export async function authenticateViaLdap(
   }
 }
 
+/** The directory entry of a user whose password the directory has verified. */
+interface VerifiedEntry {
+  user?: undefined;
+  dn: string;
+  attributes: Record<string, string[]>;
+}
+
+/**
+ * The part of a login that carries the candidate: the search for the username, then the bind as
+ * the entry found. It never throws — anything that goes wrong here, an LDAP error of any kind or an
+ * unexpected one while reading the search result, comes back as a refusal.
+ */
+async function verifyCandidate(
+  client: ResilientLdapClient,
+  config: LdapConfig,
+  username: string,
+  password: string
+): Promise<VerifiedEntry | LdapRefusal> {
+  try {
+    const found = await searchUser(client, config, username);
+    if (!found) {
+      logger.info({ username }, 'User not found in LDAP');
+      return REFUSED;
+    }
+
+    // A bind proves a password only if it is a simple bind of a named entry. An empty DN makes it
+    // an anonymous one, and ldapts reads a DN that is exactly a SASL mechanism name as a request
+    // for that mechanism.
+    if (!found.dn || (SASL_MECHANISMS as readonly string[]).includes(found.dn)) {
+      logger.warn({ username }, 'LDAP entry has no usable DN');
+      return REFUSED;
+    }
+
+    await client.bind(found.dn, password);
+    return found;
+  } catch (error) {
+    if (isDirectoryAnswer(error)) {
+      logger.info({ username, error: toErrorMessage(error) }, 'LDAP refused the login');
+      return REFUSED;
+    }
+    logger.warn(
+      { username, code: toErrorCode(error), error: toErrorMessage(error) },
+      'LDAP could not verify the login'
+    );
+    return { user: null, reason: 'ldap_unavailable', errorCode: toErrorCode(error) };
+  }
+}
+
 /**
  * Search for a user on the LDAP server
  */
@@ -178,10 +216,7 @@ async function searchUser(
   config: LdapConfig,
   username: string
 ): Promise<{ dn: string; attributes: Record<string, string[]> } | null> {
-  const searchFilter = config.searchFilter.replace(
-    /\$\{username\}/g,
-    escapeLdapFilter(username)
-  );
+  const searchFilter = fillLdapFilter(config.searchFilter, 'username', username);
 
   const options = {
     filter: searchFilter,
@@ -219,30 +254,10 @@ async function searchUser(
 }
 
 /**
- * Verify the user's credentials
+ * The groups of a user the directory has just verified. Optional: they decide only the role of a
+ * user created at first login, so a failure here is logged and the login goes on with none.
  */
-async function verifyUserCredentials(
-  client: ResilientLdapClient,
-  userDN: string,
-  password: string
-): Promise<boolean> {
-  try {
-    await client.bind(userDN, password);
-    return true;
-  } catch (error) {
-    // If it's a credentials error, return false
-    if (error instanceof TRPCError && error.code === 'UNAUTHORIZED') {
-      return false;
-    }
-    // For other errors (network, timeout), rethrow
-    throw error;
-  }
-}
-
-/**
- * Search for the user's groups
- */
-async function searchUserGroups(
+async function lookUpGroups(
   client: ResilientLdapClient,
   config: LdapConfig,
   userDN: string
@@ -251,10 +266,7 @@ async function searchUserGroups(
     return [];
   }
 
-  const groupFilter = config.groupSearchFilter.replace(
-    /\$\{userDN\}/g,
-    escapeLdapFilter(userDN)
-  );
+  const groupFilter = fillLdapFilter(config.groupSearchFilter, 'userDN', userDN);
 
   const options = {
     filter: groupFilter,
@@ -263,16 +275,25 @@ async function searchUserGroups(
   };
 
   try {
+    // The connection is bound as the user now. Back to the service account first; if that fails,
+    // the catch below skips the search rather than run it under an uncertain identity.
+    if (config.bindDN && config.bindPassword) {
+      await client.bind(config.bindDN, config.bindPassword);
+    }
     const entries = await client.search(config.groupSearchBase, options);
     return entries.map(entry => entry.dn);
   } catch (error) {
-    // Don't fail authentication on group search errors
     logger.warn(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Group search failed, proceeding without group membership'
+      { error: toErrorMessage(error) },
+      'Group lookup failed, proceeding without group membership'
     );
     return [];
   }
+}
+
+/** A mapped value is used only if it names a known role; `Roles` is the one list. */
+function isRole(value: string): value is Role {
+  return (Roles as readonly string[]).includes(value);
 }
 
 /**
@@ -282,16 +303,16 @@ function determineUserRole(
   userGroups: string[],
   roleMapping: Record<string, string>,
   log?: pino.Logger
-): 'admin' | 'editor' | 'viewer' {
+): Role {
   // Look for the most specific mapping
   for (const groupDN of userGroups) {
     if (roleMapping[groupDN]) {
       const role = roleMapping[groupDN];
-      if (['admin', 'editor', 'viewer'].includes(role)) {
+      if (isRole(role)) {
         if (log) {
           log.info({ groupDN, role }, `Role mapping found`);
         }
-        return role as 'admin' | 'editor' | 'viewer';
+        return role;
       }
     }
   }
@@ -389,7 +410,8 @@ async function createOrUpdateUser(
       }
     });
   } else {
-    // Create new user
+    // Create new user, in the business zone (ADR-035 §New users)
+    const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
     user = await prisma.$transaction(async tx => {
       const newUser = await tx.user.create({
         data: {
@@ -398,6 +420,7 @@ async function createOrUpdateUser(
           firstName,
           lastName,
           role,
+          timezone,
           isActive: true,
           pendingApproval: true,
         },
@@ -419,7 +442,7 @@ async function createOrUpdateUser(
     });
 
     // Real email already provided by LDAP: send the verification right away,
-    // no need to wait for the user to enter it manually in /auth/pending.
+    // no need to wait for the user to enter it on the login page.
     // Fire-and-forget: don't block the login response on the SMTP send.
     if (!isSyntheticLdapEmail(ldapEmail)) {
       sendVerificationEmail(prisma, {
@@ -433,26 +456,13 @@ async function createOrUpdateUser(
       });
     }
 
-    const auditNoTeam = (meta: Record<string, unknown>) =>
-      prisma.auditLog.create({
-        data: { actorId: null, action: 'USER_PROVISIONED_NO_DEFAULT_TEAM', targetType: 'User', targetId: user!.id, result: 'FAILURE', metadata: { username: user!.username, ...meta } },
-      }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
-
-    // Auto-assign to default team if configured (graceful: failure leaves user without team)
-    const defaultTeamId = (await getConfig(prisma, 'auth.provisioning.defaultTeamId', false))?.trim() || null;
-    if (defaultTeamId) {
-      try {
-        await prisma.companyTeamMembership.create({
-          data: { teamId: defaultTeamId, userId: user.id },
-        });
-        logger.info({ defaultTeamId, userId: user.id }, 'Auto-assigned LDAP user to default team');
-      } catch (err) {
-        logger.warn({ defaultTeamId, userId: user.id, err }, 'Auto-team assignment failed, user created without team');
-        await auditNoTeam({ defaultTeamId });
-      }
-    } else {
-      await auditNoTeam({ reason: 'auth.provisioning.defaultTeamId not configured' });
-    }
+    // No team assignment here — a pending LDAP user has no brand or function access anyway
+    // (`pendingApproval: true` blocks login), and picking a team without knowing the person
+    // would just be a guess. `users.approvePending` requires an explicit team at approval time,
+    // which is where a human already has to make a decision about this user.
+    await prisma.auditLog.create({
+      data: { actorId: null, action: 'USER_PROVISIONED_WITHOUT_TEAM', targetType: 'User', targetId: user.id, result: 'SUCCESS', metadata: { username: user.username } },
+    }).catch(e => logger.error({ err: e }, 'Failed to write provisioning audit log'));
   }
 
   return user;

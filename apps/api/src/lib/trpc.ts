@@ -7,8 +7,7 @@ import { randomUUID } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-
-import { hasPermission, type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { authenticateRequest } from './auth';
 import { assertNotBlockedByMaintenance } from './maintenanceMode';
@@ -16,10 +15,7 @@ import { t } from './t';
 import { verifyTokenVersion } from './tokenVersionCache';
 
 import type { Context } from './context';
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-
-export { invalidateTokenVersionCache } from './tokenVersionCache';
 
 /**
  * Creates a tRPC context for an incoming Fastify request.
@@ -85,6 +81,8 @@ export const loggingMiddleware = t.middleware(
       type,
       path,
       duration,
+      // A failed procedure also resolves here (`ok: false`), so "completed" alone hid it.
+      ok: result.ok,
       message: `tRPC ${type}: ${path} completed (${duration}ms)`,
     });
 
@@ -130,10 +128,11 @@ export const authMiddleware = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware that blocks non-admin traffic while Maintenance Mode is `ACTIVE`.
+ * Middleware that blocks traffic while Maintenance Mode is `ACTIVE`, except from whoever bypasses
+ * it (`bypassesMaintenance`, `maintenance:update`).
  * Must be chained after `authMiddleware` (already done in `protectedProcedure`) so
- * `ctx.session` is guaranteed. Admins are never blocked — they need `adminProcedure`
- * (e.g. `maintenance.mode.end`) to keep working during the very maintenance they're managing.
+ * `ctx.session` is guaranteed. Those are never blocked: they must keep working during the very
+ * maintenance they're managing (`maintenance.mode.end`, which also takes `maintenance:mode_manage`).
  */
 export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session) {
@@ -154,38 +153,6 @@ export const maintenanceGuard = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
- * Middleware that restricts access to users with the `admin` role.
- * Must be chained after `authMiddleware` (already done in `adminProcedure`).
- */
-export const adminMiddleware = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.session) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Devi essere autenticato per accedere a questa risorsa',
-    });
-  }
-
-  if (!hasPermission(ctx.session.user as { role: Role }, 'maintenance:update')) {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Accesso negato: richiesto ruolo admin',
-    });
-  }
-
-  return next({
-    ctx: {
-      ...ctx,
-      session: ctx.session, // Type-safe: session is no longer null
-    },
-  });
-});
-
-/**
- * Public procedure with automatic request logging.
- */
-export const loggedProcedure = publicProcedure.use(loggingMiddleware);
-
-/**
  * Procedure that requires a valid authenticated session.
  */
 export const protectedProcedure = publicProcedure
@@ -194,13 +161,16 @@ export const protectedProcedure = publicProcedure
   .use(maintenanceGuard);
 
 /**
- * Procedure that requires admin role.
- * Chains `authMiddleware` so tokenVersion is verified before the role check.
+ * `protectedProcedure` for an endpoint that works on the caller's own data. It writes only rows the
+ * caller owns and takes no target user id; its reads are the caller's rows plus the lookups needed to
+ * compute the caller's own view (configuration, public or static content). Declared exception:
+ * `me.changeEmail` writes a unique email, so it reveals whether an address is already taken.
+ *
+ * It carries no permission by design, and it is the only authenticated builder that
+ * `luke-procedure-requires-permission` accepts without `requirePermission`. It is a declaration for
+ * review: nothing verifies that a handler keeps it.
  */
-export const adminProcedure = publicProcedure
-  .use(loggingMiddleware)
-  .use(authMiddleware)
-  .use(adminMiddleware);
+export const selfProcedure = protectedProcedure;
 
-/** Re-exported for backward compatibility. */
+/** Re-exported so routers and services import `Context` from the same module as the procedure builders. */
 export type { Context };

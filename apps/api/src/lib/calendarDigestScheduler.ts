@@ -1,34 +1,83 @@
 /**
  * Daily calendar digest email scheduler.
  *
- * Runs at 07:00 every day. Queries AuditLog for CalendarEvent changes that
- * occurred yesterday, collapses multiple touches to the same event into a
- * single net-change entry (created+deleted in the same period cancels out;
- * repeated edits show one diff from the period's first old value to the
- * final live value), groups the result by calendar and recipient, and sends
- * one branded email digest per calendar per user.
+ * Each recipient gets their digest at the first tick at or after 07:00 in their own zone
+ * (`resolveUserTimeZone`), covering their "yesterday" there: AuditLog changes to CalendarEvents,
+ * collapsed so multiple touches to the same event become a single net-change entry
+ * (created+deleted in the same period cancels out; repeated edits show one diff from the period's
+ * first old value to the final live value), one email per calendar per user.
  *
- * Recipients for created/updated events: getVisibleUserIdsForMilestones() + admins.
- * Recipients for deleted events: snapshot stored in AuditLog.metadata.visibleUserIds + admins.
+ * Every email is a `CalendarDigestDelivery` row keyed by (user, local send date, calendar). Each
+ * state change is one conditional statement the caller owns only if it affected that row: a first
+ * claim inserts it if absent, a re-claim takes a FAILED row after its backoff or a SENDING row
+ * whose lease expired, and only the claim's holder records SENT or FAILED. At most three claims per
+ * email; one whose attempts are spent, whose send day ended, or that a successful rebuild no longer
+ * produces (recipient deactivated, opted out, lost access) becomes ABANDONED and is logged.
+ * The guarantee is bounded retry — neither at-least-once nor exactly-once: SMTP accepting a message
+ * whose reply is lost, a crash before SENT is written, or a lease outlived by a slow send can
+ * duplicate an email; exhausted attempts, the end of the send day, or downtime can omit one.
+ * Missed days are never back-filled.
  *
- * If SMTP is not configured the job logs a warning and skips — no crash.
+ * Recipients for created/updated events: `resolveEventAudience()` — brand-scoped, per-function
+ * or per-user grant; admins only through their own team membership, except for an event with no
+ * visibility rows at all (no function, no per-user grant), which reaches everyone with access to its
+ * brand, every admin included.
+ * Recipients for deleted events: the snapshot in `AuditLog.metadata.visibleUserIds` (captured by
+ * the pre-fix resolver, so wider than it should be) re-filtered at read time through
+ * `resolveBrandAccess` — the invariant holds even against audit rows written before this fix.
+ *
+ * If SMTP is not configured the tick logs a warning and claims nothing.
  */
 
+import { randomUUID } from 'crypto';
 
-import { fullName } from '@luke/core';
+import { TRPCError } from '@trpc/server';
+
+import {
+  addCalendarDays,
+  calendarDateIn,
+  calendarDateOf,
+  calendarLink,
+  CALENDAR_DIGEST_KEY,
+  DEFAULT_LOCALE,
+  eventCalendarDays,
+  formatCalendarDate,
+  formatInstant,
+  fullName,
+  instantAt,
+  NUMERIC_TIME,
+  startOfDayIn,
+  utcMidnightOf,
+  type CalendarDate,
+} from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
+
+import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../services/calendarAudience.service';
 
 import { isRedactedValue } from './auditLog';
-import { getConfig } from './configManager';
-import { sendBulkEmail, sendEmail } from './mailer';
+import { getConfigOrDefault } from './configManager';
+import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
-import { getVisibleUserIdsForMilestones } from './notifications';
+import { brandSeasonLabel, recipientsOf } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
+import { groupByTimeZone, resolveUserTimeZone } from './userTimeZone';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
-const TICK_INTERVAL_MS = 60 * 60 * 1000;
-const DIGEST_HOUR = 7;
+const TICK_INTERVAL_MS = 15 * 60 * 1000;
+/** Wall time, in each recipient's zone, from which their digest is due. */
+const DIGEST_TIME = '07:00';
+/** Longer than one `sendEmail` can take with nodemailer's default timeouts (about 38 min). */
+const LEASE_MS = 60 * 60 * 1000;
+const MAX_ATTEMPTS = 3;
+/** A failed email is re-claimable this long × the attempts made so far after the failure. */
+const RETRY_BACKOFF_MS = 30 * 60 * 1000;
+/**
+ * The `changedFields` label an update row carried for `allDay` before update rows recorded
+ * `oldAllDay` (2026-09-30). Only those older rows are read with it — frozen audit data, so it stays
+ * as written even if the label the router shows changes.
+ */
+const LEGACY_ALL_DAY_LABEL = 'Giornata intera';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -42,24 +91,53 @@ interface DigestEntry {
   otherFieldsLabel?: string;
 }
 
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+const DAY_SHORT: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+const DAY_MEDIUM: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+const DAY_LONG: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+
+/** The wall time `instant` shows in `timeZone`, as the digest writes it (`hh:mm`). */
+function timeIn(instant: Date, timeZone: string): string {
+  return formatInstant(instant, timeZone, NUMERIC_TIME, DEFAULT_LOCALE);
 }
 
-function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean): string {
-  const dateFmt = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
-  const timeFmt = (d: Date) => d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-  const sameDay = !endAt || startAt.toDateString() === endAt.toDateString();
-  if (!sameDay) return `${formatShortDate(startAt.toISOString())}–${dateFmt(endAt as Date)}`;
-  if (allDay) return dateFmt(startAt);
-  return `${dateFmt(startAt)}, ${timeFmt(startAt)}`;
+function formatEventDate(startAt: Date, endAt: Date | null, allDay: boolean, timeZone: string): string {
+  const [first, last] = eventCalendarDays(startAt, endAt, allDay, timeZone);
+  if (first !== last) return `${formatCalendarDate(first, DAY_SHORT)}–${formatCalendarDate(last, DAY_MEDIUM)}`;
+  if (allDay) return formatCalendarDate(first, DAY_MEDIUM);
+  return `${formatCalendarDate(first, DAY_MEDIUM)}, ${timeIn(startAt, timeZone)}`;
+}
+
+/**
+ * Whether an event was all-day before the change recorded in `c`. A reschedule records `oldAllDay`
+ * when it changed the kind and nothing when it did not, so the event's current kind stands in. An
+ * update row records `oldAllDay` too; one written before it did stores the new `allDay` only, and the
+ * old value was the other kind when that update listed `allDay` among its changed fields.
+ */
+function oldAllDayOf(c: { action: string; meta: Record<string, unknown> }, currentAllDay: boolean): boolean {
+  if (typeof c.meta.oldAllDay === 'boolean') return c.meta.oldAllDay;
+  if (c.action === 'CALENDAR_EVENT_RESCHEDULE') return currentAllDay;
+  const changedFields = Array.isArray(c.meta.changedFields) ? (c.meta.changedFields as string[]) : [];
+  const allDayAtChange = c.meta.allDay === true;
+  return changedFields.includes(LEGACY_ALL_DAY_LABEL) ? !allDayAtChange : allDayAtChange;
+}
+
+/**
+ * A date read from audit metadata, or `null` when it is missing, redacted, not a date or outside
+ * 1900–9999 — one malformed row must not fail the whole digest (the calendar-date helpers throw on
+ * an invalid date and outside those years, and a record keeps whatever an older schema accepted).
+ */
+function metaDate(value: unknown): Date | null {
+  if (typeof value !== 'string' || isRedactedValue(value)) return null;
+  const date = new Date(value);
+  const year = date.getUTCFullYear();
+  return Number.isNaN(year) || year < 1900 || year > 9999 ? null : date;
 }
 
 /** Builds an event date label from raw (possibly redacted/missing) audit metadata values. */
-function dateLabelFromMeta(startAt: unknown, endAt: unknown, allDay: unknown): string | undefined {
-  if (typeof startAt !== 'string' || isRedactedValue(startAt)) return undefined;
-  const end = typeof endAt === 'string' && !isRedactedValue(endAt) ? new Date(endAt) : null;
-  return formatEventDate(new Date(startAt), end, allDay === true);
+function dateLabelFromMeta(startAt: unknown, endAt: unknown, allDay: unknown, timeZone: string): string | undefined {
+  const start = metaDate(startAt);
+  if (!start) return undefined;
+  return formatEventDate(start, metaDate(endAt), allDay === true, timeZone);
 }
 
 interface UserDigest {
@@ -71,11 +149,13 @@ interface UserDigest {
 // ─── HTML generation ─────────────────────────────────────────────────────────
 
 function entryRow(e: DigestEntry): string {
+  // Every field carries user-entered text — titles, names, reasons, field values — so each is
+  // escaped where it enters the HTML.
   const extraLines = [e.dateLabel, e.dateChangeLabel, e.statusChangeLabel, e.otherFieldsLabel]
     .filter((l): l is string => !!l)
-    .map(l => `<div style="margin-top:2px;font-size:12px;color:#94a3b8">${l}</div>`)
+    .map(l => `<div style="margin-top:2px;font-size:12px;color:#94a3b8">${escapeHtml(l)}</div>`)
     .join('');
-  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${e.title}${extraLines}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${e.actorName} · ${e.time}</td></tr>`;
+  return `<tr><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:14px;color:#1e293b">${escapeHtml(e.title)}${extraLines}</td><td style="padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;text-align:right;white-space:nowrap">${escapeHtml(e.actorName)} · ${escapeHtml(e.time)}</td></tr>`;
 }
 
 function section(heading: string, color: string, entries: DigestEntry[]): string {
@@ -87,8 +167,7 @@ function section(heading: string, color: string, entries: DigestEntry[]): string
     </table>`;
 }
 
-function generateDigestHtml(dateLabel: string, digest: UserDigest, calendarUrl: string, calendarLabel: string): string {
-  const year = new Date().getFullYear();
+function generateDigestHtml(dateLabel: string, digest: UserDigest, calendarUrl: string, calendarLabel: string, timeZone: string): string {
   const body = [
     section('Nuovi eventi', '#16a34a', digest.created),
     section('Modificati', '#2563eb', digest.updated),
@@ -97,11 +176,11 @@ function generateDigestHtml(dateLabel: string, digest: UserDigest, calendarUrl: 
 
   const total = digest.created.length + digest.updated.length + digest.deleted.length;
 
-  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Recap calendario</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:32px 40px 24px;border-bottom:1px solid #e5e7eb"><h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#1e293b">Recap calendario</h1><p style="margin:0 0 2px;font-size:15px;font-weight:600;color:#475569">${calendarLabel}</p><p style="margin:0;font-size:14px;color:#64748b">${dateLabel} · ${total} modific${total === 1 ? 'a' : 'he'}</p></td></tr><tr><td style="padding:24px 40px 32px">${body}<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px"><tr><td align="center"><a href="${calendarUrl}" style="display:inline-block;padding:12px 28px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600">Vai al calendario</a></td></tr></table><p style="margin:24px 0 0;font-size:12px;color:#94a3b8">Per non ricevere questi aggiornamenti, disabilitali nelle <strong>preferenze di notifica → Calendario</strong>.</p></td></tr><tr><td style="padding:20px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:12px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Recap calendario</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:32px 40px 24px;border-bottom:1px solid #e5e7eb"><h1 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#1e293b">Recap calendario</h1><p style="margin:0 0 2px;font-size:15px;font-weight:600;color:#475569">${escapeHtml(calendarLabel)}</p><p style="margin:0;font-size:14px;color:#64748b">${escapeHtml(dateLabel)} · ${total} modific${total === 1 ? 'a' : 'he'}</p><p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Orari in ${escapeHtml(timeZone)}</p></td></tr><tr><td style="padding:24px 40px 32px">${body}<table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px"><tr><td align="center"><a href="${escapeHtml(calendarUrl)}" style="display:inline-block;padding:12px 28px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600">Vai al calendario</a></td></tr></table><p style="margin:24px 0 0;font-size:12px;color:#94a3b8">Per non ricevere questi aggiornamenti, disabilitali nelle <strong>preferenze di notifica → Calendario</strong>.</p></td></tr><tr><td style="padding:20px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:12px;text-align:center;color:#94a3b8">© Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
 }
 
-function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel: string): string {
-  const lines: string[] = [`Recap calendario — ${calendarLabel} — ${dateLabel}`, ''];
+function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel: string, timeZone: string): string {
+  const lines: string[] = [`Recap calendario — ${calendarLabel} — ${dateLabel}`, `Orari in ${timeZone}`, ''];
 
   const entryLines = (e: DigestEntry): string[] => {
     const out = [`• ${e.title}  (${e.actorName}, ${e.time})`];
@@ -131,6 +210,7 @@ function generateDigestText(dateLabel: string, digest: UserDigest, calendarLabel
   return lines.join('\n');
 }
 
+
 // ─── Core logic ──────────────────────────────────────────────────────────────
 
 export interface DigestDateRange {
@@ -138,47 +218,76 @@ export interface DigestDateRange {
   end: Date;
 }
 
-async function runDigestCore(
+export interface DigestBuildOptions {
+  /** The changes covered: AuditLog rows created in `[start, end)`. */
+  range: DigestDateRange;
+  /** IANA zone every date and time in the email is written in. */
+  timeZone: string;
+  /**
+   * Manual "send to me": only this user's slice, bypassing their digest opt-out (and, for an admin,
+   * relevance — `addManualBypassRecipient`).
+   * Scheduled runs never set it.
+   */
+  onlyUserId?: string;
+  /** Scheduled runs: keep only these (user, calendar) pairs — it narrows the audience, never widens it. */
+  include?: (userId: string, calendarId: string) => boolean;
+}
+
+// One email per calendar per user — content varies per (calendar, user) pair, so each task
+// carries its own fully-rendered subject/html/text rather than being a plain recipient list.
+export interface EmailTask { userId: string; calendarId: string; email: string; subject: string; html: string; text: string }
+
+/**
+ * Adds `onlyUserId` to `recipients` on the manual "send to me" run when their read path is
+ * unrestricted (`onlyUserAccess === null`, an admin): they see every event in `listMilestones`, so
+ * the digest may show them one they are not in the audience of — e.g. an admin belonging to no
+ * team. Anyone else gets exactly their audience: function/grant visibility (`P_relevance`) is what
+ * hides an event from them in the calendar, and their digest must not show it either.
+ */
+function addManualBypassRecipient(
+  recipients: Set<string>,
+  brandId: string | null | undefined,
+  onlyUserId: string | undefined,
+  onlyUserAccess: Set<string> | null | undefined,
+): void {
+  if (!onlyUserId || !brandId) return;
+  if (onlyUserAccess === null) recipients.add(onlyUserId);
+}
+
+/**
+ * Builds the fully-rendered email tasks for a digest run, without sending them — the seam that
+ * makes recipients testable without mocking SMTP. Returns an empty array when there's nothing to
+ * send (no changes in range, or nothing survives the recipient/preference filtering). Throws when
+ * a lookup fails: an empty audience must never stand in for one that could not be read.
+ */
+export async function buildDigestTasks(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
-  range?: DigestDateRange,
-  onlyUserId?: string,
-): Promise<void> {
-  log.info('Calendar digest scheduler: avvio digest giornaliero');
+  options: DigestBuildOptions,
+): Promise<{ tasks: EmailTask[]; calendarCount: number }> {
+  const { range, timeZone, onlyUserId, include } = options;
 
-  let rangeStart: Date;
-  let rangeEnd: Date;
-  if (range) {
-    rangeStart = range.start;
-    rangeEnd = range.end;
-  } else {
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    rangeStart = new Date(yesterday);
-    rangeStart.setHours(0, 0, 0, 0);
-    rangeEnd = new Date(now);
-    rangeEnd.setHours(0, 0, 0, 0);
-  }
-
-  const fmtDay = (d: Date) => d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-  const sameDay = rangeEnd.getTime() - rangeStart.getTime() <= 24 * 60 * 60 * 1000;
-  const dateLabel = sameDay ? fmtDay(rangeStart) : `dal ${fmtDay(rangeStart)} al ${fmtDay(new Date(rangeEnd.getTime() - 1))}`;
+  // First, so an unusable zone fails the build before anything else is read.
+  const firstDay = calendarDateIn(range.start, timeZone);
+  const lastDay = calendarDateIn(new Date(range.end.getTime() - 1), timeZone);
+  const dateLabel = firstDay === lastDay
+    ? formatCalendarDate(firstDay, DAY_LONG)
+    : `dal ${formatCalendarDate(firstDay, DAY_LONG)} al ${formatCalendarDate(lastDay, DAY_LONG)}`;
 
   const logs = await prisma.auditLog.findMany({
     where: {
       targetType: { in: ['CalendarEvent', 'CalendarMilestone'] },
-      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_CANCEL', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
+      action: { in: ['CALENDAR_EVENT_CREATE', 'CALENDAR_EVENT_UPDATE', 'CALENDAR_EVENT_RESCHEDULE', 'CALENDAR_EVENT_CANCEL', 'CALENDAR_MILESTONE_DELETE', 'CALENDAR_EVENT_DELETE'] },
       result: 'SUCCESS',
-      createdAt: { gte: rangeStart, lt: rangeEnd },
+      createdAt: { gte: range.start, lt: range.end },
     },
     include: { actor: { select: { id: true, firstName: true, lastName: true, username: true } } },
     orderBy: { createdAt: 'asc' },
   });
 
   if (logs.length === 0) {
-    log.info('Calendar digest: nessuna modifica ieri, skip');
-    return;
+    log.debug({ timeZone, start: range.start }, 'Calendar digest: no changes in range');
+    return { tasks: [], calendarCount: 0 };
   }
 
   const DELETE_ACTIONS = new Set(['CALENDAR_EVENT_DELETE', 'CALENDAR_MILESTONE_DELETE']);
@@ -198,7 +307,7 @@ async function runDigestCore(
   for (const entry of logs) {
     const actor = entry.actor;
     const actorName = actor ? fullName(actor) : 'Sistema';
-    const time = entry.createdAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    const time = timeIn(entry.createdAt, timeZone);
     const meta = (entry.metadata ?? {}) as Record<string, unknown>;
 
     if (entry.action === 'CALENDAR_EVENT_DELETE' && Array.isArray(meta.snapshots)) {
@@ -223,26 +332,52 @@ async function runDigestCore(
     byEvent.get(c.eventId)!.push(c);
   }
 
-  // An event is "net deleted" if its most recent touch in the period was a delete.
-  const liveTargetIds = [...byEvent.entries()]
-    .filter(([, chgs]) => !DELETE_ACTIONS.has(chgs[chgs.length - 1].action))
-    .map(([id]) => id);
+  // Single pass: an event is "net deleted" if its most recent touch in the period was a delete —
+  // split live vs. deleted here, and for the deleted branch also gather what the batched brand
+  // lookups below need (calendar ids, and the audit snapshot's candidate recipients).
+  const liveTargetIds: string[] = [];
+  const deletedCalendarIds = new Set<string>();
+  const brandAccessCandidateIds = new Set<string>(onlyUserId ? [onlyUserId] : []);
+  for (const [eventId, chgs] of byEvent) {
+    const last = chgs[chgs.length - 1];
+    if (!DELETE_ACTIONS.has(last.action)) {
+      liveTargetIds.push(eventId);
+      continue;
+    }
+    if (chgs.some(c => c.action === 'CALENDAR_EVENT_CREATE')) continue; // net-zero, skipped below too
+    const meta = last.meta;
+    const calendarId = !isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null;
+    if (calendarId) deletedCalendarIds.add(calendarId);
+    const extraIds = Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [];
+    for (const id of extraIds) brandAccessCandidateIds.add(id);
+  }
 
   // Parallel pre-fetches
-  const [adminResult, visibilityMap, liveEvents] = await Promise.all([
-    prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } }),
-    getVisibleUserIdsForMilestones(liveTargetIds, prisma).catch(() => new Map<string, string[]>()),
+  const [visibilityMap, liveEvents, deletedCalendarBrands, brandAccessMap] = await Promise.all([
+    resolveEventAudience(liveTargetIds, prisma),
     liveTargetIds.length > 0
-      ? prisma.calendarEvent.findMany({ where: { id: { in: liveTargetIds } }, select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, cancelledAt: true } })
+      ? prisma.calendarEvent.findMany({
+          where: { id: { in: liveTargetIds } },
+          select: { id: true, title: true, calendarId: true, startAt: true, endAt: true, allDay: true, cancelledAt: true, calendar: { select: { brandId: true } } },
+        })
       : Promise.resolve([]),
+    deletedCalendarIds.size > 0
+      ? prisma.seasonCalendar.findMany({ where: { id: { in: [...deletedCalendarIds] } }, select: { id: true, brandId: true } })
+      : Promise.resolve([]),
+    // The deleted-branch snapshot (AuditLog.metadata.visibleUserIds) was captured by the
+    // pre-fix resolver and may be wider than the current brand-scoped audience — this map
+    // re-filters it below. Also covers `onlyUserId` for the manual-bypass check.
+    resolveBrandAccess([...brandAccessCandidateIds], prisma),
   ]);
-  const adminIds = adminResult.map(a => a.id);
   const liveEventMap = new Map(liveEvents.map(e => [e.id, e]));
+  const deletedCalendarBrandMap = new Map(deletedCalendarBrands.map(c => [c.id, c.brandId]));
+  const onlyUserAccess = onlyUserId ? brandAccessMap.get(onlyUserId) : undefined;
 
   // Build per-calendar per-user digest map: calendarId → userId → UserDigest
   const calendarDigests = new Map<string, Map<string, UserDigest>>();
 
   const addEntry = (calId: string, uid: string, bucket: keyof UserDigest, entry: DigestEntry) => {
+    if (include && !include(uid, calId)) return;
     if (!calendarDigests.has(calId)) calendarDigests.set(calId, new Map());
     const calMap = calendarDigests.get(calId)!;
     if (!calMap.has(uid)) calMap.set(uid, { created: [], updated: [], deleted: [] });
@@ -253,7 +388,6 @@ async function runDigestCore(
     const last = chgs[chgs.length - 1];
     const isNetDeleted = DELETE_ACTIONS.has(last.action);
     const hasCreate = chgs.some(c => c.action === 'CALENDAR_EVENT_CREATE');
-    const actorIds = chgs.map(c => c.actorId).filter((id): id is string => !!id);
 
     // Created then deleted within the same period: net zero, drop entirely.
     if (isNetDeleted && hasCreate) continue;
@@ -263,9 +397,18 @@ async function runDigestCore(
       const title = (!isRedactedValue(meta.title) && typeof meta.title === 'string' ? meta.title : null) ?? '(evento)';
       const calendarId = !isRedactedValue(meta.calendarId) && typeof meta.calendarId === 'string' ? meta.calendarId : null;
       if (!calendarId) continue;
-      const dateLabel = dateLabelFromMeta(meta.startAt, meta.endAt, meta.allDay);
+      const brandId = deletedCalendarBrandMap.get(calendarId);
+      const dateLabel = dateLabelFromMeta(meta.startAt, meta.endAt, meta.allDay, timeZone);
       const extraIds = Array.isArray(meta.visibleUserIds) ? (meta.visibleUserIds as string[]) : [];
-      const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
+
+      const recipientIds = new Set<string>();
+      if (brandId) {
+        for (const uid of extraIds) {
+          if (hasBrandAccess(brandAccessMap.get(uid), brandId)) recipientIds.add(uid);
+        }
+      }
+      addManualBypassRecipient(recipientIds, brandId, onlyUserId, onlyUserAccess);
+
       for (const uid of recipientIds) {
         addEntry(calendarId, uid, 'deleted', { title, actorName: last.actorName, time: last.time, dateLabel });
       }
@@ -279,9 +422,9 @@ async function runDigestCore(
     if (!calendarId) continue;
     const metaTitle = chgs.map(c => c.meta.title).find((v): v is string => typeof v === 'string' && !isRedactedValue(v));
     const title = liveEvent?.title ?? metaTitle ?? eventId;
-    const dateLabel = liveEvent ? formatEventDate(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay) : undefined;
-    const extraIds = visibilityMap.get(eventId) ?? [];
-    const recipientIds = new Set([...adminIds, ...extraIds, ...actorIds]);
+    const dateLabel = liveEvent ? formatEventDate(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay, timeZone) : undefined;
+    const recipientIds = new Set(visibilityMap.get(eventId) ?? []);
+    addManualBypassRecipient(recipientIds, liveEvent?.calendar.brandId, onlyUserId, onlyUserAccess);
 
     if (hasCreate) {
       // Brand-new event this period — final state is all that matters, no diff needed.
@@ -294,22 +437,44 @@ async function runDigestCore(
     // Pure update(s)/cancellation — collapse into a single net diff over the whole period.
     const updateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE');
     const cancelChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_CANCEL');
+    // A motivated reschedule moves the dates like an update does, and records the old ones the same way.
+    const dateChanges = chgs.filter(c => c.action === 'CALENDAR_EVENT_UPDATE' || c.action === 'CALENDAR_EVENT_RESCHEDULE');
 
     let dateChangeLabel: string | undefined;
-    const firstDateChange = updateChanges.find(c => typeof c.meta.oldStartAt === 'string');
-    if (firstDateChange && liveEvent) {
-      const oldStart = new Date(firstDateChange.meta.oldStartAt as string);
-      const newStart = liveEvent.startAt;
-      if (oldStart.getTime() !== newStart.getTime()) {
-        const direction = newStart.getTime() > oldStart.getTime() ? 'Posticipato' : 'Anticipato';
-        dateChangeLabel = `${direction}: ${formatShortDate(oldStart.toISOString())} → ${formatShortDate(newStart.toISOString())}`;
-      } else {
-        const oldEndRaw = firstDateChange.meta.oldEndAt;
-        const oldEnd = typeof oldEndRaw === 'string' ? formatShortDate(oldEndRaw) : '—';
-        const newEnd = liveEvent.endAt ? formatShortDate(liveEvent.endAt.toISOString()) : '—';
-        if (oldEnd !== newEnd) dateChangeLabel = `Durata modificata: fine ${oldEnd} → ${newEnd}`;
+    const firstDateChange = dateChanges.find(c => metaDate(c.meta.oldStartAt));
+    const oldStart = firstDateChange ? metaDate(firstDateChange.meta.oldStartAt) : null;
+    if (firstDateChange && oldStart && liveEvent) {
+      const oldAllDay = oldAllDayOf(firstDateChange, liveEvent.allDay);
+      const oldEnd = metaDate(firstDateChange.meta.oldEndAt);
+      const [oldFirst] = eventCalendarDays(oldStart, oldEnd, oldAllDay, timeZone);
+      const [newFirst] = eventCalendarDays(liveEvent.startAt, liveEvent.endAt, liveEvent.allDay, timeZone);
+
+      // All-day values compare as dates, timed ones as instants.
+      const startMoved = oldAllDay !== liveEvent.allDay
+        || (liveEvent.allDay ? oldFirst !== newFirst : oldStart.getTime() !== liveEvent.startAt.getTime());
+      if (startMoved) {
+        const later = newFirst === oldFirst ? liveEvent.startAt.getTime() > oldStart.getTime() : newFirst > oldFirst;
+        dateChangeLabel = `${later ? 'Posticipato' : 'Anticipato'}: ${formatCalendarDate(oldFirst, DAY_SHORT)} → ${formatCalendarDate(newFirst, DAY_SHORT)}`;
+      } else if (liveEvent.allDay) {
+        // No end means a one-day event, so only the last day counts.
+        const oldLast = calendarDateOf(oldEnd ?? oldStart);
+        const newLast = calendarDateOf(liveEvent.endAt ?? liveEvent.startAt);
+        if (oldLast !== newLast) dateChangeLabel = `Durata modificata: fine ${formatCalendarDate(oldLast, DAY_SHORT)} → ${formatCalendarDate(newLast, DAY_SHORT)}`;
+      } else if ((oldEnd?.getTime() ?? null) !== (liveEvent.endAt?.getTime() ?? null)) {
+        const formatEnd = (end: Date | null) => end
+          ? `${formatCalendarDate(calendarDateIn(end, timeZone), DAY_SHORT)}, ${timeIn(end, timeZone)}`
+          : '—';
+        dateChangeLabel = `Durata modificata: fine ${formatEnd(oldEnd)} → ${formatEnd(liveEvent.endAt)}`;
       }
     }
+
+    // A reschedule carries a mandatory reason: it goes with the date change it explains.
+    const rescheduleReason = chgs
+      .filter(c => c.action === 'CALENDAR_EVENT_RESCHEDULE')
+      .map(c => c.meta.reason)
+      .reverse()
+      .find((r): r is string => typeof r === 'string' && !isRedactedValue(r));
+    if (dateChangeLabel && rescheduleReason) dateChangeLabel += ` — motivo: ${rescheduleReason}`;
 
     // A cancellation is terminal — surface it (with its reason) as the event's status line.
     let statusChangeLabel: string | undefined;
@@ -332,125 +497,377 @@ async function runDigestCore(
     }
   }
 
-  if (calendarDigests.size === 0) return;
+  if (calendarDigests.size === 0) return { tasks: [], calendarCount: 0 };
 
   // Fetch calendar labels + user emails + preferences + baseUrl in parallel
   const allCalendarIds = Array.from(calendarDigests.keys());
   const allUserIds = [...new Set(Array.from(calendarDigests.values()).flatMap(m => [...m.keys()]))];
 
-  const [calendars, users, disabledPrefs, baseUrlRaw] = await Promise.all([
+  const [calendars, users, receiving, baseUrl] = await Promise.all([
     prisma.seasonCalendar.findMany({
       where: { id: { in: allCalendarIds } },
       select: { id: true, brand: { select: { name: true } }, season: { select: { name: true } } },
     }),
     prisma.user.findMany({ where: { id: { in: allUserIds }, isActive: true }, select: { id: true, email: true } }),
-    prisma.notificationPreference.findMany({ where: { userId: { in: allUserIds }, category: 'CALENDAR', enabled: false }, select: { userId: true } }),
-    getConfig(prisma, 'app.baseUrl', false),
+    // The CALENDAR category, then the digest's own switch (`receives`): muting one kind of change or
+    // of deadline notice leaves the email alone.
+    recipientsOf(prisma, allUserIds, 'CALENDAR', CALENDAR_DIGEST_KEY),
+    getConfigOrDefault(prisma, 'app.baseUrl'),
   ]);
 
-  const calendarLabelMap = new Map(calendars.map(c => [c.id, `${c.brand.name} · ${c.season.name}`]));
+  const calendarLabelMap = new Map(calendars.map(c => [c.id, brandSeasonLabel(c)]));
   const userEmailMap = new Map(users.map(u => [u.id, u.email]));
-  const disabledSet = new Set(disabledPrefs.map(p => p.userId));
-  const calendarUrl = `${baseUrlRaw || 'http://localhost:3000'}/calendar`;
+  const receivingSet = new Set(receiving);
 
-  // One email per calendar per user — content varies per (calendar, user) pair, so each task
-  // carries its own fully-rendered subject/html/text rather than being a plain recipient list.
-  interface EmailTask { email: string; subject: string; html: string; text: string }
   const tasks: EmailTask[] = [];
 
   for (const [calId, userDigestMap] of calendarDigests) {
     const calendarLabel = calendarLabelMap.get(calId) ?? calId;
     const subject = `Recap calendario — ${calendarLabel} — ${dateLabel}`;
+    const calendarUrl = `${baseUrl}${calendarLink({ calendarId: calId })}`;
 
     const recipients = onlyUserId
       ? (userDigestMap.has(onlyUserId) ? [[onlyUserId, userDigestMap.get(onlyUserId)!]] as const : [])
       : [...userDigestMap];
 
     for (const [userId, digest] of recipients) {
-      // Manual "send to me" runs bypass the CALENDAR notification-preference opt-out — it's an explicit request.
-      if (!onlyUserId && disabledSet.has(userId)) continue;
+      // Manual "send to me" runs bypass the digest opt-out — it's an explicit request.
+      if (!onlyUserId && !receivingSet.has(userId)) continue;
       const email = userEmailMap.get(userId);
       if (!email) continue;
       const total = digest.created.length + digest.updated.length + digest.deleted.length;
       if (total === 0) continue;
 
       tasks.push({
+        userId,
+        calendarId: calId,
         email,
         subject,
-        html: generateDigestHtml(dateLabel, digest, calendarUrl, calendarLabel),
-        text: generateDigestText(dateLabel, digest, calendarLabel),
+        html: generateDigestHtml(dateLabel, digest, calendarUrl, calendarLabel, timeZone),
+        text: generateDigestText(dateLabel, digest, calendarLabel, timeZone),
       });
     }
   }
 
-  const { sent, failed } = await sendBulkEmail(tasks, task =>
-    sendEmail(prisma, task.email, task.subject, task.html, task.text).catch(err => {
-      log.error({ err }, 'Calendar digest: invio email fallito');
-      throw err;
-    })
-  );
-
-  log.info({ sent, failed, calendars: calendarDigests.size }, 'Calendar digest: completato');
+  return { tasks, calendarCount: calendarDigests.size };
 }
 
-async function runDigest(
+// ─── Delivery ────────────────────────────────────────────────────────────────
+
+/** What a tick needs from the outside world, injectable so a test drives it without SMTP. */
+export interface DigestTickDeps {
+  /** Read afresh at every state change, so a long tick never claims with a stale time. */
+  clock: () => Date;
+  send: (task: EmailTask) => Promise<void>;
+  /** `false` when SMTP is not configured: the tick then claims nothing. */
+  smtpReady: () => Promise<boolean>;
+  /**
+   * Cohorts with nothing left to send today, by zone — kept across ticks by whoever owns the deps.
+   * Yesterday's window is closed, so once a build finds no unsent pair, later builds that day find
+   * none either unless the cohort's members change, which rebuilds it. A recipient who opts back in,
+   * or is granted a brand, after that point gets the change from the next day. Absent: every tick
+   * rebuilds.
+   */
+  settled?: Map<string, { localDate: CalendarDate; members: string }>;
+}
+
+function defaultDeps(prisma: PrismaClient): DigestTickDeps {
+  return {
+    clock: () => new Date(),
+    send: task => sendEmail(prisma, task.email, task.subject, task.html, task.text),
+    smtpReady: () => getSmtpConfig(prisma).then(
+      () => true,
+      err => {
+        if (err instanceof TRPCError && err.code === 'PRECONDITION_FAILED') return false;
+        throw err;
+      },
+    ),
+    settled: new Map(),
+  };
+}
+
+/** The unique key of one digest email. */
+interface DeliveryKey {
+  userId: string;
+  calendarId: string;
+  localDate: Date;
+}
+
+function pairKey(userId: string, calendarId: string): string {
+  return `${userId}|${calendarId}`;
+}
+
+/** Rows re-claimable at `at`: attempts left, send day not over, no live claim and no pending backoff. */
+function reclaimable(at: Date): Prisma.CalendarDigestDeliveryWhereInput {
+  return { status: { in: ['FAILED', 'SENDING'] }, leaseUntil: { lt: at }, attempts: { lt: MAX_ATTEMPTS }, expiresAt: { gt: at } };
+}
+
+/**
+ * Rows that can never be sent any more at `at` — disjoint from `reclaimable`. A SENDING row only once
+ * its lease has expired (never a live claim); a FAILED one at once, whatever its backoff.
+ */
+function abandonable(at: Date): Prisma.CalendarDigestDeliveryWhereInput {
+  return {
+    AND: [
+      { OR: [{ status: 'FAILED' }, { status: 'SENDING', leaseUntil: { lt: at } }] },
+      { OR: [{ attempts: { gte: MAX_ATTEMPTS } }, { expiresAt: { lte: at } }] },
+    ],
+  };
+}
+
+function errorText(err: unknown): string {
+  return (err instanceof Error ? err.message : String(err)).slice(0, 500);
+}
+
+/**
+ * Sends a claimed email and records the outcome, fenced on the claim: a claim lost meanwhile (lease
+ * expired and taken over, or abandoned) writes nothing.
+ */
+async function deliver(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
-  state: { lastDigestDate: string | null },
+  deps: DigestTickDeps,
+  task: EmailTask,
+  key: DeliveryKey,
+  claimToken: string,
+  attempt: number,
 ): Promise<void> {
-  const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  if (state.lastDigestDate === today) return;
-  if (now.getHours() !== DIGEST_HOUR) return;
-  state.lastDigestDate = today;
-  // Locked around runDigestCore, not this whole function: the two guards above are cheap
-  // in-memory checks that reject 23 of 24 hourly ticks — taking the cross-instance lock before
-  // them would spend two DB round trips on every no-op tick for nothing.
-  await withSchedulerLock(prisma, 'calendar-digest', () => runDigestCore(prisma, log))();
+  const owned = { ...key, claimToken, status: 'SENDING' as const };
+  try {
+    await deps.send(task);
+  } catch (err) {
+    // Logged first: the write below can itself fail.
+    log.error({ err, userId: key.userId, calendarId: key.calendarId, attempt }, 'Calendar digest: email send failed');
+    const at = deps.clock();
+    const { count } = await prisma.calendarDigestDelivery.updateMany({
+      where: owned,
+      data: { status: 'FAILED', lastError: errorText(err), leaseUntil: new Date(at.getTime() + RETRY_BACKOFF_MS * attempt) },
+    });
+    if (count !== 1) log.warn({ userId: key.userId, calendarId: key.calendarId }, 'Calendar digest: claim lost before FAILED was recorded');
+    return;
+  }
+  const { count } = await prisma.calendarDigestDelivery.updateMany({ where: owned, data: { status: 'SENT', sentAt: deps.clock(), lastError: null } });
+  if (count !== 1) {
+    log.warn({ userId: key.userId, calendarId: key.calendarId }, 'Calendar digest: claim lost before SENT was recorded; the email may have gone out');
+  }
+}
+
+/**
+ * Re-claims FAILED emails past their backoff and SENDING ones whose lease expired, each group
+ * rebuilt from its stored window in its stored zone. A build that fails changes nothing; a pair a
+ * successful build no longer produces (recipient deactivated, opted out, lost access) is abandoned.
+ */
+async function retryDeliveries(prisma: PrismaClient, log: FastifyInstance['log'], deps: DigestTickDeps): Promise<void> {
+  const rows = await prisma.calendarDigestDelivery.findMany({
+    where: reclaimable(deps.clock()),
+    select: { userId: true, calendarId: true, localDate: true, timeZone: true, windowStart: true, windowEnd: true, attempts: true },
+  });
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const groupKey = [row.localDate.toISOString(), row.timeZone, row.windowStart.toISOString(), row.windowEnd.toISOString()].join('|');
+    const group = groups.get(groupKey);
+    if (group) group.push(row);
+    else groups.set(groupKey, [row]);
+  }
+
+  for (const group of groups.values()) {
+    const { timeZone, windowStart, windowEnd } = group[0]!;
+    try {
+      const pairs = new Set(group.map(row => pairKey(row.userId, row.calendarId)));
+      const { tasks } = await buildDigestTasks(prisma, log, {
+        range: { start: windowStart, end: windowEnd },
+        timeZone,
+        include: (userId, calendarId) => pairs.has(pairKey(userId, calendarId)),
+      });
+      const taskByPair = new Map(tasks.map(task => [pairKey(task.userId, task.calendarId), task]));
+
+      await sendBulkEmail(group, async row => {
+        const key = { userId: row.userId, calendarId: row.calendarId, localDate: row.localDate };
+        try {
+          const task = taskByPair.get(pairKey(row.userId, row.calendarId));
+          if (!task) {
+            const { count } = await prisma.calendarDigestDelivery.updateMany({
+              where: { ...key, status: { in: ['FAILED', 'SENDING'] }, leaseUntil: { lt: deps.clock() } },
+              data: { status: 'ABANDONED' },
+            });
+            if (count === 1) log.warn({ userId: row.userId, calendarId: row.calendarId }, 'Calendar digest: delivery abandoned, the email is no longer produced');
+            return;
+          }
+          const claimToken = randomUUID();
+          const at = deps.clock();
+          // `attempts` pinned to the value read: the backoff and the last-attempt rule depend on it.
+          const { count } = await prisma.calendarDigestDelivery.updateMany({
+            where: { ...key, AND: [reclaimable(at), { attempts: row.attempts }] },
+            data: { status: 'SENDING', attempts: { increment: 1 }, claimToken, leaseUntil: new Date(at.getTime() + LEASE_MS) },
+          });
+          if (count === 1) await deliver(prisma, log, deps, task, key, claimToken, row.attempts + 1);
+        } catch (err) {
+          log.error({ err, userId: row.userId, calendarId: row.calendarId }, 'Calendar digest: retry could not be recorded');
+          throw err;
+        }
+      });
+    } catch (err) {
+      log.error({ err, timeZone, windowStart }, 'Calendar digest: retry build failed; its deliveries are left as they were');
+    }
+  }
+}
+
+/**
+ * First sends for one cohort (the active users reading in `timeZone`) once 07:00 has come there:
+ * the window is their local "yesterday", pairs already recorded for the local date are skipped
+ * before rendering, and each email is claimed only while its send day lasts.
+ */
+async function sendDueDigests(
+  prisma: PrismaClient,
+  log: FastifyInstance['log'],
+  deps: DigestTickDeps,
+  now: Date,
+  timeZone: string,
+  memberIds: Set<string>,
+): Promise<void> {
+  const localDate = calendarDateIn(now, timeZone);
+  if (now < instantAt(localDate, DIGEST_TIME, timeZone)) return;
+  const windowStart = startOfDayIn(addCalendarDays(localDate, -1), timeZone);
+  const windowEnd = startOfDayIn(localDate, timeZone);
+  const expiresAt = startOfDayIn(addCalendarDays(localDate, 1), timeZone);
+  const localDateValue = utcMidnightOf(localDate);
+  const members = [...memberIds].sort().join(',');
+  const settled = deps.settled?.get(timeZone);
+  if (settled?.localDate === localDate && settled.members === members) return;
+
+  const recorded = await prisma.calendarDigestDelivery.findMany({
+    where: { localDate: localDateValue, userId: { in: [...memberIds] } },
+    select: { userId: true, calendarId: true },
+  });
+  const recordedPairs = new Set(recorded.map(row => pairKey(row.userId, row.calendarId)));
+  const { tasks } = await buildDigestTasks(prisma, log, {
+    range: { start: windowStart, end: windowEnd },
+    timeZone,
+    include: (userId, calendarId) => memberIds.has(userId) && !recordedPairs.has(pairKey(userId, calendarId)),
+  });
+  if (tasks.length === 0) {
+    deps.settled?.set(timeZone, { localDate, members });
+    return;
+  }
+
+  await sendBulkEmail(tasks, async task => {
+    try {
+      const at = deps.clock();
+      if (at >= expiresAt) {
+        log.warn({ userId: task.userId, calendarId: task.calendarId, localDate }, 'Calendar digest: send day over before the email was claimed; not sent');
+        return;
+      }
+      const key = { userId: task.userId, calendarId: task.calendarId, localDate: localDateValue };
+      const claimToken = randomUUID();
+      // One row per call: only then does the inserted count say whether this row is ours.
+      const { count } = await prisma.calendarDigestDelivery.createMany({
+        data: [{ ...key, timeZone, windowStart, windowEnd, expiresAt, status: 'SENDING', attempts: 1, claimToken, leaseUntil: new Date(at.getTime() + LEASE_MS) }],
+        skipDuplicates: true,
+      });
+      if (count === 1) await deliver(prisma, log, deps, task, key, claimToken, 1);
+    } catch (err) {
+      log.error({ err, userId: task.userId, calendarId: task.calendarId }, 'Calendar digest: first send could not be recorded');
+      throw err;
+    }
+  });
+}
+
+/**
+ * One scheduler tick: abandon what can no longer be sent (logged), stop if SMTP is not configured,
+ * retry what failed, then send every cohort whose 07:00 has come. Each retry group and each cohort
+ * isolates its own errors.
+ */
+export async function runDigestTick(
+  prisma: PrismaClient,
+  log: FastifyInstance['log'],
+  deps: DigestTickDeps = defaultDeps(prisma),
+): Promise<void> {
+  // Decides the local date, "due" and the window only; every state change reads the clock again.
+  const now = deps.clock();
+
+  const { count: abandoned } = await prisma.calendarDigestDelivery.updateMany({ where: abandonable(deps.clock()), data: { status: 'ABANDONED' } });
+  if (abandoned > 0) log.warn({ abandoned }, 'Calendar digest: deliveries abandoned (attempts spent or send day over)');
+
+  if (!(await deps.smtpReady())) {
+    log.warn('Calendar digest: SMTP is not configured; nothing claimed');
+    return;
+  }
+
+  const users = await prisma.user.findMany({ where: { isActive: true }, select: { id: true, timezone: true } });
+  const cohorts = await groupByTimeZone(prisma, users, log);
+
+  try {
+    await retryDeliveries(prisma, log, deps);
+  } catch (err) {
+    log.error({ err }, 'Calendar digest: retries failed; first sends go ahead');
+  }
+
+  for (const [timeZone, members] of cohorts) {
+    try {
+      await sendDueDigests(prisma, log, deps, now, timeZone, new Set(members.map(member => member.id)));
+    } catch (err) {
+      log.error({ err, timeZone }, 'Calendar digest: cohort failed; the others go ahead');
+    }
+  }
 }
 
 // ─── Manual trigger ──────────────────────────────────────────────────────────
 
 /**
- * Runs the digest immediately, bypassing the hour guard.
- * Defaults to the previous day if no range is given.
- * When `onlyUserId` is given, sends only to that user's own digest slice
- * (bypassing their CALENDAR preference opt-out) — used for manual "send to me" test runs.
- * Intended for admin-triggered manual runs and testing.
+ * Sends the requesting user their own digest slice for `days` (inclusive), read in their zone,
+ * bypassing their digest opt-out — the manual "send to me" run. Records no delivery:
+ * it is an explicit re-send.
  */
 export async function runDigestNow(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
-  range?: DigestDateRange,
-  onlyUserId?: string,
+  days: { from: CalendarDate; to: CalendarDate },
+  userId: string,
+  send: DigestTickDeps['send'] = defaultDeps(prisma).send,
 ): Promise<void> {
-  await runDigestCore(prisma, log, range, onlyUserId);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, timezone: true } });
+  const timeZone = await resolveUserTimeZone(prisma, user, log);
+  const range = { start: startOfDayIn(days.from, timeZone), end: startOfDayIn(addCalendarDays(days.to, 1), timeZone) };
+
+  // `include`: the caller's digest only, without building everyone else's on the way.
+  const { tasks, calendarCount } = await buildDigestTasks(prisma, log, { range, timeZone, onlyUserId: userId, include: uid => uid === userId });
+  if (tasks.length === 0) return;
+
+  const { sent, failed } = await sendBulkEmail(tasks, task =>
+    send(task).catch(err => {
+      log.error({ err }, 'Calendar digest: email send failed');
+      throw err;
+    })
+  );
+  log.info({ sent, failed, calendars: calendarCount }, 'Calendar digest: manual run completed');
 }
 
 // ─── Registration ─────────────────────────────────────────────────────────────
 
 /**
- * Registers the daily calendar digest email scheduler as a Fastify plugin.
- * Fires daily at 07:00, covering changes from the previous day.
- * Sends one email per calendar (brand+season pair) per user.
- * Respects per-user CALENDAR notification preferences.
- * Skips gracefully if SMTP is not configured.
+ * Registers the calendar digest scheduler as a Fastify plugin: a tick every 15 minutes sends each
+ * recipient their digest from 07:00 in their zone, one email per calendar (brand+season pair),
+ * respecting per-user CALENDAR notification preferences.
  */
 export function registerCalendarDigestScheduler(
   fastify: FastifyInstance,
   prisma: PrismaClient,
 ): void {
   let timer: ReturnType<typeof setInterval> | null = null;
-  const state = { lastDigestDate: null as string | null };
 
-  const guardedDigest = guardMaintenance(prisma, () => runDigest(prisma, fastify.log, state));
+  // One set of deps for the scheduler's life, so what `settled` learns carries from tick to tick.
+  const deps = defaultDeps(prisma);
+  const lockedTick = withSchedulerLock(prisma, 'calendar-digest', () => runDigestTick(prisma, fastify.log, deps));
+  const guardedTick = guardMaintenance(prisma, async () => {
+    await lockedTick();
+  });
   const run = () =>
-    guardedDigest().catch(err =>
-      fastify.log.error({ err }, 'Calendar digest scheduler: errore non gestito')
+    guardedTick().catch(err =>
+      fastify.log.error({ err }, 'Calendar digest scheduler: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Calendar digest scheduler: avviato (tick ogni ora, esecuzione alle 07:00)');
+    fastify.log.info("Calendar digest scheduler: started (15-min tick, 07:00 in each recipient's zone)");
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
 
@@ -459,6 +876,6 @@ export function registerCalendarDigestScheduler(
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Calendar digest scheduler: fermato');
+    fastify.log.info('Calendar digest scheduler: stopped');
   });
 }

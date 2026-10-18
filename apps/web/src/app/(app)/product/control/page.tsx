@@ -1,9 +1,8 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import { formatDate } from '@luke/core';
+import { formatCalendarDate, NUMERIC_DATE } from '@luke/core';
 
 import { PageHeader } from '../../../../components/PageHeader';
 import { Badge } from '../../../../components/ui/badge';
@@ -15,23 +14,26 @@ import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
 
+import { ClusterMoqCoverage } from './_components/ClusterMoqCoverage';
 import { CollectionStatistics } from './_components/CollectionStatistics';
 import { EmptyContextCard } from './_components/EmptyContextCard';
+import { QueryStateMessage } from './_components/QueryStateMessage';
 import { useControlLayout } from './_hooks/useControlLayout';
 
 import type { ReactNode } from 'react';
 
 /**
- * Controllo: pianificazione fasi (Saturazione/Strozzatura/Stagnazione) e statistiche
- * collezione riunite in un'unica pagina, separate da uno switch di primo livello —
- * sono due letture diverse dei dati (salute del processo vs. contenuto della collezione).
+ * Control: phase planning (Saturazione/Strozzatura/Stagnazione), collection statistics and the
+ * cluster MOQ coverage brought together on one page, separated by a top-level switch — they are
+ * different readings of the data (process health, collection content, forecast against vendor
+ * minimums).
  */
 export default function ControlloPage() {
   return (
     <>
       <PageHeader
         title="Controllo"
-        description="Pianificazione fasi e statistiche del Collection Layout"
+        description="Pianificazione fasi, statistiche e criticità cluster del Collection Layout"
       />
 
       <div className="p-6">
@@ -39,6 +41,7 @@ export default function ControlloPage() {
           <TabsList>
             <TabsTrigger value="fasi">Pianificazione Fasi</TabsTrigger>
             <TabsTrigger value="statistiche">Statistiche Collezione</TabsTrigger>
+            <TabsTrigger value="cluster">Criticità cluster</TabsTrigger>
           </TabsList>
           <TabsContent value="fasi" className="space-y-6">
             <Tabs defaultValue="saturation">
@@ -61,27 +64,13 @@ export default function ControlloPage() {
           <TabsContent value="statistiche">
             <CollectionStatistics />
           </TabsContent>
+          <TabsContent value="cluster">
+            <ClusterMoqCoverage />
+          </TabsContent>
         </Tabs>
       </div>
     </>
   );
-}
-
-/**
- * Loading/empty/error placeholder for a tab's main query. `error` is visually distinct
- * (destructive color + icon) from `empty` (plain muted text) — a failed fetch defaults `data` to
- * `[]` same as a genuinely empty result, so without this the two were indistinguishable.
- */
-function QueryStateMessage({ variant, message }: { variant: 'loading' | 'empty' | 'error'; message: string }) {
-  if (variant === 'error') {
-    return (
-      <div className="py-12 flex flex-col items-center gap-1.5 text-sm text-destructive">
-        <AlertTriangle className="h-5 w-5" />
-        {message}
-      </div>
-    );
-  }
-  return <div className="py-12 text-center text-muted-foreground">{message}</div>;
 }
 
 /**
@@ -106,16 +95,16 @@ function QueryBoundary({
 }
 
 /**
- * Dashboard Termografica di Saturazione.
- * Conta le righe per banda di criticità, raggruppate per brand × categoria prodotto,
- * per la stagione corrente. Nessuna libreria di charting: griglia CSS/Tailwind color-coded.
+ * Saturation heatmap dashboard.
+ * Counts rows per criticality band, grouped by brand × product category,
+ * for the current season. No charting library: a colour-coded CSS/Tailwind grid.
  */
 function SaturationTab() {
   const { season, isLoading: contextLoading } = useAppContext();
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
 
   const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled: !!season?.id });
-  const allBrands = brandsData?.items ?? [];
+  const allBrands = useMemo(() => brandsData?.items ?? [], [brandsData]);
   const brandIds = selectedBrandIds.length > 0 ? selectedBrandIds : allBrands.map(b => b.id);
 
   const { data: cells = [], isLoading, isError } = trpc.phaseAlert.saturationHeatmap.useQuery(
@@ -225,9 +214,9 @@ function SaturationTab() {
 }
 
 /**
- * Indice di Strozzatura.
- * Conta le righe per banda di criticità, raggruppate per evento/milestone attivo, per il brand
- * e la stagione correnti — identifica quale milestone specifica sta trattenendo più righe.
+ * Bottleneck index.
+ * Counts rows per criticality band, grouped by active event/milestone, for the current brand
+ * and season — it identifies which specific milestone is holding back the most rows.
  */
 function BottleneckTab() {
   const { layout, enabled, contextLoading } = useControlLayout();
@@ -261,7 +250,7 @@ function BottleneckTab() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="font-medium">{event.eventTitle}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatDate(new Date(event.eventStartAt))} · {total} righe
+                      {formatCalendarDate(event.eventStartDay, NUMERIC_DATE)} · {total} righe
                     </span>
                   </div>
                   <div className="flex h-3 w-full rounded overflow-hidden bg-muted">
@@ -291,10 +280,10 @@ function BottleneckTab() {
 }
 
 /**
- * Monitoraggio Predittivo di Stagnazione.
- * Tempo medio/mediano per fase, dallo storico CollectionRowPhaseHistory — indipendente
- * dal motore alert, identifica righe che stagnano prima ancora di superare la soglia
- * di criticità assoluta.
+ * Predictive stagnation monitoring.
+ * Mean/median time per phase, from the CollectionRowPhaseHistory log — independent of
+ * the alert engine, it identifies rows that stagnate before they even cross the absolute
+ * criticality threshold.
  */
 function StagnationTab() {
   const { layout, enabled, contextLoading } = useControlLayout();

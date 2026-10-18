@@ -1,7 +1,7 @@
 const MESSAGE =
-  "Valore Tailwind arbitrario (`prop-[...]`) senza commento esplicativo — CLAUDE.md " +
-  "richiede un commento che giustifichi il valore quando non esiste uno step della " +
-  "scala standard equivalente. Se uno step equivalente esiste, usa quello invece.";
+  "Arbitrary Tailwind value (`prop-[...]`) without an explanatory comment — CLAUDE.md " +
+  "requires a comment justifying the value when the standard scale has no " +
+  "equivalent step. If an equivalent step exists, use it instead.";
 
 // Matches a Tailwind arbitrary-VALUE utility token (`w-[327px]`, `max-h-[90vh]`,
 // `sm:max-w-[500px]`, `grid-cols-[1fr_auto]`) but not arbitrary-VARIANT selectors

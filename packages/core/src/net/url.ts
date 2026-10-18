@@ -8,8 +8,10 @@
  * @author Luke Team
  */
 
-import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env';
-import { getProxyUrl } from '../storage/contracts';
+import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env.js';
+import { getProxyUrl } from '../storage/contracts.js';
+
+import type { AuditLogExportFormat } from '../schemas/auditLog.js';
 
 /**
  * Options for URL construction
@@ -158,16 +160,13 @@ export function buildSpecsheetImageUploadUrl(
   return buildApiUrl(`/upload/specsheet-image/${specsheetId}`, options);
 }
 
-/**
- * Builds the upload URL for a temporary specsheet image.
- * The file is committed to a permanent key when the specsheet is saved.
- */
-export function buildTempSpecsheetImageUploadUrl(
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl('/upload/specsheet-image/temp', options);
-}
-
+// Raw (non-tRPC) endpoints the *browser* calls directly must live under `/download/` (streamed
+// GET) or `/upload/` (streamed POST). In production the browser can only reach Next.js (apps/api
+// publishes no port — see docker-compose.prod.yml), so such a path is reachable only if
+// `apps/web/next.config.js` rewrites it; those two prefixes are the ones wired there wholesale.
+// A path outside them resolves to a Next.js page route instead: no error, just Next's own 404
+// HTML delivered under the requested filename — exactly how backup downloads shipped 24KB of 404
+// page in place of the backup. Enforced by `apps/api/test/rawRouteProxy.spec.ts`.
 /**
  * Builds the download URL for a passphrase-protected, instance-portable backup export package.
  *
@@ -179,23 +178,24 @@ export function buildBackupExportDownloadUrl(
   token: string,
   options: UrlOptions = {}
 ): string {
-  return buildApiUrl(`/maintenance/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
+  return buildApiUrl(`/download/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
 }
 
 /**
  * Builds the upload URL for importing a passphrase-protected backup export package.
  */
 export function buildBackupImportUrl(options: UrlOptions = {}): string {
-  return buildApiUrl('/maintenance/backup/import', options);
+  return buildApiUrl('/upload/backup-import', options);
 }
 
 /**
- * Builds the CSV export download URL for the audit log.
+ * Builds the export download URL for the audit log.
  *
+ * @param format - `csv` or `xlsx`
  * @param token - Signed export token minted by `auditLog.getExportLink`, encoding the applied filters
  */
-export function buildAuditLogExportUrl(token: string, options: UrlOptions = {}): string {
-  return buildApiUrl(`/maintenance/audit-log/export?token=${encodeURIComponent(token)}`, options);
+export function buildAuditLogExportUrl(format: AuditLogExportFormat, token: string, options: UrlOptions = {}): string {
+  return buildApiUrl(`/download/audit-log?format=${format}&token=${encodeURIComponent(token)}`, options);
 }
 
 /**
@@ -222,107 +222,33 @@ export function buildTrpcUrl(
 }
 
 /**
- * Checks if a URL is a localhost URL
+ * Builds the export download URL for a season calendar.
  *
- * @param url - URL to check
- * @returns true if URL points to localhost
- */
-export function isLocalhostUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Checks if a URL is an API URL (points to our backend)
+ * Authenticated with a Bearer token by the caller (`fetch`), not a signed query token — these
+ * generate their payload from the database on the fly rather than serving a stored file.
  *
- * @param url - URL to check
- * @returns true if URL points to our API
+ * @param format - `ical` (.ics), `pdf`, or `xlsx`
+ * @param params - Season and brand scope; `view`/`viewDate` select the PDF layout and are
+ *                 ignored by the other two formats
  */
-export function isApiUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const apiBaseUrl = getCoreApiBaseUrl();
-    const apiParsed = new URL(apiBaseUrl);
-
-    return parsed.origin === apiParsed.origin;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Builds the iCal subscription URL for a season calendar, supporting multiple brands.
- * `brandIds` are encoded as a comma-separated query parameter. The `token` is a signed
- * public-access token that allows unauthenticated calendar subscriptions.
- *
- * @param sectionKey - Optional section filter for partial calendar subscriptions
- */
-export function buildSeasonCalendarIcalUrl(
-  seasonId: string,
-  brandIds: string[],
-  token: string,
-  sectionKey?: string,
+export function buildSeasonCalendarExportUrl(
+  format: 'ical' | 'pdf' | 'xlsx',
+  params: {
+    seasonId: string;
+    brandIds: string[];
+    view?: 'list' | 'week' | 'month' | 'gantt' | 'day';
+    /** The `YYYY-MM-DD` calendar date the viewer is looking at — a date, never an instant. */
+    viewDate?: string;
+  },
   options: UrlOptions = {}
 ): string {
-  const params = new URLSearchParams({
-    brandIds: brandIds.join(','),
-    token,
+  const query = new URLSearchParams({
+    seasonId: params.seasonId,
+    brandIds: params.brandIds.join(','),
   });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/ical?${params.toString()}`, options);
-}
-
-/**
- * Builds the PDF export URL for a season calendar, supporting multiple brands.
- *
- * @param sectionKey - Optional section filter for partial calendar exports
- */
-export function buildSeasonCalendarPdfUrl(
-  seasonId: string,
-  brandIds: string[],
-  sectionKey?: string,
-  options: UrlOptions = {}
-): string {
-  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/pdf?${params.toString()}`, options);
-}
-
-/**
- * Builds the XLSX export URL for a season calendar, supporting multiple brands.
- *
- * @param sectionKey - Optional section filter for partial calendar exports
- */
-export function buildSeasonCalendarXlsxUrl(
-  seasonId: string,
-  brandIds: string[],
-  sectionKey?: string,
-  options: UrlOptions = {}
-): string {
-  const params = new URLSearchParams({ brandIds: brandIds.join(',') });
-  if (sectionKey) params.set('sectionKey', sectionKey);
-  return buildApiUrl(`/season-calendar/${seasonId}/xlsx?${params.toString()}`, options);
-}
-
-/**
- * Extracts the path from a full URL
- *
- * @param url - Full URL
- * @returns Path portion of the URL
- *
- * @example
- * extractPathFromUrl('http://localhost:3001/trpc/auth.login')
- * // → '/trpc/auth.login'
- */
-export function extractPathFromUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.pathname;
-  } catch {
-    return null;
+  if (format === 'pdf') {
+    if (params.view) query.set('view', params.view);
+    if (params.viewDate) query.set('viewDate', params.viewDate);
   }
+  return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`, options);
 }

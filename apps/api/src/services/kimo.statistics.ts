@@ -6,6 +6,7 @@
 
 import ExcelJS from 'exceljs';
 
+import { isInstantInRange, wallClockDate } from '@luke/core';
 import type { KimoRow } from '@luke/nav';
 
 import {
@@ -59,11 +60,15 @@ const DATE_KEYS    = new Set<keyof KimoRow>(['createSoDateTime', 'releaseSoDateT
  * Builds an XLSX buffer from KIMO SO + BASKET query results using streaming WorkbookWriter.
  * Each row is committed immediately, keeping memory usage O(1) relative to row count.
  *
+ * @param timeZone - The reader's zone (`getUserTimeZone`): the datetime cells show its wall clock,
+ *   and a note on their headers names it (ADR-035 §Formatting) — the column names stay the NAV
+ *   field names that readers of the workbook look columns up by.
  * @param sheetName - Worksheet tab name (default: 'Vendite+Bidone').
  * @param meta - Optional workbook metadata (title, author, etc.).
  */
 export async function buildKimoXlsx(
   rows: KimoRow[],
+  timeZone: string,
   sheetName = 'Vendite+Bidone',
   meta: XlsxMeta = {},
 ): Promise<Buffer> {
@@ -80,17 +85,22 @@ export async function buildKimoXlsx(
 
   sheet.columns = KIMO_COLUMNS.map(c => ({ key: c.key, width: 20 }));
 
-  // Riga intestazione
+  // Header row
   const headerRow = sheet.addRow(KIMO_COLUMNS.map(c => c.header));
+  KIMO_COLUMNS.forEach((c, i) => {
+    if (DATE_KEYS.has(c.key)) headerRow.getCell(i + 1).note = `Orari in ${timeZone}`;
+  });
   applyStreamingHeaderStyle(headerRow, 'report');
   await (headerRow as ExcelJS.Row & { commit(): Promise<void> }).commit();
 
-  // Righe dati — commit immediato per liberare memoria
+  // Data rows — committed immediately to free memory
   for (const row of rows) {
     const values = KIMO_COLUMNS.map(col => {
       const val = row[col.key];
       if (val === null || val === undefined || val === '') return null;
-      if (DATE_KEYS.has(col.key) && val instanceof Date) return val;
+      // Excel has no zones: the cell holds the reader's wall clock. NAV's blank datetime (1753-01-01),
+      // or any other value outside the stored range, is a missing value (ADR-035 §External dates).
+      if (DATE_KEYS.has(col.key) && val instanceof Date) return isInstantInRange(val, { allDay: false }) ? wallClockDate(val, timeZone) : null;
       if (NUMERIC_KEYS.has(col.key) && typeof val === 'number') return val;
       if (typeof val === 'boolean') return val ? 'SI' : 'NO';
       return String(val);

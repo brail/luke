@@ -13,19 +13,23 @@ import { mkdir, rm } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import { createGzip } from 'zlib';
 
 import { APP_STORAGE_BUCKETS, type IStorageProvider } from '@luke/core';
+import type { BackupScope, BackupTrigger, PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
+import { releaseIdentity } from '../appVersion';
 import { getBackupRetentionDays } from '../configManager';
+import { toErrorMessage } from '../error';
 
 import { addFileEntry, addStreamEntry, createArchivePacker } from './archiveFormat';
+import { AUDIT_STAGE_EXCLUDE_ARG } from './auditStage';
 import { createBackupCipher, generateDek, wrapDek } from './crypto';
 import { parseDatabaseUrl, runPgBinary } from './pgConnection';
 
 import type { PgConnectionParts } from './pgConnection';
-import type { BackupScope, BackupTrigger, PrismaClient } from '@prisma/client';
 import type { FastifyBaseLogger } from 'fastify';
 
 /** Matches both `ctx.logger` (router callers) and `fastify.log` (scheduler callers). */
@@ -81,6 +85,8 @@ async function dumpDatabaseToFile(destPath: string, db: PgConnectionParts = pars
     '--format=custom',
     '--no-owner',
     '--no-privileges',
+    // Keep audit staging schemas out of every backup — see auditStage.ts.
+    AUDIT_STAGE_EXCLUDE_ARG,
     '--host', db.host,
     '--port', db.port,
     '--username', db.user,
@@ -214,7 +220,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     await mkdir(workDir, { recursive: true, mode: 0o700 });
 
     const dumpPath = join(workDir, 'db.dump');
-    logger.info({ backupId }, 'Backup: avvio pg_dump');
+    logger.info({ backupId }, 'Backup: starting pg_dump');
     await dumpDatabaseToFile(dumpPath, sourceConnection);
 
     const provider = await getStorageProvider(prisma);
@@ -223,8 +229,9 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
     const { iv, cipher } = createBackupCipher(dek);
     const gzip = createGzip();
 
-    pack.pipe(gzip);
-    gzip.pipe(cipher);
+    // Awaited with the upload below: a failure at any stage rejects the job instead of escaping as an
+    // uncaught exception, and an upload failure flows back to `pack`.
+    const archived = pipeline(pack, gzip, cipher);
 
     const blobKey = backupBlobKey(backupId);
     const uploadPromise = provider.put({
@@ -237,7 +244,7 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
       bypassSizeLimit: true,
     });
 
-    logger.info({ backupId, scope }, 'Backup: assemblaggio archivio tar');
+    logger.info({ backupId, scope }, 'Backup: assembling the tar archive');
     let fileCount = 0;
     const packPromise = (async () => {
       await addFileEntry(pack, 'db.dump', dumpPath);
@@ -245,15 +252,18 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
         fileCount = await addAllStorageFiles(pack, provider);
       }
       pack.finalize();
-    })();
+    })().catch((err: Error) => {
+      pack.destroy(err); // a file that cannot be read ends the chain, and the upload, with it
+      throw err;
+    });
 
-    const [, uploadResult] = await Promise.all([packPromise, uploadPromise]);
+    const [, , uploadResult] = await Promise.all([packPromise, archived, uploadPromise]);
 
     // Only safe to read now: getAuthTag() requires cipher.final() to have run, which happens
     // once the upload has consumed the cipher's entire output (its readable side has ended).
     const authTag = cipher.getAuthTag();
 
-    const appVersion = process.env.APP_VERSION ?? null;
+    const appVersion = releaseIdentity();
     const schemaMigrationName = schemaMigrationNameOverride !== undefined
       ? schemaMigrationNameOverride
       : await getLatestMigrationName(prisma);
@@ -300,10 +310,13 @@ export async function runBackupJob(params: RunBackupJobParams): Promise<void> {
       },
     });
 
-    logger.info({ backupId, fileCount, sizeBytes: uploadResult.size }, 'Backup: completato');
+    logger.info({ backupId, fileCount, sizeBytes: uploadResult.size }, 'Backup: completed');
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ backupId, err: message }, 'Backup: fallito');
+    // The error object, not its message: an AggregateError's own message is empty (#49), and
+    // pino serializes the stack and the inner errors. Credentials travel in the child's environment
+    // (PGPASSWORD, DATABASE_URL), never in its arguments, so none reaches this error.
+    const message = toErrorMessage(err);
+    logger.error({ backupId, err }, 'Backup: failed');
     await prisma.backupRecord.update({
       where: { id: backupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },

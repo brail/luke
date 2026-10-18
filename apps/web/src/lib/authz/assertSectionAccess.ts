@@ -4,7 +4,10 @@
  * so logic lives in one place and all four access layers are applied correctly.
  */
 
+import 'server-only';
+
 import { TRPCClientError } from '@trpc/client';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
 
@@ -26,7 +29,7 @@ const FORCE_LOGOUT_URL = '/api/auth/force-logout' as Route;
 // cache() deduplicates the tRPC call across nested layouts in the same server render.
 const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<string, boolean> | undefined> => {
   try {
-    return await createAuthedTrpcClient(accessToken).sectionAccess.getEffectiveForMe.query();
+    return await createAuthedTrpcClient(accessToken, await headers()).sectionAccess.getEffectiveForMe.query();
   } catch (err) {
     if (err instanceof TRPCClientError && err.data?.code === 'UNAUTHORIZED') {
       redirect(FORCE_LOGOUT_URL);

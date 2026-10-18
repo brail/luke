@@ -4,6 +4,8 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
@@ -19,6 +21,7 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
+import { type SyncedField } from '../../../../lib/userFormSchema';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
 import { ApproveUserDialog } from './_components/ApproveUserDialog';
@@ -29,51 +32,108 @@ import { UserAccessDialog } from './_components/UserAccessDialog';
 import { UsersTable } from './_components/UsersTable';
 import { UsersToolbar } from './_components/UsersToolbar';
 
+/** Identifiers for the actions the confirm dialog can be opened for. */
+type ConfirmActionType =
+  | 'disable'
+  | 'hardDelete'
+  | 'revokeSessions'
+  | 'forceLocalAccess'
+  | 'revokeLocalAccess';
+
+/** Copy + dialog styling for each `ConfirmActionType`, keyed by type so adding one is a single new entry. */
+const CONFIRM_ACTION_CONFIG: Record<
+  ConfirmActionType,
+  {
+    title: string;
+    description: string;
+    confirmText: string;
+    actionType: 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
+    /** Set only where the action is irreversible and has to be typed out to unlock. */
+    confirmPhrase?: string;
+  }
+> = {
+  disable: {
+    title: 'Disattiva Utente',
+    description:
+      "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente.",
+    confirmText: 'Disattiva',
+    actionType: 'disable',
+  },
+  hardDelete: {
+    title: 'Elimina Definitivamente',
+    description:
+      "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database.",
+    confirmText: 'Elimina Definitivamente',
+    actionType: 'hardDelete',
+    confirmPhrase: HARD_DELETE_CONFIRM_PHRASE,
+  },
+  revokeSessions: {
+    title: 'Revoca Sessioni Utente',
+    description:
+      "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza.",
+    confirmText: 'Revoca Sessioni',
+    actionType: 'revokeSessions',
+  },
+  forceLocalAccess: {
+    title: 'Forza Accesso Locale',
+    description:
+      "Verrà creata una credenziale locale per questo utente e inviato un link per impostare la password, bypassando il controllo Active Directory/LDAP esistente. L'identity esterna non viene rimossa: se AD riattiva l'account, tornerà a funzionare anche quello.",
+    confirmText: 'Forza Accesso Locale',
+    actionType: 'warning',
+  },
+  revokeLocalAccess: {
+    title: 'Revoca Accesso Locale',
+    description:
+      "La credenziale locale verrà rimossa: l'utente potrà accedere solo tramite LDAP/OIDC. Tutte le sessioni attive verranno terminate.",
+    confirmText: 'Revoca Accesso Locale',
+    actionType: 'warning',
+  },
+};
+
 /**
- * Pagina gestione utenti con CRUD completo
- * Include lista paginata, filtri, creazione, modifica e eliminazione utenti
- * Layout e header gestiti dal layout padre
+ * User management page with full CRUD.
+ * Includes the paginated list, filters, creation, editing and deletion of users.
+ * Layout and header are handled by the parent layout.
  */
 export default function UsersPage() {
   const { data: session } = useSession();
   const { can } = usePermission();
 
-  // Stato per dialog e paginazione
+  // State for the dialog and pagination
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('');
-  const [syncedFields, setSyncedFields] = useState<
-    ('email' | 'username' | 'firstName' | 'lastName' | 'role' | 'password')[]
-  >([]);
+  const [syncedFields, setSyncedFields] = useState<SyncedField[]>([]);
 
-  // Stato per modal di conferma
+  // State for the confirmation modal
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
-    type: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions';
+    type: ConfirmActionType;
     user: UserListItem;
-    handler: () => void;
+    /** Receives the typed phrase for the actions that are gated behind one. */
+    handler: (confirmPhrase?: string) => void;
   } | null>(null);
 
-  // Stato per ordinamento
+  // State for sorting
   const [sortBy, setSortBy] = useState<SortColumn>('createdAt');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  // Stato per dialog invio email verifica post-creazione
+  // State for the post-creation verification email dialog
   const [createdUserId, setCreatedUserId] = useState<string | null>(null);
   const [showVerifyDialog, setShowVerifyDialog] = useState(false);
 
   const [pendingAccessUser, setPendingAccessUser] =
     useState<UserForApproval | null>(null);
 
-  // Stato per dialog gestione accesso
+  // State for the access management dialog
   const [accessDialogUser, setAccessDialogUser] = useState<UserListItem | null>(null);
 
   const refresh = useRefresh();
 
-  // Query tRPC per lista utenti con paginazione e filtri
+  // tRPC query for the user list with pagination and filters
   const {
     data: usersData,
     isLoading,
@@ -89,7 +149,7 @@ export default function UsersPage() {
     },
     {
       enabled: !!session?.accessToken,
-      refetchInterval: 60_000, // Allineato all'intervallo heartbeat
+      refetchInterval: 60_000, // Aligned with the heartbeat interval
     }
   );
 
@@ -100,8 +160,10 @@ export default function UsersPage() {
   const hardDeleteUserMutation = trpc.users.hardDelete.useMutation();
   const revokeUserSessionsMutation =
     trpc.users.revokeUserSessions.useMutation();
+  const forceLocalAccessMutation = trpc.users.forceLocalAccess.useMutation();
+  const revokeLocalAccessMutation = trpc.users.revokeLocalAccess.useMutation();
 
-  // Mutations standardizzate
+  // Standard mutations
   const { mutate: createUser, isPending: isCreatingUser } = useStandardMutation(
     {
       mutateFn: createUserMutation.mutateAsync,
@@ -159,29 +221,45 @@ export default function UsersPage() {
       onErrorMessage: 'Errore nella revoca sessioni',
     });
 
-  // Handlers per le azioni
+  const { mutate: forceLocalAccess, isPending: isForcingLocalAccess } =
+    useStandardMutation({
+      mutateFn: forceLocalAccessMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccess: data => toast.success(data.message),
+      onErrorMessage: "Errore nel forzare l'accesso locale",
+      entityMessages: {
+        FORBIDDEN: true,
+        // The credential is in place and only the email failed; production masks the 500's text.
+        INTERNAL_SERVER_ERROR:
+          "Credenziale locale pronta ma invio email fallito: verifica la configurazione SMTP e riprova (l'operazione è idempotente).",
+      },
+    });
+
+  const { mutate: revokeLocalAccess, isPending: isRevokingLocalAccess } =
+    useStandardMutation({
+      mutateFn: revokeLocalAccessMutation.mutateAsync,
+      invalidate: refresh.users,
+      onSuccess: data => toast.success(data.message),
+      onErrorMessage: "Errore nel revocare l'accesso locale",
+      entityMessages: { FORBIDDEN: true },
+    });
+
+  // Action handlers
 
   const handleCreateUser = () => {
     setDialogMode('create');
     setSelectedUser(null);
-    setSyncedFields([]); // Nuovo utente = nessun campo sincronizzato
+    setSyncedFields([]); // New user = no synced field
     setDialogOpen(true);
   };
 
   const handleEditUser = (user: UserListItem) => {
     setDialogMode('edit');
     setSelectedUser(user);
-    // Determina campi sincronizzati in base al provider
-    // Per provider esterni (LDAP, OIDC): blocca username, firstName, lastName e password
+    // Determine the synced fields from the identity provider.
+    // External providers (LDAP, OIDC) lock username, firstName, lastName and password
     // email and role are editable even for external users
-    const synced: (
-      | 'email'
-      | 'username'
-      | 'firstName'
-      | 'lastName'
-      | 'role'
-      | 'password'
-    )[] =
+    const synced: SyncedField[] =
       user?.identities?.[0]?.provider !== 'LOCAL'
         ? ['username', 'firstName', 'lastName', 'password']
         : [];
@@ -190,7 +268,7 @@ export default function UsersPage() {
   };
 
   const handleDeleteUser = (user: UserListItem) => {
-    // Debug: verifica i valori
+    // Debug: check the values
     debugLog('handleDeleteUser - user.id:', user.id);
     debugLog('handleDeleteUser - session.user.id:', session?.user?.id);
     debugLog('handleDeleteUser - isSelf:', user.id === session?.user?.id);
@@ -207,19 +285,21 @@ export default function UsersPage() {
     setConfirmAction({
       type: 'hardDelete',
       user,
-      handler: () => hardDeleteUser({ id: user.id }),
+      handler: phrase => {
+        if (phrase) hardDeleteUser({ id: user.id, confirmPhrase: phrase });
+      },
     });
     setConfirmDialogOpen(true);
   };
 
-  const handleConfirmAction = () => {
+  const handleConfirmAction = (confirmPhrase?: string) => {
     if (confirmAction) {
-      confirmAction.handler();
+      confirmAction.handler(confirmPhrase);
     }
   };
 
   const handleRevokeUserSessions = (user: UserListItem) => {
-    // Protezione: impedisci auto-revoca
+    // Guard: no self-revocation
     if (user.id === session?.user?.id) {
       toast.error(
         'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.'
@@ -232,6 +312,31 @@ export default function UsersPage() {
       type: 'revokeSessions',
       user,
       handler: () => revokeUserSessions({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleForceLocalAccess = (user: UserListItem) => {
+    setConfirmAction({
+      type: 'forceLocalAccess',
+      user,
+      handler: () => forceLocalAccess({ id: user.id }),
+    });
+    setConfirmDialogOpen(true);
+  };
+
+  const handleRevokeLocalAccess = (user: UserListItem) => {
+    // Same self-lockout guard as handleRevokeUserSessions (revoke bumps
+    // tokenVersion, would end the admin's own session mid-action).
+    if (user.id === session?.user?.id) {
+      toast.error('Non puoi revocare il tuo stesso accesso locale.');
+      return;
+    }
+
+    setConfirmAction({
+      type: 'revokeLocalAccess',
+      user,
+      handler: () => revokeLocalAccess({ id: user.id }),
     });
     setConfirmDialogOpen(true);
   };
@@ -251,16 +356,24 @@ export default function UsersPage() {
 
   const handleFormSubmit = (data: UserDialogSubmitData) => {
     if (dialogMode === 'create') {
-      // CreateUserSchema (UserForm) requires password (min 12 chars) in create mode; the shared
-      // UserDialogSubmitData type just doesn't encode that per-mode distinction.
-      createUser({ ...data, password: data.password ?? '' });
+      // The payload type is optional in every field, because the same shape serves edit where a
+      // synced field is stripped. In create nothing is stripped, so it does carry them all — but
+      // rather than assert that with fallbacks, let the endpoint's own schema decide. Defaulting
+      // was not equally safe across fields: an empty email or password fails server-side, while
+      // `role ?? 'viewer'` would have quietly created a viewer instead of reporting a bug.
+      const parsed = CreateUserInputSchema.safeParse(data);
+      if (!parsed.success) {
+        toast.error('Dati utente incompleti', { description: parsed.error.issues[0]?.message });
+        return;
+      }
+      createUser(parsed.data);
     } else {
       if (!selectedUser) return;
-      // Filtra i campi per self-edit
+      // Filter the fields for self-edit
       const isSelfEdit = selectedUser.id === session?.user?.id;
       const updateData: Parameters<typeof updateUserMutation.mutateAsync>[0] = { id: selectedUser.id };
 
-      // Aggiungi solo i campi modificati
+      // Add only the modified fields
       if (data.email !== selectedUser.email) updateData.email = data.email;
       if (data.username !== selectedUser.username)
         updateData.username = data.username;
@@ -314,7 +427,7 @@ export default function UsersPage() {
           </TabsList>
 
           <TabsContent value="active" className="space-y-6 mt-4">
-            {/* Azioni e Filtri */}
+            {/* Actions and filters */}
             <SectionCard
               title="Ricerca e Filtri"
               description="Cerca e filtra gli utenti del sistema"
@@ -333,7 +446,7 @@ export default function UsersPage() {
               />
             </SectionCard>
 
-            {/* Tabella Utenti */}
+            {/* Users table */}
             <SectionCard
               title="Utenti Sistema"
               description="Lista completa degli utenti registrati"
@@ -359,6 +472,8 @@ export default function UsersPage() {
                   onHardDelete={handleHardDeleteUser}
                   onRevokeSessions={handleRevokeUserSessions}
                   onManageAccess={setAccessDialogUser}
+                  onForceLocalAccess={handleForceLocalAccess}
+                  onRevokeLocalAccess={handleRevokeLocalAccess}
                 />
               )}
             </SectionCard>
@@ -392,45 +507,25 @@ export default function UsersPage() {
           <ConfirmDialog
             open={confirmDialogOpen}
             onOpenChange={setConfirmDialogOpen}
-            title={
-              confirmAction.type === 'disable'
-                ? 'Disattiva Utente'
-                : confirmAction.type === 'hardDelete'
-                  ? 'Elimina Definitivamente'
-                  : confirmAction.type === 'revokeSessions'
-                    ? 'Revoca Sessioni Utente'
-                    : 'Conferma Azione'
-            }
-            description={
-              confirmAction.type === 'disable'
-                ? "L'utente non potrà più accedere al sistema. L'operazione può essere annullata riattivando l'utente."
-                : confirmAction.type === 'hardDelete'
-                  ? "Questa operazione è irreversibile. Tutti i dati dell'utente verranno eliminati permanentemente dal database."
-                  : confirmAction.type === 'revokeSessions'
-                    ? "L'utente verrà disconnesso da tutti i dispositivi e dovrà effettuare nuovamente il login. Questa operazione è utile per motivi di sicurezza."
-                    : 'Sei sicuro di voler procedere con questa azione?'
-            }
-            confirmText={
-              confirmAction.type === 'disable'
-                ? 'Disattiva'
-                : confirmAction.type === 'hardDelete'
-                  ? 'Elimina Definitivamente'
-                  : confirmAction.type === 'revokeSessions'
-                    ? 'Revoca Sessioni'
-                    : 'Conferma'
-            }
+            title={CONFIRM_ACTION_CONFIG[confirmAction.type].title}
+            description={CONFIRM_ACTION_CONFIG[confirmAction.type].description}
+            confirmText={CONFIRM_ACTION_CONFIG[confirmAction.type].confirmText}
             cancelText="Annulla"
-            variant="destructive"
             onConfirm={handleConfirmAction}
             isLoading={
-              isDeletingUser || isHardDeletingUser || isRevokingSessions
+              isDeletingUser ||
+              isHardDeletingUser ||
+              isRevokingSessions ||
+              isForcingLocalAccess ||
+              isRevokingLocalAccess
             }
             userEmail={confirmAction.user?.email}
-            actionType={confirmAction.type}
+            actionType={CONFIRM_ACTION_CONFIG[confirmAction.type].actionType}
+            confirmPhrase={CONFIRM_ACTION_CONFIG[confirmAction.type].confirmPhrase}
           />
         )}
 
-        {/* Dialog gestione accesso sezioni + brand/season */}
+        {/* Section + brand/season access dialog */}
         {accessDialogUser && (
           <UserAccessDialog
             user={accessDialogUser}
@@ -455,7 +550,7 @@ export default function UsersPage() {
           />
         )}
 
-        {/* Dialog invio email verifica post-creazione */}
+        {/* Post-creation verification email dialog */}
         <SendVerificationDialog
           userId={createdUserId}
           open={showVerifyDialog}

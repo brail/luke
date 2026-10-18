@@ -1,8 +1,6 @@
 import 'next-auth';
 
-// eslint-disable-next-line no-unused-vars
 declare module 'next-auth' {
-  // eslint-disable-next-line no-unused-vars
   interface User {
     role?: string;
     firstName?: string;
@@ -12,7 +10,6 @@ declare module 'next-auth' {
     tokenVersion?: number;
   }
 
-  // eslint-disable-next-line no-unused-vars
   interface Session {
     user: {
       id?: string;
@@ -30,9 +27,7 @@ declare module 'next-auth' {
   }
 }
 
-// eslint-disable-next-line no-unused-vars
 declare module 'next-auth/jwt' {
-  // eslint-disable-next-line no-unused-vars
   interface JWT {
     role?: string;
     accessToken?: string;

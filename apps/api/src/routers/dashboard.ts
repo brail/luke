@@ -1,4 +1,3 @@
-import { type Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -7,12 +6,23 @@ import {
   DEFAULT_CLOCKS_TIMEZONES,
   DEFAULT_FOREX_PAIRS,
   DashboardTaskInputSchema,
+  DashboardWidgetsSaveSchema,
   DashboardWidgetsSchema,
+  FOREX_PAIR_PATTERN,
+  FrankfurterRatesSchema,
+  addCalendarDays,
+  calendarDateIn,
+  calendarDateOf,
+  utcMidnightOf,
+  type CalendarDate,
   type WidgetConfigItem,
 } from '@luke/core';
+import { type Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { protectedProcedure, router } from '../lib/trpc';
+import { getConfigOrDefault } from '../lib/configManager';
+import { requirePermission } from '../lib/permissions';
+import { protectedProcedure, router, selfProcedure } from '../lib/trpc';
 import { assertBrandAccess } from '../services/context.service';
 
 
@@ -28,12 +38,14 @@ const DEFAULT_WIDGETS: WidgetConfigItem[] = [
 export const dashboardRouter = router({
   /**
    * Returns the current user's dashboard widget configuration, merging missing default widgets.
+   * Settings a widget's schema refuses, stored before saves were checked, come back dropped
+   * (`DashboardWidgetsSchema`): the widget shows its defaults and the next save is accepted.
    *
    * @auth {authenticated}
    * @input {none}
    * @output {{ widgets: WidgetConfigItem[] }}
    */
-  getConfig: protectedProcedure.query(async ({ ctx }) => {
+  getConfig: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const record = await ctx.prisma.dashboardConfig.findUnique({ where: { userId } });
     if (!record) {
@@ -55,11 +67,13 @@ export const dashboardRouter = router({
    * Persists the current user's dashboard widget configuration.
    *
    * @auth {authenticated}
-   * @input {{ widgets: DashboardWidgetsSchema }} — ordered widget config array.
+   * @input {{ widgets: DashboardWidgetsSaveSchema }} — ordered widget config array; clock zones and
+   *   forex pairs are validated (a zone stored in the spelling `Intl` gives it). `getConfig` drops
+   *   settings stored before that check, so the layout it returns always saves.
    * @output {{ ok: true }}
    */
-  saveConfig: protectedProcedure
-    .input(z.object({ widgets: DashboardWidgetsSchema }))
+  saveConfig: selfProcedure
+    .input(z.object({ widgets: DashboardWidgetsSaveSchema }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const widgetsJson = input.widgets as unknown as Prisma.InputJsonValue;
@@ -78,7 +92,7 @@ export const dashboardRouter = router({
    * @input {none}
    * @output {DashboardTask[]}
    */
-  getTasks: protectedProcedure.query(async ({ ctx }) => {
+  getTasks: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     return ctx.prisma.dashboardTask.findMany({
       where: { userId },
@@ -91,15 +105,19 @@ export const dashboardRouter = router({
    * Creates or updates a dashboard task for the current user.
    *
    * @auth {authenticated}
-   * @input {DashboardTaskInputSchema} — optional id (update if present), label, done, optional dueDate.
+   * @input {DashboardTaskInputSchema} — optional id (update if present), label, optional done and
+   *   dueDate (a `YYYY-MM-DD` day). On an update, a field left out keeps its stored value; a `null`
+   *   dueDate clears it.
    * @output {DashboardTask}
    */
-  upsertTask: protectedProcedure
+  upsertTask: selfProcedure
     .input(DashboardTaskInputSchema)
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
       const { id, label, done, dueDate } = input;
 
+      // A calendar day, stored at UTC midnight.
+      const due = dueDate == null ? dueDate : utcMidnightOf(dueDate);
       const task = await ctx.prisma.$transaction(async tx => {
         if (id) {
           const existing = await tx.dashboardTask.findFirst({ where: { id, userId } });
@@ -108,11 +126,11 @@ export const dashboardRouter = router({
           }
           return tx.dashboardTask.update({
             where: { id },
-            data: { label, done, dueDate: dueDate ? new Date(dueDate) : null },
+            data: { label, done, dueDate: due },
           });
         }
         return tx.dashboardTask.create({
-          data: { userId, label, done, dueDate: dueDate ? new Date(dueDate) : null },
+          data: { userId, label, done, dueDate: due },
         });
       });
 
@@ -133,7 +151,7 @@ export const dashboardRouter = router({
    * @input {{ id: string }} — task UUID.
    * @output {{ ok: true }}
    */
-  deleteTask: protectedProcedure
+  deleteTask: selfProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.session.user.id;
@@ -156,29 +174,35 @@ export const dashboardRouter = router({
   /**
    * Returns aggregate KPI counts: active brands, seasons, users, and collection rows.
    *
-   * @auth {authenticated}
+   * @auth {dashboard:read}
    * @input {none}
    * @output {{ brands, seasons, users, collectionRows: number }}
    */
-  getKpiStats: protectedProcedure.query(async ({ ctx }) => {
-    const [brands, seasons, users, collectionRows] = await Promise.all([
-      ctx.prisma.brand.count({ where: { isActive: true } }),
-      ctx.prisma.season.count({ where: { isActive: true } }),
-      ctx.prisma.user.count({ where: { isActive: true } }),
-      ctx.prisma.collectionLayoutRow.count(),
-    ]);
-    return { brands, seasons, users, collectionRows };
-  }),
+  getKpiStats: protectedProcedure
+    .use(requirePermission('dashboard:read'))
+    .query(async ({ ctx }) => {
+      const [brands, seasons, users, collectionRows] = await Promise.all([
+        ctx.prisma.brand.count({ where: { isActive: true } }),
+        ctx.prisma.season.count({ where: { isActive: true } }),
+        ctx.prisma.user.count({ where: { isActive: true } }),
+        ctx.prisma.collectionLayoutRow.count(),
+      ]);
+      return { brands, seasons, users, collectionRows };
+    }),
 
   /**
-   * Fetches live FX rates from Frankfurter API for the requested currency pairs.
+   * Fetches live FX rates from Frankfurter API for the requested currency pairs: the latest ECB
+   * fixing and the one before it, to compare. A base Frankfurter fails for is left out.
    *
-   * @auth {authenticated}
+   * @auth {dashboard:read}
    * @input {{ pairs: string[] }} — 1–8 currency pairs in "BASE/QUOTE" format (e.g. "EUR/USD").
-   * @output {{ rates, previousRates: Record<string, number>, timestamp: string }}
+   * @output {{ rates, previousRates: Record<string, number>, timestamp: CalendarDate | null }} —
+   *   `timestamp` is the latest fixing's day.
+   * @throws {TRPCError} BAD_GATEWAY when Frankfurter answers for no base.
    */
   getForexRates: protectedProcedure
-    .input(z.object({ pairs: z.array(z.string().regex(/^[A-Z]{3}\/[A-Z]{3}$/)).min(1).max(8) }))
+    .use(requirePermission('dashboard:read'))
+    .input(z.object({ pairs: z.array(z.string().regex(FOREX_PAIR_PATTERN)).min(1).max(8) }))
     .query(async ({ ctx, input }) => {
       const byBase = new Map<string, string[]>();
       for (const pair of input.pairs) {
@@ -187,83 +211,89 @@ export const dashboardRouter = router({
         byBase.get(base)!.push(quote);
       }
 
-      const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
       const rates: Record<string, number> = {};
       const previousRates: Record<string, number> = {};
-      let timestamp = new Date().toISOString();
 
-      await Promise.all(
-        Array.from(byBase.entries()).map(async ([base, quotes]) => {
-          const toParam = quotes.join(',');
-          const [latestRes, prevRes] = await Promise.all([
-            fetch(`https://api.frankfurter.app/latest?from=${base}&to=${toParam}`, { signal: AbortSignal.timeout(8000) }),
-            fetch(`https://api.frankfurter.app/${yesterday}?from=${base}&to=${toParam}`, { signal: AbortSignal.timeout(8000) }),
-          ]);
+      /** Frankfurter's rates at `path`, validated; `null`, with a warning, when it fails or answers something else. */
+      const fetchRates = async (path: string) => {
+        const res = await fetch(`https://api.frankfurter.app/${path}`, { signal: AbortSignal.timeout(8000) }).catch((err: unknown) => {
+          ctx.logger.warn({ err, path }, 'forex fetch failed');
+          return null;
+        });
+        if (!res) return null;
+        if (!res.ok) {
+          await res.body?.cancel();
+          ctx.logger.warn({ status: res.status, path }, 'forex fetch failed');
+          return null;
+        }
+        const parsed = FrankfurterRatesSchema.safeParse(await res.json().catch(() => null));
+        if (!parsed.success) ctx.logger.warn({ path }, 'forex answer not understood');
+        return parsed.success ? parsed.data : null;
+      };
 
-          if (latestRes.ok) {
-            const data = (await latestRes.json()) as { rates: Record<string, number>; date: string };
-            timestamp = data.date;
-            for (const [quote, rate] of Object.entries(data.rates)) {
-              rates[`${base}/${quote}`] = rate;
-            }
-          } else {
-            ctx.logger.warn({ status: latestRes.status }, 'forex latest fetch failed');
-          }
+      const fixingDays = await Promise.all(
+        Array.from(byBase.entries()).map(async ([base, quotes]): Promise<CalendarDate | null> => {
+          const query = `from=${base}&to=${quotes.join(',')}`;
+          const latest = await fetchRates(`latest?${query}`);
+          if (!latest) return null;
+          for (const [quote, rate] of Object.entries(latest.rates)) rates[`${base}/${quote}`] = rate;
 
-          if (prevRes.ok) {
-            const data = (await prevRes.json()) as { rates: Record<string, number> };
-            for (const [quote, rate] of Object.entries(data.rates)) {
-              previousRates[`${base}/${quote}`] = rate;
-            }
-          }
+          // The fixing before the latest one: Frankfurter answers a day with the last ECB working day's
+          // fixing on or before it, so no clock or zone decides which day "yesterday" is.
+          const previous = await fetchRates(`${addCalendarDays(latest.date, -1)}?${query}`);
+          for (const [quote, rate] of Object.entries(previous?.rates ?? {})) previousRates[`${base}/${quote}`] = rate;
+          return latest.date;
         })
       );
+      // Nothing at all is a failure, so the client keeps the rates it has and retries.
+      if (Object.keys(rates).length === 0) {
+        throw new TRPCError({ code: 'BAD_GATEWAY', message: 'Cambi non disponibili: Frankfurter non risponde' });
+      }
 
-      return { rates, previousRates, timestamp };
+      return { rates, previousRates, timestamp: fixingDays.find(day => day !== null) ?? null };
     }),
 
   /**
-   * Returns daily sales order counts for the past 7 days for a brand/season.
+   * Returns daily sales order counts for the 7 days ending today in the business time zone
+   * (`app.defaultTimezone`) for a brand/season.
    *
-   * @auth {authenticated}
+   * @auth {sales:read}
    * @input {{ brandId: string, seasonId: string }}
-   * @output {Array<{ date: string, count: number }>} — 7 entries, one per day.
+   * @output {Array<{ date: CalendarDate, count: number }>} — 7 entries, one per day.
    */
   getWeeklySales: protectedProcedure
+    .use(requirePermission('sales:read'))
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
     await assertBrandAccess(ctx, input.brandId);
 
-    const [brand, season] = await Promise.all([
+    const [brand, season, timeZone] = await Promise.all([
       ctx.prisma.brand.findUnique({ where: { id: input.brandId }, select: { code: true } }),
       ctx.prisma.season.findUnique({ where: { id: input.seasonId }, select: { code: true } }),
+      getConfigOrDefault(ctx.prisma, 'app.defaultTimezone'),
     ]);
-    if (!brand || !season) return [] as { date: string; count: number }[];
+    if (!brand || !season) return [];
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0, 0, 0, 0);
+    const today = calendarDateIn(new Date(), timeZone);
+    const result: { date: CalendarDate; count: number }[] = Array.from({ length: 7 }, (_, i) => ({
+      date: addCalendarDays(today, i - 6),
+      count: 0,
+    }));
 
     const headers = await ctx.prisma.navPfSalesHeader.findMany({
       where: {
         sellingSeasonCode: season.code,
         shortcutDimension2Code: brand.code,
-        orderDate: { gte: sevenDaysAgo },
+        orderDate: { gte: utcMidnightOf(addCalendarDays(today, -6)) },
       },
       select: { orderDate: true },
     });
 
-    const result: { date: string; count: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      result.push({ date: d.toISOString().split('T')[0], count: 0 });
-    }
-
+    // `orderDate` is a NAV date, synced as its UTC midnight: read it as the date it is.
     const byDate = new Map(result.map(r => [r.date, r]));
     for (const h of headers) {
       if (!h.orderDate) continue;
-      const slot = byDate.get(h.orderDate.toISOString().split('T')[0]);
+      const slot = byDate.get(calendarDateOf(h.orderDate));
       if (slot) slot.count++;
     }
 
@@ -273,11 +303,12 @@ export const dashboardRouter = router({
   /**
    * Returns collection layout progress summary (skuBudget, skuForecast, row and group counts).
    *
-   * @auth {authenticated}
+   * @auth {collection_layout:read}
    * @input {{ brandId: string, seasonId: string }}
    * @output {{ brandName, seasonName, skuBudget, skuForecast, rowCount, groupCount } | null}
    */
   getSeasonProgress: protectedProcedure
+    .use(requirePermission('collection_layout:read'))
     .input(z.object({ brandId: z.string(), seasonId: z.string() }))
     .query(async ({ ctx, input }) => {
     await assertBrandAccess(ctx, input.brandId);

@@ -1,7 +1,8 @@
 /**
  * @luke/core/storage — Type definitions for the storage system.
  * Defines `IStorageProvider` and all associated param/result interfaces.
- * Implementations include local filesystem and MinIO; extensible to SAMBA, GDrive, etc.
+ * Implementations include local filesystem and S3-compatible providers (MinIO, SeaweedFS, ...);
+ * extensible to SAMBA, GDrive, etc.
  */
 
 /**
@@ -30,8 +31,8 @@ export type StorageBucket =
  * Buckets that hold real application files, as opposed to `backups` (internal/private).
  * Used by the backup engine to enumerate "all files" for a DB_AND_FILES backup — deliberately
  * excludes `backups` itself so a backup never recursively embeds prior backup blobs. Also the
- * single source of truth for "which buckets are user/upload-facing" — `z.enum(APP_STORAGE_BUCKETS)`
- * needs the literal tuple shape (not just `readonly StorageBucket[]`), hence the `as const satisfies`.
+ * buckets the providers create and `/uploads` serves. Which of them a client may upload into is
+ * `PRESIGNED_UPLOAD_BUCKETS` below.
  */
 export const APP_STORAGE_BUCKETS = [
   'uploads',
@@ -43,6 +44,14 @@ export const APP_STORAGE_BUCKETS = [
   'merchandising-specsheet-images',
   'company-assets',
 ] as const satisfies readonly StorageBucket[];
+
+/**
+ * Buckets the presigned `storage.requestUpload` / `confirmUpload` pair may write — its callers'
+ * buckets and nothing else. Any authenticated user can request a slot, and `confirmUpload` records
+ * a checksum the client declares, so a wider list let anyone plant objects in every bucket,
+ * `collection-row-pictures-revisions` included.
+ */
+export const PRESIGNED_UPLOAD_BUCKETS = ['company-assets'] as const satisfies readonly StorageBucket[];
 
 /**
  * Metadata for a stored file
@@ -66,6 +75,14 @@ export interface StoredObjectMeta {
   createdBy: string;
   /** Creation date */
   createdAt: Date;
+  /** Master this file is a derivative of. Absent/null on masters. */
+  parentId?: string | null;
+  /** Variant name (thumb | card | export). Absent/null on masters. */
+  variant?: string | null;
+  /** Pixel width, when known (image assets only). */
+  width?: number | null;
+  /** Pixel height, when known (image assets only). */
+  height?: number | null;
 }
 
 /**
@@ -177,6 +194,15 @@ export interface IStorageCapabilities {
   supportsPresignedUpload: boolean;
   /** Provider can generate presigned GET URLs for direct client download */
   supportsPresignedDownload: boolean;
+  /** Provider can rewrite an existing object's Content-Type metadata in place, without re-transferring bytes */
+  supportsContentTypeFix: boolean;
+}
+
+/** Parameters for rewriting an existing object's Content-Type metadata in place */
+export interface StorageFixContentTypeParams {
+  bucket: StorageBucket;
+  key: string;
+  contentType: string;
 }
 
 /** Parameters for generating a presigned PUT URL */
@@ -214,7 +240,24 @@ export interface PresignedGetResult {
 }
 
 /**
- * Unified storage provider interface for all concrete implementations (LocalFs, MinIO, etc.).
+ * Thrown by `IStorageProvider.get` when no object has the requested key, and only then. Any other
+ * failure (permissions, network, a missing bucket, something other than a file at the path) is a
+ * different error, so a caller can act on absence without mistaking an outage for it.
+ */
+export class StorageObjectNotFoundError extends Error {
+  readonly bucket: StorageBucket;
+  readonly key: string;
+
+  constructor(bucket: StorageBucket, key: string, options?: ErrorOptions) {
+    super(`Storage object not found: ${bucket}/${key}`, options);
+    this.name = 'StorageObjectNotFoundError';
+    this.bucket = bucket;
+    this.key = key;
+  }
+}
+
+/**
+ * Unified storage provider interface for all concrete implementations (LocalFs, S3, etc.).
  * Implementations must be registered via the storage service — never instantiated directly by callers.
  *
  * Check `capabilities` before calling optional methods (`getPresignedPutUrl`, `getPresignedGetUrl`).
@@ -224,6 +267,7 @@ export interface IStorageProvider {
   readonly capabilities: IStorageCapabilities;
 
   put(params: StoragePutParams): Promise<StoragePutResult>;
+  /** @throws {StorageObjectNotFoundError} When no object has that key; anything else for other failures. */
   get(params: StorageGetParams): Promise<StorageGetResult>;
   delete(params: StorageDeleteParams): Promise<void>;
   list(params: StorageListParams): Promise<StorageListResult>;
@@ -232,6 +276,8 @@ export interface IStorageProvider {
   getPresignedPutUrl?(params: PresignedPutParams): Promise<PresignedPutResult>;
   /** Only present when capabilities.supportsPresignedDownload === true */
   getPresignedGetUrl?(params: PresignedGetParams): Promise<PresignedGetResult>;
+  /** Only present when capabilities.supportsContentTypeFix === true */
+  fixContentType?(params: StorageFixContentTypeParams): Promise<void>;
   /** One-time setup: ensure required buckets exist (idempotent) */
   init?(): Promise<void>;
 }

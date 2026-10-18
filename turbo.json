@@ -8,15 +8,51 @@
         ".next/**",
         "!.next/cache/**",
         "dist/**",
-        "packages/core/dist/**"
+        "dist-scripts/**"
       ]
     },
     "dev": {
+      "dependsOn": ["^build", "build"],
+      "cache": false,
+      "persistent": true
+    },
+    "@luke/db#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src/generated/**"]
+    },
+    "@luke/db#typecheck": {
+      "dependsOn": ["^build", "build"],
+      "cache": true
+    },
+    "@luke/web#build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": ["INTERNAL_API_URL", "NEXT_PUBLIC_*"],
+      "passThroughEnv": ["NEXTAUTH_SECRET", "NEXT_TELEMETRY_DISABLED", "NODE_OPTIONS"]
+    },
+    "@luke/web#dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "@luke/api#dev": {
+      "dependsOn": ["^build", "build"],
+      "with": ["@luke/api#dev:types"],
+      "cache": false,
+      "persistent": true
+    },
+    "dev:types": {
+      "dependsOn": ["^build", "build"],
       "cache": false,
       "persistent": true
     },
     "lint": {
-      "dependsOn": ["^build"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/eslint.config.mjs",
+        "$TURBO_ROOT$/packages/eslint-plugin-luke/index.js",
+        "$TURBO_ROOT$/packages/eslint-plugin-luke/rules/**/*.js"
+      ]
     },
     "typecheck": {
       "dependsOn": ["^build"],
@@ -29,16 +65,14 @@
     "test": {
       "dependsOn": ["^build"]
     },
+    "test:browser": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "test:integration": {
       "dependsOn": ["^build"],
       "cache": false,
-      "env": ["TEST_DATABASE_URL"]
-    },
-    "format": {
-      "cache": false
-    },
-    "deps:latest": {
-      "cache": false
+      "env": ["TEST_DATABASE_URL", "PGGSSENCMODE"]
     }
   }
 }

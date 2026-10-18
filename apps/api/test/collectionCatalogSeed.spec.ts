@@ -13,10 +13,10 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 import { CollectionCatalogItemInputSchema } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { seedCollectionCatalog } from '../prisma/seeds/collectionCatalog';
 
-import type { PrismaClient } from '@prisma/client';
 
 type SeededItem = {
   type: string;
@@ -36,21 +36,21 @@ beforeAll(async () => {
   seeded = upsert.mock.calls.map(([args]) => args.create);
 });
 
-describe('seedCollectionCatalog — catalogo revisionType', () => {
-  it('semina almeno una voce, altrimenti la tendina delle revisioni nasce vuota', () => {
+describe('seedCollectionCatalog — revisionType catalog', () => {
+  it('seeds at least one entry, otherwise the revisions dropdown starts empty', () => {
     expect(seeded.length).toBeGreaterThan(0);
   });
 
-  it('ogni voce seminata rispetta il contratto CollectionCatalogItemInputSchema', () => {
+  it('every seeded entry honours the CollectionCatalogItemInputSchema contract', () => {
     // Covers the ISO categories enum and the length limits: a mistyped category in the seed
     // fails here instead of at runtime, when the router serves the catalog.
     for (const item of seeded) {
       const parsed = CollectionCatalogItemInputSchema.safeParse(item);
-      expect(parsed.success, `voce non valida: ${item.value} — ${parsed.error?.message}`).toBe(true);
+      expect(parsed.success, `invalid entry: ${item.value} — ${parsed.error?.message}`).toBe(true);
     }
   });
 
-  it('non semina due voci con lo stesso value', () => {
+  it('does not seed two entries with the same value', () => {
     // The upsert key is (type, value): a duplicate wouldn't fail, it would silently overwrite
     // the previous entry.
     const values = seeded.map(i => `${i.type}:${i.value}`);

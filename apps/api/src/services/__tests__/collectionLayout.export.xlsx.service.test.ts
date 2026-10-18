@@ -3,23 +3,26 @@
  * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
  * - single image fetch failure doesn't break the row
  * - large source photos are downscaled before being embedded
+ * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid XLSX buffer
  */
 
 import { randomBytes } from 'node:crypto';
 
+import ExcelJS from 'exceljs';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
-import { readFileBuffer } from '../../storage';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutXlsx } from '../collectionLayout.export.xlsx.service';
 
 import type { CollectionLayoutForExport } from '../collectionLayout.export.xlsx.service';
-import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
 }));
 
 const mockPrisma = {
@@ -82,7 +85,7 @@ describe('buildCollectionLayoutXlsx', () => {
 
     let inFlight = 0;
     let peak = 0;
-    vi.mocked(readFileBuffer).mockImplementation(async () => {
+    vi.mocked(readAssetBuffer).mockImplementation(async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -93,11 +96,11 @@ describe('buildCollectionLayoutXlsx', () => {
     await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
 
     expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
-    expect(readFileBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
+    expect(readAssetBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
   });
 
   it('renders a row without a photo when its image fetch fails', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', 'missing.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
@@ -112,7 +115,7 @@ describe('buildCollectionLayoutXlsx', () => {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
     const rows = [makeRow('row-1', 'huge.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
@@ -123,8 +126,22 @@ describe('buildCollectionLayoutXlsx', () => {
     expect(buffer.length).toBeLessThan(noise.length);
   });
 
+  it('drops a picture sharp cannot decode instead of embedding it', async () => {
+    // `readAssetBuffer` serves the uncapped master whenever the background-generated
+    // `export` variant isn't ready, so an undecodable buffer here can be arbitrarily
+    // large. Passing it through would put those bytes straight into the workbook.
+    const undecodable = randomBytes(256 * 1024);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: undecodable, contentType: 'image/jpeg', width: null, height: null });
+    const rows = [makeRow('row-1', 'corrupt.jpg')];
+
+    const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.length).toBeLessThan(undecodable.length);
+  });
+
   it('produces a valid non-empty XLSX buffer (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
 
     const buffer = await buildCollectionLayoutXlsx(makeLayout(rows), mockPrisma);
@@ -132,5 +149,11 @@ describe('buildCollectionLayoutXlsx', () => {
     expect(buffer.length).toBeGreaterThan(0);
     // XLSX is a zip container -> "PK" local file header signature
     expect(buffer.subarray(0, 2).toString('ascii')).toBe('PK');
+
+    // The auto-filter spans exactly the header row.
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer); // exceljs types `load` with ArrayBuffer; it reads a Buffer
+    const sheet = workbook.worksheets[0];
+    expect(sheet.autoFilter).toBe(`A1:${sheet.getRow(1).getCell(sheet.getRow(1).cellCount).address}`);
   });
 });

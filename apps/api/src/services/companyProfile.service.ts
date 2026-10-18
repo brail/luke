@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@luke/db';
 
 /** Reads the company's home country from `CompanyProfile` (the singleton row). Shared by
  * `holidays.ts` (listCountries) and `phaseAlert.service.ts` (working-days deadline resolution)

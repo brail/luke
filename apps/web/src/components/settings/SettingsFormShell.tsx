@@ -1,57 +1,52 @@
 import React from 'react';
 
+import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { PageHeader } from '../PageHeader';
+import { ErrorState } from '../system/ErrorState';
+import { RetryButton } from '../system/RetryButton';
 
-interface SettingsFormShellProps {
-  title: string;
-  description?: string;
-  isLoading?: boolean;
-  error?: Error | { message: string } | null;
+interface SettingsFormGateProps {
+  /** The reads have not settled (TanStack `isPending`: a query paused offline included). */
+  isPending: boolean;
+  /** The first read error, shown through `getTrpcErrorMessage` when a read has no data. */
+  error?: unknown;
+  /** Every read the form edits has returned data. */
+  hasData: boolean;
+  onRetry: () => void;
   children: React.ReactNode;
 }
 
 /**
- * Layout shell for settings pages that handles loading and error states before rendering the form.
- *
- * Renders a loading message while `isLoading` is true, an error message when `error` is set,
- * or the `children` form content otherwise. Includes `PageHeader` in all states.
+ * The form once every read returned data, a loading message while they are pending, and otherwise
+ * the error with a retry — never the form without the stored data, whose placeholders a save would
+ * write over the stored configuration. Data comes first: a failed background refetch keeps the data
+ * read before (TanStack Query sets `error` and keeps `data`), so it does not take the form away.
  */
-export function SettingsFormShell({
-  title,
-  description,
-  isLoading,
-  error,
-  children,
-}: SettingsFormShellProps) {
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title={title} description={description} />
-        <div className="text-center py-8 text-muted-foreground">
-          Caricamento configurazione...
-        </div>
-      </div>
-    );
+export function SettingsFormGate({ isPending, error, hasData, onRetry, children }: SettingsFormGateProps) {
+  if (hasData) return children;
+  if (isPending) {
+    return <div className="text-center py-8 text-muted-foreground">Caricamento configurazione...</div>;
   }
+  return (
+    <ErrorState
+      title="Errore nel caricamento"
+      description={error ? getTrpcErrorMessage(error) : undefined}
+      actionSlot={<RetryButton onRetry={onRetry} />}
+    />
+  );
+}
 
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title={title} description={description} />
-        <div className="text-center py-8">
-          <div className="text-destructive text-lg font-semibold mb-2">
-            Errore nel caricamento
-          </div>
-          <p className="text-muted-foreground">{error.message}</p>
-        </div>
-      </div>
-    );
-  }
+interface SettingsFormShellProps extends SettingsFormGateProps {
+  title: string;
+  description?: string;
+}
 
+/** Layout shell for settings pages: `PageHeader` in all states, then the form behind {@link SettingsFormGate}. */
+export function SettingsFormShell({ title, description, ...gate }: SettingsFormShellProps) {
   return (
     <div className="space-y-6">
       <PageHeader title={title} description={description} />
-      {children}
+      <SettingsFormGate {...gate} />
     </div>
   );
 }

@@ -5,7 +5,7 @@
 
 import { z } from 'zod';
 
-import { protectedProcedure, router } from '../lib/trpc';
+import { selfProcedure, router } from '../lib/trpc';
 import {
   getMenuCollapsibleStates,
   setMenuCollapsibleStates,
@@ -27,7 +27,7 @@ const menuRouter = router({
    * @input {none}
    * @output {Record<string, boolean>}
    */
-  get: protectedProcedure.query(async ({ ctx }) => {
+  get: selfProcedure.query(async ({ ctx }) => {
     const states = await getMenuCollapsibleStates(ctx.session.user.id, ctx.prisma);
     return states;
   }),
@@ -39,7 +39,7 @@ const menuRouter = router({
    * @input {Record<string, boolean>} — map of menu section keys to collapsed/expanded state
    * @output {Record<string, boolean>}
    */
-  set: protectedProcedure
+  set: selfProcedure
     .input(menuCollapsibleStatesSchema)
     .mutation(async ({ ctx, input }) => {
       const states = await setMenuCollapsibleStates(

@@ -1,84 +1,162 @@
 import { z } from 'zod';
 
-import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig';
-import { MaintenanceModeStateSchema } from './maintenanceMode';
+import {
+  driveStorageProviderConfigSchema,
+  localStorageSaveConfigSchema,
+  s3StorageSaveConfigSchema,
+  smbStorageProviderConfigSchema,
+} from '../storage/config.js';
+
+import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import { BackupScheduleConfigSchema, BackupScopeSchema } from './backup.js';
+import { TimeZoneSchema, WallTimeSchema } from './dates.js';
+import { LDAP_STRATEGIES } from './ldap.js';
+import { mailSmtpConfigSchema, smtpFromSchema } from './mail.js';
+import { MaintenanceModeStateSchema } from './maintenanceMode.js';
+import { navConfigSchema } from './nav.js';
+import { sectionAccessDefaultsSchema } from './rbac.js';
+
+/**
+ * A boolean setting, as AppConfig stores it: a string.
+ *
+ * `z.coerce.boolean()` follows JavaScript truthiness, so every non-empty string is `true` — the
+ * literal `"false"` included. A setting declared that way can be switched on and never off, and
+ * the failure is silent: the value is in the database, the admin sees it, and nothing applies it.
+ * Parsing the two words here means no reader has to know.
+ */
+const booleanConfigSchema = z.enum(['true', 'false']).transform(v => v === 'true');
+
+/**
+ * A setting stored as a JSON string, parsed and then validated by `inner`.
+ *
+ * The point is the `ctx.addIssue`/`.pipe()` shape rather than the obvious
+ * `.transform(s => Inner.parse(JSON.parse(s)))`: a `parse` — or a `JSON.parse` `SyntaxError` —
+ * thrown inside a bare `transform` propagates straight through `safeParse` instead of landing in
+ * `result.error`. Every schema in this registry is expected to honour "safeParse never throws";
+ * nine entries were written the obvious way and did not, so each caller had to know to wrap them.
+ * Declaring the shape once here is the same move `booleanConfigSchema` makes above.
+ */
+const jsonConfigSchema = <T extends z.ZodTypeAny>(inner: T) =>
+  z
+    .string()
+    .transform((raw, ctx) => {
+      try {
+        return JSON.parse(raw) as unknown;
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'Valore non è JSON valido' });
+        return z.NEVER;
+      }
+    })
+    .pipe(inner);
+
+/**
+ * An integer setting, as AppConfig stores it: a canonical decimal string, then validated by `inner`
+ * (integer and range rules — the form or provider schema's own where one exists). Not
+ * `z.coerce.number()`, which is `Number(input)`: `''` and blanks read as 0, `'1e3'` and `'0x10'` pass.
+ */
+const integerConfigSchema = <T extends z.ZodType<number, number>>(inner: T) =>
+  z.string().regex(/^(0|-?[1-9]\d*)$/, 'Deve essere un numero intero').transform(Number).pipe(inner);
 
 /**
  * Central registry of all AppConfig keys with their Zod validation schemas.
  *
- * All values stored in the database are raw strings; `z.coerce.*` schemas handle
- * automatic type conversion. Add new keys here to gain compile-time type safety
- * and automatic validation on boot via `validateCriticalConfig()`.
+ * All values stored in the database are raw strings, parsed by each key's schema (integers,
+ * booleans and JSON through the helpers above). Add new keys here to gain compile-time type safety
+ * and validation on every write (`saveConfig`) and typed read; only `CRITICAL_CONFIG_KEYS` are also
+ * checked at boot (`validateCriticalConfig()`).
  */
 export const AppConfigRegistry = {
   // ── App ──────────────────────────────────────────────────────────────────
   'app.name':            z.string().min(1),
-  'app.version':         z.string(),
   'app.environment':     z.string(),
   'app.locale':          z.string(),
-  'app.defaultTimezone': z.string(),
+  /**
+   * The business time zone (IANA): the day shared deadlines, locks and countdowns are counted in,
+   * the zone scheduled wall-clock times are read in (`backup.schedule.dailyTime`), the days the
+   * dashboard's weekly sales end on, and the zone a user reads in when their stored `User.timezone`
+   * is not an IANA name (`resolveUserTimeZone`).
+   */
+  'app.defaultTimezone': TimeZoneSchema,
   'app.baseUrl':         z.string().url(),
-  'app.sections.disabled': z.string().transform(s => z.array(z.string()).parse(JSON.parse(s))),
-  'app.context.defaults':  z.string().transform(s => AppContextDefaultsSchema.parse(JSON.parse(s))),
+  'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
+  'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 
   // ── Auth ─────────────────────────────────────────────────────────────────
-  'auth.strategy':                       z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
-  'auth.requireEmailVerification':       z.coerce.boolean(),
+  'auth.strategy':                       z.enum(LDAP_STRATEGIES),
+  'auth.requireEmailVerification':       booleanConfigSchema,
   'auth.nextAuthSecret':                 z.string().min(32),
-  'auth.provisioning.defaultTeamId':     z.string(),
 
   // ── RBAC ─────────────────────────────────────────────────────────────────
-  'rbac.sectionAccessDefaults': z.string().transform(s => JSON.parse(s) as Record<string, Record<string, string>>),
+  // What a valid row is. The reader (`getRbacConfig`) is more lenient on purpose: it keeps every
+  // valid entry of a row this schema rejects, and the stored rows written under the previous reader
+  // were made valid by migration `20261001220553_section_access_leaf_overrides` (ADR-027).
+  'rbac.sectionAccessDefaults': jsonConfigSchema(sectionAccessDefaultsSchema),
 
   // ── SMTP ─────────────────────────────────────────────────────────────────
   'smtp.host':   z.string().min(1),
-  'smtp.port':   z.coerce.number().int().min(1).max(65535),
-  'smtp.secure': z.coerce.boolean(),
+  'smtp.port':   integerConfigSchema(mailSmtpConfigSchema.shape.port),
+  'smtp.secure': booleanConfigSchema,
   'smtp.user':   z.string(),
   'smtp.pass':   z.string(),
-  'smtp.from':   z.string().email(),
+  // The settings form's own rule: `.email()` refused the `Name <addr>` sender the form offers,
+  // failing the mail save after the keys before this one had been written.
+  'smtp.from':   smtpFromSchema,
 
   // ── Security ─────────────────────────────────────────────────────────────
-  'security.password.minLength':           z.coerce.number().int().min(6).max(128),
-  'security.password.requireUppercase':    z.coerce.boolean(),
-  'security.password.requireLowercase':    z.coerce.boolean(),
-  'security.password.requireDigit':        z.coerce.boolean(),
-  'security.password.requireSpecialChar':  z.coerce.boolean(),
-  'security.tokenVersionCacheTTL':         z.coerce.number().int().min(0),
-  'security.session.maxAge':               z.coerce.number().int().min(60),
-  'security.session.updateAge':            z.coerce.number().int().min(60),
-  'security.cors.developmentOrigins':      z.string(),
+  // 8 is the floor, and this is where it is declared. It used to say 6 while `getPasswordPolicy`
+  // clamped to 8 and `upsertConfig` refused anything under 8 by hand — three numbers for one rule,
+  // so asking for 4 produced 12 and asking for 7 produced 8.
+  'security.password.minLength':           integerConfigSchema(z.number().int().min(8).max(128)),
+  'security.password.requireUppercase':    booleanConfigSchema,
+  'security.password.requireLowercase':    booleanConfigSchema,
+  'security.password.requireDigit':        booleanConfigSchema,
+  'security.password.requireSpecialChar':  booleanConfigSchema,
+  // 10s–10min. The bounds used to live only in `getTokenVersionCacheTTL`, which clamped anything
+  // outside them back to the default while this schema accepted `0` — so a write of 5000 was
+  // validated, stored, and then silently read as 60000. Declared once, here.
+  'security.tokenVersionCacheTTL':         integerConfigSchema(z.number().int().min(10_000).max(600_000)),
+  'security.session.maxAge':               integerConfigSchema(z.number().int().min(60)),
+  'security.session.updateAge':            integerConfigSchema(z.number().int().min(60)),
 
   // ── Storage ──────────────────────────────────────────────────────────────
-  'storage.type':                z.enum(['local', 'minio']),
+  'storage.type':                z.enum(['local', 's3']),
   'storage.local.basePath':      z.string().min(1),
-  'storage.local.maxFileSizeMB': z.coerce.number().int().min(1),
-  'storage.local.buckets':       z.string().transform(s => JSON.parse(s) as string[]),
+  'storage.local.maxFileSizeMB': integerConfigSchema(localStorageSaveConfigSchema.shape.maxFileSizeMB),
   'storage.local.publicBaseUrl': z.string().url(),
-  'storage.local.enableProxy':   z.coerce.boolean(),
+  'storage.local.enableProxy':   booleanConfigSchema,
 
-  // ── Storage — MinIO ───────────────────────────────────────────────────────
-  'storage.minio.endpoint':        z.string().min(1),
-  'storage.minio.port':            z.coerce.number().int().min(1).max(65535),
-  'storage.minio.useSSL':          z.coerce.boolean(),
-  'storage.minio.accessKey':       z.string().min(1),
-  'storage.minio.secretKey':       z.string().min(1),
-  'storage.minio.region':          z.string(),
-  'storage.minio.publicBaseUrl':   z.string().url(),
-  'storage.minio.presignedPutTtl': z.coerce.number().int().min(60),
-  'storage.minio.presignedGetTtl': z.coerce.number().int().min(60),
+  // ── Storage — S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...) ─────────────
+  'storage.s3.endpoint':        z.string().min(1),
+  'storage.s3.port':            integerConfigSchema(s3StorageSaveConfigSchema.shape.port),
+  'storage.s3.useSSL':          booleanConfigSchema,
+  'storage.s3.accessKey':       z.string().min(1),
+  'storage.s3.secretKey':       z.string().min(1),
+  'storage.s3.region':          z.string(),
+  'storage.s3.publicBaseUrl':   z.string().url(),
+  'storage.s3.presignedPutTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedPutTtl),
+  'storage.s3.presignedGetTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedGetTtl),
+
+  // ── Storage — asset derivative pipeline (thumb/card/export image variants) ────
+  'storage.derivatives.enabled': booleanConfigSchema,
+
+  // ── Storage — legacy providers, written as `storage.${provider}` JSON blobs ───
+  // The only keys in the codebase assembled from a variable. They are registered rather than
+  // exempted so `saveConfig` can validate them like every other key: the interpolation is over a
+  // two-value enum, so both keys are known statically even though neither is spelled out.
+  'storage.smb':   jsonConfigSchema(smbStorageProviderConfigSchema),
+  'storage.drive': jsonConfigSchema(driveStorageProviderConfigSchema),
 
   // ── Rate limiting (JSON object) ───────────────────────────────────────────
-  'rateLimit': z.string().transform(s => RateLimitConfigSchema.parse(JSON.parse(s))),
+  'rateLimit': jsonConfigSchema(RateLimitConfigSchema),
 
   // ── Collection Control — motore alert (JSON object) ──────────────────────
-  'collectionControl.alertThresholds': z.string().transform(s => CollectionAlertThresholdsSchema.parse(JSON.parse(s))),
+  'collectionControl.alertThresholds': jsonConfigSchema(CollectionAlertThresholdsSchema),
 
   // ── Edit lock — session-scoped entity lock (currently: planning wizard) ────
-  'editLock.ttlMs': z.coerce.number().int().min(300_000).max(3_600_000),
+  'editLock.ttlMs': integerConfigSchema(z.number().int().min(300_000).max(3_600_000)),
 
   // ── LDAP ─────────────────────────────────────────────────────────────────
-  'auth.ldap.enabled':        z.coerce.boolean(),
+  'auth.ldap.enabled':        booleanConfigSchema,
   'auth.ldap.url':            z.string().url(),
   'auth.ldap.bindDN':         z.string(),
   'auth.ldap.bindPassword':   z.string(),
@@ -86,30 +164,32 @@ export const AppConfigRegistry = {
   'auth.ldap.searchFilter':   z.string(),
   'auth.ldap.groupSearchBase':   z.string(),
   'auth.ldap.groupSearchFilter': z.string(),
-  'auth.ldap.roleMapping':    z.string().transform(s => JSON.parse(s) as Record<string, string>),
+  // `z.custom` types the shape without checking it. `configManager` has a stricter
+  // `RoleMappingSchema` it applies where it actually needs the guarantee.
+  'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
 
-  // ── LDAP resilience (scalari individuali) ────────────────────────────────
-  'auth.ldap.resilience.timeoutMs':               z.coerce.number().int().min(100),
-  'auth.ldap.resilience.maxRetries':              z.coerce.number().int().min(0),
-  'auth.ldap.resilience.baseDelayMs':             z.coerce.number().int().min(10),
-  'auth.ldap.resilience.breakerFailureThreshold': z.coerce.number().int().min(1),
-  'auth.ldap.resilience.breakerCooldownMs':       z.coerce.number().int().min(500),
-  'auth.ldap.resilience.halfOpenMaxAttempts':     z.coerce.number().int().min(1),
+  // ── LDAP resilience (individual scalars) ─────────────────────────────────
+  'auth.ldap.resilience.timeoutMs':               integerConfigSchema(z.number().int().min(100)),
+  'auth.ldap.resilience.maxRetries':              integerConfigSchema(z.number().int().min(0)),
+  'auth.ldap.resilience.baseDelayMs':             integerConfigSchema(z.number().int().min(10)),
+  'auth.ldap.resilience.breakerFailureThreshold': integerConfigSchema(z.number().int().min(1)),
+  'auth.ldap.resilience.breakerCooldownMs':       integerConfigSchema(z.number().int().min(500)),
+  'auth.ldap.resilience.halfOpenMaxAttempts':     integerConfigSchema(z.number().int().min(1)),
 
   // ── Microsoft NAV (SQL Server) ───────────────────────────────────────────
   'integrations.nav.host':                  z.string().min(1),
-  'integrations.nav.port':                  z.coerce.number().int().min(1).max(65535),
+  'integrations.nav.port':                  integerConfigSchema(navConfigSchema.shape.port),
   'integrations.nav.database':              z.string().min(1),
   'integrations.nav.user':                  z.string().min(1),
   'integrations.nav.password':              z.string(),
   'integrations.nav.company':               z.string().min(1),
-  'integrations.nav.readOnly':              z.coerce.boolean(),
-  'integrations.nav.syncEnabled':           z.coerce.boolean(),
+  'integrations.nav.readOnly':              booleanConfigSchema,
+  'integrations.nav.syncEnabled':           booleanConfigSchema,
 
   // ── Google Workspace ──────────────────────────────────────────────────────
   'integrations.google.authMode':              z.enum(['service_account', 'oauth_user']),
   'integrations.google.domain':                z.string().min(1),
-  'integrations.google.calendarSync.enabled':  z.coerce.boolean(),
+  'integrations.google.calendarSync.enabled':  booleanConfigSchema,
   // Service account mode
   'integrations.google.serviceEmail':          z.string().email(),
   'integrations.google.serviceKey':            z.string().min(1),
@@ -121,29 +201,30 @@ export const AppConfigRegistry = {
   'integrations.google.oauth.userEmail':       z.string().email(),
 
   // ── Feedback ──────────────────────────────────────────────────────────────
-  'integrations.github.feedbackToken': z.string().min(1),   // GitHub PAT (encrypted)
-  'integrations.github.feedbackRepo':  z.string().min(1),   // format: "owner/repo"
+  'integrations.github.feedbackToken':          z.string().min(1),   // GitHub PAT (encrypted)
+  'integrations.github.feedbackRepo':           z.string().min(1),   // format: "owner/repo"
+  'integrations.github.feedbackSyncIntervalMs': integerConfigSchema(z.number().int().min(300_000).max(604_800_000)), // 5min–7d, default 24h (seed.ts)
 
   // ── Backup & Disaster Recovery ────────────────────────────────────────────
-  'backup.schedule.enabled':        z.coerce.boolean(),
-  'backup.schedule.dailyTime':      z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/), // "HH:mm"
-  'backup.schedule.scope':          z.enum(['DB', 'DB_AND_FILES']),
-  'backup.retentionDays':           z.coerce.number().int().min(1),
-  'backup.retentionMinCount':       z.coerce.number().int().min(0),
+  'backup.schedule.enabled':        booleanConfigSchema,
+  'backup.schedule.dailyTime':      WallTimeSchema, // wall time in app.defaultTimezone
+  'backup.schedule.scope':          BackupScopeSchema,
+  'backup.retentionDays':           integerConfigSchema(BackupScheduleConfigSchema.shape.retentionDays),
+  'backup.retentionMinCount':       integerConfigSchema(BackupScheduleConfigSchema.shape.retentionMinCount),
   'backup.target.bucket':           z.string().min(1),
-  'backup.notifyOnFailure':         z.coerce.boolean(),
+  'backup.notifyOnFailure':         booleanConfigSchema,
 
-  // ── Retention sweep (audit log + notifiche) ──────────────────────────────
-  'auditLog.retentionDays':             z.coerce.number().int().min(1),
-  'auditLog.criticalRetentionDays':     z.coerce.number().int().min(1),
-  'notification.retentionDays':         z.coerce.number().int().min(1),
-  'notification.dedupRetentionDays':    z.coerce.number().int().min(1),
+  // ── Retention sweep (audit log + notifications) ──────────────────────────
+  'auditLog.retentionDays':             integerConfigSchema(z.number().int().min(1).max(3650)),
+  'auditLog.criticalRetentionDays':     integerConfigSchema(z.number().int().min(1).max(36500)),
+  'notification.retentionDays':         integerConfigSchema(z.number().int().min(1).max(3650)),
+  'notification.dedupRetentionDays':    integerConfigSchema(z.number().int().min(1).max(3650)),
 
   // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)
   // ever reads an individual sub-field, so one row keeps writes atomic for free instead of
   // needing a $transaction across 9 rows.
-  'maintenance.mode.state': z.string().transform(s => MaintenanceModeStateSchema.parse(JSON.parse(s))),
+  'maintenance.mode.state': jsonConfigSchema(MaintenanceModeStateSchema),
 } as const satisfies Record<string, z.ZodTypeAny>;
 
 export type AppConfigKey = keyof typeof AppConfigRegistry;
@@ -166,12 +247,205 @@ export function parseConfigValue<K extends AppConfigKey>(
 }
 
 /**
+ * The value a key falls back to when AppConfig has no row for it.
+ *
+ * Declared once, in the string form AppConfig stores, so the seed writes it and every reader
+ * parses it through the same registry schema. It used to be spelled at each call site, and the
+ * copies had drifted: `storage.s3.endpoint` defaulted to `seaweedfs` in `prisma/seed.ts` and in
+ * the settings router, but to `localhost` in `storage/index.ts` — the provider that actually opens
+ * the connection. On an install that had not been seeded, the settings page showed one host and
+ * the system talked to another.
+ *
+ * `satisfies Partial<Record<AppConfigKey, string>>` binds the keys; a test parses every entry
+ * through `AppConfigRegistry`, so a default that its own schema would reject fails there rather
+ * than at the first read on a fresh install.
+ *
+ * Two deliberate absences:
+ * - `storage.local.basePath` — its default is `join(homedir(), …)`, which is not a constant.
+ * - `storage.s3.accessKey` / `secretKey` — a default credential is not a default, it is a dev
+ *   seed. `prisma/seed.ts` keeps them; nothing here hands them to a reader, and `loadS3Provider`
+ *   refuses to start rather than substituting one of its own.
+ */
+export const APP_CONFIG_DEFAULTS = {
+  'app.name':            'Luke',
+  'app.baseUrl':         'http://localhost:3000',
+  'app.defaultTimezone': 'Europe/Rome',
+
+  'smtp.secure': 'false',
+
+  'integrations.google.calendarSync.enabled': 'false',
+
+  'backup.schedule.enabled':   'false',
+  'backup.schedule.dailyTime': '03:00',
+  'backup.schedule.scope':     'DB',
+  'backup.notifyOnFailure':    'true',
+  'backup.retentionDays':      '30',
+  'backup.retentionMinCount':  '3',
+
+  'security.tokenVersionCacheTTL': '60000',
+  'editLock.ttlMs':                '900000',
+
+  'auditLog.retentionDays':          '365',
+  'auditLog.criticalRetentionDays':  '3650',
+  'notification.retentionDays':      '90',
+  'notification.dedupRetentionDays': '30',
+
+  'storage.type':                'local',
+  'storage.local.maxFileSizeMB': '50',
+  'storage.local.enableProxy':   'true',
+  'storage.local.publicBaseUrl': 'http://localhost:3001',
+
+  'storage.s3.endpoint':        'seaweedfs',
+  'storage.s3.port':            '8333',
+  'storage.s3.useSSL':          'false',
+  'storage.s3.region':          'us-east-1',
+  'storage.s3.presignedPutTtl': '3600',
+  'storage.s3.presignedGetTtl': '3600',
+
+  'storage.derivatives.enabled': 'true',
+
+  'auth.ldap.resilience.timeoutMs':               '3000',
+  'auth.ldap.resilience.maxRetries':              '2',
+  'auth.ldap.resilience.baseDelayMs':             '200',
+  'auth.ldap.resilience.breakerFailureThreshold': '5',
+  'auth.ldap.resilience.breakerCooldownMs':       '10000',
+  'auth.ldap.resilience.halfOpenMaxAttempts':     '1',
+} as const satisfies Partial<Record<AppConfigKey, string>>;
+
+/** A key that has a declared fallback, so reading it can be total. */
+export type AppConfigKeyWithDefault = keyof typeof APP_CONFIG_DEFAULTS;
+
+/**
+ * Narrows an arbitrary string to a registered key.
+ *
+ * The type on `saveConfig` closes typos at the call sites that spell a key out, but the config
+ * router receives its key over the wire as a plain `string`; this is where that string earns the
+ * type. Registry membership is strictly stronger than the router's prefix allowlist — it does not
+ * replace it, because the allowlist additionally decides which registered keys the *generic*
+ * endpoint may reach at all (`backup.*` and `rbac.*` are registered but only written by their own
+ * routers).
+ */
+export function isAppConfigKey(key: string): key is AppConfigKey {
+  return Object.hasOwn(AppConfigRegistry, key);
+}
+
+/**
+ * Validates a raw string value against its key's schema. The write path needs the verdict, not the
+ * value: `saveConfig` stores the string it was given.
+ *
+ * No try/catch: every registry entry composes safely under `safeParse`, which is what
+ * `jsonConfigSchema` is for. A message rather than the `ZodError` because `@luke/core` has no
+ * business knowing what transport the caller will turn it into.
+ */
+export function validateConfigValue(
+  key: AppConfigKey,
+  raw: string,
+): { success: true } | { success: false; message: string } {
+  const result = (AppConfigRegistry[key] as z.ZodTypeAny).safeParse(raw);
+  return result.success
+    ? { success: true }
+    : { success: false, message: result.error.issues.map(i => i.message).join('; ') };
+}
+
+/**
  * Config keys that must be present and valid at API boot time.
  * A missing or malformed value for any of these keys causes the server to refuse to start in production.
  */
 export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',
 ] satisfies AppConfigKey[];
+
+/** First segment of a dotted key: `app` for `app.baseUrl`. Generic so it distributes over a union. */
+type KeyPrefix<Key> = Key extends `${infer Prefix}.${string}` ? Prefix : never;
+
+/** Every first segment a registered key starts with. */
+type AppConfigKeyPrefix = KeyPrefix<AppConfigKey>;
+
+/**
+ * Prefixes the generic `config` router writes: `set`, `update`, `setMultiple`, `importJson` and
+ * `config.delete` refuse a key outside them. Registered keys outside them (`backup.*`, `rbac.*`,
+ * `smtp.*`, …) are written through the routers that own them. The router's reads are not
+ * prefix-gated. Bound to the registry: a prefix no registered key starts with does not compile.
+ */
+export const CONFIG_ROUTER_PREFIXES = [
+  'app',
+  'auth',
+  'storage',
+  'security',
+  'integrations',
+] as const satisfies readonly AppConfigKeyPrefix[];
+
+export type ConfigRouterPrefix = (typeof CONFIG_ROUTER_PREFIXES)[number];
+
+const CONFIG_ROUTER_PREFIX_SET = new Set<string>(CONFIG_ROUTER_PREFIXES);
+
+/**
+ * Whether the generic `config` router writes `key`, by prefix alone. Registry membership is a
+ * separate check, so a row the registry no longer declares stays deletable under these prefixes.
+ */
+export function isConfigRouterKey(key: string): boolean {
+  return CONFIG_ROUTER_PREFIX_SET.has(key.split('.')[0]);
+}
+
+/** Key format the generic `config` router accepts: `<prefix>.<segment>[.<segment>…]`. */
+export const CONFIG_ROUTER_KEY_REGEX = new RegExp(
+  `^(${CONFIG_ROUTER_PREFIXES.join('|')})(\\.[a-zA-Z0-9_-]+)+$`
+);
+
+/**
+ * Keys `config.delete` refuses, because deleting one succeeds but breaks something: boot
+ * (`CRITICAL_CONFIG_KEYS`), every LDAP login while LDAP is enabled (the three fields `ldapAuth.ts`
+ * requires), or, silently, every link in outgoing email (`app.baseUrl` falls back to
+ * `http://localhost:3000`). `auth.nextAuthSecret` is a legacy key the seed still writes. Deleting
+ * any other key under `CONFIG_ROUTER_PREFIXES` resets it to its default or leaves it
+ * unconfigured, which an update can do as well.
+ */
+export const UNDELETABLE_CONFIG_KEYS = [
+  ...CRITICAL_CONFIG_KEYS,
+  'auth.nextAuthSecret',
+  'auth.ldap.url',
+  'auth.ldap.searchBase',
+  'auth.ldap.searchFilter',
+  'app.baseUrl',
+] as const satisfies readonly AppConfigKey[];
+
+const UNDELETABLE_CONFIG_KEY_SET = new Set<string>(UNDELETABLE_CONFIG_KEYS);
+
+/** Whether the generic `config` router refuses to delete `key`. */
+export function isUndeletableConfigKey(key: string): boolean {
+  return UNDELETABLE_CONFIG_KEY_SET.has(key);
+}
+
+/**
+ * What `config.exportJson` writes in place of an encrypted value, and what `config.viewValue` shows
+ * for one in masked mode. It stands for a secret the export does not carry, so it is never a value:
+ * the generic router refuses to store it and the import dialog skips the rows that carry it.
+ * Re-importing an export used to write it, encrypted, over every secret.
+ */
+export const CONFIG_SECRET_PLACEHOLDER = '[ENCRYPTED]';
+
+/**
+ * One row of a config import: an item of `config.importJson` and a row of the file the config page
+ * exports. `value: null` means "skip this key", which is how an export without values writes every row.
+ */
+export const ConfigImportItemSchema = z.object({
+  key: z.string().min(1),
+  value: z.string().nullable(),
+  /** Whether to store the value encrypted; absent or `null` means plaintext. */
+  encrypt: z.boolean().nullish(),
+});
+
+export type ConfigImportItem = z.infer<typeof ConfigImportItemSchema>;
+
+/**
+ * The file the config page exports and imports. Rows stay `unknown` here and are parsed one at a
+ * time with `ConfigImportItemSchema`, so a malformed row is reported on its own instead of failing
+ * the whole file. The other fields the export writes (`exportedAt`, `version`, `note`, each row's
+ * `category`) are ignored.
+ */
+export const ConfigImportFileSchema = z.object({
+  configs: z.array(z.unknown()),
+});
 
 // Re-export LdapResilienceSchema for use in configManager (avoids double-import)
 export { LdapResilienceSchema };

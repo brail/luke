@@ -7,8 +7,11 @@ description: >
   frontend shadcn violations, and dev pattern failures.
   Use after vibe coding sessions or before releases.
   Scoping: default = diff vs merge-base. /luke-audit apps/web | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: Explore
+background: false
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Luke Architecture Audit
@@ -17,14 +20,23 @@ Read-only. Do NOT modify any file.
 Find violations of the architectural constraints in CLAUDE.md.
 Report findings with proposed fixes — never apply them.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
-integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
-obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
+full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
+to rule" section (§3), `lessons.md` as a check input (§4), and the
+constraint/heuristic classification (§8).
 
-Poi leggi questi file:
+**Scope of this skill: application architecture.** Platform state — exact
+versions, dependency alignment, Node/pnpm/Docker lifecycle, package-manager
+policy, toolchain health — belongs to `/luke-deps`
+(`.claude/skills/luke-shared/governance-map.md`). Consume a platform finding
+when it explains an application finding; never maintain a second checklist for
+it. Several checks that used to live here now have a deterministic owner in
+`tools/scripts/check-platform-integrity.ts`.
+
+Then read these files:
 
 - `CLAUDE.md` (project root)
-- `lessons.md` (project root, if it exists)
+- `lessons.md` (project root) — the part routed to this skill, per protocol §4
 - `packages/core/src/schemas/config.ts` (AppConfigRegistry)
 - `packages/core/src/schemas/rbac.ts` (sectionEnum, SECTION_TO_PERMISSION, SECTION_ACCESS_DEFAULTS)
 - `packages/core/src/auth/permissions.ts` (RESOURCES, ROLE_PERMISSIONS)
@@ -34,22 +46,42 @@ Poi leggi questi file:
 These source files are the single source of truth for enum-like checks below —
 never assume a hardcoded count or list from this skill file.
 
-Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
-**diff vs merge-base**, non intero monorepo.
+**Accepted ADRs are normative architecture**, not documentation
+(`governance-map.md` §4). Read the ADR files that bear on the scope directly
+from `docs/decisions/` — the generated index is for navigation and is **not**
+proof that no other ADR exists, because ADRs have been missing from it. Load
+only what the scope touches, not the whole directory.
+
+Code that contradicts an Accepted ADR is reported as `ADR/CODE CONFLICT` with
+the evidence, and the user decides. Never conclude from the contradiction alone
+that the ADR is stale, and never reinterpret one to fit the implementation.
+
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per `audit-protocol.md` §1 **before**
+running any git scope derivation. The whole bound value is the scope selector
+here — this skill takes no mode. If it is empty, use the protocol default —
+diff vs merge-base, not the whole monorepo. If it carries an explicit selector,
+that selector wins and the default is never derived.
 
 ---
 
-## Aree di controllo
+## Check Areas
 
-Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+Three areas, one single pass. See the fan-out note in `../luke-shared/audit-protocol.md` §6.
 
 ### 1 — Stack, Config & Env
 
 **Stack constraints:**
 
-- `npm install`, `npm run`, `yarn` anywhere in scripts/docs (must be pnpm)
-- Raw SQL outside `packages/nav/src/`
-- `$queryRaw` / `$executeRaw` outside nav package
+- Raw SQL inconsistent with the raw-SQL policy in `CLAUDE.md` (Stack
+  Constraints → Raw SQL). **CONSTRAINT** against that policy, which is the
+  normative source and carries its own exception classes — read it, do not
+  restate it here. Raw SQL that the policy permits is not a finding; raw SQL
+  whose justification is absent or contradicted is. Unusual-but-permitted SQL
+  is an investigation trigger, not an automatic violation (protocol §8)
+- `$queryRawUnsafe` / `$executeRawUnsafe` anywhere in application code — the
+  policy names the tagged-template form as the only sanctioned one
 - `any` type without explanatory comment on same line
 - `// @ts-ignore` or `// @ts-expect-error` without explanation
 - `console.log/warn/error/info` in `apps/api/src/` (must use Pino) or `apps/web/src/` (must use `lib/debug.ts`). Exception: `apps/api/prisma/` scripts.
@@ -57,22 +89,22 @@ Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-p
 **AppConfig system:**
 
 - `process.env.*` in `apps/` or `packages/core/` outside these allowed files:
-  `packages/core/src/runtime/env.ts`, `apps/*/next.config.*`, `apps/*/src/middleware.*`
+  `packages/core/src/runtime/env.ts`, `apps/*/next.config.*`
 - AppConfig keys used in `prisma.appConfig.findUnique/upsert` that are NOT in `AppConfigRegistry`
 - Sensitive keys (`password`, `pass`, `secret`, `token`) read with `decrypt: false`
 
 **Env policy:**
 
-- `.env` or `.env.*` files containing forbidden patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`
-  Allowed exceptions: `NEXTAUTH_SECRET`, `COOKIE_SECURE`
+- An app's `.env` or `.env.*` variables outside that app's permitted list in CLAUDE.md "Env Policy",
+  or an API variable matching `FORBIDDEN_ENV_PATTERNS` (`apps/api/src/server.ts`); the web list may
+  hold `NEXTAUTH_*`, and compose interpolation variables are out of scope
 
 **Dev patterns:**
 
 - `user.role === 'admin'` or `user.role === 'editor'` inline instead of `hasPermission()`
 - `console.*` leaking through (covered above)
-- Missing `onDelete:` on any `@relation` in `schema.prisma`
-- Missing `@@index` on FK fields or commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `schema.prisma`
-- Dependency version mismatch: same package at different versions across `package.json` files in the monorepo
+- An explicit `onDelete:` on every `@relation`, and an index led by every FK's columns, are enforced by P13 in `tools/scripts/check-platform-integrity.ts`; review what it cannot see: a `Cascade` without the justifying comment rule 6 asks for
+- Missing `@@index` on commonly filtered columns (`isActive`, `navVendorId`, `brandId`, `seasonId`, `vendorId`) in `packages/db/prisma/*.prisma`. **CONSTRAINT**: CLAUDE.md rule 8 says so — enforce it as written. Its breadth is decided: the owner kept the rule as it is (`docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`, Appendix Z.7), so do not raise it as `NEEDS DECISION`
 
 ---
 
@@ -85,8 +117,12 @@ Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-p
 
 **RBAC:**
 
-- Any AppConfig write to RBAC keys NOT followed by `invalidateRbacCache()`
-- tRPC mutations without `requirePermission()` call
+- A write to RBAC keys that bypasses `saveConfig`/`saveConfigs`/`deleteConfig` and is NOT followed by
+  `invalidateRbacCache()` after it commits
+- `requirePermission` presence is enforced by `.semgrep/rules/procedure-requires-permission.yml`;
+  review what it cannot see: a `selfProcedure` handler that breaks its contract in
+  `apps/api/src/lib/trpc.ts`, a `nosemgrep: luke-procedure-requires-permission` whose reason does
+  not hold, a permission that does not match the operation
 - tRPC read-only procedures using `requirePermission('entity:update')` instead of `entity:read`
 - Missing `withAuditLog` or `logAudit()` on procedures named `create`, `update`, `delete`, `remove`, `restore`, `unlink`
 
@@ -125,9 +161,11 @@ Check:
 
 **Collection Layout:**
 
-- `COLLECTION_PROGRESS` values as free strings instead of imported constant
-- `COLLECTION_STRATEGY`, `COLLECTION_STATUS`, `COLLECTION_GENDER` as free strings
-- Column visibility allowing more than 7 visible columns
+- Collection progress as a hardcoded value or ordering instead of the catalog-backed `phaseId`
+- Gender values as free strings instead of `COLLECTION_GENDER`; strategy or line-status options built
+  from the default constants instead of the `CollectionCatalogItem` catalog
+- Column visibility allowing more toggleable columns than `COLLECTION_COLUMNS_MAX_VISIBLE` outside
+  fullscreen
 - `skuBudget` on a Row or `skuForecast` on a Group (inverted)
 - Collection row picture URLs constructed manually instead of `buildCollectionRowPictureUploadUrl()`
 
@@ -142,7 +180,7 @@ Check:
 
 - NAV table names built without `sanitizeCompany()`
 - Any import from `apps/api` inside `packages/nav`
-- mssql requests missing `request.timeout = 60_000`
+- NAV sync requests built with `pool.request()` instead of `createSyncRequest()`
 - NAV + local upsert NOT in `prisma.$transaction()`
 - Sync touching `isActive` or enriched fields on local entities
 
@@ -155,7 +193,6 @@ Check:
 - Tailwind arbitrary values without justifying comment
 - Hardcoded `localhost:3001` or absolute API URLs
 - `globalThis.confirm(` or `window.confirm(` instead of `<ConfirmDialog>`
-- `canCreate()`, `canUpdate()`, `canDelete()` called with parentheses (booleans, not functions)
 
 ---
 
@@ -175,7 +212,7 @@ Date: <today>
 
 ✅ clean  ⚠️ LOW only  🔴 HIGH or MEDIUM present
 
-Soppresse da baseline: N
+Suppressed by baseline: N
 
 ### Findings
 
@@ -192,8 +229,8 @@ Fix:
 **[LOW]** — <title> — `file.ts:line`
 Fix: <one-line fix>
 
-### Promozione a regola
-<sezione obbligatoria — vedi §3 del protocollo condiviso>
+### Promotion to rule
+<mandatory section — see §3 of the shared protocol>
 ```
 
 ### Rules

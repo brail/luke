@@ -1,57 +1,133 @@
-# Storage — Bucket Immutabile
+# Storage — Immutable Bucket
 
 ## collection-row-pictures-revisions
 
-Bucket di destinazione per le foto delle righe del Collection Layout incluse nelle revisioni formali (registro qualità ISO 9001:2015).
+Destination bucket for the photos of the Collection Layout rows included in
+formal revisions (ISO 9001:2015 quality register).
 
-### Chi scrive
+### Who writes
 
-`copyToImmutableBucket()` in `apps/api/src/storage/index.ts` — chiamata dal service `createRevision` PRIMA della transazione Prisma.
+`copyToImmutableBucket()` in `apps/api/src/storage/index.ts`. The
+`collectionLayoutRevision.create` procedure passes it to the `createRevision`
+service, which calls it for every row with a photo BEFORE the Prisma
+transaction. A source object that is gone makes it throw
+`StorageObjectNotFoundError`, and that row is snapshotted without a photo as long
+as another photo of the layout was read (see
+[collection-layout-versioning.md](collection-layout-versioning.md#creating-a-revision)).
 
-### Chi legge
+Automatic MILESTONE revisions copy photos here too
+(`apps/api/src/services/collectionLayoutAutoRevision.service.ts`). Until
+2026-09-26 they passed a callback that returned the source key unchanged, so the
+automatic revisions created by v2.0.0–v2.1.x still name an object in
+`collection-row-pictures`; see the known gap in
+[collection-layout-versioning.md](collection-layout-versioning.md#automatic-revisions-causemilestone).
 
-- Service `getRevisionDetail` → per il drill-down della revisione
-- Service `getLayoutAsOfRevision` → per il time-travel
-- Frontend (future): visualizzazione foto nello snapshot
+Backup restore, which accepts any bucket in `APP_STORAGE_BUCKETS`, can also
+write here. The presigned `storage.requestUpload` / `storage.confirmUpload`
+pair could too until 2026-09-27: it accepted every application bucket for any
+authenticated user and recorded a checksum the client declared. It now serves
+`PRESIGNED_UPLOAD_BUCKETS` only (`company-assets`), and `confirmUpload`
+refuses a slot signed for any other bucket. Since 2026-10-07 the web app no
+longer calls the pair: the company logo goes through `/upload/company-logo`.
 
-### Semantica CAS (Content-Addressable Storage)
+### Who reads
 
-Prima di copiare un file, viene cercato un `FileObject` esistente con stesso `bucket` e `checksumSha256`. Se trovato, la chiave esistente viene restituita senza copiare.
+- The `getRevisionDetail` service → for the revision drill-down
+- The `getLayoutAsOfRevision` service → for time travel
+- Frontend: the revision page
+  (`/product/collection-layout/revisions/[revisionId]`) shows the snapshot
+  photos through the storage proxy
+- Revision exports (`collectionLayoutRevision.export.xlsx` / `.pdf`) embed the
+  photos read from this bucket
 
-Questo garantisce che due righe con la stessa foto (es. foto copiata da una stagione all'altra) non creino duplicati nel bucket.
+### CAS semantics (Content-Addressable Storage)
 
-### File orfani
+Before a file is copied, an existing `FileObject` with the same `bucket` and
+`checksumSha256`, written by the copier itself (`createdBy: 'system'`,
+confirmed), is looked up. If one is found, the existing key is returned without
+copying. Rows from any other writer are ignored: their checksum may be one a
+client declared rather than one computed from the bytes.
 
-Se la transazione della revisione fallisce dopo `copyToImmutableBucket`:
-- Il file è nel bucket ma non ha un record `CollectionLayoutRowRevision.pictureKey` che lo referenzia
-- Non è un problema: il contenuto è identico a file già presenti (stesso sha256)
-- In produzione, il bucket può avere un lifecycle rule per pulire file non referenziati dopo N giorni
+This keeps rows with byte-identical photos from creating duplicates in the
+bucket; the common case is a photo that has not changed between revisions,
+since every revision copies the photo of every row. It is a lookup, not a
+guarantee: `FileObject` is unique only on `bucket` + `key`, so copies of
+identical content that run concurrently can each miss the lookup and upload
+their own copy. The photos of one revision are copied in parallel, a bounded
+number at a time, so two of its rows sharing a photo are enough.
 
-### MinIO: Configurazione retention policy (produzione)
+### Orphan files
 
-Per rendere il bucket veramente immutabile in MinIO:
+If the revision transaction fails after `copyToImmutableBucket`:
+- The file is in the bucket, but no `CollectionLayoutRowRevision.pictureKey`
+  record references it
+- Its `FileObject` row, written outside the transaction, survives, so a
+  retried revision finds it through the checksum lookup and reuses it instead
+  of uploading a second copy
+- No job removes it: the row is written already confirmed, and the
+  pending-file cleanup (`setupTempFileCleanup` in `apps/api/src/server.ts`)
+  does not cover this bucket. A bucket lifecycle rule cannot remove it either:
+  S3 lifecycle rules select objects by prefix, tag, size and age, not by
+  whether a database row references them
 
-```sh
-# Abilita versioning (requisito per Object Lock)
-mc versioning enable ALIAS/collection-row-pictures-revisions
+### Retention policy configuration (production)
 
-# Abilita Object Lock con modalità governance (ammette override con permissions admin)
-mc retention set --default governance 365d ALIAS/collection-row-pictures-revisions
-```
+Object Lock (versioning + WORM retention) is a standard S3 feature, not
+specific to one vendor. It is configured through the S3 API
+(`PutBucketVersioning` + `PutObjectLockConfiguration`/`PutObjectRetention`),
+not through the application's storage provider (`IStorageProvider` exposes no
+bucket policy or retention; that is outside its scope and has to be done at the
+storage-backend level). It applies only when `storage.type` is `s3`: with the
+default `local` provider, the bucket is a plain directory under
+`storage.local.basePath`.
 
-Per compliance totale (nessun override):
-```sh
-mc retention set --default compliance 3650d ALIAS/collection-row-pictures-revisions
-```
+The Docker stack runs SeaweedFS, which supports Object Lock (GOVERNANCE and
+COMPLIANCE modes, Legal Hold) from release 3.94 onwards. **Not verified in this
+project**: before relying on `compliance` for a real legal requirement, verify
+it against the SeaweedFS version actually deployed. The upstream report of
+deletes succeeding in `compliance` mode, seaweedfs/seaweedfs#8350, was closed
+as not planned in February 2026: the delete it reported carried no version ID,
+which under S3 semantics succeeds by adding a delete marker while the locked
+version survives. A follow-up, seaweedfs/seaweedfs#11333, was closed in
+September 2026 after the maintainer could not reproduce a versioned delete
+succeeding and added tests for it (seaweedfs/seaweedfs#11335). The earlier
+thread also asks whether the protection extends to the filer, a SeaweedFS
+component that the stack's `weed server` also runs and that can delete files
+outside the S3 gateway; treat it as a separate path to guard. With MinIO (if still in use for an existing installation)
+the same setup used `mc versioning enable` +
+`mc retention set --default compliance ...`, which MinIO's community edition
+accepts only on a bucket created with object locking (`mc mb --with-lock`); the
+application creates missing buckets without it (`S3Provider.init()`). With
+SeaweedFS the equivalent goes through the standard S3 API
+(`aws s3api put-object-lock-configuration` / `put-object-retention`), not
+through an `mc`-style CLI.
 
-**IMPORTANTE**: Con retention `compliance`, nemmeno l'admin può cancellare i file prima della scadenza. Valutare in base ai requisiti legali del cliente.
+**IMPORTANT**: with retention in compliance mode, not even the admin should be
+able to delete files before they expire — but see the caveat above before
+treating that as guaranteed. The protection covers object versions: the
+application's delete (`S3Provider.delete`) sends no version ID, so on a locked
+bucket it still succeeds by adding a delete marker, after which the
+application's reads, which carry no version ID either, no longer find the
+file. Evaluate this against the customer's legal requirements, and explicitly
+test delete behaviour against the build actually in production before
+considering the bucket truly immutable.
 
-### Permessi applicativi
+### Application permissions
 
-L'applicazione NON ha `s3:DeleteObject` su questo bucket in produzione. Il service non implementa delete per i file del bucket immutabile.
+Nothing in this repository restricts the application's delete rights on this
+bucket. The SeaweedFS S3 gateway of the Docker stack knows a single identity,
+the admin identity it builds from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+(set from the stack's `S3_ROOT_USER` / `S3_ROOT_PASSWORD` variables,
+`_RC`-suffixed in the RC stack; fixed values in `docker-compose.dev.yml`), with
+full rights on every bucket, and the application reaches every bucket
+with the one credential pair in `storage.s3.accessKey` /
+`storage.s3.secretKey`. No application procedure deletes from this bucket (the
+generic `storage.delete` was removed on 2026-09-25), but that single S3 identity
+still can.
 
 ---
 
-## Relazione con il versioning del CL
+## Relationship to Collection Layout versioning
 
-Vedi [docs/collection-layout-versioning.md](./collection-layout-versioning.md) per il flusso completo.
+See [docs/collection-layout-versioning.md](./collection-layout-versioning.md)
+for the full flow.

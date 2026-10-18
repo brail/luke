@@ -21,7 +21,7 @@ export function parseDatabaseUrl(): PgConnectionParts {
   // the same database — not an application secret that needs to be routed through AppConfig.
   // nosemgrep: luke-no-direct-env
   const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error('DATABASE_URL non impostata');
+  if (!raw) throw new Error('DATABASE_URL is not set');
   const url = new URL(raw);
   return {
     host: url.hostname,
@@ -66,7 +66,34 @@ export function runPgBinary(
   password: string,
   stderrLimit = 4000
 ): Promise<void> {
+  // nosemgrep: luke-no-direct-env -- the child inherits the environment (PATH, locale); no application value is read
   return spawnAndCapture(binary, args, { env: { ...process.env, PGPASSWORD: password } }, stderrLimit);
+}
+
+/**
+ * Reads a libpq CLI tool's major version (e.g. `18` from "pg_restore (PostgreSQL) 18.4").
+ *
+ * Not folded into `runPgBinary`: that one discards stdout, which is where `--version` writes.
+ * Throws if the binary is missing or its output is unparseable — a backup feature whose tools
+ * cannot be identified should say so rather than guess.
+ */
+export function pgBinaryMajorVersion(binary: 'pg_dump' | 'pg_restore'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, ['--version']);
+    let stdout = '';
+    child.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
+    child.on('error', reject);
+    child.on('close', code => {
+      // A non-zero exit means the banner was never printed: whatever landed on stdout is error
+      // text, and a digit inside it would otherwise be read as a version number.
+      const major = code === 0 ? /(\d+)/.exec(stdout.replace(/^\D*\(.*?\)/, '')) : null;
+      if (!major) {
+        reject(new Error(`Cannot determine the version of ${binary} (exit ${code}): "${stdout.trim()}"`));
+        return;
+      }
+      resolve(Number.parseInt(major[1], 10));
+    });
+  });
 }
 
 /**
@@ -80,5 +107,6 @@ export function runCommand(
   options: { env?: Partial<NodeJS.ProcessEnv>; cwd?: string } = {},
   stderrLimit = 4000
 ): Promise<void> {
+  // nosemgrep: luke-no-direct-env -- the child inherits the environment (PATH, locale); no application value is read
   return spawnAndCapture(command, args, { env: { ...process.env, ...options.env }, cwd: options.cwd }, stderrLimit);
 }

@@ -1,10 +1,10 @@
 'use client';
 
-import { Download, PackageOpen, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { PackageOpen, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { BACKUP_RESTORE_CONFIRM_PHRASE, buildApiUrl, buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
+import { buildBackupExportDownloadUrl, type BackupRecord } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
@@ -29,9 +29,9 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { triggerUrlDownload } from '../../../../lib/download';
 import { trpc } from '../../../../lib/trpc';
@@ -103,6 +103,7 @@ function showBackupRecap(backup: BackupRecord) {
 
 export default function MaintenanceBackupPage() {
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const utils = trpc.useUtils();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -156,12 +157,25 @@ export default function MaintenanceBackupPage() {
       setRestoreTarget(null);
       void utils.maintenance.backup.list.invalidate();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      // Production masks a failed restore's text, and two different outcomes both arrive as
+      // 500: refused before anything was touched, or failed half-way. Only the second leaves the
+      // maintenance mode the restore itself activated, with its own message, so refresh it and
+      // point at that message.
+      void utils.maintenance.backup.list.invalidate();
+      void utils.maintenance.mode.getStatus.invalidate();
+      toast.error(
+        getTrpcErrorMessage(err, {
+          INTERNAL_SERVER_ERROR:
+            'Ripristino non riuscito. Se la manutenzione è attiva con il messaggio «Ripristino database in corso», il database può essere ripristinato solo in parte: controlla i log del server prima di disattivarla.',
+        }),
+      );
+    },
   });
 
-  // Invariante per la durata del processo (il file di migration è nell'immagine, lo schema
-  // corrente cambia solo al boot) — nessun evento di sessione lo invalida davvero, niente
-  // refetch oltre al primo per ogni backup.
+  // Invariant for the lifetime of the process (the migration file is in the image, the current
+  // schema changes only at boot) — no session event really invalidates it, so no refetch beyond
+  // the first one per backup.
   const { data: restoreCompat } = trpc.maintenance.backup.checkRestoreCompatibility.useQuery(
     { id: restoreTarget?.id ?? '' },
     { enabled: restoreTarget !== null, staleTime: Infinity }
@@ -172,23 +186,11 @@ export default function MaintenanceBackupPage() {
       toast.success('Migrazione avviata — segui il progresso nella tabella backup');
       setRestoreTarget(null);
       void utils.maintenance.backup.list.invalidate();
-      // Il recap-toast già esistente (showBackupRecap sopra) copre da solo la transizione
-      // PENDING/RUNNING→COMPLETED del nuovo backup "Migrato" — nessun codice aggiuntivo qui.
+      // The existing recap toast (showBackupRecap above) alone covers the PENDING/RUNNING→COMPLETED
+      // transition of the new "Migrato" backup — no extra code here.
     },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
-
-  const getDownloadLinkMutation = trpc.maintenance.backup.getDownloadLink.useMutation();
-
-  const handleDownload = async (backup: BackupRecord) => {
-    try {
-      const { token, filename } = await getDownloadLinkMutation.mutateAsync({ id: backup.id });
-      const url = buildApiUrl(`/maintenance/backup/${backup.id}/download?token=${encodeURIComponent(token)}`);
-      triggerUrlDownload(url, filename || `${backup.id}.enc`);
-    } catch {
-      toast.error('Download del backup fallito');
-    }
-  };
 
   const prepareExportMutation = trpc.maintenance.backup.prepareExport.useMutation({
     onSuccess: ({ token, filename }) => {
@@ -257,9 +259,7 @@ export default function MaintenanceBackupPage() {
               {items.map(backup => (
                 <TableRow key={backup.id}>
                   <TableCell>
-                    {new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(
-                      new Date(backup.createdAt)
-                    )}
+                    {fmt.dateTime(backup.createdAt)}
                   </TableCell>
                   <TableCell>
                     {SCOPE_LABEL[backup.scope]}
@@ -272,29 +272,18 @@ export default function MaintenanceBackupPage() {
                   <TableCell>
                     <StatusBadge status={backup.status} />
                     {backup.status === 'FAILED' && backup.errorMessage && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="ml-1 cursor-help text-xs text-muted-foreground underline decoration-dotted">
-                              dettagli
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-sm">{backup.errorMessage}</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="ml-1 cursor-help text-xs text-muted-foreground underline decoration-dotted">
+                            dettagli
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-sm">{backup.errorMessage}</TooltipContent>
+                      </Tooltip>
                     )}
                   </TableCell>
                   <TableCell>{formatSize(backup.sizeBytesEncrypted)}</TableCell>
                   <TableCell className="text-right space-x-1">
-                    <PermissionButton
-                      hasPermission={backup.status === 'COMPLETED'}
-                      tooltip="Il backup non è ancora completato"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => void handleDownload(backup)}
-                    >
-                      <Download className="h-4 w-4" />
-                    </PermissionButton>
                     <PermissionButton
                       hasPermission={canExport && backup.status === 'COMPLETED'}
                       tooltip={
@@ -365,14 +354,8 @@ export default function MaintenanceBackupPage() {
         backup={restoreTarget}
         compat={restoreCompat}
         isLoading={restoreMutation.isPending}
-        onConfirm={({ preserveAuditLog, restoreFiles }: { preserveAuditLog: boolean; restoreFiles: boolean }) =>
-          restoreTarget &&
-          restoreMutation.mutate({
-            id: restoreTarget.id,
-            preserveAuditLog,
-            restoreFiles,
-            confirmPhrase: BACKUP_RESTORE_CONFIRM_PHRASE,
-          })
+        onConfirm={fields =>
+          restoreTarget && restoreMutation.mutate({ id: restoreTarget.id, ...fields })
         }
         isBridging={bridgeMutation.isPending}
         onRunMigrationBridge={() =>

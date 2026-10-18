@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { DEFAULT_WARNING_LEAD_MINUTES } from '@luke/core';
+import { calendarDateIn, DEFAULT_WARNING_LEAD_MINUTES, instantAt, parseCalendarDate, WALL_TIME_PATTERN, wallTimeIn, type MaintenanceModeStatus } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -15,26 +15,28 @@ import { Label } from '../../../../components/ui/label';
 import { Skeleton } from '../../../../components/ui/skeleton';
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
+import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
-const STATUS_LABEL: Record<'INACTIVE' | 'SCHEDULED' | 'ACTIVE', string> = {
+const STATUS_LABEL: Record<MaintenanceModeStatus, string> = {
   INACTIVE: 'Inattiva',
   SCHEDULED: 'Pianificata',
   ACTIVE: 'Attiva',
 };
 
-/** `datetime-local` needs a value with no timezone suffix and minute precision. */
-function minDateTimeLocal(): string {
-  const d = new Date(Date.now() + 5 * 60 * 1000); // almeno 5 minuti nel futuro
-  d.setSeconds(0, 0);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60 * 1000).toISOString().slice(0, 16);
+/** The earliest value the `datetime-local` field offers (`YYYY-MM-DDTHH:mm`): 5 minutes from now, read in `zone`. */
+function minDateTimeLocal(zone: string): string {
+  const soon = new Date(Date.now() + 5 * 60 * 1000);
+  return `${calendarDateIn(soon, zone)}T${wallTimeIn(soon, zone)}`;
 }
 
 export default function MaintenanceModePage() {
   const { can } = usePermission();
-  const canManage = can('maintenance:update');
+  const canManage = can('maintenance:mode_manage');
+  const fmt = useFormatDate();
+  const formZone = useFormZone();
   const utils = trpc.useUtils();
 
   const { data: state, isLoading } = trpc.maintenance.mode.getStatus.useQuery(undefined, {
@@ -83,12 +85,16 @@ export default function MaintenanceModePage() {
   });
 
   const handleSchedule = () => {
-    if (!scheduledAtLocal) {
-      toast.error('Seleziona data e ora');
+    const [day = '', time = ''] = scheduledAtLocal.split('T');
+    // `null` for a year the field accepts but a calendar day does not (before 1900).
+    const date = parseCalendarDate(day);
+    if (!formZone || !date || !WALL_TIME_PATTERN.test(time)) {
+      toast.error('Seleziona una data e un\'ora valide');
       return;
     }
     scheduleMutation.mutate({
-      scheduledAt: new Date(scheduledAtLocal).toISOString(),
+      // A wall time the zone skips moves past the gap; a repeated one is its first occurrence.
+      scheduledAt: instantAt(date, time, formZone).toISOString(),
       message: message.trim() || undefined,
       forceLogout,
       warningLeadMinutes: DEFAULT_WARNING_LEAD_MINUTES,
@@ -116,12 +122,12 @@ export default function MaintenanceModePage() {
               </Badge>
               {state.status === 'SCHEDULED' && state.scheduledAt && (
                 <span className="text-sm text-muted-foreground">
-                  Prevista per {new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(state.scheduledAt))}
+                  Prevista per {fmt.dateTime(state.scheduledAt)}
                 </span>
               )}
               {state.status === 'ACTIVE' && state.activatedAt && (
                 <span className="text-sm text-muted-foreground">
-                  Attiva dalle {new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(state.activatedAt))}
+                  Attiva dalle {fmt.dateTime(state.activatedAt)}
                 </span>
               )}
             </div>
@@ -156,14 +162,17 @@ export default function MaintenanceModePage() {
         >
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="scheduledAt">Data e ora di inizio</Label>
+              <Label htmlFor="scheduledAt">
+                Data e ora di inizio (orari in {formZone ?? '…'})
+              </Label>
               <Input
                 id="scheduledAt"
                 type="datetime-local"
-                min={minDateTimeLocal()}
+                min={formZone ? minDateTimeLocal(formZone) : undefined}
                 value={scheduledAtLocal}
                 onChange={e => setScheduledAtLocal(e.target.value)}
-                disabled={!canManage}
+                // Typed values are read in the profile zone: nothing to type until it is known.
+                disabled={!canManage || !formZone}
               />
             </div>
             <div className="space-y-2">
@@ -206,7 +215,7 @@ export default function MaintenanceModePage() {
               >
                 Attiva subito
               </Button>
-              <Button onClick={handleSchedule} disabled={!canManage || isBusy}>
+              <Button onClick={handleSchedule} disabled={!canManage || isBusy || !formZone}>
                 {scheduleMutation.isPending ? 'Pianificazione...' : 'Pianifica'}
               </Button>
             </div>

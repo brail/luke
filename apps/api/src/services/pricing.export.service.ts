@@ -1,22 +1,16 @@
 
-import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange } from '@luke/core';
+import { calcMaxSupplierCost, calculateCompanyMultiplier, formatCompanyMultiplier, generateRetailPriceRange, NUMERIC_DATE } from '@luke/core';
+import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
 import { applyStreamingHeaderStyle, createStreamingBuffer } from '../lib/export/xlsxStreaming';
-import { readFileBuffer } from '../storage';
 
-import type { PrismaClient, PricingParameterSet } from '@prisma/client';
+import { resolveLogoDataUri } from './asset.service';
+
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 type Brand = { name: string; code: string; logoKey?: string | null };
 type Season = { code: string; year: number | null };
-
-function toDataUri(buf: Buffer, key: string): string | null {
-  const lower = key.toLowerCase();
-  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
-  if (lower.endsWith('.webp')) return null;
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
-}
 
 function fmt2(n: number) { return n.toFixed(2); }
 function fmt1(n: number) { return n.toFixed(1); }
@@ -87,7 +81,7 @@ export async function buildPricingGridXlsx(
 
     if (key === undefined) {
       const cm = commonValue(sets, 'optimalMargin');
-      const row = ws.addRow([label, cm !== null ? `×${fmt2(calculateCompanyMultiplier(cm))}` : '(varia per variante)']);
+      const row = ws.addRow([label, cm !== null ? formatCompanyMultiplier(calculateCompanyMultiplier(cm)) : '(varia per variante)']);
       row.getCell(1).font = { italic: true, size: 9, name: 'Calibri', color: { argb: 'FF888888' } };
       row.getCell(2).font = { size: 9, name: 'Calibri', color: { argb: 'FF888888' } };
       await row.commit();
@@ -131,7 +125,7 @@ export async function buildPricingGridXlsx(
     const rowVals: (number | string)[] = [retail, Math.round(wholesale * 10) / 10];
     for (const set of sets) {
       const fob = calcMaxSupplierCost(retail, set);
-      rowVals.push(fob > 0 ? fob : '');
+      rowVals.push(fob ?? '');
     }
     const dataRow = ws.addRow(rowVals);
     dataRow.font = { size: 9, name: 'Calibri' };
@@ -153,6 +147,7 @@ export async function buildPricingGridXlsx(
  *
  * @param extractedBy - Display name of the requesting user (shown in the header).
  * @param extractedAt - Timestamp to include in the header.
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header date is written in.
  * @returns A Buffer containing the PDF file.
  */
 export async function buildPricingGridPdf(
@@ -162,21 +157,18 @@ export async function buildPricingGridPdf(
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
+  timeZone: string,
 ): Promise<Buffer> {
   const retailPrices = generateRetailPriceRange();
   const refSet = sets[0];
 
   const [logoDataUri, company] = await Promise.all([
-    brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', brand.logoKey).then(buf =>
-          buf ? toDataUri(buf, brand.logoKey!) : null,
-        ).catch(() => null)
-      : Promise.resolve(null),
+    resolveLogoDataUri(prisma, brand.logoKey),
     fetchCompanyExportContext(prisma),
   ]);
 
   const subtitle = `${season.code} ${season.year ?? ''} — Griglia Prezzi`;
-  const extractedInfo = `Estratto da ${extractedBy} il ${extractedAt.toLocaleDateString('it-IT')}`;
+  const extractedInfo = `Estratto da ${extractedBy} il ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE)}`;
 
   // Parameters section
   const paramRows: Content[] = [];
@@ -184,7 +176,7 @@ export async function buildPricingGridPdf(
     { label: 'Margine target',             value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? `${v}%` : '(varia)'; } },
     { label: 'Tasso di cambio',            value: s => { const v = commonValue(s, 'exchangeRate');             return v !== null ? String(v) : '(varia)'; } },
     { label: 'Moltiplicatore retail',      value: s => { const v = commonValue(s, 'retailMultiplier');         return v !== null ? `×${fmt2(v)}` : '(varia)'; } },
-    { label: 'Moltiplicatore aziendale',   value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? `×${fmt2(calculateCompanyMultiplier(v))}` : '(varia)'; } },
+    { label: 'Moltiplicatore aziendale',   value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? formatCompanyMultiplier(calculateCompanyMultiplier(v)) : '(varia)'; } },
     { label: 'Trasporto + assicurazione',  value: s => { const v = commonValue(s, 'transportInsuranceCost');   return v !== null ? `${fmt2(v)} ${s[0].purchaseCurrency}` : '(varia)'; } },
     { label: 'Costi accessori Italia',     value: s => { const v = commonValue(s, 'italyAccessoryCosts');      return v !== null ? `${fmt2(v)} ${s[0].sellingCurrency}` : '(varia)'; } },
     { label: 'Stampi',                     value: s => { const v = commonValue(s, 'tools');                    return v !== null ? `${fmt2(v)} ${s[0].purchaseCurrency}` : '(varia)'; } },
@@ -218,7 +210,7 @@ export async function buildPricingGridPdf(
     ];
     for (const set of sets) {
       const fob = calcMaxSupplierCost(retail, set);
-      row.push({ text: fob > 0 ? fmt1(fob) : '—', fontSize: 7, color: fob > 0 ? '#000000' : '#999999' });
+      row.push({ text: fob !== null ? fmt1(fob) : '—', fontSize: 7, color: fob !== null ? '#000000' : '#999999' });
     }
     gridBody.push(row);
   }

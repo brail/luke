@@ -48,19 +48,19 @@ export function discoverProcedures(): string[] {
 
   if (entries.length === 0) {
     throw new Error(
-      '[procedure-coverage] `appRouter._def.procedures` è vuoto. Non significa ' +
-        '"nessuna procedura": significa che gli internals di tRPC sono cambiati. ' +
-        'Aggiorna `discoverProcedures()` prima di proseguire — proseguire ' +
-        'significherebbe un gate di copertura permanentemente verde.'
+      '[procedure-coverage] `appRouter._def.procedures` is empty. That does not ' +
+        'mean "no procedures": it means the tRPC internals have changed. ' +
+        'Update `discoverProcedures()` before going on — going on would mean ' +
+        'a permanently green coverage gate.'
     );
   }
 
   const notCallable = entries.filter(([, value]) => typeof value !== 'function');
   if (notCallable.length > 0) {
     throw new Error(
-      `[procedure-coverage] \`_def.procedures\` contiene ${notCallable.length} ` +
-        `valori non invocabili (es. "${notCallable[0][0]}"): la mappa non è più ` +
-        'piatta. Serve una visita ricorsiva di `_def.record`.'
+      `[procedure-coverage] \`_def.procedures\` contains ${notCallable.length} ` +
+        `non-callable values (e.g. "${notCallable[0][0]}"): the map is no longer ` +
+        'flat. It needs a recursive walk of `_def.record`.'
     );
   }
 
@@ -74,9 +74,9 @@ export function discoverProcedures(): string[] {
   );
   if (missing.length > 0) {
     throw new Error(
-      '[procedure-coverage] namespace presenti in `_def.record` ma assenti da ' +
-        `\`_def.procedures\`: ${missing.join(', ')}. Le due strutture sono ` +
-        'divergenti: la mappa piatta non è più esaustiva.'
+      '[procedure-coverage] namespaces present in `_def.record` but missing from ' +
+        `\`_def.procedures\`: ${missing.join(', ')}. The two structures have ` +
+        'diverged: the flat map is no longer exhaustive.'
     );
   }
 

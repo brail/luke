@@ -14,7 +14,7 @@
 
 // Runtime check: fail if executed in the browser
 import { hkdfSync, randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -41,14 +41,26 @@ export function getMasterKey(): Buffer {
   const keyDir = join(homedir(), '.luke');
 
   if (!existsSync(MASTER_KEY_PATH)) {
-    // Create directory if it does not exist
-    if (!existsSync(keyDir)) {
-      mkdirSync(keyDir, { mode: 0o700 });
-    }
+    // `recursive`: no EEXIST when another process creates the directory at the same moment.
+    mkdirSync(keyDir, { mode: 0o700, recursive: true });
 
-    // Generate new master key
-    const masterKey = randomBytes(KEY_LENGTH);
-    writeFileSync(MASTER_KEY_PATH, masterKey, { mode: 0o600 });
+    // Security intent: exactly one master key, and never a partly written one. Several processes
+    // can reach this point together on a fresh home (parallel test workers, `pnpm dev` starting
+    // several services). Writing the file in place let one of them read it empty — every derived
+    // secret then failed — and let two of them each write their own key, so secrets derived in
+    // different processes disagreed. The key is written whole to a private temporary file and
+    // published with `link`, which is atomic and refuses to replace an existing file: the first
+    // process to link wins, the others keep its key.
+    const tmpPath = `${MASTER_KEY_PATH}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+    writeFileSync(tmpPath, randomBytes(KEY_LENGTH), { mode: 0o600, flag: 'wx' });
+    try {
+      linkSync(tmpPath, MASTER_KEY_PATH);
+    } catch (error) {
+      // `as`: fs errors carry a `code`, which the catch clause's `unknown` does not expose.
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    } finally {
+      unlinkSync(tmpPath);
+    }
   }
 
   const keyBuffer = readFileSync(MASTER_KEY_PATH);

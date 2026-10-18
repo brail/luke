@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { getMaintenanceUrgencyTier, type MaintenanceModeState, type MaintenanceUrgencyTier } from '@luke/core';
 
+import { useFormatDate } from '../../hooks/useFormatDate';
 import { trpc } from '../../lib/trpc';
 import { getTrpcErrorMessage } from '../../lib/trpcErrorMessages';
 import { Button } from '../ui/button';
@@ -14,14 +15,6 @@ function formatCountdown(ms: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-/** Far/normal tiers show the actual date/time (a precise mm:ss countdown is noise a day out); approaching/imminent switch to the live countdown, where second-level precision actually matters. */
-function formatRemaining(tier: MaintenanceUrgencyTier, msRemaining: number, scheduledAt: string): string {
-  if (tier === 'far' || tier === 'normal') {
-    return new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(scheduledAt));
-  }
-  return `tra ${formatCountdown(msRemaining)}`;
 }
 
 const TIER_STYLE: Record<MaintenanceUrgencyTier, string> = {
@@ -41,7 +34,33 @@ const TIER_ICON: Record<MaintenanceUrgencyTier, typeof Info> = {
 interface MaintenanceBannerProps {
   state: MaintenanceModeState;
   isAdmin: boolean;
+  /** Holds `maintenance:mode_manage`, which `maintenance.mode.end` requires. */
+  canEnd: boolean;
   msRemaining: number | null;
+}
+
+/**
+ * The notice of a scheduled window. Its own component so that only a scheduled window loads the
+ * reader zone: during active maintenance `me.get` is refused to whoever does not bypass it.
+ */
+function ScheduledNotice({ message, scheduledAt, msRemaining }: { message: string | null; scheduledAt: string; msRemaining: number }) {
+  const fmt = useFormatDate();
+  const tier = getMaintenanceUrgencyTier(msRemaining / 60_000);
+  const Icon = TIER_ICON[tier];
+  // Far/normal tiers show the date and time (a mm:ss countdown is noise a day out); approaching and
+  // imminent switch to the live countdown, where seconds matter.
+  const remaining =
+    tier === 'far' || tier === 'normal'
+      ? fmt.dateTime(scheduledAt)
+      : `tra ${formatCountdown(msRemaining)}`;
+  return (
+    <div className={`flex items-center justify-center gap-2 px-4 ${TIER_STYLE[tier]}`}>
+      <Icon className="h-4 w-4 shrink-0" />
+      <span>
+        {message || 'Manutenzione programmata'} — {remaining}
+      </span>
+    </div>
+  );
 }
 
 /**
@@ -53,7 +72,7 @@ interface MaintenanceBannerProps {
  * shared with the scheduler's own tick cadence) — a maintenance window scheduled days out shouldn't
  * look as alarming as one about to start.
  */
-export function MaintenanceBanner({ state, isAdmin, msRemaining }: MaintenanceBannerProps) {
+export function MaintenanceBanner({ state, isAdmin, canEnd, msRemaining }: MaintenanceBannerProps) {
   const utils = trpc.useUtils();
   const endMutation = trpc.maintenance.mode.end.useMutation({
     onSuccess: () => {
@@ -64,16 +83,7 @@ export function MaintenanceBanner({ state, isAdmin, msRemaining }: MaintenanceBa
   });
 
   if (state.status === 'SCHEDULED' && state.scheduledAt && msRemaining !== null) {
-    const tier = getMaintenanceUrgencyTier(msRemaining / 60_000);
-    const Icon = TIER_ICON[tier];
-    return (
-      <div className={`flex items-center justify-center gap-2 px-4 ${TIER_STYLE[tier]}`}>
-        <Icon className="h-4 w-4 shrink-0" />
-        <span>
-          {state.message || 'Manutenzione programmata'} — {formatRemaining(tier, msRemaining, state.scheduledAt)}
-        </span>
-      </div>
-    );
+    return <ScheduledNotice message={state.message} scheduledAt={state.scheduledAt} msRemaining={msRemaining} />;
   }
 
   if (state.status === 'ACTIVE' && isAdmin) {
@@ -81,14 +91,16 @@ export function MaintenanceBanner({ state, isAdmin, msRemaining }: MaintenanceBa
       <div className="flex items-center justify-center gap-3 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-100">
         <Wrench className="h-4 w-4 shrink-0" />
         <span>Modalità manutenzione attiva (visibile solo a te come admin)</span>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => endMutation.mutate()}
-          disabled={endMutation.isPending}
-        >
-          {endMutation.isPending ? 'Termino...' : 'Termina manutenzione'}
-        </Button>
+        {canEnd && (
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => endMutation.mutate()}
+            disabled={endMutation.isPending}
+          >
+            {endMutation.isPending ? 'Termino...' : 'Termina manutenzione'}
+          </Button>
+        )}
       </div>
     );
   }

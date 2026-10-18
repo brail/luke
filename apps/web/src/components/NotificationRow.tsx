@@ -4,7 +4,8 @@ import Link from 'next/link';
 
 import type { RouterOutputs } from '@luke/api';
 
-import { NOTIFICATION_CATEGORY_META, formatNotificationRelativeTime } from '../lib/notificationCategoryMeta';
+import { useFormatDate } from '../hooks/useFormatDate';
+import { NOTIFICATION_CATEGORY_META } from '../lib/notificationCategoryMeta';
 import { cn } from '../lib/utils';
 
 import type { Route } from 'next';
@@ -21,6 +22,7 @@ interface NotificationRowProps {
  * Clicking anywhere on the row — including the deep-link — marks the notification as read.
  */
 export function NotificationRow({ notification: n, onMarkAsRead }: NotificationRowProps) {
+  const fmt = useFormatDate();
   const handleRowClick = () => {
     if (!n.isRead) onMarkAsRead(n.id);
   };
@@ -53,7 +55,7 @@ export function NotificationRow({ notification: n, onMarkAsRead }: NotificationR
           <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
           {/* 10px: below Tailwind's text-xs (12px) floor; dense timestamp caption */}
           <p className="text-[10px] text-muted-foreground mt-1">
-            {formatNotificationRelativeTime(new Date(n.createdAt))}
+            {fmt.relative(n.createdAt)}
           </p>
         </div>
       </div>

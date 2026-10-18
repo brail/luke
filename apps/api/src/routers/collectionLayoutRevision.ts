@@ -23,6 +23,7 @@ import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import {
   resolveLayoutBrandAccess,
   resolveRevisionBrandAccess,
@@ -55,15 +56,17 @@ export const collectionLayoutRevisionRouter = router({
     .mutation(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 
-      const copyPhoto = (sourceKey: string) =>
-        copyToImmutableBucket(ctx.prisma, sourceKey, ctx.logger);
+      const copyPhoto = (sourceKey: string) => copyToImmutableBucket(ctx.prisma, sourceKey);
 
-      const revision = await createRevision(
+      const { revision, missingPhotoRowIds } = await createRevision(
         { ...input, cause: 'MANUAL' },
         ctx.session.user.id,
         copyPhoto,
         ctx.prisma,
       );
+      if (missingPhotoRowIds.length > 0) {
+        ctx.logger?.warn({ revisionId: revision.id, missingPhotoRowIds }, 'Revision created without the row photos gone from storage');
+      }
 
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_REVISION_CREATE',
@@ -75,6 +78,7 @@ export const collectionLayoutRevisionRouter = router({
           revisionNumber: revision.revisionNumber,
           revisionTypeValue: input.revisionTypeValue,
           rowsIncluded: revision.groups.flatMap(g => g.rows).length,
+          missingPhotoRowIds: missingPhotoRowIds.length > 0 ? missingPhotoRowIds : undefined,
         },
       });
 
@@ -156,9 +160,10 @@ export const collectionLayoutRevisionRouter = router({
         });
         const buf = await buildRevisionXlsx(input.revisionId, collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
+        const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
         return {
           data: buf.toString('base64'),
-          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp()}.xlsx`,
+          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp(timeZone)}.xlsx`,
         };
       }),
 
@@ -187,11 +192,12 @@ export const collectionLayoutRevisionRouter = router({
         const fullName = exportUser
           ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
           : ctx.session.user.email;
-        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, revision, ctx.prisma, ctx.logger);
+        const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+        const buf = await buildRevisionPdf(input.revisionId, collectionLayoutId, fullName, timeZone, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         return {
           data: buf.toString('base64'),
-          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp()}.pdf`,
+          filename: `${brand.code}-${season.code}-rev${revision.revisionNumber}-${revision.revisionTypeValue}-${exportTimestamp(timeZone)}.pdf`,
         };
       }),
   }),

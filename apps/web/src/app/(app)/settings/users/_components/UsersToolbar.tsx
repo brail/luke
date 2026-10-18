@@ -30,7 +30,7 @@ export function UsersToolbar({
 }: UsersToolbarProps) {
   return (
     <div className="space-y-4">
-      {/* Search e Filtri */}
+      {/* Search and filters */}
       <div className="flex gap-4 items-center">
         <div className="flex-1">
           <Input
@@ -55,7 +55,7 @@ export function UsersToolbar({
         </div>
       </div>
 
-      {/* Azioni */}
+      {/* Actions */}
       <CreateActionButton
         label="Nuovo Utente"
         onClick={onCreateUser}
@@ -63,7 +63,7 @@ export function UsersToolbar({
         resourceName="utente"
       />
 
-      {/* Paginazione */}
+      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-between items-center pt-4">
           <div className="text-sm text-muted-foreground">

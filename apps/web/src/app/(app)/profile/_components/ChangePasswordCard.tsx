@@ -14,8 +14,11 @@ import { SectionCard } from '../../../../components/SectionCard';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
 import { debugLog } from '../../../../lib/debug';
+import { evaluatePassword } from '../../../../lib/passwordChecks';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 
 
@@ -44,28 +47,31 @@ export function ChangePasswordCard({
     confirm: false,
   });
 
-  // Form setup con validazione Zod
+  // Form setup with Zod validation
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
     reset,
+    setError,
     watch,
   } = useForm<ChangePasswordInput>({
     resolver: zodResolver(ChangePasswordSchema),
   });
 
-  // Watch per validazione policy in tempo reale
+  const policy = usePasswordPolicy();
+
+  // Watched for live policy validation
   const newPassword = watch('newPassword', '');
   const confirmPassword = watch('confirmNewPassword', '');
 
-  // Mutation per cambio password
+  // Password change mutation
   const changePasswordMutation = trpc.me.changePassword.useMutation({
     onSuccess: () => {
       toast.success('Password cambiata con successo');
       reset(); // Reset form
       setShowPasswords({ current: false, new: false, confirm: false });
-      // Chiama callback se fornito
+      // Call the callback, if one was passed
       if (onSuccess) {
         onSuccess();
       }
@@ -75,29 +81,39 @@ export function ChangePasswordCard({
       }, 1000);
     },
     onError: error => {
-      // Gestisce errori UNAUTHORIZED per invalidazione sessioni
+      // Handle UNAUTHORIZED errors from session invalidation
       if (error?.data?.code === 'UNAUTHORIZED') {
-        // Se il messaggio è "Password corrente non valida", non forzare logout
+        // If the message is "Password corrente non valida", do not force logout
         if (error.message === 'Password corrente non valida') {
           toast.error('Password corrente non valida');
           return;
         }
-        // Altrimenti è un errore di sessione scaduta
-        debugLog('Sessione invalidata, forzando logout...');
+        // Otherwise it is an expired-session error
+        debugLog('Session invalidated, forcing logout...');
         signOut({ callbackUrl: '/login' });
         return;
       }
-      toast.error(`Errore nel cambio password: ${error.message}`);
+      // FORBIDDEN here is "not allowed for external providers", not a missing permission.
+      toast.error(`Errore nel cambio password: ${getTrpcErrorMessage(error, { FORBIDDEN: true })}`);
     },
   });
 
-  // Handler per submit form
+  /**
+   * `ChangePasswordSchema` only carries the static prefilter — the complexity rules and the real
+   * minimum come from the configured policy, which a schema compiled into the bundle cannot know.
+   * So the policy is applied here, against the same evaluation the server runs, and the failure
+   * lands on the field instead of coming back as a toast from the API.
+   */
   const onSubmit = (data: ChangePasswordInput) => {
-    // Zod gestisce già tutta la validazione lato client
+    const evaluation = evaluatePassword(data.newPassword, data.confirmNewPassword, policy);
+    if (!evaluation.isValid) {
+      setError('newPassword', { message: `Password non valida: ${evaluation.errors.join(', ')}` });
+      return;
+    }
     changePasswordMutation.mutate(data);
   };
 
-  // Toggle visibilità password
+  // Toggle password visibility
   const togglePasswordVisibility = (field: 'current' | 'new' | 'confirm') => {
     setShowPasswords(prev => ({
       ...prev,
@@ -115,7 +131,6 @@ export function ChangePasswordCard({
       description="Cambia la tua password per mantenere l'account sicuro"
     >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Password Corrente */}
         <div className="space-y-2">
           <Label htmlFor="currentPassword">Password Corrente</Label>
           <div className="relative">
@@ -150,7 +165,6 @@ export function ChangePasswordCard({
           )}
         </div>
 
-        {/* Nuova Password */}
         <div className="space-y-2">
           <Label htmlFor="newPassword">Nuova Password</Label>
           <div className="relative">
@@ -185,7 +199,6 @@ export function ChangePasswordCard({
           )}
         </div>
 
-        {/* Conferma Nuova Password */}
         <div className="space-y-2">
           <Label htmlFor="confirmNewPassword">Conferma Nuova Password</Label>
           <div className="relative">
@@ -232,7 +245,6 @@ export function ChangePasswordCard({
           showConfirmPassword={true}
         />
 
-        {/* Pulsante Cambia Password */}
         <div className="flex justify-end">
           <Button
             type="submit"

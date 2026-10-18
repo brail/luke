@@ -24,7 +24,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
   steps: NavConnectionStep[];
 }> {
   const steps: NavConnectionStep[] = [];
-  let testPool: mssql.ConnectionPool | null = null;
+  let testPool: mssql.ConnectionPool;
 
   // Step 1: connection + SQL Server authentication
   try {

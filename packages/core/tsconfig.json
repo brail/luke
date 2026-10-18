@@ -1,23 +1,44 @@
 {
+  // `@luke/core` is an ESM package: `package.json` declares `"type": "module"`,
+  // so `module: NodeNext` emits ESM and every relative import in `src/` must
+  // carry an explicit `.js` extension — Node's ESM resolver does no extension
+  // guessing. Dropping those extensions fails the build; do not "tidy" them.
+  //
+  // ESM-only rather than dual: the browser is a real consumer (`apps/web` ships
+  // core to the client, and the Vitest browser tier loads `dist` directly), and
+  // a CommonJS artifact cannot serve named ESM imports there. The CommonJS
+  // consumers — `apps/api` and `packages/calendar`, both of which emit
+  // `require("@luke/core")` — reach it through Node's `require(esm)`, supported
+  // unflagged on the Node 24 this repo pins everywhere. That works only while
+  // the graph stays free of top-level `await`, which would make the package
+  // unloadable from `require()` (`ERR_REQUIRE_ASYNC_MODULE`).
+  //
+  // `DOM` on top of the base's neutral `lib` is this package's one deliberate
+  // exception, and it is narrow: `crypto/secrets.server.ts` and `runtime/env.ts`
+  // hold two `typeof window` guards that are the whole point of an isomorphic
+  // package — they decide which side they are running on. Without `DOM` those
+  // two lines fail with TS2304, measured. What is *not* inherited any more is
+  // the rest of `lib.es2022.full`: DOM.Iterable, DOM.AsyncIterable, ScriptHost
+  // and WebWorker.ImportScripts, none of which this package uses.
+  //
+  // `types: ["node"]` stays even though core ships to the browser: `types` has
+  // no per-file granularity, and the per-file runtime split is enforced by the
+  // per-runtime ESLint globals instead (see `eslint.config.mjs`).
+  //
+  // No `composite` and no `incremental`: no project references this one, and
+  // an incremental build trusts `tsconfig.tsbuildinfo` over the filesystem —
+  // after `rm -rf dist` it reported success and emitted nothing. A plain `tsc`
+  // always emits every output, so `build` can delete `dist` first.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "composite": true,
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": false,
-    "emitDeclarationOnly": false,
-    "allowJs": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": ["src/**/*"],

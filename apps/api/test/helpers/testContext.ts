@@ -52,6 +52,7 @@ export async function createContextForRole(
   const uid = randomUUID().substring(0, 8);
   const user = await prisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `ctx-${role}-${uid}@test.com`,
       username: `ctx-${role}-${uid}`,
       firstName: 'Ctx',

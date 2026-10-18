@@ -1,14 +1,15 @@
 /**
  * Prisma client construction for one-shot CLI scripts.
  *
- * Prisma 7 removed `datasources` and `datasourceUrl` from the constructor, and
- * a `new PrismaClient()` with no arguments can no longer be built: the only way
- * to open a connection is the driver adapter, the same one `src/server.ts` uses.
- * The scripts were left on the old signature and failed on startup.
+ * A named re-export rather than its own construction: `createPrismaClient` in
+ * `@luke/db` already is the single constructor, adapter and all, and it already
+ * refuses to build without a connection string. This module stays because the
+ * scripts read better naming what kind of client they open, and because the
+ * default it documents — `DATABASE_URL`, the script's own environment — is a
+ * decision about scripts rather than about the database package.
  */
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { createPrismaClient, type PrismaClient } from '@luke/db';
 
 /**
  * Creates a Prisma client for a CLI script.
@@ -20,11 +21,5 @@ import { PrismaClient } from '@prisma/client';
 export function createScriptPrismaClient(
   connectionString = process.env.DATABASE_URL
 ): PrismaClient {
-  if (!connectionString) {
-    throw new Error(
-      'DATABASE_URL non definito: impossibile connettersi al database.'
-    );
-  }
-
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  return createPrismaClient({ connectionString });
 }

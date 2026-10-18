@@ -3,21 +3,26 @@
 import { Plus, StickyNote } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { type CalendarDate, formatCalendarDate, isoWeekOf } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
+import { PermissionTooltip } from '../../../../components/PermissionTooltip';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_IT } from '../constants';
-import { formatVisibleFunctions, getIsoWeek, groupBadge, groupTooltip, resolveBrandColor } from '../utils';
+import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, formatVisibleFunctions, groupBadge, groupTooltip, monthStart, resolveBrandColor, sortByFirstDay } from '../utils';
 
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {
   milestones: CalendarEvent[];
+  /** The reader zone: timed events are dated in it. */
+  zone: string;
   onEventClick: (id: string) => void;
   onNoteClick?: (id: string) => void;
-  onDayClick?: (isoDate: string) => void;
+  onDayClick?: (date: CalendarDate) => void;
   onBulkDelete?: (ids: string[]) => void;
   activeBrandId?: string;
   functionsById: Record<string, string>;
@@ -40,37 +45,41 @@ interface Props {
  * @param activeBrandId - Dims events that belong to a different brand.
  * @param brandColorMap - Pre-computed brand-ID→colour map.
  */
-export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
+export function CalendarEventTimeline({ milestones, zone, onEventClick, onNoteClick, onDayClick, onBulkDelete, activeBrandId, functionsById, canUpdate, brandColorMap, showGroupBadge }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const sorted = useMemo(
-    () => [...milestones].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
-    [milestones]
+    () => sortByFirstDay(milestones, zone),
+    [milestones, zone]
   );
 
   const groups = useMemo(() => {
-    const map = new Map<string, { label: string; firstDay: Date; items: typeof sorted }>();
+    const map = new Map<CalendarDate, { label: string; firstDay: CalendarDate; items: typeof sorted }>();
     for (const m of sorted) {
-      const d = new Date(m.startAt);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      if (!map.has(key)) map.set(key, { label: `${MONTH_NAMES_IT[d.getMonth()]} ${d.getFullYear()}`, firstDay: new Date(d.getFullYear(), d.getMonth(), 1), items: [] });
-      map.get(key)!.items.push(m);
+      // The month of the event's first date in `zone`: an all-day event on the 1st belongs to that
+      // month in every zone.
+      const firstDay = monthStart(eventDays(m, zone)[0]);
+      if (!map.has(firstDay)) map.set(firstDay, { label: `${MONTH_NAMES_IT[Number(firstDay.slice(5, 7)) - 1]} ${firstDay.slice(0, 4)}`, firstDay, items: [] });
+      map.get(firstDay)!.items.push(m);
     }
     return Array.from(map.values());
-  }, [sorted]);
+  }, [sorted, zone]);
 
-  const allIds = useMemo(() => sorted.map(m => m.id), [sorted]);
-  const allSelected = useMemo(() => allIds.length > 0 && allIds.every(id => selected.has(id)), [allIds, selected]);
+  // Only deletable events can be selected, and the selection is read against the current list: an
+  // event deleted, cancelled or frozen by someone else since it was ticked drops out on refresh.
+  const deletableIds = useMemo(() => sorted.filter(m => !eventDeleteBlock(m)).map(m => m.id), [sorted]);
+  const effective = useMemo(() => new Set(deletableIds.filter(id => selected.has(id))), [deletableIds, selected]);
+  const allSelected = deletableIds.length > 0 && effective.size === deletableIds.length;
 
-  const toggleAll = (checked: boolean) => setSelected(checked ? new Set(allIds) : new Set());
+  const toggleAll = (checked: boolean) => setSelected(checked ? new Set(deletableIds) : new Set());
   const toggleOne = (id: string) => setSelected(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
 
   const handleConfirmDelete = () => {
-    const ids = [...selected];
-    setSelected(new Set());
     setConfirmOpen(false);
-    onBulkDelete?.(ids);
+    // Emptied before the outcome, so the same selection cannot be sent twice.
+    setSelected(new Set());
+    if (effective.size > 0) onBulkDelete?.([...effective]);
   };
 
   // Fixed-width columns (checkbox, badge, dates, title, function, cancelled, note) sized to their
@@ -81,11 +90,11 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
 
   return (
     <>
-      {canUpdate && selected.size > 0 && (
+      {canUpdate && effective.size > 0 && (
         <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b text-sm">
-          <span className="text-muted-foreground">{selected.size} selezionat{selected.size === 1 ? 'a' : 'e'}</span>
+          <span className="text-muted-foreground">{effective.size} selezionat{effective.size === 1 ? 'a' : 'e'}</span>
           <Button variant="destructive" size="xs" onClick={() => setConfirmOpen(true)}>
-            Elimina selezionat{selected.size === 1 ? 'a' : 'e'}
+            Elimina selezionat{effective.size === 1 ? 'a' : 'e'}
           </Button>
           <Button variant="ghost" size="xs" onClick={() => setSelected(new Set())}>Deseleziona</Button>
         </div>
@@ -93,7 +102,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
 
       <div className="space-y-0">
         <div className={cn('grid gap-x-4 px-3 py-2 text-xs font-medium text-muted-foreground border-b', colClass)}>
-          {canUpdate && <span className="flex items-center justify-center"><Checkbox checked={allSelected} onCheckedChange={(v) => toggleAll(!!v)} aria-label="Seleziona tutto" /></span>}
+          {canUpdate && <span className="flex items-center justify-center"><Checkbox checked={allSelected} disabled={deletableIds.length === 0} onCheckedChange={(v) => toggleAll(!!v)} aria-label="Seleziona tutto" /></span>}
           <span className="text-center">W</span>
           <span>Data</span>
           <span>Evento</span>
@@ -108,7 +117,7 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
               <div className={cn('flex items-center justify-between', canUpdate ? 'col-span-7' : 'col-span-6')}>
                 <span className="text-xs font-semibold text-muted-foreground">{group.label}</span>
                 {canUpdate && onDayClick && (
-                  <button type="button" onClick={() => onDayClick(group.firstDay.toISOString())} className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 rounded" title={`Aggiungi evento in ${group.label}`}>
+                  <button type="button" onClick={() => onDayClick(group.firstDay)} className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 rounded" title={`Aggiungi evento in ${group.label}`}>
                     <Plus size={12} />
                   </button>
                 )}
@@ -117,8 +126,9 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
 
             {group.items.map(m => {
               const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
-              const d = new Date(m.startAt);
-              const isSelected = selected.has(m.id);
+              const firstDay = eventDays(m, zone)[0];
+              const isSelected = effective.has(m.id);
+              const deleteBlock = eventDeleteBlock(m);
               const hasNote = !!(m.notes?.[0]?.body);
               const badge = groupBadge(showGroupBadge, m.planningGroupName);
               return (
@@ -130,12 +140,15 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
                 >
                   {canUpdate && (
                     <span className="flex items-center justify-center" onClick={e => e.stopPropagation()}>
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggleOne(m.id)} aria-label={`Seleziona ${m.title}`} />
+                      <PermissionTooltip hasPermission={!deleteBlock} tooltip={deleteBlock ? DELETE_BLOCK_REASON[deleteBlock] : ''}>
+                        <Checkbox checked={isSelected} disabled={!!deleteBlock} onCheckedChange={() => toggleOne(m.id)}
+                          aria-label={`Seleziona ${m.title}`} className="disabled:pointer-events-none" />
+                      </PermissionTooltip>
                     </span>
                   )}
                   {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline week label */}
-                  <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{getIsoWeek(d)}</span>
-                  <span className="text-muted-foreground tabular-nums">{d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}</span>
+                  <span className="text-[10px] text-muted-foreground/60 tabular-nums font-mono text-center">W{isoWeekOf(firstDay).week}</span>
+                  <span className="text-muted-foreground tabular-nums">{formatCalendarDate(firstDay, { day: '2-digit', month: 'short' })}</span>
                   <span className="flex items-center gap-2 min-w-0">
                     {m.brandId && <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: resolveBrandColor(m.brandId, brandColorMap) }} />}
                     {/* 10px: below Tailwind's text-xs (12px) floor; dense timeline badge */}
@@ -168,11 +181,10 @@ export function CalendarEventTimeline({ milestones, onEventClick, onNoteClick, o
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={(open) => { if (!open) setConfirmOpen(false); }}
-        title={`Elimina ${selected.size} event${selected.size === 1 ? 'o' : 'i'}`}
-        description={`Questa operazione è irreversibile. Vuoi eliminare ${selected.size} event${selected.size === 1 ? 'o selezionato' : 'i selezionati'}?`}
+        title={`Elimina ${effective.size} event${effective.size === 1 ? 'o' : 'i'}`}
+        description={`Questa operazione è irreversibile. Vuoi eliminare ${effective.size} event${effective.size === 1 ? 'o selezionato' : 'i selezionati'}?`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={handleConfirmDelete}
       />

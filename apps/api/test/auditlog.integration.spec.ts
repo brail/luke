@@ -3,8 +3,10 @@
  * Verifies end-to-end that every sensitive action produces consistent entries
  */
 
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeEach } from 'vitest';
+
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+import { PrismaClient } from '@luke/db';
 
 import { appRouter } from '../src/routers';
 
@@ -26,7 +28,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_CREATE', () => {
-    it('dovrebbe loggare entry coerente per creazione utente', async () => {
+    it('should log a consistent entry for user creation', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -56,15 +58,17 @@ describe('AuditLog Integration', () => {
       expect(log.ip).toBe('127.0.0.1');
       expect(log.createdAt).toBeInstanceOf(Date);
 
-      // Verify there are no passwords in metadata
+      // The `password` key is now recorded, masked, instead of being dropped along with
+      // everything else the middleware could not name: what must never appear is its value.
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).toContain('"password":"***REDACTED***"');
+      expect(metadataStr).not.toContain('SecurePassword123!');
       expect(metadataStr).not.toContain('SecurePass');
     });
   });
 
   describe('USER_UPDATE', () => {
-    it('dovrebbe loggare entry per aggiornamento utente', async () => {
+    it('should log an entry for a user update', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
@@ -94,8 +98,23 @@ describe('AuditLog Integration', () => {
     });
   });
 
+  describe('EMAIL_VERIFICATION_FORCED', () => {
+    it('records whether the address was verified or cleared', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const { user: target } = await createTestUser('viewer');
+
+      await createCallerWithSession(session).users.forceVerifyEmail({ userId: target.id, verified: false });
+
+      const log = await testPrisma.auditLog.findFirstOrThrow({
+        where: { action: 'EMAIL_VERIFICATION_FORCED', actorId: admin.id },
+      });
+      expect(log.result).toBe('SUCCESS');
+      expect(log.metadata).toMatchObject({ input: { userId: target.id, verified: false } });
+    });
+  });
+
   describe('USER_DELETE (soft delete)', () => {
-    it('dovrebbe loggare entry per soft delete', async () => {
+    it('should log an entry for a soft delete', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
@@ -121,13 +140,13 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_HARD_DELETE', () => {
-    it('dovrebbe loggare entry per hard delete', async () => {
+    it('should log an entry for a hard delete', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
 
       const caller = createCallerWithSession(session);
 
-      await caller.users.hardDelete({ id: targetUser.id });
+      await caller.users.hardDelete({ id: targetUser.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: { action: 'USER_HARD_DELETE' },
@@ -151,7 +170,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('USER_PASSWORD_CHANGE', () => {
-    it('dovrebbe loggare entry per cambio password senza password in chiaro', async () => {
+    it('should log an entry for a password change without the plaintext password', async () => {
       // `createTestUser` already creates a LOCAL identity **and** credential: creating a
       // second one violates the unique constraint on identityId.
       const { user: user, session } = await createTestUser('viewer');
@@ -187,7 +206,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('AUTH_LOGIN', () => {
-    it('dovrebbe loggare entry per login riuscito', async () => {
+    it('should log an entry for a successful login', async () => {
       // Credential already created by `createTestUser`
       const { user } = await createTestUser('viewer');
 
@@ -219,13 +238,96 @@ describe('AuditLog Integration', () => {
     });
   });
 
+  describe('Subject attribution (null actorId)', () => {
+    it('should attribute the login to whoever performed it even without an actorId', async () => {
+      const { user } = await createTestUser('viewer');
+      const { session: adminSession } = await createTestUser('admin');
+
+      const anonCaller = await createCallerAs(null);
+      await anonCaller.auth.login({
+        username: user.username,
+        password: TEST_USER_PASSWORD,
+      });
+
+      const page = await createCallerWithSession(adminSession).auditLog.list({
+        action: 'AUTH_LOGIN',
+        page: 1,
+        limit: 50,
+      });
+
+      const entry = page.items.find(i => i.targetId === user.id);
+      expect(entry).toBeDefined();
+      // The actor is genuinely absent (no session during login) and must stay absent:
+      // the fix resolves the *subject* from targetId, it does not fabricate an actor.
+      expect(entry?.actorId).toBeNull();
+      expect(entry?.actorName).toBeNull();
+      expect(entry?.subjectName).toBeTruthy();
+      expect(entry?.subjectEmail).toBe(user.email);
+    });
+
+    it('should attribute the failed login to the attempted username when the user does not exist', async () => {
+      const { session: adminSession } = await createTestUser('admin');
+
+      const anonCaller = await createCallerAs(null);
+      await expect(
+        anonCaller.auth.login({ username: 'no-such-user', password: 'AnyThing123!' })
+      ).rejects.toThrow();
+
+      const page = await createCallerWithSession(adminSession).auditLog.list({
+        action: 'AUTH_LOGIN_FAILED',
+        page: 1,
+        limit: 50,
+      });
+
+      const entry = page.items.find(i => i.subjectName === 'no-such-user');
+      expect(entry).toBeDefined();
+      // No user row to point at, so the subject falls back to the attempted username in metadata.
+      expect(entry?.targetId).toBeNull();
+      expect(entry?.subjectEmail).toBeNull();
+    });
+
+    it('should return the user login history instead of an empty list', async () => {
+      const { user, session } = await createTestUser('viewer');
+
+      const anonCaller = await createCallerAs(null);
+      await anonCaller.auth.login({ username: user.username, password: TEST_USER_PASSWORD });
+
+      const history = await createCallerWithSession(session).me.loginHistory({ limit: 10 });
+
+      // Regression: `me.loginHistory` filtered by `actorId`, which login events never set,
+      // so it returned [] for every user no matter how many times they had logged in.
+      expect(history.length).toBeGreaterThan(0);
+      expect(history[0].success).toBe(true);
+      expect(history[0].ipAddress).toBe('127.0.0.1');
+    });
+
+    it('should not attribute a subject when a real actor exists', async () => {
+      const { user: admin, session } = await createTestUser('admin');
+      const caller = createCallerWithSession(session);
+
+      await caller.users.create({
+        username: 'subjectcheck',
+        email: 'subjectcheck@test.com',
+        password: 'SecurePassword123!',
+        role: 'viewer',
+      });
+
+      const page = await caller.auditLog.list({ action: 'USER_CREATE', page: 1, limit: 50 });
+      const entry = page.items.find(i => i.actorId === admin.id);
+      expect(entry).toBeDefined();
+      expect(entry?.actorName).toBeTruthy();
+      expect(entry?.subjectName).toBeNull();
+      expect(entry?.subjectEmail).toBeNull();
+    });
+  });
+
   describe('CONFIG_UPSERT', () => {
-    it('dovrebbe loggare entry per configurazione con redazione segreti', async () => {
+    it('should log a configuration entry with secrets redacted', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
       await caller.config.set({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         value: 'super-secret-value',
         encrypt: true,
       });
@@ -244,16 +346,17 @@ describe('AuditLog Integration', () => {
         result: 'SUCCESS',
       });
 
-      // Verify secret redaction
+      // Verify secret redaction. The call site substitutes the value with the `[ENCRYPTED]`
+      // marker before `logAudit` ever sees it, so the plaintext cannot reach the sanitizer.
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).toContain('app.test.secret');
-      expect(metadataStr).toContain('[REDACTED]'); // Redacted value
+      expect(metadataStr).toContain('auth.ldap.bindPassword');
+      expect(metadataStr).toContain('[ENCRYPTED]');
       expect(metadataStr).not.toContain('super-secret-value');
     });
   });
 
-  describe('Ordering e timestamp', () => {
-    it('dovrebbe ordinare per createdAt DESC', async () => {
+  describe('Ordering and timestamps', () => {
+    it('should order by createdAt DESC', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -292,7 +395,7 @@ describe('AuditLog Integration', () => {
   });
 
   describe('Metadata redaction', () => {
-    it('dovrebbe redattare campi sensibili nei metadata', async () => {
+    it('should redact sensitive fields in the metadata', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -311,26 +414,29 @@ describe('AuditLog Integration', () => {
       expect(auditLogs).toHaveLength(1);
       const log = auditLogs[0];
 
-      // Verify that metadata contains useful information but no password
+      // Metadata must carry the useful fields, with their values — asserting mere presence
+      // let `{ input_username: '[REDACTED]' }` pass as if it were information.
       expect(log.metadata).toBeTruthy();
-      expect(log.metadata).toHaveProperty('input_username');
-      expect(log.metadata).toHaveProperty('input_email');
-      expect(log.metadata).toHaveProperty('input_role');
+      expect(log.metadata).toHaveProperty('input.username', 'sensitiveuser');
+      expect(log.metadata).toHaveProperty('input.email', 'sensitive@test.com');
+      expect(log.metadata).toHaveProperty('input.role', 'viewer');
+      expect(log.metadata).toHaveProperty('result.id');
 
-      // Verify there are no passwords in metadata
+      // ...and the password masked, never its value.
+      expect(log.metadata).toHaveProperty('input.password', '***REDACTED***');
       const metadataStr = JSON.stringify(log.metadata);
-      expect(metadataStr).not.toContain('password');
+      expect(metadataStr).not.toContain('SuperSecurePassword123!');
       expect(metadataStr).not.toContain('SecurePass');
     });
   });
 
-  describe('USER_HARD_DELETE con targetId corretto', () => {
-    it('dovrebbe loggare targetId corretto per hard delete', async () => {
+  describe('USER_HARD_DELETE with the correct targetId', () => {
+    it('should log the correct targetId for a hard delete', async () => {
       const { session } = await createTestUser('admin');
       const { user: targetUser } = await createTestUser('viewer');
       const caller = createCallerWithSession(session);
 
-      await caller.users.hardDelete({ id: targetUser.id });
+      await caller.users.hardDelete({ id: targetUser.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: {
@@ -349,38 +455,38 @@ describe('AuditLog Integration', () => {
     });
   });
 
-  describe('CONFIG_VIEW_VALUE con targetId', () => {
-    it('dovrebbe loggare targetId per visualizzazione valore raw', async () => {
+  describe('CONFIG_VIEW_VALUE with targetId', () => {
+    it('should log targetId when a raw value is viewed', async () => {
       const { session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
       // First create a config
       await caller.config.set({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         value: 'secret123',
         encrypt: true,
       });
 
       // Then view it in raw mode
       await caller.config.viewValue({
-        key: 'app.test.secret',
+        key: 'auth.ldap.bindPassword',
         mode: 'raw',
       });
 
       const auditLogs = await testPrisma.auditLog.findMany({
         where: {
           action: 'CONFIG_VIEW_VALUE',
-          targetId: 'app.test.secret',
+          targetId: 'auth.ldap.bindPassword',
         },
       });
 
       expect(auditLogs).toHaveLength(1);
-      expect(auditLogs[0].targetId).toBe('app.test.secret');
+      expect(auditLogs[0].targetId).toBe('auth.ldap.bindPassword');
     });
   });
 
-  describe('CONFIG_UPSERT per LDAP', () => {
-    it('dovrebbe loggare evento aggregato per salvataggio LDAP', async () => {
+  describe('CONFIG_UPSERT for LDAP', () => {
+    it('should log one aggregated event for an LDAP save', async () => {
       const { user: admin, session } = await createTestUser('admin');
       const caller = createCallerWithSession(session);
 
@@ -423,7 +529,7 @@ describe('AuditLog Integration', () => {
       expect(log.metadata).toHaveProperty('ldapEnabled');
     });
 
-    it('dovrebbe loggare FAILURE per errore LDAP', async () => {
+    it('should log FAILURE on an LDAP error', async () => {
       const { session } = await createTestUser('admin');
       const ctx = createTestContext(session);
 

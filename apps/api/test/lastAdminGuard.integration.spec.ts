@@ -1,6 +1,6 @@
 /**
  * `lastAdminGuard` — real enforcement through the tRPC endpoints, not against
- * a mock. `sectionAccess.spec.ts` only exercises `countAdminsWithSettingsAccess`
+ * a mock. `sectionAccess.spec.ts` only exercises `countRecoveryCapableAdmins`
  * with a fake `PrismaClient`: no test touches `assertNotLastAdminWithSettingsAccess`,
  * `acquireLastAdminLock`, or the real transaction of `users.update`/`softDelete`/
  * `hardDelete`. This suite covers both, including the race that
@@ -11,12 +11,13 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { acquireLastAdminLock } from '../src/lib/lastAdminGuard';
+import type { PrismaClient } from '@luke/db';
+
+import { acquireLastAdminLock, assertNotLastAdmin } from '../src/lib/lastAdminGuard';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 
@@ -35,25 +36,37 @@ beforeEach(async () => {
   prisma = await setupTestDb();
 });
 
-describe('lastAdminGuard — enforcement reale', () => {
-  it('editor con users:update NON può disattivare l\'unico admin rimasto', async () => {
-    const { session: editorSession } = await createTestUser('editor');
+describe('lastAdminGuard — real enforcement', () => {
+  // Only an admin manages users, so the caller is one too: what makes the target the last is that the
+  // caller cannot reach `settings.users`, the only way back from a wrong RBAC setting.
+  it('an admin without settings.users CANNOT deactivate the only admin who has it', async () => {
+    const { user: caller, session: callerSession } = await createTestUser('admin');
+    await prisma.userSectionAccess.create({ data: { userId: caller.id, section: 'settings.users', enabled: false } });
     const { user: admin } = await createTestUser('admin');
 
     await expect(
-      callerFor(editorSession).update({ id: admin.id, isActive: false })
+      callerFor(callerSession).update({ id: admin.id, isActive: false })
     ).rejects.toMatchObject({ code: 'FORBIDDEN', message: LAST_ADMIN_MESSAGE });
 
     const refreshed = await prisma.user.findUniqueOrThrow({ where: { id: admin.id } });
     expect(refreshed.isActive).toBe(true);
   });
 
-  it('editor con users:update PUÒ disattivare un admin se ne resta almeno un altro attivo', async () => {
-    const { session: editorSession } = await createTestUser('editor');
-    const { user: admin1 } = await createTestUser('admin');
-    await createTestUser('admin'); // second admin: keeps the system above the threshold
+  // No endpoint reaches the role count any more: its caller manages users, so is an active admin itself.
+  // The count stays as defence in depth, proven on the guard directly.
+  it('the role count alone refuses a change that would leave no active admin', async () => {
+    await createTestUser('admin');
 
-    await callerFor(editorSession).update({ id: admin1.id, isActive: false });
+    await expect(
+      prisma.$transaction(tx => assertNotLastAdmin(tx, LAST_ADMIN_MESSAGE))
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: LAST_ADMIN_MESSAGE });
+  });
+
+  it('an admin CAN deactivate another admin while one able to manage users stays active', async () => {
+    const { session: callerSession } = await createTestUser('admin');
+    const { user: admin1 } = await createTestUser('admin');
+
+    await callerFor(callerSession).update({ id: admin1.id, isActive: false });
 
     const refreshed = await prisma.user.findUniqueOrThrow({ where: { id: admin1.id } });
     expect(refreshed.isActive).toBe(false);
@@ -62,15 +75,17 @@ describe('lastAdminGuard — enforcement reale', () => {
   /**
    * Regression: the first version of the guard only checked the `settings`
    * section, and removing `settings.users` from the last admin passed without
-   * any obstacle. The Users menu entry is gated on
-   * `settings && settings['settings.users']` (`useMenuAccess.ts`) and that
-   * section maps to `users:read`: whoever loses it can no longer create or
-   * promote anyone, so it's the same lockout as `settings`, through another
-   * door. Found by testing manually on RC, not by a test.
+   * any obstacle. The Users menu entry reads `settings.users` (`useMenuAccess.ts`)
+   * and that section maps to `users:read`: whoever loses it can no longer create
+   * or promote anyone. Found by testing manually on RC, not by a test.
+   *
+   * Only `settings.users` is exercised: `settings` is derived from its children (ADR-025), so
+   * `set` refuses to switch it at all, and the way to take it from a user is to take its
+   * children — `settings.users` among them.
    */
-  describe('sezioni di recupero', () => {
-    it.each(['settings', 'settings.users'] as const)(
-      "togliere '%s' all'unico admin è rifiutato",
+  describe('recovery sections', () => {
+    it.each(['settings.users'] as const)(
+      "removing '%s' from the only admin is rejected",
       async section => {
         const { user: admin, session } = await createTestUser('admin');
 
@@ -84,8 +99,8 @@ describe('lastAdminGuard — enforcement reale', () => {
       }
     );
 
-    it.each(['settings', 'settings.users'] as const)(
-      "togliere '%s' a un admin è consentito se ne resta un altro",
+    it.each(['settings.users'] as const)(
+      "removing '%s' from an admin is allowed if another one remains",
       async section => {
         const { user: target, session } = await createTestUser('admin');
         await createTestUser('admin'); // the way out
@@ -102,8 +117,8 @@ describe('lastAdminGuard — enforcement reale', () => {
   });
 
   it(
-    'acquireLastAdminLock serializza due transazioni concorrenti sulla stessa chiave ' +
-      '(pg_advisory_xact_lock, non un mutex applicativo — sopravvive a più repliche API)',
+    'acquireLastAdminLock serialises two concurrent transactions on the same key ' +
+      '(pg_advisory_xact_lock, not an in-process mutex — it holds across several API replicas)',
     async () => {
       // Direct test of mutual exclusion on the real primitive used by all three
       // endpoints (`users.update`/`softDelete`/`hardDelete`, see grep in

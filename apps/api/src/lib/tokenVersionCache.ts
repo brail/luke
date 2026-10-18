@@ -6,9 +6,10 @@
  * clear this cache, so the cache can't live inside `trpc.ts` without a circular import.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { getTokenVersionCacheTTL } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 
 export const tokenVersionCache = new Map<
   string,

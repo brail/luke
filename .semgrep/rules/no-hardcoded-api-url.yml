@@ -1,0 +1,13 @@
+rules:
+  - id: luke-no-hardcoded-api-url
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Hardcoded apps/api address. Build the URL with `buildApiUrl()`,
+      `buildTrpcUrl()` or a specialised builder from `@luke/core`
+      (`packages/core/src/net/url.ts`): a literal host works on a developer
+      machine and breaks in every deployed environment.
+    pattern-regex: '(localhost|127\.0\.0\.1):3001'
+    paths:
+      include:
+        - '/apps/web/src/**'

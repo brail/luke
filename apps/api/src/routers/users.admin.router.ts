@@ -1,20 +1,29 @@
 /**
- * Admin procedures for users
- * revokeUserSessions, forceVerifyEmail, changeEmail
+ * Admin procedures for users: pending LDAP user approval, session revocation,
+ * email-verification override, and the local-access bypass for LDAP/OIDC users.
  */
 
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { UserIdSchema } from '@luke/core';
+import { Prisma } from '@luke/db';
+
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
-import { getConfig } from '../lib/configManager';
-import { sendVerificationEmail } from '../lib/emailHelpers';
-import { sendAccountApprovedEmail } from '../lib/mailer';
+import { getConfigOrDefault } from '../lib/configManager';
+import { createResetToken, isSyntheticLdapEmail } from '../lib/emailHelpers';
+import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure, invalidateTokenVersionCache } from '../lib/trpc';
-import { UserIdSchema } from '../services/users.service';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { router, protectedProcedure } from '../lib/trpc';
+import {
+  LocalAccessRefused,
+  assertOwnLocalIdentity,
+  placeholderPasswordHash,
+  prepareLocalIdentity,
+} from '../services/localAccess.service';
 
 export const usersAdminRouter = router({
   /**
@@ -51,39 +60,48 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Approves a pending LDAP user (clears pendingApproval flag) and sends an account-approved email.
+   * Approves a pending LDAP user (clears pendingApproval flag), assigns them to the given team
+   * in the same transaction, and sends an account-approved email. A pending user is provisioned
+   * without a team (`ldapAuth.ts`) — this is the first point a human decides where they belong,
+   * so the team is mandatory here rather than defaulted.
    *
    * @auth {users:update}
-   * @input {UserIdSchema}
+   * @input {{ id: string (UUID), teamId: string (UUID) }}
    * @output {{ success: true, message: string }}
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .input(UserIdSchema)
+    .input(z.object({ id: z.string().uuid(), teamId: z.string().uuid() }))
     .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findUnique({
-        where: { id: input.id },
-      });
+      const user = await ctx.prisma.$transaction(async tx => {
+        const pendingUser = await tx.user.findUnique({ where: { id: input.id } });
+        if (!pendingUser || !pendingUser.pendingApproval) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Utente in attesa non trovato',
+          });
+        }
 
-      if (!user || !user.pendingApproval) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Utente in attesa non trovato',
-        });
-      }
+        const team = await tx.companyTeam.findUnique({ where: { id: input.teamId }, select: { isActive: true } });
+        if (!team || !team.isActive) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Team non trovato o non attivo',
+          });
+        }
 
-      await ctx.prisma.user.update({
-        where: { id: input.id },
-        data: { pendingApproval: false },
+        await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
+        await tx.user.update({ where: { id: input.id }, data: { pendingApproval: false } });
+
+        return pendingUser;
       });
 
       // Send activation notification email (only if the email isn't synthetic)
       if (!user.email.endsWith('@ldap.local')) {
         try {
           const baseUrl =
-            (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-            'http://localhost:3000';
+            await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
           await sendAccountApprovedEmail(
             ctx.prisma,
             user.email,
@@ -234,74 +252,196 @@ export const usersAdminRouter = router({
     }),
 
   /**
-   * Changes the current user's email, resets emailVerifiedAt, and sends a new verification email.
+   * Force-provisions a LOCAL identity for a user currently authenticating via LDAP/OIDC, so login
+   * keeps working if AD disables or deletes the account. The existing external identity is left
+   * untouched — if AD re-enables the account, that login path keeps working too. Delivers access
+   * via the existing password-reset flow (`/auth/reset`): the placeholder credential created here
+   * is random and never usable on its own.
    *
-   * @auth {users:update}
-   * @input {{ newEmail: string }}
+   * @auth {users:update} + `*:*` — bypassing an external auth provider is admin-only even for a
+   *   `users:update` holder, same restriction as the password field in `users.update`
+   *   (users.core.router.ts)
+   * @input {UserIdSchema}
    * @output {{ success: true, message: string }}
    */
-  changeEmail: protectedProcedure
+  forceLocalAccess: protectedProcedure
     .use(requirePermission('users:update'))
+    .use(requirePermission('*:*'))
     .use(withRateLimit('userMutations'))
-    .input(
-      z.object({
-        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
-      })
-    )
+    .input(UserIdSchema)
+    .use(withAuditLog('USER_LOCAL_ACCESS_FORCED', 'User'))
     .mutation(async ({ input, ctx }) => {
-      const { newEmail } = input;
-      const userId = ctx.session.user.id;
-
-      // Verify email uniqueness
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email: newEmail, id: { not: userId } },
+      const user = await ctx.prisma.user.findUnique({
+        where: { id: input.id },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          identities: {
+            select: { id: true, provider: true, providerId: true, localCredential: { select: { id: true } } },
+          },
+        },
       });
 
-      if (existing) {
+      if (!user) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+      }
+
+      // Mirrors the UI's own gate (button hidden unless the user has an external identity):
+      // this action exists to bypass LDAP/OIDC, not to duplicate an ordinary password reset.
+      const hasExternalIdentity = user.identities.some(i => i.provider !== 'LOCAL');
+      if (!hasExternalIdentity) {
         throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Email già in uso',
+          code: 'BAD_REQUEST',
+          message:
+            "L'utente non ha un'identity esterna (LDAP/OIDC): usa il reset password standard invece di forzare l'accesso locale.",
         });
       }
 
-      // Update email + reset verification
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: { email: newEmail, emailVerifiedAt: null },
-      });
-
-      // Audit EMAIL_CHANGED (no PII)
-      await logAudit(ctx, {
-        action: 'EMAIL_CHANGED',
-        targetType: 'User',
-        targetId: userId,
-        result: 'SUCCESS',
-        metadata: {},
-      });
-
-      // Send verification using the DRY helper
-      try {
-        await sendVerificationEmail(
-          ctx.prisma,
-          {
-            userId,
-            reason: 'email_changed',
-            actorId: userId,
-          },
-          ctx
-        );
-
-        return {
-          success: true,
+      if (isSyntheticLdapEmail(user.email)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
           message:
-            'Email aggiornata. Controlla la nuova casella per verificarla.',
-        };
-      } catch {
-        return {
-          success: true,
-          message:
-            'Email aggiornata ma invio verifica fallito. Richiedi un nuovo link.',
-        };
+            "Imposta prima un'email reale per questo utente (Modifica utente), poi riprova: serve per recapitare il link di accesso locale.",
+        });
       }
+
+      // A LOCAL identity under the current username, with a credential: created if missing (the
+      // credential is a random placeholder until the user sets a password through the link below).
+      const local = user.identities.find(i => i.provider === 'LOCAL');
+      if (!local || !local.localCredential || local.providerId !== user.username) {
+        const placeholderHash = await placeholderPasswordHash();
+        try {
+          try {
+            await ctx.prisma.$transaction(tx => prepareLocalIdentity(tx, user, placeholderHash));
+          } catch (err) {
+            // `user.identities` was read outside any transaction: a concurrent call for the same
+            // user can race this one, and the `(provider, providerId)` unique key decides it. The
+            // identity that won is acceptable only if it is this user's, with a credential.
+            if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+            await assertOwnLocalIdentity(ctx.prisma, user);
+          }
+        } catch (err) {
+          if (!(err instanceof LocalAccessRefused)) throw err;
+          ctx.logger.warn({ userId: user.id, reason: err.message }, 'forceLocalAccess: unusable LOCAL identity');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "L'identità locale di questo utente non è utilizzabile: è registrata con un altro username o appartiene a un altro account.",
+          });
+        }
+      }
+
+      // Token generation and `getConfig` are independent reads/writes — run concurrently.
+      let userToken;
+      try {
+        const [{ token, userToken: createdToken }, baseUrl] = await Promise.all([
+          createResetToken(ctx.prisma, user.id),
+          getConfigOrDefault(ctx.prisma, 'app.baseUrl'),
+        ]);
+        userToken = createdToken;
+
+        await sendPasswordResetEmail(ctx.prisma, user.email, token, baseUrl);
+      } catch (error) {
+        // The LOCAL identity/credential (if just created) is deliberately left in place —
+        // it's unusable without the link, and the next call finds it ready and just resends
+        // the link. Only the orphaned token, which nobody received, is cleaned up, mirroring
+        // `requestPasswordReset` in `auth.service.ts`; a link sent earlier is never touched.
+        if (userToken) {
+          await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
+            ctx.logger.warn({ err: e, tokenId: userToken!.id }, 'Failed to delete orphaned reset token');
+          });
+        }
+        ctx.logger.error(
+          { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },
+          'forceLocalAccess: reset email failed — check SMTP config in AppConfig'
+        );
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message:
+            "Credenziale locale pronta ma invio email fallito (verifica configurazione SMTP). Riprova: l'operazione è idempotente.",
+          cause: error,
+        });
+      }
+
+      return {
+        success: true,
+        message: `Link di accesso locale inviato a ${user.email}`,
+      };
+    }),
+
+  /**
+   * Revokes the LOCAL identity (and its credential) provisioned by `forceLocalAccess`, e.g. once
+   * an LDAP/OIDC account is confirmed to work again. Refuses to remove a user's only identity —
+   * there must be a remaining external provider to fall back to. Bumps `tokenVersion` to
+   * invalidate any session already authenticated via the removed local credential.
+   *
+   * @auth {users:update} + `*:*` — same class of action as `forceLocalAccess`, admin-only
+   *   even for a `users:update` holder
+   * @input {UserIdSchema}
+   * @output {{ success: true, message: string }}
+   */
+  revokeLocalAccess: protectedProcedure
+    .use(requirePermission('users:update'))
+    .use(requirePermission('*:*'))
+    .use(withRateLimit('userMutations'))
+    .input(UserIdSchema)
+    .use(withAuditLog('USER_LOCAL_ACCESS_REVOKED', 'User'))
+    .mutation(async ({ input, ctx }) => {
+      // Same self-lockout risk as revokeUserSessions (this also bumps tokenVersion,
+      // ending the caller's own session mid-action) — same guard.
+      if (input.id === ctx.session.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Non puoi revocare il tuo stesso accesso locale.',
+        });
+      }
+
+      // Read → validate → write entirely inside the transaction: a concurrent second call for
+      // the same user must re-read fresh state, not act on a stale pre-transaction snapshot
+      // (mirrors the race-safety already applied to `forceLocalAccess` above).
+      const result = await ctx.prisma.$transaction(async tx => {
+        const user = await tx.user.findUnique({
+          where: { id: input.id },
+          include: { identities: { select: { id: true, provider: true } } },
+        });
+
+        if (!user) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+        }
+
+        const localIdentity = user.identities.find(i => i.provider === 'LOCAL');
+        if (!localIdentity) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: "L'utente non ha accesso locale attivo",
+          });
+        }
+
+        const hasExternalIdentity = user.identities.some(i => i.provider !== 'LOCAL');
+        if (!hasExternalIdentity) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              "Impossibile revocare l'unico metodo di accesso dell'utente: nessuna identity esterna (LDAP/OIDC) di fallback.",
+          });
+        }
+
+        // Cascade-deletes the LocalCredential row (schema onDelete: Cascade).
+        await tx.identity.delete({ where: { id: localIdentity.id } });
+        await tx.user.update({
+          where: { id: user.id },
+          data: { tokenVersion: { increment: 1 } },
+        });
+
+        return user;
+      });
+
+      invalidateTokenVersionCache(result.id);
+
+      return {
+        success: true,
+        message: `Accesso locale revocato per ${result.username}`,
+      };
     }),
 });

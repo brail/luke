@@ -6,8 +6,26 @@
 import { z } from 'zod';
 
 /**
+ * Supported LDAP authentication strategies — the one list the `auth.strategy` AppConfig schema,
+ * the LDAP config schemas below and the API's config reader all derive from.
+ * `local-first` tries local credentials before LDAP; `ldap-only` refuses local login except to an
+ * administrator, as the break-glass path.
+ */
+export const LDAP_STRATEGIES = [
+  'local-first',
+  'ldap-first',
+  'local-only',
+  'ldap-only',
+] as const;
+
+export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];
+
+/**
  * Input schema for saving LDAP configuration.
  * `roleMapping` must be a valid JSON string mapping LDAP group names to Luke role names.
+ * `ldap-only` with LDAP disabled is refused: only the local administrators could log in. The issue
+ * sits on `strategy` so the settings form shows it under that field. A convenience for this form
+ * and `saveLdapConfig`; Maintenance → Config writes the same keys without it.
  */
 export const ldapConfigSchema = z.object({
   enabled: z.boolean(),
@@ -27,7 +45,7 @@ export const ldapConfigSchema = z.object({
     .or(z.literal(''))
     .refine(
       val => {
-        if (!val || val.trim() === '') return true; // Vuoto è valido
+        if (!val || val.trim() === '') return true; // Empty is valid
         try {
           JSON.parse(val);
           return true;
@@ -37,29 +55,24 @@ export const ldapConfigSchema = z.object({
       },
       { message: 'Role Mapping deve essere un JSON valido' }
     ),
-  strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
-});
-
-/**
- * Response shape for `getLdapConfig`. Sensitive fields (`bindDN`, `bindPassword`) are replaced
- * with boolean presence flags.
- */
-export const ldapConfigResponseSchema = z.object({
-  enabled: z.boolean(),
-  url: z.string(),
-  hasBindDN: z.boolean(),
-  hasBindPassword: z.boolean(),
-  searchBase: z.string(),
-  searchFilter: z.string(),
-  groupSearchBase: z.string(),
-  groupSearchFilter: z.string(),
-  roleMapping: z.string(), // JSON string
-  strategy: z.enum(['local-first', 'ldap-first', 'local-only', 'ldap-only']),
+  strategy: z.enum(LDAP_STRATEGIES),
+}).superRefine((config, ctx) => {
+  if (config.strategy === 'ldap-only' && !config.enabled) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['strategy'],
+      message: 'La strategia ldap-only richiede LDAP abilitato',
+    });
+  }
 });
 
 /** Input schema for testing LDAP user search by username. */
 export const ldapSearchTestSchema = z.object({
-  username: z.string().min(1, 'Username è obbligatorio'),
+  // Bounds the filter string sent to the directory; nothing else does.
+  username: z
+    .string()
+    .min(1, 'Username è obbligatorio')
+    .max(256, 'Username troppo lungo (max 256 caratteri)'),
 });
 
 /** Response shape for an LDAP search test, including matched entries and effective search config. */
@@ -91,9 +104,8 @@ export const ldapOperationResponseSchema = z.object({
   message: z.string(),
 });
 
-// Tipi inferiti dagli schema
+// Types inferred from the schemas
 export type LdapConfigInput = z.infer<typeof ldapConfigSchema>;
-export type LdapConfigResponse = z.infer<typeof ldapConfigResponseSchema>;
 export type LdapSearchTestInput = z.infer<typeof ldapSearchTestSchema>;
 export type LdapSearchTestResponse = z.infer<
   typeof ldapSearchTestResponseSchema
@@ -102,16 +114,3 @@ export type LdapConnectionTestResponse = z.infer<
   typeof ldapConnectionTestResponseSchema
 >;
 export type LdapOperationResponse = z.infer<typeof ldapOperationResponseSchema>;
-
-/**
- * Supported LDAP authentication strategies. Must match the `auth.strategy` AppConfig value.
- * `local-first` tries local credentials before LDAP; `ldap-only` disables local login entirely.
- */
-export const LDAP_STRATEGIES = [
-  'local-first',
-  'ldap-first',
-  'local-only',
-  'ldap-only',
-] as const;
-
-export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];

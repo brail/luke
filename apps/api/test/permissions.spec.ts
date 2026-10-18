@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 import {
   hasPermission,
@@ -63,18 +63,14 @@ describe('hasPermission', () => {
     expect(hasPermission({ role: 'admin' }, 'settings:read')).toBe(true);
   });
 
-  it('should return true for editor with resource wildcard', () => {
-    expect(hasPermission({ role: 'editor' }, 'brands:create')).toBe(true);
-    expect(hasPermission({ role: 'editor' }, 'brands:update')).toBe(true);
-    expect(hasPermission({ role: 'editor' }, 'brands:delete')).toBe(true);
-  });
-
   it('should return true for editor with specific permission', () => {
     expect(hasPermission({ role: 'editor' }, 'users:read')).toBe(true);
-    expect(hasPermission({ role: 'editor' }, 'users:update')).toBe(true);
+    expect(hasPermission({ role: 'editor' }, 'collection_layout:update')).toBe(true);
   });
 
   it('should return false for editor without permission', () => {
+    expect(hasPermission({ role: 'editor' }, 'brands:create')).toBe(false);
+    expect(hasPermission({ role: 'editor' }, 'users:update')).toBe(false);
     expect(hasPermission({ role: 'editor' }, 'users:delete')).toBe(false);
     expect(hasPermission({ role: 'editor' }, 'maintenance:read')).toBe(false);
   });
@@ -115,12 +111,11 @@ describe('expandRole', () => {
 
   it('should expand editor role to specific permissions', () => {
     const permissions = expandRole('editor');
-    expect(permissions).toContain('brands:create');
     expect(permissions).toContain('brands:read');
-    expect(permissions).toContain('brands:update');
-    expect(permissions).toContain('brands:delete');
+    expect(permissions).not.toContain('brands:create');
+    expect(permissions).toContain('collection_layout:update');
     expect(permissions).toContain('users:read');
-    expect(permissions).toContain('users:update');
+    expect(permissions).not.toContain('users:update');
     expect(permissions).not.toContain('users:delete');
     expect(permissions).not.toContain('maintenance:read');
   });
@@ -129,7 +124,6 @@ describe('expandRole', () => {
     const permissions = expandRole('viewer');
     expect(permissions).toContain('brands:read');
     expect(permissions).toContain('users:read');
-    expect(permissions).toContain('config:read');
     expect(permissions).not.toContain('brands:create');
     expect(permissions).not.toContain('brands:update');
     expect(permissions).not.toContain('brands:delete');
@@ -175,7 +169,7 @@ describe('requirePermission middleware', () => {
   it('should allow access for editor with resource permission', async () => {
     const ctx = createMockContext('editor');
 
-    await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
+    await expect(callProbe('collection_layout:update', ctx)).resolves.toBe('success');
   });
 
   it('should deny access for viewer without permission', async () => {
@@ -199,12 +193,13 @@ describe('requirePermission middleware', () => {
     const ctx = createMockContext('editor');
 
     await expect(
-      callProbe(['brands:create', 'users:delete'], ctx)
+      callProbe(['users:delete', 'collection_layout:update'], ctx)
     ).resolves.toBe('success');
   });
 
   it('should deny access when user has none of the required permissions', async () => {
     const ctx = createMockContext('viewer');
+    const warn = vi.spyOn(ctx.logger!, 'warn');
 
     await expect(
       callProbe(['brands:create', 'users:delete'], ctx)
@@ -214,19 +209,30 @@ describe('requirePermission middleware', () => {
       ctx
     ).catch(e => e);
     expect(error.code).toBe('FORBIDDEN');
+    // The permission names go to the log, never to the client.
+    expect(error.message).toBe('Accesso negato');
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: ctx.session!.user.id,
+        userRole: 'viewer',
+        requestedPermissions: ['brands:create', 'users:delete'],
+        deniedPermissions: ['brands:create', 'users:delete'],
+      }),
+      'Permission denied'
+    );
   });
 
   it('should cache permission checks', async () => {
     const ctx = createMockContext('editor');
 
-    const key = cacheKey('editor', 'brands:create');
+    const key = cacheKey('editor', 'collection_layout:update');
 
-    await callProbe('brands:create', ctx);
+    await callProbe('collection_layout:update', ctx);
     expect(ctx._permissionsCache?.has(key)).toBe(true);
     expect(ctx._permissionsCache?.get(key)).toBe(true);
 
     // Second call: served from cache, same outcome
-    await expect(callProbe('brands:create', ctx)).resolves.toBe('success');
+    await expect(callProbe('collection_layout:update', ctx)).resolves.toBe('success');
   });
 });
 
@@ -239,8 +245,8 @@ describe('can helper', () => {
 
   it('should return true for editor with resource permission', () => {
     const ctx = createMockContext('editor');
-    expect(can(ctx, 'brands:create')).toBe(true);
-    expect(can(ctx, 'brands:update')).toBe(true);
+    expect(can(ctx, 'collection_layout:update')).toBe(true);
+    expect(can(ctx, 'brands:update')).toBe(false);
   });
 
   it('should return false for viewer without permission', () => {
@@ -259,13 +265,13 @@ describe('can helper', () => {
     const ctx = createMockContext('editor');
 
     // First call
-    expect(can(ctx, 'brands:create')).toBe(true);
-    expect(ctx._permissionsCache?.has(cacheKey('editor', 'brands:create'))).toBe(
-      true
-    );
+    expect(can(ctx, 'collection_layout:update')).toBe(true);
+    expect(
+      ctx._permissionsCache?.has(cacheKey('editor', 'collection_layout:update'))
+    ).toBe(true);
 
     // Second call should use the cache
-    expect(can(ctx, 'brands:create')).toBe(true);
+    expect(can(ctx, 'collection_layout:update')).toBe(true);
   });
 });
 
@@ -276,12 +282,16 @@ describe('ROLE_PERMISSIONS configuration', () => {
 
   it('should have correct permissions for editor', () => {
     const editorPermissions = ROLE_PERMISSIONS.editor;
-    expect(editorPermissions).toContain('brands:*');
-    expect(editorPermissions).toContain('seasons:*');
+    expect(editorPermissions).toContain('brands:read');
+    expect(editorPermissions).toContain('seasons:read');
+    expect(editorPermissions).toContain('vendors:read');
     expect(editorPermissions).toContain('users:read');
-    expect(editorPermissions).toContain('users:update');
-    expect(editorPermissions).toContain('config:read');
-    expect(editorPermissions).toContain('config:update');
+    expect(editorPermissions).not.toContain('users:update');
+    // No access to config: the endpoints it gates (SMTP, LDAP, auth strategy, storage
+    // credentials, password policy) do not check section access, so the permission
+    // reached far beyond the pages the interface hid.
+    expect(editorPermissions).not.toContain('config:read');
+    expect(editorPermissions).not.toContain('config:update');
     expect(editorPermissions).toContain('audit:read');
     expect(editorPermissions).toContain('dashboard:read');
     // The settings section is admin-only by design: `SECTION_ACCESS_DEFAULTS.editor.settings`
@@ -295,7 +305,7 @@ describe('ROLE_PERMISSIONS configuration', () => {
     expect(viewerPermissions).toContain('brands:read');
     expect(viewerPermissions).toContain('seasons:read');
     expect(viewerPermissions).toContain('users:read');
-    expect(viewerPermissions).toContain('config:read');
+    expect(viewerPermissions).not.toContain('config:read');
     expect(viewerPermissions).toContain('audit:read');
     expect(viewerPermissions).toContain('dashboard:read');
     expect(viewerPermissions).not.toContain('brands:create');

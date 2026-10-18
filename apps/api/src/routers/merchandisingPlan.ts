@@ -8,10 +8,11 @@
  *  - merchandisingPlan.createRow / updateRow / deleteRow / reorderRows
  *  - merchandisingPlan.getSpecsheet / upsertSpecsheet
  *  - merchandisingPlan.upsertComponents
- *  - merchandisingPlan.addImage / deleteImage / setDefaultImage
+ *  - merchandisingPlan.deleteImage / setDefaultImage
  *  - merchandisingPlan.assignUser
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
@@ -21,8 +22,10 @@ import {
   MERCHANDISING_PLAN_STATUS,
   partialWithoutDefaults,
 } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { isForeignKeyViolation } from '../lib/error';
 import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -30,8 +33,49 @@ import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
 import {
   assertBrandAccess,
+  resolveMerchPlanBrandAccess,
   resolveMerchPlanRowBrandAccess,
+  resolveMerchSpecsheetBrandAccess,
 } from '../services/brandScope.service';
+import { getUserAllowedIds } from '../services/context.service';
+import { deleteSpecsheetImage, setDefaultSpecsheetImage } from '../services/specsheetImage.service';
+
+const invalidParameterSet = () =>
+  new TRPCError({ code: 'BAD_REQUEST', message: 'Set di parametri non valido per questo piano' });
+
+/** A row's parameter set must be one of its plan's brand and season, or none. */
+async function assertParameterSetOfPlan(
+  prisma: PrismaClient,
+  parameterSetId: string | null | undefined,
+  plan: { brandId: string; seasonId: string },
+): Promise<void> {
+  if (!parameterSetId) return;
+  const set = await prisma.pricingParameterSet.findFirst({
+    where: { id: parameterSetId, brandId: plan.brandId, seasonId: plan.seasonId },
+    select: { id: true },
+  });
+  if (!set) throw invalidParameterSet();
+}
+
+/**
+ * Runs a row write whose parameter set `assertParameterSetOfPlan` has checked. A set never changes
+ * brand or season and a row never changes plan, so the check can go stale only by the set's
+ * deletion: a write naming a deleted set is refused by the foreign key, and that refusal gets the
+ * check's answer, not a 500 (a deletion after the write is refused: `removeParameterSet` will not
+ * delete a set a row uses).
+ * No transaction around the check and the write — under READ COMMITTED it would not hold the check;
+ * the foreign key does.
+ */
+async function writeCheckedRow<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (isForeignKeyViolation(err, 'merchandising_plan_rows_pricingParameterSetId_fkey')) {
+      throw invalidParameterSet();
+    }
+    throw err;
+  }
+}
 
 export const merchandisingPlanRouter = router({
   /**
@@ -77,6 +121,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       const result = await ctx.prisma.merchandisingPlan.update({
         where: { id: input.planId },
         data: { status: input.status },
@@ -102,6 +148,8 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:read'))
     .input(z.object({ planId: z.string().uuid() }))
     .query(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       const rows = await ctx.prisma.merchandisingPlanRow.findMany({
         where: { planId: input.planId },
         orderBy: { order: 'asc' },
@@ -152,7 +200,10 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(MerchandisingPlanRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const result = await ctx.prisma.merchandisingPlanRow.create({
+      const plan = await resolveMerchPlanBrandAccess(ctx, input.planId);
+      await assertParameterSetOfPlan(ctx.prisma, input.pricingParameterSetId, plan);
+
+      const result = await writeCheckedRow(() => ctx.prisma.merchandisingPlanRow.create({
         data: {
           planId: input.planId,
           order: input.order ?? 0,
@@ -181,9 +232,8 @@ export const merchandisingPlanRouter = router({
           wholesaleEu: input.wholesaleEu ?? null,
           pricingNotes: input.pricingNotes ?? null,
           generalNotes: input.generalNotes ?? null,
-          assignedUserId: input.assignedUserId ?? null,
         },
-      });
+      }));
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_CREATE',
         targetType: 'MerchandisingPlanRow',
@@ -211,16 +261,19 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const result = await ctx.prisma.merchandisingPlanRow.update({
+      const row = await resolveMerchPlanRowBrandAccess(ctx, input.id);
+      await assertParameterSetOfPlan(ctx.prisma, input.data.pricingParameterSetId, row.plan);
+
+      const result = await writeCheckedRow(() => ctx.prisma.merchandisingPlanRow.update({
         where: { id: input.id },
         data: input.data,
-      });
+      }));
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_UPDATE',
         targetType: 'MerchandisingPlanRow',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { planId: result.planId, changedFields: Object.keys(input.data) },
       });
       return result;
     }),
@@ -237,13 +290,17 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.merchandisingPlanRow.delete({ where: { id: input.id } });
+      await resolveMerchPlanRowBrandAccess(ctx, input.id);
+
+      // `delete` returns the removed row, so the audit entry can describe what is gone
+      // without a second read — after this the id points at nothing.
+      const deleted = await ctx.prisma.merchandisingPlanRow.delete({ where: { id: input.id } });
       await logAudit(ctx, {
         action: 'MERCHANDISING_ROW_DELETE',
         targetType: 'MerchandisingPlanRow',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { planId: deleted.planId, code: deleted.articleCode },
       });
       return { success: true };
     }),
@@ -265,6 +322,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchPlanBrandAccess(ctx, input.planId);
+
       await ctx.prisma.$transaction(
         input.rows.map(r =>
           ctx.prisma.merchandisingPlanRow.update({
@@ -322,6 +381,8 @@ export const merchandisingPlanRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const { rowId, ...data } = input;
+      await resolveMerchPlanRowBrandAccess(ctx, rowId);
+
       const result = await ctx.prisma.merchandisingSpecsheet.upsert({
         where: { rowId },
         create: { rowId, ...data },
@@ -354,6 +415,8 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      await resolveMerchSpecsheetBrandAccess(ctx, input.specsheetId);
+
       await ctx.prisma.$transaction([
         ctx.prisma.merchandisingComponent.deleteMany({
           where: { specsheetId: input.specsheetId },
@@ -382,49 +445,8 @@ export const merchandisingPlanRouter = router({
     }),
 
   /**
-   * Adds an image to a specsheet. The first image added is automatically set as default.
-   *
-   * @auth merchandising_plan:update
-   * @input { specsheetId, key, caption? }
-   * @output The created MerchandisingImage
-   */
-  addImage: protectedProcedure
-    .use(requirePermission('merchandising_plan:update'))
-    .use(withRateLimit('configMutations'))
-    .input(
-      z.object({
-        specsheetId: z.string().uuid(),
-        key: z.string(),
-        caption: z.string().optional().nullable(),
-      })
-    )
-    .mutation(async ({ input, ctx }) => {
-      const result = await ctx.prisma.$transaction(async tx => {
-        const existingCount = await tx.merchandisingImage.count({
-          where: { specsheetId: input.specsheetId },
-        });
-        return tx.merchandisingImage.create({
-          data: {
-            specsheetId: input.specsheetId,
-            key: input.key,
-            isDefault: existingCount === 0,
-            order: existingCount,
-            caption: input.caption ?? null,
-          },
-        });
-      });
-      await logAudit(ctx, {
-        action: 'MERCHANDISING_IMAGE_ADD',
-        targetType: 'MerchandisingSpecsheet',
-        targetId: input.specsheetId,
-        result: 'SUCCESS',
-        metadata: { imageId: result.id },
-      });
-      return result;
-    }),
-
-  /**
-   * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted.
+   * Deletes an image from a specsheet. If it was the default, the next image (by order) is promoted
+   * (`deleteSpecsheetImage`, under the specsheet's image lock).
    *
    * @auth merchandising_plan:update
    * @input { id }
@@ -435,40 +457,21 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await ctx.prisma.merchandisingImage.findUnique({
-        where: { id: input.id },
-      });
-      if (!image) return { success: true };
-
-      await ctx.prisma.$transaction(async tx => {
-        await tx.merchandisingImage.delete({ where: { id: input.id } });
-
-        if (image.isDefault) {
-          const next = await tx.merchandisingImage.findFirst({
-            where: { specsheetId: image.specsheetId },
-            orderBy: { order: 'asc' },
-          });
-          if (next) {
-            await tx.merchandisingImage.update({
-              where: { id: next.id },
-              data: { isDefault: true },
-            });
-          }
-        }
-      });
+      const { specsheetId } = await deleteSpecsheetImage(ctx, input.id);
 
       await logAudit(ctx, {
         action: 'MERCHANDISING_IMAGE_DELETE',
         targetType: 'MerchandisingImage',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { specsheetId: image.specsheetId },
+        metadata: { specsheetId },
       });
       return { success: true };
     }),
 
   /**
-   * Sets a specific image as the default for its specsheet (resets all others, then sets this one).
+   * Sets a specific image as the default for its specsheet (resets all others, then sets this one;
+   * `setDefaultSpecsheetImage`, under the specsheet's image lock).
    *
    * @auth merchandising_plan:update
    * @input { id }
@@ -479,28 +482,14 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      const image = await ctx.prisma.merchandisingImage.findUnique({
-        where: { id: input.id },
-      });
-      if (!image) return { success: true };
-
-      await ctx.prisma.$transaction([
-        ctx.prisma.merchandisingImage.updateMany({
-          where: { specsheetId: image.specsheetId },
-          data: { isDefault: false },
-        }),
-        ctx.prisma.merchandisingImage.update({
-          where: { id: input.id },
-          data: { isDefault: true },
-        }),
-      ]);
+      const { specsheetId } = await setDefaultSpecsheetImage(ctx, input.id);
 
       await logAudit(ctx, {
         action: 'MERCHANDISING_IMAGE_SET_DEFAULT',
         targetType: 'MerchandisingImage',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { specsheetId: image.specsheetId },
+        metadata: { specsheetId },
       });
       return { success: true };
     }),
@@ -524,7 +513,26 @@ export const merchandisingPlanRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+      const row = await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
+
+      // The assignee must be able to open the row they are notified about. A point-in-time check,
+      // with no transaction: assignment grants no access (every read checks brand scope on its own),
+      // and a deactivation or team change landing between this check and the write is the same as
+      // one landing just after it. Accepted consequence: such an assignee still receives the
+      // notification below, with the article code, since `createNotification` does not re-check.
+      if (input.userId) {
+        const assignee = await ctx.prisma.user.findFirst({
+          where: { id: input.userId, isActive: true },
+          select: { id: true, role: true },
+        });
+        if (!assignee) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+        }
+        const { brandIds } = await getUserAllowedIds(assignee.id, ctx.prisma, assignee.role);
+        if (brandIds !== null && !brandIds.includes(row.plan.brandId)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: "L'utente non ha accesso a questo brand" });
+        }
+      }
 
       const existingRow = await ctx.prisma.merchandisingPlanRow.findUnique({
         where: { id: input.rowId },

@@ -24,10 +24,10 @@ interface Props {
 }
 
 /**
- * Cambio gruppo di pianificazione per una singola riga — picker puramente locale, nessuna mutation
- * di rete: riporta la selezione al drawer via `onChanged`, che la bufferizza nel form della riga. Il
- * commit reale avviene solo al Salva del drawer (stessa transazione della riga). `planningGroups`
- * arriva dal drawer, che le ha già fetchate per il form — nessuna query propria.
+ * Planning group change for a single row — a purely local picker, no network mutation: it hands
+ * the selection back to the drawer via `onChanged`, which buffers it in the row form. The real
+ * commit happens only on the drawer Save (same transaction as the row). `planningGroups` comes
+ * from the drawer, which already fetched them for the form — no query of its own.
  */
 export function ChangePlanningGroupDialog({ open, onClose, onChanged, planningGroups, isLoading }: Props) {
   const [planningGroupId, setPlanningGroupId] = useState('');

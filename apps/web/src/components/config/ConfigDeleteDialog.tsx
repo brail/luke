@@ -1,20 +1,19 @@
-import { AlertTriangle, Lock } from 'lucide-react';
-import { useState } from 'react';
+'use client';
 
-import { isCriticalKey } from '../../lib/configHelpers';
+import { Lock } from 'lucide-react';
+
+import { isUndeletableConfigKey } from '@luke/core';
+
+import { ConfirmDialog } from '../ConfirmDialog';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import { Badge } from '../ui/badge';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 
 interface ConfigDeleteDialogProps {
   onOpenChange: () => void;
@@ -26,10 +25,14 @@ interface ConfigDeleteDialogProps {
 /**
  * Confirmation dialog for deleting an AppConfig key.
  *
- * Critical keys (from `isCriticalKey`) are blocked from deletion and render a locked badge.
- * For non-critical keys the user must type the exact key name to enable the confirm button.
+ * A deletable key goes through the shared `ConfirmDialog`, typing the key name itself as the
+ * confirmation — the same gate the permanent deletions use, with the entity's own identifier in
+ * place of their fixed phrase.
  *
- * @param configKey - The config key to be deleted; used for the confirmation input and critical-key check.
+ * A key `isUndeletableConfigKey` names cannot be deleted at all, so it gets its own dialog: there
+ * is no action to confirm, only a reason to read.
+ *
+ * @param configKey - The config key to be deleted; used both as the confirmation phrase and for the undeletable-key check.
  */
 export function ConfigDeleteDialog({
   onOpenChange,
@@ -37,85 +40,49 @@ export function ConfigDeleteDialog({
   onConfirm,
   isLoading = false,
 }: ConfigDeleteDialogProps) {
-  const [confirmKey, setConfirmKey] = useState('');
-  const isCritical = isCriticalKey(configKey);
-  const canDelete = !isCritical && confirmKey === configKey;
+  if (isUndeletableConfigKey(configKey)) {
+    return (
+      <AlertDialog open={true} onOpenChange={onOpenChange}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Lock className="w-5 h-5 text-destructive" />
+              Eliminazione bloccata
+            </AlertDialogTitle>
+          </AlertDialogHeader>
 
-  const handleConfirm = () => {
-    if (canDelete) {
-      onConfirm();
-      setConfirmKey('');
-    }
-  };
+          <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/10 p-3">
+            <div>
+              <Badge variant="destructive" className="mb-1">
+                Chiave critica
+              </Badge>
+              <p className="text-sm text-destructive">
+                <code className="font-mono">{configKey}</code> è necessaria per il funzionamento
+                del sistema e non può essere eliminata.
+              </p>
+            </div>
+          </div>
 
-  const handleOpenChange = () => {
-    setConfirmKey('');
-    onOpenChange();
-  };
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Chiudi</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
 
   return (
-    <AlertDialog open={true} onOpenChange={handleOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-destructive" />
-            Conferma Eliminazione
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Stai per eliminare la configurazione{' '}
-            <code className="bg-muted px-1 py-0.5 rounded text-sm font-mono">
-              {configKey}
-            </code>
-            . Questa azione è irreversibile.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="space-y-3">
-          {isCritical ? (
-            <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-              <Lock className="w-4 h-4 text-destructive" />
-              <div>
-                <Badge variant="destructive" className="mb-1">
-                  Chiave Critica — Eliminazione Bloccata
-                </Badge>
-                <p className="text-sm text-destructive">
-                  Questa chiave è necessaria per il funzionamento del sistema e
-                  non può essere eliminata.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <Label htmlFor="confirm-key" className="text-sm font-medium">
-                Digita il nome della chiave per confermare:
-              </Label>
-              <Input
-                id="confirm-key"
-                value={confirmKey}
-                onChange={e => setConfirmKey(e.target.value)}
-                placeholder={configKey}
-                disabled={isLoading}
-              />
-              {confirmKey && confirmKey !== configKey && (
-                <p className="text-sm text-destructive">
-                  Il nome della chiave non corrisponde
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isLoading}>Annulla</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleConfirm}
-            disabled={!canDelete || isLoading}
-            className="bg-destructive hover:bg-destructive/90"
-          >
-            {isLoading ? 'Eliminazione...' : 'Elimina'}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={true}
+      onOpenChange={open => { if (!open) onOpenChange(); }}
+      title="Conferma eliminazione"
+      description={`Stai per eliminare la configurazione ${configKey}. Questa azione è irreversibile.`}
+      confirmText="Elimina"
+      cancelText="Annulla"
+      actionType="hardDelete"
+      confirmPhrase={configKey}
+      onConfirm={() => onConfirm()}
+      isLoading={isLoading}
+    />
   );
 }

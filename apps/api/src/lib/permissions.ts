@@ -1,7 +1,7 @@
 /**
  * tRPC middleware for Resource:Action permission enforcement.
  * Implements granular access control with a per-request cache for performance.
- * Supports wildcard matching and backward compatibility with legacy roles.
+ * Wildcards (`*:*`, `resource:*`) are resolved by `hasPermission` in `@luke/core`.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -11,6 +11,7 @@ import {
   type Permission,
   type PermissionDeclaration,
   type Role,
+  type Section,
 } from '@luke/core';
 
 import { t } from './t';
@@ -32,6 +33,33 @@ declare module './context' {
 }
 
 /**
+ * The one log line for a refused Resource:Action permission or section, wherever the check sits:
+ * `requirePermission`, a manual `can()`/`hasPermission()` guard, `withSectionAccess`, or a raw
+ * Fastify route (given that request's logger). The FORBIDDEN the client gets stays short on
+ * purpose — a 4xx reaches every client — so this is where the permission or section is named.
+ * Brand scope, ownership and data rules (the last admin) are other refusals and do not come here.
+ *
+ * `requestedPermissions` defaults to the denied ones; it is wider only for an AND check that the
+ * caller partly passed.
+ */
+export function logAccessDenied(
+  ctx: Partial<Pick<Context, 'logger' | 'traceId'>> & Pick<Context, 'session'>,
+  denied: { deniedPermissions: Permission[]; requestedPermissions?: Permission[] } | { section: Section }
+): void {
+  const what =
+    'section' in denied
+      ? denied
+      : {
+          requestedPermissions: denied.requestedPermissions ?? denied.deniedPermissions,
+          deniedPermissions: denied.deniedPermissions,
+        };
+  ctx.logger?.warn(
+    { traceId: ctx.traceId, userId: ctx.session?.user.id, userRole: ctx.session?.user.role, ...what },
+    'Permission denied'
+  );
+}
+
+/**
  * Resolves the required permission(s) from the procedure's parsed input — for the rare case where
  * the permission depends on a runtime field (e.g. which entity type is being locked). The `.use()`
  * call must come *after* `.input()` in the procedure chain, otherwise `input` is not yet parsed.
@@ -47,8 +75,8 @@ function normalizeDeclaration(
 }
 
 /**
- * Factory for middleware that requires one or more permissions
- * Supports both role-based and user-granted permissions
+ * Factory for middleware that requires one or more permissions, read from the session's role
+ * (`ROLE_PERMISSIONS`).
  *
  * @param permission - A single permission, an array of permissions, a PermissionDeclaration, or a
  *   `(input) => Permission` function for cases where the permission depends on the parsed input
@@ -68,7 +96,6 @@ function normalizeDeclaration(
  * requirePermission({
  *   required: 'brands:delete',
  *   description: 'Delete brand',
- *   context: { checkOwnership: true }
  * })
  *
  * // Input-dependent (requires .use() after .input())
@@ -136,21 +163,12 @@ export function requirePermission<TInput = never>(
     }
 
     if (!hasAnyPermission) {
-      // Structured log for audit (no PII)
-      const logData = {
-        traceId: ctx.traceId,
-        userId: user.id,
-        userRole: user.role,
-        requestedPermissions: permissionArray,
-        deniedPermissions,
-        timestamp: new Date().toISOString(),
-      };
-
-      ctx.logger?.warn(logData, 'Permission denied');
+      logAccessDenied(ctx, { requestedPermissions: permissionArray, deniedPermissions });
 
       throw new TRPCError({
         code: 'FORBIDDEN',
-        message: `Accesso negato: richieste permissions ${permissionArray.join(' o ')}`,
+        // The permission names stay in the log line above: a 4xx reaches every client.
+        message: 'Accesso negato',
       });
     }
 

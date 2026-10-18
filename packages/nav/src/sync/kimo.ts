@@ -1,20 +1,21 @@
 /**
  * NAV → PostgreSQL sync for KIMO-FASHION tables.
  *
- * Strategy per table:
- *  - KIMO-FASHION Sales Order Hdr / Line: incremental via SQL Server rowversion.
- *    No season filter: all basket records are replicated (baskets lack a season field).
- *  - Lookup tables (e.g. AssortimentiQuantita): full-sync each cycle (small tables).
+ * Scope: the two KIMO-FASHION tables, Sales Order Hdr and Line, header first,
+ * each incremental via SQL Server rowversion. No season filter: all basket
+ * records are replicated (baskets lack a season field). No lookup table is
+ * synced here.
  *
  * Designed to run every N minutes as a background job.
  * Uses nav_pf_sync_state for tracking (same schema, "nav_kimo_*" table names).
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
 import { SS_CHUNK, syncIncremental, type TableSyncStats } from './pgUpsert.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type mssql from 'mssql';
 import type { Logger } from 'pino';
 

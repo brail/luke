@@ -8,6 +8,7 @@ import {
   COLLECTION_COLUMNS_DEFAULT_HIDDEN,
   COLLECTION_COLUMNS_MAX_VISIBLE,
   COLLECTION_TABLE_COLUMNS,
+  formatMarginPct,
 } from '@luke/core';
 
 import { Badge } from '../../../../../components/ui/badge';
@@ -200,7 +201,7 @@ export function CollectionLayoutTable({
         {totalWeightedMargin !== null && (
           <>
             <span className="text-muted-foreground">·</span>
-            <span className="font-medium">mrg {(totalWeightedMargin * 100).toFixed(1)}%</span>
+            <span className="font-medium">mrg {formatMarginPct(totalWeightedMargin)}</span>
           </>
         )}
 
@@ -267,7 +268,7 @@ export function CollectionLayoutTable({
               </div>
               {visibleCount >= COLLECTION_COLUMNS_MAX_VISIBLE && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Massimo {COLLECTION_COLUMNS_MAX_VISIBLE} colonne. Deselezionane una per aggiungerne un'altra.
+                  Massimo {COLLECTION_COLUMNS_MAX_VISIBLE} colonne. Deselezionane una per aggiungerne un&apos;altra.
                 </p>
               )}
             </PopoverContent>

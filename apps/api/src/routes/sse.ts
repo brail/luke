@@ -38,7 +38,10 @@ export async function registerSseRoute(
       return reply.status(401).send({ error: 'Invalid or expired SSE ticket' });
     }
 
-    // SSE headers — X-Accel-Buffering disables nginx/proxy buffering.
+    // SSE headers — X-Accel-Buffering disables nginx/proxy buffering. `no-transform` keeps the
+    // stream out of compression: apps/web's server compresses every response it proxies, rewrites
+    // included, and gzip held the events — heartbeats too — in its buffer until the reverse proxy
+    // timed the stream out (#135); `compression` skips a response marked `no-transform`.
     // reply.raw.writeHead() bypasses Fastify hooks (including @fastify/cors), so
     // Access-Control-Allow-Origin must be added manually. Origin is validated against the
     // same allowlist (buildCorsAllowedOrigins) used by the main @fastify/cors plugin,
@@ -46,7 +49,7 @@ export async function registerSseRoute(
     const origin = request.headers.origin;
     const headers: Record<string, string> = {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
       'X-Accel-Buffering': 'no',
     };

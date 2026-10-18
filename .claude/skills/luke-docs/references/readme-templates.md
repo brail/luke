@@ -1,286 +1,124 @@
-# luke-docs — Template README (modalità `readme`)
+# luke-docs — README templates (`readme` mode)
 
-Ogni sezione generata vive tra marker `<!-- luke-docs:start:NAME -->` / `<!-- luke-docs:end:NAME -->`.
-Contenuto fuori dai marker = manuale, mai toccarlo.
+Every generated section lives between `<!-- luke-docs:start:NAME -->` /
+`<!-- luke-docs:end:NAME -->` markers. Content outside the markers = manual,
+never touch it.
 
-## Logica update (run successive)
+## Update logic (subsequent runs)
 
-| Situazione                          | Comportamento                                 |
-| ----------------------------------- | --------------------------------------------- |
-| README non esiste                   | Scrivi tutto da zero con tutti i marker       |
-| README esiste, sezione ha marker    | Sostituisci il contenuto tra i marker         |
-| README esiste, sezione senza marker | **Non toccare** — è stata scritta manualmente |
-| Marker presente ma contenuto vuoto  | Genera il contenuto                           |
+**Every row below applies to the README files templated in this file, and to no
+other.** A `luke-docs` marker is not a claim of ownership: `docs/decisions/README.md`
+carries one and belongs to `adr` mode. The ownership table in `SKILL.md` decides,
+and it is the only place that does.
+
+| Situation                              | Behavior                                       |
+| ----------------------------------------- | ------------------------------------------------- |
+| README doesn't exist                      | Write everything from scratch with all markers    |
+| README exists, section has markers        | Replace the content between the markers           |
+| README exists, section has no markers     | **Don't touch it** — it was written manually      |
+| Marker present but content empty          | Generate the content                              |
+
+## How to read the tables below
+
+Each README is a title line, then one section per table row, **in table order**.
+A row with a heading is written as:
+
+```markdown
+## {Heading}
+
+<!-- luke-docs:start:{marker} -->
+
+{content, as the row describes it}
+
+<!-- luke-docs:end:{marker} -->
+```
+
+A row whose heading is `—` has no heading of its own: its marker block sits
+directly under the title. Text in the Content column is an instruction, never
+copied as is, except where it is quoted as the literal line to write.
 
 ---
 
 ## `/README.md` (root)
 
-```markdown
-# Luke
+Title: `# Luke`
 
-<!-- luke-docs:start:overview -->
-
-{1-2 paragrafi: cos'è Luke, chi lo usa, problema che risolve — FEBOS/BLAUER, B2B interno,
-collection management, season planning, sourcing, merchandise planning.
-Menziona ISO 9001 e integrazione NAV se rilevante.}
-
-<!-- luke-docs:end:overview -->
-
-## Struttura del monorepo
-
-<!-- luke-docs:start:structure -->
-
-{Tabella: Workspace | Tipo | Descrizione — genera da dizionario Phase 1}
-
-<!-- luke-docs:end:structure -->
-
-## Prerequisiti
-
-<!-- luke-docs:start:prerequisites -->
-
-{Versioni da package.json engines + runtime richiesti: Node.js, pnpm, Docker, PostgreSQL, MinIO, MSSQL per NAV sync}
-
-<!-- luke-docs:end:prerequisites -->
-
-## Quick Start
-
-<!-- luke-docs:start:quickstart -->
-
-{Blocco bash: clone, pnpm install, cp .env.example .env, pnpm dev}
-
-<!-- luke-docs:end:quickstart -->
-
-## Script disponibili
-
-<!-- luke-docs:start:scripts -->
-
-{Tabella degli script root-level rilevanti: dev, build, lint, typecheck, test, db:migrate}
-
-<!-- luke-docs:end:scripts -->
-
-## Deployment
-
-<!-- luke-docs:start:deployment -->
-
-{3-4 frasi: conventional tag → GitHub Actions → ghcr.io → Portainer.
-Non inventare dettagli che non riesci a verificare dalla codebase.}
-
-<!-- luke-docs:end:deployment -->
-
-## Architettura
-
-<!-- luke-docs:start:architecture -->
-
-{Paragrafo breve: stack, pattern principali (tRPC end-to-end types, RBAC, NAV sync).
-Link a docs/decisions/ per le decisioni architetturali.}
-
-<!-- luke-docs:end:architecture -->
-
-## Decisioni architetturali
-
-<!-- luke-docs:start:adr-link -->
-
-Le decisioni architetturali rilevanti sono documentate in [`docs/decisions/`](docs/decisions/README.md).
-
-<!-- luke-docs:end:adr-link -->
-
-## Release
-
-<!-- luke-docs:start:release -->
-
-{Conventional commits + git-cliff per CHANGELOG automatico.
-Tag naming: vX.Y.Z. commitlint + husky hooks attivi.}
-
-<!-- luke-docs:end:release -->
-```
+| Heading | Marker | Content |
+| --- | --- | --- |
+| — | `overview` | 1-2 paragraphs: what Luke is, who uses it, what problem it solves — FEBOS/BLAUER, internal B2B, collection management, season planning, sourcing, merchandise planning. Mention ISO 9001 and NAV integration if relevant. |
+| Monorepo Structure | `structure` | Table: Workspace \| Type \| Description — generate from the Phase 1 dictionary. |
+| Prerequisites | `prerequisites` | Required runtimes: Node.js, pnpm, Docker, PostgreSQL, S3-compatible storage, MSSQL for NAV sync. Name them without versions; manifests and runtime configuration are the live sources. |
+| Quick Start | `quickstart` | Bash block: pnpm install; `docker compose -f docker-compose.dev.yml up -d` (development PostgreSQL and S3 storage); create `apps/api/.env` with `DATABASE_URL` and `NODE_ENV=development` — there is no `.env.example` to copy; `pnpm --filter "@luke/api..." build` — a full `pnpm build` also builds the web for production, which needs `NEXTAUTH_SECRET`; `pnpm --filter @luke/api db:bootstrap` (reset, migrations, administrator and base configuration); `pnpm db:seed` with `DATABASE_URL` in the shell (reference data — it does not read `apps/api/.env`); pnpm dev. |
+| Available Scripts | `scripts` | Table of relevant root-level scripts: dev, build, lint, typecheck, test, db:seed. Only scripts a root or workspace `package.json` defines. |
+| Deployment | `deployment` | 3-4 sentences: conventional tag → GitHub Actions → ghcr.io, plus a GitHub Release with the CHANGELOG section for a stable tag → manual redeploy of the stack. Don't invent details you can't verify from the codebase. |
+| Architecture | `architecture` | Short paragraph: stack, main patterns (end-to-end tRPC types, RBAC, NAV sync). Link to docs/decisions/ for architectural decisions. |
+| Architectural Decisions | `adr-link` | Literal line: ``Relevant architectural decisions are documented in [`docs/decisions/`](docs/decisions/README.md).`` |
+| Release | `release` | Conventional commits + git-cliff for automatic CHANGELOG. Tag naming: vX.Y.Z. commitlint + husky hooks active. |
 
 ---
 
 ## `apps/web/README.md`
 
-```markdown
-# apps/web — Frontend Luke
+Title: `# apps/web — Luke Frontend`
 
-<!-- luke-docs:start:overview -->
-
-{Next.js 15, App Router, shadcn/ui. Cosa renderizza, chi lo usa.}
-
-<!-- luke-docs:end:overview -->
-
-## Route principali
-
-<!-- luke-docs:start:routes -->
-
-{Albero delle directory `src/app/` a 2 livelli con una riga descrittiva per ciascuna.
-Usa indentazione markdown, non tabella.}
-
-<!-- luke-docs:end:routes -->
-
-## Dipendenze interne
-
-<!-- luke-docs:start:internal-deps -->
-
-{Lista dei packages/ interni importati da questo app.}
-
-<!-- luke-docs:end:internal-deps -->
-
-## Variabili d'ambiente
-
-<!-- luke-docs:start:env -->
-
-{Tabella: Variabile | Descrizione | Richiesta. Solo quelle consumate da web.}
-
-<!-- luke-docs:end:env -->
-
-## Sviluppo locale
-
-<!-- luke-docs:start:dev -->
-
-{Comando per avviare in dev dal root del monorepo e dalla dir dell'app.}
-
-<!-- luke-docs:end:dev -->
-```
+| Heading | Marker | Content |
+| --- | --- | --- |
+| — | `overview` | Framework and UI layer, named but never versioned — read the versions from apps/web/package.json and the routing style from the app directory. What it renders, who uses it. |
+| Main Routes | `routes` | 2-level directory tree of `src/app/` with one descriptive line for each. Use markdown indentation, not a table. |
+| Internal Dependencies | `internal-deps` | List of internal packages/ imported by this app. |
+| Environment Variables | `env` | Table: Variable \| Description \| Required. Only the ones consumed by web. |
+| Local Development | `dev` | Command to start dev from the monorepo root and from the app's directory. |
 
 ---
 
 ## `apps/api/README.md`
 
-```markdown
-# apps/api — Backend Luke
+Title: `# apps/api — Luke Backend`
 
-<!-- luke-docs:start:overview -->
-
-{Fastify 5 + tRPC + Prisma + PostgreSQL. Cosa espone (tRPC endpoint, eventuale REST).}
-
-<!-- luke-docs:end:overview -->
-
-## Router tRPC
-
-<!-- luke-docs:start:trpc-routers -->
-
-{Lista dei namespace router (da elenco file in `src/routers/`).
-Formato: `namespace.*` — descrizione breve}
-
-<!-- luke-docs:end:trpc-routers -->
-
-## Packages interni utilizzati
-
-<!-- luke-docs:start:internal-deps -->
-
-{Lista packages/ importati.}
-
-<!-- luke-docs:end:internal-deps -->
-
-## Variabili d'ambiente
-
-<!-- luke-docs:start:env -->
-
-{Tabella: Variabile | Tipo | Default | Descrizione.
-Fonti: `.env.production.example` + policy env in CLAUDE.md.
-Menziona `assertEnvPolicy()` in `apps/api/src/server.ts` (enforcement in produzione).}
-
-<!-- luke-docs:end:env -->
-
-## Database
-
-<!-- luke-docs:start:database -->
-
-{PostgreSQL + Prisma. Comandi migrate + studio. Elenco model rilevati in Phase 1.}
-
-<!-- luke-docs:end:database -->
-
-## NAV Sync
-
-<!-- luke-docs:start:nav -->
-
-{packages/nav, MSSQL diretto (no DAB), sync unidirezionale NAV → Luke.
-Config NAV letta da AppConfig, non da env.}
-
-<!-- luke-docs:end:nav -->
-
-## Storage
-
-<!-- luke-docs:start:storage -->
-
-{Provider IStorageProvider. Bucket validi: leggi `isValidBucket()` in
-`packages/core/src/storage/config.ts` — non hardcodare l'elenco.
-Content-addressed SHA256 key per foto revisioni.}
-
-<!-- luke-docs:end:storage -->
-```
+| Heading | Marker | Content |
+| --- | --- | --- |
+| — | `overview` | Server stack, named but never versioned — read the versions from apps/api/package.json. What it exposes (tRPC endpoint, any REST). |
+| tRPC Routers | `trpc-routers` | List of router namespaces (from the file listing in `src/routers/`). Format: `namespace.*` — short description. |
+| Internal Packages | `internal-deps` | List of imported packages/. |
+| Environment Variables | `env` | Table: Variable \| Type \| Default \| Description. Sources: `.env.production.example` + env policy in CLAUDE.md. `NODE_ENV` has no default: only `development` and `production` change the runtime posture, and any other value or none runs as neither (`isDevelopment()` in `packages/core/src/runtime/env.ts`); `test` additionally registers a test-only route in `apps/api/src/server.ts`. Mention `assertEnvPolicy()` in `apps/api/src/server.ts` (production enforcement). |
+| Database | `database` | PostgreSQL + Prisma. migrate + studio commands. List of models detected in Phase 1. |
+| NAV Sync | `nav` | packages/nav, direct MSSQL (no DAB), one-way NAV → Luke sync. NAV config read from AppConfig, not from env. |
+| Storage | `storage` | IStorageProvider provider. Valid buckets: point to `APP_STORAGE_BUCKETS` in `packages/core/src/storage/types.ts`, the only list (`isValidBucket()` derives from it and also admits the internal `backups` bucket) — don't hardcode it. Content-addressed SHA256 key for revision photos. |
 
 ---
 
-## `packages/*/README.md` (uno per package)
+## `packages/*/README.md` (one per package)
 
-```markdown
-# @luke/{name}
+Title: `# @luke/{name}`
 
-<!-- luke-docs:start:overview -->
-
-{1 frase: cosa fa questo package, quale domain problem risolve.}
-
-<!-- luke-docs:end:overview -->
-
-## Utilizzato da
-
-<!-- luke-docs:start:dependents -->
-
-{Lista di apps/packages che importano da questo package — da dizionario Phase 1.}
-
-<!-- luke-docs:end:dependents -->
-
-## Export principali
-
-<!-- luke-docs:start:exports -->
-
-{Tabella o lista: Simbolo | Tipo | Descrizione breve.
-Solo export pubblici di `src/index.ts`. Max 20 righe — se ci sono troppi export, raggruppa per categoria.}
-
-<!-- luke-docs:end:exports -->
-
-## Concetti chiave
-
-<!-- luke-docs:start:concepts -->
-
-{3-6 bullet point su comportamenti non ovvi, pattern, vincoli architetturali del package.}
-
-<!-- luke-docs:end:concepts -->
-
-## Esempio d'uso
-
-<!-- luke-docs:start:example -->
-
-{Snippet TypeScript minimale che mostra l'uso più comune. Deve essere sintatticamente valido.}
-
-<!-- luke-docs:end:example -->
-```
+| Heading | Marker | Content |
+| --- | --- | --- |
+| — | `overview` | 1 sentence: what this package does, what domain problem it solves. |
+| Used By | `dependents` | List of apps/packages that import from this package — from the Phase 1 dictionary. |
+| Main Exports | `exports` | Table or list: Symbol \| Type \| Short description. Only public exports from `src/index.ts`. Max 20 rows — if there are too many exports, group by category. |
+| Key Concepts | `concepts` | 3-6 bullet points on non-obvious behaviors, patterns, architectural constraints of the package. |
+| Usage Example | `example` | Minimal TypeScript snippet showing the most common usage. Must be syntactically valid. |
 
 ---
 
-## `docs/README.md` (indice documentazione)
+## `docs/README.md` (documentation index)
 
-```markdown
-# Documentazione Luke
+Title: `# Luke Documentation`
 
-<!-- luke-docs:start:index -->
-
-{Indice dei contenuti in docs/, con link e una riga descrittiva per ciascun file/directory.
-Generato da elenco file rilevato in Phase 1.}
-
-<!-- luke-docs:end:index -->
-```
+| Heading | Marker | Content |
+| --- | --- | --- |
+| — | `index` | Index of the contents of docs/, with links and one descriptive line for each file/directory. Generated from the file listing detected in Phase 1. A directory gets one row. The decisions row is one link to the ADR index. The repository-owned file is `docs/decisions/README.md`, but this template generates `docs/README.md`, so the href is relative to it — emit `[Architectural decisions](decisions/README.md)`, never a `docs/`-prefixed path, which would resolve one directory too deep. Never a per-ADR table either: that index is `adr`-owned, and a second copy here drifts from it and hands both modes a reason to edit the other's file. |
 
 ---
 
-## Checklist qualità README (verifica prima di chiudere)
+## README quality checklist (verify before closing)
 
-- [ ] Nessun testo placeholder (`TBD`, `…`, `{da compilare}`)
-- [ ] Tutti i code snippet sono sintatticamente validi
-- [ ] Tutti i link interni `[testo](#ancora)` risolvono a sezioni esistenti
-- [ ] Il link root README → `docs/decisions/README.md` risolve
-- [ ] Le env var listate corrispondono a `.env.production.example` reale
-- [ ] L'elenco export corrisponde a ciò che `index.ts` esporta realmente
-- [ ] Nessun numero di versione hardcoded (usa `package.json` come source of truth)
-- [ ] Tabella "Struttura monorepo" nel root README include tutti i workspace
+- [ ] No placeholder text (`TBD`, `…`, `{to be filled in}`)
+- [ ] All code snippets are syntactically valid
+- [ ] `pnpm check:drift` passes supported heading-fragment and owned-index checks;
+      parser limits are documented in `tools/README.md`, not silently assumed covered
+- [ ] The root README → `docs/decisions/README.md` link resolves
+- [ ] The listed env vars match the real `.env.production.example`
+- [ ] The export list matches what `index.ts` actually exports
+- [ ] No hardcoded version number (use `package.json` as source of truth)
+- [ ] The "Monorepo Structure" table in the root README includes every workspace

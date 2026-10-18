@@ -5,7 +5,9 @@
 
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
+
+import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating a brand. Code must be alphanumeric with `_` and `-`, max 20 chars. */
 export const BrandInputSchema = z.object({
@@ -19,9 +21,9 @@ export const BrandInputSchema = z.object({
   /** Brand name (max 128 characters) */
   name: z
     .string()
+    .trim()
     .min(1, 'Nome obbligatorio')
-    .max(128, 'Max 128 caratteri')
-    .trim(),
+    .max(128, 'Max 128 caratteri'),
 
   /**
    * Logo removal. `null` is the only accepted value, and means "remove".
@@ -49,6 +51,9 @@ export const BrandIdSchema = z.object({
   /** UUID of the brand */
   id: z.string().uuid('ID brand non valido'),
 });
+
+/** Input schema for permanently deleting a brand — an id alone is not enough. */
+export const BrandHardDeleteInputSchema = BrandIdSchema.merge(HardDeleteConfirmSchema);
 
 /** Full brand record as returned by the API (includes all fields). */
 export const BrandSchema = z.object({
@@ -92,18 +97,17 @@ export const BrandListInputSchema = z.object({
   limit: z.number().min(1).max(100).default(50),
 });
 
-/** Input schema for partially updating a brand. Relaxes code/name regex to allow NAV codes with spaces. */
+/** Input schema for partially updating a brand. Relaxes the code regex to allow NAV codes with spaces. */
 export const BrandUpdateInputSchema = z.object({
   /** UUID of the brand to update */
   id: z.string().uuid('ID brand non valido'),
 
-  /** Partial data for update — code/name without regex: NAV codes can contain spaces */
+  /** Partial data for update — code without regex: NAV codes can contain spaces */
   data: partialWithoutDefaults(
     BrandInputSchema
-      .omit({ code: true, name: true })
+      .omit({ code: true })
       .extend({
         code: z.string().min(1, 'Codice obbligatorio').max(20, 'Max 20 caratteri'),
-        name: z.string().min(1, 'Nome obbligatorio').max(128, 'Max 128 caratteri'),
       })
   ),
 });
@@ -113,26 +117,6 @@ export type BrandId = z.infer<typeof BrandIdSchema>;
 export type Brand = z.infer<typeof BrandSchema>;
 export type BrandListInput = z.infer<typeof BrandListInputSchema>;
 export type BrandUpdateInput = z.infer<typeof BrandUpdateInputSchema>;
-
-/** Input schema for validating a brand logo file upload request. */
-export const BrandLogoUploadSchema = z.object({
-  /** UUID of the brand */
-  brandId: z.string().uuid('Brand ID deve essere un UUID valido'),
-
-  /** File information */
-  file: z.object({
-    /** Original file name */
-    filename: z.string().min(1, 'Nome file obbligatorio'),
-
-    /** MIME type of the file */
-    mimetype: z.string().min(1, 'MIME type obbligatorio'),
-
-    /** File size in bytes */
-    size: z.number().int().positive('Dimensione file deve essere positiva'),
-  }),
-});
-
-export type BrandLogoUpload = z.infer<typeof BrandLogoUploadSchema>;
 
 /**
  * Normalizes a brand code for consistency: trims whitespace, uppercases,

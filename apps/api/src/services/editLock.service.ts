@@ -7,9 +7,10 @@
 
 import { TRPCError } from '@trpc/server';
 
+import type { LockEntityType, Prisma, PrismaClient } from '@luke/db';
+
 import { getEditLockTtlMs } from '../lib/configManager';
 
-import type { LockEntityType, Prisma, PrismaClient } from '@prisma/client';
 
 type Lock = { expiresAt: Date; lockedByUserId: string };
 type LockRef = { entityType: LockEntityType; entityId: string };

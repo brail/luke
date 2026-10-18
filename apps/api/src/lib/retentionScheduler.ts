@@ -1,19 +1,22 @@
 /**
  * Age-based retention sweep for `AuditLog` and `Notification`/`NotificationDedupKey` — none of
  * these tables had a purge mechanism before this, so they grew unbounded (see
- * `docs/decisions/` for the AppConfig-driven pattern this mirrors from `backupScheduler.ts`).
+ * `docs/decisions/` for the AppConfig-driven pattern this mirrors from `backupScheduler.ts`) — and
+ * for `CalendarDigestDelivery`, which shipped with its sweep and a fixed 30-day window.
  *
- * Daily tick, single lock (`retention-sweep`) shared by all three sweeps below — unlike
+ * Daily tick, single lock (`retention-sweep`) shared by all the sweeps below — unlike
  * `backupScheduler.ts`, none of these need per-row side effects or a keep-N-most-recent floor, so
  * they share the same bounded "collect ids up to a cap → act → delete" shape via
  * `retentionSweep.ts` instead of `backupScheduler.ts`'s per-row prune loop.
  *
  * `sweepAuditLog` archives before deleting (`auditLogArchive.ts`) — audit history has compliance
- * value. `sweepNotifications`/`sweepDedupKeys` delete outright — read notifications and expired
- * dedup markers have none once past their window.
+ * value. `sweepNotifications`/`sweepDedupKeys`/`sweepDigestDeliveries` delete outright — read
+ * notifications, expired dedup markers and past digest deliveries have none once past their window.
  */
 
 import { randomUUID } from 'crypto';
+
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../storage';
 
@@ -28,10 +31,15 @@ import {
 import { collectIdsOlderThan, deleteIdsInBatches } from './retentionSweep';
 import { withSchedulerLock } from './schedulerLock';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A digest delivery row only guards its own send day; kept this long after it for diagnosis. Fixed,
+ * not configurable: nothing reads the rows once their day is over.
+ */
+const DIGEST_DELIVERY_RETENTION_DAYS = 30;
 
 /** Hard cap on rows processed per tier per tick — bounds one tick's work; the remainder is picked up on the next tick. */
 const MAX_ROWS_PER_TICK = 20000;
@@ -77,9 +85,9 @@ async function sweepAuditLog(
         chunk => prisma.auditLog.deleteMany({ where: { id: { in: chunk } } }).then(r => r.count),
         ids,
       );
-      log.info({ tier, deleted, archiveKey: key }, 'Retention sweep: audit log archiviato e rimosso');
+      log.info({ tier, deleted, archiveKey: key }, 'Retention sweep: audit log archived and removed');
     } catch (err) {
-      log.error({ err, tier, candidateRows: ids.length }, 'Retention sweep: archiviazione audit log fallita, righe conservate per il prossimo tick');
+      log.error({ err, tier, candidateRows: ids.length }, 'Retention sweep: audit log archiving failed, rows kept for the next tick');
     }
   }));
 }
@@ -104,15 +112,27 @@ async function sweepNotifications(prisma: PrismaClient, log: FastifyInstance['lo
     chunk => prisma.notification.deleteMany({ where: { id: { in: chunk } } }).then(r => r.count),
     ids,
   );
-  log.info({ deleted }, 'Retention sweep: notifiche lette rimosse');
+  log.info({ deleted }, 'Retention sweep: read notifications removed');
 }
 
-/** Deletes expired dedup markers. Table is small/bounded by stable keys — no batching needed. */
+/**
+ * Deletes expired dedup markers. Keys may name an occurrence (`milestoneDeadlineScheduler.ts`), so
+ * the table is bounded by the retention window, not by a fixed key set — still small enough for one
+ * unbatched delete.
+ */
 async function sweepDedupKeys(prisma: PrismaClient, log: FastifyInstance['log'], dedupRetentionDays: number): Promise<void> {
   const { count } = await prisma.notificationDedupKey.deleteMany({
     where: { lastSentAt: { lt: cutoffDaysAgo(dedupRetentionDays) } },
   });
-  if (count > 0) log.info({ deleted: count }, 'Retention sweep: dedup key notifiche rimosse');
+  if (count > 0) log.info({ deleted: count }, 'Retention sweep: notification dedup keys removed');
+}
+
+/** Deletes digest delivery rows whose send day ended more than the retention window ago. At most one row per user, calendar and day. */
+async function sweepDigestDeliveries(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
+  const { count } = await prisma.calendarDigestDelivery.deleteMany({
+    where: { expiresAt: { lt: cutoffDaysAgo(DIGEST_DELIVERY_RETENTION_DAYS) } },
+  });
+  if (count > 0) log.info({ deleted: count }, 'Retention sweep: calendar digest deliveries removed');
 }
 
 async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promise<void> {
@@ -127,17 +147,18 @@ async function runTick(prisma: PrismaClient, log: FastifyInstance['log']): Promi
     getNotificationDedupRetentionDays(prisma),
   ]);
 
-  // The three tables are disjoint and each already isolates its own errors (sweepAuditLog per
-  // tier, the other two via `allSettled` here) — no reason to pay their latency in sequence,
-  // nor to skip the remaining sweeps if one of the three fails.
+  // The tables are disjoint and each already isolates its own errors (sweepAuditLog per tier, the
+  // others via `allSettled` here) — no reason to pay their latency in sequence, nor to skip the
+  // remaining sweeps if one fails.
   const results = await Promise.allSettled([
     sweepAuditLog(prisma, log, tickId, retentionDays, criticalRetentionDays),
     sweepNotifications(prisma, log, notificationRetentionDays),
     sweepDedupKeys(prisma, log, dedupRetentionDays),
+    sweepDigestDeliveries(prisma, log),
   ]);
   for (const result of results) {
     if (result.status === 'rejected') {
-      log.error({ err: result.reason }, 'Retention sweep: uno sweep è fallito, gli altri sono comunque andati avanti');
+      log.error({ err: result.reason }, 'Retention sweep: one sweep failed, the others went ahead anyway');
     }
   }
 }
@@ -152,11 +173,11 @@ export function registerRetentionScheduler(fastify: FastifyInstance, prisma: Pri
   const lockedTick = withSchedulerLock(prisma, 'retention-sweep', () => runTick(prisma, fastify.log));
   const run = () =>
     lockedTick().catch(err =>
-      fastify.log.error({ err }, 'Retention sweep: errore non gestito')
+      fastify.log.error({ err }, 'Retention sweep: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Retention sweep: avviato (tick ogni 24h, audit log + notifiche + dedup key)');
+    fastify.log.info('Retention sweep: started (tick every 24h, audit log + notifications + dedup keys + digest deliveries)');
     timer = setInterval(() => void run(), TICK_INTERVAL_MS);
   });
 
@@ -165,6 +186,6 @@ export function registerRetentionScheduler(fastify: FastifyInstance, prisma: Pri
       clearInterval(timer);
       timer = null;
     }
-    fastify.log.info('Retention sweep: fermato');
+    fastify.log.info('Retention sweep: stopped');
   });
 }

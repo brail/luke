@@ -3,22 +3,20 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoaderCircle, Info } from 'lucide-react';
 import React, { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { UserProfileSchema, type UserProfileInput } from '@luke/core';
 
+import { TimeZoneSelect } from '../../../../components/TimeZoneSelect';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '../../../../components/ui/tooltip';
-import { LOCALES } from '../../../../lib/i18n/locales';
-import { TIMEZONES } from '../../../../lib/i18n/timezones';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
@@ -39,7 +37,7 @@ interface UserProfileFormProps {
 }
 
 /**
- * Profile edit form covering display name, locale, timezone, and email change.
+ * Profile edit form covering display name, timezone, and email change.
  * Fields for first name and last name are read-only when the account is managed
  * by an external provider (LDAP or SSO); a tooltip indicates the sync source.
  * @param user - Current user data; `provider` determines which fields are editable.
@@ -47,20 +45,21 @@ interface UserProfileFormProps {
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 
-  // Stato per cambio email
+  // State for the email change
   const [newEmail, setNewEmail] = useState('');
 
-  // Form setup con validazione Zod
+  // Form setup with Zod validation
   const {
     register,
+    control,
     handleSubmit,
     formState: { errors, isDirty, isSubmitting },
   } = useForm<UserProfileInput>({
     resolver: zodResolver(UserProfileSchema),
     defaultValues: {
-      email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      // No field until the i18n cycle (dates use one locale, ADR-035): the saved value is resubmitted.
       locale: user.locale,
       timezone: user.timezone,
     },
@@ -70,10 +69,11 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
   const updateProfileMutation = trpc.me.updateProfile.useMutation();
   const changeEmailMutation = trpc.me.changeEmail.useMutation();
 
-  // Mutation standardizzate
+  // Standard mutations
   const { mutate: updateProfile } = useStandardMutation({
     mutateFn: updateProfileMutation.mutateAsync,
-    invalidate: refresh.me,
+    // The profile carries the time zone, which some server reads depend on (`refresh.timeZone`).
+    invalidate: refresh.timeZone,
     onSuccessMessage: 'Profilo aggiornato con successo',
     onErrorMessage: "Errore durante l'aggiornamento del profilo",
   });
@@ -85,18 +85,18 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       onSuccess: data => {
         toast.success(data.message);
         setNewEmail('');
-        // Ricarica pagina per aggiornare sessione
+        // Reload the page to refresh the session
         window.location.reload();
       },
       onErrorMessage: 'Errore cambio email',
     });
 
-  // Handler per submit form
+  // Form submit handler
   const onSubmit = (data: UserProfileInput) => {
     updateProfile(data);
   };
 
-  // Determina se i campi sono read-only per provider esterni
+  // Whether the fields are read-only because an external provider owns them
   const isExternalProvider = user.provider !== 'LOCAL';
   const readonlyFields = isExternalProvider ? ['firstName', 'lastName'] : [];
 
@@ -114,7 +114,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         />
       </div>
 
-      {/* Cambia Email */}
       <div className="space-y-2">
         <Label htmlFor="newEmail">Cambia Email</Label>
         <div className="flex gap-2">
@@ -151,7 +150,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Username (sempre read-only) */}
+      {/* Username (always read-only) */}
       <div className="space-y-2">
         <Label htmlFor="username">Username</Label>
         <Input
@@ -165,21 +164,18 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         </p>
       </div>
 
-      {/* Nome */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Label htmlFor="firstName">Nome</Label>
           {readonlyFields.includes('firstName') && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Campo sincronizzato da {user.provider}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Campo sincronizzato da {user.provider}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Input
@@ -199,21 +195,18 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Cognome */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Label htmlFor="lastName">Cognome</Label>
           {readonlyFields.includes('lastName') && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-muted-foreground" />
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Campo sincronizzato da {user.provider}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Info className="h-4 w-4 text-muted-foreground" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Campo sincronizzato da {user.provider}</p>
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <Input
@@ -233,49 +226,25 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Locale */}
-      <div className="space-y-2">
-        <Label htmlFor="locale">Lingua</Label>
-        <select
-          id="locale"
-          {...register('locale')}
-          className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-            errors.locale ? 'border-destructive' : ''
-          }`}
-          aria-invalid={!!errors.locale}
-          aria-describedby={errors.locale ? 'locale-error' : undefined}
-        >
-          {LOCALES.map(locale => (
-            <option key={locale.value} value={locale.value}>
-              {locale.label}
-            </option>
-          ))}
-        </select>
-        {errors.locale && (
-          <p id="locale-error" className="text-sm text-destructive">
-            {errors.locale.message}
-          </p>
-        )}
-      </div>
-
       {/* Timezone */}
       <div className="space-y-2">
         <Label htmlFor="timezone">Fuso Orario</Label>
-        <select
-          id="timezone"
-          {...register('timezone')}
-          className={`flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-            errors.timezone ? 'border-destructive' : ''
-          }`}
-          aria-invalid={!!errors.timezone}
-          aria-describedby={errors.timezone ? 'timezone-error' : undefined}
-        >
-          {TIMEZONES.map(timezone => (
-            <option key={timezone.value} value={timezone.value}>
-              {timezone.label}
-            </option>
-          ))}
-        </select>
+        <Controller
+          name="timezone"
+          control={control}
+          render={({ field }) => (
+            <TimeZoneSelect
+              id="timezone"
+              ref={field.ref}
+              value={field.value}
+              onValueChange={field.onChange}
+              onBlur={field.onBlur}
+              stored={user.timezone}
+              invalid={!!errors.timezone}
+              describedBy={errors.timezone ? 'timezone-error' : undefined}
+            />
+          )}
+        />
         {errors.timezone && (
           <p id="timezone-error" className="text-sm text-destructive">
             {errors.timezone.message}
@@ -283,7 +252,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
         )}
       </div>
 
-      {/* Pulsante Salva */}
       <div className="flex justify-end">
         <Button
           type="submit"

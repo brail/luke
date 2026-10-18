@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 import type { VendorInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -37,7 +38,7 @@ export default function VendorsPage() {
     { staleTime: 30 * 1000 },
   );
 
-  const vendors = (data?.items ?? []) as VendorItem[];
+  const vendors = data?.items ?? [];
 
   const invalidate = () => { void utils.vendors.list.invalidate(); invalidateContext(); };
 
@@ -146,8 +147,7 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler disattivare "${deletingVendor?.name}"? Non apparirà più nelle liste di selezione. Potrai riattivarlo in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingVendor) removeMutation.mutate({ id: deletingVendor.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -159,7 +159,6 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingVendor?.name}" da NAV? Il fornitore verrà disattivato e il codice NAV "${unlinkingVendor?.navVendorId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingVendor) unlinkMutation.mutate({ id: unlinkingVendor.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -172,9 +171,11 @@ export default function VendorsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingVendor?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
-        onConfirm={() => { if (hardDeletingVendor) hardDeleteMutation.mutate({ id: hardDeletingVendor.id }); }}
+        actionType="hardDelete"
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingVendor && phrase) hardDeleteMutation.mutate({ id: hardDeletingVendor.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

@@ -3,7 +3,11 @@
  * Provides hashing, verification, and policy validation.
  */
 
+import { randomBytes } from 'crypto';
+
 import argon2 from 'argon2';
+
+import { checkPassword, type PasswordPolicy } from '@luke/core';
 
 /**
  * Argon2 configuration for password hashing
@@ -13,7 +17,7 @@ import argon2 from 'argon2';
  * key from passphrase with the same tuning instead of a verification hash) that must remain
  * aligned on these parameters.
  */
-export const ARGON2_OPTIONS: argon2.Options = {
+export const ARGON2_OPTIONS: argon2.HashOptions = {
   type: argon2.argon2id,
   memoryCost: 2 ** 16, // 64 MB
   timeCost: 3, // 3 iterations
@@ -32,7 +36,8 @@ export async function hashPassword(password: string): Promise<string> {
     return await argon2.hash(password, ARGON2_OPTIONS);
   } catch (error) {
     throw new Error(
-      `Errore durante l'hash della password: ${error instanceof Error ? error.message : 'Errore sconosciuto'}`
+      `Password hashing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      { cause: error }
     );
   }
 }
@@ -54,16 +59,27 @@ export async function verifyPassword(
   }
 }
 
+let dummyHash: Promise<string> | null = null;
+
 /**
- * Password complexity requirements loaded from AppConfig.
+ * A hash of a random secret nobody knows, with the same parameters as a real credential, for a
+ * login to verify against when there is no stored hash. An unknown username then costs the same
+ * argon2 run as a known one instead of answering at once.
+ *
+ * It removes the argon2 skip, not every timing difference: the user lookup, the LDAP path, a
+ * malformed stored hash (which argon2 may refuse without hashing) and hashes stored with older costs still
+ * differ. Memoized as the promise, so concurrent first calls share one hash; a failed hash is not
+ * kept, so the next call tries again.
  */
-export interface PasswordPolicy {
-  minLength: number;
-  requireUppercase: boolean;
-  requireLowercase: boolean;
-  requireDigit: boolean;
-  requireSpecialChar: boolean;
+export function dummyPasswordHash(): Promise<string> {
+  dummyHash ??= hashPassword(randomBytes(32).toString('hex')).catch(error => {
+    dummyHash = null;
+    throw error;
+  });
+  return dummyHash;
 }
+
+export type { PasswordPolicy };
 
 /**
  * Outcome of a password validation check.
@@ -83,35 +99,20 @@ export function validatePassword(
   password: string,
   policy: PasswordPolicy
 ): PasswordValidationResult {
-  const errors: string[] = [];
+  // The predicates live in `@luke/core`; what stays here is the wording. `checkPassword` returns
+  // keys precisely so the client can render the same evaluation as a checklist without either side
+  // having to share the other's phrasing.
+  const messages: Record<string, string> = {
+    length: `Lunghezza minima: ${policy.minLength} caratteri`,
+    uppercase: 'Richiesta almeno una lettera maiuscola',
+    lowercase: 'Richiesta almeno una lettera minuscola',
+    digit: 'Richiesta almeno una cifra',
+    special: 'Richiesto almeno un carattere speciale',
+  };
 
-  // Checks minimum length
-  if (password.length < policy.minLength) {
-    errors.push(`Lunghezza minima: ${policy.minLength} caratteri`);
-  }
-
-  // Checks for uppercase letter
-  if (policy.requireUppercase && !/[A-Z]/.test(password)) {
-    errors.push('Richiesta almeno una lettera maiuscola');
-  }
-
-  // Checks for lowercase letter
-  if (policy.requireLowercase && !/[a-z]/.test(password)) {
-    errors.push('Richiesta almeno una lettera minuscola');
-  }
-
-  // Checks for digit
-  if (policy.requireDigit && !/[0-9]/.test(password)) {
-    errors.push('Richiesta almeno una cifra');
-  }
-
-  // Checks for special character
-  if (
-    policy.requireSpecialChar &&
-    !/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)
-  ) {
-    errors.push('Richiesto almeno un carattere speciale');
-  }
+  const errors = checkPassword(password, policy)
+    .filter(r => !r.met)
+    .map(r => messages[r.key] as string);
 
   return {
     isValid: errors.length === 0,

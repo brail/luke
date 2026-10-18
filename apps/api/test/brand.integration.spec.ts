@@ -21,6 +21,8 @@
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach } from 'vitest';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { appRouter } from '../src/routers/index';
 
 import { expectUnauthorized } from './helpers';
@@ -63,7 +65,7 @@ describe('Brand Router', () => {
       const caller = appRouter.createCaller(testContext).brand;
 
       await expect(
-        caller.hardDelete({ id: testBrand.id })
+        caller.hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
       ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
     });
 
@@ -83,15 +85,43 @@ describe('Brand Router', () => {
       const caller = appRouter.createCaller(testContext).brand;
 
       await expect(
+        caller.hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    // The one thing the confirmation actually guarantees: an id on its own is not a delete. It
+    // says nothing about whether a human typed the phrase — the constant is public and the client
+    // sends it either way — but it does stop a call built by hand or by a script.
+    it('should reject hardDelete carrying only an id', async () => {
+      const caller = appRouter.createCaller(testContext).brand;
+
+      await expect(
+        // @ts-expect-error confirmPhrase is required — this is the call shape being refused
         caller.hardDelete({ id: testBrand.id })
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+      expect(
+        await testContext.prisma.brand.findUnique({ where: { id: testBrand.id } })
+      ).not.toBeNull();
+    });
+
+    it('should reject hardDelete with the wrong phrase', async () => {
+      const caller = appRouter.createCaller(testContext).brand;
+
+      await expect(
+        caller.hardDelete({ id: testBrand.id, confirmPhrase: 'elimina' })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+      expect(
+        await testContext.prisma.brand.findUnique({ where: { id: testBrand.id } })
+      ).not.toBeNull();
     });
 
     it('should allow hardDelete if brand is not referenced', async () => {
       // Test: hardDelete should succeed
       const caller = appRouter.createCaller(testContext).brand;
 
-      const result = await caller.hardDelete({ id: testBrand.id });
+      const result = await caller.hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       expect(result).toEqual({ success: true });
 
@@ -108,7 +138,7 @@ describe('Brand Router', () => {
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
       await expect(
-        caller.hardDelete({ id: nonExistentId })
+        caller.hardDelete({ id: nonExistentId, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
       ).rejects.toMatchObject({
         code: 'NOT_FOUND',
         message: 'Brand non trovato',
@@ -537,7 +567,7 @@ describe('Brand Router', () => {
       });
 
       // Hard delete
-      const result = await caller.hardDelete({ id: brandToHardDelete.id });
+      const result = await caller.hardDelete({ id: brandToHardDelete.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE });
 
       expect(result).toEqual({ success: true });
 
@@ -620,6 +650,7 @@ describe('Brand Router', () => {
         ROLES.map(role =>
           testContext.prisma.user.create({
             data: {
+              timezone: 'Europe/Rome',
               email: `${role}@example.com`,
               username: role,
               firstName: role.charAt(0).toUpperCase() + role.slice(1),
@@ -660,58 +691,51 @@ describe('Brand Router', () => {
         c => c.create({ code: 'RBAC_BRAND', name: 'RBAC Brand', isActive: true }),
       ],
       ['update', c => c.update({ id: testBrand.id, data: { name: 'Updated' } })],
-      ['hardDelete', c => c.hardDelete({ id: testBrand.id })],
+      ['hardDelete', c => c.hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })],
     ];
 
     /** Mutations: everything except `list`. */
     const MUTATIONS = OPERATIONS.slice(1);
 
-    it.each(ROLES)('%s può listare i brand', async role => {
+    it.each(ROLES)('%s can list brands', async role => {
       const result = await brandAs(role).list();
       expect(Array.isArray(result.items)).toBe(true);
     });
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s può creare un brand',
-      async role => {
-        const code = `${role.toUpperCase()}_BRAND`;
-        const result = await brandAs(role).create({
-          code,
-          name: `${role} Brand`,
-          isActive: true,
-        });
-        expect(result.id).toBeDefined();
-        expect(result.code).toBe(code);
-      }
-    );
+    it('admin can create a brand', async () => {
+      const result = await brandAs('admin').create({
+        code: 'ADMIN_BRAND',
+        name: 'admin Brand',
+        isActive: true,
+      });
+      expect(result.code).toBe('ADMIN_BRAND');
+    });
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s può aggiornare un brand',
-      async role => {
-        const name = `Updated by ${role}`;
-        const result = await brandAs(role).update({
-          id: testBrand.id,
-          data: { name },
-        });
-        expect(result.name).toBe(name);
-      }
-    );
+    it('admin can update a brand', async () => {
+      const result = await brandAs('admin').update({
+        id: testBrand.id,
+        data: { name: 'Updated by admin' },
+      });
+      expect(result.name).toBe('Updated by admin');
+    });
 
-    it.each(['admin', 'editor'] as Role[])(
-      '%s può cancellare definitivamente un brand',
-      async role => {
-        await expect(
-          brandAs(role).hardDelete({ id: testBrand.id })
-        ).resolves.toEqual({ success: true });
-      }
-    );
+    it('admin can permanently delete a brand', async () => {
+      await expect(
+        brandAs('admin').hardDelete({ id: testBrand.id, confirmPhrase: HARD_DELETE_CONFIRM_PHRASE })
+      ).resolves.toEqual({ success: true });
+    });
 
-    it.each(MUTATIONS)('viewer: %s → FORBIDDEN', async (_label, invoke) => {
-      await expectUnauthorized(() => invoke(brandAs('viewer')), 'FORBIDDEN');
+    // Brands are admin-only master data: editor reads them like viewer.
+    it.each(
+      (['editor', 'viewer'] as const).flatMap(role =>
+        MUTATIONS.map(([label, invoke]) => [role, label, invoke] as const)
+      )
+    )('%s: %s → FORBIDDEN', async (role, _label, invoke) => {
+      await expectUnauthorized(() => invoke(brandAs(role)), 'FORBIDDEN');
     });
 
     it.each(OPERATIONS)(
-      'non autenticato: %s → UNAUTHORIZED',
+      'unauthenticated: %s → UNAUTHORIZED',
       async (_label, invoke) => {
         await expectUnauthorized(() => invoke(brandAs(null)), 'UNAUTHORIZED');
       }

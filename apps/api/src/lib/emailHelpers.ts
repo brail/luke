@@ -5,13 +5,24 @@
 
 import { randomBytes, createHash } from 'crypto';
 
-import { PrismaClient } from '@prisma/client';
+import { TRPCError } from '@trpc/server';
+
+import { PrismaClient } from '@luke/db';
 
 import { logAudit } from './auditLog';
-import { getConfig } from './configManager';
+import { getConfigOrDefault } from './configManager';
 import { sendEmailVerificationEmail } from './mailer';
 
 import type { Context } from './context';
+
+/**
+ * True if the email is the synthetic one generated for an LDAP user with no `mail` value set. It
+ * reaches nobody. Lives here rather than in `ldapAuth.ts` because `sendVerificationEmail` refuses
+ * it, and `ldapAuth.ts` already imports this module.
+ */
+export function isSyntheticLdapEmail(email: string): boolean {
+  return email.endsWith('@ldap.local');
+}
 
 /**
  * Options for sending a verification email to a user.
@@ -38,7 +49,9 @@ export interface SendVerificationEmailOptions {
  * @param options - Target user, reason, and optional actor for audit logging.
  * @param ctx - Optional tRPC-like context for request correlation in the audit log.
  * @returns Success flag and a human-readable message.
- * @throws {Error} If the user is not found or the email send fails after retries.
+ * @throws {TRPCError} NOT_FOUND if the user is not found or inactive; BAD_REQUEST for a synthetic
+ *   LDAP address, refused before any token is created.
+ * @throws {Error} If the email send fails after retries.
  */
 export async function sendVerificationEmail(
   prisma: PrismaClient,
@@ -54,7 +67,11 @@ export async function sendVerificationEmail(
   });
 
   if (!user) {
-    throw new Error('Utente non trovato');
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+  }
+
+  if (isSyntheticLdapEmail(user.email)) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Nessun indirizzo email reale da verificare.' });
   }
 
   // Skip if already verified (except on email change)
@@ -79,26 +96,21 @@ export async function sendVerificationEmail(
 
   // Retrieve baseUrl from config
   const baseUrl =
-    (await getConfig(prisma, 'app.baseUrl', false)) || 'http://localhost:3000';
+    await getConfigOrDefault(prisma, 'app.baseUrl');
 
   // Send email (with automatic internal retry)
   try {
     await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
 
-    // Audit log SUCCESS (no PII)
-    // logAudit requires a full Context; here we build a partial one —
-    // some callers (e.g. ldapAuth.ts during automatic provisioning)
-    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
-    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
-    // the caller already catches it with .catch(). Pre-existing behavior, not
-    // changed by this cast.
+    // Audit log SUCCESS (no PII). Some callers have no request at all (LDAP provisioning), and
+    // `logAudit` writes their row without one.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as unknown as Context,
+      },
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',
@@ -114,19 +126,13 @@ export async function sendVerificationEmail(
     };
   } catch (error) {
     // Audit log FAILURE (no PII)
-    // logAudit requires a full Context; here we build a partial one —
-    // some callers (e.g. ldapAuth.ts during automatic provisioning)
-    // don't have a real HTTP request and don't pass `ctx` at all. If `req`
-    // remains undefined, logAudit throws when reading ctx.req.ip/ctx.req.log —
-    // the caller already catches it with .catch(). Pre-existing behavior, not
-    // changed by this cast.
     await logAudit(
       {
         prisma,
         session: actorId ? { user: { id: actorId } } : undefined,
         req: ctx?.req,
         logger: ctx?.logger,
-      } as unknown as Context,
+      },
       {
         action: 'EMAIL_VERIFICATION_SENT',
         targetType: 'Auth',
@@ -139,6 +145,38 @@ export async function sendVerificationEmail(
       }
     );
 
-    throw new Error('Impossibile inviare email. Verifica configurazione SMTP.');
+    throw new Error('Impossibile inviare email. Verifica configurazione SMTP.', { cause: error });
   }
+}
+
+/** Result of {@link createResetToken}. */
+export interface CreateResetTokenResult {
+  /** Plaintext token — embed it in the reset link. Never persisted directly (`userToken` holds the hash). */
+  token: string;
+  userToken: { id: string; expiresAt: Date };
+}
+
+/**
+ * Generates a password-reset token and persists it as a `UserToken` (type `RESET`, 30-minute
+ * expiry). Does not send anything or check for an existing `LocalCredential` — callers own that
+ * (self-service `requestPasswordReset` treats a missing one as user-not-found; admin-triggered
+ * `forceLocalAccess` and the `db:grant-local-access` command may have just created one, the command
+ * in the same transaction as this token).
+ *
+ * @param prisma - Prisma client or transaction client; only `userToken` is used.
+ * @param userId - Target user.
+ */
+export async function createResetToken(
+  prisma: Pick<PrismaClient, 'userToken'>,
+  userId: string
+): Promise<CreateResetTokenResult> {
+  const token = randomBytes(32).toString('hex');
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  const userToken = await prisma.userToken.create({
+    data: { userId, type: 'RESET', tokenHash, expiresAt },
+  });
+
+  return { token, userToken };
 }

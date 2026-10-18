@@ -2,11 +2,12 @@
 
 import { useMemo, useRef, useState } from 'react';
 
+import { addCalendarDays, type CalendarDate, formatCalendarDate, parseCalendarDate } from '@luke/core';
+
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
 import { cn } from '../../../../../lib/utils';
-import { addDays, toUtcIsoDate } from '../../utils';
 
 import type { HolidayMap } from '../useHolidays';
 
@@ -17,9 +18,9 @@ const MAX_SEARCH_DAYS = 90;
 
 interface Props {
   /** Original event date — keeps the visible window stable while the user drags `value` around. */
-  anchorDate: Date;
-  value: Date;
-  onChange: (d: Date) => void;
+  anchorDate: CalendarDate;
+  value: CalendarDate;
+  onChange: (d: CalendarDate) => void;
   holidayDates: HolidayMap;
   /** ISO dates ('YYYY-MM-DD') closed for the vendor(s) relevant to this event's anchored rows. */
   closedDates: Set<string>;
@@ -28,6 +29,10 @@ interface Props {
 function isBlocked(iso: string, holidayDates: HolidayMap, closedDates: Set<string>): boolean {
   return holidayDates.has(iso) || closedDates.has(iso);
 }
+
+// Every cell is a calendar date, and so is every `holidayDates`/`closedDates` key: the day shown,
+// the day checked and the day written back are one value, whatever the browser zone. The caller
+// turns the event into that date (`eventDays`), an all-day event as its own date in every zone.
 
 /**
  * Single-row draggable timeline: a marker for the event's draft date over a strip of days shaded
@@ -39,19 +44,18 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
   const [isDragging, setIsDragging] = useState(false);
 
   const days = useMemo(
-    () => Array.from({ length: WINDOW_HALF * 2 + 1 }, (_, i) => addDays(anchorDate, i - WINDOW_HALF)),
+    () => Array.from({ length: WINDOW_HALF * 2 + 1 }, (_, i) => addCalendarDays(anchorDate, i - WINDOW_HALF)),
     [anchorDate]
   );
 
-  const valueIso = toUtcIsoDate(value);
-  const valueIndex = days.findIndex(d => toUtcIsoDate(d) === valueIso);
-  const blocked = isBlocked(valueIso, holidayDates, closedDates);
+  const valueIndex = days.indexOf(value);
+  const blocked = isBlocked(value, holidayDates, closedDates);
 
   const nextFreeDate = useMemo(() => {
     if (!blocked) return null;
     for (let i = 1; i <= MAX_SEARCH_DAYS; i++) {
-      const candidate = addDays(value, i);
-      if (!isBlocked(toUtcIsoDate(candidate), holidayDates, closedDates)) return candidate;
+      const candidate = addCalendarDays(value, i);
+      if (!isBlocked(candidate, holidayDates, closedDates)) return candidate;
     }
     return null;
   }, [blocked, value, holidayDates, closedDates]);
@@ -75,10 +79,10 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
         <Input
           id="event-drag-exact-date"
           type="date"
-          value={valueIso}
+          value={value}
           onChange={e => {
-            if (!e.target.value) return;
-            onChange(new Date(e.target.value));
+            const parsed = parseCalendarDate(e.target.value);
+            if (parsed) onChange(parsed);
           }}
           inputSize="sm"
           className="w-40 [&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground"
@@ -91,11 +95,10 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
         style={{ height: 56 }}
       >
         {days.map(d => {
-          const iso = toUtcIsoDate(d);
-          const dayBlocked = isBlocked(iso, holidayDates, closedDates);
+          const dayBlocked = isBlocked(d, holidayDates, closedDates);
           return (
             <div
-              key={iso}
+              key={d}
               onClick={() => onChange(d)}
               className={cn(
                 // 10px: below Tailwind's text-xs (12px) floor; dense day-picker cell
@@ -104,8 +107,8 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
               )}
               style={{ width: CELL_WIDTH }}
             >
-              <span className="text-muted-foreground">{d.toLocaleDateString('it-IT', { weekday: 'narrow' })}</span>
-              <span className="tabular-nums">{d.getDate()}</span>
+              <span className="text-muted-foreground">{formatCalendarDate(d, { weekday: 'narrow' })}</span>
+              <span className="tabular-nums">{Number(d.slice(8))}</span>
             </div>
           );
         })}
@@ -144,7 +147,7 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
               className="h-6 px-2 text-xs border-destructive/30"
               onClick={() => onChange(nextFreeDate)}
             >
-              Sposta al {nextFreeDate.toLocaleDateString('it-IT')}
+              Sposta al {formatCalendarDate(nextFreeDate, {})}
             </Button>
           )}
         </div>

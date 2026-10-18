@@ -1,13 +1,27 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import {
+  calendarDateOf,
+  calendarDaysBetween,
+  CalendarEventBaseSchema,
+  formatCalendarDate,
+  MilestoneCancelInputSchema,
+  MilestoneRescheduleInputSchema,
+  type CalendarDate,
+  type CalendarDaysRelevance,
+} from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../components/CalendarDaysRelevanceSelect';
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../components/PermissionButton';
-import { PhaseSelect } from '../../../../components/PhaseSelect';
+import { NO_PHASE_VALUE, PhaseSelect } from '../../../../components/PhaseSelect';
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -19,16 +33,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
-import { Label } from '../../../../components/ui/label';
 import { Textarea } from '../../../../components/ui/textarea';
+import { useFormatDate, useFormZone } from '../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../hooks/usePermission';
+import {
+  UNTOUCHED_SIDES,
+  applyLinkedEdit,
+  rangeFromEvent,
+  rangeFromStart,
+  resolveSide,
+  toggleAllDay,
+  type DateRangeState,
+  type RangeSide,
+} from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
-import { daysBetween, isEventDateLocked, isEventDeleteLocked } from '../utils';
+import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, expectedDates, isStaleListError } from '../utils';
 
+import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
-import { addOneHour, resolveIso, toDateInput, toTimeInput, useLinkedDateRange } from './useLinkedDateRange';
 
 interface ExistingEvent {
   id: string;
@@ -47,6 +80,7 @@ interface ExistingEvent {
   visibilities: { functionId: string }[];
   planningGroupName?: string;
   planningGroupFrozenAt?: Date | string | null;
+  dateLocked?: boolean;
 }
 
 interface Props {
@@ -59,18 +93,86 @@ interface Props {
   functionsById?: Record<string, string>;
   event?: ExistingEvent;
   existingMilestones?: CalendarEventItem[];
-  defaultDate?: string;
-  defaultAllDay?: boolean;
+  /** The day a new event starts on. */
+  defaultDate?: CalendarDate;
+  /** The wall time a new timed event starts at; without one the new event is all-day. */
+  defaultTime?: string;
   readOnly?: boolean;
   onDeleted?: () => void;
 }
 
-// TODO(Fase5): motore alert avrà bisogno dello stesso calcolo di scostamento lato server —
-// se estratto in helper condiviso, mantenere identica la semantica di arrotondamento (daysBetween).
-/** Days elapsed between the frozen baseline start and the current start, or null if not frozen / unchanged. */
-function describeBaselineDrift(event: ExistingEvent): string | null {
+interface EventFormData {
+  title: string;
+  description: string;
+  /** `NO_PHASE_VALUE` when no phase is linked — the select needs a non-empty sentinel. */
+  phaseId: string;
+  /** `NO_RELEVANCE_VALUE` when the deadline is counted in plain calendar days. */
+  calendarDaysRelevance: string;
+  planningGroupId: string;
+  visibilityFunctionIds: string[];
+  allDay: boolean;
+  publishExternally: boolean;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
+}
+
+/**
+ * The form's own shape of a calendar event. It is not the mutation input: dates live here as the
+ * `yyyy-mm-dd` + `hh:mm` pairs the inputs hold and are resolved to ISO instants on submit, and the
+ * two selects use sentinels rather than null. Only the visibility list comes through from
+ * `CalendarEventBaseSchema` untouched; title and description restate it with a user-facing message.
+ */
+const EventFormBaseSchema = CalendarEventBaseSchema
+  .pick({ visibilityFunctionIds: true })
+  .extend({
+    title: z.string().min(1, 'Il titolo è obbligatorio').max(200, 'Massimo 200 caratteri'),
+    description: z.string().max(2000, 'Massimo 2000 caratteri'),
+    phaseId: z.string(),
+    calendarDaysRelevance: z.string(),
+    planningGroupId: z.string(),
+    allDay: z.boolean(),
+    publishExternally: z.boolean(),
+    startDate: z.string().min(1, 'La data di inizio è obbligatoria'),
+    startTime: z.string(),
+    endDate: z.string(),
+    endTime: z.string(),
+  });
+
+/**
+ * The motivated-move form. It carries its own copy of the range: cancelling out of the move must
+ * not leave the event's dates altered behind it.
+ *
+ * The dates are not picked from the endpoint's schema because they are not the same fields: it
+ * takes two ISO datetimes, the form four inputs that `handleReschedule` recombines. `reason` is the
+ * one rule both sides share, so it comes off the endpoint like the cancel form's does.
+ */
+const RescheduleFormSchema = MilestoneRescheduleInputSchema.pick({ reason: true }).extend({
+  startDate: z.string().min(1, 'La nuova data di inizio è obbligatoria'),
+  startTime: z.string(),
+  endDate: z.string(),
+  endTime: z.string(),
+  allDay: z.boolean(),
+});
+type RescheduleFormData = z.infer<typeof RescheduleFormSchema>;
+
+const CancelFormSchema = MilestoneCancelInputSchema.pick({ reason: true });
+type CancelFormData = z.infer<typeof CancelFormSchema>;
+
+/** The reschedule endpoint's field names, mapped back onto the form fields that produce them. */
+const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | undefined> = {
+  startAt: 'startDate',
+  endAt: 'endDate',
+  reason: 'reason',
+};
+
+/** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
+function describeBaselineDrift(event: ExistingEvent, zone: string): string | null {
   if (!event.baselineStartAt) return null;
-  const diff = daysBetween(new Date(event.baselineStartAt), new Date(event.startAt));
+  // The baseline carries no `allDay` of its own, so it is read as the event's current kind.
+  const firstDay = (at: Date | string) => eventDays({ startAt: at, endAt: null, allDay: event.allDay }, zone)[0];
+  const diff = calendarDaysBetween(firstDay(event.baselineStartAt), firstDay(event.startAt));
   if (diff === 0) return null;
   return diff > 0 ? `Spostato di ${diff}g rispetto al piano originale` : `Anticipato di ${-diff}g rispetto al piano originale`;
 }
@@ -86,28 +188,35 @@ function describeBaselineDrift(event: ExistingEvent): string | null {
  * @param availableFunctions - Company functions available as visibility targets.
  * @param functionsById - Map of function ID → name for display in read-only mode.
  * @param event - Existing event to edit; omit for create mode.
- * @param defaultDate - ISO date pre-filled in the start-date field on create.
+ * @param defaultDate - Date pre-filled in the start-date field on create.
+ * @param defaultTime - Wall time pre-filled on create; without one the new event is all-day.
  * @param readOnly - When true renders a read-only info card instead of the form.
  * @param onDeleted - Called after the event is successfully deleted.
  */
 export function CalendarEventDialog({
   open, onClose, onSaved, brandId, seasonId, availableFunctions, functionsById = {},
-  event, existingMilestones = [], defaultDate, defaultAllDay = true, readOnly = false, onDeleted,
+  event, existingMilestones = [], defaultDate, defaultTime, readOnly = false, onDeleted,
 }: Props) {
   const isEdit = !!event;
+  const defaultAllDay = !defaultTime;
+  // Times are typed and read in the zone the dialog opened with (ADR-035); the read-only card
+  // formats in the reader zone like the rest of the page.
+  const zone = useFormZone();
+  const fmt = useFormatDate();
   const isCancelled = !!event?.cancelledAt;
   const { can } = usePermission();
 
   // A phase event whose planning group is frozen and whose deadline has passed is locked: the backend
   // rejects title/phase/date edits (they'd rewrite what the frozen baseline committed to). Date moves
   // only via the motivated reschedule flow; title/phase have no such escape hatch — only unfreezing
-  // the group lifts the lock. Shared helper mirrors isEventDateLocked on the server.
-  const isDateLocked = !!event && isEventDateLocked(event);
+  // the group lifts the lock. Evaluated by the server in the business time zone (`dateLocked`).
+  const isDateLocked = !!event?.dateLocked;
 
   // A phase event whose planning group is frozen can't be hard-deleted — that would destroy the
-  // frozen baseline. The backend rejects it (isEventDeleteLocked); mirror it so the button doesn't
-  // look clickable then fail with a toast. "Annulla evento" is the correct action instead.
-  const isDeleteLocked = !!event && isEventDeleteLocked(event);
+  // frozen baseline. The backend rejects it (`eventDeleteBlock`, the rule a cancelled event also
+  // falls under, which this dialog shows read-only); mirror it so the button doesn't look clickable
+  // then fail with a toast. "Annulla evento" is the correct action instead.
+  const isDeleteLocked = !!event && eventDeleteBlock(event) === 'frozen';
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
   const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
@@ -115,25 +224,47 @@ export function CalendarEventDialog({
     { enabled: open && !isEdit }
   );
 
-  const [title, setTitle] = useState(event?.title ?? '');
-  const [description, setDescription] = useState(event?.description ?? '');
-  const [phaseId, setPhaseId] = useState<string>(event?.phaseId ?? '_none');
-  const [calendarDaysRelevance, setCalendarDaysRelevance] = useState<string>(event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE);
-  const [visibilityFunctionIds, setVisibilityFunctionIds] = useState<string[]>(() =>
-    event ? event.visibilities.map(v => v.functionId) : []
+  // The planning group is only asked for on create; in edit mode the event already belongs to one
+  // and no selector is rendered, so requiring it would reject a submit with nowhere to show why.
+  const schema = useMemo<z.ZodType<EventFormData, EventFormData>>(
+    () =>
+      isEdit
+        ? EventFormBaseSchema
+        : EventFormBaseSchema.extend({
+            planningGroupId: z.string().min(1, 'Seleziona un gruppo di pianificazione'),
+          }),
+    [isEdit]
   );
-  const {
-    startDate, startTime, endDate, endTime, reset: resetDateRange,
-    onStartDateChange, onStartTimeChange, onEndDateChange, onEndTimeChange,
-  } = useLinkedDateRange();
-  const [allDay, setAllDay] = useState(event?.allDay ?? defaultAllDay);
-  const [publishExternally, setPublishExternally] = useState(event?.publishExternally ?? true);
-  const [planningGroupId, setPlanningGroupId] = useState('');
+
+  const form = useForm<EventFormData>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      title: '', description: '', phaseId: NO_PHASE_VALUE, calendarDaysRelevance: NO_RELEVANCE_VALUE,
+      planningGroupId: '', visibilityFunctionIds: [], allDay: defaultAllDay,
+      publishExternally: true, startDate: '', startTime: '', endDate: '', endTime: '',
+    },
+  });
+  const rescheduleForm = useForm<RescheduleFormData>({
+    resolver: zodResolver(RescheduleFormSchema),
+    defaultValues: { startDate: '', startTime: '', endDate: '', endTime: '', allDay: false, reason: '' },
+  });
+  const cancelForm = useForm<CancelFormData>({
+    resolver: zodResolver(CancelFormSchema),
+    defaultValues: { reason: '' },
+  });
+
+  // Which range sides the user has edited directly — interaction state, not form data, and one
+  // tracker per range since the move dialog edits its own copy.
+  const rangeTouched = useRef({ ...UNTOUCHED_SIDES });
+  const rescheduleTouched = useRef({ ...UNTOUCHED_SIDES });
+
+  const allDay = form.watch('allDay');
+  const visibilityFunctionIds = form.watch('visibilityFunctionIds');
+  const planningGroupId = form.watch('planningGroupId');
+
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelReason, setCancelReason] = useState('');
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [rescheduleReason, setRescheduleReason] = useState('');
 
   // Defaults to the first group until the user picks one — fully derivable from `planningGroups`,
   // no need to sync it into state via an effect once the query resolves.
@@ -157,27 +288,80 @@ export function CalendarEventDialog({
   }, [isEdit, existingMilestones, event, effectivePlanningGroupId, phases]);
 
   useEffect(() => {
-    setTitle(event?.title ?? '');
-    setDescription(event?.description ?? '');
-    setPhaseId(event?.phaseId ?? '_none');
-    setCalendarDaysRelevance(event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE);
-    setVisibilityFunctionIds(event ? event.visibilities.map(v => v.functionId) : []);
-    const sd = toDateInput(event?.startAt ?? defaultDate);
-    const st = event ? toTimeInput(event.startAt) : (defaultAllDay ? '09:00' : toTimeInput(defaultDate));
-    resetDateRange({
-      startDate: sd,
-      startTime: st,
-      endDate: event?.endAt ? toDateInput(event.endAt) : sd,
-      endTime: event?.endAt ? toTimeInput(event.endAt) : addOneHour(st),
+    if (!zone) return;
+    // An existing event is read in the dialog's zone so that resubmitting it unchanged writes the
+    // same instants; a new one starts on the day (and, from the day view, the hour) the user clicked.
+    const range = event
+      ? rangeFromEvent(event.startAt, event.endAt, event.allDay, zone)
+      : rangeFromStart(defaultDate ?? '', defaultTime ?? '09:00');
+    rangeTouched.current = { ...UNTOUCHED_SIDES };
+    form.reset({
+      title: event?.title ?? '',
+      description: event?.description ?? '',
+      phaseId: event?.phaseId ?? NO_PHASE_VALUE,
+      calendarDaysRelevance: event?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
+      planningGroupId: '',
+      visibilityFunctionIds: event ? event.visibilities.map(v => v.functionId) : [],
+      allDay: event?.allDay ?? defaultAllDay,
+      publishExternally: event?.publishExternally ?? true,
+      ...range,
     });
-    setAllDay(event?.allDay ?? defaultAllDay);
-    setPublishExternally(event?.publishExternally ?? true);
-  }, [event?.id, open, defaultDate]);
+    // Deliberately not depending on `form`: it is stable, and listing it would reset the fields
+    // under the user on every render.
+  }, [event?.id, open, defaultDate, defaultTime, zone]);
 
   const toggleVisible = (fnId: string) => {
-    setVisibilityFunctionIds(prev =>
-      prev.includes(fnId) ? prev.filter(k => k !== fnId) : [...prev, fnId]
+    const next = visibilityFunctionIds.includes(fnId)
+      ? visibilityFunctionIds.filter(k => k !== fnId)
+      : [...visibilityFunctionIds, fnId];
+    form.setValue('visibilityFunctionIds', next, { shouldValidate: true });
+  };
+
+  /** Routes one range edit through the linked/clamp rule, then writes all four fields back. */
+  const applyRange = (side: RangeSide, patch: Partial<DateRangeState>) => {
+    const v = form.getValues();
+    const { next, touched } = applyLinkedEdit(
+      { startDate: v.startDate, startTime: v.startTime, endDate: v.endDate, endTime: v.endTime },
+      side, patch, v.allDay, rangeTouched.current
     );
+    rangeTouched.current = touched;
+    form.setValue('startDate', next.startDate, { shouldValidate: true });
+    form.setValue('startTime', next.startTime);
+    form.setValue('endDate', next.endDate);
+    form.setValue('endTime', next.endTime);
+  };
+
+  const applyRescheduleRange = (side: RangeSide, patch: Partial<DateRangeState>) => {
+    const v = rescheduleForm.getValues();
+    const { next, touched } = applyLinkedEdit(
+      { startDate: v.startDate, startTime: v.startTime, endDate: v.endDate, endTime: v.endTime },
+      side, patch, v.allDay, rescheduleTouched.current
+    );
+    rescheduleTouched.current = touched;
+    rescheduleForm.setValue('startDate', next.startDate, { shouldValidate: true });
+    rescheduleForm.setValue('startTime', next.startTime);
+    rescheduleForm.setValue('endDate', next.endDate);
+    rescheduleForm.setValue('endTime', next.endTime);
+  };
+
+  // The selector shows the first group until the user picks one; mirror that into form state, so
+  // the value that gets validated and submitted is the one displayed as selected.
+  useEffect(() => {
+    if (!isEdit && !form.getValues('planningGroupId') && planningGroups[0]?.id) {
+      form.setValue('planningGroupId', planningGroups[0].id, { shouldValidate: true });
+    }
+  }, [isEdit, planningGroups, form]);
+
+  /** Seeds the move dialog from the event's current range, so it starts where the event is. */
+  const openReschedule = () => {
+    const v = form.getValues();
+    rescheduleTouched.current = { ...UNTOUCHED_SIDES };
+    rescheduleForm.reset({
+      startDate: v.startDate, startTime: v.startTime,
+      endDate: v.endDate, endTime: v.endTime,
+      allDay: v.allDay, reason: '',
+    });
+    setRescheduleOpen(true);
   };
 
   const createMutation = trpc.seasonCalendar.createMilestone.useMutation({
@@ -185,9 +369,21 @@ export function CalendarEventDialog({
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  const utils = trpc.useUtils();
   const updateMutation = trpc.seasonCalendar.updateMilestone.useMutation({
-    onSuccess: data => { if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning); toast.success('Evento aggiornato'); onSaved(); onClose(); },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onSuccess: (data, variables) => {
+      if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning);
+      toast.success('Evento aggiornato');
+      // The share picker leaves out who sees the event through its functions, which may have
+      // changed: stale for the next opening, not refetched by the dialog that is closing.
+      void utils.seasonCalendar.listGrantCandidates.invalidate({ eventId: variables.id }, { refetchType: 'none' });
+      onSaved();
+      onClose();
+    },
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   const deleteMutation = trpc.seasonCalendar.deleteMilestone.useMutation({
@@ -204,7 +400,7 @@ export function CalendarEventDialog({
     onSuccess: () => {
       toast.success('Evento annullato');
       setCancelOpen(false);
-      setCancelReason('');
+      cancelForm.reset();
       onSaved();
       onClose();
     },
@@ -225,48 +421,72 @@ export function CalendarEventDialog({
       if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning);
       toast.success('Evento spostato');
       setRescheduleOpen(false);
-      setRescheduleReason('');
+      rescheduleForm.reset();
       onSaved();
       onClose();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
-  const handleReschedule = () => {
-    if (!event || !startDate || !rescheduleReason.trim()) return;
-    const startIso = resolveIso(startDate, startTime, allDay);
-    const endIso = endDate ? resolveIso(endDate, endTime, allDay) : undefined;
-    rescheduleMutation.mutate({ id: event.id, startAt: startIso, endAt: endIso, allDay, reason: rescheduleReason.trim() });
+  /**
+   * The four date/time fields are folded into two instants here, after the resolver has run, so the
+   * object that goes on the wire is not the one the form validated. It is checked against the
+   * endpoint's own schema before sending: otherwise an instant the fields accept but the endpoint
+   * refuses comes back as a toast, which is exactly the divergence the shared schema is for.
+   */
+  const handleReschedule = (data: RescheduleFormData) => {
+    if (!event || !zone) return;
+    const startIso = resolveSide(data.startDate, data.startTime, data.allDay, zone, { at: event.startAt, allDay: event.allDay });
+    const endIso = data.endDate ? resolveSide(data.endDate, data.endTime, data.allDay, zone, { at: event.endAt, allDay: event.allDay }) : undefined;
+    if (startIso === null || endIso === null) {
+      rescheduleForm.setError(startIso === null ? 'startDate' : 'endDate', {
+        message: 'Data e ora non formano un istante valido',
+      });
+      return;
+    }
+
+    const parsed = MilestoneRescheduleInputSchema.safeParse({
+      id: event.id, startAt: startIso, endAt: endIso, allDay: data.allDay, reason: data.reason, expected: expectedDates(event),
+    });
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const field = ISSUE_PATH_TO_FIELD[String(issue.path[0])];
+        if (field) rescheduleForm.setError(field, { message: issue.message });
+      }
+      return;
+    }
+    rescheduleMutation.mutate(parsed.data);
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  const handleSubmit = () => {
-    if (!title.trim() || !startDate) {
-      toast.error('Titolo e data di inizio sono obbligatori');
+  const handleSubmit = (data: EventFormData) => {
+    if (!zone) return;
+    // A side the user left as it was sends the stored instant back (`resolveSide`).
+    const startIso = resolveSide(data.startDate, data.startTime, data.allDay, zone, event && { at: event.startAt, allDay: event.allDay });
+    const endIso = data.endDate
+      ? resolveSide(data.endDate, data.endTime, data.allDay, zone, event && { at: event.endAt, allDay: event.allDay })
+      : undefined;
+    if (startIso === null || endIso === null) {
+      form.setError(startIso === null ? 'startDate' : 'endDate', {
+        message: 'Data e ora non formano un istante valido',
+      });
       return;
     }
-    if (visibilityFunctionIds.length === 0) {
-      toast.error('Seleziona almeno una funzione visibile');
-      return;
-    }
-    if (!isEdit && !effectivePlanningGroupId) {
-      toast.error('Seleziona un gruppo di pianificazione');
-      return;
-    }
-    const startIso = resolveIso(startDate, startTime, allDay);
-    const endIso = endDate ? resolveIso(endDate, endTime, allDay) : undefined;
 
     const payload = {
-      title: title.trim(),
-      description: description.trim() || undefined,
-      phaseId: phaseId === '_none' ? null : phaseId,
-      calendarDaysRelevance: calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
-      visibilityFunctionIds,
+      title: data.title.trim(),
+      description: data.description.trim() || undefined,
+      phaseId: data.phaseId === NO_PHASE_VALUE ? null : data.phaseId,
+      calendarDaysRelevance: data.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (data.calendarDaysRelevance as CalendarDaysRelevance) /* the select offers only CALENDAR_DAYS_RELEVANCE values besides the sentinel */,
+      visibilityFunctionIds: data.visibilityFunctionIds,
       startAt: startIso,
       endAt: endIso,
-      allDay,
-      publishExternally,
+      allDay: data.allDay,
+      publishExternally: data.publishExternally,
     };
 
     if (isEdit) {
@@ -275,25 +495,28 @@ export function CalendarEventDialog({
       // touch", the correct semantics for a field the user isn't allowed to change here. Date changes
       // only ever go through the motivated `rescheduleMilestone` flow (handleReschedule).
       const { title: _title, phaseId: _phaseId, startAt: _startAt, endAt: _endAt, allDay: _allDay, ...unlockedPayload } = payload;
-      const data = isDateLocked ? unlockedPayload : payload;
-      updateMutation.mutate({ id: event.id, data });
+      const updatePayload = isDateLocked ? unlockedPayload : payload;
+      // The form was filled from `event`: its dates are what this save is based on.
+      updateMutation.mutate({ id: event.id, data: updatePayload, expected: expectedDates(event) });
     } else {
-      createMutation.mutate({ planningGroupId: effectivePlanningGroupId, ...payload });
+      createMutation.mutate({ planningGroupId: data.planningGroupId, ...payload });
     }
   };
 
+  // Until the reader zone is known nothing here can be read or typed: the page opens the dialog
+  // only from views that already waited for it.
+  if (!zone) return null;
+
   if ((readOnly || isCancelled) && event) {
-    const dateStr = new Date(event.startAt).toLocaleDateString('it-IT', {
+    const dateStr = formatCalendarDate(eventDays(event, zone)[0], {
       weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     });
-    const timeStr = !event.allDay
-      ? new Date(event.startAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-      : null;
+    const timeStr = !event.allDay ? fmt.time(event.startAt) : null;
     const phaseLabel = phases.find(p => p.id === event.phaseId)?.label;
     const relevanceLabel = event.calendarDaysRelevance
       ? { COMPANY: 'gg lavorativi (azienda)', VENDOR: 'gg lavorativi (fornitore)', BOTH: 'gg lavorativi (entrambi)' }[event.calendarDaysRelevance]
       : null;
-    const baselineDrift = describeBaselineDrift(event);
+    const baselineDrift = describeBaselineDrift(event, zone);
     return (
       <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
         <DialogContent className="sm:max-w-[480px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
@@ -321,8 +544,8 @@ export function CalendarEventDialog({
               <p className="text-sm capitalize">{dateStr}{timeStr ? ` · ${timeStr}` : ''}</p>
               {event.endAt && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  → {new Date(event.endAt).toLocaleDateString('it-IT')}
-                  {!event.allDay && ` · ${new Date(event.endAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
+                  → {event.allDay ? formatCalendarDate(calendarDateOf(new Date(event.endAt)), {}) : fmt.date(event.endAt)}
+                  {!event.allDay && ` · ${fmt.time(event.endAt)}`}
                 </p>
               )}
               {baselineDrift && (
@@ -367,7 +590,7 @@ export function CalendarEventDialog({
     );
   }
 
-  const editFormBaselineDrift = event ? describeBaselineDrift(event) : null;
+  const editFormBaselineDrift = event ? describeBaselineDrift(event, zone) : null;
 
   return (
     <>
@@ -385,79 +608,161 @@ export function CalendarEventDialog({
             )}
           </DialogHeader>
 
+          <Form {...form}>
+          {/* flex, not the usual grid: this DialogContent overrides its own layout with
+              `p-0 gap-0 flex flex-col`, and the form has to stay transparent to it. */}
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="ev-title">Titolo *</Label>
-              <Input id="ev-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Nome dell'evento" disabled={isDateLocked} />
-            </div>
+            <FormField
+              control={form.control}
+              name="title"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>Titolo *</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Nome dell'evento" disabled={isDateLocked || isPending} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-            <div className="space-y-1.5">
-              <Label>Fase</Label>
-              <PhaseSelect value={phaseId} onValueChange={setPhaseId} phases={availablePhases} disabled={isDateLocked} />
-              <p className="text-xs text-muted-foreground">
-                Collega l'evento a una fase di produzione — necessario perché il motore di criticità delle righe collezione lo consideri come scadenza.
-              </p>
-            </div>
+            <FormField
+              control={form.control}
+              name="phaseId"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>Fase</FormLabel>
+                  <FormControl>
+                    <PhaseSelect value={field.value} onValueChange={field.onChange} phases={availablePhases} disabled={isDateLocked} />
+                  </FormControl>
+                  <FormDescription className="text-xs">
+                    Collega l&apos;evento a una fase di produzione — necessario perché il motore di criticità delle righe collezione lo consideri come scadenza.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-            <div className="space-y-1.5">
-              <Label>Conteggio giorni scadenza</Label>
-              <CalendarDaysRelevanceSelect value={calendarDaysRelevance} onValueChange={setCalendarDaysRelevance} />
-            </div>
+            <FormField
+              control={form.control}
+              name="calendarDaysRelevance"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>Conteggio giorni scadenza</FormLabel>
+                  <FormControl>
+                    <CalendarDaysRelevanceSelect value={field.value} onValueChange={field.onChange} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             {!isEdit && (
-              <div className="space-y-1.5">
-                <Label>Gruppo di pianificazione *</Label>
-                <PlanningGroupSelect
-                  value={effectivePlanningGroupId}
-                  onValueChange={setPlanningGroupId}
-                  groups={planningGroups}
-                  placeholder="Seleziona gruppo…"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Determina a quali righe di collezione si applica questo evento.
-                </p>
-              </div>
+              <FormField
+                control={form.control}
+                name="planningGroupId"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Gruppo di pianificazione *</FormLabel>
+                    <FormControl>
+                      <PlanningGroupSelect
+                        value={field.value || effectivePlanningGroupId}
+                        onValueChange={field.onChange}
+                        groups={planningGroups}
+                        placeholder="Seleziona gruppo…"
+                      />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      Determina a quali righe di collezione si applica questo evento.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             )}
 
-            <div className="space-y-1.5">
-              <Label>Visibile a *</Label>
-              <div className="flex flex-wrap gap-3">
-                {availableFunctions.map(fn => (
-                  <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
-                    <Checkbox checked={visibilityFunctionIds.includes(fn.id)} onCheckedChange={() => toggleVisible(fn.id)} />
-                    <span className="text-sm">{fn.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <FormField
+              control={form.control}
+              name="visibilityFunctionIds"
+              render={() => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>Visibile a *</FormLabel>
+                  <div className="flex flex-wrap gap-3">
+                    {availableFunctions.map(fn => (
+                      <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <Checkbox checked={visibilityFunctionIds.includes(fn.id)} onCheckedChange={() => toggleVisible(fn.id)} />
+                        <span className="text-sm">{fn.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-            <div className="flex items-center gap-2">
-              <Checkbox id="ev-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} disabled={isDateLocked} />
-              <Label htmlFor="ev-allday" className="cursor-pointer font-normal">Tutto il giorno</Label>
-            </div>
+            {isEdit && event?.id && (
+              <CalendarEventShareSection eventId={event.id} readOnly={readOnly} />
+            )}
+
+            <FormField
+              control={form.control}
+              name="allDay"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    {/* The end date crosses the exclusive/inclusive change (`toggleAllDay`). */}
+                    <Checkbox checked={field.value} disabled={isDateLocked}
+                      onCheckedChange={v => { form.setValue('endDate', toggleAllDay(form.getValues(), !!v).endDate); field.onChange(!!v); }} />
+                  </FormControl>
+                  <FormLabel className="cursor-pointer font-normal">Tutto il giorno</FormLabel>
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-start-date">Inizio *</Label>
-                <Input id="ev-start-date" type="date" value={startDate} disabled={isDateLocked}
-                  onChange={e => onStartDateChange(e.target.value, allDay)}
-                  className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
-                {!allDay && (
-                  <Input type="time" value={startTime} disabled={isDateLocked}
-                    onChange={e => onStartTimeChange(e.target.value, allDay)}
-                    className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Inizio *</FormLabel>
+                    <FormControl>
+                      <Input type="date" value={field.value} disabled={isDateLocked}
+                        onChange={e => applyRange('start', { startDate: e.target.value })}
+                        className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+                    </FormControl>
+                    {!allDay && (
+                      <Input type="time" value={form.watch('startTime')} disabled={isDateLocked}
+                        onChange={e => applyRange('start', { startTime: e.target.value })}
+                        className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+                    )}
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-end-date">Fine</Label>
-                <Input id="ev-end-date" type="date" value={endDate} disabled={isDateLocked} onChange={e => onEndDateChange(e.target.value, allDay)}
-                  className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
-                {!allDay && (
-                  <Input type="time" value={endTime} disabled={isDateLocked} onChange={e => onEndTimeChange(e.target.value, allDay)}
-                    className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+              />
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Fine</FormLabel>
+                    <FormControl>
+                      <Input type="date" value={field.value} disabled={isDateLocked}
+                        onChange={e => applyRange('end', { endDate: e.target.value })}
+                        className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+                    </FormControl>
+                    {!allDay && (
+                      <Input type="time" value={form.watch('endTime')} disabled={isDateLocked}
+                        onChange={e => applyRange('end', { endTime: e.target.value })}
+                        className="[&::-webkit-datetime-edit-fields-wrapper]:text-muted-foreground" />
+                    )}
+                    <FormMessage />
+                  </FormItem>
                 )}
-              </div>
+              />
             </div>
+            {!allDay && <p className="text-xs text-muted-foreground">Orari in {zone}</p>}
 
             {isDateLocked && (
               <p className="text-xs text-amber-700">
@@ -471,29 +776,45 @@ export function CalendarEventDialog({
               </Badge>
             )}
 
-            <div className="flex items-center gap-2">
-              <Checkbox id="ev-publish" checked={publishExternally} onCheckedChange={v => setPublishExternally(!!v)} />
-              <Label htmlFor="ev-publish" className="cursor-pointer font-normal">Pubblica su Google Calendar</Label>
-            </div>
+            <FormField
+              control={form.control}
+              name="publishExternally"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                  <FormControl>
+                    <Checkbox checked={field.value} onCheckedChange={v => field.onChange(!!v)} />
+                  </FormControl>
+                  <FormLabel className="cursor-pointer font-normal">Pubblica su Google Calendar</FormLabel>
+                </FormItem>
+              )}
+            />
 
-            <div className="space-y-1.5">
-              <Label htmlFor="ev-desc">Descrizione</Label>
-              <Textarea id="ev-desc" value={description} onChange={e => setDescription(e.target.value)}
-                placeholder="Note opzionali…" className="resize-none text-sm" rows={3} />
-            </div>
+            <FormField
+              control={form.control}
+              name="description"
+              render={({ field }) => (
+                <FormItem className="space-y-1.5">
+                  <FormLabel>Descrizione</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="Note opzionali…" className="resize-none text-sm" rows={3} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
 
           <DialogFooter className="flex-wrap gap-y-2 px-6 py-4 border-t shrink-0">
             {isEdit && (
               <div className="mr-auto flex gap-2">
                 {isDateLocked && !event.cancelledAt && (
-                  <Button variant="outline" onClick={() => setRescheduleOpen(true)} disabled={isPending}>
+                  <Button type="button" variant="outline" onClick={openReschedule} disabled={isPending}>
                     Sposta con motivazione
                   </Button>
                 )}
                 {!event.cancelledAt && (
                   // Amber classes match the baseline-drift badge convention already used in this file.
-                  <Button variant="outline" onClick={() => setCancelOpen(true)} disabled={isPending}
+                  <Button type="button" variant="outline" onClick={() => { cancelForm.reset(); setCancelOpen(true); }} disabled={isPending}
                     className="text-amber-700 border-amber-300 hover:bg-amber-50 hover:text-amber-800">
                     Annulla evento
                   </Button>
@@ -501,18 +822,20 @@ export function CalendarEventDialog({
                 {onDeleted && (
                   <PermissionButton
                     hasPermission={!isDeleteLocked}
-                    tooltip="Evento di fase congelato: non può essere eliminato, solo annullato («Annulla evento»)"
-                    variant="destructive" onClick={() => setDeleteOpen(true)} disabled={isPending}>
+                    tooltip={DELETE_BLOCK_REASON.frozen}
+                    type="button" variant="destructive" onClick={() => setDeleteOpen(true)} disabled={isPending}>
                     Elimina
                   </PermissionButton>
                 )}
               </div>
             )}
-            <Button variant="outline" onClick={onClose} disabled={isPending}>Chiudi</Button>
-            <Button onClick={handleSubmit} disabled={isPending}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>Chiudi</Button>
+            <Button type="submit" disabled={isPending}>
               {isPending ? 'Salvataggio…' : isEdit ? 'Salva' : 'Crea'}
             </Button>
           </DialogFooter>
+          </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
@@ -524,7 +847,6 @@ export function CalendarEventDialog({
           description={`Sei sicuro di voler eliminare "${event.title}"? Questa operazione è irreversibile.`}
           confirmText="Elimina"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => deleteMutation.mutate({ id: event.id })}
           isLoading={deleteMutation.isPending}
@@ -532,83 +854,157 @@ export function CalendarEventDialog({
       )}
 
       {isEdit && (
-        <Dialog open={cancelOpen} onOpenChange={v => { if (!v) { setCancelOpen(false); setCancelReason(''); } }}>
+        <Dialog
+          open={cancelOpen}
+          onOpenChange={v => { if (!v && !cancelMutation.isPending) setCancelOpen(false); }}
+        >
           <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
             <DialogHeader>
               <DialogTitle>Annulla evento</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 py-2">
-              <p className="text-sm text-muted-foreground">
-                L&apos;evento resta nello storico ma viene escluso dal motore di criticità. La motivazione è obbligatoria.
-              </p>
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-cancel-reason">Motivazione *</Label>
-                <Textarea id="ev-cancel-reason" value={cancelReason} onChange={e => setCancelReason(e.target.value)}
-                  placeholder="Perché questo evento viene annullato…" className="resize-none text-sm" rows={3} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setCancelOpen(false); setCancelReason(''); }} disabled={cancelMutation.isPending}>
-                Indietro
-              </Button>
-              <Button variant="destructive"
-                onClick={() => cancelMutation.mutate({ id: event.id, reason: cancelReason.trim() })}
-                disabled={cancelMutation.isPending || !cancelReason.trim()}>
-                {cancelMutation.isPending ? 'Annullamento…' : 'Conferma annullamento'}
-              </Button>
-            </DialogFooter>
+            <Form {...cancelForm}>
+              <form
+                onSubmit={cancelForm.handleSubmit(data =>
+                  cancelMutation.mutate({ id: event.id, reason: data.reason })
+                )}
+                className="grid gap-4"
+              >
+                <div className="space-y-3 py-2">
+                  <p className="text-sm text-muted-foreground">
+                    L&apos;evento resta nello storico ma viene escluso dal motore di criticità. La motivazione è obbligatoria.
+                  </p>
+                  <FormField
+                    control={cancelForm.control}
+                    name="reason"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel>Motivazione *</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Perché questo evento viene annullato…"
+                            className="resize-none text-sm"
+                            rows={3}
+                            disabled={cancelMutation.isPending}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setCancelOpen(false)} disabled={cancelMutation.isPending}>
+                    Indietro
+                  </Button>
+                  <Button type="submit" variant="destructive" disabled={cancelMutation.isPending}>
+                    {cancelMutation.isPending ? 'Annullamento…' : 'Conferma annullamento'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
           </DialogContent>
         </Dialog>
       )}
 
       {isEdit && (
-        <Dialog open={rescheduleOpen} onOpenChange={v => { if (!v) { setRescheduleOpen(false); setRescheduleReason(''); } }}>
+        <Dialog
+          open={rescheduleOpen}
+          onOpenChange={v => { if (!v && !rescheduleMutation.isPending) setRescheduleOpen(false); }}
+        >
           <DialogContent className="sm:max-w-[440px]"> {/* px: dialog width tuned to this form's content; no exact Tailwind max-w scale match */}
             <DialogHeader>
               <DialogTitle>Sposta evento (motivato)</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 py-2">
-              <p className="text-sm text-muted-foreground">
-                La baseline congelata resta invariata — la varianza continua a misurare il piano originale;
-                si aggiorna solo la scadenza operativa. La motivazione è obbligatoria.
-              </p>
-              <div className="flex items-center gap-2">
-                <Checkbox id="ev-resched-allday" checked={allDay} onCheckedChange={v => setAllDay(!!v)} />
-                <Label htmlFor="ev-resched-allday" className="cursor-pointer font-normal">Tutto il giorno</Label>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label htmlFor="ev-resched-start">Nuovo inizio *</Label>
-                  <Input id="ev-resched-start" type="date" value={startDate}
-                    onChange={e => onStartDateChange(e.target.value, allDay)} />
-                  {!allDay && (
-                    <Input type="time" value={startTime}
-                      onChange={e => onStartTimeChange(e.target.value, allDay)} />
-                  )}
+            <Form {...rescheduleForm}>
+              <form onSubmit={rescheduleForm.handleSubmit(handleReschedule)} className="grid gap-4">
+                <div className="space-y-3 py-2">
+                  <p className="text-sm text-muted-foreground">
+                    La baseline congelata resta invariata — la varianza continua a misurare il piano originale;
+                    si aggiorna solo la scadenza operativa. La motivazione è obbligatoria.
+                  </p>
+                  <FormField
+                    control={rescheduleForm.control}
+                    name="allDay"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center gap-2 space-y-0">
+                        <FormControl>
+                          <Checkbox checked={field.value}
+                            onCheckedChange={v => { rescheduleForm.setValue('endDate', toggleAllDay(rescheduleForm.getValues(), !!v).endDate); field.onChange(!!v); }} />
+                        </FormControl>
+                        <FormLabel className="cursor-pointer font-normal">Tutto il giorno</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={rescheduleForm.control}
+                      name="startDate"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel>Nuovo inizio *</FormLabel>
+                          <FormControl>
+                            <Input type="date" value={field.value}
+                              onChange={e => applyRescheduleRange('start', { startDate: e.target.value })} />
+                          </FormControl>
+                          {!rescheduleForm.watch('allDay') && (
+                            <Input type="time" value={rescheduleForm.watch('startTime')}
+                              onChange={e => applyRescheduleRange('start', { startTime: e.target.value })} />
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={rescheduleForm.control}
+                      name="endDate"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel>Nuova fine</FormLabel>
+                          <FormControl>
+                            <Input type="date" value={field.value}
+                              onChange={e => applyRescheduleRange('end', { endDate: e.target.value })} />
+                          </FormControl>
+                          {!rescheduleForm.watch('allDay') && (
+                            <Input type="time" value={rescheduleForm.watch('endTime')}
+                              onChange={e => applyRescheduleRange('end', { endTime: e.target.value })} />
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {!rescheduleForm.watch('allDay') && <p className="text-xs text-muted-foreground">Orari in {zone}</p>}
+                  <FormField
+                    control={rescheduleForm.control}
+                    name="reason"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel>Motivazione *</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Perché la scadenza viene spostata…"
+                            className="resize-none text-sm"
+                            rows={3}
+                            disabled={rescheduleMutation.isPending}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="ev-resched-end">Nuova fine</Label>
-                  <Input id="ev-resched-end" type="date" value={endDate} onChange={e => onEndDateChange(e.target.value, allDay)} />
-                  {!allDay && (
-                    <Input type="time" value={endTime} onChange={e => onEndTimeChange(e.target.value, allDay)} />
-                  )}
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ev-resched-reason">Motivazione *</Label>
-                <Textarea id="ev-resched-reason" value={rescheduleReason} onChange={e => setRescheduleReason(e.target.value)}
-                  placeholder="Perché la scadenza viene spostata…" className="resize-none text-sm" rows={3} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setRescheduleOpen(false); setRescheduleReason(''); }} disabled={rescheduleMutation.isPending}>
-                Indietro
-              </Button>
-              <Button onClick={handleReschedule}
-                disabled={rescheduleMutation.isPending || !rescheduleReason.trim() || !startDate}>
-                {rescheduleMutation.isPending ? 'Spostamento…' : 'Conferma spostamento'}
-              </Button>
-            </DialogFooter>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setRescheduleOpen(false)} disabled={rescheduleMutation.isPending}>
+                    Indietro
+                  </Button>
+                  <Button type="submit" disabled={rescheduleMutation.isPending}>
+                    {rescheduleMutation.isPending ? 'Spostamento…' : 'Conferma spostamento'}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
           </DialogContent>
         </Dialog>
       )}

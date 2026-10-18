@@ -5,7 +5,7 @@
  * it captures every error in the record itself) — the frontend polls `getById`/`list` for status.
  * `restore` is synchronous instead: it first creates a pre-restore safety snapshot (mandatory,
  * cannot be disabled — if it fails the restore is aborted without touching anything), then runs
- * `runRestoreJob` (which throws on error, unlike the backup job).
+ * `applyStagedRestore` (which throws on error, unlike the backup job).
  */
 
 import { TRPCError } from '@trpc/server';
@@ -25,13 +25,22 @@ import { logAudit } from '../lib/auditLog';
 import { unwrapDek, wrapDekWithPassphrase } from '../lib/backup/crypto';
 import { createPendingBackupRecord, deleteBackupBlob, runBackupJob } from '../lib/backup/dumpPipeline';
 import { classifySchemaCompatibility, runMigrationBridgeJob } from '../lib/backup/migrationBridge';
-import { runRestoreJob } from '../lib/backup/restorePipeline';
-import { getBackupScheduleSettings, saveConfig } from '../lib/configManager';
+import {
+  applyStagedRestore,
+  assertPgToolchainCompatible,
+  discardStagedRestore,
+  RestorePreconditionError,
+  stageBackupArchive,
+} from '../lib/backup/restorePipeline';
+import { getBackupScheduleSettings, saveConfigs } from '../lib/configManager';
+import { toErrorCode, toErrorMessage } from '../lib/error';
 import { forceLogoutNonAdmins, writeMaintenanceState } from '../lib/maintenanceMode';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getStorageProvider } from '../storage';
-import { signDownloadToken, signExportToken } from '../utils/downloadToken';
+import { signExportToken } from '../utils/downloadToken';
+
+import type { StagedRestore } from '../lib/backup/restorePipeline';
 
 const BACKUP_SELECT = {
   id: true,
@@ -58,6 +67,16 @@ function serializeRecord<T extends { sizeBytesEncrypted: bigint | null }>(
   record: T
 ): Omit<T, 'sizeBytesEncrypted'> & { sizeBytesEncrypted: string | null } {
   return { ...record, sizeBytesEncrypted: record.sizeBytesEncrypted?.toString() ?? null };
+}
+
+/**
+ * A preflight refusal written for the admin stays a 412; any other failure is a server fault whose
+ * text can carry paths, driver errors or pg_restore output, so it goes out as a 500 — masked in
+ * production by `trpcErrorFormatter`, logged in full by the tRPC `onError`.
+ */
+function preflightError(err: unknown, message: string): TRPCError {
+  const code = err instanceof RestorePreconditionError ? 'PRECONDITION_FAILED' : 'INTERNAL_SERVER_ERROR';
+  return new TRPCError({ code, message, cause: err });
 }
 
 export const backupRouter = router({
@@ -91,7 +110,8 @@ export const backupRouter = router({
     }),
 
   /**
-   * Returns a single backup's current state — used by the frontend to poll job progress.
+   * Returns a single backup's current state — polled by `scripts/rc-prod-clone.ts` to wait for a
+   * job to finish (the backup page polls `list` instead).
    *
    * @auth {maintenance:read}
    * @input `{ id: string }` — the backup record id.
@@ -110,32 +130,10 @@ export const backupRouter = router({
     }),
 
   /**
-   * Mints a short-lived (5 min) signed download token for a completed backup's encrypted blob.
-   * The frontend appends it to `/maintenance/backup/:id/download?token=...` and downloads via a
-   * native `<a href>` — no Bearer header, no buffering the whole file into a JS `Blob` first.
-   *
-   * @auth {maintenance:read}
-   * @input `{ id: string }` — the backup record id.
-   * @output `{ token, filename }` — signed download token and the blob's filename.
-   */
-  getDownloadLink: protectedProcedure
-    .use(requirePermission('maintenance:read'))
-    .input(BackupIdSchema)
-    .mutation(async ({ ctx, input }) => {
-      const record = await ctx.prisma.backupRecord.findUnique({ where: { id: input.id } });
-      if (!record || record.status !== 'COMPLETED' || !record.filename) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Backup non trovato o non completato' });
-      }
-
-      const token = signDownloadToken({ bucket: 'backups', key: record.filename });
-      return { token, filename: record.filename };
-    }),
-
-  /**
    * Prepares a passphrase-protected, instance-portable export package (`.lukebak`) for a
    * completed backup: unwraps its DEK with the server master key, re-wraps it with a key derived
    * from the given passphrase (Argon2id), and mints a signed token embedding that re-wrapped
-   * envelope so `/maintenance/backup/:id/export` can stream the package without hitting the DB
+   * envelope so `/download/backup/:id/export` can stream the package without hitting the DB
    * again. The passphrase itself is never persisted or included in the token.
    *
    * @auth {maintenance:backup_export}
@@ -280,6 +278,13 @@ export const backupRouter = router({
         });
       }
 
+      // Same pg_restore, same skew — the bridge restores into a temp database on this same server.
+      try {
+        await assertPgToolchainCompatible(ctx.prisma);
+      } catch (err) {
+        throw preflightError(err, toErrorMessage(err));
+      }
+
       const migrated = await createPendingBackupRecord(ctx.prisma, {
         scope: 'DB',
         trigger: 'MIGRATED',
@@ -381,81 +386,145 @@ export const backupRouter = router({
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message });
       }
 
-      // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
-      const safety = await createPendingBackupRecord(ctx.prisma, {
-        scope: 'DB',
-        trigger: 'PRE_RESTORE_SAFETY',
-        createdById: ctx.session.user.id,
-      });
-      await runBackupJob({ prisma: ctx.prisma, backupId: safety.id, scope: 'DB', logger: ctx.logger });
-      const safetyResult = await ctx.prisma.backupRecord.findUnique({
-        where: { id: safety.id },
-        select: { status: true, errorMessage: true },
-      });
-      if (safetyResult?.status !== 'COMPLETED') {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Snapshot di sicurezza pre-restore fallito, restore annullato: ${safetyResult?.errorMessage ?? 'errore sconosciuto'}`,
-        });
+      // Before anything irreversible: a pg_restore whose major differs from the server's aborts on
+      // its own prologue. Caught here, that costs nothing; caught inside applyStagedRestore it would
+      // already have taken a safety snapshot and put the instance into Maintenance Mode.
+      try {
+        await assertPgToolchainCompatible(ctx.prisma);
+      } catch (err) {
+        throw preflightError(err, toErrorMessage(err));
       }
 
-      const baseMeta = { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles };
-
-      // Blocks all non-admin traffic (reads included) and invalidates their sessions before
-      // touching the DB — a restore is already a deliberate action, so activation is immediate,
-      // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
-      // explicitly after verifying that everything works.
-      await writeMaintenanceState(ctx.prisma, {
-        status: 'ACTIVE',
-        scheduledAt: null,
-        activatedAt: new Date().toISOString(),
-        message: 'Ripristino database in corso',
-        forceLogout: true,
-        warningLeadMinutes: [],
-        warningsSent: [],
-        activatedByUserId: ctx.session.user.id,
-        notifyByEmail: false,
-      });
-      await forceLogoutNonAdmins(ctx.prisma);
-      await logAudit(ctx, {
-        action: 'MAINTENANCE_MODE_ACTIVATED',
-        targetType: 'MaintenanceMode',
-        result: 'SUCCESS',
-        metadata: { trigger: 'RESTORE', forceLogout: true },
-      });
-
+      // Download, decrypt, unpack and verify the archive before anything else. All of it is
+      // non-destructive, and it is where a backup written by an incompatible pg_dump is caught —
+      // so an unreadable backup costs a temp directory instead of leaving the instance in
+      // Maintenance Mode with a safety snapshot taken for a restore that never had a chance.
+      let staged: StagedRestore;
       try {
-        await runRestoreJob({
+        staged = await stageBackupArchive({
           prisma: ctx.prisma,
           filename: target.filename,
           ivHex: target.ivHex,
           authTagHex: target.authTagHex,
           wrappedDekHex: target.wrappedDekHex,
-          preserveAuditLog: input.preserveAuditLog,
           restoreFiles: input.restoreFiles,
           logger: ctx.logger,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const error = preflightError(err, `Backup non ripristinabile: ${toErrorMessage(err)}`);
+        // The code the client gets: a refusal or a server fault. The message stays out of the
+        // audit trail — it can carry paths or pg_restore output — and reaches the server log.
         await logAudit(ctx, {
           action: 'BACKUP_RESTORE',
           targetType: 'BackupRecord',
           targetId: target.id,
           result: 'FAILURE',
-          metadata: { ...baseMeta, errorCode: message.slice(0, 200) },
+          metadata: { preserveAuditLog: input.preserveAuditLog, restoreFiles: input.restoreFiles, errorCode: toErrorCode(error) },
         });
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
+        throw error;
       }
 
-      await logAudit(ctx, {
-        action: 'BACKUP_RESTORE',
-        targetType: 'BackupRecord',
-        targetId: target.id,
-        result: 'SUCCESS',
-        metadata: { ...baseMeta, safetySnapshotId: safety.id },
-      });
+      // Everything from here on owns the staged working directory: a full decrypted copy of the
+      // backup on local disk. The safety snapshot, the maintenance write and the audit writes can
+      // all throw, and none of them is a reason to leave gigabytes behind under ~/.luke.
+      try {
+        // Mandatory safety snapshot: if it fails, the restore doesn't start — nothing has been touched.
+        const safety = await createPendingBackupRecord(ctx.prisma, {
+          scope: 'DB',
+          trigger: 'PRE_RESTORE_SAFETY',
+          createdById: ctx.session.user.id,
+        });
+        await runBackupJob({ prisma: ctx.prisma, backupId: safety.id, scope: 'DB', logger: ctx.logger });
+        const safetyResult = await ctx.prisma.backupRecord.findUnique({
+          where: { id: safety.id },
+          select: { status: true, errorMessage: true },
+        });
+        if (safetyResult?.status !== 'COMPLETED') {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: `Snapshot di sicurezza pre-restore fallito, restore annullato: ${safetyResult?.errorMessage ?? 'errore sconosciuto'}`,
+          });
+        }
 
-      return { success: true, safetySnapshotId: safety.id };
+        // Blocks all non-admin traffic (reads included) and invalidates their sessions before
+        // touching the DB — a restore is already a deliberate action, so activation is immediate,
+        // not scheduled. Stays ACTIVE even after the restore completes: an admin must end it
+        // explicitly after verifying that everything works.
+        const maintenanceState = {
+          status: 'ACTIVE' as const,
+          scheduledAt: null,
+          activatedAt: new Date().toISOString(),
+          message: 'Ripristino database in corso',
+          forceLogout: true,
+          warningLeadMinutes: [],
+          warningsSent: [],
+          activatedByUserId: ctx.session.user.id,
+          notifyByEmail: false,
+        };
+        await writeMaintenanceState(ctx.prisma, maintenanceState);
+        await forceLogoutNonAdmins(ctx.prisma);
+        await logAudit(ctx, {
+          action: 'MAINTENANCE_MODE_ACTIVATED',
+          targetType: 'MaintenanceMode',
+          result: 'SUCCESS',
+          metadata: { trigger: 'RESTORE', forceLogout: true },
+        });
+
+        try {
+          await applyStagedRestore({
+            prisma: ctx.prisma,
+            staged,
+            preserveAuditLog: input.preserveAuditLog,
+            restoreFiles: input.restoreFiles,
+            logger: ctx.logger,
+          });
+        } catch (err) {
+          const message = toErrorMessage(err);
+          await logAudit(ctx, {
+            action: 'BACKUP_RESTORE',
+            targetType: 'BackupRecord',
+            targetId: target.id,
+            result: 'FAILURE',
+            metadata: {
+              preserveAuditLog: input.preserveAuditLog,
+              restoreFiles: input.restoreFiles,
+              errorCode: toErrorCode(err),
+            },
+          });
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Restore fallito: ${message}`, cause: err });
+        } finally {
+          // `pg_restore` overwrote both halves of the lockdown with the snapshot's copy: the
+          // maintenance state in `app_configs` (INACTIVE there) and `users.tokenVersion` (rolled
+          // back to before the force-logout, so every revoked non-admin JWT is valid again).
+          // Re-assert both — and on the failure path above all, which is exactly when the instance
+          // must not reopen onto a half-restored database.
+          //
+          // In a `finally` rather than after the block, and wrapped so a throw here cannot mask the
+          // restore's own error: the caller must still see why the restore failed.
+          try {
+            await writeMaintenanceState(ctx.prisma, maintenanceState);
+            await forceLogoutNonAdmins(ctx.prisma);
+          } catch (lockdownErr) {
+            ctx.logger.error({ err: lockdownErr }, 'Restore: could not reassert the post-restore lockdown');
+          }
+        }
+
+        await logAudit(ctx, {
+          action: 'BACKUP_RESTORE',
+          targetType: 'BackupRecord',
+          targetId: target.id,
+          result: 'SUCCESS',
+          metadata: {
+            preserveAuditLog: input.preserveAuditLog,
+            restoreFiles: input.restoreFiles,
+            safetySnapshotId: safety.id,
+          },
+        });
+
+        return { success: true, safetySnapshotId: safety.id };
+      } finally {
+        await discardStagedRestore(staged);
+      }
     }),
 
   /**
@@ -465,7 +534,8 @@ export const backupRouter = router({
    * @auth {maintenance:read}
    * @input None
    * @output Schedule/retention settings: `{ enabled, dailyTime, scope, retentionDays,
-   * retentionMinCount, notifyOnFailure }`.
+   * retentionMinCount, notifyOnFailure }`; `scope` is `null`, with the stored value in `storedScope`,
+   * when the stored one is not a scope (`BackupScheduleSettings`).
    */
   getScheduleConfig: protectedProcedure
     .use(requirePermission('maintenance:read'))
@@ -482,20 +552,30 @@ export const backupRouter = router({
     .use(requirePermission('maintenance:update'))
     .input(BackupScheduleConfigSchema)
     .mutation(async ({ ctx, input }) => {
-      await Promise.all([
-        saveConfig(ctx.prisma, 'backup.schedule.enabled', input.enabled.toString(), false),
-        saveConfig(ctx.prisma, 'backup.schedule.dailyTime', input.dailyTime, false),
-        saveConfig(ctx.prisma, 'backup.schedule.scope', input.scope, false),
-        saveConfig(ctx.prisma, 'backup.retentionDays', input.retentionDays.toString(), false),
-        saveConfig(ctx.prisma, 'backup.retentionMinCount', input.retentionMinCount.toString(), false),
-        saveConfig(ctx.prisma, 'backup.notifyOnFailure', input.notifyOnFailure.toString(), false),
+      // One change: a failure leaves the stored schedule as it was.
+      await saveConfigs(ctx.prisma, [
+        { key: 'backup.schedule.enabled', value: input.enabled.toString() },
+        { key: 'backup.schedule.dailyTime', value: input.dailyTime },
+        { key: 'backup.schedule.scope', value: input.scope },
+        { key: 'backup.retentionDays', value: input.retentionDays.toString() },
+        { key: 'backup.retentionMinCount', value: input.retentionMinCount.toString() },
+        { key: 'backup.notifyOnFailure', value: input.notifyOnFailure.toString() },
       ]);
 
       await logAudit(ctx, {
         action: 'BACKUP_SCHEDULE_UPDATE',
         targetType: 'Config',
         result: 'SUCCESS',
-        metadata: { ...input },
+        // Written out rather than spread: a spread hides the key names from `AuditMetadata`, so
+        // adding a field to `BackupScheduleConfigSchema` would silently store it as `[REDACTED]`.
+        metadata: {
+          enabled: input.enabled,
+          dailyTime: input.dailyTime,
+          scope: input.scope,
+          retentionDays: input.retentionDays,
+          retentionMinCount: input.retentionMinCount,
+          notifyOnFailure: input.notifyOnFailure,
+        },
       });
 
       return { success: true };

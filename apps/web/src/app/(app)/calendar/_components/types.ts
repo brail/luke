@@ -20,4 +20,6 @@ export interface CalendarEventItem {
   planningGroupId: string;
   planningGroupName?: string;
   planningGroupFrozenAt?: Date | string | null;
+  /** Post-freeze date lock, evaluated by the server in the business time zone (absent = unlocked). */
+  dateLocked?: boolean;
 }

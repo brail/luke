@@ -10,9 +10,10 @@
  * so a graceful shutdown doesn't drop notifications still waiting for their window to elapse.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import { flushDueCalendarNotifications, flushAllCalendarNotifications } from './notifications';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 30 * 1000;
@@ -29,11 +30,11 @@ export function registerCalendarNotificationBuffer(
 
   const tick = () =>
     flushDueCalendarNotifications(prisma, fastify.log).catch(err =>
-      fastify.log.error({ err }, 'Calendar notification buffer: errore non gestito')
+      fastify.log.error({ err }, 'Calendar notification buffer: unhandled error')
     );
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('Calendar notification buffer: avviato (tick ogni 30s, finestra 3 min)');
+    fastify.log.info('Calendar notification buffer: started (tick every 30s, 3 min window)');
     timer = setInterval(() => void tick(), TICK_INTERVAL_MS);
   });
 
@@ -43,6 +44,6 @@ export function registerCalendarNotificationBuffer(
       timer = null;
     }
     await flushAllCalendarNotifications(prisma, fastify.log);
-    fastify.log.info('Calendar notification buffer: fermato, buffer svuotato');
+    fastify.log.info('Calendar notification buffer: stopped, buffer flushed');
   });
 }

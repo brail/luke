@@ -1,11 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
+import { z } from 'zod';
 
-import { ldapConfigSchema, type LdapConfigInput } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema, type LdapConfigInput } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
@@ -41,18 +42,15 @@ import {
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function LdapSettingsPage() {
-  const { data: _session, status } = useSession();
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  // Form con react-hook-form e validazione Zod
+  // Form with react-hook-form and Zod validation
   const form = useForm<LdapConfigInput>({
     resolver: zodResolver(ldapConfigSchema),
     defaultValues: {
@@ -78,15 +76,19 @@ export default function LdapSettingsPage() {
   const [testConnectionMessage, setTestConnectionMessage] =
     React.useState<string>('');
 
-  // Dialog per test ricerca
+  // Search test dialog
   const [showSearchDialog, setShowSearchDialog] = useState(false);
-  const [searchUsername, setSearchUsername] = useState('');
+  const searchForm = useForm<z.infer<typeof ldapSearchTestSchema>>({
+    resolver: zodResolver(ldapSearchTestSchema),
+    defaultValues: { username: '' },
+  });
 
-  // Carica configurazione esistente (solo se admin)
+  // Load the existing configuration (admin only)
   const {
     data: existingConfig,
-    isLoading: isLoadingConfig,
+    isPending: isConfigPending,
     error: configError,
+    refetch: refetchConfig,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
   // Update form when existing configuration arrives
@@ -110,7 +112,7 @@ export default function LdapSettingsPage() {
     }
   }, [existingConfig, form]);
 
-  // Mutations (solo se admin)
+  // Mutations (admin only)
   const saveConfigMutation = trpc.integrations.auth.saveLdapConfig.useMutation({
     onSuccess: () => {
       toast.success('Configurazione LDAP salvata con successo');
@@ -150,7 +152,7 @@ export default function LdapSettingsPage() {
       toast.success(`Test ricerca LDAP: ${data.message}`);
       debugLog('LDAP Search Results:', data);
       setShowSearchDialog(false);
-      setSearchUsername('');
+      searchForm.reset();
     },
     onError: err => {
       toast.error('Test ricerca fallito', {
@@ -160,21 +162,8 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // Controllo accesso admin
-  if (status === 'loading') {
-    return (
-      <SettingsFormShell
-        title="Configurazione LDAP"
-        description="Caricamento..."
-        isLoading={true}
-      >
-        <div />
-      </SettingsFormShell>
-    );
-  }
-
   const onSubmit = (data: LdapConfigInput) => {
-    // Prepara payload escludendo bindPassword se vuoto
+    // Prepare the payload, leaving out bindPassword if empty
     const { bindPassword, ...payloadWithoutPassword } = data;
     const payload =
       !bindPassword || bindPassword.trim() === ''
@@ -205,18 +194,18 @@ export default function LdapSettingsPage() {
     setShowSearchDialog(true);
   };
 
-  const handleSearchDialogSubmit = () => {
-    if (searchUsername.trim()) {
-      testSearchMutation.mutate({ username: searchUsername.trim() });
-    }
+  const handleSearchDialogSubmit = (data: z.infer<typeof ldapSearchTestSchema>) => {
+    testSearchMutation.mutate({ username: data.username.trim() });
   };
 
   return (
     <SettingsFormShell
       title="Configurazione LDAP"
       description="Configura l'autenticazione enterprise via LDAP con mapping dei ruoli"
-      isLoading={isLoadingConfig}
+      isPending={isConfigPending}
       error={configError}
+      hasData={!!existingConfig}
+      onRetry={() => void refetchConfig()}
     >
       <SectionCard
         title="Parametri LDAP"
@@ -224,7 +213,6 @@ export default function LdapSettingsPage() {
       >
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Abilita LDAP */}
             <FormField
               control={form.control}
               name="enabled"
@@ -249,7 +237,6 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* Strategia Autenticazione */}
             <FormField
               control={form.control}
               name="strategy"
@@ -277,7 +264,7 @@ export default function LdapSettingsPage() {
                         Solo autenticazione locale
                       </SelectItem>
                       <SelectItem value="ldap-only">
-                        Solo autenticazione LDAP
+                        Solo LDAP (admin locali come accesso di emergenza)
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -417,7 +404,7 @@ export default function LdapSettingsPage() {
               render={({ field }) => (
                 <SensitiveField
                   label="Bind DN"
-                  description="DN dell'account amministrativo per cercare gli utenti"
+                  description="DN dell'account di servizio con cui cercare gli utenti. Va sempre configurato insieme alla password: senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene."
                   hasValue={hasBindDN}
                   placeholder="cn=admin,dc=example,dc=com"
                   disabled={!canUpdate || !form.watch('enabled')}
@@ -471,7 +458,7 @@ export default function LdapSettingsPage() {
               )}
             />
 
-            {/* Bottoni Test */}
+            {/* Test buttons */}
             <div className="flex justify-end space-x-2 pt-4">
               <Button
                 type="button"
@@ -511,7 +498,7 @@ export default function LdapSettingsPage() {
               message={testConnectionMessage}
             />
 
-            {/* Pulsanti Azione */}
+            {/* Action buttons */}
             <div className="flex justify-end space-x-4">
               <Button
                 type="button"
@@ -544,8 +531,11 @@ export default function LdapSettingsPage() {
         </Form>
       </SectionCard>
 
-      {/* Dialog Test Ricerca */}
-      <Dialog open={showSearchDialog} onOpenChange={setShowSearchDialog}>
+      {/* Search test dialog */}
+      <Dialog
+        open={showSearchDialog}
+        onOpenChange={open => { if (!open && !testSearchMutation.isPending) setShowSearchDialog(false); }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Test Ricerca LDAP</DialogTitle>
@@ -553,32 +543,41 @@ export default function LdapSettingsPage() {
               Inserisci un username per testare la ricerca nel server LDAP
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              placeholder="Username da cercare"
-              value={searchUsername}
-              onChange={e => setSearchUsername(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  handleSearchDialogSubmit();
-                }
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowSearchDialog(false)}
-            >
-              Annulla
-            </Button>
-            <Button
-              onClick={handleSearchDialogSubmit}
-              disabled={!searchUsername.trim() || testSearchMutation.isPending}
-            >
-              {testSearchMutation.isPending ? 'Ricerca...' : 'Cerca'}
-            </Button>
-          </DialogFooter>
+          <Form {...searchForm}>
+            <form onSubmit={searchForm.handleSubmit(handleSearchDialogSubmit)} className="grid gap-4">
+              <div className="py-4">
+                <FormField
+                  control={searchForm.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          placeholder="Username da cercare"
+                          disabled={testSearchMutation.isPending}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSearchDialog(false)}
+                  disabled={testSearchMutation.isPending}
+                >
+                  Annulla
+                </Button>
+                <Button type="submit" disabled={testSearchMutation.isPending}>
+                  {testSearchMutation.isPending ? 'Ricerca...' : 'Cerca'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </SettingsFormShell>

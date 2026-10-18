@@ -1,0 +1,127 @@
+/**
+ * Event instants are accepted only in the years the calendar-date helpers support (1900–9999): a
+ * year typed as "26" in a date field used to be stored as year 26, and every deadline evaluation on
+ * that event would then throw.
+ */
+
+import { describe, it, expect } from 'vitest';
+
+import {
+  ApplyTemplateInputSchema,
+  CalendarDigestRangeInputSchema,
+  CalendarEventBaseSchema,
+  CalendarLinkTargetSchema,
+  EventDatesExpectedSchema,
+  MilestoneRescheduleInputSchema,
+  VendorClosureUpsertInputSchema,
+  calendarLink,
+  calendarLinkTargetOf,
+} from '../seasonCalendar.js';
+
+const ID = '00000000-0000-4000-8000-000000000000';
+/** The dates the client read, required on every write that can move an event. */
+const EXPECTED = { startAt: '2026-10-01T00:00:00.000Z', endAt: null, allDay: true };
+
+describe('event instants', () => {
+  it.each(['1900-01-01T00:00:00.000Z', '2026-10-02T00:00:00.000Z', '9999-12-30T23:59:59.999Z'])('accept %s', value => {
+    expect(MilestoneRescheduleInputSchema.safeParse({ id: ID, startAt: value, endAt: value, reason: 'motivo', expected: EXPECTED }).success).toBe(true);
+  });
+
+  // 9999-12-31 has no next day: an all-day deadline on it could not be evaluated.
+  it.each(['0026-10-02T00:00:00.000Z', '1899-12-31T23:59:59.999Z', '9999-12-31T00:00:00.000Z'])('refuse %s', value => {
+    expect(MilestoneRescheduleInputSchema.safeParse({ id: ID, startAt: value, reason: 'motivo', expected: EXPECTED }).success).toBe(false);
+    expect(CalendarEventBaseSchema.shape.startAt.safeParse(value).success).toBe(false);
+    expect(CalendarEventBaseSchema.shape.endAt.safeParse(value).success).toBe(false);
+  });
+
+  it('a malformed one gets one issue, not also the range one', () => {
+    expect(CalendarEventBaseSchema.shape.startAt.safeParse('abc').error?.issues).toHaveLength(1);
+  });
+});
+
+describe('a reschedule names the dates it was based on', () => {
+  it('is refused without them', () => {
+    expect(MilestoneRescheduleInputSchema.safeParse({ id: ID, startAt: '2026-10-02T00:00:00.000Z', reason: 'motivo' }).success).toBe(false);
+  });
+});
+
+describe('manual digest range', () => {
+  it('accepts an existing range of calendar dates, one day included', () => {
+    expect(CalendarDigestRangeInputSchema.parse({ from: '2026-10-01', to: '2026-10-01' })).toEqual({ from: '2026-10-01', to: '2026-10-01' });
+    expect(CalendarDigestRangeInputSchema.safeParse({ from: '2024-02-29', to: '2024-03-01' }).success).toBe(true);
+    expect(CalendarDigestRangeInputSchema.safeParse({ from: '2026-10-01', to: '2026-10-31' }).success).toBe(true);
+  });
+
+  it.each([
+    ['a date that does not exist', { from: '2026-02-30', to: '2026-03-01' }],
+    ['a month out of range', { from: '2026-13-01', to: '2026-13-02' }],
+    ['a year outside 1900–9999', { from: '1899-12-31', to: '1900-01-01' }],
+    ['not a date', { from: '01/10/2026', to: '2026-10-01' }],
+    ['an end before the start', { from: '2026-10-02', to: '2026-10-01' }],
+    ['a range longer than 31 days', { from: '2026-10-01', to: '2026-11-01' }],
+  ])('refuses %s', (_label, value) => {
+    expect(CalendarDigestRangeInputSchema.safeParse(value).success).toBe(false);
+  });
+});
+
+describe('vendor closure days', () => {
+  const closure = (startDate: string, endDate: string) =>
+    VendorClosureUpsertInputSchema.safeParse({ vendorId: ID, seasonId: ID, countryCode: null, name: 'Ferie', startDate, endDate, type: 'CLOSURE' });
+
+  it('accepts calendar days, one day included', () => {
+    expect(closure('2026-08-10', '2026-08-21').data).toMatchObject({ startDate: '2026-08-10', endDate: '2026-08-21' });
+    expect(closure('2026-08-10', '2026-08-10').success).toBe(true);
+  });
+
+  // Rome's midnight of 10 August is 22:00Z on the 9th: taken as an instant, it would store the 9th.
+  it('refuses an instant for a day', () => {
+    expect(closure('2026-08-09T22:00:00.000Z', '2026-08-21T22:00:00.000Z').success).toBe(false);
+  });
+
+  it('refuses an end before the start', () => {
+    expect(closure('2026-08-21', '2026-08-10').error?.issues).toMatchObject([{ path: ['endDate'] }]);
+  });
+});
+
+describe('template anchor', () => {
+  const apply = (anchorDate: string) => ApplyTemplateInputSchema.safeParse({ planningGroupId: ID, templateId: ID, anchorDate });
+
+  it('accepts a calendar day', () => {
+    expect(apply('2026-03-10').data?.anchorDate).toBe('2026-03-10');
+  });
+
+  // Rome's midnight of 10 March is 23:00Z on the 9th: taken as an instant, it would anchor on the 9th.
+  it.each(['2026-03-09T23:00:00.000Z', '2026-03-10T00:00:00.000Z', '1899-12-31'])('refuses %s', value => {
+    expect(apply(value).success).toBe(false);
+  });
+});
+
+describe('the dates a write was based on', () => {
+  const expected = (startAt: string) => EventDatesExpectedSchema.safeParse({ ...EXPECTED, startAt });
+
+  // A stored all-day value at the lower bound must stay comparable.
+  it('accepts an all-day value at 1900-01-01', () => {
+    expect(expected('1900-01-01T00:00:00.000Z').success).toBe(true);
+  });
+
+  it('refuses a date with no next day', () => {
+    expect(expected('9999-12-31T00:00:00.000Z').success).toBe(false);
+  });
+});
+
+describe('calendarLink / calendarLinkTargetOf', () => {
+  const read = (link: string) => calendarLinkTargetOf(new globalThis.URL(link, 'https://luke.test').searchParams);
+
+  it('links an event, else a calendar, else the page, and reads the target back', () => {
+    expect(calendarLink({ eventId: ID, calendarId: ID })).toBe(`/calendar?event=${ID}`);
+    expect(read(calendarLink({ eventId: ID }))).toEqual({ eventId: ID });
+    expect(read(calendarLink({ calendarId: ID }))).toEqual({ calendarId: ID });
+    expect(calendarLink({})).toBe('/calendar');
+    expect(read(calendarLink({}))).toBeNull();
+  });
+
+  it('accepts as a target only an event or a calendar id', () => {
+    expect(CalendarLinkTargetSchema.safeParse({ eventId: ID }).success).toBe(true);
+    expect(CalendarLinkTargetSchema.safeParse({ eventId: 'abc' }).success).toBe(false);
+  });
+});

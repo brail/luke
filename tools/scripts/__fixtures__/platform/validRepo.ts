@@ -1,0 +1,288 @@
+/**
+ * A minimal repository that satisfies every platform invariant.
+ *
+ * The behavioral fixtures in `check-platform-integrity.test.ts` materialize this
+ * into a throwaway git repository and mutate one thing at a time, so each case
+ * proves exactly one invariant.
+ *
+ * ## Why this is data and not a directory of real files
+ *
+ * `checkPlatformIntegrity` discovers manifests with `git ls-files '*package.json'`.
+ * A fixture `package.json` committed under `tools/` would therefore be read by
+ * the checker **when it runs against Luke itself**, and its deliberately
+ * mismatched versions would be reported as real alignment and family failures in
+ * this repo. Declaring the tree here keeps the fixture permanent and reviewable
+ * without needing an exception list inside the checker — and an exception list
+ * is how a checker starts becoming furniture.
+ *
+ * Versions below are fixture data. They are not claims about what Luke installs,
+ * and nothing reads them as such.
+ */
+
+/** Files of a repository, keyed by path relative to its root. */
+export type RepoFiles = Record<string, string>;
+
+const ROOT_PACKAGE_JSON = {
+  name: 'fixture-monorepo',
+  private: true,
+  packageManager: 'pnpm@11.24.0+sha512.abcdef0123456789abcdef0123456789',
+  engines: { node: '>=24.0.0', pnpm: '>=10.0.0' },
+  scripts: {
+    // The Prisma client is a stub until this runs, and a fresh clone cannot
+    // start without it. Root, not workspace: pnpm only runs lifecycle scripts
+    // for the root project — see `checkPrismaBootstrap`.
+    postinstall: 'pnpm --filter @fixture/api exec prisma generate',
+    security: 'pnpm security:sast && pnpm security:secrets',
+    'security:sast': 'semgrep scan --config a.yml && semgrep scan --error',
+    'security:secrets': 'gitleaks detect --source .',
+  },
+  devDependencies: { typescript: '^6.0.3' },
+};
+
+const API_PACKAGE_JSON = {
+  name: '@fixture/api',
+  private: true,
+  // The published-contract shape: entry points in `dist`, an `exports` map that
+  // answers only what it means to, and a `files` allowlist. All three are
+  // required together — the negative cases remove one at a time.
+  main: './dist/index.js',
+  types: './dist/index.d.ts',
+  exports: {
+    '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+    './package.json': './package.json',
+  },
+  files: ['dist'],
+  dependencies: {
+    '@fixture/core': 'workspace:*',
+    prisma: '7.10.0',
+    '@prisma/adapter-pg': '^7.10.0',
+    '@trpc/server': '^11.18.0',
+    // OpenTelemetry deliberately spans 0.x experimental and 1.x/2.x stable
+    // lines. This is correct upstream design and must stay green.
+    '@opentelemetry/api': '^1.9.1',
+    '@opentelemetry/sdk-node': '^0.219.0',
+    '@opentelemetry/resources': '^2.10.0',
+  },
+  // `@prisma/client` is here and not in `dependencies` on purpose: it is the
+  // baseline for `DECLARATION_GRAPH_DEPENDENCIES`, whose negative cases move it
+  // and remove it.
+  devDependencies: { typescript: '^6.0.3', '@prisma/client': '^7.10.0' },
+};
+
+/**
+ * The second registered published contract. It exists here because
+ * `checkPublishedContracts` reports a declared contract whose manifest is not
+ * tracked — a silent skip would have made the rule vacuous exactly when a
+ * package was renamed out from under it.
+ */
+const CORE_PACKAGE_JSON = {
+  name: '@fixture/core',
+  private: true,
+  main: './dist/index.js',
+  types: './dist/index.d.ts',
+  exports: {
+    '.': { types: './dist/index.d.ts', default: './dist/index.js' },
+    './server': { types: './dist/server/index.d.ts', default: './dist/server/index.js' },
+    './package.json': './package.json',
+  },
+  files: ['dist'],
+  // P14: `dev` emits while it watches, `dev:check` does not.
+  scripts: { dev: 'tsc --watch --preserveWatchOutput', 'dev:check': 'tsc --watch --noEmit' },
+  devDependencies: { typescript: '^6.0.3' },
+};
+
+/** The task graph P14 reads: the emitting `dev` waits for its own build, `dev:check` need not. */
+export const TURBO_JSON = {
+  tasks: {
+    build: { dependsOn: ['^build'], outputs: ['dist/**'] },
+    dev: { dependsOn: ['^build', 'build'], cache: false, persistent: true },
+    'dev:check': { dependsOn: ['^build'], cache: false, persistent: true },
+  },
+};
+
+const WEB_PACKAGE_JSON = {
+  name: '@fixture/web',
+  private: true,
+  dependencies: {
+    react: '^19.2.8',
+    'react-dom': '^19.2.8',
+    '@trpc/client': '^11.18.0',
+    '@trpc/react-query': '^11.18.0',
+  },
+  devDependencies: {
+    typescript: '^6.0.3',
+    // Types version independently of the runtime packages they describe.
+    '@types/react': '^19.2.18',
+    '@types/react-dom': '^19.2.5',
+  },
+};
+
+/**
+ * The package owning the Prisma schema. Its `build` is the baseline for
+ * `PRISMA_GENERATED_TREE`: the generated tree is deleted *before* the generator
+ * writes it, because the generator cleans only its own output root.
+ */
+const DB_PACKAGE_JSON = {
+  name: '@fixture/db',
+  private: true,
+  scripts: { build: 'rm -rf src/generated dist && prisma generate && tsc' },
+  dependencies: { '@prisma/client': '^7.10.0' },
+};
+
+const WORKSPACE_YAML = `packages:
+  - apps/*
+
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
+minimumReleaseAgeExclude:
+  - electron-to-chromium
+`;
+
+/**
+ * A lockfile in the v9 shape the parser reads: a \`packages:\` block whose keys
+ * are \`name@version\`. Only the entries the exclusion cases need are present.
+ */
+const LOCKFILE = `lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+
+packages:
+
+  'electron-to-chromium@1.5.416':
+    resolution: {integrity: sha512-fixture}
+  'prettier@3.9.6':
+    resolution: {integrity: sha512-fixture}
+  '@myorg/widget@1.0.0':
+    resolution: {integrity: sha512-fixture}
+  'react@19.2.8':
+    resolution: {integrity: sha512-fixture}
+
+snapshots:
+
+  'react@19.2.8': {}
+`;
+
+const SETUP_ACTION = `name: Setup workspace
+description: fixture
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+`;
+
+/**
+ * A datamodel whose relations all satisfy P13: `Child.parentId` is led by an `@@index`, and the
+ * one-to-one `Single.parentId` by its own `@unique`.
+ */
+export const PRISMA_SCHEMA = `model Parent {
+  id       String  @id
+  children Child[]
+  single   Single?
+}
+
+model Child {
+  id       String @id
+  name     String
+  parentId String
+  parent   Parent @relation(fields: [parentId], references: [id], onDelete: Cascade)
+
+  @@index([parentId])
+}
+
+model Single {
+  id       String @id
+  parentId String @unique
+  parent   Parent @relation(fields: [parentId], references: [id], onDelete: Restrict)
+}
+`;
+
+/** The healthy baseline. Every negative case is a mutation of exactly one file. */
+export const VALID_REPO: RepoFiles = {
+  'packages/db/prisma/fixture.prisma': PRISMA_SCHEMA,
+  'turbo.json': JSON.stringify(TURBO_JSON, null, 2),
+  'package.json': JSON.stringify(ROOT_PACKAGE_JSON, null, 2),
+  'apps/api/package.json': JSON.stringify(API_PACKAGE_JSON, null, 2),
+  'packages/core/package.json': JSON.stringify(CORE_PACKAGE_JSON, null, 2),
+  'apps/web/package.json': JSON.stringify(WEB_PACKAGE_JSON, null, 2),
+  // Every row of `WORKSPACE_POLICY` must be tracked, or P10 reports the row as
+  // stale — so the two peer libraries and the tooling package exist here,
+  // minimally. `nav → core` is the baseline's permitted, unused edge.
+  'packages/db/package.json': JSON.stringify(DB_PACKAGE_JSON, null, 2),
+  'packages/nav/package.json': JSON.stringify(
+    { name: '@fixture/nav', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
+    null,
+    2
+  ),
+  'packages/calendar/package.json': JSON.stringify(
+    { name: '@fixture/calendar', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
+    null,
+    2
+  ),
+  'packages/eslint-plugin-luke/package.json': JSON.stringify(
+    { name: 'eslint-plugin-fixture', private: true },
+    null,
+    2
+  ),
+  'pnpm-workspace.yaml': WORKSPACE_YAML,
+  'pnpm-lock.yaml': LOCKFILE,
+  '.nvmrc': '24\n',
+  '.github/actions/setup-workspace/action.yml': SETUP_ACTION,
+  'apps/api/Dockerfile': 'FROM node:24-alpine AS base\n',
+  'apps/web/Dockerfile': 'FROM node:24-alpine AS base\n',
+};
+
+/** A copy of the baseline with one file replaced. */
+export function withFile(path: string, contents: string): RepoFiles {
+  return { ...VALID_REPO, [path]: contents };
+}
+
+/** A copy of the baseline with one file removed. */
+export function withoutFile(path: string): RepoFiles {
+  const files = { ...VALID_REPO };
+  delete files[path];
+  return files;
+}
+
+/** A copy of the baseline whose root manifest has been edited. */
+export function withRootManifest(
+  edit: (json: typeof ROOT_PACKAGE_JSON) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(ROOT_PACKAGE_JSON));
+  edit(json);
+  return withFile('package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose Core manifest has been edited. */
+export function withCoreManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(CORE_PACKAGE_JSON));
+  edit(json);
+  return withFile('packages/core/package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose API manifest has been edited. */
+export function withApiManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(API_PACKAGE_JSON));
+  edit(json);
+  return withFile('apps/api/package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose database-package manifest has been edited. */
+export function withDbManifest(
+  edit: (json: Record<string, unknown>) => void
+): RepoFiles {
+  const json = JSON.parse(JSON.stringify(DB_PACKAGE_JSON));
+  edit(json);
+  return withFile('packages/db/package.json', JSON.stringify(json, null, 2));
+}
+
+/** A copy of the baseline whose `pnpm-workspace.yaml` policy block is replaced. */
+export function withPolicy(policy: string): RepoFiles {
+  return withFile('pnpm-workspace.yaml', `packages:\n  - apps/*\n\n${policy}`);
+}

@@ -28,7 +28,7 @@ async function main() {
   try {
     const creds = await getConfiguredGoogleClient(prisma);
     if (!creds) {
-      console.error('❌ Integrazione Google Calendar non configurata o disabilitata — nulla da fare.');
+      console.error('❌ Google Calendar integration not configured or disabled — nothing to do.');
       process.exit(1);
     }
 
@@ -37,7 +37,7 @@ async function main() {
       include: { companyFunction: { select: { name: true } }, seasonCalendar: { select: { brandId: true, seasonId: true } } },
     });
 
-    console.log(`🔍 ${bindings.length} calendar Google provisioned trovati.\n`);
+    console.log(`🔍 ${bindings.length} provisioned Google calendars found.\n`);
 
     let hardened = 0;
     let errors = 0;
@@ -68,7 +68,7 @@ async function main() {
       }
     }
 
-    console.log(`\n✅ Completato: ${hardened} calendar aggiornati, ${errors} errori.`);
+    console.log(`\n✅ Completed: ${hardened} calendars updated, ${errors} errors.`);
     if (errors > 0) process.exit(1);
   } finally {
     await prisma.$disconnect();
@@ -76,6 +76,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

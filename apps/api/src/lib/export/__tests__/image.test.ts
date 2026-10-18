@@ -23,6 +23,7 @@ describe('resizeForEmbed', () => {
     const large = await makePng(3000, 3000);
 
     const out = await resizeForEmbed(large, 340, 120);
+    if (!out) throw new Error('resizeForEmbed returned null for a decodable PNG');
     const meta = await sharp(out).metadata();
 
     expect(meta.width).toBeLessThanOrEqual(340);
@@ -34,17 +35,22 @@ describe('resizeForEmbed', () => {
     const small = await makePng(20, 10);
 
     const out = await resizeForEmbed(small, 340, 120);
+    if (!out) throw new Error('resizeForEmbed returned null for a decodable PNG');
     const meta = await sharp(out).metadata();
 
     expect(meta.width).toBe(20);
     expect(meta.height).toBe(10);
   });
 
-  it('falls back to the original buffer when sharp cannot decode it', async () => {
+  it('returns null when sharp cannot decode the source', async () => {
+    // Never the original buffer: an undecodable source is unrenderable for
+    // exceljs/pdfmake anyway, and re-embedding it reopens the OOM path these
+    // tests exist to guard (`readAssetBuffer` serves the uncapped master until
+    // the background-generated `export` variant lands).
     const notAnImage = Buffer.from('not an image');
 
     const out = await resizeForEmbed(notAnImage, 340, 120);
 
-    expect(out).toBe(notAnImage);
+    expect(out).toBeNull();
   });
 });

@@ -69,7 +69,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 }
 
 describe('bulkAssignRowsPlanningGroup', () => {
-  it('esclude dal where le righe già sul gruppo target, per non riscriverle inutilmente', async () => {
+  it('excludes rows already in the target group from the where, so they are not rewritten for nothing', async () => {
     const { prisma, updateManyCalls } = buildFakePrisma();
     const rowIds = ['row-1', 'row-2'];
 
@@ -83,7 +83,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
     expect(updateManyCalls[0].data).toEqual({ planningGroupId: TARGET_GROUP_ID });
   });
 
-  it('il count ritornato riflette le righe realmente modificate, non quelle selezionate', async () => {
+  it('the returned count reflects the rows actually modified, not the selected ones', async () => {
     const { prisma } = buildFakePrisma({ updatedCount: 1 });
     const rowIds = ['row-1', 'row-2', 'row-3']; // 3 selected, only 1 actually outside the target group
 
@@ -92,7 +92,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
     expect(result).toEqual({ success: true, count: 1 });
   });
 
-  it('non scrive nulla se la riga è bloccata da un altro utente (CONFLICT)', async () => {
+  it('writes nothing if the row is locked by another user (CONFLICT)', async () => {
     const { prisma, updateManyCalls } = buildFakePrisma({ lockedByOtherUser: true });
 
     await expectToThrow(
@@ -102,7 +102,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
     expect(updateManyCalls).toHaveLength(0);
   });
 
-  it('non scrive nulla se il gruppo di pianificazione destinazione non esiste (NOT_FOUND)', async () => {
+  it('writes nothing if the target planning group does not exist (NOT_FOUND)', async () => {
     const { prisma, updateManyCalls } = buildFakePrisma({ planningGroupExists: false });
 
     await expectToThrow(
@@ -112,7 +112,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
     expect(updateManyCalls).toHaveLength(0);
   });
 
-  it('non scrive nulla se il gruppo destinazione appartiene a un\'altra stagione (BAD_REQUEST)', async () => {
+  it('writes nothing if the target group belongs to another season (BAD_REQUEST)', async () => {
     const { prisma, updateManyCalls } = buildFakePrisma({ planningGroupSeasonId: 'other-season' });
 
     await expectToThrow(
@@ -122,7 +122,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
     expect(updateManyCalls).toHaveLength(0);
   });
 
-  it('rifiuta l\'intera selezione se contiene righe concluse (CONFLICT), senza scriverne nessuna', async () => {
+  it('rejects the whole selection if it contains completed rows (CONFLICT), writing none of them', async () => {
     // Silently discarding the completed ones would return a partial count indistinguishable from
     // an intended success: the user would believe they'd moved all the selected rows.
     const { prisma, updateManyCalls } = buildFakePrisma({ completedCount: 1 });

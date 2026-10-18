@@ -47,25 +47,3 @@ export const TIMEZONES: TimezoneOption[] = [
   // UTC
   { value: 'UTC', label: 'UTC (Coordinated Universal Time)' },
 ];
-
-/** Finds a `TimezoneOption` by its IANA identifier, or `undefined` if not found. */
-export function findTimezoneByValue(value: string): TimezoneOption | undefined {
-  return TIMEZONES.find(timezone => timezone.value === value);
-}
-
-/** Returns the application default timezone (`Europe/Rome`). */
-export function getDefaultTimezone(): string {
-  return 'Europe/Rome';
-}
-
-/**
- * Returns the browser's current IANA timezone from `Intl.DateTimeFormat`.
- * Falls back to `getDefaultTimezone()` if the API is unavailable.
- */
-export function getBrowserTimezone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  } catch {
-    return getDefaultTimezone();
-  }
-}

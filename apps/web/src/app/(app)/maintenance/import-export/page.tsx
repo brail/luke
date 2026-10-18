@@ -80,7 +80,7 @@ export default function MaintenanceImportExportPage() {
         description="Importa ed esporta dati del sistema in formato JSON, CSV o XLSX"
       />
 
-      {/* Sezione Import */}
+      {/* Import section */}
       <SectionCard
         title="Importa Dati"
         description="Carica file per importare dati nel sistema"
@@ -110,7 +110,7 @@ export default function MaintenanceImportExportPage() {
           {importMutation.isPending ? 'Import in corso...' : 'Avvia Import'}
         </Button>
 
-        {/* Risultato Import */}
+        {/* Import result */}
         {importResult && (
           <div
             className={`p-4 rounded-md ${
@@ -126,7 +126,7 @@ export default function MaintenanceImportExportPage() {
         )}
       </SectionCard>
 
-      {/* Sezione Export */}
+      {/* Export section */}
       <SectionCard
         title="Esporta Dati"
         description="Esporta dati dal sistema in formato JSON"
@@ -155,7 +155,7 @@ export default function MaintenanceImportExportPage() {
           {exportMutation.isPending ? 'Export in corso...' : 'Avvia Export'}
         </Button>
 
-        {/* Risultato Export */}
+        {/* Export result */}
         {exportResult && (
           <div
             className={`p-4 rounded-md ${
@@ -183,7 +183,7 @@ export default function MaintenanceImportExportPage() {
         )}
       </SectionCard>
 
-      {/* Note Informative */}
+      {/* Informational notes */}
       <SectionCard
         title="Note Importanti"
         description="Informazioni sui formati supportati e limitazioni"

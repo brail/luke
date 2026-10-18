@@ -1,62 +1,45 @@
-# Documentazione Luke
+# Luke Documentation
 
 <!-- luke-docs:start:index -->
-## Architettura & Design
+## Getting started
 
-| File | Descrizione |
-|------|-------------|
-| [architecture-brand-flows.md](architecture-brand-flows.md) | Mappa architetturale dei flussi Brand — relazioni tra entità, lifecycle e transizioni di stato |
-| [collection-layout-versioning.md](collection-layout-versioning.md) | Sistema di revisioni del piano di collezione — registro qualità ISO 9001:2015, snapshot immutabili |
-| [storage-immutable-bucket.md](storage-immutable-bucket.md) | Bucket immutabile per foto revisioni — content-addressed storage, SHA-256 key, policy di retention |
-| [nav-integration.md](nav-integration.md) | Architettura integrazione Microsoft Dynamics NAV — pattern entità duale, sync differenziale, tabelle replica |
-| [google-calendar-setup.md](google-calendar-setup.md) | Setup integrazione Google Calendar — configurazione OAuth, provisioning calendario stagione, sync milestone |
-| [genoma-collezione-pianificazione.md](genoma-collezione-pianificazione.md) | Recepimento in Luke dell'algoritmo "Genoma della Collezione" — alert e monitoraggio avanzamento campionario |
-| [genoma-collezione-simplify-skipped.md](genoma-collezione-simplify-skipped.md) | Findings delle review `/simplify` non applicati durante l'implementazione del Genoma della Collezione, con motivazione dello skip |
-| [prisma-migration-workflow.md](prisma-migration-workflow.md) | Workflow per generare una migration Prisma versionata (Postgres temporaneo porta 5433 → `db push` su 5432) |
-| [rc-prod-clone.md](rc-prod-clone.md) | Procedura per clonare i dati di PROD su RC prima di promuovere una release stabile |
+Start with the [repository overview](../README.md) for the monorepo map and
+[`CLAUDE.md`](../CLAUDE.md) for the engineering rules that govern changes. Use
+the sections below to find architecture, procedures, reference material, and
+preserved evidence.
 
-## Decisioni Architetturali (ADR)
+## Architecture and decisions
 
-Le decisioni architetturali rilevanti sono documentate in [`decisions/`](decisions/):
+| Resource | Purpose |
+|----------|---------|
+| [Architectural decisions](decisions/README.md) | Canonical index of Architecture Decision Records, including status and supersession links. |
+| [Collection Layout versioning](collection-layout-versioning.md) | Revision model for Collection Layout snapshots, history, immutable storage, and access control. |
+| [Immutable revision storage](storage-immutable-bucket.md) | Content-addressed storage and retention contract for Collection Layout revision images. |
+| [Microsoft Dynamics NAV integration](nav-integration.md) | One-way NAV-to-Luke synchronization architecture, data ownership, and operational boundaries. |
+| [Country-aware working days](country-aware-working-days.md) | Design and resolution rules for counting working days by vendor or company country in milestone deadlines and criticality. |
 
-| # | Titolo |
-|---|--------|
-| [001](decisions/001-jwt-hs256-hkdf.md) | JWT HS256 con derivazione HKDF-SHA256 per i segreti |
-| [002](decisions/002-rbac-policy.md) | RBAC Policy e Enforcement (Resource:Action) |
-| [003](decisions/003-core-server-only.md) | Core Package — export server-only isolati |
-| [004](decisions/004-prisma-select-only.md) | Prisma Select-Only Pattern (prevenzione data leakage) |
-| [005](decisions/005-shared-zod-schemas.md) | Schemi Zod centralizzati in `@luke/core` |
-| [006](decisions/006-resource-action-permissions.md) | Sistema permessi Resource:Action unificato |
-| [007](decisions/007-storage-layer-refactor.md) | Refactor storage layer — interfaccia `IStorageProvider` |
-| [008](decisions/008-appconfig-env-policy.md) | AppConfig KV System e Env Policy |
-| [009](decisions/009-tokenversion-session-invalidation.md) | TokenVersion Multi-Layer Session Invalidation |
-| [010](decisions/010-section-access-precedence.md) | Section Access a 4 Layer di Precedenza |
-| [011](decisions/011-single-instance-scaling-constraint.md) | Vincolo di scalabilità a istanza singola |
+## How-to and runbooks
 
-Indice con Status aggiornato: [decisions/README.md](decisions/README.md).
+| Resource | Purpose |
+|----------|---------|
+| [Google Calendar setup](google-calendar-setup.md) | Provision and configure the Google Calendar integration. |
+| [Prisma migration workflow](prisma-migration-workflow.md) | Generate, review, and apply versioned migrations for the multi-file Prisma schema. |
+| [Production-to-RC data clone](rc-prod-clone.md) | Clone production data into RC without exposing the production master key. |
+| [Upgrading from 2.1.6 to 3.0](upgrade-2.1-to-3.0.md) | Production upgrade: MinIO-to-SeaweedFS file copy, data repairs, the reverse proxy's network, the move to a Git stack, and rollback. |
 
-## Analisi & Report
+## Reference
 
-| File | Descrizione |
-|------|-------------|
-| [audit-report-brand-management.md](audit-report-brand-management.md) | Report audit architetturale — gestione Brand |
-| [luke-taric-classifier.md](luke-taric-classifier.md) | Integrazione classificatore TARIC — categorizzazione doganale articoli |
-| [quality-hardening-plan.md](quality-hardening-plan.md) | Piano di consolidamento dei controlli qualità — dall'analisi statica alla verifica comportamentale |
+| Resource | Purpose |
+|----------|---------|
+| [Merchandising reference](merchandising-reference/) | Local, git-ignored reference material for the merchandising domain. |
+| [Microsoft Access porting](access-porting/) | Local, git-ignored reverse-engineering notes and query analysis for Access migrations. |
 
-## Task e note tecniche
+## Historical evidence
 
-| File | Descrizione |
-|------|-------------|
-| [TASK_calendar_ux_deferred_items.md](TASK_calendar_ux_deferred_items.md) | Backlog differito della UX review calendario/collection-layout (2026-07-10) |
-| [TASK_working_days_calendar_relevance.md](TASK_working_days_calendar_relevance.md) | Design doc storico: giorni lavorativi paese-aware per la criticità calendario (implementato 2026-07-10) |
-
-## Directory operative
-
-| Directory | Descrizione |
-|-----------|-------------|
-| [merchandising-reference/](merchandising-reference/) | Materiali di riferimento per il dominio merchandising |
-| [access-porting/](access-porting/) | Documentazione porting da Microsoft Access — reverse engineering e analisi query |
-| [archive/](archive/) | Feature rimosse archiviate — es. what-if calendar solver (rimosso 2026-07) |
-
-*Ultimo aggiornamento: 2026-08-08*
+| Resource | Purpose |
+|----------|---------|
+| Brand management architecture audit (retired) | Italian audit and remediation record for Brand management (2025-01-26), retired from the tree under ADR-030. Last path `docs/audit-report-brand-management.md`; read it with `git show fbf7e61a:docs/audit-report-brand-management.md`. |
+| [Agent engineering and platform governance audit](LUKE_AGENT_PLATFORM_GOVERNANCE_AUDIT_2026-08-30_v3.md) | Frozen assessment of agent, platform, skill, and control-plane governance. |
+| [Monorepo audit and closure appendices](LUKE_MONOREPO_AUDIT_2026-08-30.md) | Append-only evidence ledger for the monorepo remediation program. |
+| [Documentation archive](archive/README.md) | Index of archived designs and other frozen historical documents, and of the records retired from it. |
 <!-- luke-docs:end:index -->

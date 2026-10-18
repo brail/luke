@@ -1,22 +1,28 @@
 
-import { formatDateTime } from '@luke/core';
+import {
+  DEFAULT_OPTIMAL_MARGIN,
+  NUMERIC_DATE_TIME,
+  classifyMargin,
+  retailMargin,
+  skuWeightedAverage,
+} from '@luke/core';
 import type { StorageBucket } from '@luke/core';
-
-import { imageFetchLimiter } from '../lib/export/concurrency';
-import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
-import { readFileBuffer } from '../storage';
-
-import { buildProgressLabelMap } from './collectionLayout.service';
-
-import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { PrismaClient,
   Brand,
   CollectionGroup,
   CollectionLayout,
   CollectionLayoutRow,
   Season,
-  Vendor } from '@prisma/client';
+  Vendor } from '@luke/db';
+
+import { imageFetchLimiter } from '../lib/export/concurrency';
+import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
+
+import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
+import { buildProgressLabelMap } from './collectionLayout.service';
+
+import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -100,44 +106,32 @@ const PHOTO_MARGIN = [2, 15, 2, 15] as [number, number, number, number];
 const IMAGE_WIDTH  = 44;
 const IMAGE_HEIGHT = 20;
 
-// ─── Margin computation (mirrors usePricingCalc.ts) ──────────────────────────
+// ─── Margin computation ───────────────────────────────────────────────────────
+// Margin, status, SKU weighting and default target are all core's, as the web's `computeRowMargin`
+// (apps/web/src/app/(app)/product/_shared/pricingCalc.ts) uses them: a row shows the same margin
+// and status on screen and in the PDF.
 
-function computeMarginResult(
+/** SKU-weighted mean margin when any quotation has SKU > 0, arithmetic mean otherwise. */
+export function computeMarginResult(
   quotations: QuotationWithParamSet[],
 ): { pct: number; isAboveTarget: boolean; isWarning: boolean } | null {
-  const margins: number[] = [];
-  let refOptimal = 52;
+  const margins: Array<{ value: number; sku: number | null }> = [];
+  let refOptimal = DEFAULT_OPTIMAL_MARGIN;
   for (const q of quotations) {
     const ps = q.pricingParameterSet;
     if (!ps || !q.supplierQuotation || !q.retailPrice) continue;
     if (q.supplierQuotation <= 0 || q.retailPrice <= 0) continue;
-    const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
-    const withQC     = q.supplierQuotation + qc + ps.tools;
-    const withTransp = withQC + ps.transportInsuranceCost;
-    const withDuty   = withTransp * (1 + ps.duty / 100);
-    const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-    const wholesale  = q.retailPrice / ps.retailMultiplier;
-    margins.push((wholesale - landed) / wholesale);
+    margins.push({ value: retailMargin(q.supplierQuotation, q.retailPrice, ps), sku: q.sku ?? null });
     refOptimal = ps.optimalMargin;
   }
   if (margins.length === 0) return null;
-  const avg = margins.reduce((s, m) => s + m, 0) / margins.length;
-  const avgPct = avg * 100;
+  const avg = skuWeightedAverage(margins);
+  const status = classifyMargin(avg * 100, refOptimal);
   return {
     pct: Math.round(avg * 10000) / 100,
-    isAboveTarget: avgPct >= refOptimal,
-    isWarning: avgPct < refOptimal && avgPct >= refOptimal - 3,
+    isAboveTarget: status === 'green',
+    isWarning: status === 'yellow',
   };
-}
-
-// ─── Image helpers ────────────────────────────────────────────────────────────
-
-/** Returns a data URI string, or null for unsupported types (e.g. WebP). */
-function toDataUri(buf: Buffer, key: string): string | null {
-  const lower = key.toLowerCase();
-  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
-  if (lower.endsWith('.webp')) return null;
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }
 
 // ─── Table layout ─────────────────────────────────────────────────────────────
@@ -248,6 +242,7 @@ type Logger = { warn: (obj: object, msg: string) => void };
  *
  * @param extractedBy - Display name of the requesting user (shown in the page header).
  * @param extractedAt - Timestamp to include in the header.
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header time is written in.
  * @param pictureBucket - Storage bucket for row photos; defaults to `'collection-row-pictures'`.
  * @param extraFooterNote - Optional pre-formatted extra line appended to the footer (caller-formatted, this builder has no opinion on its content).
  * @returns A Buffer containing the complete PDF file.
@@ -257,6 +252,7 @@ export async function buildCollectionLayoutPdf(
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
+  timeZone: string,
   logger?: Logger,
   pictureBucket: StorageBucket = 'collection-row-pictures',
   extraFooterNote?: string | null,
@@ -268,24 +264,15 @@ export async function buildCollectionLayoutPdf(
   const limit = imageFetchLimiter();
   const [progressLabelMap, brandLogoDataUri, company] = await Promise.all([
     buildProgressLabelMap(prisma),
-    layout.brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', layout.brand.logoKey, logger).then(buf =>
-          buf ? toDataUri(buf, layout.brand.logoKey!) : null,
-        )
-      : Promise.resolve(null),
+    resolveLogoDataUri(prisma, layout.brand.logoKey, logger),
     fetchCompanyExportContext(prisma, logger),
     ...uniqueRowKeys.map(key =>
       limit(async () => {
-        const buf = await readFileBuffer(prisma, pictureBucket, key, logger);
-        keyToDataUriMap.set(
-          key,
-          buf
-            ? toDataUri(
-                await resizeForEmbed(buf, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
-                key,
-              )
-            : null,
-        );
+        const result = await readAssetBuffer(prisma, pictureBucket, key, 'export', logger);
+        const resized = result
+          ? await resizeForEmbed(result.buffer, IMAGE_WIDTH * EMBED_OVERSAMPLE_FACTOR, IMAGE_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger)
+          : null;
+        keyToDataUriMap.set(key, result && resized ? bufferToDataUri(resized, result.contentType) : null);
       }),
     ),
   ]);
@@ -397,7 +384,7 @@ export async function buildCollectionLayoutPdf(
   }
 
   const subtitle      = `Collection Layout — ${[layout.season.code, layout.season.name].filter(Boolean).join(' ')}`;
-  const extractedInfo = `${extractedBy} — ${formatDateTime(extractedAt)}`;
+  const extractedInfo = `${extractedBy} — ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE_TIME)}`;
 
   const docDefinition: TDocumentDefinitions = {
     pageSize: 'A3',

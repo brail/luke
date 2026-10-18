@@ -3,8 +3,10 @@
  * Isolated in its own file to prevent circular dependency cycles.
  */
 
+import type { PrismaClient } from '@luke/db';
+
 import type { UserSession } from './auth';
-import type { PrismaClient } from '@prisma/client';
+import type { UserAllowedIds } from '../services/context.service';
 import type { FastifyRequest, FastifyReply, FastifyBaseLogger } from 'fastify';
 
 
@@ -22,9 +24,10 @@ export interface Context {
   /** Per-request permission check cache — populated lazily by requirePermission(). */
   _permissionsCache?: Map<string, boolean>;
   /**
-   * Per-request cache of the user's allowed brand IDs — populated lazily by the
-   * guards in `services/brandScope.service.ts`. Holds the promise, not the
-   * value, so concurrent guards share one `companyTeamMembership` query.
+   * Per-request cache of the user's team-membership access (brand IDs + function IDs) —
+   * populated lazily by the guards in `services/brandScope.service.ts`. Holds the promise, not
+   * the value, so concurrent guards (brand or function, in any combination) share one
+   * `companyTeamMembership` query.
    */
-  _allowedBrandIdsPromise?: Promise<string[] | null>;
+  _allowedTeamAccessPromise?: Promise<UserAllowedIds>;
 }

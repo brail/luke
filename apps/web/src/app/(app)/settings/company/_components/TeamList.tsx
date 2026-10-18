@@ -84,7 +84,7 @@ export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamLi
 
               <div className="hidden shrink-0 items-center gap-1 sm:flex">
                 {team.brandScopes.length === 0 ? (
-                  <span className="text-xs italic text-muted-foreground">tutti i brand</span>
+                  <span className="text-xs italic text-muted-foreground">nessun brand</span>
                 ) : (
                   <>
                     {team.brandScopes.slice(0, 3).map(s => (
@@ -156,7 +156,6 @@ export function TeamList({ functionId, canCreate, canUpdate, canDelete }: TeamLi
         description={`Sei sicuro di voler eliminare "${deleteTarget?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget.id }); }}
         isLoading={deleteMutation.isPending}

@@ -8,10 +8,6 @@ import React, { useState } from 'react';
 
 import type { AppRouter } from '@luke/api';
 
-// Usa crypto.randomUUID() del browser invece di Node.js crypto
-// Import type-only dall'API per type-safety end-to-end tRPC
-// Nota: safe in monorepo; se separassimo i repo, considerare @luke/core/server
-
 /**
  * Typed tRPC client bound to `AppRouter` for end-to-end type inference.
  *
@@ -44,18 +40,19 @@ export function narrowRouterOutput<T>(value: unknown): T {
  */
 export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
   const { data: session } = useSession();
+  const accessToken = session?.accessToken;
 
   const [queryClient] = useState(
     () =>
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // 1 minuto
+            staleTime: 60 * 1000, // 1 minute
             retry: 1,
-            refetchOnWindowFocus: false, // Evita refetch automatici non necessari
+            refetchOnWindowFocus: false, // Avoid unnecessary automatic refetches
           },
           mutations: {
-            retry: false, // No retry automatico per evitare duplicazioni
+            retry: false, // No automatic retry, to avoid duplicate writes
           },
         },
       })
@@ -69,7 +66,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
             // Relative path — Next.js rewrites proxy /trpc/* → http://api:3001/trpc/*
             // This works whether the browser hits port 80 (via NPM) or port 3000 directly.
             url: '/trpc',
-            // Headers per autenticazione, Content-Type e trace correlation
+            // Headers for authentication, Content-Type and trace correlation
             headers() {
               // crypto.randomUUID() requires a secure context (HTTPS or localhost) — falls back
               // to a non-crypto random id over plain HTTP (e.g. an internal http:// hostname).
@@ -79,9 +76,9 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
                   Math.random().toString(36).substring(2) + Date.now().toString(36),
               };
 
-              // Aggiungi token JWT se disponibile
-              if (session?.accessToken) {
-                headers.authorization = `Bearer ${session.accessToken}`;
+              // Add the JWT token if available
+              if (accessToken) {
+                headers.authorization = `Bearer ${accessToken}`;
               }
 
               return headers;
@@ -89,7 +86,7 @@ export const TRPCProvider = ({ children }: { children: React.ReactNode }) => {
           }),
         ],
       }),
-    [session?.accessToken]
+    [accessToken]
   );
 
   return (

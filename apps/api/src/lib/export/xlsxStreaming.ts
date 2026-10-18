@@ -1,6 +1,9 @@
-import { PassThrough } from 'stream';
+import { PassThrough, type Writable } from 'stream';
+import { buffer } from 'stream/consumers';
 
 import ExcelJS from 'exceljs';
+
+import { calendarDateIn, wallTimeIn } from '@luke/core';
 
 /**
  * Document metadata for generated XLSX files.
@@ -28,31 +31,15 @@ export const XLSX_HEADER_STYLES = {
 } as const;
 
 /**
- * Creates a streaming ExcelJS workbook backed by a PassThrough stream.
- * The workbook writes to the stream as rows are committed; the accumulated
- * bytes are resolved once the stream ends.
+ * Creates a streaming ExcelJS workbook that writes into `stream` as rows are committed, carrying
+ * the document metadata every export sets.
  *
+ * @param stream - Destination of the XLSX bytes (a response, or a PassThrough to collect them).
  * @param meta - Document metadata applied to the workbook properties.
- * @returns `wb` — the workbook writer to add sheets to;
- *   `bufferPromise` — resolves with the complete XLSX buffer after `wb.commit()`.
  */
-export function createStreamingBuffer(meta: XlsxMeta): {
-  wb: ExcelJS.stream.xlsx.WorkbookWriter;
-  bufferPromise: Promise<Buffer>;
-} {
-  const pass = new PassThrough();
-
-  const bufferPromise = new Promise<Buffer>((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    pass.on('data', (chunk: Buffer | string) =>
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
-    );
-    pass.on('end', () => resolve(Buffer.concat(chunks)));
-    pass.on('error', reject);
-  });
-
+export function createStreamingWorkbook(stream: Writable, meta: XlsxMeta): ExcelJS.stream.xlsx.WorkbookWriter {
   const wb = new ExcelJS.stream.xlsx.WorkbookWriter({
-    stream: pass,
+    stream,
     useStyles: true,
     useSharedStrings: false,
   });
@@ -64,17 +51,30 @@ export function createStreamingBuffer(meta: XlsxMeta): {
   wb.created        = new Date();
   wb.modified       = new Date();
 
-  return { wb, bufferPromise };
+  return wb;
 }
 
 /**
- * Returns a compact timestamp string formatted as `YYYYMMdd-HHmm`.
- * Suitable for embedding in export filenames.
+ * Creates a streaming workbook whose bytes are collected in memory.
+ *
+ * @param meta - Document metadata applied to the workbook properties.
+ * @returns `wb` — the workbook writer to add sheets to;
+ *   `bufferPromise` — resolves with the complete XLSX buffer after `wb.commit()`.
  */
-export function exportTimestamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+export function createStreamingBuffer(meta: XlsxMeta): {
+  wb: ExcelJS.stream.xlsx.WorkbookWriter;
+  bufferPromise: Promise<Buffer>;
+} {
+  const pass = new PassThrough();
+  return { wb: createStreamingWorkbook(pass, meta), bufferPromise: buffer(pass) };
+}
+
+/**
+ * Returns a compact timestamp string formatted as `YYYYMMdd-HHmm`, on the wall clock in `timeZone`
+ * (the requester's, `getUserTimeZone`). Suitable for embedding in export filenames.
+ */
+export function exportTimestamp(timeZone: string, now: Date = new Date()): string {
+  return `${calendarDateIn(now, timeZone).replaceAll('-', '')}-${wallTimeIn(now, timeZone).replace(':', '')}`;
 }
 
 /**

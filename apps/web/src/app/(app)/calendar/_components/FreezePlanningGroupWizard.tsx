@@ -4,6 +4,8 @@ import { AlertTriangle, ShieldAlert } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { formatCalendarDate } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -17,6 +19,7 @@ import {
 import { ScrollArea } from '../../../../components/ui/scroll-area';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { eventDays } from '../utils';
 
 import type { CalendarEventItem } from './types';
 
@@ -25,6 +28,8 @@ interface Props {
   onClose: () => void;
   onFrozen: () => void;
   planningGroupId: string;
+  /** The reader zone: each event's first date is read in it. */
+  zone: string;
   milestones: CalendarEventItem[];
 }
 
@@ -54,7 +59,7 @@ function overlapReasonLabel(entry: { reason: 'weekend' | 'company' | 'vendor'; v
  * @param milestones - The planning group's events, used for the summary list.
  * @param onFrozen - Called after the group is successfully frozen.
  */
-export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, milestones }: Props) {
+export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGroupId, zone, milestones }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const utils = trpc.useUtils();
 
@@ -104,7 +109,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
               Salva uno snapshot immutabile delle date correnti di tutti gli eventi ({milestones.length}) del
-              gruppo di pianificazione come baseline "in teoria". Le date degli eventi restano modificabili dopo
+              gruppo di pianificazione come baseline &quot;in teoria&quot;. Le date degli eventi restano modificabili dopo
               il congelamento — solo lo snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
             </p>
 
@@ -138,7 +143,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
                     <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded text-sm">
                       <span className="flex-1 truncate">{m.title}</span>
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {new Date(m.startAt).toLocaleDateString('it-IT')}
+                        {formatCalendarDate(eventDays(m, zone)[0], {})}
                       </span>
                       {overlapReasons && (
                         <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">
@@ -179,7 +184,6 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
         description="Salva uno snapshot immutabile delle date correnti come baseline — da questo momento lo scostamento piano/realtà si misura contro queste date, non più contro quelle live dell'evento. Operazione irreversibile senza uno scongelamento amministrativo."
         confirmText="Congela"
         cancelText="Annulla"
-        variant="destructive"
         actionType="warning"
         onConfirm={() => freezeMutation.mutate({ planningGroupId })}
       />

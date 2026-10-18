@@ -35,7 +35,7 @@ export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
       toast.success('Email di verifica inviata');
       onOpenChange(false);
     } catch (err: unknown) {
-      toast.error(getTrpcErrorMessage(err) || 'Impossibile inviare email. Verifica SMTP.');
+      toast.error(getTrpcErrorMessage(err, { INTERNAL_SERVER_ERROR: 'Impossibile inviare email. Verifica SMTP.' }));
     }
   };
 
@@ -45,7 +45,7 @@ export function SendVerificationDialog({ userId, open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>Utente creato con successo</DialogTitle>
           <DialogDescription>
-            Vuoi inviare un'email di verifica all'utente?
+            Vuoi inviare un&apos;email di verifica all&apos;utente?
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

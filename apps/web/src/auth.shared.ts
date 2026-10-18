@@ -16,7 +16,7 @@ export const SESSION_UPDATE_AGE = 4 * 60 * 60;
  */
 export function checkTokenVersion(token: JWT): JWT | null {
   if (token.tokenVersion === undefined || token.tokenVersion === null) {
-    debugLog('JWT senza tokenVersion, forzo logout');
+    debugLog('JWT without tokenVersion, forcing logout');
     return null;
   }
   return token;

@@ -13,9 +13,8 @@ import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
 import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
+import { Transform, type TransformCallback } from 'stream';
 import { pipeline } from 'stream/promises';
-
-import pino from 'pino';
 
 import type {
   IStorageCapabilities,
@@ -29,42 +28,34 @@ import type {
   StorageListResult,
   LocalStorageConfig,
 } from '@luke/core';
-import { isPathSafe } from '@luke/core';
+import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError, isPathSafe } from '@luke/core';
 
-const logger = pino({ level: 'info' });
-
-/**
- * `NodeJS.ReadableStream` doesn't declare `.destroy()` (it's specific to the
- * more concrete `stream.Readable`) — narrows structurally instead of casting.
- */
-function tryDestroyStream(stream: NodeJS.ReadableStream): void {
-  const maybeDestroyable = stream as unknown as { destroy?: unknown };
-  if (typeof maybeDestroyable.destroy === 'function') {
-    (maybeDestroyable.destroy as () => void)();
-  }
-}
+import { generateStorageKey } from '../keys';
 
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
 export class LocalFsProvider implements IStorageProvider {
   readonly capabilities: IStorageCapabilities = {
     supportsPresignedUpload: false,
     supportsPresignedDownload: false,
+    supportsContentTypeFix: false,
   };
 
   private basePath: string;
   private maxFileSizeBytes: number;
-  private buckets: string[];
   private realBasePath?: string;
 
   constructor(config: LocalStorageConfig) {
     this.basePath = config.basePath;
     this.maxFileSizeBytes = config.maxFileSizeMB * 1024 * 1024;
-    this.buckets = config.buckets;
   }
 
   /**
-   * Initializes the provider by creating the base directory and one subdirectory per configured bucket.
-   * Each bucket also gets a `.tmp` subdirectory used for atomic writes.
+   * Initializes the provider by creating the base directory and one subdirectory per application
+   * bucket, each with the `.tmp` subdirectory used for atomic writes.
+   *
+   * Pre-creation is a convenience, not a precondition: `put` creates the directory it needs anyway.
+   * The set is `APP_STORAGE_BUCKETS` rather than a configured list — nothing chose a subset, and a
+   * second spelling of the list only gave the two a chance to disagree.
    */
   async init(): Promise<void> {
     // Get the realpath of basePath
@@ -73,29 +64,19 @@ export class LocalFsProvider implements IStorageProvider {
       this.realBasePath = await realpath(this.basePath);
     } catch (error) {
       throw new Error(
-        `Impossibile inizializzare basePath: ${error instanceof Error ? error.message : 'Unknown'}`
+        `Impossibile inizializzare basePath: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
 
     // Create directory for each bucket
-    for (const bucket of this.buckets) {
+    for (const bucket of APP_STORAGE_BUCKETS) {
       const bucketPath = join(this.basePath, bucket);
       await mkdir(bucketPath, { recursive: true, mode: 0o700 });
 
       // Create .tmp directory for atomic writes
       const tmpPath = join(bucketPath, '.tmp');
       await mkdir(tmpPath, { recursive: true, mode: 0o700 });
-    }
-
-    // Explicitly create brand-logos directory if missing
-    const brandLogosPath = join(this.basePath, 'brand-logos');
-    try {
-      await mkdir(brandLogosPath, { recursive: true, mode: 0o700 });
-      const brandLogosTmpPath = join(brandLogosPath, '.tmp');
-      await mkdir(brandLogosTmpPath, { recursive: true, mode: 0o700 });
-    } catch (error) {
-      // Log but don't fail if it already exists
-      logger.warn({ err: error }, 'Directory brand-logos creation warning');
     }
   }
 
@@ -112,7 +93,7 @@ export class LocalFsProvider implements IStorageProvider {
 
     // Pre-check with isPathSafe (blocks ../ and absolute paths)
     if (!isPathSafe(candidateSubpath)) {
-      throw new Error('Path non sicuro: caratteri invalidi o traversal');
+      throw new Error('Unsafe path: invalid characters or traversal');
     }
 
     // Canonicalize base (already done in init, but for safety)
@@ -147,38 +128,6 @@ export class LocalFsProvider implements IStorageProvider {
     return finalAbs;
   }
 
-  /**
-   * Generates a server-side storage key with date-based path partitioning: `YYYY/MM/DD/<uuid>[.ext]`.
-   */
-  private generateKey(contentType?: string): string {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const uuid = randomUUID();
-
-    // Add extension based on content-type
-    const extension = this.getExtensionFromContentType(contentType);
-    return `${year}/${month}/${day}/${uuid}${extension}`;
-  }
-
-  /** Returns the file extension for a given MIME type, or an empty string if unknown. */
-  private getExtensionFromContentType(contentType?: string): string {
-    if (!contentType) return '';
-    
-    switch (contentType) {
-      case 'image/png':
-        return '.png';
-      case 'image/jpeg':
-      case 'image/jpg':
-        return '.jpg';
-      case 'image/webp':
-        return '.webp';
-      default:
-        return '';
-    }
-  }
-
   /** Computes the SHA-256 hex digest of the file at the given path. */
   private async calculateChecksum(filePath: string): Promise<string> {
     const hash = createHash('sha256');
@@ -206,37 +155,23 @@ export class LocalFsProvider implements IStorageProvider {
     // Create parent directory if it doesn't exist
     await mkdir(dirname(targetPath), { recursive: true, mode: 0o700 });
 
-    const writeStream = createWriteStream(targetPath, { mode: 0o600 });
-
-    return new Promise((resolve, reject) => {
-      stream.on('data', (chunk: Buffer) => {
-        bytesWritten += chunk.length;
-
-        // Check size limit (if applicable)
-        if (maxSize !== null && bytesWritten > maxSize) {
-          // Close the streams
-          tryDestroyStream(stream);
-          writeStream.destroy();
-          reject(new Error(`File troppo grande (max ${maxSize} bytes)`));
-        }
-      });
-
-      stream.on('error', error => {
-        writeStream.destroy();
-        reject(error);
-      });
-
-      writeStream.on('error', error => {
-        tryDestroyStream(stream);
-        reject(error);
-      });
-
-      writeStream.on('finish', () => {
-        resolve(bytesWritten);
-      });
-
-      stream.pipe(writeStream);
-    });
+    // `pipeline` also rejects on a source that has already failed or closed, which the source's own
+    // events would no longer report, and destroys every stream when one of them fails.
+    await pipeline(
+      stream,
+      new Transform({
+        transform(chunk: Buffer, _encoding, callback: TransformCallback) {
+          bytesWritten += chunk.length;
+          if (maxSize !== null && bytesWritten > maxSize) {
+            callback(new Error(`File troppo grande (max ${maxSize} bytes)`));
+          } else {
+            callback(null, chunk);
+          }
+        },
+      }),
+      createWriteStream(targetPath, { mode: 0o600 })
+    );
+    return bytesWritten;
   }
 
   /**
@@ -246,7 +181,7 @@ export class LocalFsProvider implements IStorageProvider {
    */
   async put(params: StoragePutParams): Promise<StoragePutResult> {
     // Use the caller-supplied key, if present; otherwise generate server-side with an extension
-    const key = params.key ?? this.generateKey(params.contentType);
+    const key = params.key ?? generateStorageKey(params.contentType);
 
     // Final and temporary paths
     const finalPath = join(params.bucket, key);
@@ -292,7 +227,8 @@ export class LocalFsProvider implements IStorageProvider {
       }
 
       throw new Error(
-        `Errore upload file: ${error instanceof Error ? error.message : 'Unknown'}`
+        `File upload failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
   }
@@ -301,7 +237,9 @@ export class LocalFsProvider implements IStorageProvider {
    * Opens a readable stream for a stored file.
    *
    * @returns A stream, the file size, and a default content type (`application/octet-stream`).
-   * @throws If the path does not exist or is not a regular file.
+   * @throws {StorageObjectNotFoundError} If nothing exists at the path in an existing bucket
+   *   directory; another error if the bucket directory is missing, or the path is not a regular file
+   *   or cannot be read.
    */
   async get(params: StorageGetParams): Promise<StorageGetResult> {
     const filePath = join(params.bucket, params.key);
@@ -310,7 +248,7 @@ export class LocalFsProvider implements IStorageProvider {
     try {
       const stats = await stat(absPath);
       if (!stats.isFile()) {
-        throw new Error('Path non è un file');
+        throw new Error('Path is not a file');
       }
 
       const stream = createReadStream(absPath);
@@ -325,8 +263,17 @@ export class LocalFsProvider implements IStorageProvider {
         contentType,
       };
     } catch (error) {
+      // `stat` rejects with a Node errno error. ENOENT means "no such object" only while the bucket
+      // directory exists: without it the provider is looking in the wrong place.
+      if (
+        (error as NodeJS.ErrnoException).code === 'ENOENT' &&
+        (await stat(this.validatePathSafety(params.bucket)).then(s => s.isDirectory(), () => false))
+      ) {
+        throw new StorageObjectNotFoundError(params.bucket, params.key, { cause: error });
+      }
       throw new Error(
-        `File non trovato: ${error instanceof Error ? error.message : 'Unknown'}`
+        `File read failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+        { cause: error }
       );
     }
   }
@@ -344,7 +291,8 @@ export class LocalFsProvider implements IStorageProvider {
       // If the file doesn't exist, we consider the operation successful (idempotent)
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
-          `Errore cancellazione file: ${error instanceof Error ? error.message : 'Unknown'}`
+          `File deletion failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+          { cause: error }
         );
       }
     }

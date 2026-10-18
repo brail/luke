@@ -102,7 +102,6 @@ export function CreateRevisionDialog({
         </div>
 
         <div className="space-y-4">
-          {/* Tipo revisione */}
           <div className="space-y-1.5">
             <Label>Tipo revisione <span className="text-destructive">*</span></Label>
             <Select value={revisionTypeValue} onValueChange={setRevisionTypeValue}>

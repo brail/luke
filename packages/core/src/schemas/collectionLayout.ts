@@ -1,6 +1,8 @@
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
+
+import { MandatoryReasonSchema } from './reason.js';
 
 /**
  * Toggleable columns for the collection table. Always-visible columns (#, line, skuForecast, actions)
@@ -39,20 +41,18 @@ export const COLLECTION_COLUMNS_DEFAULT_HIDDEN = [
 export const COLLECTION_GENDER = ['MAN', 'WOMAN'] as const;
 export type CollectionGender = (typeof COLLECTION_GENDER)[number];
 
-/** Default strategy catalog values — used to seed `CollectionCatalogItem` on migration. */
+/**
+ * Default strategy catalog values. The `CollectionCatalogItem` rows were seeded by migration SQL,
+ * which spells the values itself; nothing reads this constant to seed them.
+ */
 export const DEFAULT_CATALOG_STRATEGY = ['CORE', 'INNOVATION'] as const;
 /** Default line-status catalog values. */
 export const DEFAULT_CATALOG_LINE_STATUS = ['CARRY_OVER', 'NEW'] as const;
-/** Default style-status catalog values. */
-export const DEFAULT_CATALOG_STYLE_STATUS = ['CARRY_OVER', 'NEW'] as const;
-// Kept for backward compatibility — export and xlsx/pdf services still reference these aliases.
+// The collection-layout group form and the API integration tests read the defaults through these aliases.
 export const COLLECTION_STRATEGY = DEFAULT_CATALOG_STRATEGY;
 export type CollectionStrategy = (typeof COLLECTION_STRATEGY)[number];
 export const COLLECTION_STATUS = DEFAULT_CATALOG_LINE_STATUS;
 export type CollectionStatus = (typeof COLLECTION_STATUS)[number];
-
-/** Default price-positioning catalog values. */
-export const DEFAULT_CATALOG_PRICE_POSITIONING = ['ENTRY', 'MID_MARKET', 'PREMIUM', 'LUXURY'] as const;
 
 /** All catalog dimension types managed via the `CollectionCatalogItem` table. */
 export const COLLECTION_CATALOG_TYPES = [
@@ -90,7 +90,11 @@ export type CollectionGroupInput = z.infer<typeof CollectionGroupInputSchema>;
 export const CollectionLayoutSettingsSchema = z.object({
   skuBudget: z.number().int().min(0).optional().nullable(),
   hiddenColumns: z.array(z.string()).optional().nullable(),
-  availableGenders: z.array(z.string()).min(1).optional(),
+  availableGenders: z
+    .array(z.enum(COLLECTION_GENDER))
+    .min(1)
+    .refine(genders => new Set(genders).size === genders.length, 'Gender ripetuto')
+    .optional(),
 });
 
 /**
@@ -103,7 +107,7 @@ export const CollectionLayoutRowInputSchema = z.object({
   planningGroupId: z.string().uuid().optional(),
   order: z.number().int().optional(),
   // Required
-  gender: z.string().min(1, 'Gender obbligatorio'),
+  gender: z.enum(COLLECTION_GENDER, { error: 'Gender non valido' }),
   vendorId: z.string().uuid().nullable().optional(),
   line: z.string().min(1, 'Linea obbligatoria'),
   article: z.string().max(100).optional().nullable(),
@@ -126,9 +130,9 @@ export const CollectionLayoutRowInputSchema = z.object({
   toolingNotes: z.string().optional().nullable(),
   // Optional — pricing
   toolingQuotation: z.number().positive().optional().nullable(),
-  // Optional — sotto-flussi bufferizzati nel drawer, committati atomicamente col salvataggio riga
+  // Optional — sub-flows buffered in the drawer, committed atomically with the row save
   quotations: z.array(z.lazy(() => CollectionRowQuotationDraftSchema)).optional(),
-  // Transiente, mai persistito su colonna — solo per arricchire l'audit log quando phaseId cambia davvero
+  // Transient, never persisted to a column — only to enrich the audit log when phaseId really changes
   phaseChangeNote: z.string().max(500).optional().nullable(),
 });
 export type CollectionLayoutRowInput = z.infer<
@@ -142,6 +146,22 @@ export const CollectionLayoutBulkAssignPlanningGroupInputSchema = z.object({
 });
 export type CollectionLayoutBulkAssignPlanningGroupInput = z.infer<
   typeof CollectionLayoutBulkAssignPlanningGroupInputSchema
+>;
+
+/**
+ * Input schema for concluding or reopening the development of a collection row: `note` is mandatory
+ * in both directions, `force` acknowledges phases the row skipped. Shared with `RowCompletionDialog`
+ * so the form and the endpoint reject the same text with the same message; the reasoning is on
+ * `rows.setCompleted`.
+ */
+export const CollectionRowSetCompletedInputSchema = z.object({
+  rowId: z.string(),
+  completed: z.boolean(),
+  note: MandatoryReasonSchema,
+  force: z.boolean().optional(),
+});
+export type CollectionRowSetCompletedInput = z.infer<
+  typeof CollectionRowSetCompletedInputSchema
 >;
 
 /** Input schema for creating or updating a quotation attached to a collection row. */
@@ -165,10 +185,10 @@ export type CollectionRowQuotationUpdate = z.infer<
   typeof CollectionRowQuotationUpdateSchema
 >;
 
-/** Bozza quotazione bufferizzata client-side nel drawer riga: `id` presente = riga esistente da
- *  aggiornare, assente = nuova da creare. `order` omesso: il server lo ricalcola dalla posizione
- *  nell'array inviato al salvataggio (non ha senso lasciarlo al client con inserimenti/cancellazioni
- *  intrecciati). */
+/** Quotation draft buffered client-side in the row drawer: `id` present = existing row to
+ *  update, absent = new one to create. `order` omitted: the server recomputes it from the position
+ *  in the array sent on save (leaving it to the client makes no sense with interleaved
+ *  inserts/deletes). */
 export const CollectionRowQuotationDraftSchema = CollectionRowQuotationInputSchema
   .omit({ rowId: true, order: true })
   .extend({ id: z.string().uuid().optional() });

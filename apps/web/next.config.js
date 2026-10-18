@@ -1,26 +1,23 @@
+/**
+ * The repository root: where Turbopack resolves the workspace from, and where
+ * standalone tracing starts. Next warns when the two differ, so they share it.
+ */
+const REPOSITORY_ROOT = require('path').resolve(__dirname, '../..');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ['@luke/core', '@luke/api'],
+  // The runtime image ships `.next/standalone`: the server and only the files
+  // its traces name, instead of the workspace's whole node_modules
+  // (apps/web/Dockerfile, tools/scripts/check-image-runtime.ts).
+  output: 'standalone',
+  outputFileTracingRoot: REPOSITORY_ROOT,
+  transpilePackages: ['@luke/core'],
   typedRoutes: true,
-  // Keep agent instructions centralized at the repository root; generated
-  // workspace files would create a competing authority.
-  agentRules: false,
-  env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || 'dev',
-  },
   experimental: {
-    externalDir: true,
-    proxyTimeout: 360_000, // 6 min — query portafoglio impiegano ~3–4 min, +2 min di margine
+    proxyTimeout: 360_000, // 6 min: portfolio queries take ~3–4 min, plus 2 min of headroom
   },
   turbopack: {
-    root: require('path').resolve(__dirname, '../..'),
-  },
-  webpack: config => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@': require('path').resolve(__dirname, 'src'),
-    };
-    return config;
+    root: REPOSITORY_ROOT,
   },
 
   /**
@@ -37,7 +34,22 @@ const nextConfig = {
    * Routes NOT proxied here (already handled by Next.js route handlers):
    *   /api/auth/...               → NextAuth
    *   /api/uploads/...            → app/api/uploads/[...path]/route.ts
-   *   /api/upload/brand-logo/temp → app/api/upload/brand-logo/temp/route.ts
+   *
+   * The temporary brand-logo upload has no route handler of its own: the
+   * dialog posts straight to `/upload/brand-logo/temp`
+   * (`buildTempBrandLogoUploadUrl()`) with its Bearer token, and reaches the
+   * API through the `/upload/:path*` rewrite below like every other upload.
+   * A handler at `app/api/upload/brand-logo/temp/route.ts` used to exist; it
+   * was never tracked (`.gitignore` ignores every `temp/` directory) and was
+   * retired as stale residue in Monorepo Audit Cycle 10.
+   *
+   * An API path missing from this list does NOT fail loudly: it falls through to Next's own
+   * routing, which answers with the 404 page. A `fetch` caller sees `res.ok === false`, but an
+   * `<a download>` caller just saves that HTML under the requested filename — which is how
+   * backup downloads shipped 24KB of 404 page instead of the backup. To keep that impossible,
+   * every raw browser-facing API route lives under `/download/` (GET, streamed responses) or
+   * `/upload/` (POST, streamed request bodies), both wildcarded below, and
+   * `apps/api/test/rawRouteProxy.spec.ts` fails the build on a route registered outside them.
    */
   async rewrites() {
     const apiUrl = process.env.INTERNAL_API_URL;
@@ -46,14 +58,12 @@ const nextConfig = {
     return [
       // tRPC batch/streaming
       { source: '/trpc/:path*',    destination: `${apiUrl}/trpc/:path*` },
-      // Direct file uploads (brand logo by id, collection row pictures)
+      // Direct file uploads (brand logo by id, collection row pictures, backup import)
       { source: '/upload/:path*',  destination: `${apiUrl}/upload/:path*` },
-      // SSE session invalidation
-      { source: '/session-events', destination: `${apiUrl}/session-events` },
+      // Streamed downloads (backup blob/export, audit log CSV, season calendar exports)
+      { source: '/download/:path*', destination: `${apiUrl}/download/:path*` },
       // SSE notifications push
       { source: '/api/sse',        destination: `${apiUrl}/api/sse` },
-      // Health check passthrough
-      { source: '/health',         destination: `${apiUrl}/health` },
     ];
   },
 };

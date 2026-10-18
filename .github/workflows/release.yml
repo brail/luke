@@ -1,32 +1,139 @@
 name: Release
 
-# Triggered by a version tag: git tag v1.2.3 && git push --tags
+# Triggered by a version tag: git tag v1.2.3 && git push origin v1.2.3
+#
+# One named tag, never `--tags`: that pushes every local tag, and a clone can
+# hold candidates that were never meant for the remote. The provenance gate
+# rejects them, loudly, after they exist.
 on:
   push:
     tags:
       - 'v*'
 
+# Read by default, stated here rather than left to the repository setting; the
+# image jobs and the GitHub Release job raise their own scope.
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   API_IMAGE: ghcr.io/brail/luke-api
   WEB_IMAGE: ghcr.io/brail/luke-web
-  PNPM_VERSION: '10.32.1'
+  # The two lines a release may come from. `main` is permanent; the release
+  # train is the temporary branch of the current cycle and changes with it —
+  # one of the per-cycle edits, with the `branches` lists in ci.yml and
+  # security.yml's own RELEASE_TRAIN_BRANCH (CLAUDE.md, "When switching develop
+  # branch"; enforced by `pnpm check:workflows`).
+  STABLE_BRANCH: main
+  RELEASE_TRAIN_BRANCH: develop-2.2
 
 jobs:
-  # ── Gate: nessuna immagine se la CI non è verde ──────────────────────────────
-  # Riusa ci.yml invece di duplicarne gli step: lint, typecheck, typecheck:test,
-  # unit test, integration e migrazioni. Nessuno è continue-on-error — dallo
-  # svuotamento della quarantena anche `integration` blocca il tag
-  # (docs/quality-hardening-plan.md §5).
+  # ── Gate: a tag may only publish what its provenance allows ─────────────────
+  # Runs before everything, including the CI reuse below, so a tag pushed from
+  # the wrong line costs nothing and publishes nothing.
+  #
+  # This replaces `contains(github.ref_name, '-rc')`, which decided the channel
+  # from a substring of a name the tagger chose. It could not tell where the
+  # tagged commit lived, so a stable tag cut by mistake from the release train
+  # moved every `latest` consumer onto unmerged code; and it was not a SemVer
+  # check either, so `v2.2` passed the `v*` trigger, produced no `type=semver`
+  # tag at all, and pushed an unversioned image with every step green.
+  #
+  # The reasoning lives in tools/scripts/check-release-provenance.ts, where it
+  # is typechecked by `typecheck:tools` and regression-tested by `test:tools` —
+  # both directions, since a gate that rejects a legitimate release is
+  # discovered with the tag already pushed.
+  provenance:
+    name: Release provenance
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.gate.outputs.channel }}
+      version: ${{ steps.gate.outputs.version }}
+      series: ${{ steps.gate.outputs.series }}
+      publish_series: ${{ steps.gate.outputs.publish_series }}
+      publish_latest: ${{ steps.gate.outputs.publish_latest }}
+      publish_rc_latest: ${{ steps.gate.outputs.publish_rc_latest }}
+      notes: ${{ steps.tree.outputs.notes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Reachability is the whole proof: a shallow clone would make every
+          # ancestry question unanswerable, and an unanswerable question must
+          # not resolve to "yes".
+          fetch-depth: 0
+
+      - name: Fetch the lines provenance is proved against
+        run: |
+          git fetch --no-tags --quiet origin \
+            "+refs/heads/${STABLE_BRANCH}:refs/remotes/origin/${STABLE_BRANCH}"
+          # The release train is deleted once it has graduated, and stable
+          # tags keep being cut from main afterwards. A missing train ref is
+          # fatal only for an rc, and that is the checker's call, not this
+          # step's.
+          git fetch --no-tags --quiet origin \
+            "+refs/heads/${RELEASE_TRAIN_BRANCH}:refs/remotes/origin/${RELEASE_TRAIN_BRANCH}" \
+            || echo "note: ${RELEASE_TRAIN_BRANCH} not on the remote — only a stable tag can pass"
+          # The tree check compares a graduation with its last candidate, so it
+          # needs every release tag. `fetch-depth: 0` brings them today, but a
+          # candidate that is silently absent reads as "not a graduation" and
+          # proves nothing — the dependency is stated here instead. No `+`: a
+          # local tag that differs from the remote's fails the step.
+          git fetch --no-tags --quiet origin 'refs/tags/v*:refs/tags/v*'
+
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Check release provenance
+        id: gate
+        run: |
+          pnpm exec tsx tools/scripts/check-release-provenance.ts \
+            --tag "$GITHUB_REF_NAME" \
+            --stable-ref "origin/${STABLE_BRANCH}" \
+            --train-ref "origin/${RELEASE_TRAIN_BRANCH}" \
+            --expected-sha "$GITHUB_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+      # The gate proves the tag may publish from this line. It says nothing
+      # about what the tree contains, and nothing here did: an image was
+      # published whose package.json versions and whose release notes had never
+      # been compared with the tag. The only checks that existed lived in
+      # .husky/pre-push — skipped by `--no-verify`, absent from any other clone,
+      # and reading the working tree rather than the tagged one.
+      #
+      # `--rev` is the gate's own `sha` output, not a second resolution of the
+      # tag: the tree read here is exactly the tree the gate authorized. It
+      # travels through `env` because a `${{ }}` expression pasted into a shell
+      # is a value the shell then parses.
+      #
+      # Its `notes` output is the tag's CHANGELOG section, written only for a
+      # tree it accepted; the GitHub Release job publishes it.
+      - name: Check release tree
+        id: tree
+        env:
+          GATE_SHA: ${{ steps.gate.outputs.sha }}
+        run: |
+          pnpm exec tsx tools/scripts/check-release-tree.ts \
+            --tag "$GITHUB_REF_NAME" \
+            --rev "$GATE_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+  # ── Gate: no image unless CI is green ────────────────────────────────────────
+  # Reuses ci.yml instead of duplicating its steps: every ci.yml job, the same
+  # set its `CI gate` aggregates. None of them is continue-on-error
+  # (tools/scripts/check-workflow-paths.ts refuses the key), so each one blocks
+  # the tag.
   verify:
     name: Verify
+    needs: provenance
     uses: ./.github/workflows/ci.yml
 
   # ── Build & push API image ───────────────────────────────────────────────────
   build-api:
     name: Build API image
-    needs: verify
+    needs: [provenance, verify]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -47,35 +154,64 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.API_IMAGE }}
-          # RC tags (v*-rc*): push version + rc-latest, never latest
-          # Stable tags (v*): push version + major.minor + latest
+          # Every tag comes from the provenance gate, including the version
+          # itself: `type=semver` re-parses `github.ref_name` with its own
+          # rules and emits nothing when it disagrees, which is a push with no
+          # version tag and no failed step. One parser, one decision.
+          #
+          # rc  → version + rc-latest, never latest and never the minor series
+          # stable → version + major.minor + latest, never rc-latest
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
+            type=raw,value=${{ needs.provenance.outputs.version }}
+            type=raw,value=${{ needs.provenance.outputs.series }},enable=${{ needs.provenance.outputs.publish_series == 'true' }}
+            type=raw,value=latest,enable=${{ needs.provenance.outputs.publish_latest == 'true' }}
+            type=raw,value=rc-latest,enable=${{ needs.provenance.outputs.publish_rc_latest == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
+      # Built once and loaded, checked from inside, then pushed: the image that
+      # reaches ghcr is the one the check passed, not a second build. Same check
+      # as ci.yml's `images` job (tools/scripts/check-image-runtime.ts).
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ github.ref_name }}
+            APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,scope=api,mode=max
+
+      - name: Check runtime contents
+        env:
+          IMAGE: ${{ env.API_IMAGE }}:${{ needs.provenance.outputs.version }}
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          "$IMAGE" /check/check-image-runtime.ts api
+
+      # The version tag first, so a push that fails part-way never leaves a
+      # moving alias (series, latest, rc-latest) on an image whose own version
+      # is missing. `shell: bash` runs with `-e`, so it stops at the first failure;
+      # pushes are not atomic (ADR-028).
+      - name: Push
+        shell: bash
+        env:
+          VERSION_TAG: ${{ env.API_IMAGE }}:${{ needs.provenance.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker push "$VERSION_TAG"
+          for tag in $TAGS; do [ "$tag" = "$VERSION_TAG" ] || docker push "$tag"; done
 
   # ── Build & push Web image ───────────────────────────────────────────────────
   build-web:
     name: Build Web image
-    needs: verify
+    needs: [provenance, verify]
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -94,7 +230,7 @@ jobs:
       - name: Set public hostname for web build
         id: hostname
         run: |
-          if [[ "${{ github.ref_name }}" == *"-rc"* ]]; then
+          if [ "${{ needs.provenance.outputs.channel }}" = "rc" ]; then
             echo "value=${{ vars.RC_PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${{ vars.PUBLIC_HOSTNAME }}" >> "$GITHUB_OUTPUT"
@@ -106,27 +242,101 @@ jobs:
         with:
           images: ${{ env.WEB_IMAGE }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
-            type=raw,value=rc-latest,enable=${{ contains(github.ref_name, '-rc') }}
+            type=raw,value=${{ needs.provenance.outputs.version }}
+            type=raw,value=${{ needs.provenance.outputs.series }},enable=${{ needs.provenance.outputs.publish_series == 'true' }}
+            type=raw,value=latest,enable=${{ needs.provenance.outputs.publish_latest == 'true' }}
+            type=raw,value=rc-latest,enable=${{ needs.provenance.outputs.publish_rc_latest == 'true' }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build and push
+      # Built once and loaded, checked from inside, then pushed: the image that
+      # reaches ghcr is the one the check passed, not a second build. Same check
+      # as ci.yml's `images` job (tools/scripts/check-image-runtime.ts).
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
-          push: true
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # PUBLIC_HOSTNAME → prod, RC_PUBLIC_HOSTNAME → rc (both set as GitHub repo variables)
           build-args: |
             NEXT_PUBLIC_API_URL=http://${{ steps.hostname.outputs.value }}
-            INTERNAL_API_URL=${{ contains(github.ref_name, '-rc') && 'http://api-rc:3001' || 'http://api:3001' }}
-            APP_VERSION=${{ github.ref_name }}
+            INTERNAL_API_URL=${{ needs.provenance.outputs.channel == 'rc' && 'http://api-rc:3001' || 'http://api:3001' }}
+            APP_VERSION=${{ needs.provenance.outputs.version }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,scope=web,mode=max
 
+      - name: Check runtime contents
+        env:
+          IMAGE: ${{ env.WEB_IMAGE }}:${{ needs.provenance.outputs.version }}
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          "$IMAGE" /check/check-image-runtime.ts web
+
+      # The version tag first, so a push that fails part-way never leaves a
+      # moving alias (series, latest, rc-latest) on an image whose own version
+      # is missing. `shell: bash` runs with `-e`, so it stops at the first failure;
+      # pushes are not atomic (ADR-028).
+      - name: Push
+        shell: bash
+        env:
+          VERSION_TAG: ${{ env.WEB_IMAGE }}:${{ needs.provenance.outputs.version }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          docker push "$VERSION_TAG"
+          for tag in $TAGS; do [ "$tag" = "$VERSION_TAG" ] || docker push "$tag"; done
+
+  # ── GitHub Release: stable tags only ─────────────────────────────────────────
+  # A graduation's CHANGELOG section covers the whole train since the previous
+  # stable (release-prepare.sh renders it ignoring the rc tags), so one release
+  # per stable tag loses no notes and a candidate publishes none. It runs after
+  # both images are pushed, so a release always names images that exist.
+  #
+  # The only job with `contents: write`, and it runs no repository code: the
+  # notes arrive as the provenance job's output, the tool is the runner's `gh`.
+  github-release:
+    name: GitHub Release
+    needs: [provenance, build-api, build-web]
+    if: needs.provenance.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          NOTES: ${{ needs.provenance.outputs.notes }}
+          PUBLISH_LATEST: ${{ needs.provenance.outputs.publish_latest }}
+        run: |
+          # The runner drops an output that looks like a secret with only a
+          # warning; an empty body is the blank release the tree check refuses.
+          if [ -z "$NOTES" ]; then
+            echo "::error::no release notes reached this job from the provenance gate"
+            exit 1
+          fi
+          printf '%s\n' "$NOTES" > notes.md
+          # The same values for create and edit, so a re-run converges on the
+          # CHANGELOG. The title is the product name, written "Luke", and the
+          # version without the tag's `v`; `--latest` follows the image's
+          # `latest` tag decision.
+          args=(--title "Luke ${TAG#v}" --notes-file notes.md --latest="$PUBLISH_LATEST")
+          # Branch on the API's status, not on gh's wording: 404 creates, 200
+          # edits, and anything else (auth, rate limit, network) stops here.
+          status=$(gh api --include "repos/$GH_REPO/releases/tags/$TAG" 2>/dev/null \
+            | head -n 1 | cut -d ' ' -f 2) || true
+          case "$status" in
+            200) gh release edit "$TAG" "${args[@]}" ;;
+            404) gh release create "$TAG" --verify-tag "${args[@]}" ;;
+            *)
+              echo "::error::looking up the release of $TAG returned HTTP ${status:-no response}"
+              exit 1
+              ;;
+          esac

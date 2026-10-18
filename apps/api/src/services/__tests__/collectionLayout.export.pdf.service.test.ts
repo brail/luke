@@ -3,6 +3,7 @@
  * - image fetch concurrency bounded by IMAGE_FETCH_CONCURRENCY
  * - single image fetch failure doesn't break the row
  * - large source photos are downscaled before being embedded
+ * - an undecodable photo is dropped, never re-embedded at full size
  * - end-to-end smoke test produces a valid PDF buffer
  */
 
@@ -11,15 +12,21 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { IMAGE_FETCH_CONCURRENCY } from '../../lib/export/concurrency';
-import { readFileBuffer } from '../../storage';
+import * as pdf from '../../lib/export/pdf';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionLayoutPdf } from '../collectionLayout.export.pdf.service';
 
 import type { CollectionLayoutForPdf } from '../collectionLayout.export.pdf.service';
-import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
+  // Every fixture in this file uses `logoKey: null`, which real `resolveLogoDataUri`
+  // short-circuits to `null` without touching storage — this mock mirrors exactly
+  // that, so it needs no per-test setup.
+  resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
 const mockPrisma = {
@@ -85,7 +92,7 @@ describe('buildCollectionLayoutPdf', () => {
 
     let inFlight = 0;
     let peak = 0;
-    vi.mocked(readFileBuffer).mockImplementation(async () => {
+    vi.mocked(readAssetBuffer).mockImplementation(async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise(resolve => setTimeout(resolve, 5));
@@ -93,17 +100,17 @@ describe('buildCollectionLayoutPdf', () => {
       return null;
     });
 
-    await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(peak).toBeLessThanOrEqual(IMAGE_FETCH_CONCURRENCY);
-    expect(readFileBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
+    expect(readAssetBuffer).toHaveBeenCalledTimes(uniqueKeyCount);
   });
 
   it('renders a row without a photo when its image fetch fails', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', 'missing.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
   });
@@ -115,10 +122,10 @@ describe('buildCollectionLayoutPdf', () => {
       .jpeg({ quality: 90 })
       .toBuffer();
 
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
     const rows = [makeRow('row-1', 'huge.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     // The full-size source photo (base64-encoded into the content stream)
     // must not survive into the output PDF — this is the actual bug: a
@@ -127,11 +134,36 @@ describe('buildCollectionLayoutPdf', () => {
     expect(buffer.length).toBeLessThan(noise.length);
   });
 
+  it('drops a picture sharp cannot decode instead of embedding it', async () => {
+    // `readAssetBuffer` serves the uncapped master whenever the background-generated
+    // `export` variant isn't ready, so an undecodable buffer here can be arbitrarily
+    // large. Passing it through would base64 those bytes into the content stream.
+    const undecodable = randomBytes(256 * 1024);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: undecodable, contentType: 'image/jpeg', width: null, height: null });
+    const rows = [makeRow('row-1', 'corrupt.jpg')];
+
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
+
+    expect(buffer.length).toBeGreaterThan(0);
+    expect(buffer.length).toBeLessThan(undecodable.length);
+  });
+
+  it("writes the header's extraction time in the requester's zone, and names it", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const header = vi.spyOn(pdf, 'buildBrandPageHeader');
+
+    // 23:30Z on June 30 is 16:30 the same day in Los Angeles.
+    await buildCollectionLayoutPdf(makeLayout([makeRow('row-1', null)]), mockPrisma, 'Tester', new Date('2026-06-30T23:30:00Z'), 'America/Los_Angeles');
+
+    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 30/06/2026, 16:30 (America/Los_Angeles)');
+    header.mockRestore();
+  });
+
   it('produces a valid non-empty PDF buffer (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
     const rows = [makeRow('row-1', null), makeRow('row-2', 'key.jpg')];
 
-    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionLayoutPdf(makeLayout(rows), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');

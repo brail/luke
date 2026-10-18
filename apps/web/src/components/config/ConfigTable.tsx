@@ -11,12 +11,11 @@ import {
   ArrowDown,
 } from 'lucide-react';
 
+import { isConfigRouterKey, isUndeletableConfigKey } from '@luke/core';
+
 import { COPY_ERROR_MESSAGE, useCopyToClipboard } from '../../hooks/useCopyToClipboard';
-import {
-  formatValue,
-  formatDate,
-  isCriticalKey,
-} from '../../lib/configHelpers';
+import { useFormatDate } from '../../hooks/useFormatDate';
+import { formatValue } from '../../lib/configHelpers';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -47,6 +46,18 @@ export interface Config {
   isEncrypted: boolean;
   category: string;
   updatedAt: string;
+}
+
+/**
+ * Why the row menu cannot delete `key`, shown next to the disabled item; `null` when it can.
+ * `config.delete` refuses a key outside the router prefixes, as `set` and `update` do. A registered
+ * one is managed on its own settings page; an unregistered row there has no page at all, and only
+ * a data step removes it (`db:check-config-rows` lists them).
+ */
+function deleteBlockReason(key: string): string | null {
+  if (!isConfigRouterKey(key)) return 'gestita altrove';
+  if (isUndeletableConfigKey(key)) return 'bloccato';
+  return null;
 }
 
 interface ConfigTableProps {
@@ -80,6 +91,7 @@ export function ConfigTable({
   canUpdate = true,
 }: ConfigTableProps) {
   const { copy } = useCopyToClipboard();
+  const { dateTime } = useFormatDate();
   const handleCopyKey = (key: string) =>
     copy(key, { successMessage: 'Chiave copiata negli appunti', errorMessage: COPY_ERROR_MESSAGE });
 
@@ -207,7 +219,7 @@ export function ConfigTable({
 
               <TableCell>
                 <span className="text-sm text-muted-foreground">
-                  {formatDate(config.updatedAt)}
+                  {dateTime(config.updatedAt)}
                 </span>
               </TableCell>
 
@@ -221,10 +233,10 @@ export function ConfigTable({
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       onClick={() => onEdit(config)}
-                      disabled={!canUpdate}
+                      disabled={!canUpdate || !isConfigRouterKey(config.key)}
                     >
                       <Edit className="w-4 h-4 mr-2" />
-                      Modifica
+                      {isConfigRouterKey(config.key) ? 'Modifica' : 'Modifica (gestita altrove)'}
                     </DropdownMenuItem>
 
                     {!config.isEncrypted && (
@@ -241,16 +253,16 @@ export function ConfigTable({
 
                     <DropdownMenuItem
                       onClick={() => onDelete(config)}
-                      disabled={!canUpdate || isCriticalKey(config.key)}
+                      disabled={!canUpdate || deleteBlockReason(config.key) !== null}
                       className={
-                        !canUpdate || isCriticalKey(config.key)
+                        !canUpdate || deleteBlockReason(config.key) !== null
                           ? 'text-muted-foreground'
                           : 'text-destructive'
                       }
                     >
                       <Trash2 className="w-4 h-4 mr-2" />
-                      {isCriticalKey(config.key)
-                        ? 'Elimina (bloccato)'
+                      {deleteBlockReason(config.key)
+                        ? `Elimina (${deleteBlockReason(config.key)})`
                         : 'Elimina'}
                     </DropdownMenuItem>
                   </DropdownMenuContent>

@@ -10,21 +10,22 @@ import {
   UserProfileSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
+  greetingAt,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { sendVerificationEmail } from '../lib/emailHelpers';
-import { getTimeBasedGreeting, GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
+import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { pickRandom } from '../lib/random';
 import { withRateLimit } from '../lib/ratelimit';
-import {
-  protectedProcedure,
-  router,
-  invalidateTokenVersionCache,
-} from '../lib/trpc';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+import { selfProcedure, router } from '../lib/trpc';
+import { resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
+import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
 const DAILY_GREETING_ENABLED_KEY = 'dailyGreetingEnabled';
 
@@ -34,9 +35,11 @@ export const meRouter = router({
    *
    * @auth {authenticated}
    * @input {none}
-   * @output {User with provider, profileCompletion, loginCount, lastLoginAt.}
+   * @output {User with provider, profileCompletion, loginCount, lastLoginAt. `timezone` is the zone
+   *   the server renders in (`resolveUserTimeZone`): the business zone when the stored value is not
+   *   an IANA name.}
    */
-  get: protectedProcedure.query(async ({ ctx }) => {
+  get: selfProcedure.query(async ({ ctx }) => {
     const user = await ctx.prisma.user.findUnique({
       where: { id: ctx.session.user.id },
       select: {
@@ -72,12 +75,16 @@ export const meRouter = router({
     // Determines the main provider (first identity)
     const provider = user.identities[0]?.provider || 'LOCAL';
 
+    // The zone the server renders this user's dates in, not the raw column: the web formats with
+    // it and the profile form saves it back, which a legacy non-IANA value would fail.
+    const timezone = await resolveUserTimeZone(ctx.prisma, user, ctx.logger);
+
     // Calculates profile completion percentage
     const profileCompletion = calculateProfileCompletion({
       firstName: user.firstName,
       lastName: user.lastName,
       locale: user.locale,
-      timezone: user.timezone,
+      timezone,
     });
 
     const dailyGreetingEnabled = await getUserPreferenceValue(
@@ -89,6 +96,7 @@ export const meRouter = router({
 
     return {
       ...user,
+      timezone,
       provider,
       profileCompletion,
       dailyGreetingEnabled,
@@ -101,10 +109,11 @@ export const meRouter = router({
    * Updates the current user's editable profile fields; blocks sync-locked fields for LDAP/OIDC users.
    *
    * @auth {authenticated}
-   * @input {UserProfileSchema} — email, firstName, lastName, locale, timezone.
+   * @input {UserProfileSchema} — firstName, lastName, locale, timezone. The email changes only
+   *   through `me.changeEmail`.
    * @output {Partial User with updated fields.}
    */
-  updateProfile: protectedProcedure
+  updateProfile: selfProcedure
     .input(UserProfileSchema)
     .mutation(async ({ ctx, input }) => {
       // Check the user's provider
@@ -112,7 +121,6 @@ export const meRouter = router({
         where: { id: ctx.session.user.id },
         select: {
           id: true,
-          email: true,
           identities: {
             select: {
               provider: true,
@@ -158,17 +166,13 @@ export const meRouter = router({
       }
 
       // Update the allowed fields
-      const emailChanged = input.email !== userWithProvider.email;
       const updated = await ctx.prisma.user.update({
         where: { id: ctx.session.user.id },
         data: {
-          email: input.email,
           firstName: input.firstName,
           lastName: input.lastName,
           locale: input.locale,
           timezone: input.timezone,
-          // Reset email verification when address changes
-          ...(emailChanged ? { emailVerifiedAt: null } : {}),
         },
         select: {
           id: true,
@@ -181,15 +185,12 @@ export const meRouter = router({
         },
       });
 
-      // Log audit per l'aggiornamento
+      // Audit the update
       await logAudit(ctx, {
         action: 'USER_UPDATE_PROFILE',
         targetType: 'User',
         targetId: ctx.session.user.id,
         result: 'SUCCESS',
-        metadata: {
-          emailChanged,
-        },
       });
 
       return updated;
@@ -201,30 +202,40 @@ export const meRouter = router({
    * @auth {authenticated}
    * @input {{ newEmail: string }} — the new email address (must be unique).
    * @output {{ success: true, message: string }}
+   * @throws {TRPCError} BAD_REQUEST for the address the account already has (which would only
+   *   unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address — the
+   *   unique constraint's answer at the write, with no read before it.
    */
-  changeEmail: protectedProcedure
+  changeEmail: selfProcedure
     .use(withRateLimit('userMutations'))
     .input(
       z.object({
-        newEmail: z.string().email('Email non valida').toLowerCase().trim(),
+        newEmail: z.string().trim().toLowerCase().email('Email non valida').max(255, 'Email troppo lunga'),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const { newEmail } = input;
       const userId = ctx.session.user.id;
-
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email: newEmail, id: { not: userId } },
-      });
-
-      if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
+      if (isSyntheticLdapEmail(newEmail)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email non valida' });
       }
 
-      await ctx.prisma.user.update({
-        where: { id: userId },
-        data: { email: newEmail, emailVerifiedAt: null },
-      });
+      // The current address is excluded in the write itself: re-submitting it would only unverify it.
+      let written: { count: number };
+      try {
+        written = await ctx.prisma.user.updateMany({
+          where: { id: userId, email: { not: newEmail } },
+          data: { email: newEmail, emailVerifiedAt: null },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
+        }
+        throw err;
+      }
+      if (written.count === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'È già il tuo indirizzo email' });
+      }
 
       await logAudit(ctx, {
         action: 'EMAIL_CHANGED',
@@ -259,7 +270,7 @@ export const meRouter = router({
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
    */
-  changePassword: protectedProcedure
+  changePassword: selfProcedure
     .use(withRateLimit('passwordChange'))
     .input(ChangePasswordSchema)
     .use(withIdempotency())
@@ -328,6 +339,8 @@ export const meRouter = router({
         });
       }
 
+      await assertPasswordMeetsPolicy(ctx.prisma, input.newPassword);
+
       // Generate hash for the new password
       const newPasswordHash = await hashPassword(input.newPassword);
 
@@ -370,12 +383,17 @@ export const meRouter = router({
    * @input {{ limit?: number }} — max entries to return (default 10).
    * @output {Array<{ id, timestamp, success, ipAddress, location }>}
    */
-  loginHistory: protectedProcedure
+  loginHistory: selfProcedure
     .input(z.object({ limit: z.number().min(1).max(100).default(10) }).optional())
     .query(async ({ ctx, input }) => {
+      // Filtered by `targetId`, not `actorId`: login events are recorded before a session
+      // exists, so they always store `actorId: null` and point at the account through
+      // `targetId` instead. Filtering by actor matched 0 rows out of every login ever
+      // recorded, which is why this history always came back empty.
       const logs = await ctx.prisma.auditLog.findMany({
         where: {
-          actorId: ctx.session.user.id,
+          targetId: ctx.session.user.id,
+          targetType: 'Auth',
           action: { in: ['AUTH_LOGIN', 'AUTH_LOGIN_FAILED'] },
         },
         orderBy: { createdAt: 'desc' },
@@ -409,7 +427,7 @@ export const meRouter = router({
    * @input {none}
    * @output {{ success: true }}
    */
-  revokeAllSessions: protectedProcedure.mutation(async ({ ctx }) => {
+  revokeAllSessions: selfProcedure.mutation(async ({ ctx }) => {
     // Bump tokenVersion to invalidate all sessions
     await ctx.prisma.user.update({
       where: { id: ctx.session.user.id },
@@ -440,7 +458,7 @@ export const meRouter = router({
    * @input {UpdateTimezoneSchema} — timezone (IANA timezone identifier).
    * @output {{ id, timezone, updatedAt }}
    */
-  updateTimezone: protectedProcedure
+  updateTimezone: selfProcedure
     .input(UpdateTimezoneSchema)
     .mutation(async ({ ctx, input }) => {
       const updated = await ctx.prisma.user.update({
@@ -477,7 +495,7 @@ export const meRouter = router({
    * @input {none}
    * @output {{ enabled: false } | { enabled: true, greeting, userName, intro, type, content, author }}
    */
-  getDailyGreeting: protectedProcedure.query(async ({ ctx }) => {
+  getDailyGreeting: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
 
     const enabled = await getUserPreferenceValue(userId, DAILY_GREETING_ENABLED_KEY, false, ctx.prisma);
@@ -486,17 +504,15 @@ export const meRouter = router({
     }
 
     const [user, content] = await Promise.all([
-      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true } }),
+      ctx.prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, timezone: true } }),
       selectGreetingContent(),
     ]);
 
-    const hour = Number(
-      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date())
-    );
+    const timeZone = await resolveUserTimeZone(ctx.prisma, { id: userId, timezone: user?.timezone ?? '' }, ctx.logger);
 
     return {
       enabled: true as const,
-      greeting: getTimeBasedGreeting(hour),
+      greeting: greetingAt(new Date(), timeZone),
       userName: user?.firstName ?? '',
       intro: pickRandom(GREETING_INTROS),
       ...content,
@@ -510,7 +526,7 @@ export const meRouter = router({
    * @input {{ enabled: boolean }}
    * @output {{ enabled: boolean }}
    */
-  updateGreetingPreference: protectedProcedure
+  updateGreetingPreference: selfProcedure
     .input(z.object({ enabled: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const enabled = await setUserPreferenceValue(

@@ -1,0 +1,297 @@
+/**
+ * S3-compatible implementation of IStorageProvider (MinIO, SeaweedFS, Ceph RGW, ...).
+ * Assumes a self-hosted, path-style-addressing backend (`forcePathStyle: true`, auto-creates
+ * missing buckets on `init()`) — not verified against real AWS S3, where path-style addressing
+ * is deprecated for new buckets and bucket names are globally unique.
+ *
+ * Uses two S3Client instances: one for internal server-to-storage traffic and one
+ * for presigned URL generation that points to the browser-reachable public endpoint
+ * (configured via `storage.s3.publicBaseUrl` in AppConfig).
+ * Bucket auto-creation is performed at initialization for all known buckets.
+ */
+
+import { createHash } from 'crypto';
+import { Transform, type TransformCallback } from 'stream';
+import { pipeline } from 'stream/promises';
+
+import {
+  S3Client,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
+  HeadBucketCommand,
+  CreateBucketCommand,
+  PutObjectCommand,
+  CopyObjectCommand,
+  NoSuchKey,
+} from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
+import type {
+  IStorageCapabilities,
+  IStorageProvider,
+  S3StorageConfig,
+  PresignedGetParams,
+  PresignedGetResult,
+  PresignedPutParams,
+  PresignedPutResult,
+  StorageBucket,
+  StorageDeleteParams,
+  StorageFixContentTypeParams,
+  StorageGetParams,
+  StorageGetResult,
+  StorageListParams,
+  StorageListResult,
+  StoragePutParams,
+  StoragePutResult,
+} from '@luke/core';
+
+import { generateStorageKey } from '../keys';
+
+/** S3-compatible storage provider. Implements IStorageProvider using the AWS SDK v3. */
+export class S3Provider implements IStorageProvider {
+  readonly capabilities: IStorageCapabilities = {
+    supportsPresignedUpload: true,
+    supportsPresignedDownload: true,
+    supportsContentTypeFix: true,
+  };
+
+  private readonly client: S3Client;
+  /** Used for presigned URL generation — points to the browser-reachable host */
+  private readonly presignClient: S3Client;
+  private readonly config: S3StorageConfig;
+
+  constructor(config: S3StorageConfig) {
+    this.config = config;
+    const protocol = config.useSSL ? 'https' : 'http';
+    const internalEndpoint = `${protocol}://${config.endpoint}:${config.port}`;
+    const credentials = {
+      accessKeyId: config.accessKey,
+      secretAccessKey: config.secretKey,
+    };
+
+    this.client = new S3Client({
+      endpoint: internalEndpoint,
+      region: config.region,
+      credentials,
+      forcePathStyle: true,
+    });
+
+    // Presigned URLs must use the public-facing endpoint so browsers can reach them.
+    // If publicBaseUrl is not set, fall back to the internal endpoint (works when
+    // the S3-compatible service is directly accessible on the same hostname, e.g. local dev without Docker).
+    const presignEndpoint = config.publicBaseUrl || internalEndpoint;
+    this.presignClient = presignEndpoint === internalEndpoint
+      ? this.client
+      : new S3Client({
+          endpoint: presignEndpoint,
+          region: config.region,
+          credentials,
+          forcePathStyle: true,
+        });
+  }
+
+  /**
+   * Ensures all known buckets exist, creating any that are missing.
+   *
+   * Derived from `APP_STORAGE_BUCKETS` rather than respelled here: since the `mc`-based
+   * sidecar was removed (ADR-012), this is the only path that creates buckets on an
+   * S3-compatible backend, so a bucket added to the shared list and forgotten here would
+   * never be created and its first upload would fail at runtime. `backups` is appended
+   * because it is deliberately not an application bucket — it is excluded from
+   * `APP_STORAGE_BUCKETS` so a backup never enumerates prior backup blobs — but it must
+   * still exist on the backend.
+   */
+  async init(): Promise<void> {
+    const allBuckets: StorageBucket[] = [...APP_STORAGE_BUCKETS, 'backups'];
+
+    await Promise.all(allBuckets.map(async bucket => {
+      try {
+        await this.client.send(new HeadBucketCommand({ Bucket: bucket }));
+      } catch {
+        await this.client.send(new CreateBucketCommand({ Bucket: bucket }));
+      }
+    }));
+  }
+
+  /**
+   * Uploads a file via a true streaming multipart upload (`@aws-sdk/lib-storage`),
+   * without buffering the payload in memory — required for arbitrarily large files (e.g. DB backups).
+   *
+   * @returns The (generated or caller-supplied via `params.key`) key, SHA-256 checksum, and byte size.
+   */
+  async put(params: StoragePutParams): Promise<StoragePutResult> {
+    const key = params.key ?? generateStorageKey(params.contentType);
+
+    // Single consumer of params.stream: a Transform that hashes each chunk while forwarding it
+    // unchanged as the upload Body. Attaching two independent consumers to the same source stream
+    // (e.g. a raw 'data' listener alongside a separate .pipe()) risks losing chunks emitted before
+    // the second listener attaches — this sidesteps that entirely.
+    const hash = createHash('sha256');
+    let size = 0;
+    const hashingStream = new Transform({
+      transform(chunk: Buffer, _encoding, callback: TransformCallback) {
+        size += chunk.length;
+        hash.update(chunk);
+        callback(null, chunk);
+      },
+    });
+    // Awaited with the upload: a source that fails rejects the put instead of escaping as an
+    // uncaught exception, and an upload that fails closes the source.
+    const hashed = pipeline(params.stream, hashingStream);
+
+    const upload = new Upload({
+      client: this.client,
+      params: {
+        Bucket: params.bucket,
+        Key: key,
+        Body: hashingStream,
+        ContentType: params.contentType,
+      },
+    });
+
+    await Promise.all([
+      hashed,
+      upload.done().catch((err: Error) => {
+        hashingStream.destroy(err);
+        throw err;
+      }),
+    ]);
+
+    return { key, checksumSha256: hash.digest('hex'), size };
+  }
+
+  /**
+   * Retrieves a file as a readable stream.
+   *
+   * @throws {StorageObjectNotFoundError} If the backend answers `NoSuchKey`; any other failure
+   *   (including `NoSuchBucket`) unchanged. A backend that answers a missing key with
+   *   `AccessDenied` (AWS without `s3:ListBucket`) therefore never reports absence.
+   */
+  async get(params: StorageGetParams): Promise<StorageGetResult> {
+    const res = await this.client.send(new GetObjectCommand({
+      Bucket: params.bucket,
+      Key: params.key,
+    })).catch((err: unknown) => {
+      if (err instanceof NoSuchKey) throw new StorageObjectNotFoundError(params.bucket, params.key, { cause: err });
+      throw err;
+    });
+
+    if (!res.Body) throw new Error(`Object not found: ${params.bucket}/${params.key}`);
+
+    return {
+      stream: res.Body as unknown as NodeJS.ReadableStream,
+      size: res.ContentLength ?? 0,
+      contentType: res.ContentType ?? 'application/octet-stream',
+    };
+  }
+
+  /**
+   * Rewrites the Content-Type metadata of an existing object in place via S3 CopyObject
+   * (same bucket/key as source and destination, `MetadataDirective: REPLACE`) — S3 performs
+   * this server-side, no bytes are re-transferred over the network.
+   */
+  async fixContentType(params: StorageFixContentTypeParams): Promise<void> {
+    await this.client.send(new CopyObjectCommand({
+      Bucket: params.bucket,
+      Key: params.key,
+      CopySource: `${params.bucket}/${encodeURIComponent(params.key)}`,
+      ContentType: params.contentType,
+      MetadataDirective: 'REPLACE',
+    }));
+  }
+
+  /** Deletes a file. */
+  async delete(params: StorageDeleteParams): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({
+      Bucket: params.bucket,
+      Key: params.key,
+    }));
+  }
+
+  /**
+   * Lists objects in a bucket, with optional prefix and limit.
+   *
+   * @returns Page items and an optional continuation token for the next page.
+   */
+  async list(params: StorageListParams): Promise<StorageListResult> {
+    const res = await this.client.send(new ListObjectsV2Command({
+      Bucket: params.bucket,
+      Prefix: params.prefix,
+      MaxKeys: params.limit ?? 100,
+      ContinuationToken: params.cursor,
+    }));
+
+    const items = (res.Contents ?? []).map(obj => ({
+      key: obj.Key!,
+      size: obj.Size ?? 0,
+      modifiedAt: obj.LastModified ?? new Date(),
+    }));
+
+    return {
+      items,
+      nextCursor: res.NextContinuationToken,
+    };
+  }
+
+  /**
+   * Generates a presigned PUT URL for direct browser-to-storage upload.
+   *
+   * Uses the public presign client so the URL points to the browser-reachable endpoint.
+   *
+   * @returns The presigned URL, the key under which the file will be stored, and its expiry time.
+   */
+  async getPresignedPutUrl(params: PresignedPutParams): Promise<PresignedPutResult> {
+    const key = params.key ?? generateStorageKey(params.contentType);
+    const ttl = params.expiresIn ?? this.config.presignedPutTtl;
+
+    const url = await getSignedUrl(
+      this.presignClient,
+      new PutObjectCommand({
+        Bucket: params.bucket,
+        Key: key,
+        ContentType: params.contentType,
+      }),
+      { expiresIn: ttl },
+    );
+
+    return {
+      url,
+      key,
+      expiresAt: new Date(Date.now() + ttl * 1000),
+    };
+  }
+
+  /**
+   * Generates a presigned GET URL for time-limited direct download.
+   *
+   * @returns The presigned URL and its expiry time.
+   */
+  async getPresignedGetUrl(params: PresignedGetParams): Promise<PresignedGetResult> {
+    const ttl = params.expiresIn ?? this.config.presignedGetTtl;
+
+    const url = await getSignedUrl(
+      this.presignClient,
+      new GetObjectCommand({
+        Bucket: params.bucket,
+        Key: params.key,
+      }),
+      { expiresIn: ttl },
+    );
+
+    return {
+      url,
+      expiresAt: new Date(Date.now() + ttl * 1000),
+    };
+  }
+
+  /** Public URL for a key in a public-read bucket (no presigning needed) */
+  getPublicUrl(bucket: StorageBucket, key: string): string {
+    const base = this.config.publicBaseUrl;
+    if (base) return `${base}/${bucket}/${key}`;
+    const protocol = this.config.useSSL ? 'https' : 'http';
+    return `${protocol}://${this.config.endpoint}:${this.config.port}/${bucket}/${key}`;
+  }
+}

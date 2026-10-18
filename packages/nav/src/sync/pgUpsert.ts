@@ -1,8 +1,9 @@
 import mssql from 'mssql';
 
+import type { PrismaClient } from '@luke/db';
+
 import { createSyncRequest } from './utils.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 
 /**
@@ -61,7 +62,7 @@ export async function bulkUpsert(
       });
       return `(${placeholders.join(', ')})`;
     });
-    // nosemgrep: luke-prisma-raw-unsafe -- identificatori (table/colonne) controllati internamente dal caller, mai da input utente; valori sempre parametrizzati ($1, $2...)
+    // nosemgrep: luke-prisma-raw-unsafe -- identifiers (table and columns) are controlled internally by the caller, never by user input; values are always bound as parameters ($1, $2...)
     await prisma.$executeRawUnsafe(
       `INSERT INTO "${table}" (${colList}) VALUES ${vals.join(', ')} ON CONFLICT (${pkList}) DO UPDATE SET ${setList}`,
       ...params,
@@ -88,9 +89,9 @@ export async function updateSyncState(
   });
 }
 
-/** Spec di una tabella replicata incrementalmente via rowversion watermark. */
+/** Spec of a table replicated incrementally through a rowversion watermark. */
 export interface IncrementalSyncSpec {
-  /** Nome tabella PG di destinazione (usato anche come chiave in nav_pf_sync_state). */
+  /** Target PG table name (also used as the key in nav_pf_sync_state). */
   table: string;
   pk: readonly string[];
   /**
@@ -99,7 +100,7 @@ export interface IncrementalSyncSpec {
    * the loop) and `ORDER BY [timestamp]` ascending.
    */
   buildQuery: (req: mssql.Request) => string;
-  /** Colonne BIGINT per bulkUpsert (default: ['navRowversion']). */
+  /** BIGINT columns for bulkUpsert (default: ['navRowversion']). */
   bigintCols?: readonly string[];
 }
 
@@ -131,7 +132,7 @@ export async function syncIncremental(
     await bulkUpsert(prisma, table, pk, rows, bigintCols);
     totalRows += rows.length;
 
-    // Le righe sono ordinate per [timestamp] ASC: l'ultima contiene il max rowversion.
+    // Rows are ordered by [timestamp] ASC: the last one holds the max rowversion.
     lastRv = BigInt(rows[rows.length - 1]!['navRowversion'] as string | number);
 
     if (rows.length < SS_CHUNK) break;

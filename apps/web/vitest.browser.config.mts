@@ -1,0 +1,132 @@
+import { playwright } from '@vitest/browser-playwright';
+import { defaultExclude, defineConfig } from 'vitest/config';
+
+/**
+ * Browser tier: React components and hooks exercised in a real Chromium.
+ *
+ * Separate from `vitest.config.mts` on purpose. That project is Node-only and
+ * deliberately restricted to pure modules under `src/lib/`; it is what
+ * `pnpm test` and `.husky/pre-push` run, and it must stay fast enough that
+ * neither has to provision a browser. This project is opt-in, has its own
+ * script, and runs in its own CI job.
+ *
+ * What it is for is the class of defect the other tiers structurally cannot
+ * see: focus and tab order, Radix portals, whether a click actually reaches a
+ * submit handler. `lessons.md` records a dialog whose submit button never fired
+ * because Radix unmounted it mid-click — typecheck, lint and the whole suite
+ * were green, and a human found it by clicking.
+ *
+ * ## Why `oxc.jsx` and not a React plugin
+ *
+ * The workspace TypeScript config sets `jsx: preserve`, which is correct for
+ * Next but leaves JSX untransformed for anything else that reads it. Vite 8
+ * transforms with **oxc**, so the fix belongs there.
+ *
+ * `esbuild.jsx` was tried first and Vite reported it back as ignored — oxc wins
+ * when both are set — and removing it entirely broke the import, which is how
+ * we know the setting is load-bearing rather than decorative. One option in the
+ * right namespace is enough: `@vitejs/plugin-react` is **not** required here,
+ * and was not installed. Its Fast Refresh is worthless to a test run.
+ */
+export default defineConfig({
+  optimizeDeps: {
+    include: [
+      'vitest-browser-react',
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom/client',
+      'react-hook-form',
+      '@radix-ui/react-alert-dialog',
+      '@radix-ui/react-tooltip',
+      '@radix-ui/react-label',
+      '@radix-ui/react-slot',
+      'lucide-react',
+      'class-variance-authority',
+      'clsx',
+      'tailwind-merge',
+      // Added for planningWizardReadiness.browser.test.tsx (BUG-B, Cycle 4), which mounts the
+      // real PlanningWizard component rather than only its hooks. Without these listed up front, the
+      // scanner discovers them mid-run instead of before it, Vite reloads deps mid-test, and every
+      // component that had already mounted a hook (Dialog's useRef here) throws "Invalid hook
+      // call" against the discarded React instance. Reproduces reliably on a cold `.vite` cache —
+      // which is what CI always has and a local run usually does not, so it is silent locally and
+      // failed CI outright on the first push (run 33436843455).
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-scroll-area',
+      '@tanstack/react-query',
+      '@trpc/client',
+      '@trpc/react-query',
+      'next-auth/react',
+      'sonner',
+      // Added for useCalendarViewNavigation.browser.test.tsx (H1 hygiene batch), which mocks this
+      // module — same "discovered mid-run instead of before it" failure mode as the block above,
+      // on a cold `.vite` cache. Without this, `vi.mock('next/navigation', ...)` produces
+      // "useSearchParams is not a function" instead of actually intercepting the module.
+      'next/navigation',
+      // Added for AboutVersionBadge.browser.test.tsx, which mounts about/page.tsx: same
+      // "discovered mid-run" reload on a cold `.vite` cache, which failed the first run of the
+      // suite three times on 2026-09-25 (the second run, on a warm cache, always passed).
+      'next/image',
+      // Added for loginFailure.browser.test.tsx, which mounts login/page.tsx: same "discovered
+      // mid-run" reload, on the first run after this test was written.
+      'next/link',
+      // Added for the section-access dialog tests (UserAccessDialog, ApproveUserDialog), the first
+      // to mount a Switch and a Select: listed up front for the same cold-cache reason.
+      '@radix-ui/react-switch',
+      '@radix-ui/react-select',
+      // Added for VendorCombobox.browser.test.tsx, the first to mount a Popover and a Command:
+      // the same cold-cache reload, which failed CI on its first push (run 37194351818).
+      '@radix-ui/react-popover',
+      'cmdk',
+      // Added for UserActionsMenu.browser.test.tsx, the first to mount a DropdownMenu: same reason.
+      '@radix-ui/react-dropdown-menu',
+      // Added for BrandDialogWithPermissions.browser.test.tsx, the first to import a Progress (through
+      // the dialog; it renders only during an upload): same reason.
+      '@radix-ui/react-progress',
+      // Added for emptyLayoutChoices.browser.test.tsx, the first to mount collection-layout/page.tsx:
+      // its import graph brings the table's drag-and-drop, the copy dialog's Checkbox and the
+      // fullscreen portal. Same cold-cache reason.
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/utilities',
+      '@radix-ui/react-checkbox',
+      'react-dom',
+      // Added for SpecsheetModal.browser.test.tsx, the first to mount a Collapsible: it failed on a
+      // cold cache in review (`Cannot read properties of null (reading 'useState')`). Same reason.
+      '@radix-ui/react-collapsible',
+      // Added for navSyncAndCompanyForms.browser.test.tsx, the first to mount a Tabs: it reloaded
+      // mid-run on its first run (`Cannot read properties of null (reading 'useContext')`).
+      '@radix-ui/react-tabs',
+    ],
+  },
+  // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left
+  // unset, as in development: `buildApiUrl` (@luke/core `getApiBaseUrl`) then falls back to
+  // localhost, and the mail form starts with an empty base URL.
+  define: {
+    'process.env.NEXT_PUBLIC_API_URL': 'undefined',
+    'process.env.NEXT_PUBLIC_FRONTEND_URL': 'undefined',
+  },
+  oxc: {
+    jsx: { runtime: 'automatic' },
+  },
+  test: {
+    include: ['src/**/*.browser.test.tsx'],
+    // `*.timezone.browser.test.tsx` asserts it's running under a non-UTC offset — true under
+    // `vitest.browser.timezone.config.mts`'s explicit non-UTC instances,
+    // but this project's single default instance inherits whatever TZ the host/CI runner is on
+    // (often UTC), which would fail that guard for a reason unrelated to the code under test.
+    exclude: [...defaultExclude, 'src/**/*.timezone.browser.test.tsx'],
+    browser: {
+      enabled: true,
+      provider: playwright(),
+      instances: [{ browser: 'chromium' }],
+      headless: true,
+      // Failure screenshots are debug artifacts, not fixtures. Default they
+      // land in a `__screenshots__` directory beside the spec, inside `src/`;
+      // send them to the ignored attachments directory so a red run never
+      // leaves untracked binaries in the source tree.
+      screenshotDirectory: '.vitest-attachments/screenshots',
+    },
+  },
+});

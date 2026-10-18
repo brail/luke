@@ -20,9 +20,10 @@ import {
   CollectionLayoutSettingsSchema,
   CollectionRowQuotationInputSchema,
   CollectionRowQuotationUpdateSchema,
+  CollectionRowSetCompletedInputSchema,
   partialWithoutDefaults,
 } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
@@ -31,6 +32,8 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
+import { resolveVariantUrls } from '../services/asset.service';
 import {
   assertBrandAccess,
   assertBrandAccessAll,
@@ -76,7 +79,6 @@ import { deleteObjectByKey } from '../storage';
 
 import type { Context } from '../lib/trpc';
 import type { QuotationSyncResult } from '../services/collectionRow.quotation.service';
-import type { PrismaClient } from '@prisma/client';
 
 const quotationsRouter = router({
   /**
@@ -109,9 +111,9 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ quotationId: z.string().uuid(), data: CollectionRowQuotationUpdateSchema }))
     .mutation(async ({ input, ctx }) => {
-      await resolveQuotationBrandAccess(ctx, input.quotationId);
+      const quotation = await resolveQuotationBrandAccess(ctx, input.quotationId);
       const result = await updateQuotation(input.quotationId, input.data, ctx.prisma);
-      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: { rowId: quotation.rowId, changedFields: Object.keys(input.data) } });
       return result;
     }),
 
@@ -127,9 +129,9 @@ const quotationsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ quotationId: z.string().uuid() }))
     .mutation(async ({ input, ctx }) => {
-      await resolveQuotationBrandAccess(ctx, input.quotationId);
+      const quotation = await resolveQuotationBrandAccess(ctx, input.quotationId);
       await deleteQuotation(input.quotationId, ctx.prisma);
-      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: input.quotationId, result: 'SUCCESS', metadata: { rowId: quotation.rowId } });
       return { success: true };
     }),
 
@@ -194,9 +196,9 @@ const groupsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      await resolveGroupBrandAccess(ctx, input.groupId);
+      const group = await resolveGroupBrandAccess(ctx, input.groupId);
       const result = await updateGroup(input.groupId, input.data, ctx.prisma, ctx.session!.user.id);
-      await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_GROUP_UPDATE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { collectionLayoutId: group.collectionLayoutId, brandId: group.collectionLayout.brandId, seasonId: group.collectionLayout.seasonId, changedFields: Object.keys(input.data) } });
       return result;
     }),
 
@@ -212,9 +214,9 @@ const groupsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ groupId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      await resolveGroupBrandAccess(ctx, input.groupId);
+      const group = await resolveGroupBrandAccess(ctx, input.groupId);
       await deleteGroup(input.groupId, ctx.prisma, ctx.session!.user.id);
-      await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_GROUP_DELETE', targetType: 'CollectionGroup', targetId: input.groupId, result: 'SUCCESS', metadata: { collectionLayoutId: group.collectionLayoutId, brandId: group.collectionLayout.brandId, seasonId: group.collectionLayout.seasonId } });
       return { success: true };
     }),
 });
@@ -233,10 +235,10 @@ function quotationSyncAuditPromises(ctx: Context, rowId: string, sync: Quotation
       logAudit(ctx, { action: 'COLLECTION_QUOTATION_CREATE', targetType: 'CollectionRowQuotation', targetId: q.id, result: 'SUCCESS', metadata: { rowId } })
     ),
     ...sync.updated.map(q =>
-      logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: q.id, result: 'SUCCESS', metadata: {} })
+      logAudit(ctx, { action: 'COLLECTION_QUOTATION_UPDATE', targetType: 'CollectionRowQuotation', targetId: q.id, result: 'SUCCESS', metadata: { rowId } })
     ),
     ...sync.deletedIds.map(id =>
-      logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: id, result: 'SUCCESS', metadata: {} })
+      logAudit(ctx, { action: 'COLLECTION_QUOTATION_DELETE', targetType: 'CollectionRowQuotation', targetId: id, result: 'SUCCESS', metadata: { rowId } })
     ),
   ];
 }
@@ -385,9 +387,15 @@ const rowsRouter = router({
           targetType: 'CollectionLayoutRow',
           targetId: input.rowId,
           result: 'SUCCESS',
+          // Conditional values, not conditional keys: `AuditMetadata` only checks properties
+          // written literally, so a spread hides the key names from it. `undefined` is dropped
+          // by the sanitizer, so the stored row is the same as before.
           metadata: {
-            ...(phaseChanged ? { oldPhaseId: before.phaseId, newPhaseId: rowData.phaseId, ...(phaseChangeNote ? { phaseChangeNote } : {}) } : {}),
-            ...(planningGroupChanged ? { oldPlanningGroupId: before.planningGroupId, newPlanningGroupId: rowData.planningGroupId } : {}),
+            oldPhaseId: phaseChanged ? before.phaseId : undefined,
+            newPhaseId: phaseChanged ? rowData.phaseId : undefined,
+            phaseChangeNote: phaseChanged ? phaseChangeNote : undefined,
+            oldPlanningGroupId: planningGroupChanged ? before.planningGroupId : undefined,
+            newPlanningGroupId: planningGroupChanged ? rowData.planningGroupId : undefined,
           },
         }),
         ...quotationSyncAuditPromises(ctx, input.rowId, quotationsSync),
@@ -407,9 +415,9 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(z.object({ rowId: z.string() }))
     .mutation(async ({ input, ctx }) => {
-      await resolveRowBrandAccess(ctx, input.rowId);
+      const row = await resolveRowBrandAccess(ctx, input.rowId);
       await deleteRow(input.rowId, ctx.prisma, ctx.session!.user.id);
-      await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_ROW_DELETE', targetType: 'CollectionLayoutRow', targetId: input.rowId, result: 'SUCCESS', metadata: { collectionLayoutId: row.collectionLayoutId, groupId: row.groupId, brandId: row.collectionLayout.brandId, seasonId: row.collectionLayout.seasonId } });
       return { success: true };
     }),
 
@@ -431,20 +439,13 @@ const rowsRouter = router({
    * make it possible, in hindsight, to tell cleanly closed rows apart from forced ones.
    *
    * @auth collection_layout:update
-   * @input { rowId: string, completed: boolean, note: string (mandatory rationale, 1-500 chars), force?: boolean }
+   * @input CollectionRowSetCompletedInputSchema — rowId, completed, mandatory note (trimmed, 1-500), optional force
    * @output The updated CollectionLayoutRow record, with completedAt set or cleared.
    */
   setCompleted: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(
-      z.object({
-        rowId: z.string(),
-        completed: z.boolean(),
-        note: z.string().min(1, 'Motivazione obbligatoria').max(500),
-        force: z.boolean().optional(),
-      })
-    )
+    .input(CollectionRowSetCompletedInputSchema)
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
 
@@ -469,9 +470,9 @@ const rowsRouter = router({
         metadata: {
           completedAt: row.completedAt?.toISOString() ?? null,
           completionNote: input.note,
-          ...(missingPhases.length > 0
-            ? { completionForced: true, skippedPhases: missingPhases.map(p => p.value) }
-            : {}),
+          completionForced: missingPhases.length > 0 ? true : undefined,
+          skippedPhases:
+            missingPhases.length > 0 ? missingPhases.map(p => p.value) : undefined,
         },
       });
       return row;
@@ -547,6 +548,17 @@ const rowsRouter = router({
 /**
  * Resolves `pictureKey` → `pictureUrl` for each row and `logoKey` → `logoUrl` for the brand
  * in a layout response, using the active storage provider to build URLs.
+ *
+ * Row pictures serve the `card` derivative (800px, WebP) rather than the master —
+ * the same `pictureUrl` field feeds both the grid thumbnail and the row drawer
+ * preview, and `card` fits both without a second field on the contract. Brand
+ * logos serve `thumb` instead: `ASSET_KINDS['brand-logo'].variants` never includes
+ * `card` (only `thumb`/`export`, see `@luke/core/storage/assets`), so requesting
+ * `card` here would always miss and silently fall back to the full-size master.
+ * Falls back to the master's own URL for a row/logo whose derivative isn't ready
+ * yet (just uploaded, or the background worker hasn't caught up) — never a broken
+ * image. One batched query per bucket for the whole layout via `resolveVariantUrls`,
+ * not N — and one shared URL resolver, not one per call.
  */
 async function resolveLayoutUrls<T extends {
   brand: { logoKey: string | null; [k: string]: unknown };
@@ -554,20 +566,33 @@ async function resolveLayoutUrls<T extends {
   [k: string]: unknown;
 }>(layout: T, prisma: PrismaClient): Promise<T & { brand: { logoUrl: string | null } }> {
   const resolve = await makeUrlResolver(prisma);
+
+  const pictureKeys = layout.groups.flatMap(g => g.rows.map(r => r.pictureKey).filter((k): k is string => k !== null));
+  const [pictureCardUrls, logoThumbUrls] = await Promise.all([
+    resolveVariantUrls(prisma, 'collection-row-pictures', pictureKeys, 'card', resolve),
+    layout.brand.logoKey
+      ? resolveVariantUrls(prisma, 'brand-logos', [layout.brand.logoKey], 'thumb', resolve)
+      : Promise.resolve(new Map<string, string>()),
+  ]);
+
   return {
     ...layout,
     brand: {
       ...layout.brand,
-      logoUrl: layout.brand.logoKey ? resolve('brand-logos', layout.brand.logoKey) : null,
+      logoUrl: layout.brand.logoKey
+        ? (logoThumbUrls.get(layout.brand.logoKey) ?? resolve('brand-logos', layout.brand.logoKey))
+        : null,
     },
     groups: layout.groups.map(g => ({
       ...g,
       rows: g.rows.map(r => ({
         ...r,
-        pictureUrl: r.pictureKey ? resolve('collection-row-pictures', r.pictureKey) : null,
+        pictureUrl: r.pictureKey
+          ? (pictureCardUrls.get(r.pictureKey) ?? resolve('collection-row-pictures', r.pictureKey))
+          : null,
       })),
     })),
-  } as T & { brand: { logoUrl: string | null } }; // spread di un T generico con override annidato: TS non verifica la forma esatta
+  } as T & { brand: { logoUrl: string | null } }; // spread of a generic T with a nested override: TS does not check the exact shape
 }
 
 /**
@@ -640,16 +665,17 @@ const exportRouter = router({
         ctx.prisma,
         ctx.logger,
       );
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_ROW_EXPORT_XLSX',
         targetType: 'CollectionLayoutRow',
         targetId: input.rowId,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { brandId: collectionLayout.brandId, seasonId: collectionLayout.seasonId },
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.xlsx`,
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp(timeZone)}.xlsx`,
       };
     }),
 
@@ -681,11 +707,13 @@ const exportRouter = router({
         : ctx.session.user.username;
 
       const { collectionLayout, ...rowData } = row;
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       const buffer = await buildCollectionRowPdf(
         { brand: collectionLayout.brand, season: collectionLayout.season, row: rowData },
         ctx.prisma,
         fullName,
         new Date(),
+        timeZone,
         ctx.logger,
       );
       await logAudit(ctx, {
@@ -693,11 +721,11 @@ const exportRouter = router({
         targetType: 'CollectionLayoutRow',
         targetId: input.rowId,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { brandId: collectionLayout.brandId, seasonId: collectionLayout.seasonId },
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp()}.pdf`,
+        filename: `${collectionLayout.brand.code}-${rowData.line}-${exportTimestamp(timeZone)}.pdf`,
       };
     }),
 
@@ -724,6 +752,7 @@ const exportRouter = router({
       await assertBrandAccess(ctx, layout.brandId);
 
       const buffer = await buildCollectionLayoutXlsx(layout, ctx.prisma, ctx.logger);
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_XLSX',
         targetType: 'CollectionLayout',
@@ -733,7 +762,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.xlsx`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp(timeZone)}.xlsx`,
       };
     }),
 
@@ -768,7 +797,8 @@ const exportRouter = router({
         ? [exportUser.firstName, exportUser.lastName].filter(Boolean).join(' ') || exportUser.username
         : ctx.session.user.username;
 
-      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), ctx.logger);
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+      const buffer = await buildCollectionLayoutPdf(layout, ctx.prisma, fullName, new Date(), timeZone, ctx.logger);
       await logAudit(ctx, {
         action: 'COLLECTION_LAYOUT_EXPORT_PDF',
         targetType: 'CollectionLayout',
@@ -778,7 +808,7 @@ const exportRouter = router({
       });
       return {
         data: buffer.toString('base64'),
-        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp()}.pdf`,
+        filename: `${layout.brand.code}-${layout.season.code}-CollectionLayout-${exportTimestamp(timeZone)}.pdf`,
       };
     }),
 });
@@ -819,7 +849,7 @@ export const collectionLayoutRouter = router({
       z.object({
         brandId: z.string().uuid(),
         seasonId: z.string().uuid(),
-        availableGenders: z.array(z.string()).min(1).optional(),
+        availableGenders: CollectionLayoutSettingsSchema.shape.availableGenders,
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -884,9 +914,9 @@ export const collectionLayoutRouter = router({
     )
     .mutation(async ({ input, ctx }) => {
       const { collectionLayoutId, ...settings } = input;
-      await resolveLayoutBrandAccess(ctx, collectionLayoutId);
+      const layout = await resolveLayoutBrandAccess(ctx, collectionLayoutId);
       await updateLayoutSettings(collectionLayoutId, settings, ctx.prisma);
-      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_UPDATE_SETTINGS', targetType: 'CollectionLayout', targetId: collectionLayoutId, result: 'SUCCESS', metadata: {} });
+      await logAudit(ctx, { action: 'COLLECTION_LAYOUT_UPDATE_SETTINGS', targetType: 'CollectionLayout', targetId: collectionLayoutId, result: 'SUCCESS', metadata: { brandId: layout.brandId, seasonId: layout.seasonId, changedFields: Object.keys(settings) } });
       return { success: true };
     }),
 

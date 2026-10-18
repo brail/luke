@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 
 import { trpc } from '../lib/trpc';
 
-const HEARTBEAT_INTERVAL_MS = 60_000; // 60 secondi
+const HEARTBEAT_INTERVAL_MS = 60_000; // 60 seconds
 
 /**
  * Invisible component that sends a periodic heartbeat and enforces session revocation.
@@ -27,7 +27,7 @@ export function HeartbeatTicker() {
     mutate();
     const id = setInterval(() => mutate(), HEARTBEAT_INTERVAL_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [mutate]);
 
   return null;
 }

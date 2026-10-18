@@ -3,8 +3,8 @@ import React from 'react';
 import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
 
 /**
- * Layout per sezione Maintenance
- * Protegge tutte le route sotto /maintenance con controllo accesso
+ * Layout for the Maintenance section.
+ * Protects every route under /maintenance with an access check.
  */
 export default async function MaintenanceLayout({
   children,

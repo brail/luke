@@ -13,7 +13,7 @@
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
-import type { PrismaClient, Brand, Season, User } from '@prisma/client';
+import type { PrismaClient, Brand, Season, User } from '@luke/db';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -283,13 +283,6 @@ describe('Sales Router Integration', () => {
 
       expect(response.queryDurationMs).toBe(3200);
       expect(response.queryDurationMs).toBeGreaterThan(0);
-    });
-
-    it('should use process.env.npm_package_version in Excel metadata', async () => {
-      const version = process.env.npm_package_version ?? 'unknown';
-
-      expect(typeof version).toBe('string');
-      expect(version.length).toBeGreaterThan(0);
     });
   });
 

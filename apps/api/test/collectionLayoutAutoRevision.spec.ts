@@ -10,8 +10,9 @@
  * queries are the input of the test, not what's being verified.
  */
 
-import { Prisma } from '@prisma/client';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { Prisma } from '@luke/db';
 
 import {
   AUTO_REVISION_TYPE_DATE,
@@ -20,12 +21,17 @@ import {
   createRevisionsForReachedEvents,
 } from '../src/services/collectionLayoutAutoRevision.service';
 import { createRevision } from '../src/services/collectionLayoutRevision.service';
+import { copyToImmutableBucket } from '../src/storage';
 
 vi.mock('../src/services/collectionLayoutRevision.service', () => ({
   createRevision: vi.fn(),
 }));
+vi.mock('../src/storage', () => ({
+  copyToImmutableBucket: vi.fn(async () => 'immutable-key'),
+}));
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
+const ROME = 'Europe/Rome';
 
 type FakePrismaOpts = {
   events?: unknown[];
@@ -48,11 +54,17 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 
 const fakeLogger = { warn: vi.fn(), info: vi.fn() };
 
-/** Event with a phase, already overdue, belonging to the given planning group. */
-function reachedEvent(id: string, title: string, groupName: string) {
+/**
+ * Event with a phase, belonging to the given planning group. By default an all-day deadline on the
+ * day before NOW, so already reached in Rome (at 22:00Z that day).
+ */
+function reachedEvent(id: string, title: string, groupName: string, startAt = new Date('2026-07-31T00:00:00.000Z')) {
   return {
     id,
     title,
+    startAt,
+    endAt: null,
+    allDay: true,
     planningGroup: { name: groupName },
     calendar: { brandId: 'brand-1', seasonId: 'season-1' },
   };
@@ -71,17 +83,17 @@ function duplicateRevisionError() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(createRevision).mockResolvedValue({ id: 'rev-1', revisionNumber: 3 } as never);
+  vi.mocked(createRevision).mockResolvedValue({ revision: { id: 'rev-1', revisionNumber: 3 }, missingPhotoRowIds: [] } as never);
 });
 
 describe('createRevisionsForReachedEvents', () => {
-  it('crea una revisione MILESTONE_DATA col titolo evento e il gruppo nel commento', async () => {
+  it('creates a MILESTONE_DATA revision with the event title and the group in the comment', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
     });
 
-    const created = await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    const created = await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     expect(created).toBe(1);
     expect(createRevision).toHaveBeenCalledTimes(1);
@@ -97,13 +109,28 @@ describe('createRevisionsForReachedEvents', () => {
     expect(userId).toBe('admin-1');
   });
 
-  it('registra un audit log per ogni revisione automatica creata', async () => {
+  it('copies the row photos into the immutable revisions bucket, as a manual revision does', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
     });
 
-    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
+
+    // The copier handed to the snapshot used to return the live key unchanged, so the revision
+    // pointed at a `collection-row-pictures` object that no revision reader looks in.
+    const copyPhoto = vi.mocked(createRevision).mock.calls[0]![2];
+    await expect(copyPhoto('live-key')).resolves.toBe('immutable-key');
+    expect(copyToImmutableBucket).toHaveBeenCalledWith(prisma, 'live-key');
+  });
+
+  it('records an audit log for every automatic revision created', async () => {
+    const prisma = buildFakePrisma({
+      events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
+      layouts: [LAYOUT],
+    });
+
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
     expect(prisma.auditLog.create.mock.calls[0][0].data).toMatchObject({
@@ -114,70 +141,107 @@ describe('createRevisionsForReachedEvents', () => {
     });
   });
 
-  it('non ricrea la revisione se quell’evento ne ha già una dello stesso tipo', async () => {
+  it('names the rows whose photo was gone in the audit row and a warning', async () => {
+    vi.mocked(createRevision).mockResolvedValue({ revision: { id: 'rev-1', revisionNumber: 3 }, missingPhotoRowIds: ['row-9'] } as never);
+    const prisma = buildFakePrisma({
+      events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
+      layouts: [LAYOUT],
+    });
+
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(1);
+
+    expect(prisma.auditLog.create.mock.calls[0][0].data.metadata).toMatchObject({ missingPhotoRowIds: ['row-9'] });
+    expect(fakeLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ revisionId: 'rev-1', missingPhotoRowIds: ['row-9'] }),
+      expect.any(String),
+    );
+  });
+
+  it('does not recreate the revision if that event already has one of the same type', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
       existingRevisions: [{ milestoneId: 'ev-1' }],
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('ignora gli eventi il cui brand+stagione non ha un collection layout', async () => {
+  it('ignores events whose brand+season has no collection layout', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [],
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('interroga solo eventi attivi con fase e scadenza già passata, entro la finestra di lookback', async () => {
+  it('queries only active events with a phase and a deadline already past, within the lookback window', async () => {
     const prisma = buildFakePrisma({ events: [] });
 
-    await createRevisionsForReachedEvents(prisma, NOW, fakeLogger);
+    await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger);
 
     const where = prisma.calendarEvent.findMany.mock.calls[0][0].where;
     expect(where.cancelledAt).toBeNull();
     expect(where.phaseId).toEqual({ not: null });
-    // endAt when set, otherwise startAt — two mutually exclusive branches
+    // endAt when set, otherwise startAt — two mutually exclusive branches, over a superset of the
+    // 7-day window: a deadline is reached up to 48 h after its stored value.
     expect(where.OR).toHaveLength(2);
     for (const branch of where.OR) {
       const range = branch.endAt ?? branch.startAt;
       expect(range.lte).toEqual(NOW);
-      expect(NOW.getTime() - range.gte.getTime()).toBe(7 * 24 * 60 * 60 * 1000);
+      expect(NOW.getTime() - range.gte.getTime()).toBe((7 * 24 + 48) * 60 * 60 * 1000);
     }
   });
 
-  it('non crea nulla se non esiste un admin attivo a cui attribuire la revisione', async () => {
+  it('keeps exactly the deadlines reached within the window, at UTC−12 as well', async () => {
+    // At UTC−12 an all-day deadline is reached 36 h after its stored UTC midnight. The window
+    // starts at 2026-07-25T12:00Z: the 24th is reached exactly then, the 23rd a day before it, and
+    // the 1st of August has not ended yet at NOW.
+    const prisma = buildFakePrisma({
+      events: [
+        reachedEvent('ev-before', 'Prima', 'Uomo FW26', new Date('2026-07-23T00:00:00.000Z')),
+        reachedEvent('ev-edge', 'Al confine', 'Uomo FW26', new Date('2026-07-24T00:00:00.000Z')),
+        reachedEvent('ev-open', 'Ancora aperta', 'Uomo FW26', new Date('2026-08-01T00:00:00.000Z')),
+      ],
+      layouts: [LAYOUT],
+    });
+
+    expect(await createRevisionsForReachedEvents(prisma, NOW, 'Etc/GMT+12', fakeLogger)).toBe(1);
+    expect(createRevision).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(createRevision).mock.calls[0][0]).toMatchObject({ milestoneId: 'ev-edge' });
+    const where = prisma.calendarEvent.findMany.mock.calls[0][0].where;
+    expect(where.OR[1].startAt.gte.getTime()).toBeLessThanOrEqual(new Date('2026-07-24T00:00:00.000Z').getTime());
+  });
+
+  it('creates nothing if there is no active admin to attribute the revision to', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
       admin: null,
     });
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
     expect(fakeLogger.warn).toHaveBeenCalled();
   });
 
-  it('non conta come creata la revisione persa in corsa contro un trigger concorrente (P2002)', async () => {
+  it('does not count as created a revision lost in a race against a concurrent trigger (P2002)', async () => {
     const prisma = buildFakePrisma({
       events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
       layouts: [LAYOUT],
     });
     vi.mocked(createRevision).mockRejectedValue(duplicateRevisionError());
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(0);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
     // Lost race = revision already exists, not an error to report
     expect(fakeLogger.warn).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it('un evento che fallisce non blocca gli altri', async () => {
+  it('one failing event does not block the others', async () => {
     const prisma = buildFakePrisma({
       events: [
         reachedEvent('ev-1', 'Primo', 'Uomo FW26'),
@@ -187,15 +251,15 @@ describe('createRevisionsForReachedEvents', () => {
     });
     vi.mocked(createRevision)
       .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce({ id: 'rev-2', revisionNumber: 4 } as never);
+      .mockResolvedValueOnce({ revision: { id: 'rev-2', revisionNumber: 4 }, missingPhotoRowIds: [] } as never);
 
-    expect(await createRevisionsForReachedEvents(prisma, NOW, fakeLogger)).toBe(1);
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(1);
     expect(createRevision).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('createRevisionsForCompletedPhase', () => {
-  it('crea una revisione MILESTONE_FASE quando tutte le righe del gruppo hanno superato la fase', async () => {
+  it('creates a MILESTONE_FASE revision when every row in the group has passed the phase', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }, { phase: { order: 4 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -215,7 +279,7 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(input.notes).toContain('Uomo FW26');
   });
 
-  it('seleziona solo gli eventi la cui fase è al più quella minima raggiunta dal gruppo', async () => {
+  it('selects only events whose phase is at most the minimum one the group has reached', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 5 } }, { phase: { order: 2 } }, { phase: { order: 4 } }],
       events: [],
@@ -230,7 +294,7 @@ describe('createRevisionsForCompletedPhase', () => {
     });
   });
 
-  it('non crea nulla se anche una sola riga del gruppo è senza fase', async () => {
+  it('creates nothing if even one row in the group has no phase', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }, { phase: null }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -241,14 +305,14 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non crea nulla se il gruppo non ha righe', async () => {
+  it('creates nothing if the group has no rows', async () => {
     const prisma = buildFakePrisma({ rows: [] });
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non ricrea la revisione se quell’evento ne ha già una dello stesso tipo', async () => {
+  it('does not recreate the revision if that event already has one of the same type', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -259,7 +323,7 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(createRevision).not.toHaveBeenCalled();
   });
 
-  it('non propaga mai un errore — il salvataggio della riga non deve fallire per una revisione', async () => {
+  it('never propagates an error — saving the row must not fail because of a revision', async () => {
     const prisma = buildFakePrisma({
       rows: [{ phase: { order: 3 } }],
       events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
@@ -268,5 +332,19 @@ describe('createRevisionsForCompletedPhase', () => {
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
     expect(fakeLogger.warn).toHaveBeenCalled();
+  });
+
+  it('a failure ends the call: every pending event would snapshot the same layout', async () => {
+    const prisma = buildFakePrisma({
+      rows: [{ phase: { order: 3 } }],
+      events: [
+        { id: 'ev-1', title: 'Primo', planningGroup: { name: 'Uomo FW26' } },
+        { id: 'ev-2', title: 'Secondo', planningGroup: { name: 'Uomo FW26' } },
+      ],
+    });
+    vi.mocked(createRevision).mockRejectedValueOnce(new Error('boom'));
+
+    expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
+    expect(createRevision).toHaveBeenCalledTimes(1);
   });
 });

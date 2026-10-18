@@ -7,6 +7,8 @@
  * the client opens the SSE connection, then exchanged for the user identity.
  */
 
+import type { MaintenanceModeStatus } from '@luke/core';
+
 import type { FastifyReply } from 'fastify';
 
 // --- Connection pool ---
@@ -33,7 +35,7 @@ export type SSEEvent =
   | { type: 'notification'; payload: Record<string, unknown> }
   | { type: 'sync-state'; entity: string; isRunning: boolean }
   | { type: 'calendar-updated'; seasonId: string }
-  | { type: 'maintenance-mode'; status: 'INACTIVE' | 'SCHEDULED' | 'ACTIVE'; scheduledAt: string | null; message: string | null }
+  | { type: 'maintenance-mode'; status: MaintenanceModeStatus; scheduledAt: string | null; message: string | null }
   | { type: 'heartbeat' };
 
 function pushToUser(userId: string, event: SSEEvent): void {
@@ -88,13 +90,15 @@ function consumeTicket(ticketId: string): string | null {
   return ticket.userId;
 }
 
-// Cleans up expired tickets every 5 minutes
+// Cleans up expired tickets every 5 minutes. `unref`: the server is kept alive by its listener, and
+// a timer of its own would keep alive any other process that imports this module through the
+// notifications — a CLI script never exited.
 setInterval(() => {
   const now = Date.now();
   for (const [id, ticket] of tickets) {
     if (now > ticket.expiresAt) tickets.delete(id);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 /**
  * Singleton SSE store exposing the full connection pool and ticket API.

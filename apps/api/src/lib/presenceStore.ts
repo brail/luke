@@ -4,9 +4,9 @@
  * State is volatile — it resets on server restart, which is the intended behaviour.
  */
 
-const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minuti
+const ONLINE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 
-const presenceMap = new Map<string, number>(); // userId -> timestamp ultimo heartbeat
+const presenceMap = new Map<string, number>(); // userId -> timestamp of the last heartbeat
 
 /**
  * Records or refreshes a user's last-seen timestamp.
@@ -14,14 +14,6 @@ const presenceMap = new Map<string, number>(); // userId -> timestamp ultimo hea
  */
 export function updatePresence(userId: string): void {
   presenceMap.set(userId, Date.now());
-}
-
-/**
- * Returns `true` if the user sent a heartbeat within the last 2 minutes.
- */
-export function isUserOnline(userId: string): boolean {
-  const lastSeen = presenceMap.get(userId);
-  return lastSeen !== undefined && Date.now() - lastSeen < ONLINE_TTL_MS;
 }
 
 /**

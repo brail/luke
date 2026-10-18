@@ -3,6 +3,8 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
 
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { CreateActionButton } from '../../../../components/CreateActionButton';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -53,7 +55,7 @@ export default function SeasonsPage() {
 
   const invalidate = () => {
     utils.season.list.invalidate();
-    invalidateContext(); // aggiorna context.get, catalog.brands, catalog.seasons (ContextSelector)
+    invalidateContext(); // refreshes context.get, catalog.brands, catalog.seasons (ContextSelector)
   };
 
   const createMutation = trpc.season.create.useMutation({
@@ -188,8 +190,7 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler disattivare la stagione "${deletingSeason?.code}"? Potrà essere riattivata in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingSeason) removeMutation.mutate({ id: deletingSeason.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -201,7 +202,6 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingSeason?.code}" da NAV? La stagione verrà disattivata e il codice NAV "${unlinkingSeason?.navSeasonId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingSeason) unlinkMutation.mutate({ id: unlinkingSeason.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -214,9 +214,11 @@ export default function SeasonsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingSeason?.code}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
-        onConfirm={() => { if (hardDeletingSeason) hardDeleteMutation.mutate({ id: hardDeletingSeason.id }); }}
+        actionType="hardDelete"
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingSeason && phrase) hardDeleteMutation.mutate({ id: hardDeletingSeason.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

@@ -13,10 +13,15 @@ interface PasswordValidationIndicatorsProps {
 }
 
 /**
- * Real-time password strength checklist rendered below a password input.
+ * Real-time password checklist rendered below a password input.
  *
- * Renders nothing when `password` is empty. Uses `usePasswordValidation` to evaluate
- * minimum length, uppercase, lowercase, number, symbol, and optional confirmation match.
+ * The requirements come from the policy the server applies, not from a list written here: a
+ * requirement the installation switched off is absent rather than shown as a tick that will never
+ * turn green, and the minimum length is the configured one. The checklist used to be five
+ * hardcoded rows saying 12 characters and "a symbol" whatever was configured — and "a symbol"
+ * covered `~` and a space, which the server refuses.
+ *
+ * Renders nothing while the field is empty.
  *
  * @param showConfirmPassword - When true, also shows the "passwords match" indicator.
  * @param confirmPassword - Required only when `showConfirmPassword` is true.
@@ -27,107 +32,27 @@ export function PasswordValidationIndicators({
   showConfirmPassword = false,
   className = '',
 }: PasswordValidationIndicatorsProps) {
-  const { passwordChecks } = usePasswordValidation(password, confirmPassword);
+  const { checks } = usePasswordValidation(
+    password,
+    showConfirmPassword ? confirmPassword : undefined
+  );
 
   if (!password || password.length === 0) {
     return null;
   }
 
   return (
-    <div className={`space-y-2 ${className}`}>
-      {/* Indicatori validazione password */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.length ? (
+    <div className={`space-y-1 ${className}`}>
+      {checks.map(check => (
+        <div key={check.key} className="flex items-center gap-2 text-sm">
+          {check.met ? (
             <Check className="h-4 w-4 text-green-500" />
           ) : (
             <X className="h-4 w-4 text-red-500" />
           )}
-          <span
-            className={
-              passwordChecks.length ? 'text-green-700' : 'text-red-700'
-            }
-          >
-            Almeno 12 caratteri
-          </span>
+          <span className={check.met ? 'text-green-700' : 'text-red-700'}>{check.label}</span>
         </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.uppercase ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <X className="h-4 w-4 text-red-500" />
-          )}
-          <span
-            className={
-              passwordChecks.uppercase ? 'text-green-700' : 'text-red-700'
-            }
-          >
-            Una lettera maiuscola
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.lowercase ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <X className="h-4 w-4 text-red-500" />
-          )}
-          <span
-            className={
-              passwordChecks.lowercase ? 'text-green-700' : 'text-red-700'
-            }
-          >
-            Una lettera minuscola
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.number ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <X className="h-4 w-4 text-red-500" />
-          )}
-          <span
-            className={
-              passwordChecks.number ? 'text-green-700' : 'text-red-700'
-            }
-          >
-            Un numero
-          </span>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.symbol ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <X className="h-4 w-4 text-red-500" />
-          )}
-          <span
-            className={
-              passwordChecks.symbol ? 'text-green-700' : 'text-red-700'
-            }
-          >
-            Un carattere speciale
-          </span>
-        </div>
-      </div>
-
-      {/* Indicatore conferma password */}
-      {showConfirmPassword && confirmPassword && (
-        <div className="flex items-center gap-2 text-sm">
-          {passwordChecks.match ? (
-            <Check className="h-4 w-4 text-green-500" />
-          ) : (
-            <X className="h-4 w-4 text-red-500" />
-          )}
-          <span
-            className={passwordChecks.match ? 'text-green-700' : 'text-red-700'}
-          >
-            Le password coincidono
-          </span>
-        </div>
-      )}
+      ))}
     </div>
   );
 }

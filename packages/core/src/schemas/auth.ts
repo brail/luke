@@ -31,16 +31,6 @@ export const ConfirmPasswordResetSchema = z.object({
   newPassword: z.string().min(1, 'Password richiesta'),
 });
 
-/** Input schema for requesting an email verification link. */
-export const RequestEmailVerificationSchema = z.object({
-  email: z
-    .string()
-    .min(1, 'Email richiesta')
-    .email('Email non valida')
-    .toLowerCase()
-    .trim(),
-});
-
 /** Input schema for confirming email verification with a 64-character hex token. */
 export const ConfirmEmailVerificationSchema = z.object({
   token: z
@@ -51,6 +41,16 @@ export const ConfirmEmailVerificationSchema = z.object({
       /^[a-f0-9]{64}$/,
       'Token deve essere una stringa hex di 64 caratteri'
     ),
+});
+
+/**
+ * Input schema for an LDAP user awaiting approval to register a real email. The password is the
+ * proof of identity, verified exactly as a login's.
+ */
+export const SubmitPendingEmailSchema = z.object({
+  username: z.string().min(1, 'Username richiesto'),
+  password: z.string().min(1, 'Password richiesta'),
+  email: z.string().trim().toLowerCase().email('Email non valida'),
 });
 
 /** Input schema for an admin to trigger email verification for a user by userId. */
@@ -64,9 +64,6 @@ export type RequestPasswordResetInput = z.infer<
 >;
 export type ConfirmPasswordResetInput = z.infer<
   typeof ConfirmPasswordResetSchema
->;
-export type RequestEmailVerificationInput = z.infer<
-  typeof RequestEmailVerificationSchema
 >;
 export type ConfirmEmailVerificationInput = z.infer<
   typeof ConfirmEmailVerificationSchema

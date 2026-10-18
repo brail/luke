@@ -1,8 +1,9 @@
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
+
+import { FeedbackSubmitInputSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getTypedConfig } from '../lib/configManager';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
@@ -13,20 +14,17 @@ export const feedbackRouter = router({
    * Submits a bug report or feature request as a GitHub issue using the configured feedback token.
    *
    * @auth {authenticated}
-   * @input {{ type: "bug" | "feature", title: string, description: string }}
+   * @input {FeedbackSubmitInputSchema} — feedback type, title and description.
    * @output {{ issueUrl: string, issueNumber: number }}
    */
+  // nosemgrep: luke-procedure-requires-permission -- any signed-in user may report a problem; rate-limited, and the GitHub token is the server's
   submit: protectedProcedure
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      type: z.enum(['bug', 'feature']),
-      title: z.string().min(1).max(200),
-      description: z.string().min(1).max(4000),
-    }))
+    .input(FeedbackSubmitInputSchema)
     .mutation(async ({ input, ctx }) => {
       const [token, repo] = await Promise.all([
-        getConfig(ctx.prisma, 'integrations.github.feedbackToken', true),
-        getConfig(ctx.prisma, 'integrations.github.feedbackRepo', false),
+        getTypedConfig(ctx.prisma, 'integrations.github.feedbackToken'),
+        getTypedConfig(ctx.prisma, 'integrations.github.feedbackRepo'),
       ]).catch(() => {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -62,6 +60,11 @@ export const feedbackRouter = router({
       });
 
       if (!res.ok) {
+        const errorBody = await res.text().catch(() => '');
+        ctx.logger.error(
+          { status: res.status, repo, body: errorBody },
+          'GitHub issue creation failed',
+        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore nella creazione della segnalazione. Riprova.',
@@ -69,6 +72,15 @@ export const feedbackRouter = router({
       }
 
       const issue = await res.json() as { html_url: string; number: number };
+
+      await ctx.prisma.feedbackSubmission.create({
+        data: {
+          userId: ctx.session.user.id,
+          issueNumber: issue.number,
+          issueUrl: issue.html_url,
+          repo,
+        },
+      });
 
       await logAudit(ctx, {
         action: 'FEEDBACK_SUBMIT',

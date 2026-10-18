@@ -43,12 +43,12 @@ export function buildNavSyncFilter(
   codeField: string = 'No_',
 ): NavFilterResult {
   if (!filter) {
-    logger.info({ entity }, 'NAV sync: nessun criterio configurato, skip');
+    logger.info({ entity }, 'NAV sync: no criterion configured, skipping');
     return { shouldSkip: true, filterMode: 'not_configured' };
   }
 
   if (!filter.active) {
-    logger.info({ entity, filter: 'disabled' }, 'NAV sync: entità disabilitata, skip');
+    logger.info({ entity, filter: 'disabled' }, 'NAV sync: entity disabled, skipping');
     return { shouldSkip: true, filterMode: 'disabled' };
   }
 
@@ -56,7 +56,7 @@ export function buildNavSyncFilter(
   const navNos = filter.navNos;
 
   if (filterMode === 'whitelist' && navNos.length === 0) {
-    logger.warn({ entity, filterMode }, 'NAV sync: whitelist con navNos vuoti — skip completo');
+    logger.warn({ entity, filterMode }, 'NAV sync: whitelist with empty navNos — skipping entirely');
     return { shouldSkip: true, filterMode };
   }
 
@@ -82,6 +82,17 @@ export function buildNavSyncFilter(
  */
 export function buildWhereClause(predicates: string[]): string {
   return predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : '';
+}
+
+/** NAV's blank date: the minimum of SQL Server's `datetime`, written in a date field left empty. */
+const NAV_BLANK_DATE_MS = Date.UTC(1753, 0, 1);
+
+/**
+ * A NAV date column as the driver reads it (UTC), or `null` when the field is empty: a missing
+ * value or NAV's blank date `1753-01-01` (ADR-035 §External dates).
+ */
+export function navDateOrNull(value: Date | null | undefined): Date | null {
+  return value == null || value.getTime() === NAV_BLANK_DATE_MS ? null : value;
 }
 
 /**

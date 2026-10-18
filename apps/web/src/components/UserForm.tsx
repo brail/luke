@@ -2,72 +2,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { z } from 'zod';
+
+import { usePasswordPolicy } from '../hooks/usePasswordValidation';
+import { evaluatePassword } from '../lib/passwordChecks';
+import {
+  buildUserPayload,
+  type SyncedField,
+  type UserFormData,
+  type UserSubmitPayload,
+} from '../lib/userFormSchema';
 
 import { PasswordValidationIndicators } from './PasswordValidationIndicators';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-
-/**
- * Schema di validazione per il form utente
- */
-const CreateUserSchema = z
-  .object({
-    email: z.string().email('Email non valida'),
-    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-    firstName: z.string().optional().or(z.literal('')),
-    lastName: z.string().optional().or(z.literal('')),
-    password: z.string().min(12, 'Password deve essere di almeno 12 caratteri'),
-    confirmPassword: z.string().min(12, 'Conferma password richiesta'),
-    role: z.enum(['admin', 'editor', 'viewer']),
-    isActive: z.boolean(),
-  })
-  .refine(data => data.password === data.confirmPassword, {
-    message: 'Le password non coincidono',
-    path: ['confirmPassword'],
-  });
-
-const EditUserSchema = z
-  .object({
-    email: z.string().email('Email non valida'),
-    username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
-    firstName: z.string().optional().or(z.literal('')),
-    lastName: z.string().optional().or(z.literal('')),
-    password: z
-      .string()
-      .min(12, 'Password deve essere di almeno 12 caratteri')
-      .regex(/[A-Z]/, 'Password deve contenere almeno una lettera maiuscola')
-      .regex(/[a-z]/, 'Password deve contenere almeno una lettera minuscola')
-      .regex(/[0-9]/, 'Password deve contenere almeno un numero')
-      .regex(
-        /[^A-Za-z0-9]/,
-        'Password deve contenere almeno un carattere speciale'
-      )
-      .optional()
-      .or(z.literal('')), // Permette stringa vuota
-    confirmPassword: z.string().optional().or(z.literal('')), // Permette stringa vuota
-    role: z.enum(['admin', 'editor', 'viewer']),
-    isActive: z.boolean(),
-  })
-  .refine(
-    data => {
-      // Se password è vuota, confirmPassword deve essere vuota
-      if (!data.password || data.password.trim() === '') {
-        return !data.confirmPassword || data.confirmPassword.trim() === '';
-      }
-      // Se password è presente, deve coincidere con confirmPassword
-      return data.password === data.confirmPassword;
-    },
-    {
-      message: 'Le password non coincidono',
-      path: ['confirmPassword'],
-    }
-  );
-
-type CreateUserData = z.infer<typeof CreateUserSchema>;
-type EditUserData = z.infer<typeof EditUserSchema>;
-type UserFormData = CreateUserData | EditUserData;
 
 interface UserFormProps {
   mode: 'create' | 'edit';
@@ -78,17 +26,10 @@ interface UserFormProps {
     lastName?: string | null;
     provider?: string;
   };
-  onSubmit: (data: UserFormData) => void;
+  onSubmit: (data: UserSubmitPayload) => void;
   onCancel: () => void;
   isLoading?: boolean;
-  syncedFields?: (
-    | 'email'
-    | 'username'
-    | 'firstName'
-    | 'lastName'
-    | 'role'
-    | 'password'
-  )[];
+  syncedFields?: SyncedField[];
   isSelfEdit?: boolean;
   /** Whether the current user may reset this user's password in edit mode (requires `*:*`). */
   canResetPassword?: boolean;
@@ -129,6 +70,7 @@ export function UserForm({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const policy = usePasswordPolicy();
 
   const handleInputChange = (
     field: keyof UserFormData,
@@ -136,128 +78,53 @@ export function UserForm({
   ) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-
-    // Real-time password validation (simplified)
-    if (field === 'password') {
-      const passwordValue = value as string;
-      // Advanced validation is handled by PasswordValidationIndicators component
-      // Here we only handle basic validation for the form
-      if (
-        passwordValue &&
-        passwordValue.length > 0 &&
-        passwordValue.length < 12
-      ) {
-        setErrors(prev => ({
-          ...prev,
-          password: 'Password deve essere di almeno 12 caratteri',
-        }));
-      } else {
-        setErrors(prev => ({ ...prev, password: '' }));
-      }
-    }
-
-    // Real-time confirmation password validation
-    if (field === 'confirmPassword') {
-      const confirmPasswordValue = value as string;
-      const passwordValue = formData.password;
-
-      if (mode === 'edit') {
-        // In edit mode, if password is empty, confirmPassword must be empty
-        if (!passwordValue || passwordValue.trim() === '') {
-          if (confirmPasswordValue && confirmPasswordValue.trim() !== '') {
-            setErrors(prev => ({
-              ...prev,
-              confirmPassword:
-                'Confirm password not needed if password is empty',
-            }));
-          } else {
-            setErrors(prev => ({ ...prev, confirmPassword: '' }));
-          }
-        } else {
-          // If password is present, must match
-          if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
-            setErrors(prev => ({
-              ...prev,
-              confirmPassword: 'Le password non coincidono',
-            }));
-          } else if (
-            confirmPasswordValue &&
-            confirmPasswordValue === passwordValue
-          ) {
-            setErrors(prev => ({ ...prev, confirmPassword: '' }));
-          }
-        }
-      } else {
-        // Create mode: password must match
-        if (confirmPasswordValue && confirmPasswordValue !== passwordValue) {
-          setErrors(prev => ({
-            ...prev,
-            confirmPassword: 'Le password non coincidono',
-          }));
-        } else if (
-          confirmPasswordValue &&
-          confirmPasswordValue === passwordValue
-        ) {
-          setErrors(prev => ({ ...prev, confirmPassword: '' }));
-        }
-      }
+    // Clear the error the user is editing away. For the two password fields the confirmation goes
+    // with it: a mismatch belongs to the pair, so fixing either half resolves it.
+    //
+    // No rule is re-implemented here any more. This block used to carry a third copy of the
+    // twelve-character minimum and a second copy of the match rule — one of them announcing itself
+    // in English in an otherwise Italian form — while the configured policy said something else
+    // entirely. The checklist under the field shows the real requirements live, and
+    // `buildUserPayload` decides on submit.
+    const pairedWithConfirm = field === 'password' || field === 'confirmPassword';
+    if (errors[field] || (pairedWithConfirm && errors.confirmPassword)) {
+      setErrors(prev => ({
+        ...prev,
+        [field]: '',
+        ...(pairedWithConfirm ? { confirmPassword: '' } : {}),
+      }));
     }
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Use correct schema based on mode
-    const schema = mode === 'create' ? CreateUserSchema : EditUserSchema;
-    const result = schema.safeParse(formData);
-
-    if (!result.success) {
-      const fieldErrors: Record<string, string> = {};
-      result.error.issues.forEach(issue => {
-        if (issue.path[0]) {
-          fieldErrors[issue.path[0] as string] = issue.message;
-        }
-      });
-      setErrors(fieldErrors);
+    const result = buildUserPayload(mode, formData, syncedFields);
+    if (!result.ok) {
+      setErrors(result.errors);
       return;
     }
 
-    // Remove confirmPassword from data before sending
-    const { confirmPassword: _confirmPassword, ...dataToSubmit } = result.data;
-
-    // In edit mode, if password is empty, remove it from data
-    if (
-      mode === 'edit' &&
-      (!formData.password || formData.password.trim() === '')
-    ) {
-      const { password: _password, ...dataWithoutPassword } = dataToSubmit;
-
-      // Remove synced fields from data to send
-      const filteredData = { ...dataWithoutPassword };
-      syncedFields?.forEach(field => {
-        delete filteredData[field as keyof typeof filteredData];
-      });
-
-      onSubmit(filteredData as UserFormData);
-    } else {
-      // Remove synced fields from data to send
-      const filteredData = { ...dataToSubmit };
-      syncedFields?.forEach(field => {
-        delete filteredData[field as keyof typeof filteredData];
-      });
-
-      onSubmit(filteredData as UserFormData);
+    // The schema carries only the static prefilter; the complexity rules and the real minimum come
+    // from the configured policy, which the bundle cannot know. Applied here so a password the
+    // server would refuse fails on the field, next to the checklist already showing what is missing,
+    // instead of returning as a toast. Skipped when blank in edit mode: there it means "keep the
+    // existing one", and `buildUserPayload` has already dropped the key.
+    if (result.payload.password) {
+      const evaluation = evaluatePassword(result.payload.password, undefined, policy);
+      if (!evaluation.isValid) {
+        setErrors({ password: `Password non valida: ${evaluation.errors.join(', ')}` });
+        return;
+      }
     }
+
+    onSubmit(result.payload);
   };
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-          {/* Prima riga: Email e Username */}
+          {/* Row 1: Email and Username */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Email */}
             <div className="space-y-2">
@@ -314,9 +181,8 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Seconda riga: Nome e Cognome */}
+          {/* Row 2: First and last name */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Nome */}
             <div className="space-y-2">
               <Label htmlFor="firstName">Nome</Label>
               <Input
@@ -338,7 +204,6 @@ export function UserForm({
               )}
             </div>
 
-            {/* Cognome */}
             <div className="space-y-2">
               <Label htmlFor="lastName">Cognome</Label>
               <Input
@@ -361,9 +226,8 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Terza riga: Ruolo e Password */}
+          {/* Row 3: Role and Password */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Ruolo */}
             <div className="space-y-2">
               <Label htmlFor="role">Ruolo *</Label>
               <select
@@ -438,7 +302,7 @@ export function UserForm({
                   </p>
                 )}
 
-              {/* Indicatori validazione password */}
+              {/* Password validation indicators */}
               <PasswordValidationIndicators
                 password={formData.password || ''}
                 confirmPassword={formData.confirmPassword || ''}
@@ -452,7 +316,7 @@ export function UserForm({
             </div>
           </div>
 
-          {/* Conferma Password - Solo se necessario */}
+          {/* Confirm password - only when needed */}
           {(mode === 'create' ||
             (mode === 'edit' &&
               formData.password &&
@@ -485,7 +349,6 @@ export function UserForm({
               </div>
             )}
 
-          {/* Attivo */}
           <div className="flex items-center space-x-2">
             <input
               id="isActive"
@@ -509,7 +372,7 @@ export function UserForm({
           </div>
       </div>
 
-      {/* Pulsanti */}
+      {/* Buttons */}
       <div className="flex justify-end space-x-2 px-6 py-4 border-t shrink-0">
         <Button
           type="button"

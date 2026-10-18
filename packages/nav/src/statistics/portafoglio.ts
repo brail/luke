@@ -54,7 +54,7 @@ function buildSql(co: string): string {
   return `
 WITH
 
--- CTE 1: Prenotazioni di vendita (dateprenotazionipervendite)
+-- CTE 1: Sales reservations (dateprenotazionipervendite)
 date_prenotazioni AS (
     SELECT
         ral.[Sales Document No_],
@@ -92,7 +92,7 @@ picking_status AS (
     GROUP BY dpl.[Order No_], dpl.[Order Line No_]
 ),
 
--- CTE 3: Landed cost per articolo (avg Standard Cost SKU con costo > 0)
+-- CTE 3: Landed cost per item (avg Standard Cost of SKUs with cost > 0)
 landed_cost AS (
     SELECT
         i.[Model Item No_] AS No_,
@@ -121,7 +121,7 @@ carry_over AS (
     WHERE i.[Configurator Relation] = 3
 ),
 
--- CTE 5: Must Buy per articolo/colore
+-- CTE 5: Must Buy per item/color
 must_buy AS (
     SELECT
         i.[Must Buy],
@@ -132,10 +132,10 @@ must_buy AS (
     GROUP BY i.[Must Buy], i.[Variable Code 01], i.[Model Item No_]
 ),
 
--- CTE 6: Cross-reference cliente per articolo/colore (tipo 1)
--- ⚠️ TODO: verificare il nome esatto della tabella in FEBOS_10.
---   Candidati: 'Cross-Reference Model Item', 'Item Cross Reference', 'Item Reference'
---   Sostituire il SELECT vuoto con la query reale una volta confermato il nome.
+-- CTE 6: Customer cross-reference per item/color (type 1)
+-- ⚠️ TODO: confirm the exact table name in FEBOS_10.
+--   Candidates: 'Cross-Reference Model Item', 'Item Cross Reference', 'Item Reference'
+--   Replace the empty SELECT with the real query once the name is confirmed.
 cross_ref_cliente AS (
     SELECT
         CAST(NULL AS NVARCHAR(50)) AS [Model Item No_],
@@ -145,7 +145,7 @@ cross_ref_cliente AS (
     WHERE 1 = 0
 ),
 
--- CTE 7: Righe ordine base (qSoloVendNoFiltr-STEP0)
+-- CTE 7: Base order lines (qSoloVendNoFiltr-STEP0)
 base_lines AS (
     SELECT
         CASE sl.[Document Type] WHEN 1 THEN 'SALES' WHEN 5 THEN 'RETURNS' ELSE '' END AS DocumentType,
@@ -364,7 +364,7 @@ base_lines AS (
         ISNULL(TRY_CAST(sh.[Right on Return _] AS DECIMAL(18,4)), 0) AS PercentualeDirittoAlReso,
         sh.Note,
         sh.[Campaign No_],
-        CAST(NULL AS NVARCHAR(50))                                  AS [event code], -- colonna non presente in FEBOS_10
+        CAST(NULL AS NVARCHAR(50))                                  AS [event code], -- column not present in FEBOS_10
         ISNULL(TRY_CAST(sl.[Line Discount _]  AS DECIMAL(18,4)), 0) AS ScontoRiga,
         ISNULL(TRY_CAST(sl.[Discount 1 _]     AS DECIMAL(18,4)), 0) AS Sconto1Riga,
         ISNULL(TRY_CAST(sl.[Discount 2 _]     AS DECIMAL(18,4)), 0) AS Sconto2Riga,
@@ -443,7 +443,7 @@ base_lines AS (
         AND (@CustomerCode    IS NULL OR sh.[Sell-to Customer No_]  = @CustomerCode)
 ),
 
--- CTE 8: Aggregazione + arricchimento cliente/ship-to (qSoloVend-step1)
+-- CTE 8: Aggregation + customer/ship-to enrichment (qSoloVend-step1)
 agg_lines AS (
     SELECT
         bl.[Document No_], bl.[Line No_], bl.[Customer Order Ref_], bl.Reference,
@@ -565,7 +565,7 @@ agg_lines AS (
         bl.ShipmentMethodDescription, bl.CalcoloScontoFattura, bl.[Customer Price Group],
         bl.ScontoFattura, bl.ScontoRiga, bl.Sconto1Riga, bl.Sconto2Riga, bl.Sconto3Riga,
         c.[E-Mail], bl.ContoVendita, bl.PercentualeDirittoAlReso, bl.Note,
-        bl.[Campaign No_], bl.[event code], bl.SecuritiesReceived, -- [event code] è sempre NULL
+        bl.[Campaign No_], bl.[event code], bl.SecuritiesReceived, -- [event code] is always NULL
         bl.Anomalo, bl.NonAnomalo, bl.[Anomalous Date], bl.Verificato, bl.[Checked Date],
         bl.[Budget No_], bl.DataDecorrenza, bl.KimoOrder, she.[Old Order No_],
         bl.[Season Code], bl.[Transport Reason Code], bl.TransportReasonCodeDescription,

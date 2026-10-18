@@ -1,11 +1,15 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus, Trash2, Star } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
 
 import type { RouterOutputs } from '@luke/api';
 import {
+  MerchandisingSpecsheetInputSchema,
   SPECSHEET_COMPONENT_SECTIONS,
   type SpecsheetComponentSection,
   buildSpecsheetImageUploadUrl,
@@ -26,10 +30,18 @@ import {
   DialogTitle,
 } from '../../../../../components/ui/dialog';
 import { FileDropZone } from '../../../../../components/ui/file-drop-zone';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+} from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
-import { Label } from '../../../../../components/ui/label';
+import { useStorageUpload } from '../../../../../hooks/useStorageUpload';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { cn } from '../../../../../lib/utils';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
@@ -51,6 +63,27 @@ interface EditableComponent {
   order: number;
   section: SpecsheetComponentSection;
 }
+
+interface SpecsheetHeaderFormData {
+  madeIn: string;
+  supplierName: string;
+  notes: string;
+}
+
+/**
+ * The three header fields, taken from the specsheet input. Core marks them optional and nullable;
+ * the form holds plain strings so the inputs stay controlled, and maps empties back to null on
+ * submit. Declared rather than inferred so the narrowing is not at the mercy of `.extend()`
+ * inference through the composed schema.
+ */
+const SpecsheetHeaderFormSchema: z.ZodType<SpecsheetHeaderFormData, SpecsheetHeaderFormData> =
+  MerchandisingSpecsheetInputSchema.extend({
+    madeIn: z.string(),
+    supplierName: z.string(),
+    notes: z.string(),
+  });
+
+const EMPTY_HEADER: SpecsheetHeaderFormData = { madeIn: '', supplierName: '', notes: '' };
 
 interface Props {
   open: boolean;
@@ -79,24 +112,29 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
   );
 
   // Header state
-  const [madeIn, setMadeIn] = useState('');
-  const [supplierName, setSupplierName] = useState('');
-  const [headerNotes, setHeaderNotes] = useState('');
+  const form = useForm<SpecsheetHeaderFormData>({
+    resolver: zodResolver(SpecsheetHeaderFormSchema),
+    defaultValues: EMPTY_HEADER,
+  });
 
-  // Components state (flat list, gruppati per section nel render)
+  // Components state (flat list, grouped by section at render time)
   const [components, setComponents] = useState<EditableComponent[]>([]);
 
   // Sections collapsed state
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const { upload: uploadImage, isUploading: uploadingImage } = useStorageUpload({
+    url: specsheet ? buildSpecsheetImageUploadUrl(specsheet.id) : '',
+  });
 
   // Sync local state when data arrives
   useEffect(() => {
     if (specsheet) {
-      setMadeIn(specsheet.madeIn ?? '');
-      setSupplierName(specsheet.supplierName ?? '');
-      setHeaderNotes(specsheet.notes ?? '');
+      form.reset({
+        madeIn: specsheet.madeIn ?? '',
+        supplierName: specsheet.supplierName ?? '',
+        notes: specsheet.notes ?? '',
+      });
       setComponents(
         specsheet.components.map(c => ({
           id: c.id,
@@ -110,13 +148,11 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
         }))
       );
     } else if (!isLoading) {
-      // Specsheet non ancora esistente
-      setMadeIn('');
-      setSupplierName('');
-      setHeaderNotes('');
+      // Specsheet does not exist yet
+      form.reset(EMPTY_HEADER);
       setComponents([]);
     }
-  }, [specsheet, isLoading]);
+  }, [specsheet, isLoading, form]);
 
   const upsertSpecsheetMutation = trpc.merchandisingPlan.upsertSpecsheet.useMutation({
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
@@ -139,13 +175,27 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
     onError: (err: unknown) => toast.error(getTrpcErrorMessage(err)),
   });
 
-  const handleSave = async () => {
+  // `component` is the one required field on a BOM row (MerchandisingComponentInputSchema), and
+  // nothing here used to check it: an unnamed row reached the server and the whole batch came back
+  // rejected with a raw validation error.
+  const unnamedComponents = components.filter(c => !c.component.trim()).length;
+
+  const handleSave = async (header: SpecsheetHeaderFormData) => {
+    if (unnamedComponents > 0) {
+      toast.error(
+        unnamedComponents === 1
+          ? 'Un componente non ha un nome — compilalo prima di salvare'
+          : `${unnamedComponents} componenti non hanno un nome — compilali prima di salvare`
+      );
+      return;
+    }
+
     // 1. Upsert specsheet header
     const ss = await upsertSpecsheetMutation.mutateAsync({
       rowId: row.id,
-      madeIn: madeIn || null,
-      supplierName: supplierName || null,
-      notes: headerNotes || null,
+      madeIn: header.madeIn || null,
+      supplierName: header.supplierName || null,
+      notes: header.notes || null,
     });
 
     // 2. Sostituisci componenti
@@ -196,20 +246,13 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
 
   const handleImageUpload = async (file: File) => {
     if (!specsheet) return;
-    setUploadingImage(true);
     try {
-      const formData = new globalThis.FormData();
-      formData.append('file', file);
-      const url = buildSpecsheetImageUploadUrl(specsheet.id);
-      const res = await fetch(url, { method: 'POST', body: formData, credentials: 'include' });
-      if (!res.ok) throw new Error('Upload fallito');
+      await uploadImage(file);
       utils.merchandisingPlan.getSpecsheet.invalidate({ rowId: row.id });
       onSaved();
       toast.success('Immagine caricata');
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Errore upload immagine');
-    } finally {
-      setUploadingImage(false);
+      toast.error(getTrpcErrorMessage(err));
     }
   };
 
@@ -230,7 +273,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden p-0"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
-        {/* Header fisso */}
+        {/* Fixed header */}
         <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle className="text-base">
             <span className="font-mono">{row.articleCode}</span>
@@ -247,43 +290,60 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
           </p>
         </DialogHeader>
 
-        {/* Corpo scrollabile */}
+        <Form {...form}>
+          {/* flex, not the usual grid: this DialogContent overrides its own layout with
+              `flex flex-col overflow-hidden p-0`, and the form has to stay transparent to it. */}
+          <form onSubmit={form.handleSubmit(handleSave)} className="flex min-h-0 flex-1 flex-col">
+        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
-          {/* Footer info + note generali */}
+          {/* Footer info + general notes */}
           <div className="px-6 py-4 border-b grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Made In</Label>
-              <Input
-                value={madeIn}
-                onChange={e => setMadeIn(e.target.value)}
-                placeholder="es. Italy"
-                disabled={!canUpdate}
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Fornitore</Label>
-              <Input
-                value={supplierName}
-                onChange={e => setSupplierName(e.target.value)}
-                disabled={!canUpdate}
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Note specsheet</Label>
-              <Input
-                value={headerNotes}
-                onChange={e => setHeaderNotes(e.target.value)}
-                disabled={!canUpdate}
-                className="h-8 text-sm"
-              />
-            </div>
+            <FormField
+              control={form.control}
+              name="madeIn"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="text-xs">Made In</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="es. Italy"
+                      disabled={!canUpdate || isSaving}
+                      className="h-8 text-sm"
+                      {...field}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="supplierName"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="text-xs">Fornitore</FormLabel>
+                  <FormControl>
+                    <Input disabled={!canUpdate || isSaving} className="h-8 text-sm" {...field} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="text-xs">Note specsheet</FormLabel>
+                  <FormControl>
+                    <Input disabled={!canUpdate || isSaving} className="h-8 text-sm" {...field} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
           </div>
 
-          {/* Colonne: Galleria | BOM */}
+          {/* Columns: Gallery | BOM */}
           <div className="grid grid-cols-[280px_1fr] divide-x">
-            {/* Galleria immagini */}
+            {/* Image gallery */}
             <div className="p-4 space-y-3">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Immagini
@@ -301,6 +361,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                       <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {!img.isDefault && canUpdate && (
                           <button
+                            type="button"
                             title="Imposta come default"
                             onClick={() => setDefaultImageMutation.mutate({ id: img.id })}
                             className="bg-background/90 rounded p-1 hover:bg-background"
@@ -310,6 +371,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                         )}
                         {canUpdate && (
                           <button
+                            type="button"
                             title="Elimina immagine"
                             onClick={() => deleteImageMutation.mutate({ id: img.id })}
                             className="bg-background/90 rounded p-1 hover:bg-background text-destructive"
@@ -354,7 +416,7 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
               )}
             </div>
 
-            {/* BOM per sezione */}
+            {/* BOM by section */}
             <div className="p-4 space-y-2 overflow-y-auto">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 BOM
@@ -415,11 +477,17 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
                                       </td>
                                       <td className="px-1 py-0.5">
                                         <Input
-                                          className="h-6 text-xs px-1 min-w-[120px]" // 120px: readable minimum width for a free-text specsheet component name; no exact scale match
+                                          // 120px: readable minimum width for a free-text specsheet component name; no exact scale match
+                                          className={cn(
+                                            'h-6 text-xs px-1 min-w-[120px]',
+                                            !c.component.trim() && 'border-destructive'
+                                          )}
                                           value={c.component}
                                           onChange={e =>
                                             updateComponent(c.originalIndex, 'component', e.target.value)
                                           }
+                                          aria-invalid={!c.component.trim()}
+                                          title={!c.component.trim() ? 'Il nome del componente è obbligatorio' : undefined}
                                           disabled={!canUpdate}
                                         />
                                       </td>
@@ -493,17 +561,19 @@ export function SpecsheetModal({ open, onOpenChange, row, canUpdate, onSaved }: 
           </div>
         </div>
 
-        {/* Footer fisso */}
+        {/* Fixed footer */}
         <DialogFooter className="px-6 py-4 border-t shrink-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
             Annulla
           </Button>
           {canUpdate && (
-            <Button onClick={handleSave} disabled={isSaving}>
+            <Button type="submit" disabled={isSaving}>
               {isSaving ? 'Salvataggio…' : 'Salva'}
             </Button>
           )}
         </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

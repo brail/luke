@@ -1,10 +1,11 @@
 'use client';
 
 import { Calendar, CalendarClock, CalendarPlus, RefreshCw, Copy, Plus, List, GanttChart, CalendarRange, CalendarDays, Maximize2, Minimize2, ChevronDown, Check, MoreHorizontal, Snowflake } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
+
+import type { CalendarDate } from '@luke/core';
 
 import { ConfirmDialog } from '../../../components/ConfirmDialog';
 import { Badge } from '../../../components/ui/badge';
@@ -12,8 +13,9 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent } from '../../../components/ui/card';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../components/ui/tooltip';
 import { useAppContext } from '../../../contexts/AppContextProvider';
+import { useFormatDate } from '../../../hooks/useFormatDate';
 import { usePermission } from '../../../hooks/usePermission';
 import { trpc } from '../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../lib/trpcErrorMessages';
@@ -27,6 +29,7 @@ import { CalendarEventMonthView } from './_components/CalendarEventMonthView';
 import { CalendarEventNoteDialog } from './_components/CalendarEventNoteDialog';
 import { CalendarEventTimeline } from './_components/CalendarEventTimeline';
 import { CalendarEventWeekView } from './_components/CalendarEventWeekView';
+import { CalendarLinkOpener } from './_components/CalendarLinkOpener';
 import { CloneBrandSeasonDialog } from './_components/CloneBrandSeasonDialog';
 import { ExportButton } from './_components/ExportButton';
 import { FreezePlanningGroupWizard } from './_components/FreezePlanningGroupWizard';
@@ -35,25 +38,26 @@ import { ManagePlanningGroupsDialog } from './_components/ManagePlanningGroupsDi
 import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
-import { assignBrandColors, resolveBrandColor } from './utils';
+import { useCalendarViewNavigation } from './useCalendarViewNavigation';
+import { assignBrandColors, expectedDates, isStaleListError, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
-
-const VALID_VIEWS = ['list', 'gantt', 'week', 'day', 'month'] as const;
-type CalendarView = (typeof VALID_VIEWS)[number];
 
 export default function CalendarPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
   const { can } = usePermission();
-  const searchParams = useSearchParams();
-  const router = useRouter();
+  const { view, viewDate, setView, setViewDate, setViewAndDate, linkTarget, clearLinkTarget } = useCalendarViewNavigation();
+  // The calendar views read in the reader zone and wait for it; without a `?date=` they show today there.
+  const fmt = useFormatDate();
+  const { zone } = fmt;
+  const viewDay = viewDate ?? fmt.today;
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
   const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [noteEventId, setNoteEventId] = useState<string | null>(null);
-  const [createDate, setCreateDate] = useState<string | null>(null);
-  const [createDefaultAllDay, setCreateDefaultAllDay] = useState(true);
+  /** The new event being created: its first day and, from the day view, its start time; `null` when none is. */
+  const [createAt, setCreateAt] = useState<{ date?: CalendarDate; time?: string } | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
@@ -66,15 +70,6 @@ export default function CalendarPage() {
   // Which group the picker resolved to, and what to do with it — freeze steps through a wizard,
   // unfreeze just confirms, but there's only ever one active target regardless of which.
   const [activeGroupAction, setActiveGroupAction] = useState<{ type: 'freeze' | 'unfreeze' | 'amend'; groupId: string } | null>(null);
-  const [view, setViewState] = useState<CalendarView>(() => {
-    const v = searchParams.get('view');
-    return (VALID_VIEWS as readonly string[]).includes(v ?? '') ? (v as CalendarView) : 'month';
-  });
-  const [viewDate, setViewDateState] = useState<Date>(() => {
-    const d = searchParams.get('date');
-    const parsed = d ? new Date(d) : null;
-    return parsed && !isNaN(parsed.getTime()) ? parsed : new Date();
-  });
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -84,60 +79,57 @@ export default function CalendarPage() {
     return () => window.removeEventListener('keydown', handler);
   }, [isFullscreen]);
 
-  const setSearchParam = useCallback((key: string, value: string) => {
-    const p = new URLSearchParams(searchParams.toString());
-    p.set(key, value);
-    router.replace(`?${p.toString()}`, { scroll: false });
-  }, [router, searchParams]);
-
-  const setView = useCallback((v: CalendarView) => {
-    setViewState(v);
-    setSearchParam('view', v);
-  }, [setSearchParam]);
-
-  const setViewDate = useCallback((d: Date) => {
-    setViewDateState(d);
-    setSearchParam('date', d.toISOString().slice(0, 10));
-  }, [setSearchParam]);
-
   const contextBrandId = brand?.id ?? null;
   const enabled = !!contextBrandId && !!season?.id;
 
   useEffect(() => {
     if (contextBrandId && !selectedBrandIds.includes(contextBrandId)) {
-      setSelectedBrandIds(prev => [...prev, contextBrandId]);
+      // Deduplicated: a followed link may have selected it in the same commit (`CalendarLinkOpener`).
+      setSelectedBrandIds(prev => (prev.includes(contextBrandId) ? prev : [...prev, contextBrandId]));
     }
   }, [contextBrandId]); // intentional: only seed brand on context change
 
   const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled });
   const { data: functionsData } = trpc.company.function.list.useQuery(undefined, { enabled });
 
-  const availableFunctions = useMemo(
-    () => (functionsData ?? []).map(f => ({ id: f.id, name: f.name })),
+  // Unrestricted name lookup — an event's `visibilities` can name a function the current user
+  // doesn't belong to (e.g. shared with Sourcing+Prodotto, user is only in Prodotto), and that
+  // still needs a readable label, not a raw id.
+  const functionsById = useMemo(
+    () => Object.fromEntries((functionsData ?? []).map(f => [f.id, f.name])),
     [functionsData]
   );
-  const functionsById = useMemo(
-    () => Object.fromEntries(availableFunctions.map(f => [f.id, f.name])),
-    [availableFunctions]
-  );
-
-  useEffect(() => {
-    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
-      setSelectedFunctionIds(availableFunctions.map(f => f.id));
-    }
-  }, [availableFunctions]); // intentional: only initialize when empty
 
   const { data: calendar, isLoading: calendarLoading } = trpc.seasonCalendar.getOrCreate.useQuery(
     { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
     { enabled }
   );
 
-  const { data: rawMilestones, isLoading: milestonesLoading, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
+  const { data: rawMilestones, isLoading: milestonesLoading, isFetching: milestonesFetching, refetch } = trpc.seasonCalendar.listMilestones.useQuery(
     { seasonId: season?.id ?? '', brandIds: selectedBrandIds.length > 0 ? selectedBrandIds : [contextBrandId ?? ''] },
-    { enabled: enabled && selectedBrandIds.length > 0 }
+    // On again for this query (off app-wide in `lib/trpc.tsx`): each event's `dateLocked` is a
+    // server snapshot, and a deadline reached while the tab was in the background must lock the drag.
+    { enabled: enabled && selectedBrandIds.length > 0, refetchOnWindowFocus: true }
   );
   // TS2589: RouterOutputs type is excessively deep — as unknown breaks instantiation before re-narrowing
   const milestones = rawMilestones as unknown as CalendarEventItem[] | undefined;
+
+  // Filter chips are scoped to functions actually present on the (already access-controlled)
+  // events, not every function in the company — a chip for a function with zero visible events
+  // here would just be dead UI. `listMilestones` already restricts the underlying data
+  // (`eventVisibilityWhere`); this only shapes which chips are worth showing.
+  const availableFunctions = useMemo(() => {
+    const presentIds = new Set((milestones ?? []).flatMap(m => m.visibilities.map(v => v.functionId)));
+    return (functionsData ?? [])
+      .filter(f => presentIds.has(f.id))
+      .map(f => ({ id: f.id, name: f.name }));
+  }, [functionsData, milestones]);
+
+  useEffect(() => {
+    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
+      setSelectedFunctionIds(availableFunctions.map(f => f.id));
+    }
+  }, [availableFunctions]); // intentional: only initialize when empty
 
   const { data: syncStatus } = trpc.seasonCalendar.getSyncStatus.useQuery(
     { calendarId: calendar?.id ?? '' },
@@ -174,16 +166,27 @@ export default function CalendarPage() {
 
   const updateEventMutation = trpc.seasonCalendar.updateMilestone.useMutation({
     onSuccess: () => refetchAfterEventChange(),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // A drag the list was out of date for: refresh, so it shows what the server holds.
+      if (isStaleListError(err)) refetchAfterEventChange();
+    },
   });
 
-  const handleEventUpdate = (id: string, data: { startAt: string; endAt?: string | null }) => {
-    updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined } });
+  const handleEventUpdate = (id: string, data: { startAt?: string; endAt?: string | null }) => {
+    // The move was computed from this list: it names the dates it saw.
+    const seen = milestones?.find(m => m.id === id);
+    if (!seen) return;
+    updateEventMutation.mutate({ id, data: { ...data, endAt: data.endAt ?? undefined }, expected: expectedDates(seen) });
   };
 
   const deleteEventsMutation = trpc.seasonCalendar.deleteMilestones.useMutation({
     onSuccess: () => refetchAfterEventChange(),
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      // Refused because the list is stale (an event cancelled or frozen meanwhile): show the current one.
+      if (isStaleListError(err)) refetchAfterEventChange();
+    },
   });
 
   const unfreezeMutation = trpc.seasonCalendar.unfreezePlanningGroup.useMutation({
@@ -208,8 +211,7 @@ export default function CalendarPage() {
   // ─── Planning vs maintenance state ───────────────────────────────────────
   // Derived from PlanningGroup.frozenAt (no new endpoint — planningGroup.list already returns it
   // for the group-management dialog). "Planning" means at least one group has events not yet
-  // frozen; "maintenance" means every group with events is frozen. See
-  // docs/TASK_calendar_ux_deferred_items.md §6 for the design rationale.
+  // frozen; "maintenance" means every group with events is frozen.
   const { data: planningGroups } = trpc.planningGroup.list.useQuery(
     { brandId: contextBrandId ?? '', seasonId: season?.id ?? '' },
     { enabled }
@@ -226,19 +228,13 @@ export default function CalendarPage() {
     .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
   const showFreezeInBar = canFreeze && seasonState === 'planning';
 
-  const handleDayClick = useCallback((isoDate: string) => { setCreateDefaultAllDay(true); setCreateDate(isoDate); }, []);
-  const handleDayClickTimed = useCallback((isoDate: string) => { setCreateDefaultAllDay(false); setCreateDate(isoDate); }, []);
-  const onDayClickProp = canUpdate ? handleDayClick : undefined;
+  const handleDayClickTimed = useCallback((date: CalendarDate, time: string) => setCreateAt({ date, time }), []);
   const onDayClickTimedProp = canUpdate ? handleDayClickTimed : undefined;
 
-  const handleDayNumberClick = useCallback((isoDate: string) => {
-    setViewDate(new Date(isoDate));
-    setView('day');
-  }, []);
-  const handleWeekNumberClick = useCallback((isoDate: string) => {
-    setViewDate(new Date(isoDate));
-    setView('week');
-  }, []);
+  const handleCellClick = useCallback((date: CalendarDate) => setCreateAt({ date }), []);
+  const onCellClickProp = canUpdate ? handleCellClick : undefined;
+  const handleDayNumberClick = useCallback((date: CalendarDate) => setViewAndDate('day', date), [setViewAndDate]);
+  const handleWeekNumberClick = useCallback((monday: CalendarDate) => setViewAndDate('week', monday), [setViewAndDate]);
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
@@ -257,9 +253,10 @@ export default function CalendarPage() {
   const holidayCountryCodes = useMemo(() => holidayCountries.map(c => c.code), [holidayCountries]);
   const holidayDates = useHolidays(holidayCountryCodes);
 
+  // From every event, not only those the function chips show: a notification link may open a hidden one.
   const activeEvent = useMemo(
-    () => filteredMilestones.find(m => m.id === activeEventId) ?? null,
-    [filteredMilestones, activeEventId]
+    () => milestones?.find(m => m.id === activeEventId) ?? null,
+    [milestones, activeEventId]
   );
 
   const noteEvent = useMemo(
@@ -269,9 +266,13 @@ export default function CalendarPage() {
 
   const canEditActiveEvent = canUpdate && (!activeEvent?.brandId || activeEvent.brandId === contextBrandId);
 
-  const allBrands = brandsData?.items ?? [];
+  const allBrands = useMemo(() => brandsData?.items ?? [], [brandsData]);
   const multiBrandAvailable = allBrands.length > 1;
   const brandColorMap = useMemo(() => assignBrandColors(allBrands), [allBrands]);
+
+  const selectBrand = useCallback((brandId: string) => {
+    setSelectedBrandIds(prev => (prev.includes(brandId) ? prev : [...prev, brandId]));
+  }, []);
 
   const toggleBrand = (brandId: string) => {
     setSelectedBrandIds(prev => prev.includes(brandId) ? prev.filter(id => id !== brandId) : [...prev, brandId]);
@@ -293,7 +294,7 @@ export default function CalendarPage() {
   const actionBar = (
     <div className="flex gap-2 items-center">
       {canUpdate && (
-        <Button size="sm" onClick={() => setCreateDate('')} disabled={!calendar}>
+        <Button size="sm" onClick={() => setCreateAt({})} disabled={!calendar}>
           <Plus size={14} className="mr-1" />Nuovo evento
         </Button>
       )}
@@ -309,7 +310,7 @@ export default function CalendarPage() {
         <Button variant={view === 'day' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('day')} title="Giorno"><CalendarClock size={14} /></Button>
         <Button variant={view === 'list' ? 'default' : 'ghost'} size="sm" className="rounded-none border-0" onClick={() => setView('list')} title="Lista"><List size={14} /></Button>
       </div>
-      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDate} disabled={!season?.id} />
+      <ExportButton seasonId={season?.id ?? ''} brandIds={selectedBrandIds} view={view} viewDate={viewDay} disabled={!season?.id} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" title="Altre azioni"><MoreHorizontal size={14} /></Button>
@@ -453,7 +454,7 @@ export default function CalendarPage() {
         <span className="text-xs text-muted-foreground ml-auto">
           {syncStatus.totalSynced} sincronizzati
           {syncStatus.lastSyncedAt && (
-            <> · {new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</>
+            <> · {fmt.dateTime(syncStatus.lastSyncedAt)}</>
           )}
         </span>
       )}
@@ -465,17 +466,18 @@ export default function CalendarPage() {
       {filterStrip}
       <Card>
         <CardContent className="p-0">
-          {calendarLoading || milestonesLoading ? (
+          {calendarLoading || milestonesLoading || !zone || !viewDay ? (
             <div className="py-12 text-center text-muted-foreground">Caricamento…</div>
           ) : view === 'week' ? (
             <CalendarEventWeekView
               milestones={filteredMilestones}
-              viewDate={viewDate}
+              viewDate={viewDay}
+              zone={zone}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               onDayNumberClick={handleDayNumberClick}
               activeBrandId={contextBrandId ?? undefined}
               canUpdate={canUpdate}
@@ -486,12 +488,13 @@ export default function CalendarPage() {
           ) : view === 'month' ? (
             <CalendarEventMonthView
               milestones={filteredMilestones}
-              viewDate={viewDate}
+              viewDate={viewDay}
+              zone={zone}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               onDayNumberClick={handleDayNumberClick}
               onWeekNumberClick={handleWeekNumberClick}
               activeBrandId={contextBrandId ?? undefined}
@@ -503,7 +506,8 @@ export default function CalendarPage() {
           ) : view === 'day' ? (
             <CalendarEventDayView
               milestones={filteredMilestones}
-              viewDate={viewDate}
+              viewDate={viewDay}
+              zone={zone}
               onViewDateChange={setViewDate}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
@@ -519,7 +523,7 @@ export default function CalendarPage() {
               <Calendar size={32} className="mx-auto mb-2 opacity-40" />
               <p>Nessun evento per i filtri selezionati</p>
               {canUpdate && calendar && (
-                <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateDate('')}>
+                <Button variant="outline" size="sm" className="mt-3" onClick={() => setCreateAt({})}>
                   <Plus size={14} className="mr-1" />Crea il primo evento
                 </Button>
               )}
@@ -527,10 +531,11 @@ export default function CalendarPage() {
           ) : view === 'gantt' ? (
             <CalendarEventGantt
               milestones={filteredMilestones}
+              zone={zone}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
               onEventUpdate={handleEventUpdate}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               activeBrandId={contextBrandId ?? undefined}
               functionsById={functionsById}
               canUpdate={canUpdate}
@@ -541,9 +546,10 @@ export default function CalendarPage() {
           ) : (
             <CalendarEventTimeline
               milestones={filteredMilestones}
+              zone={zone}
               onEventClick={id => setActiveEventId(id)}
               onNoteClick={id => setNoteEventId(id)}
-              onDayClick={onDayClickProp}
+              onDayClick={onCellClickProp}
               onBulkDelete={ids => deleteEventsMutation.mutate({ ids })}
               activeBrandId={contextBrandId ?? undefined}
               functionsById={functionsById}
@@ -568,22 +574,20 @@ export default function CalendarPage() {
     },
     maintenance: {
       label: 'Congelata — manutenzione',
-      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${new Date(mostRecentFreeze).toLocaleDateString('it-IT')}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
+      tooltip: `Tutti i gruppi con eventi sono congelati${mostRecentFreeze ? ` — ultimo congelamento il ${fmt.date(mostRecentFreeze)}` : ''}. Modifiche ora sono manutenzione, non pianificazione iniziale.`,
     },
   };
   const seasonStateBadge = season && (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
-            {seasonStateCopy[seasonState].label}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-xs">
-          {seasonStateCopy[seasonState].tooltip}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant={seasonState === 'maintenance' ? 'secondary' : 'outline'} className="cursor-help">
+          {seasonStateCopy[seasonState].label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {seasonStateCopy[seasonState].tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 
   return (
@@ -601,6 +605,21 @@ export default function CalendarPage() {
           <Button variant="outline" size="sm" onClick={() => setIsFullscreen(true)} title="Espandi"><Maximize2 size={14} /></Button>
         </div>
       </div>
+
+      {enabled && (
+        <CalendarLinkOpener
+          target={linkTarget}
+          brandId={contextBrandId}
+          seasonId={season.id}
+          selectedBrandIds={selectedBrandIds}
+          events={milestones}
+          isFetching={milestonesFetching}
+          refetch={refetch}
+          onSelectBrand={selectBrand}
+          onOpenEvent={setActiveEventId}
+          onDone={clearLinkTarget}
+        />
+      )}
 
       {!isFullscreen && calendarBody}
 
@@ -640,18 +659,18 @@ export default function CalendarPage() {
       )}
 
       {/* Create dialog */}
-      {calendar && createDate !== null && (
+      {calendar && createAt && (
         <CalendarEventDialog
           open
-          onClose={() => { setCreateDate(null); setCreateDefaultAllDay(true); }}
-          onSaved={() => { setCreateDate(null); setCreateDefaultAllDay(true); refetchAfterEventChange(); }}
+          onClose={() => setCreateAt(null)}
+          onSaved={() => { setCreateAt(null); refetchAfterEventChange(); }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}
           availableFunctions={availableFunctions}
           functionsById={functionsById}
           existingMilestones={milestones ?? []}
-          defaultDate={createDate || undefined}
-          defaultAllDay={createDefaultAllDay}
+          defaultDate={createAt.date}
+          defaultTime={createAt.time}
         />
       )}
 
@@ -691,9 +710,10 @@ export default function CalendarPage() {
       )}
 
       {/* Automatic wizard, triggered right after a template is applied to a planning group */}
-      {calendar && postApplyWizard && (
+      {calendar && postApplyWizard && zone && (
         <PlanningWizard
           open
+          zone={zone}
           onClose={() => setPostApplyWizard(null)}
           onFrozen={() => { setPostApplyWizard(null); refetchAfterEventChange(); }}
           calendarId={calendar.id}
@@ -727,9 +747,10 @@ export default function CalendarPage() {
           emptyMessage={pickerAction === 'freeze' ? 'Nessun gruppo con eventi da congelare' : 'Nessun gruppo congelato'}
         />
       )}
-      {activeGroupAction?.type === 'freeze' && (
+      {activeGroupAction?.type === 'freeze' && zone && (
         <FreezePlanningGroupWizard
           open
+          zone={zone}
           onClose={() => setActiveGroupAction(null)}
           onFrozen={() => { setActiveGroupAction(null); refetchAfterEventChange(); }}
           planningGroupId={activeGroupAction.groupId}
@@ -762,7 +783,6 @@ export default function CalendarPage() {
         description="Azzera la baseline congelata di tutti gli eventi del gruppo — lo scostamento piano/realtà misurato finora andrà perso. Operazione riservata agli amministratori, da usare solo per correggere un congelamento fatto per errore."
         confirmText="Forza scongelamento"
         cancelText="Annulla"
-        variant="destructive"
         actionType="warning"
         isLoading={unfreezeMutation.isPending}
         onConfirm={() => activeGroupAction && unfreezeMutation.mutate({ planningGroupId: activeGroupAction.groupId })}

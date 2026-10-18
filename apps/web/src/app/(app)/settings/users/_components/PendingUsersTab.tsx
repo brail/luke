@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
+import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { useRefresh } from '../../../../../lib/refresh';
 import { trpc } from '../../../../../lib/trpc';
@@ -28,6 +29,7 @@ import { ApproveUserDialog } from './ApproveUserDialog';
  */
 export function PendingUsersTab() {
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const refresh = useRefresh();
 
   const canUpdate = can('users:update');
@@ -128,9 +130,7 @@ export function PendingUsersTab() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {user.createdAt
-                    ? new Date(user.createdAt).toLocaleDateString('it-IT')
-                    : 'N/A'}
+                  {fmt.date(user.createdAt)}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
@@ -197,7 +197,6 @@ export function PendingUsersTab() {
           description={`Vuoi rifiutare la richiesta di "${rejectTarget.username}"? L'account verrà eliminato definitivamente.`}
           confirmText="Rifiuta"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => reject({ id: rejectTarget.id })}
           isLoading={isRejecting}

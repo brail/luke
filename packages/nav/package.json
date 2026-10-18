@@ -1,28 +1,27 @@
 {
   "name": "@luke/nav",
-  "version": "2.1.6",
+  "private": true,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "type": "commonjs",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.js"
+      "default": "./dist/index.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "lint": "eslint src/",
+    "build": "rm -rf dist && tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@luke/core": "workspace:*",
-    "@prisma/client": "^7.8.0",
-    "mssql": "^12.6.0",
+    "@luke/db": "workspace:*",
+    "mssql": "^12.7.0",
     "pino": "^10.3.1"
   },
   "devDependencies": {

@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
 import { mailSmtpConfigSchema, type MailSmtpConfigInput } from '@luke/core';
 
@@ -32,12 +33,11 @@ import {
   SelectValue,
 } from '../../../../components/ui/select';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function MailPage() {
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
   const [hasPassword, setHasPassword] = useState(false);
@@ -47,7 +47,7 @@ export default function MailPage() {
   const [testMessage, setTestMessage] = useState<string>('');
   const [testEmail, setTestEmail] = useState('');
 
-  // Form con react-hook-form e validazione Zod
+  // Form with react-hook-form and Zod validation
   const form = useForm<MailSmtpConfigInput>({
     resolver: zodResolver(mailSmtpConfigSchema),
     defaultValues: {
@@ -61,10 +61,16 @@ export default function MailPage() {
     },
   });
 
-  // Carica configurazione esistente
-  const { data: existingConfigs, isLoading } = trpc.config.list.useQuery({
+  // Load the existing configuration
+  // The SMTP keys by prefix (the first page of all configs would miss them once there are more than
+  // 100 rows), plus the base URL the mail links use.
+  const { data: existingConfigs, isPending: smtpPending, error: smtpError, refetch: refetchSmtp } = trpc.config.list.useQuery({
+    category: 'smtp',
     page: 1,
     pageSize: 100,
+  });
+  const { data: baseUrlConfig, isPending: baseUrlPending, error: baseUrlError, refetch: refetchBaseUrl } = trpc.config.getMultiple.useQuery({
+    keys: ['app.baseUrl'],
   });
 
   useEffect(() => {
@@ -76,7 +82,6 @@ export default function MailPage() {
       const smtpUser = configs.find(c => c.key === 'smtp.user');
       const smtpPass = configs.find(c => c.key === 'smtp.pass');
       const smtpFrom = configs.find(c => c.key === 'smtp.from');
-      const appBaseUrl = configs.find(c => c.key === 'app.baseUrl');
 
       form.reset({
         host: smtpHost?.valuePreview || '',
@@ -85,16 +90,20 @@ export default function MailPage() {
         user: smtpUser?.valuePreview || '',
         pass: '',
         from: smtpFrom?.valuePreview || '',
-        baseUrl: appBaseUrl?.valuePreview || '',
+        // A base URL not stored, or not read, keeps the deployment's own address.
+        baseUrl: baseUrlConfig?.[0]?.value || process.env.NEXT_PUBLIC_FRONTEND_URL || '',
       });
 
-      // Indica se la password è già configurata
+      // Whether the password is already configured
       setHasPassword(!!smtpPass);
     }
-  }, [existingConfigs, form]);
+  }, [existingConfigs, baseUrlConfig, form]);
 
+  const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
     onSuccess: () => {
+      // The cached rows predate the save: coming back to the page must not refill the old values.
+      void utils.config.invalidate();
       toast.success('Configurazione SMTP salvata con successo');
       setHasPassword(true);
       setTestStatus('idle');
@@ -129,7 +138,7 @@ export default function MailPage() {
   });
 
   const onSubmit = (data: MailSmtpConfigInput) => {
-    // Se la password è vuota e già configurata, omettila dal payload
+    // If the password is empty and already configured, leave it out of the payload
     const { pass, ...payloadWithoutPassword } = data;
     const payload = !pass || pass.trim() === '' ? payloadWithoutPassword : data;
 
@@ -150,7 +159,15 @@ export default function MailPage() {
     <SettingsFormShell
       title="Configurazione Mail"
       description="Gestisci l'integrazione SMTP per l'invio delle email transazionali (reset password, verifica email)"
-      isLoading={isLoading}
+      isPending={smtpPending || baseUrlPending}
+      // Both: the form saves `app.baseUrl` too, and a fallback written over an unread value would
+      // replace the address of every password-reset and verification link.
+      error={smtpError ?? baseUrlError}
+      hasData={!!existingConfigs && !!baseUrlConfig}
+      onRetry={() => {
+        void refetchSmtp();
+        void refetchBaseUrl();
+      }}
     >
       <SectionCard
         title="Parametri SMTP"
@@ -179,7 +196,6 @@ export default function MailPage() {
                 )}
               />
 
-              {/* Porta SMTP */}
               <FormField
                 control={form.control}
                 name="port"
@@ -193,9 +209,7 @@ export default function MailPage() {
                         type="number"
                         placeholder="587"
                         {...field}
-                        onChange={e =>
-                          field.onChange(parseInt(e.target.value) || 587)
-                        }
+                        {...numberInputProps(field.value, field.onChange)}
                       />
                     </FormControl>
                     <FormDescription>
@@ -206,7 +220,6 @@ export default function MailPage() {
                 )}
               />
 
-              {/* Tipo connessione */}
               <FormField
                 control={form.control}
                 name="secure"
@@ -344,7 +357,7 @@ export default function MailPage() {
               )}
             />
 
-            {/* Note per provider comuni */}
+            {/* Notes for common providers */}
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-300">
               <h4 className="mb-2 font-semibold">
                 ℹ️ Configurazione provider comuni
@@ -371,7 +384,7 @@ export default function MailPage() {
               </ul>
             </div>
 
-            {/* Pulsanti Azione */}
+            {/* Action buttons */}
             <div className="flex justify-end space-x-4">
               <Button
                 type="button"
@@ -442,7 +455,7 @@ export default function MailPage() {
             )
           </p>
 
-          {/* Risultato Test */}
+          {/* Test result */}
           <TestStatusBanner status={testStatus} message={testMessage} />
         </div>
       </SectionCard>

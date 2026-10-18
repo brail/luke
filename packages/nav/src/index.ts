@@ -7,7 +7,7 @@ export type { NavConnectionStep } from './client.js';
 export { runNavSync } from './sync/index.js';
 export type { NavSyncReport } from './sync/index.js';
 
-export { createSyncRequest } from './sync/utils.js';
+export { createSyncRequest, navDateOrNull } from './sync/utils.js';
 
 export { syncVendors } from './sync/vendors.js';
 export { syncBrands } from './sync/brands.js';

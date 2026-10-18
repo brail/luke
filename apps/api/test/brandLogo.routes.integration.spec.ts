@@ -1,7 +1,26 @@
 /**
  * Integration tests for Brand Logo Upload Endpoints
  * Verifies Fastify multipart endpoint with supertest
+ *
+ * **Known load-sensitive failures.** A successful upload leaves work in flight: `ingestImageAsset`
+ * calls `enqueueDerivatives` without awaiting it, and that defers through `setImmediate` before
+ * queueing on a `pLimit`. So `processMaster` can start after the test has finished and after
+ * `afterEach` has reset the memoized storage provider and removed `basePath` — at which point it
+ * calls `getStorageProvider()` again and re-initialises against whatever the config now points at,
+ * creating the bucket directories inside the *next* test's `basePath`.
+ *
+ * That is why `rm` here carries retries, and it is how the "service layer errors" test below fails
+ * intermittently: it needs to write a plain file where `brand-logos` goes, and if a leftover
+ * `init()` has already created that directory, `writeFile` throws `EISDIR` before the assertion is
+ * ever reached — a red that has nothing to do with what the test checks.
+ *
+ * Not fixed by draining the queue in `afterEach`: that would only make the test blind to unowned
+ * work still running, which is the actual defect and lives at the call site, not here.
  */
+
+import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 import multipart from '@fastify/multipart';
 import { FastifyInstance } from 'fastify';
@@ -10,20 +29,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
+import { resetStorageProvider } from '../src/storage';
 
-import { createValidPngBuffer } from './helpers/storageTestHelper';
+import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
-// Mock of the storage module
-vi.mock('../src/storage', () => ({
-  putObject: vi.fn(),
-  // `deleteObjectByKey`, not `deleteObject`: that is what
-  // `brandLogo.service.ts` imports. With the wrong name the factory did not define it, and
-  // from the second upload onward the previous-logo cleanup branch threw
-  // inside the `setImmediate` -- where the service's `catch` swallowed it.
-  deleteObjectByKey: vi.fn(),
-  getStorageProvider: vi.fn(),
-}));
+// Storage is NOT mocked here (see `seedLocalStorageConfig`, in `./helpers/storageTestHelper`): `appRouter` is
+// imported eagerly by `test/setup.procedureUsage.ts` (a `setupFiles` entry, for the
+// procedure-coverage gate) before this file's own `vi.mock` hoisting can run, and
+// `appRouter` now reaches `services/asset.service.ts` — which imports `../storage` —
+// through `collectionLayout.ts`'s `resolveVariantUrls`. A module already evaluated
+// by an earlier file can't be retroactively mocked, so `putObject` et al. would
+// silently run for real regardless of a `vi.mock('../src/storage', ...)` here. Real
+// local storage pointed at a throwaway temp directory is what these tests actually
+// exercise now — see `seedLocalStorageConfig`.
 
 // `brandLogo.service` must NOT be mocked: it contains exactly the validations these
 // tests verify (file type, magic bytes, brand existence -> 404). Mocking it
@@ -62,6 +81,7 @@ describe('Brand Logo Upload Integration', () => {
   let testContext: any;
   let testBrand: any;
   let authToken: string;
+  let basePath: string;
 
   beforeEach(async () => {
     // The brand code is fixed: without truncating the data, a `TEST_BRAND` left
@@ -82,27 +102,8 @@ describe('Brand Logo Upload Integration', () => {
     // Mock JWT token for authentication
     authToken = 'mock-jwt-token';
 
-    // Mock the storage functions
-    const { putObject, deleteObjectByKey, getStorageProvider } = await import(
-      '../src/storage'
-    );
-    // Partial stubs: they only cover the surface used by the service, so the casts
-    // acknowledge that these are not complete implementations of StoredObjectMeta /
-    // IStorageProvider.
-    vi.mocked(putObject).mockResolvedValue({
-      id: 'mock-file-id',
-      key: 'mock-key',
-      bucket: 'brand-logos',
-      contentType: 'image/png',
-      size: 1000,
-      createdAt: new Date(),
-    } as unknown as Awaited<ReturnType<typeof putObject>>);
-
-    vi.mocked(deleteObjectByKey).mockResolvedValue(undefined);
-    vi.mocked(getStorageProvider).mockResolvedValue({
-      get: vi.fn(),
-      delete: vi.fn(),
-    } as unknown as Awaited<ReturnType<typeof getStorageProvider>>);
+    basePath = await mkdtemp(join(tmpdir(), 'luke-brandlogo-routes-'));
+    await seedLocalStorageConfig(testContext.prisma, basePath, { maxFileSizeMB: 2 });
 
     // Create Fastify app for testing
     const fastify = (await import('fastify')).default;
@@ -134,10 +135,13 @@ describe('Brand Logo Upload Integration', () => {
   });
 
   afterEach(async () => {
-    // Only what the truncation does not cover: the Fastify server and the mocks. The data
-    // is reset by `createContextForRole` in the `beforeEach` of the next test.
+    // Only what the truncation does not cover: the Fastify server, the storage
+    // provider singleton, and the temp directory. The data is reset by
+    // `createContextForRole` in the `beforeEach` of the next test.
     await app.close();
     vi.clearAllMocks();
+    resetStorageProvider();
+    await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   describe('POST /upload/brand-logo/:brandId', () => {
@@ -204,7 +208,7 @@ describe('Brand Logo Upload Integration', () => {
         .expect(404);
     });
 
-    it('con più file allegati usa il primo e ignora gli altri', async () => {
+    it('with several files attached it uses the first and ignores the rest', async () => {
       const pngBuffer = createValidPngBuffer();
 
       // `req.file()` reads the first file part and stops: subsequent ones are
@@ -221,14 +225,14 @@ describe('Brand Logo Upload Integration', () => {
       expect(response.body).toHaveProperty('publicUrl');
     });
 
-    it('rifiuta un file il cui contenuto non corrisponde al tipo dichiarato', async () => {
+    it('rejects a file whose content does not match the declared type', async () => {
       // The previous version attached a stream that emitted `error`: the
       // client aborted the request before receiving a response and supertest
       // failed with ECONNRESET -- it was measuring the harness, not the server.
       //
       // The verifiable contract is magic-byte validation: bytes that are not
       // a PNG, declared as PNG, must be rejected with 400.
-      const notAnImage = Buffer.from('questo non è un PNG');
+      const notAnImage = Buffer.from('this is not a PNG');
 
       await request(app.server)
         .post(`/upload/brand-logo/${testBrand.id}`)
@@ -267,7 +271,7 @@ describe('Brand Logo Upload Integration', () => {
         .expect(401);
     });
 
-    it('accetta l\'upload senza tempId: il campo non fa più parte del contratto', async () => {
+    it('accepts the upload without tempId: the field is no longer part of the contract', async () => {
       const pngBuffer = createValidPngBuffer();
 
       // The file id is assigned by the server (`fileObjectId`), not the client: a
@@ -327,7 +331,7 @@ describe('Brand Logo Upload Integration', () => {
         remoteAddress: ip,
       });
 
-    it('espone il budget residuo già alla prima richiesta', async () => {
+    it('exposes the remaining budget from the first request', async () => {
       const res = await consumeQuota();
 
       // 30, not the 100 used in development: `test/setup.ts` sets NODE_ENV=test, so
@@ -337,7 +341,7 @@ describe('Brand Logo Upload Integration', () => {
       expect(res.statusCode).toBe(400);
     });
 
-    it('la richiesta oltre il budget è 429', async () => {
+    it('the request over budget gets 429', async () => {
       const first = await consumeQuota();
       const limit = Number(first.headers['x-ratelimit-limit']);
 
@@ -353,7 +357,7 @@ describe('Brand Logo Upload Integration', () => {
       expect(rejected.headers['x-ratelimit-remaining']).toBe('0');
     });
 
-    it('il budget cade sull’IP quando il bearer non è un JWT valido, e le due rotte lo condividono', async () => {
+    it('the budget falls back to the IP when the bearer is not a valid JWT, and the two routes share it', async () => {
       // `authToken` is the string 'mock-jwt-token', not a JWT: `keyGenerator`
       // fails to verify it and falls back to `req.ip`. With a real bearer the
       // key would be the user id -- this test pins down the fallback, not the
@@ -379,10 +383,13 @@ describe('Brand Logo Upload Integration', () => {
 
   describe('Error handling', () => {
     it('should handle service layer errors gracefully', async () => {
-      // The service is no longer mocked (it contains the validations under test): the
-      // failure is injected into the storage, which is the layer that is actually replaceable.
-      const { putObject } = await import('../src/storage');
-      vi.mocked(putObject).mockRejectedValueOnce(new Error('Storage non raggiungibile'));
+      // The service is not mocked (it contains the validations under test), and
+      // storage itself can no longer be module-mocked here (see the note at the top
+      // of this file). The failure is injected for real instead: a plain *file*
+      // sits where the provider needs to create the `brand-logos` *directory*, so
+      // `LocalFsProvider.init()`'s `mkdir` genuinely fails on the next storage call.
+      await writeFile(join(basePath, 'brand-logos'), 'not a directory');
+      resetStorageProvider();
 
       const pngBuffer = createValidPngBuffer();
 

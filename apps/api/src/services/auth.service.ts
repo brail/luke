@@ -2,27 +2,30 @@
  * Authentication service — handles login, password reset, email verification, and logout.
  */
 
-import { randomBytes, createHash } from 'crypto';
+import { createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
-import argon2 from 'argon2';
 
+import { hasPermission } from '@luke/core';
+import type { PrismaClient, User } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig, getPasswordPolicy } from '../lib/configManager';
-import { authenticateViaLdap } from '../lib/ldapAuth';
-import {
-  sendPasswordResetEmail,
-  sendEmailVerificationEmail,
-} from '../lib/mailer';
-import { assertNotBlockedByMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
-import { validatePassword } from '../lib/password';
+import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { createResetToken, isSyntheticLdapEmail } from '../lib/emailHelpers';
+import { toErrorCode, toErrorMessage } from '../lib/error';
+import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
+import { sendPasswordResetEmail } from '../lib/mailer';
+import { assertNotBlockedByMaintenance, bypassesMaintenance, isMaintenanceActive } from '../lib/maintenanceMode';
+import { notifyAdmins } from '../lib/notifications';
+import { dummyPasswordHash, hashPassword, verifyPassword } from '../lib/password';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
+
+import { checkPasswordAgainstPolicy } from './passwordPolicy.service';
 
 import type { Context } from '../lib/trpc';
-import type { PrismaClient, User } from '@prisma/client';
 
 /**
  * Authenticates a user against local credentials (argon2 password hash).
@@ -53,17 +56,18 @@ export async function authenticateLocal(
     },
   });
 
-  if (!user || !user.identities[0]?.localCredential) {
-    return null;
-  }
-
-  // Verify the password
-  const isValidPassword = await argon2.verify(
-    user.identities[0].localCredential.passwordHash,
-    password
+  // Verified even with no credential to check: an unknown, inactive or password-less account then
+  // costs the same argon2 run as a real one (`dummyPasswordHash`), which never matches.
+  // Via `verifyPassword` rather than argon2 directly: it treats a malformed stored hash as a failed
+  // verification instead of throwing, so a corrupted credential row answers "wrong password"
+  // instead of turning a login attempt into a 500.
+  const credential = user?.identities[0]?.localCredential;
+  const isValidPassword = await verifyPassword(
+    password,
+    credential?.passwordHash ?? (await dummyPasswordHash())
   );
 
-  if (!isValidPassword) {
+  if (!user || !credential || !isValidPassword) {
     return null;
   }
 
@@ -71,16 +75,57 @@ export async function authenticateLocal(
 }
 
 /**
- * Authenticates a user using the configured auth strategy (local-first, ldap-first,
- * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ * How many administrators could take the break-glass path of `ldap-only` right now, as far as the
+ * database shows: active, approved, holding a LOCAL credential under their current username, with a
+ * verified email when verification is required — what `authenticateUser` asks of them.
  *
- * @returns User profile, signed JWT token, and the auth method used.
- * @throws {TRPCError} UNAUTHORIZED if credentials are invalid, FORBIDDEN if account is pending or email unverified.
+ * A check at a moment, not a guarantee: a later deactivation, demotion, credential change or
+ * verification policy change can undo it. And a credential row is not proof that anyone knows the
+ * password: forcing local access (`users.forceLocalAccess`) stores a random one until the
+ * reset link is used.
  */
-export async function authenticateUser(
+export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<number> {
+  const requireEmailVerification =
+    (await getConfig(prisma, 'auth.requireEmailVerification', false)) === 'true';
+
+  const localIdentity = { provider: 'LOCAL' as const, localCredential: { isNot: null } };
+  const admins = await prisma.user.findMany({
+    where: {
+      // The one role holding `*:*`, which is what the break-glass path checks.
+      role: 'admin',
+      isActive: true,
+      pendingApproval: false,
+      emailVerifiedAt: requireEmailVerification ? { not: null } : undefined,
+      identities: { some: localIdentity },
+    },
+    select: { username: true, identities: { where: localIdentity, select: { providerId: true } } },
+  });
+  // `authenticateLocal` finds the identity by the current username, a comparison between two
+  // columns that a Prisma filter cannot express. An identity left under an old username does not
+  // log anyone in, so it does not count.
+  return admins.filter(admin => admin.identities.some(identity => identity.providerId === admin.username)).length;
+}
+
+/**
+ * Verifies a username and password with the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only), as a login does, and nothing more: no pending-approval,
+ * email-verification or maintenance check, no token. Every public endpoint that takes a user's
+ * password (`auth.login`, `auth.submitPendingEmail`, `auth.resendVerification`) goes through it, so
+ * they share the per-account `loginByUsername` bucket and none adds guesses.
+ *
+ * A failure writes the `AUTH_LOGIN_FAILED` audit row and throws the answer a login gets. A success
+ * has the strategy's own side effects before any eligibility check: an LDAP bind provisions the
+ * user at first login, or syncs their name (`authenticateViaLdap`).
+ *
+ * @returns The authenticated user, the method that authenticated them, and the strategy in force.
+ * @throws {TRPCError} TOO_MANY_REQUESTS if the account's bucket is full, UNAUTHORIZED if nobody was
+ *   authenticated, SERVICE_UNAVAILABLE if nobody was authenticated and LDAP could not complete the
+ *   login for a reason that has nothing to do with the username.
+ */
+export async function verifyCredentials(
   ctx: Context,
   input: { username: string; password: string }
-) {
+): Promise<{ user: User; authMethod: 'local' | 'ldap'; strategy: string }> {
   const { username, password } = input;
 
   // Bucket separate from the per-IP rate limit of `withRateLimit('login')` (router auth.ts):
@@ -111,31 +156,37 @@ export async function authenticateUser(
 
   ctx.logger.info({ strategy, username }, `Authentication strategy selected`);
 
-  let authenticatedUser = null;
-  let authMethod = '';
+  let authenticatedUser: User | null;
+  let authMethod: 'local' | 'ldap';
 
-  const handleLdapError = (ldapError: unknown) => {
-    if (ldapError instanceof TRPCError) {
-      if (
-        ldapError.code === 'SERVICE_UNAVAILABLE' ||
-        ldapError.code === 'BAD_GATEWAY'
-      ) {
-        ctx.logger.warn({ username, code: ldapError.code }, `LDAP unavailable`);
-        // LDAP down - return null (auth fail) unless fallback logic catches it
-        return null;
-      } else {
-        // Do NOT fall back for authorization errors
-        throw ldapError;
-      }
-    } else {
-      const errorMessage =
-        ldapError instanceof Error ? ldapError.message : 'Unknown LDAP error';
+  // Why the LDAP attempt, if one is made, did not authenticate. `couldNotComplete` is what decides
+  // the public answer: it is set only when `authenticateViaLdap` threw, which it does for a failure
+  // that has nothing to do with the username (incomplete configuration, the service-account bind,
+  // the circuit breaker) or once the directory has verified the password. A refusal it returns
+  // stays a generic one in public, and carries the reason for the audit row.
+  // Held in an object: `tryLdap` assigns it from inside a closure, which the compiler does not
+  // follow when it narrows a plain `let`.
+  const ldap: {
+    failure: { couldNotComplete: boolean; reason: LdapRefusal['reason']; errorCode?: string } | null;
+  } = { failure: null };
+  // Set when `ldap-only` meets a correct local password that is not an administrator's.
+  let localLoginRefused = false;
+
+  // Either way it counts as no LDAP login, so each strategy's local fallback applies: rethrowing
+  // used to lock every user out under ldap-first, local admin included.
+  const tryLdap = async (): Promise<User | null> => {
+    try {
+      const login = await authenticateViaLdap(ctx.prisma, username, password);
+      if (login.user) return login.user;
+      ldap.failure = { couldNotComplete: false, reason: login.reason, errorCode: login.errorCode };
+    } catch (e) {
       ctx.logger.warn(
-        { username, error: errorMessage },
-        `LDAP connection error`
+        { username, code: e instanceof TRPCError ? e.code : undefined, error: toErrorMessage(e) },
+        'LDAP authentication could not complete'
       );
-      return null;
+      ldap.failure = { couldNotComplete: true, reason: 'ldap_unavailable', errorCode: toErrorCode(e) };
     }
+    return null;
   };
 
   switch (strategy) {
@@ -149,18 +200,23 @@ export async function authenticateUser(
       break;
 
     case 'ldap-only':
-      try {
-        authenticatedUser = await authenticateViaLdap(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'ldap';
-      } catch (e) {
-        // Pass the error along for correct tRPC exception handling
-        handleLdapError(e);
-        // If handleLdapError doesn't throw, it means it's a connection/tech error
-        // and authenticatedUser stays null
+      authenticatedUser = await tryLdap();
+      authMethod = 'ldap';
+
+      // The break-glass path: once LDAP did not authenticate them, an administrator with a LOCAL
+      // credential can use it; nobody else can. Without it a directory that authenticates nobody
+      // locks every administrator out as well, and one that answers from the wrong subtree cannot
+      // be told from an unknown user — so there is no condition on why LDAP refused.
+      if (!authenticatedUser) {
+        const local = await authenticateLocal(ctx.prisma, username, password);
+        if (local && hasPermission({ role: local.role }, '*:*')) {
+          authenticatedUser = local;
+          authMethod = 'local';
+        } else if (local) {
+          // A correct password that grants nothing is refused here, as a wrong one is: the
+          // checks below would answer it with a 403 and so tell the two apart.
+          localLoginRefused = true;
+        }
       }
       break;
 
@@ -177,49 +233,16 @@ export async function authenticateUser(
           { username },
           `Local auth failed, trying LDAP fallback...`
         );
-        try {
-          authenticatedUser = await authenticateViaLdap(
-            ctx.prisma,
-            username,
-            password
-          );
-          authMethod = 'ldap';
-        } catch (e) {
-          handleLdapError(e);
-        }
+        authenticatedUser = await tryLdap();
+        authMethod = 'ldap';
       }
       break;
 
     case 'ldap-first':
-      try {
-        authenticatedUser = await authenticateViaLdap(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'ldap';
-      } catch (e) {
-        if (e instanceof TRPCError) {
-          if (e.code === 'SERVICE_UNAVAILABLE' || e.code === 'BAD_GATEWAY') {
-            ctx.logger.warn(
-              { code: e.code },
-              'LDAP unavailable, fallback to local'
-            );
-          } else {
-            throw e;
-          }
-        } else {
-          ctx.logger.warn({ error: e }, 'LDAP error, fallback to local');
-        }
-        authenticatedUser = await authenticateLocal(
-          ctx.prisma,
-          username,
-          password
-        );
-        authMethod = 'local';
-      }
+      authenticatedUser = await tryLdap();
+      authMethod = 'ldap';
 
-      if (!authenticatedUser && authMethod === 'ldap') {
+      if (!authenticatedUser) {
         ctx.logger.info(
           { username },
           'LDAP auth failed, trying local fallback...'
@@ -241,16 +264,27 @@ export async function authenticateUser(
   }
 
   if (!authenticatedUser) {
+    // The audit row says what happened; the answer says only what cannot tell one username from
+    // another. An outage met after the username was sent to the directory is recorded here as
+    // `ldap_unavailable` and answered like a wrong password.
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
       result: 'FAILURE',
       metadata: {
         username: input.username,
-        reason: 'invalid_credentials',
+        reason: localLoginRefused ? 'local_login_not_allowed' : (ldap.failure?.reason ?? 'invalid_credentials'),
         strategy,
+        errorCode: ldap.failure?.errorCode,
       },
     });
+
+    if (ldap.failure?.couldNotComplete) {
+      throw new TRPCError({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Servizio di autenticazione non disponibile',
+      });
+    }
 
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -258,9 +292,28 @@ export async function authenticateUser(
     });
   }
 
+  return { user: authenticatedUser, authMethod, strategy };
+}
+
+/**
+ * Authenticates a user using the configured auth strategy (local-first, ldap-first,
+ * local-only, or ldap-only). Writes an audit log entry on success or failure.
+ *
+ * @returns User profile, signed JWT token, and the auth method used.
+ * @throws {TRPCError} What `verifyCredentials` throws; FORBIDDEN if the account is pending or the
+ *   email unverified — only once the password is proven, so neither tells anything to a caller
+ *   without it.
+ */
+export async function authenticateUser(
+  ctx: Context,
+  input: { username: string; password: string }
+) {
+  const { username } = input;
+  const { user: authenticatedUser, authMethod, strategy } = await verifyCredentials(ctx, input);
+
   // Block login if the LDAP user is pending admin approval
   if (authenticatedUser.pendingApproval) {
-    const hasSyntheticEmail = authenticatedUser.email.endsWith('@ldap.local');
+    const hasSyntheticEmail = isSyntheticLdapEmail(authenticatedUser.email);
 
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
@@ -302,15 +355,12 @@ export async function authenticateUser(
       },
     });
 
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message:
-        'Email non verificata. Controlla la tua casella di posta per il link di verifica.',
-    });
+    // A marker the web turns into its own message, as `ACCOUNT_PENDING_APPROVAL` above.
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'EMAIL_NOT_VERIFIED' });
   }
 
-  // Block non-admin logins while maintenance mode is active
-  if (authenticatedUser.role !== 'admin' && await isMaintenanceActive(ctx.prisma)) {
+  // Block logins that cannot bypass maintenance while it is active
+  if (!bypassesMaintenance(authenticatedUser.role) && await isMaintenanceActive(ctx.prisma)) {
     await logAudit(ctx, {
       action: 'AUTH_LOGIN_FAILED',
       targetType: 'Auth',
@@ -358,6 +408,18 @@ export async function authenticateUser(
 
   ctx.logger.info({ username, authMethod }, `Authentication successful`);
 
+  // Every use of the break-glass path, once it has passed every check above. In-app, and muted for
+  // an administrator who turned the category off: the `AUTH_LOGIN` row is the record, this is the
+  // prompt to look at it. It must never cost the login.
+  if (strategy === 'ldap-only' && authMethod === 'local') {
+    await notifyAdmins(ctx.prisma, {
+      category: 'SYSTEM',
+      title: 'Accesso di emergenza con credenziale locale',
+      message: `${authenticatedUser.username} è entrato con la password locale mentre la strategia è ldap-only.`,
+      data: { type: 'ldap_only_local_login', userId: authenticatedUser.id },
+    }).catch(err => ctx.logger.error({ err, username }, 'Failed to notify admins of an emergency local login'));
+  }
+
   return {
     user: {
       id: authenticatedUser.id,
@@ -371,51 +433,6 @@ export async function authenticateUser(
     },
     token,
     authMethod,
-  };
-}
-
-/**
- * Invalidates all active sessions for the current user by incrementing tokenVersion.
- *
- * @throws {TRPCError} UNAUTHORIZED if the caller is not authenticated.
- */
-export async function logoutAllSessions(ctx: Context) {
-  if (!ctx.session?.user) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Non autenticato',
-    });
-  }
-
-  const userId = ctx.session.user.id;
-
-  // Increment tokenVersion
-  await ctx.prisma.user.update({
-    where: { id: userId },
-    data: { tokenVersion: { increment: 1 } },
-  });
-
-  // Invalidate cache (dynamic import to avoid cycles if needed, or direct if lib/trpc is safe)
-  // Here we assume lib/trpc is importable. If it creates a cycle, better to move the cache logic.
-  // For now we import dynamically, as the router used to do, for safety.
-  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
-  invalidateTokenVersionCache(userId);
-
-  await logAudit(ctx, {
-    action: 'AUTH_LOGOUT_ALL',
-    targetType: 'Auth',
-    targetId: userId,
-    result: 'SUCCESS',
-    metadata: {
-      success: true,
-      reason: 'user_initiated',
-    },
-  });
-
-  return {
-    success: true,
-    message:
-      'Tutte le sessioni sono state revocate. Effettua nuovamente il login.',
   };
 }
 
@@ -456,23 +473,10 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     };
   }
 
-  // Generate token
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-  const userToken = await ctx.prisma.userToken.create({
-    data: {
-      userId: user.id,
-      type: 'RESET',
-      tokenHash,
-      expiresAt,
-    },
-  });
+  const { token, userToken } = await createResetToken(ctx.prisma, user.id);
 
   const baseUrl =
-    (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    'http://localhost:3000';
+    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
 
   const genericResponse = {
     success: true,
@@ -488,7 +492,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       targetType: 'Auth',
       targetId: user.id,
       result: 'SUCCESS',
-      metadata: { expiresAt: expiresAt.toISOString() },
+      metadata: { expiresAt: userToken.expiresAt.toISOString() },
     });
 
     return genericResponse;
@@ -580,8 +584,7 @@ export async function confirmPasswordReset(
     });
   }
 
-  const passwordPolicy = await getPasswordPolicy(ctx.prisma);
-  const passwordValidation = validatePassword(newPassword, passwordPolicy);
+  const passwordValidation = await checkPasswordAgainstPolicy(ctx.prisma, newPassword);
 
   if (!passwordValidation.isValid) {
     await logAudit(ctx, {
@@ -600,12 +603,7 @@ export async function confirmPasswordReset(
     });
   }
 
-  const passwordHash = await argon2.hash(newPassword, {
-    type: argon2.argon2id,
-    timeCost: 3,
-    memoryCost: 65536,
-    parallelism: 1,
-  });
+  const passwordHash = await hashPassword(newPassword);
 
   await ctx.prisma.$transaction(async tx => {
     await tx.localCredential.update({
@@ -621,7 +619,6 @@ export async function confirmPasswordReset(
     });
   });
 
-  const { invalidateTokenVersionCache } = await import('../lib/trpc.js');
   invalidateTokenVersionCache(userToken.userId);
 
   await logAudit(ctx, {
@@ -639,111 +636,6 @@ export async function confirmPasswordReset(
     success: true,
     message: 'Password reimpostata con successo.',
   };
-}
-
-/**
- * Sends an email verification link. Returns a generic success response to prevent
- * enumeration. No-ops silently if the email is already verified.
- *
- * @param email - Email address to verify.
- * @throws {TRPCError} INTERNAL_SERVER_ERROR if the email cannot be sent.
- */
-export async function requestEmailVerification(ctx: Context, email: string) {
-  const normalizedEmail = email.toLowerCase();
-
-  const user = await ctx.prisma.user.findFirst({
-    where: {
-      email: normalizedEmail,
-      isActive: true,
-    },
-    include: {
-      identities: {
-        where: { provider: 'LOCAL' },
-      },
-    },
-  });
-
-  if (!user || user.identities.length === 0) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      result: 'FAILURE',
-      metadata: { reason: 'user_not_found' },
-    });
-    return {
-      success: true,
-      message: "Se l'email esiste nel sistema, riceverai un link di verifica.",
-    };
-  }
-
-  if (user.emailVerifiedAt) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'FAILURE',
-      metadata: { reason: 'already_verified' },
-    });
-    return {
-      success: true,
-      message: 'Email già verificata.',
-    };
-  }
-
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-  await ctx.prisma.userToken.create({
-    data: {
-      userId: user.id,
-      type: 'VERIFY',
-      tokenHash,
-      expiresAt,
-    },
-  });
-
-  const baseUrl =
-    (await getConfig(ctx.prisma, 'app.baseUrl', false)) ||
-    'http://localhost:3000';
-
-  try {
-    await sendEmailVerificationEmail(
-      ctx.prisma,
-      normalizedEmail,
-      token,
-      baseUrl
-    );
-
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SENT',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'SUCCESS',
-      metadata: { expiresAt: expiresAt.toISOString() },
-    });
-
-    return {
-      success: true,
-      message: 'Email inviata.',
-    };
-  } catch (error) {
-    await logAudit(ctx, {
-      action: 'EMAIL_VERIFICATION_SEND_FAILED',
-      targetType: 'Auth',
-      targetId: user.id,
-      result: 'FAILURE',
-      metadata: {
-        reason: 'email_send_failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
-      },
-    });
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: 'Impossibile inviare email.',
-      cause: error,
-    });
-  }
 }
 
 /**

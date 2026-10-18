@@ -1,93 +1,149 @@
-# luke-docs — Regole ADR (modalità `adr`)
+# luke-docs — ADR rules (`adr` mode)
 
-Directory: `docs/decisions/` (formato MADR). Lingua: **italiano**.
-La skill modifica **solo il campo Status**. Contesto, Decisione e Conseguenze sono sempre manuali.
+Directory: `docs/decisions/` (MADR format). All new or updated technical prose
+is English under the canonical language policy in `CLAUDE.md`; ADR-030 records
+the rationale, including the errata rule below.
 
-## Formato MADR (obbligatorio)
+**An Accepted ADR is normative architecture, not documentation** — it outranks
+the implementation until a human supersedes it
+(`.claude/skills/luke-shared/governance-map.md` §4). This mode therefore
+**reports** and does not decide: Context, Decision and Consequences are always
+manual, and `Status` is only ever changed on an explicit user instruction.
+
+Discovery reads the ADR **files** under `docs/decisions/`. The generated index
+is for navigation and is not proof that no other ADR exists.
+
+## MADR format (mandatory)
 
 ```markdown
-# NNNN — Titolo della decisione
+# ADR-NNN — Decision Title
 
 ## Status
 
 Accepted
 
-## Contesto
+## Context
 
-Perché questa decisione era necessaria. Vincoli, forze in gioco, alternative considerate.
+Why the decision was needed: constraints, forces, and alternatives considered.
 
-## Decisione
+## Decision
 
-Cosa abbiamo scelto e perché.
+What was chosen and why.
 
-## Conseguenze
+## Consequences
 
-Trade-off introdotti, vincoli architetturali, impatti su altri componenti.
+Trade-offs, architectural constraints, and effects on other components.
 ```
 
-Valori ammessi per `Status`:
+An Accepted ADR may end with an `## Errata` section: dated English entries, each
+locating a statement of fact about the repository the ADR no longer matches,
+saying what is true now and citing the change that made it so (ADR-030). The
+section is appended by hand; this mode never writes one.
 
-- `Accepted` — decisione attiva e validata
-- `Deprecated` — non più applicabile, sostituita da prassi diverse
-- `Superseded by [NNNN — Titolo](NNNN-titolo.md)` — rimpiazzata da un ADR successivo
-- `Potentially stale — review needed` — la skill ha rilevato una potenziale contraddizione con la codebase
+**Numbering is three digits**, zero-padded, matching the tracked corpus. Derive
+the next number from the ADR files; never store the current highest number in
+this reference. A four-digit number would start a second convention, and the
+index and every cross-reference would then carry both.
 
----
+Allowed values for `Status`:
 
-## Validazione contro codebase
-
-Per ogni ADR con `Status: Accepted`, verifica le affermazioni chiave cercando evidenza nel codice.
-
-**Strategia di ricerca per tipo di affermazione:**
-
-| Tipo di affermazione                | Come verificare                                                |
-| ----------------------------------- | -------------------------------------------------------------- |
-| "Usiamo libreria X"                 | Cerca `X` in `package.json` dei workspace rilevanti            |
-| "Non usiamo Y"                      | Cerca `Y` in tutti i `package.json` — assenza = confermato     |
-| "Il modello si chiama Z"            | Cerca `model Z` in `schema.prisma`                             |
-| "La funzione F esiste in package P" | Cerca `export` + nome in `packages/<P>/src/`                   |
-| "Il pattern/flag/config C è attivo" | Cerca in `CLAUDE.md`, `lessons.md`, file di config rilevanti   |
-| "Il campo status ammette valori V"  | Cerca enum corrispondente in `schema.prisma` o `packages/core` |
-
-**Esito per ogni ADR:**
-
-| Evidenza trovata                                | Azione                                                                                |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Confermata — codice coerente con decisione      | Lascia `Status: Accepted` invariato                                                   |
-| Contraddizione rilevata — codice diverge        | Imposta `Status: Potentially stale — review needed`, segnala nel report con dettaglio |
-| Non verificabile — affermazione troppo astratta | Lascia invariato, segnala come "non verificabile automaticamente" nel report          |
-| ADR già `Deprecated` o `Superseded`             | Salta la validazione, includi solo nell'indice                                        |
-
-**Non marcare mai un ADR come stale se la contraddizione è ambigua** — solo quando c'è
-evidenza esplicita (es. package rimosso, model rinominato, pattern abbandonato).
+- `Accepted` — active, validated decision
+- `Deprecated` — no longer applicable, replaced by different practice
+- `Superseded by [NNN — Title](NNN-title.md)` — replaced by a later ADR
+- `Potentially stale — review needed` — **legacy value, do not write it.** It
+  was written before this mode was read-only about status, and no current ADR
+  carries it. If one ever does, leave it alone and report it for decision
+  rather than rewriting it either way
 
 ---
 
-## Indice `docs/decisions/README.md`
+## Validation against the codebase
 
-Sempre completamente rigenerato, ordine numerico crescente:
+For every ADR with `Status: Accepted`, verify its key statements by looking
+for evidence in the code.
+
+**Search strategy by statement type:**
+
+| Statement type                     | How to verify                                                  |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| "We use library X"                  | Search for `X` in the relevant workspaces' `package.json`       |
+| "We don't use Y"                    | Search for `Y` in every `package.json` — absence = confirmed    |
+| "The model is called Z"             | Search for `model Z` in `packages/db/prisma/*.prisma`            |
+| "Function F exists in package P"    | Search for `export` + name in `packages/<P>/src/`                |
+| "Pattern/flag/config C is active"   | Search in `CLAUDE.md`, `lessons.md`, relevant config files       |
+| "Field status allows values V"      | Search for the matching enum in `packages/db/prisma/*.prisma` or `packages/core` |
+
+**Outcome for each ADR:**
+
+| Evidence found                                  | Action                                                                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Confirmed — code matches the decision             | Leave `Status` unchanged                                                                       |
+| Contradiction detected — code diverges            | **Report `ADR/CODE CONFLICT`. Change nothing.**                                                |
+| Not verifiable — statement too abstract           | Leave unchanged, flag as "not automatically verifiable" in the report                         |
+| ADR already `Deprecated` or `Superseded`          | Skip validation, include only in the index                                                    |
+
+### `ADR/CODE CONFLICT`
+
+A contradiction between an Accepted ADR and the code has **two** explanations,
+and this mode cannot tell them apart:
+
+1. the decision was superseded and nobody updated the ADR;
+2. the implementation drifted away from a decision that still stands.
+
+Assuming (1) is how an architectural decision gets repealed by an agent that
+noticed the code disagreed with it. Report instead:
+
+```
+ADR/CODE CONFLICT — <NNN Title>
+  Decision says: <the statement, quoted>
+  Code shows:    <file:line and what it does>
+  Not resolved here. Options: restore the implementation · supersede the ADR ·
+  accept a new ADR · append an erratum (only when the statement is a fact about
+  the repository and correcting it changes nothing the ADR decides).
+```
+
+Only after the user chooses may `Status` be edited, and only to what they chose.
+
+**Never mark an ADR stale on ambiguity** — and now, never mark one stale at all
+without an explicit decision.
+
+---
+
+## Index `docs/decisions/README.md`
+
+`docs/README.md` links to this index and is **readme**-owned: a stale entry
+there is reported as `owned by readme, not touched`, never corrected here. What
+each mode may write is the ownership table in `SKILL.md`.
+
+Always fully regenerated in ascending numeric order. The title in every row is
+copied verbatim from the ADR H1 after removing its `ADR-NNN — ` or legacy
+`ADR-NNN: ` prefix; never translate or paraphrase it. Preserve the source H1.
 
 ```markdown
-# Decisioni architetturali
+# Architectural Decisions
 
 <!-- luke-docs:start:adr-index -->
 
-| #                      | Titolo                 | Status     |
+| #                      | Title                  | Status     |
 | ---------------------- | ---------------------- | ---------- |
-| [0001](0001-titolo.md) | Titolo della decisione | Accepted   |
-| [0002](0002-titolo.md) | Titolo della decisione | Deprecated |
+| [001](001-title.md)    | Decision Title         | Accepted   |
+| [002](002-title.md)    | Decision Title         | Deprecated |
 
-_Ultimo aggiornamento: {data corrente}_
+_Last updated: {current date}_
 
 <!-- luke-docs:end:adr-index -->
 ```
 
 ---
 
-## Checklist qualità ADR (verifica prima di chiudere)
+## ADR quality checklist (verify before closing)
 
-- [ ] Nessun ADR ha Contesto / Decisione / Conseguenze modificati
-- [ ] Solo il campo `Status` è stato toccato dove necessario
-- [ ] Ogni `Potentially stale` nel report ha un dettaglio specifico (cosa contraddice cosa)
-- [ ] L'indice `docs/decisions/README.md` include tutti i file presenti nella directory
-- [ ] Nessun ADR è stato marcato stale per ambiguità — solo per evidenza esplicita
+- [ ] No ADR has had Context / Decision / Consequences modified
+- [ ] No `Status` field was changed without an explicit user decision
+- [ ] Every contradiction was reported as `ADR/CODE CONFLICT`, not resolved
+- [ ] Every `ADR/CODE CONFLICT` in the report has specific detail (what contradicts what)
+- [ ] No new `Potentially stale` status was written — the value is legacy, read
+      and reported only
+- [ ] `pnpm check:drift` passes ADR index completeness and exact-title checks
+      in `tools/scripts/check-docs-integrity.ts`; gaps and title drift are
+      blocking failures rather than manual review items

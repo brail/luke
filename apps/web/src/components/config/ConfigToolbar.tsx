@@ -1,6 +1,7 @@
 import { Search } from 'lucide-react';
 
-import { CATEGORIES } from '../../lib/configHelpers';
+import { CONFIG_ROUTER_PREFIXES } from '@luke/core';
+
 import { Input } from '../ui/input';
 import {
   Select,
@@ -46,7 +47,7 @@ export function ConfigToolbar({
         />
       </div>
 
-      {/* Filtro Tipo */}
+      {/* Type filter */}
       <Select
         value={
           filterEncrypted === undefined
@@ -79,7 +80,7 @@ export function ConfigToolbar({
         </SelectContent>
       </Select>
 
-      {/* Filtro Categoria */}
+      {/* Category filter */}
       <Select
         value={filterCategory || 'all'}
         onValueChange={value =>
@@ -92,7 +93,7 @@ export function ConfigToolbar({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Tutte le categorie</SelectItem>
-          {CATEGORIES.map(category => (
+          {CONFIG_ROUTER_PREFIXES.map(category => (
             <SelectItem key={category} value={category}>
               {category}
             </SelectItem>

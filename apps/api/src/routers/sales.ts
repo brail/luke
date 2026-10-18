@@ -13,10 +13,14 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { versionLabel } from '@luke/core';
 import type { Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
+import { appVersion } from '../lib/appVersion';
 import { getConfig } from '../lib/configManager';
+import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
@@ -27,11 +31,11 @@ import {
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone, resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedBrandIds } from '../services/context.service';
 import { buildKimoXlsx } from '../services/kimo.statistics';
 import { buildPortafoglioXlsx } from '../services/sales.statistics';
 
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
@@ -62,6 +66,37 @@ async function resolveSalespersonNames(
 }
 
 // ─── Sub-router: portafoglio ──────────────────────────────────────────────────
+
+/** The prefix of a replica's tables: both replicas record their tables in `navPfSyncState`. */
+const REPLICA_TABLE_PREFIX = { portafoglio: 'nav_pf_', kimo: 'nav_kimo_' } as const;
+
+/**
+ * A replica's sync state: its tables, and the two fields of its automatic sync schedule a
+ * `sales:read` page shows — never the NAV sync filter itself, which takes `config:read`.
+ */
+async function replicaSyncState(prisma: PrismaClient, entity: keyof typeof REPLICA_TABLE_PREFIX, isRunning: boolean) {
+  const [rows, schedule] = await Promise.all([
+    prisma.navPfSyncState.findMany({
+      where: { tableName: { startsWith: REPLICA_TABLE_PREFIX[entity] } },
+      orderBy: { tableName: 'asc' },
+    }),
+    prisma.navSyncFilter.findUnique({
+      where: { entity },
+      select: { autoSyncEnabled: true, intervalMinutes: true },
+    }),
+  ]);
+
+  return {
+    isRunning,
+    schedule,
+    tables: rows.map(r => ({
+      tableName: r.tableName,
+      lastSyncedAt: r.lastSyncedAt,
+      rowCount: r.rowCount,
+      lastDurationMs: r.lastDurationMs,
+    })),
+  };
+}
 
 const portafoglioRouter = router({
   /**
@@ -141,7 +176,7 @@ const portafoglioRouter = router({
           salespersons: result.recordset.map(r => ({ code: r.Code, name: r.Name })),
         };
       } catch (err) {
-        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV non raggiungibile');
+        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV unreachable');
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -153,12 +188,12 @@ const portafoglioRouter = router({
   /**
    * Triggers an immediate NAV→PG portafoglio sync; returns conflict error if a sync is already running.
    *
-   * @auth {sales:read}
+   * @auth {sales:sync} — only admin holds it: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerPortafoglioSyncNow()}
    */
   triggerSync: protectedProcedure
-    .use(requirePermission('sales:read'))
+    .use(requirePermission('sales:sync'))
     .mutation(async ({ ctx }) => {
       if (isPortafoglioSyncRunning()) {
         throw new TRPCError({
@@ -167,7 +202,7 @@ const portafoglioRouter = router({
         });
       }
 
-      ctx.logger.info('sales.statistics.portafoglio.triggerSync: avvio manuale');
+      ctx.logger.info('sales.statistics.portafoglio.triggerSync: manual start');
       const result = await triggerPortafoglioSyncNow();
 
       if (!result) {
@@ -181,29 +216,16 @@ const portafoglioRouter = router({
     }),
 
   /**
-   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables.
+   * Returns the sync state (last sync timestamp, row count, duration) for all nav_pf_* replica tables,
+   * and the replica's automatic sync schedule, which the statistics page shows to `sales:read` holders.
    *
    * @auth {sales:read}
    * @input {none}
-   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
+   * @output {{ isRunning: boolean, schedule: { autoSyncEnabled, intervalMinutes } | null, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
-    .query(async ({ ctx }) => {
-      const rows = await ctx.prisma.navPfSyncState.findMany({
-        orderBy: { tableName: 'asc' },
-      });
-
-      return {
-        isRunning: isPortafoglioSyncRunning(),
-        tables: rows.map(r => ({
-          tableName: r.tableName,
-          lastSyncedAt: r.lastSyncedAt,
-          rowCount: r.rowCount,
-          lastDurationMs: r.lastDurationMs,
-        })),
-      };
-    }),
+    .query(({ ctx }) => replicaSyncState(ctx.prisma, 'portafoglio', isPortafoglioSyncRunning())),
 
   /**
    * Generates and returns the order portfolio XLSX for a brand+season (base64-encoded); uses PG replica with NAV direct fallback.
@@ -265,7 +287,7 @@ const portafoglioRouter = router({
         // Fallback: direct NAV query (slow, no replica available)
         ctx.logger.warn(
           { brandCode: brand.code, seasonCode: season.code },
-          'Portafoglio PG replica vuota — fallback NAV diretto',
+          'Portafoglio PG replica empty — falling back to NAV directly',
         );
         dataSource = 'nav';
         const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
@@ -292,18 +314,15 @@ const portafoglioRouter = router({
         title: 'Analisi Vendite',
         subject: `${brand.name} - ${season.code}`,
         author: authorName,
-        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
+        manager: `Luke - ${versionLabel(appVersion())}`,
       });
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const stamp = exportTimestamp(await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
       const filterSuffix = input.customerCode
         ? `_${input.customerCode}`
         : input.salespersonCode
           ? `_${input.salespersonCode}`
           : '';
-      const filename = `Luke-AnalisiVendite-${datePart}-${timePart}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
+      const filename = `Luke-AnalisiVendite-${stamp}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
 
       return {
         data: buffer.toString('base64'),
@@ -384,40 +403,25 @@ const kimoRouter = router({
     }),
 
   /**
-   * Returns the sync state for all nav_kimo_* replica tables.
+   * Returns the sync state for all nav_kimo_* replica tables, and the replica's automatic sync schedule.
    *
    * @auth {sales:read}
    * @input {none}
-   * @output {{ isRunning: boolean, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
+   * @output {{ isRunning: boolean, schedule: { autoSyncEnabled, intervalMinutes } | null, tables: { tableName, lastSyncedAt, rowCount, lastDurationMs }[] }}
    */
   getSyncState: protectedProcedure
     .use(requirePermission('sales:read'))
-    .query(async ({ ctx }) => {
-      const rows = await ctx.prisma.navPfSyncState.findMany({
-        where: { tableName: { startsWith: 'nav_kimo_' } },
-        orderBy: { tableName: 'asc' },
-      });
-
-      return {
-        isRunning: isKimoSyncRunning(),
-        tables: rows.map(r => ({
-          tableName:     r.tableName,
-          lastSyncedAt:  r.lastSyncedAt,
-          rowCount:      r.rowCount,
-          lastDurationMs: r.lastDurationMs,
-        })),
-      };
-    }),
+    .query(({ ctx }) => replicaSyncState(ctx.prisma, 'kimo', isKimoSyncRunning())),
 
   /**
    * Triggers an immediate NAV→PG KIMO sync; returns conflict error if already running.
    *
-   * @auth {sales:read}
+   * @auth {sales:sync} — only admin holds it: it starts a NAV replica, not a read
    * @input {none}
    * @output {Sync result from triggerKimoSyncNow()}
    */
   triggerSync: protectedProcedure
-    .use(requirePermission('sales:read'))
+    .use(requirePermission('sales:sync'))
     .mutation(async ({ ctx }) => {
       if (isKimoSyncRunning()) {
         throw new TRPCError({
@@ -426,7 +430,7 @@ const kimoRouter = router({
         });
       }
 
-      ctx.logger.info('sales.statistics.kimo.triggerSync: avvio manuale');
+      ctx.logger.info('sales.statistics.kimo.triggerSync: manual start');
       const result = await triggerKimoSyncNow();
 
       if (!result) {
@@ -487,30 +491,29 @@ const kimoRouter = router({
       const sheetName = `${season.code}_${brand.code}_Kimo`;
       const dbUser = await ctx.prisma.user.findUnique({
         where: { id: ctx.session.user.id },
-        select: { firstName: true, lastName: true, email: true },
+        select: { firstName: true, lastName: true, email: true, timezone: true },
       });
       const authorName =
         [dbUser?.firstName, dbUser?.lastName].filter(Boolean).join(' ') ||
         dbUser?.email ||
         ctx.session.user.email;
 
-      const buffer = await buildKimoXlsx(rows, sheetName, {
+      // One zone for the cells, their headers and the file name.
+      const timeZone = await resolveUserTimeZone(ctx.prisma, { id: ctx.session.user.id, timezone: dbUser?.timezone ?? '' }, ctx.logger);
+      const buffer = await buildKimoXlsx(rows, timeZone, sheetName, {
         title:   'Vendite + Bidone Kimo',
         subject: `${brand.name} - ${season.code}`,
         author:  authorName,
-        manager: `Luke - v${process.env.APP_VERSION ?? 'dev'}`,
+        manager: `Luke - ${versionLabel(appVersion())}`,
       });
 
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}`;
+      const stamp = exportTimestamp(timeZone);
       const filterSuffix = input.customerCode
         ? `_${input.customerCode}`
         : input.salespersonCode
           ? `_${input.salespersonCode}`
           : '';
-      const filename = `Luke-KimoBidone-${datePart}-${timePart}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
+      const filename = `Luke-KimoBidone-${stamp}-(${season.code}_${brand.code}${filterSuffix}).xlsx`;
 
       return {
         data: buffer.toString('base64'),

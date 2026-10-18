@@ -5,12 +5,14 @@
  * (Fastify, HTTP, Undici, Prisma) are applied from the very start of the process.
  *
  * Initialization is skipped when `OTEL_ENABLED=false` or when
- * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Graceful SDK shutdown is wired to
- * `SIGTERM` and `SIGINT` signals.
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is not set. Preloaded in every mode — `--require` in production,
+ * `--import` under tsx in development — so `server.ts` importing `shutdownTelemetry` gets this same
+ * instance. It registers no signal handler: `lib/gracefulShutdown.ts` calls `shutdownTelemetry`
+ * after the server has closed.
  */
 
+import FastifyOtelInstrumentation from '@fastify/otel';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-grpc';
-import { FastifyInstrumentation } from '@opentelemetry/instrumentation-fastify';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { resourceFromAttributes } from '@opentelemetry/resources';
@@ -24,6 +26,8 @@ import { PrismaInstrumentation } from '@prisma/instrumentation';
 import pino from 'pino';
 
 import { isDevelopment } from '@luke/core';
+
+import { appVersion } from './lib/appVersion';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -41,7 +45,7 @@ let sdk: NodeSDK | null = null;
 if (otelEnabled) {
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: '@luke/api',
-    [ATTR_SERVICE_VERSION]: process.env.npm_package_version || '0.1.0',
+    [ATTR_SERVICE_VERSION]: appVersion(),
     [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: isDevelopment() ? 'development' : 'production',
   });
 
@@ -54,7 +58,10 @@ if (otelEnabled) {
     instrumentations: [
       new HttpInstrumentation(),
       new UndiciInstrumentation(),
-      new FastifyInstrumentation(),
+      // @opentelemetry/instrumentation-fastify is deprecated in favor of this,
+      // the Fastify-authors-maintained package; registerOnInitialization keeps
+      // the same NodeSDK auto-registration behavior the old package had.
+      new FastifyOtelInstrumentation({ registerOnInitialization: true }),
       new PrismaInstrumentation(),
     ],
   });
@@ -65,27 +72,13 @@ if (otelEnabled) {
   logger.info('ℹ️  OpenTelemetry disabled (no endpoint configured)');
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  if (sdk) {
-    logger.info('Shutting down OpenTelemetry SDK...');
-    try {
-      await sdk.shutdown();
-    } catch (err) {
-      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
-    }
+/** Flushes and stops the OpenTelemetry SDK; does nothing when telemetry is disabled. Never throws. */
+export async function shutdownTelemetry(): Promise<void> {
+  if (!sdk) return;
+  logger.info('Shutting down OpenTelemetry SDK...');
+  try {
+    await sdk.shutdown();
+  } catch (err) {
+    logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
   }
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  if (sdk) {
-    logger.info('Shutting down OpenTelemetry SDK...');
-    try {
-      await sdk.shutdown();
-    } catch (err) {
-      logger.error({ err }, 'Error shutting down OpenTelemetry SDK');
-    }
-  }
-  process.exit(0);
-});
+}

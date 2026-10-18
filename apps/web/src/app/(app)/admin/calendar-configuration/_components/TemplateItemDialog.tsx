@@ -5,9 +5,10 @@ import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import type { CalendarDaysRelevance } from '@luke/core';
 
 import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../../components/CalendarDaysRelevanceSelect';
-import { PhaseSelect } from '../../../../../components/PhaseSelect';
+import { NO_PHASE_VALUE, PhaseSelect } from '../../../../../components/PhaseSelect';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import {
@@ -86,7 +87,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
       setRelDelta('0');
       reset({
         title: item?.title ?? '',
-        phaseId: item?.phaseId ?? '_none',
+        phaseId: item?.phaseId ?? NO_PHASE_VALUE,
         calendarDaysRelevance: item?.calendarDaysRelevance ?? NO_RELEVANCE_VALUE,
         visibilityFunctionIds: item
           ? (item.visibilities?.map((v: NonNullable<TemplateItem['visibilities']>[number]) => v.functionId) ?? [])
@@ -98,7 +99,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
         description: item?.description ?? '',
       });
     }
-  }, [open, item?.id]);
+  }, [open, item, reset]);
 
   const createMutation = trpc.seasonCalendar.createTemplateItem.useMutation({
     onSuccess: () => { toast.success('Item aggiunto'); onSaved(); },
@@ -115,8 +116,8 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
   const onSubmit = (values: FormValues) => {
     const payload = {
       title: values.title.trim(),
-      phaseId: values.phaseId === '_none' ? null : values.phaseId,
-      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as 'COMPANY' | 'VENDOR' | 'BOTH'),
+      phaseId: values.phaseId === NO_PHASE_VALUE ? null : values.phaseId,
+      calendarDaysRelevance: values.calendarDaysRelevance === NO_RELEVANCE_VALUE ? null : (values.calendarDaysRelevance as CalendarDaysRelevance) /* the select offers only CALENDAR_DAYS_RELEVANCE values besides the sentinel */,
       visibilityFunctionIds: values.visibilityFunctionIds,
       offsetDays: Number(values.offsetDays),
       durationDays: Number(values.durationDays),
@@ -159,7 +160,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               )}
             />
             <p className="text-xs text-muted-foreground">
-              Propagata all'evento generato quando il template viene applicato al calendario.
+              Propagata all&apos;evento generato quando il template viene applicato al calendario.
             </p>
           </div>
 
@@ -173,7 +174,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               )}
             />
             <p className="text-xs text-muted-foreground">
-              Propagato all'evento generato quando il template viene applicato al calendario.
+              Propagato all&apos;evento generato quando il template viene applicato al calendario.
             </p>
           </div>
 
@@ -185,7 +186,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                 type="number"
                 {...register('offsetDays', { required: true, valueAsNumber: true })}
               />
-              <p className="text-xs text-muted-foreground">Giorni dall'anchor date (negativo = prima)</p>
+              <p className="text-xs text-muted-foreground">Giorni dall&apos;anchor date (negativo = prima)</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="durationDays">Durata giorni</Label>

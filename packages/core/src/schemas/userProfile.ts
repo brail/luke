@@ -1,53 +1,40 @@
 import { z } from 'zod';
 
-/** Input schema for updating the authenticated user's profile (all editable fields). */
-export const UserProfileSchema = z.object({
-  /** Email dell'utente */
-  email: z
-    .string()
-    .email('Email non valida')
-    .trim()
-    .min(1, 'Email obbligatoria')
-    .max(255, 'Email troppo lunga'),
+import { TimeZoneSchema } from './dates.js';
+import { passwordPrefilterSchema } from './password.js';
 
-  /** Nome dell'utente */
+/**
+ * Input schema for updating the authenticated user's profile. No email: it changes only through
+ * `me.changeEmail`, which marks the new address unverified and mails a verification link to it.
+ */
+export const UserProfileSchema = z.object({
+  /** User first name */
   firstName: z
     .string()
     .trim()
     .min(1, 'Nome obbligatorio')
     .max(64, 'Nome troppo lungo'),
 
-  /** Cognome dell'utente */
+  /** User last name */
   lastName: z
     .string()
     .trim()
     .min(1, 'Cognome obbligatorio')
     .max(64, 'Cognome troppo lungo'),
 
-  /** Locale dell'utente (es. it-IT, en-US) */
+  /** User locale (e.g. it-IT, en-US) */
   locale: z
     .string()
     .trim()
     .min(2, 'Locale non valido')
     .max(10, 'Locale troppo lungo'),
 
-  /** Timezone dell'utente (es. Europe/Rome, America/New_York) */
-  timezone: z
-    .string()
-    .trim()
-    .min(1, 'Timezone obbligatorio')
-    .max(64, 'Timezone troppo lungo'),
+  /** The zone this person reads and types dates in (the reader zone, ADR-035). */
+  timezone: TimeZoneSchema,
 });
 
 /** Input schema for updating only the user's timezone without requiring other profile fields. */
-export const UpdateTimezoneSchema = z.object({
-  /** Timezone dell'utente (es. Europe/Rome, America/New_York) */
-  timezone: z
-    .string()
-    .trim()
-    .min(1, 'Timezone obbligatorio')
-    .max(64, 'Timezone troppo lungo'),
-});
+export const UpdateTimezoneSchema = UserProfileSchema.pick({ timezone: true });
 
 /**
  * Input schema for changing the authenticated user's password.
@@ -55,26 +42,24 @@ export const UpdateTimezoneSchema = z.object({
  */
 export const ChangePasswordSchema = z
   .object({
-    /** Password corrente (per verifica) */
+    /** Current password (for verification) */
     currentPassword: z
       .string()
       .min(1, 'Password corrente obbligatoria')
       .max(128, 'Password troppo lunga'),
 
-    /** Nuova password con policy forte */
-    newPassword: z
-      .string()
-      .min(12, 'Password deve essere di almeno 12 caratteri')
-      .max(128, 'Password troppo lunga')
-      .regex(/[A-Z]/, 'Deve contenere almeno una lettera maiuscola')
-      .regex(/[a-z]/, 'Deve contenere almeno una lettera minuscola')
-      .regex(/[0-9]/, 'Deve contenere almeno una cifra')
-      .regex(/[^A-Za-z0-9]/, 'Deve contenere almeno un simbolo speciale'),
+    /**
+     * New password. The complexity rules are not here: `validatePassword` applies them with the
+     * policy configured in AppConfig, because a schema compiled into the bundle cannot know what an
+     * installation chose. This chain used to say 12 plus four regexes, which is why relaxing a
+     * configured requirement did not relax this path.
+     */
+    newPassword: passwordPrefilterSchema,
 
-    /** Conferma nuova password */
+    /** New password confirmation */
     confirmNewPassword: z
       .string()
-      .min(12, 'Conferma password obbligatoria')
+      .min(1, 'Conferma password obbligatoria')
       .max(128, 'Password troppo lunga'),
   })
   .refine(data => data.newPassword === data.confirmNewPassword, {

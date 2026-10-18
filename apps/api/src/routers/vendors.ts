@@ -13,17 +13,18 @@ import { TRPCError } from '@trpc/server';
 
 import {
   VendorInputSchema,
+  VendorHardDeleteInputSchema,
   VendorIdSchema,
   VendorListInputSchema,
   VendorUpdateInputSchema,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 
-import type { Prisma } from '@prisma/client';
 
 const VENDOR_SELECT = {
   id: true,
@@ -35,6 +36,9 @@ const VENDOR_SELECT = {
   phone: true,
   chat: true,
   notes: true,
+  moqPerLine: true,
+  moqPerModel: true,
+  moqPerColor: true,
   navVendorId: true,
   isActive: true,
   createdAt: true,
@@ -80,29 +84,6 @@ export const vendorsRouter = router({
       const nextCursor = hasMore ? results[results.length - 1].id : null;
 
       return { items: results, nextCursor, hasMore: !!nextCursor };
-    }),
-
-  /**
-   * Returns a single vendor by ID.
-   *
-   * @auth {vendors:read}
-   * @input {VendorIdSchema}
-   * @output {Vendor}
-   */
-  getById: protectedProcedure
-    .use(requirePermission('vendors:read'))
-    .input(VendorIdSchema)
-    .query(async ({ ctx, input }) => {
-      const vendor = await ctx.prisma.vendor.findUnique({
-        where: { id: input.id },
-        select: VENDOR_SELECT,
-      });
-
-      if (!vendor) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore non trovato' });
-      }
-
-      return vendor;
     }),
 
   /**
@@ -275,14 +256,18 @@ export const vendorsRouter = router({
   /**
    * Permanently deletes a vendor; only allowed for vendors not linked to NAV and without CollectionLayoutRow references.
    *
-   * @auth {vendors:delete}
-   * @input {VendorIdSchema}
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
+   * @auth {*:*} — admin only. `vendors:delete` is not enough: a permanent delete is not the
+   *   archive that permission is for.
+   * @input {VendorHardDeleteInputSchema} — vendor UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
-    .use(requirePermission('vendors:delete'))
+    .use(requirePermission('*:*'))
     .use(withRateLimit('configMutations'))
-    .input(VendorIdSchema)
+    .input(VendorHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const vendor = await ctx.prisma.vendor.findUnique({ where: { id: input.id } });
 

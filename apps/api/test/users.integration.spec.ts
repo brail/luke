@@ -1,5 +1,5 @@
 /**
- * `users.update` — admin password reset (plan: docs/TASK_admin_password_reset_fix.md).
+ * `users.update` — admin password reset.
  *
  * `UpdateUserInputSchema` never had a `password` field: the "Edit user" dialog
  * collected it, but the server silently discarded it. This suite covers the privilege guard (`*:*`),
@@ -7,7 +7,13 @@
  * (tokenVersion, audit) on the admin-to-admin path.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { USER_EDITOR_UPDATABLE_FIELDS, UpdateUserInputSchema, privilegedUserUpdateFields } from '@luke/core';
+import type { PrivilegedUserUpdateField, UserEditorUpdatableField } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
+
+import * as permissions from '../src/lib/permissions';
 
 import {
   createCallerWithIP,
@@ -18,10 +24,10 @@ import {
   TEST_USER_PASSWORD,
 } from './helpers';
 
-import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
-type Role = 'admin' | 'editor' | 'viewer';
+import type { UserSession } from '../src/lib/auth';
+
+type Role = 'admin' | 'viewer';
 
 let prisma: PrismaClient;
 
@@ -31,16 +37,27 @@ function usersAs(role: Role) {
   return createCallerWithSession(sessions[role]).users;
 }
 
+/**
+ * A caller holding `users:update` without `*:*`, whichever roles are that: an admin with `*:*`
+ * denied by narrowing `can`, as in `accessDeniedLogging.integration.spec.ts`.
+ */
+function usersWithoutWildcard() {
+  const real = permissions.can;
+  vi.spyOn(permissions, 'can').mockImplementation((ctx, permission) => (permission === '*:*' ? false : real(ctx, permission)));
+  return usersAs('admin');
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 const NEW_PASSWORD = 'BrandNewPassw0rd!42';
 
 beforeAll(async () => {
   prisma = await setupTestDb();
 
-  const [admin, editor, viewer] = await Promise.all(
-    (['admin', 'editor', 'viewer'] as Role[]).map(role => createTestUser(role))
-  );
+  const [admin, viewer] = await Promise.all((['admin', 'viewer'] as Role[]).map(role => createTestUser(role)));
   sessions.admin = admin.session;
-  sessions.editor = editor.session;
   sessions.viewer = viewer.session;
 });
 
@@ -50,15 +67,15 @@ async function createTargetUser() {
 }
 
 describe('users.update — reset password admin', () => {
-  it('editor con users:update ma senza *:* → FORBIDDEN', async () => {
+  it('a users:update holder without *:* → FORBIDDEN', async () => {
     const { user: target } = await createTargetUser();
 
     await expectUnauthorized(() =>
-      usersAs('editor').update({ id: target.id, password: NEW_PASSWORD })
+      usersWithoutWildcard().update({ id: target.id, password: NEW_PASSWORD })
     );
   });
 
-  it('admin resetta la password di un utente LOCAL → login vecchia fallisce, nuova funziona, tokenVersion incrementato, audit presente', async () => {
+  it('admin resets the password of a LOCAL user → old login fails, new one works, tokenVersion incremented, audit present', async () => {
     const { user: target } = await createTargetUser();
     const tokenVersionBefore = target.tokenVersion;
 
@@ -88,16 +105,17 @@ describe('users.update — reset password admin', () => {
     expect(auditRow?.result).toBe('SUCCESS');
   });
 
-  it('admin tenta di resettare la propria password via users.update → FORBIDDEN (deve passare da me.changePassword)', async () => {
+  it('admin tries to reset their own password via users.update → FORBIDDEN (it must go through me.changePassword)', async () => {
     await expectUnauthorized(() =>
       usersAs('admin').update({ id: sessions.admin.user.id, password: NEW_PASSWORD })
     );
   });
 
-  it('admin tenta di resettare la password di un utente LDAP → rigettato dal locked-field guard', async () => {
+  it('admin tries to reset the password of an LDAP user → rejected by the locked-field guard', async () => {
     const timestamp = Date.now();
     const ldapUser = await prisma.user.create({
       data: {
+        timezone: 'Europe/Rome',
         email: `ldap-pwtest-${timestamp}@test.com`,
         username: `ldap-pwtest-${timestamp}`,
         firstName: 'LDAP',
@@ -120,7 +138,41 @@ describe('users.update — reset password admin', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
-  it('password omessa: nessun bump di tokenVersion, nessuna riga USER_PASSWORD_RESET_BY_ADMIN', async () => {
+  it('dual-identity user (LDAP + LOCAL, e.g. after forceLocalAccess) → password reset stays blocked', async () => {
+    // Regression test for the `identities[0]` nondeterminism fixed alongside
+    // `forceLocalAccess`/`revokeLocalAccess`: a user can now hold more than one identity, and
+    // `getLockedFields` must key off the external one deterministically, not an unordered `[0]`.
+    const timestamp = Date.now();
+    const dualUser = await prisma.user.create({
+      data: {
+        timezone: 'Europe/Rome',
+        email: `dual-pwtest-${timestamp}@test.com`,
+        username: `dual-pwtest-${timestamp}`,
+        firstName: 'Dual',
+        lastName: 'User',
+        role: 'viewer',
+        isActive: true,
+        emailVerifiedAt: new Date(),
+      },
+    });
+    // LOCAL identity created first, LDAP second: the ordering that would have broken a naive
+    // `identities[0]` read (which would have resolved to LOCAL → password wrongly unlocked).
+    const localIdentity = await prisma.identity.create({
+      data: { userId: dualUser.id, provider: 'LOCAL', providerId: dualUser.username },
+    });
+    await prisma.localCredential.create({
+      data: { identityId: localIdentity.id, passwordHash: 'not-a-real-hash' },
+    });
+    await prisma.identity.create({
+      data: { userId: dualUser.id, provider: 'LDAP', providerId: `cn=dual-pwtest-${timestamp}` },
+    });
+
+    await expect(
+      usersAs('admin').update({ id: dualUser.id, password: NEW_PASSWORD })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('password omitted: no tokenVersion bump, no USER_PASSWORD_RESET_BY_ADMIN row', async () => {
     const { user: target } = await createTargetUser();
     const tokenVersionBefore = target.tokenVersion;
 
@@ -136,11 +188,174 @@ describe('users.update — reset password admin', () => {
     expect(auditRow).toBeNull();
   });
 
-  it('password sotto i 12 caratteri → rigettata da Zod prima di raggiungere il router', async () => {
+  it('password below the static prefilter → rejected by Zod, not by the policy', async () => {
+    // The title used to claim the rejection happened before the router, while asserting only
+    // `BAD_REQUEST` — which `assertPasswordMeetsPolicy` produces too, from inside it. Lowering the
+    // prefilter left it green. Asserting the message distinguishes the two: Zod's wording is the
+    // prefilter's own, and the policy answers `Password non valida: …`.
+    //
+    // The prefilter is 8, not 12: the real minimum comes from the configured policy and is proved
+    // in `passwordPolicyEnforcement.integration.spec.ts`.
     const { user: target } = await createTargetUser();
 
     await expect(
-      usersAs('admin').update({ id: target.id, password: 'short1!' })
-    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      usersAs('admin').update({ id: target.id, password: 'Ab1!efg' })
+    ).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+      message: expect.stringContaining('Password deve essere di almeno 8 caratteri'),
+    });
+  });
+});
+
+/**
+ * SEC-A — a caller holding `users:update` without `*:*` may change only the
+ * fields explicitly classified as editor-permitted on someone else's account.
+ *
+ * The concrete defect was an editor repointing an admin's email and then
+ * driving the public password-reset flow to obtain the account. The reset was
+ * never the defect: it behaves correctly for whoever owns the address on
+ * record, which is exactly what made the chain work.
+ *
+ * The matrices below iterate `privilegedUserUpdateFields()` and
+ * `USER_EDITOR_UPDATABLE_FIELDS`, the same two declarations the router
+ * consumes, so the authorization surface cannot be tested against a stale copy
+ * of itself. The sample maps are typed `Record<…Field, …>`: a field added to
+ * `UpdateUserInputSchema` and left unclassified lands in the privileged
+ * complement automatically and fails `typecheck:test` here for a missing key,
+ * so it cannot reach production silently permitted.
+ */
+
+/** One attacker-supplied value per privileged field. Keys are exhaustive by type. */
+const PRIVILEGED_SAMPLE: Record<PrivilegedUserUpdateField, unknown> = {
+  email: `takeover-${Date.now()}@evil.test`,
+  username: `takeover${Date.now()}`,
+  // Must differ from the target's stored value or the guard correctly treats it
+  // as a no-op: the target below is an admin, so demoting is the real attempt.
+  role: 'viewer',
+};
+
+/** One legitimate value per editor-permitted field. Keys are exhaustive by type. */
+const EDITOR_SAMPLE: Record<UserEditorUpdatableField, unknown> = {
+  firstName: 'Modificato',
+  lastName: 'DaEditor',
+  isActive: false,
+};
+
+describe('users.update — cross-user field authorization (SEC-A)', () => {
+  it.each(privilegedUserUpdateFields())(
+    'a users:update holder without *:* cannot change %s of an admin',
+    async field => {
+      const { user: adminTarget } = await createTestUser('admin');
+      const before = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
+
+      await expectUnauthorized(() =>
+        usersWithoutWildcard().update({ id: adminTarget.id, [field]: PRIVILEGED_SAMPLE[field] })
+      );
+
+      // The rejection must also mean the write did not happen. An endpoint that
+      // throws after persisting would satisfy the assertion above and still be
+      // exploitable.
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: adminTarget.id } });
+      expect(after.email).toBe(before.email);
+      expect(after.username).toBe(before.username);
+      expect(after.role).toBe(before.role);
+    }
+  );
+
+  it.each(USER_EDITOR_UPDATABLE_FIELDS)(
+    'a users:update holder without *:* keeps the legitimate ability to change %s',
+    async field => {
+      // The other half of the boundary. A guard that froze the whole procedure
+      // for editors would pass every test above and get reverted in a week.
+      const { user: target } = await createTargetUser();
+
+      await usersWithoutWildcard().update({ id: target.id, [field]: EDITOR_SAMPLE[field] });
+
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+      expect(after[field]).toBe(EDITOR_SAMPLE[field]);
+    }
+  );
+
+  it('the classification covers exactly the schema: no field stays unclassified', () => {
+    // Belt to the type-level braces: proves at runtime that the two sets
+    // partition the schema, so a field cannot be silently absent from both.
+    const schemaFields = Object.keys(UpdateUserInputSchema.shape)
+      .filter(f => f !== 'id' && f !== 'password')
+      .sort();
+    const classified = [...privilegedUserUpdateFields(), ...USER_EDITOR_UPDATABLE_FIELDS].sort();
+
+    expect(classified).toEqual(schemaFields);
+  });
+
+  it('the takeover chain breaks at the first step: the password reset does not reach an injected address', async () => {
+    const { user: adminTarget } = await createTestUser('admin');
+    const attackerEmail = `chain-${Date.now()}@evil.test`;
+
+    await expectUnauthorized(() =>
+      usersWithoutWildcard().update({ id: adminTarget.id, email: attackerEmail })
+    );
+
+    // No user carries the attacker's address, so the public reset flow has
+    // nothing to send there. `requestPasswordReset` answers generically either
+    // way (enumeration protection), so assert on state rather than on its reply.
+    const holder = await prisma.user.findFirst({ where: { email: attackerEmail } });
+    expect(holder).toBeNull();
+
+    const caller = await createCallerWithIP('10.20.30.9', null);
+    await caller.auth.requestPasswordReset({ email: attackerEmail });
+
+    const tokens = await prisma.userToken.findMany({
+      where: { type: 'RESET', userId: adminTarget.id },
+    });
+    expect(tokens).toHaveLength(0);
+  });
+
+  it('an admin legitimately changes the email: it succeeds, clears emailVerifiedAt and invalidates the sessions', async () => {
+    const { user: target } = await createTargetUser();
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { emailVerifiedAt: new Date() },
+    });
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(before.emailVerifiedAt).not.toBeNull();
+
+    const newEmail = `moved-${Date.now()}@example.test`;
+    await usersAs('admin').update({ id: target.id, email: newEmail });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.email).toBe(newEmail);
+    // The address on record is what the recovery flow trusts; it must not
+    // inherit the verified state of the address it replaced.
+    expect(after.emailVerifiedAt).toBeNull();
+    // An identity change invalidates issued tokens, like a role or password change.
+    expect(after.tokenVersion).toBe(before.tokenVersion + 1);
+  });
+
+  it('an admin rewriting the same email is not blocked and does not invalidate the sessions', async () => {
+    // The guard must compare against the stored value, not merely detect the
+    // key's presence: an idempotent update carrying the unchanged email is a
+    // normal edit-dialog save.
+    const { user: target } = await createTargetUser();
+    const before = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+
+    await usersAs('admin').update({ id: target.id, email: before.email, firstName: 'Rinominato' });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: target.id } });
+    expect(after.firstName).toBe('Rinominato');
+    expect(after.tokenVersion).toBe(before.tokenVersion);
+  });
+});
+
+describe('users.list — search', () => {
+  it('ignores case, like the brand, season and vendor lists', async () => {
+    const { user } = await createTestUser('viewer');
+    const lastName = `Rossi${user.id.slice(0, 6)}`;
+    await prisma.user.update({ where: { id: user.id }, data: { firstName: 'Mario', lastName } });
+
+    const list = createCallerWithSession(sessions.admin).users.list;
+
+    expect((await list({ search: lastName.toLowerCase() })).users.map(u => u.id)).toContain(user.id);
+    // A pasted name often carries a space at the end.
+    expect((await list({ search: `${lastName} ` })).users.map(u => u.id)).toContain(user.id);
   });
 });

@@ -1,12 +1,19 @@
 'use client';
 
 import type { RouterOutputs } from '@luke/api';
+import {
+  DEFAULT_OPTIMAL_MARGIN,
+  classifyMargin,
+  retailMargin,
+  skuWeightedAverage,
+  type MarginStatus,
+} from '@luke/core';
 
-/** Set di parametri pricing come restituito dal router. */
+/** Pricing parameter set as returned by the router. */
 export type PricingParameterSet =
   RouterOutputs['pricing']['parameterSets']['list'][number];
 
-/** Input per computeRowMargin — compatibile con CollectionRow dopo la migrazione quotazioni. */
+/** Input for computeRowMargin — compatible with CollectionRow after the quotations migration. */
 export interface MarginComputeInput {
   quotations?: Array<{
     pricingParameterSetId?: string | null;
@@ -17,32 +24,6 @@ export interface MarginComputeInput {
   qtyForecast: number | null;
 }
 
-/** Same green/≥optimal / yellow/≥optimal-3 / red thresholds computeRowMargin uses per row —
- * exported so aggregate views (per-vendor, per-positioning) can classify a plain margin number
- * against a reference optimalMargin without re-deriving the thresholds. */
-export function computeMarginStatus(
-  marginPct: number,
-  optimalMargin: number
-): 'green' | 'yellow' | 'red' {
-  if (marginPct >= optimalMargin) return 'green';
-  if (marginPct >= optimalMargin - 3) return 'yellow';
-  return 'red';
-}
-
-/** SKU-weighted average of `value` across items that have a positive `sku`; arithmetic mean
- * fallback otherwise. Shared by computeRowMargin (margin) and computeRowRetailPrice (retailPrice)
- * — same weighting rule, only the field being averaged differs. */
-function skuWeightedAverage(items: Array<{ value: number; sku: number | null }>): number {
-  const withSku = items.filter(i => i.sku !== null && i.sku > 0);
-  if (withSku.length > 0) {
-    const totalSku = withSku.reduce((s, i) => s + i.sku!, 0);
-    return withSku.reduce((s, i) => s + i.value * i.sku!, 0) / totalSku;
-  }
-  return items.reduce((s, i) => s + i.value, 0) / items.length;
-}
-
-const DEFAULT_OPTIMAL_MARGIN = 52;
-
 /** The parameter set used as the margin-target reference for aggregate (non-row) views — the
  * season's default variant, falling back to the first one, falling back to a generic default
  * when no parameter sets exist yet. */
@@ -50,11 +31,14 @@ export function getReferenceOptimalMargin(parameterSets: PricingParameterSet[]):
   return (parameterSets.find(p => p.isDefault) ?? parameterSets[0])?.optimalMargin ?? DEFAULT_OPTIMAL_MARGIN;
 }
 
-/** SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average. */
+/**
+ * SKU-weighted average margin if any quotation has sku set; otherwise arithmetic average.
+ * Unrounded, as every margin is until `formatMarginPct` shows it.
+ */
 export function computeRowMargin(
   row: MarginComputeInput,
   parameterSets: PricingParameterSet[]
-): { margin: number; isAboveTarget: boolean; marginStatus: 'green' | 'yellow' | 'red' } | null {
+): { margin: number; isAboveTarget: boolean; marginStatus: MarginStatus } | null {
   const computed: Array<{ value: number; sku: number | null }> = [];
   let refOptimalMargin = DEFAULT_OPTIMAL_MARGIN;
 
@@ -64,30 +48,24 @@ export function computeRowMargin(
     const ps = parameterSets.find(p => p.id === q.pricingParameterSetId);
     if (!ps) continue;
 
-    const qc = q.supplierQuotation * (ps.qualityControlPercent / 100);
-    const withQC = q.supplierQuotation + qc + ps.tools;
-    const withTransport = withQC + ps.transportInsuranceCost;
-    const withDuty = withTransport * (1 + ps.duty / 100);
-    const landed = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-    const wholesale = q.retailPrice / ps.retailMultiplier;
-    computed.push({ value: (wholesale - landed) / wholesale, sku: q.sku ?? null });
+    computed.push({ value: retailMargin(q.supplierQuotation, q.retailPrice, ps), sku: q.sku ?? null });
     refOptimalMargin = ps.optimalMargin;
   }
 
   if (computed.length === 0) return null;
 
   const avg = skuWeightedAverage(computed);
-  const marginStatus = computeMarginStatus(avg * 100, refOptimalMargin);
+  const marginStatus = classifyMargin(avg * 100, refOptimalMargin);
 
   return {
-    margin: Math.round(avg * 10000) / 10000,
+    margin: avg,
     isAboveTarget: marginStatus === 'green',
     marginStatus,
   };
 }
 
 /**
- * Quantity-weighted average margin across multiple collection rows.
+ * Quantity-weighted average margin across multiple collection rows, unrounded.
  * Returns null when no row has computable margin data.
  */
 export function computeWeightedMargin(
@@ -102,30 +80,33 @@ export function computeWeightedMargin(
     weightedSum += m.margin * (row.qtyForecast ?? 0);
     totalQty += row.qtyForecast ?? 0;
   }
-  return totalQty > 0 ? Math.round((weightedSum / totalQty) * 10000) / 10000 : null;
+  return totalQty > 0 ? weightedSum / totalQty : null;
 }
 
-/** Classe Tailwind testo per stato margine — stesso mapping usato in CollectionGroupSection. */
-export const MARGIN_STATUS_TEXT_CLASS: Record<'green' | 'yellow' | 'red', string> = {
-  green: 'text-green-700 dark:text-green-400',
-  yellow: 'text-amber-600 dark:text-amber-400',
-  red: 'text-destructive',
+/**
+ * Text colour of a margin status, on the theme's status tokens: the one colour map for margins.
+ * A badge or bar takes its border and fill from it with `border-current`/`bg-current`.
+ */
+export const MARGIN_STATUS_TEXT_CLASS: Record<MarginStatus, string> = {
+  green: 'text-status-good',
+  yellow: 'text-status-warning',
+  red: 'text-status-critical',
 };
 
-/** Colore per fill dei grafici (recharts) — stessi hue di MARGIN_STATUS_TEXT_CLASS via CSS var. */
-export const MARGIN_STATUS_CHART_COLOR: Record<'green' | 'yellow' | 'red', string> = {
+/** Chart fill colour (recharts) — the same hues as MARGIN_STATUS_TEXT_CLASS via CSS var. */
+export const MARGIN_STATUS_CHART_COLOR: Record<MarginStatus, string> = {
   green: 'hsl(var(--status-good))',
   yellow: 'hsl(var(--status-warning))',
-  red: 'hsl(var(--destructive))',
+  red: 'hsl(var(--status-critical))',
 };
 
-export const MARGIN_STATUS_LABEL: Record<'green' | 'yellow' | 'red', string> = {
+export const MARGIN_STATUS_LABEL: Record<MarginStatus, string> = {
   green: 'In target',
   yellow: 'Vicino al target',
   red: 'Sotto target',
 };
 
-/** Input per computeRowRetailPrice — sottoinsieme di MarginComputeInput['quotations']. */
+/** Input for computeRowRetailPrice — a subset of MarginComputeInput['quotations']. */
 export interface RetailPriceComputeInput {
   quotations?: Array<{
     pricingParameterSetId?: string | null;

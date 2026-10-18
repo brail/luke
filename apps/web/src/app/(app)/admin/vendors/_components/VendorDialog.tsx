@@ -29,10 +29,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../../compone
 import { Textarea } from '../../../../../components/ui/textarea';
 import { useAppContext } from '../../../../../contexts/AppContextProvider';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { nullableNumberInputProps } from '../../../../../lib/numberInput';
 import { trpc } from '../../../../../lib/trpc';
 import { VendorClosurePeriodManager } from '../../calendar-configuration/_components/VendorClosurePeriodManager';
 
 import type { VendorItem } from './VendorTable';
+
+/** A new vendor's form values. The colour minimum starts empty (`NaN`): it is required on save. */
+const EMPTY_VENDOR: VendorInput = {
+  name: '',
+  countryCode: null,
+  nickname: null,
+  referente: null,
+  email: null,
+  phone: null,
+  chat: null,
+  notes: null,
+  moqPerLine: null,
+  moqPerModel: null,
+  moqPerColor: Number.NaN,
+  navVendorId: null,
+  enabledParameterSetIds: [],
+};
 
 interface VendorDialogProps {
   open: boolean;
@@ -73,19 +91,17 @@ export function VendorDialog({
 
   const form = useForm<VendorInput>({
     resolver: zodResolver(VendorInputSchema),
-    defaultValues: {
-      name: '',
-      countryCode: null,
-      nickname: null,
-      referente: null,
-      email: null,
-      phone: null,
-      chat: null,
-      notes: null,
-      navVendorId: null,
-      enabledParameterSetIds: [],
-    },
+    defaultValues: EMPTY_VENDOR,
   });
+
+  // The submit button stays visible on every tab, and an inactive tab's fields are unmounted: an
+  // invalid save brings back the tab that shows the error, and every opening starts there.
+  const [tab, setTab] = React.useState('dati');
+  const [wasOpen, setWasOpen] = React.useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setTab('dati');
+  }
 
   React.useEffect(() => {
     if (open) {
@@ -99,24 +115,17 @@ export function VendorDialog({
           phone: vendor.phone ?? null,
           chat: vendor.chat ?? null,
           notes: vendor.notes ?? null,
+          moqPerLine: vendor.moqPerLine ?? null,
+          moqPerModel: vendor.moqPerModel ?? null,
+          moqPerColor: vendor.moqPerColor ?? Number.NaN,
           navVendorId: vendor.navVendorId ?? null,
           enabledParameterSetIds: vendor.enabledParameterSets.map(p => p.id),
         });
       } else {
-        form.reset({
-          name: '',
-          nickname: null,
-          referente: null,
-          email: null,
-          phone: null,
-          chat: null,
-          notes: null,
-          navVendorId: null,
-          enabledParameterSetIds: [],
-        });
+        form.reset(EMPTY_VENDOR);
       }
     }
-  }, [open, vendor?.id]); // form is stable (react-hook-form)
+  }, [open, vendor, form]);
 
   const handleSubmit = async (data: VendorInput) => {
     await onSubmit(data);
@@ -138,8 +147,16 @@ export function VendorDialog({
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col min-h-0 flex-1">
-            <Tabs defaultValue="dati" className="flex flex-col min-h-0 flex-1">
+          <form
+            onSubmit={e => {
+              // A form rendered through a portal inside this one — the closures' dialog — bubbles
+              // its submit here: only a submit of this form saves the vendor.
+              if (e.target !== e.currentTarget) return;
+              void form.handleSubmit(handleSubmit, () => setTab('dati'))(e);
+            }}
+            className="flex flex-col min-h-0 flex-1"
+          >
+            <Tabs value={tab} onValueChange={setTab} className="flex flex-col min-h-0 flex-1">
               <TabsList className="w-full shrink-0">
                 <TabsTrigger value="dati" className="flex-1">Dati generali</TabsTrigger>
                 {vendor && <TabsTrigger value="chiusure" className="flex-1">Chiusure</TabsTrigger>}
@@ -306,7 +323,7 @@ export function VendorDialog({
                     {vendor?.navVendorId}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                    Collegamento bloccato. Usa &quot;Scollega da NAV&quot; per rimuoverlo.
                   </p>
                 </div>
               ) : (
@@ -331,6 +348,44 @@ export function VendorDialog({
                 />
               )}
 
+              <fieldset className="col-span-2 space-y-2">
+                <legend className="text-sm font-medium">Minimi produttivi (MOQ)</legend>
+                <div className="grid grid-cols-3 gap-4">
+                  {(
+                    [
+                      ['moqPerLine', 'Minimo per linea'],
+                      ['moqPerModel', 'Minimo per modello'],
+                      ['moqPerColor', 'Minimo per colore *'],
+                    ] as const
+                  ).map(([name, label]) => (
+                    <FormField
+                      key={name}
+                      control={form.control}
+                      name={name}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{label}</FormLabel>
+                          <div className="flex items-center gap-2">
+                            <FormControl>
+                              {/* Emptied, even the required colour minimum is `null`: the schema refuses it
+                                  with the same message as an empty new vendor's. */}
+                              <Input
+                                type="number"
+                                disabled={!canEdit || isLoading}
+                                {...field}
+                                {...nullableNumberInputProps(field.value, field.onChange)}
+                              />
+                            </FormControl>
+                            <span className="text-sm text-muted-foreground">paia</span>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+
               <FormField
                 control={form.control}
                 name="notes"
@@ -353,7 +408,7 @@ export function VendorDialog({
                 )}
               />
 
-              {/* Param set abilitati — visibile solo se brand+season selezionati */}
+              {/* Enabled param sets — visible only when brand+season are selected */}
               <FormField
                 control={form.control}
                 name="enabledParameterSetIds"

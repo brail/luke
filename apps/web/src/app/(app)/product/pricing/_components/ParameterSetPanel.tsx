@@ -11,25 +11,19 @@ import {
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
+import { calculateCompanyMultiplier, formatCompanyMultiplier } from '@luke/core';
 import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
-import { Button } from '../../../../../components/ui/button';
 import {
   Table,
   TableBody,
   TableCell,
   TableRow,
 } from '../../../../../components/ui/table';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
 import { usePermission } from '../../../../../hooks/usePermission';
 
 import { ParameterSetDialog } from './ParameterSetDialog';
@@ -46,11 +40,6 @@ interface ParameterSetPanelProps {
   onDeleteSet: (id: string) => void;
   onSetDefault: (id: string) => void;
   isLoading?: boolean;
-}
-
-function calculateCompanyMultiplier(optimalMargin: number) {
-  if (optimalMargin <= 0 || optimalMargin >= 100) return 0;
-  return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
 }
 
 function buildRows(set: PricingParameterSet) {
@@ -80,7 +69,7 @@ function buildRows(set: PricingParameterSet) {
     { label: 'Margine target', value: `${set.optimalMargin}%` },
     {
       label: 'Moltiplicatore aziendale',
-      value: `×${calculateCompanyMultiplier(set.optimalMargin).toFixed(2)}`,
+      value: formatCompanyMultiplier(calculateCompanyMultiplier(set.optimalMargin)),
     },
   ];
 }
@@ -129,7 +118,6 @@ export function ParameterSetPanel({
 
   return (
     <div className="space-y-3">
-      {/* Pulsante nuova variante */}
       <div className="flex justify-end">
         <PermissionButton
           hasPermission={canUpdate}
@@ -144,7 +132,7 @@ export function ParameterSetPanel({
         </PermissionButton>
       </div>
 
-      {/* Lista set */}
+      {/* Set list */}
       <div className="space-y-2">
         {sets.map(set => {
           const isSelected = set.id === selectedSetId;
@@ -158,7 +146,7 @@ export function ParameterSetPanel({
                 isSelected ? 'border-primary/40 bg-primary/5' : ''
               }`}
             >
-              {/* Riga header del set */}
+              {/* Set header row */}
               <div
                 className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-accent/40 rounded-md"
                 onClick={() => onSelectSet(set.id)}
@@ -181,31 +169,27 @@ export function ParameterSetPanel({
                   )}
                 </div>
 
-                {/* Azioni: stopPropagation per non triggerare onSelectSet */}
+                {/* Actions: stopPropagation so a click here does not also fire onSelectSet */}
                 <div
                   className="flex items-center gap-1"
                   onClick={e => e.stopPropagation()}
                 >
-                  {/* Imposta default */}
+                  {/* Set as default */}
                   {canUpdate && !set.isDefault && sets.length > 1 && (
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => onSetDefault(set.id)}
-                            disabled={isLoading}
-                          >
-                            <Star className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Imposta come default</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                    <PermissionButton
+                      hasPermission={canUpdate}
+                      tooltip="Non hai i permessi per modificare i parametri"
+                      infoTooltip="Imposta come default"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => onSetDefault(set.id)}
+                      disabled={isLoading}
+                    >
+                      <Star className="h-3.5 w-3.5" />
+                    </PermissionButton>
                   )}
 
-                  {/* Modifica */}
+                  {/* Edit */}
                   <PermissionButton
                     hasPermission={canUpdate}
                     tooltip="Non hai i permessi per modificare i parametri"
@@ -217,48 +201,21 @@ export function ParameterSetPanel({
                     <Pencil className="h-3.5 w-3.5" />
                   </PermissionButton>
 
-                  {/* Elimina (solo se più di un set) */}
-                  {sets.length > 1 &&
-                    (canUpdate ? (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => setDeleteTarget(set)}
-                              disabled={isLoading}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Elimina variante</TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ) : (
-                      <TooltipProvider>
-                        <Tooltip>
-                          {/* Il trigger è lo span: un bottone disabilitato non emette gli eventi
-                              che aprono il tooltip (vedi `PermissionButton`). */}
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex" tabIndex={0}>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="opacity-50 cursor-not-allowed"
-                                disabled
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Non hai i permessi per eliminare le varianti
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    ))}
+                  {/* Delete (only when more than one set exists) */}
+                  {sets.length > 1 && (
+                    <PermissionButton
+                      hasPermission={canUpdate}
+                      tooltip="Non hai i permessi per eliminare le varianti"
+                      infoTooltip="Elimina variante"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setDeleteTarget(set)}
+                      disabled={isLoading}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </PermissionButton>
+                  )}
                 </div>
 
                 {/* Expand toggle */}
@@ -278,7 +235,7 @@ export function ParameterSetPanel({
                 </button>
               </div>
 
-              {/* Dettagli espandibili */}
+              {/* Expandable details */}
               {isExpanded && (
                 <div className="border-t px-2 pb-2">
                   <Table>
@@ -305,7 +262,7 @@ export function ParameterSetPanel({
         })}
       </div>
 
-      {/* Dialog creazione */}
+      {/* Create dialog */}
       <ParameterSetDialog
         open={isCreateDialogOpen}
         onOpenChange={setIsCreateDialogOpen}
@@ -317,7 +274,7 @@ export function ParameterSetPanel({
         isLoading={isLoading}
       />
 
-      {/* Dialog modifica */}
+      {/* Edit dialog */}
       {editingSet && (
         <ParameterSetDialog
           open={!!editingSet}
@@ -327,8 +284,8 @@ export function ParameterSetPanel({
           mode="edit"
           initialData={{
             ...editingSet,
-            // Set esistente, già validato alla creazione — la colonna DB
-            // resta `String` generico, TS non lo sa.
+            // Existing set, already validated at creation time — the DB column stays a
+            // generic `String`, which TS has no way of knowing.
             purchaseCurrency: editingSet.purchaseCurrency as PricingCurrency,
             sellingCurrency: editingSet.sellingCurrency as PricingCurrency,
           }}
@@ -340,7 +297,7 @@ export function ParameterSetPanel({
           isLoading={isLoading}
         />
       )}
-      {/* Dialog conferma eliminazione */}
+      {/* Delete confirmation dialog */}
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={open => {
@@ -350,7 +307,6 @@ export function ParameterSetPanel({
         description={`Sei sicuro di voler eliminare la variante "${deleteTarget?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => {
           if (deleteTarget) onDeleteSet(deleteTarget.id);

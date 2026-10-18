@@ -1,1 +1,7 @@
+# No Co-Authored-By trailer in this project (owner decision, 2026-08-26). Agent
+# harnesses add one by default, and history that has been pushed stays that way.
+if grep -qi '^co-authored-by:' "$1"; then
+  echo "❌ Co-Authored-By trailer found — remove it (CLAUDE.md, \"Commit Conventions\")."
+  exit 1
+fi
 pnpm exec commitlint --edit $1

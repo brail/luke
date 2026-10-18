@@ -5,7 +5,9 @@
 
 import { z } from 'zod';
 
-import { partialWithoutDefaults } from '../utils/zod';
+import { partialWithoutDefaults } from '../utils/zod.js';
+
+import { HardDeleteConfirmSchema } from './confirmation.js';
 
 /** Input schema for creating a season. Code must be alphanumeric, max 10 chars (NAV constraint). */
 export const SeasonInputSchema = z.object({
@@ -15,7 +17,7 @@ export const SeasonInputSchema = z.object({
     .max(10, 'Max 10 caratteri')
     .regex(/^[A-Za-z0-9_-]+$/, 'Solo lettere, numeri, _ e -'),
 
-  /** Anno (opzionale, descrittivo) */
+  /** Year (optional, descriptive) */
   year: z
     .number()
     .int('Anno deve essere intero')
@@ -26,11 +28,11 @@ export const SeasonInputSchema = z.object({
 
   name: z
     .string()
+    .trim()
     .min(1, 'Nome obbligatorio')
-    .max(128, 'Max 128 caratteri')
-    .trim(),
+    .max(128, 'Max 128 caratteri'),
 
-  /** Codice NAV collegato (opzionale) */
+  /** Linked NAV code (optional) */
   navSeasonId: z.string().max(10).optional().nullable(),
 
   isActive: z.boolean().default(true),
@@ -40,6 +42,9 @@ export const SeasonInputSchema = z.object({
 export const SeasonIdSchema = z.object({
   id: z.string().uuid('ID season non valido'),
 });
+
+/** Input schema for permanently deleting a season — an id alone is not enough. */
+export const SeasonHardDeleteInputSchema = SeasonIdSchema.merge(HardDeleteConfirmSchema);
 
 /** Input schema for listing seasons with optional search, active filter, and cursor pagination. */
 export const SeasonListInputSchema = z.object({
@@ -55,7 +60,7 @@ export const SeasonUpdateInputSchema = z.object({
   data: partialWithoutDefaults(SeasonInputSchema),
 });
 
-/** Schema di output completo per Season (response dal server) */
+/** Full output schema for Season (server response) */
 export const SeasonSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),

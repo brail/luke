@@ -2,6 +2,8 @@
 
 import React from 'react';
 
+import type { RouterOutputs } from '@luke/api';
+
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -17,22 +19,8 @@ import {
 import { usePermission } from '../../../../../hooks/usePermission';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
-export interface VendorItem {
-  id: string;
-  name: string;
-  countryCode: string | null;
-  nickname: string | null;
-  referente: string | null;
-  email: string | null;
-  phone: string | null;
-  chat: string | null;
-  notes: string | null;
-  navVendorId: string | null;
-  isActive: boolean;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-  enabledParameterSets: { id: string }[];
-}
+/** A vendor as the list returns it. */
+export type VendorItem = RouterOutputs['vendors']['list']['items'][number];
 
 interface VendorTableProps {
   vendors: VendorItem[];
@@ -71,6 +59,8 @@ export function VendorTable({
   const { can } = usePermission();
   const canUpdate = can('vendors:update');
   const canDelete = can('vendors:delete');
+  // A permanent delete is admin-only (`*:*`); the resource's `:delete` only archives.
+  const canHardDelete = can('*:*');
   const canRead = can('vendors:read');
 
   if (error) {
@@ -131,16 +121,16 @@ export function VendorTable({
           >
             Disattiva
           </PermissionButton>
-          {canDelete && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onHardDelete(vendor)}
-              className="text-destructive hover:text-destructive"
-            >
-              Elimina
-            </Button>
-          )}
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i fornitori"
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(vendor)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </PermissionButton>
         </>
       );
     }
@@ -156,15 +146,17 @@ export function VendorTable({
         >
           Riattiva
         </PermissionButton>
-        {!vendor.navVendorId && canDelete && (
-          <Button
+        {!vendor.navVendorId && (
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i fornitori"
             variant="outline"
             size="sm"
             onClick={() => onHardDelete(vendor)}
             className="text-destructive hover:text-destructive"
           >
             Elimina
-          </Button>
+          </PermissionButton>
         )}
       </>
     );
@@ -181,6 +173,7 @@ export function VendorTable({
             <TableHead>Referente</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Telefono</TableHead>
+            <TableHead>Min. colore</TableHead>
             <TableHead>NAV</TableHead>
             <TableHead>Stato</TableHead>
             <TableHead className="text-right">Azioni</TableHead>
@@ -195,6 +188,9 @@ export function VendorTable({
               <TableCell className="text-sm text-muted-foreground">{vendor.referente ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.email ?? '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{vendor.phone ?? '—'}</TableCell>
+              <TableCell className="text-sm text-muted-foreground tabular-nums">
+                {vendor.moqPerColor === null ? '—' : `${vendor.moqPerColor.toLocaleString('it-IT')} paia`}
+              </TableCell>
               <TableCell className="text-sm font-mono text-muted-foreground">{vendor.navVendorId ?? '—'}</TableCell>
               <TableCell>
                 <Badge variant={vendor.isActive ? 'default' : 'secondary'}>

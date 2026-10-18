@@ -15,11 +15,12 @@ import { Readable } from 'stream';
 import { TRPCError } from '@trpc/server';
 import fp from 'fastify-plugin';
 
+import type { PrismaClient } from '@luke/db';
+
 import { requireSessionWithPermission } from '../lib/auth.js';
 import { getTraceId, toErrorMessage } from '../lib/error.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export default fp(

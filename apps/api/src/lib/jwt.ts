@@ -65,8 +65,6 @@ export function signJWT(
   >,
   options: JWTSignOptions = {}
 ): string {
-  // const now = Math.floor(Date.now() / 1000);
-
   const jwtPayload: Omit<JWTPayload, 'iat' | 'exp' | 'nbf'> = {
     userId: payload.userId,
     email: payload.email,
@@ -115,55 +113,3 @@ export function verifyJWT(token: string): JWTPayload | null {
     return null;
   }
 }
-
-/**
- * Returns `true` if the token passes full JWT verification, `false` otherwise.
- */
-export function isValidJWT(token: string): boolean {
-  return verifyJWT(token) !== null;
-}
-
-/**
- * Decodes a JWT token without verifying the signature.
- * Safe to use for structured logging — never trust the result for authorisation.
- *
- * @returns Extracted metadata fields, or `null` if the token is malformed.
- */
-export function extractJWTMetadata(token: string): {
-  userId?: string;
-  role?: string;
-  exp?: number;
-  iat?: number;
-} | null {
-  try {
-    // Decodes without verification (header + payload)
-    const decoded = jwt.decode(token, { complete: true });
-
-    if (!decoded || typeof decoded === 'string') {
-      return null;
-    }
-
-    const payload = decoded.payload;
-    if (typeof payload === 'string') {
-      return null;
-    }
-
-    return {
-      userId: typeof payload.userId === 'string' ? payload.userId : undefined,
-      role: typeof payload.role === 'string' ? payload.role : undefined,
-      exp: typeof payload.exp === 'number' ? payload.exp : undefined,
-      iat: typeof payload.iat === 'number' ? payload.iat : undefined,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Read-only JWT configuration snapshot for tests and debugging.
- * The secret is never included.
- */
-export const JWT_CONFIG_EXPORT = {
-  ...JWT_CONFIG,
-  // Never export the secret
-} as const;

@@ -1,5 +1,6 @@
 /**
- * Frasi statiche per il daily greeting: intro motivazionali, fallback quotes e saluto per fascia oraria.
+ * Static phrases for the daily greeting: motivational intros and fallback quotes; the time-of-day
+ * greeting is `greetingAt` in `@luke/core`.
  */
 
 import { getRandomFact } from './dailyFacts';
@@ -29,16 +30,6 @@ export const FALLBACK_QUOTES: { content: string; author: string }[] = [
   { content: 'Quality is not an act, it is a habit.', author: 'Aristotle' },
   { content: 'Well done is better than well said.', author: 'Benjamin Franklin' },
 ];
-
-/**
- * Returns the time-of-day greeting for Europe/Rome hour buckets:
- * 05:00-11:59 Buongiorno, 12:00-17:59 Buon pomeriggio, 18:00-04:59 Buonasera.
- */
-export function getTimeBasedGreeting(hour: number): string {
-  if (hour >= 5 && hour < 12) return 'Buongiorno';
-  if (hour >= 12 && hour < 18) return 'Buon pomeriggio';
-  return 'Buonasera';
-}
 
 export interface GreetingContent {
   type: 'quote' | 'fact';

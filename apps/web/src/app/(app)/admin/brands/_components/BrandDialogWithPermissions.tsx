@@ -2,7 +2,6 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { UploadCloud } from 'lucide-react';
-import { useSession } from 'next-auth/react';
 import React, { useState, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -12,6 +11,7 @@ import type { RouterOutputs } from '@luke/api';
 import { BrandInputSchema, type BrandInput, normalizeCode } from '@luke/core';
 import { buildTempBrandLogoUploadUrl } from '@luke/core';
 
+import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Button } from '../../../../../components/ui/button';
 import {
   Dialog,
@@ -40,18 +40,12 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Switch } from '../../../../../components/ui/switch';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../../components/ui/tooltip';
-import { useBrandPermissions } from '../../../../../hooks/useBrandPermissions';
+import { usePermission } from '../../../../../hooks/usePermission';
 import { debugError } from '../../../../../lib/debug';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
 
-// Schema per form con isActive obbligatorio (per React Hook Form)
+// Form schema with a required isActive (for React Hook Form)
 // logoUrl accepts any string (including relative paths in DEV) or null/undefined
 const BrandFormSchema = BrandInputSchema.extend({
   isActive: z.boolean(),
@@ -74,45 +68,10 @@ interface BrandDialogWithPermissionsProps {
 }
 
 /**
- * Wraps a form field with a tooltip when the field is disabled.
- *
- * @param disabled - Whether the wrapped field should be treated as disabled.
- * @param tooltip - Tooltip message shown when disabled is true.
- */
-function DisabledFieldWrapper({
-  children,
-  disabled,
-  tooltip,
-}: {
-  children: React.ReactNode;
-  disabled: boolean;
-  tooltip: string;
-}) {
-  if (!disabled || !tooltip) {
-    return <>{children}</>;
-  }
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        {/* The trigger is the `div`, not the field: a disabled input doesn't emit `pointerenter`
-            or `focus`, so with `asChild` directly on the field the tooltip would never open
-            — same fix applied in `PermissionButton`. `tabIndex` makes it keyboard-reachable,
-            where a disabled field cannot be reached. */}
-        <TooltipTrigger asChild>
-          <div tabIndex={0}>{children}</div>
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-/**
  * Permission-aware dialog for creating and editing a Brand.
  *
- * Disables all fields and the submit button for read-only users, and shows
- * contextual tooltips explaining why. NAV-linked fields are locked regardless
+ * Disables the fields and hides the submit button for a user who can neither
+ * create nor update brands, and shows contextual tooltips explaining why. NAV-linked fields are locked regardless
  * of the user's role. Logo upload is gated by `brands:update`.
  *
  * @param brand - Existing brand to edit; omit for create mode.
@@ -133,44 +92,46 @@ export function BrandDialogWithPermissions({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [codePreview, setCodePreview] = useState<string>('');
 
-  // Hook per permissions
-  const brandPerms = useBrandPermissions();
-  const { data: session } = useSession();
+  const { can, session } = usePermission();
+  const canUpdate = can('brands:update');
+  const canEdit = can('brands:create') || canUpdate;
+  // Reads brands but cannot create them: every role but admin.
+  const isReadOnly = can('brands:read') && !can('brands:create');
 
-  // Lista brand NAV sincronizzati (per collegamento)
+  // Synced NAV brands (for linking)
   const { data: navBrands = [] } = trpc.integrations.nav.brands.list.useQuery(
     { excludeLinkedTo: brand?.navBrandId ?? undefined },
     { staleTime: 5 * 60 * 1000 }
   );
 
-  // Determina il label del dialog in base ai permessi
+  // Determine the dialog label from the permissions
   const dialogTitle = useMemo(() => {
     if (brand) {
-      return brandPerms.isReadOnly() ? 'Visualizza Brand' : 'Modifica Brand';
+      return isReadOnly ? 'Visualizza Brand' : 'Modifica Brand';
     }
     return 'Nuovo Brand';
-  }, [brand, brandPerms]);
+  }, [brand, isReadOnly]);
 
   const dialogDescription = useMemo(() => {
     if (brand) {
-      if (brandPerms.isReadOnly()) {
+      if (isReadOnly) {
         return 'Visualizzazione del brand (accesso sola lettura)';
       }
       return 'Modifica le informazioni del brand selezionato.';
     }
     return 'Crea un nuovo brand nel sistema.';
-  }, [brand, brandPerms]);
+  }, [brand, isReadOnly]);
 
-  // Messaggio per campi disabilitati
+  // Message for disabled fields
   const disabledFieldTooltip = useMemo(() => {
-    if (brandPerms.isReadOnly()) {
+    if (isReadOnly) {
       return 'Accesso sola lettura - non puoi modificare i brand';
     }
-    if (!brandPerms.canEdit()) {
+    if (!canEdit) {
       return 'Non hai i permessi necessari per modificare i brand';
     }
     return '';
-  }, [brandPerms]);
+  }, [isReadOnly, canEdit]);
 
   const form = useForm<BrandFormData>({
     resolver: zodResolver(BrandFormSchema),
@@ -212,18 +173,11 @@ export function BrandDialogWithPermissions({
       setCodePreview('');
       setUploadProgress(0);
     }
-  }, [
-    brand?.id,
-    brand?.code,
-    brand?.name,
-    brand?.logoUrl,
-    brand?.isActive,
-    form,
-  ]);
+  }, [brand, form]);
 
   // Auto-focus code field when dialog opens
   React.useEffect(() => {
-    if (open && brandPerms.canEdit()) {
+    if (open && canEdit) {
       const timer = setTimeout(() => {
         const codeInput = document.querySelector(
           'input[placeholder="es. nike-2024"]'
@@ -240,10 +194,12 @@ export function BrandDialogWithPermissions({
       setCodePreview('');
       setUploadProgress(0);
     }
-  }, [open]); // intentionally limited to open: avoid infinite loop from unstable refs
+    // `canEdit` deliberately excluded: this effect runs on `open` transitions only, so a session
+    // that resolves while the dialog is open does not re-arm the focus timer.
+  }, [open, form]);
 
   const handleLogoUpload = (file: File) => {
-    if (!brandPerms.canUpdate) {
+    if (!canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
       return;
     }
@@ -298,7 +254,7 @@ export function BrandDialogWithPermissions({
   };
 
   const handleLogoRemove = () => {
-    if (!brandPerms.canUpdate) {
+    if (!canUpdate) {
       toast.error('Non hai i permessi per modificare il logo');
       return;
     }
@@ -308,15 +264,15 @@ export function BrandDialogWithPermissions({
     form.setValue('logoUrl', null);
   };
 
-  // Handler per submit form
+  // Form submit handler
   const handleSubmit = async (data: BrandFormData) => {
-    if (!brandPerms.canEdit()) {
+    if (!canEdit) {
       toast.error('Non hai i permessi per modificare i brand');
       return;
     }
 
     try {
-      // Converti BrandFormData a BrandInput per il backend
+      // Convert BrandFormData to BrandInput for the backend
       const brandInput: BrandInput = {
         code: data.code,
         name: data.name,
@@ -330,12 +286,12 @@ export function BrandDialogWithPermissions({
 
       await onSubmit(brandInput);
     } catch (error) {
-      debugError('Errore submit form:', error);
+      debugError('Form submit error:', error);
       throw error;
     }
   };
 
-  const isFormDisabled = !brandPerms.canEdit();
+  const isFormDisabled = !canEdit;
   // Fields from NAV are read-only if brand is already linked
   const isNavLinked = !!brand?.navBrandId;
   const isNavFieldReadOnly = isNavLinked || isFormDisabled;
@@ -373,18 +329,19 @@ export function BrandDialogWithPermissions({
             {/* Logo Upload */}
             <div className="space-y-2">
               <FormLabel>Logo</FormLabel>
-              <DisabledFieldWrapper
-                disabled={!brandPerms.canUpdate}
+              <PermissionTooltip
+                hasPermission={canUpdate || !disabledFieldTooltip}
                 tooltip={disabledFieldTooltip}
+                className="flex w-full cursor-not-allowed"
               >
                 <FileDropZone
                   onFile={handleLogoUpload}
                   accept={['image/png', 'image/jpeg', 'image/webp']}
                   maxSizeMB={2}
-                  disabled={isUploading || isLoading || !brandPerms.canUpdate}
+                  disabled={isUploading || isLoading || !canUpdate}
                   className={cn(
                     'rounded-lg border-2 border-dashed p-4',
-                    brandPerms.canUpdate && !isUploading
+                    canUpdate && !isUploading
                       ? 'cursor-pointer border-muted hover:border-primary/40 hover:bg-muted/30'
                       : 'border-muted opacity-50 cursor-not-allowed'
                   )}
@@ -397,7 +354,7 @@ export function BrandDialogWithPermissions({
                           alt="Logo brand"
                           className="h-16 w-16 rounded-lg object-cover border"
                         />
-                        {brandPerms.canUpdate && (
+                        {canUpdate && (
                           <Button
                             type="button"
                             variant="destructive"
@@ -424,7 +381,7 @@ export function BrandDialogWithPermissions({
                         </>
                       ) : (
                         <p className="text-sm text-muted-foreground">
-                          {brandPerms.canUpdate
+                          {canUpdate
                             ? 'Trascina qui o clicca per caricare'
                             : 'Sola lettura'}
                         </p>
@@ -438,7 +395,7 @@ export function BrandDialogWithPermissions({
                     </div>
                   </div>
                 </FileDropZone>
-              </DisabledFieldWrapper>
+              </PermissionTooltip>
             </div>
 
             {/* Code */}
@@ -453,14 +410,16 @@ export function BrandDialogWithPermissions({
                       <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
                     )}
                   </FormLabel>
-                  <DisabledFieldWrapper
-                    disabled={isNavFieldReadOnly}
+                  <PermissionTooltip
+                    hasPermission={!isNavFieldReadOnly}
                     tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
+                    className="flex w-full cursor-not-allowed"
                   >
                     <FormControl>
                       <Input
                         placeholder="es. nike-2024"
                         disabled={isLoading || isNavFieldReadOnly}
+                        className="disabled:pointer-events-none"
                         {...field}
                         onChange={e => {
                           field.onChange(e);
@@ -469,7 +428,7 @@ export function BrandDialogWithPermissions({
                         }}
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                   {codePreview && codePreview !== field.value && (
                     <p className="text-xs text-muted-foreground">
                       Verrà salvato come: <strong>{codePreview}</strong>
@@ -492,18 +451,20 @@ export function BrandDialogWithPermissions({
                       <span className="text-xs font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">da NAV</span>
                     )}
                   </FormLabel>
-                  <DisabledFieldWrapper
-                    disabled={isNavFieldReadOnly}
+                  <PermissionTooltip
+                    hasPermission={!isNavFieldReadOnly}
                     tooltip={isNavLinked ? 'Sincronizzato da NAV — non modificabile' : disabledFieldTooltip}
+                    className="flex w-full cursor-not-allowed"
                   >
                     <FormControl>
                       <Input
                         placeholder="es. Nike, Adidas"
                         disabled={isLoading || isNavFieldReadOnly}
+                        className="disabled:pointer-events-none"
                         {...field}
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                   <FormMessage />
                 </FormItem>
               )}
@@ -520,7 +481,7 @@ export function BrandDialogWithPermissions({
                   {brand?.navBrandId}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                  Collegamento bloccato. Usa &quot;Scollega da NAV&quot; per rimuoverlo.
                 </p>
               </div>
             ) : navBrands.length > 0 && (
@@ -530,14 +491,18 @@ export function BrandDialogWithPermissions({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Collega a NAV</FormLabel>
-                    <DisabledFieldWrapper disabled={isFormDisabled} tooltip={disabledFieldTooltip}>
+                    <PermissionTooltip
+                      hasPermission={!isFormDisabled}
+                      tooltip={disabledFieldTooltip}
+                      className="flex w-full cursor-not-allowed"
+                    >
                       <Select
                         value={field.value ?? '__none__'}
                         onValueChange={v => field.onChange(v === '__none__' ? null : v)}
                         disabled={isFormDisabled || isLoading}
                       >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="disabled:pointer-events-none">
                             <SelectValue placeholder="Nessun collegamento NAV" />
                           </SelectTrigger>
                         </FormControl>
@@ -550,7 +515,7 @@ export function BrandDialogWithPermissions({
                           ))}
                         </SelectContent>
                       </Select>
-                    </DisabledFieldWrapper>
+                    </PermissionTooltip>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -569,24 +534,26 @@ export function BrandDialogWithPermissions({
                       Il brand sarà disponibile per la selezione
                     </p>
                   </div>
-                  <DisabledFieldWrapper
-                    disabled={isFormDisabled}
+                  <PermissionTooltip
+                    hasPermission={!isFormDisabled}
                     tooltip={disabledFieldTooltip}
+                    className="cursor-not-allowed"
                   >
                     <FormControl>
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
                         disabled={isLoading || isFormDisabled}
+                        className="disabled:pointer-events-none"
                       />
                     </FormControl>
-                  </DisabledFieldWrapper>
+                  </PermissionTooltip>
                 </FormItem>
               )}
             />
 
             {/* Read-Only Banner */}
-            {brandPerms.isReadOnly() && (
+            {isReadOnly && (
               <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
                 <p className="text-sm text-blue-800">
                   Hai accesso sola lettura. Per modificare i brand, contatta un
@@ -602,9 +569,9 @@ export function BrandDialogWithPermissions({
                 onClick={() => onOpenChange(false)}
                 disabled={isLoading || isUploading}
               >
-                {brandPerms.isReadOnly() ? 'Chiudi' : 'Annulla'}
+                {isReadOnly ? 'Chiudi' : 'Annulla'}
               </Button>
-              {brandPerms.canEdit() && (
+              {canEdit && (
                 <Button type="submit" disabled={isLoading || isUploading}>
                   {isLoading ? 'Salvataggio...' : brand ? 'Aggiorna' : 'Crea'}
                 </Button>

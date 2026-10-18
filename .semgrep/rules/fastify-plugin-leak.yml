@@ -3,13 +3,13 @@ rules:
     languages: [typescript]
     severity: ERROR
     message: >-
-      Un file di route non deve registrare plugin dentro `fp()`. `fastify-plugin`
-      rompe l'incapsulamento di proposito: il plugin finisce nello scope root e
-      diventa globale per tutto il server. È già successo con il rate limiter di
-      brandLogo.routes.ts, che ha sostituito il limite globale con 30 req/min per
-      utente su ogni rotta in produzione. Esporta una normale funzione async —
-      nessun file in routes/ usa decorate o addHook, quindi nessuno ha bisogno di
-      fp().
+      A route file must not register plugins inside `fp()`. `fastify-plugin`
+      breaks encapsulation on purpose: the plugin lands in the root scope and
+      becomes global for the whole server. It already happened with the
+      brandLogo.routes.ts rate limiter, which replaced the global limit with
+      30 req/min per user on every route in production. Export a plain async
+      function — no file in routes/ uses decorate or addHook, so none of them
+      needs fp().
     patterns:
       - pattern-inside: |
           fp(async ($APP, ...) => { ... }, ...)

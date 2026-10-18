@@ -10,8 +10,8 @@ import { TRPCError } from '@trpc/server';
 /**
  * Structured payload attached as `cause` to every `TOO_MANY_REQUESTS` error thrown by
  * rate-limit checks. `trpcErrorFormatter` reads this to put `retryAfterSeconds` in the
- * serialized error `data`, so clients can render an accurate `Retry-After` without
- * recomputing the window themselves.
+ * serialized error `data`, so clients can render an upper-bound `Retry-After` (the whole
+ * window) without recomputing it themselves.
  */
 export interface RateLimitExceededCause {
   retryAfterSeconds: number;
@@ -33,21 +33,19 @@ export function isRateLimitExceededCause(
 
 /**
  * Builds a `TOO_MANY_REQUESTS` TRPCError with `retryAfterSeconds` attached as `cause`.
- * Shared by `withRateLimit()` and by call sites that check `rateLimitStore` directly with
- * an explicit key instead of going through the middleware (e.g. `loginByUsername`).
+ * Called only by `enforceRateLimit()`, which logs the route and the limit before throwing.
+ *
+ * The message names neither the route nor the limit: a 4xx reaches every client, and the
+ * budget of `auth.login` is exactly what a password sprayer would pace itself by. No number either — `retryAfterSeconds` is the whole window, not the time left.
  */
-export function buildRateLimitExceededError(
-  routeName: string,
-  config: { max: number; windowMs: number }
-): TRPCError {
-  const windowMinutes = Math.ceil(config.windowMs / 60_000);
+export function buildRateLimitExceededError(windowMs: number): TRPCError {
   const cause: RateLimitExceededCause = {
-    retryAfterSeconds: Math.ceil(config.windowMs / 1000),
+    retryAfterSeconds: Math.ceil(windowMs / 1000),
   };
 
   return new TRPCError({
     code: 'TOO_MANY_REQUESTS',
-    message: `Rate limit exceeded for ${routeName}. Max ${config.max} requests per ${windowMinutes} minute(s).`,
+    message: 'Troppe richieste. Riprova più tardi.',
     cause,
   });
 }

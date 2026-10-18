@@ -32,10 +32,10 @@
 import { TRPCError } from '@trpc/server';
 
 import { type Role } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
-import { getUserAllowedBrandIds } from './context.service';
+import { getUserAllowedIds, type UserAllowedIds } from './context.service';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * The minimum a guard needs.
@@ -47,23 +47,26 @@ import type { PrismaClient } from '@prisma/client';
 export interface BrandScopeCtx {
   prisma: PrismaClient;
   session: { user: { id: string; role: string } } | null;
-  /** See `allowedBrandIds`. Present on `Context`, optional elsewhere. */
-  _allowedBrandIdsPromise?: Promise<string[] | null>;
+  /** See `allowedTeamAccess`. Present on `Context`, optional elsewhere. */
+  _allowedTeamAccessPromise?: Promise<UserAllowedIds>;
 }
 
 /**
- * The brands accessible to the requesting user, resolved once.
+ * The user's team-membership access (brand IDs + function IDs), resolved once.
  *
- * Memoizes the **promise**, not the value: `seasonCalendar.listEvents` and
- * `copyFromSeason` fire multiple guards in parallel with `Promise.all`, and
- * with a value cache each one would start before the first had finished,
+ * Memoizes the **promise**, not the value: guards a request runs in parallel
+ * (a `Promise.all` of guards, or tRPC batching several procedures into one
+ * request) would each start before the first had finished with a value cache,
  * missing it every time. Result: one `companyTeamMembership.findMany` per
- * request instead of one per guard, and zero for admins.
+ * request instead of one per guard, and zero for admins — and, since brand
+ * and function guards now share the same promise, one query even when a
+ * request needs both (e.g. `seasonCalendar.listMilestones`, batched in the
+ * same tRPC request as `getOrCreate`'s `assertBrandAccess`).
  *
  * If the query rejects, every subsequent `await` in the same request inherits
  * the rejection. That's intentional — the request must fail, not retry.
  */
-async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
+async function allowedTeamAccess(ctx: BrandScopeCtx): Promise<UserAllowedIds> {
   if (!ctx.session) {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
@@ -74,13 +77,25 @@ async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
   // Watch out with `{ ...ctx, prisma: tx }`: the spread copies the slot by value, and
   // the `??=` would write to the copy. If a transaction client is needed, pass it
   // as an explicit parameter.
-  ctx._allowedBrandIdsPromise ??= getUserAllowedBrandIds(
+  ctx._allowedTeamAccessPromise ??= getUserAllowedIds(
     ctx.session.user.id,
     ctx.prisma,
     ctx.session.user.role as Role
   );
 
-  return ctx._allowedBrandIdsPromise;
+  return ctx._allowedTeamAccessPromise;
+}
+
+async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
+  return (await allowedTeamAccess(ctx)).brandIds;
+}
+
+/**
+ * The function IDs accessible to the requesting user, resolved once — the function-visibility
+ * sibling of `filterAllowedBrandIds`, sharing the same per-request cache.
+ */
+export async function getAllowedFunctionIds(ctx: BrandScopeCtx): Promise<string[] | null> {
+  return (await allowedTeamAccess(ctx)).functionIds;
 }
 
 /**
@@ -157,7 +172,8 @@ export async function filterAllowedBrandIds(
 //
 // Chains: layout → `brandId` (0 hop) · group and row → `collectionLayout.brandId`
 // (1 hop, `collectionLayoutId` is denormalized on the row) · quotation →
-// `row.collectionLayout.brandId` (2 hop).
+// `row.collectionLayout.brandId` (2 hop) · season calendar → `brandId` (0 hop) · calendar event and
+// planning group → `calendar.brandId` (1 hop).
 
 /** Layout, by `collectionLayoutId`. */
 export async function resolveLayoutBrandAccess(
@@ -312,7 +328,7 @@ export async function resolveMerchPlanRowBrandAccess(
 ) {
   const row = await ctx.prisma.merchandisingPlanRow.findUnique({
     where: { id: rowId },
-    select: { id: true, planId: true, plan: { select: { brandId: true } } },
+    select: { id: true, planId: true, plan: { select: { brandId: true, seasonId: true } } },
   });
   if (!row) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Riga non trovata' });
@@ -320,6 +336,56 @@ export async function resolveMerchPlanRowBrandAccess(
 
   await assertBrandAccess(ctx, row.plan.brandId);
   return row;
+}
+
+/** Merchandising plan, by `planId`. */
+export async function resolveMerchPlanBrandAccess(ctx: BrandScopeCtx, planId: string) {
+  const plan = await ctx.prisma.merchandisingPlan.findUnique({
+    where: { id: planId },
+    select: { id: true, brandId: true, seasonId: true },
+  });
+  if (!plan) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Piano non trovato' });
+  }
+
+  await assertBrandAccess(ctx, plan.brandId);
+  return plan;
+}
+
+/** Merchandising specsheet, by `specsheetId`: specsheet → row → plan. */
+export async function resolveMerchSpecsheetBrandAccess(
+  ctx: BrandScopeCtx,
+  specsheetId: string
+) {
+  const specsheet = await ctx.prisma.merchandisingSpecsheet.findUnique({
+    where: { id: specsheetId },
+    select: { id: true, row: { select: { plan: { select: { brandId: true } } } } },
+  });
+  if (!specsheet) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Specsheet non trovata' });
+  }
+
+  await assertBrandAccess(ctx, specsheet.row.plan.brandId);
+  return specsheet;
+}
+
+/** Merchandising specsheet image, by `imageId`: image → specsheet → row → plan. */
+export async function resolveMerchImageBrandAccess(ctx: BrandScopeCtx, imageId: string) {
+  const image = await ctx.prisma.merchandisingImage.findUnique({
+    where: { id: imageId },
+    select: {
+      id: true,
+      specsheetId: true,
+      isDefault: true,
+      specsheet: { select: { row: { select: { plan: { select: { brandId: true } } } } } },
+    },
+  });
+  if (!image) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Immagine non trovata' });
+  }
+
+  await assertBrandAccess(ctx, image.specsheet.row.plan.brandId);
+  return image;
 }
 
 /** Planning group, by `planningGroupId`. */
@@ -344,4 +410,51 @@ export async function resolvePlanningGroupBrandAccess(
 
   await assertBrandAccess(ctx, group.calendar.brandId);
   return group;
+}
+
+/** Season calendar, by `calendarId`. */
+export async function resolveCalendarBrandAccess(ctx: BrandScopeCtx, calendarId: string) {
+  const calendar = await ctx.prisma.seasonCalendar.findUnique({
+    where: { id: calendarId },
+    select: { id: true, brandId: true },
+  });
+  if (!calendar) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Calendario non trovato' });
+  }
+
+  await assertBrandAccess(ctx, calendar.brandId);
+  return calendar;
+}
+
+/** What every event resolve loads besides the event's own fields: its calendar's brand and season. */
+const EVENT_CALENDAR = { calendar: { select: { brandId: true, seasonId: true } } } as const;
+
+/** Relations a caller may add; `calendar` is not one, `EVENT_CALENDAR` always loads it. */
+type EventInclude = Omit<Prisma.CalendarEventInclude, 'calendar'>;
+
+/** A calendar event with `EVENT_CALENDAR` and the relations in `I`. */
+type EventWith<I extends EventInclude> = Prisma.CalendarEventGetPayload<{ include: I & typeof EVENT_CALENDAR }>;
+
+/**
+ * Calendar event, by `eventId`: event → `calendar.brandId`. Returns the event's fields, its
+ * calendar's `brandId` and `seasonId`, and the relations in `include`, so a procedure checks the
+ * brand before anything about the event's state.
+ */
+export async function resolveEventBrandAccess<I extends EventInclude = Record<never, never>>(
+  ctx: BrandScopeCtx,
+  eventId: string,
+  include?: I
+): Promise<EventWith<I>> {
+  const event = await ctx.prisma.calendarEvent.findUnique({
+    where: { id: eventId },
+    include: { ...include, ...EVENT_CALENDAR },
+  });
+  if (!event) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+  }
+
+  await assertBrandAccess(ctx, event.calendar.brandId);
+  // The query's include is `{ ...include, ...EVENT_CALENDAR }`, which is `EventWith<I>`'s; TypeScript
+  // cannot resolve Prisma's payload type for a generic `I`, so it cannot see the two are equal.
+  return event as EventWith<I>;
 }

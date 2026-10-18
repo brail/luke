@@ -48,13 +48,21 @@ split_commits = false
 protect_breaking_commits = true
 filter_commits = false
 tag_pattern = "v[0-9].*"
-# Skip all pre-1.9 tags (1.0.0–1.6.3 + futuri 1.7/1.8 se mai taggati):
-# commit non-conventional, history sintetizzata nel footer
+# Skip all pre-1.9 tags (1.0.0–1.6.3, plus any 1.7/1.8 if ever tagged):
+# non-conventional commits, history summarized in the footer
 skip_tags = "^v1\\.[0-8]\\..*"
 topo_order = false
 sort_commits = "oldest"
 
 commit_parsers = [
+  # A merge commit is not a change, it is how a change arrived. `[2.1.4]` still
+  # carries `- Merge pull request #28 from brail/hotfix/mysql2-main` followed by
+  # the PR body, because an unconventional commit is rendered with its whole
+  # message. Anchored, capitalised and with the trailing space, so it skips
+  # git's own `Merge pull request …` / `Merge branch …` subjects and nothing
+  # else: `feat(web): merge …` and `chore: merge …` are ordinary commits and
+  # stay. Future generation only — CHANGELOG.md is not rewritten.
+  { message = "^Merge ",             skip = true },
   { message = "^feat",               group = "Added" },
   { message = "^fix",                group = "Fixed" },
   { message = "^perf",               group = "Performance" },

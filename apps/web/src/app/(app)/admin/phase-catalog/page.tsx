@@ -1,11 +1,18 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowDown, ArrowUp, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { PhaseInputSchema } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
+import { PermissionButton } from '../../../../components/PermissionButton';
+import { PermissionTooltip } from '../../../../components/PermissionTooltip';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -15,14 +22,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '../../../../components/ui/tooltip';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -108,26 +118,15 @@ export default function PhaseCatalogPage() {
 
       <div className="p-6">
         <div className="flex items-center justify-end mb-4">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button
-                    size="sm"
-                    disabled={!canWrite}
-                    className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                    onClick={() => canWrite && setItemDialog({ mode: 'create' })}
-                  >
-                    <Plus className="mr-1 h-4 w-4" />
-                    Aggiungi fase
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {!canWrite && (
-                <TooltipContent>Non hai i permessi per modificare il catalogo fasi</TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          <PermissionButton
+            hasPermission={canWrite}
+            tooltip="Non hai i permessi per modificare il catalogo fasi"
+            size="sm"
+            onClick={() => setItemDialog({ mode: 'create' })}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Aggiungi fase
+          </PermissionButton>
         </div>
 
         <div className="rounded-lg border bg-card">
@@ -154,24 +153,36 @@ export default function PhaseCatalogPage() {
                   <tr key={item.id} className={cn('border-b last:border-0', !item.isActive && 'opacity-50')}>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-0.5">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6"
-                          disabled={!canWrite || index === 0 || reorderMutation.isPending}
-                          onClick={() => moveItem(index, -1)}
+                        {/* One tooltip for the pair: same permission, same message. Per-button
+                            wrappers would put four identical tab stops on every row of the table.
+                            `cursor-not-allowed` belongs on the span, which is where the pointer
+                            actually lands — the buttons under it are `pointer-events-none`. */}
+                        <PermissionTooltip
+                          hasPermission={canWrite}
+                          tooltip="Non hai i permessi per modificare il catalogo fasi"
+                          className="items-center gap-0.5 cursor-not-allowed"
                         >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6"
-                          disabled={!canWrite || index === sortedItems.length - 1 || reorderMutation.isPending}
-                          onClick={() => moveItem(index, 1)}
-                        >
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            disabled={!canWrite || index === 0 || reorderMutation.isPending}
+                            onClick={() => moveItem(index, -1)}
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            disabled={
+                              !canWrite || index === sortedItems.length - 1 || reorderMutation.isPending
+                            }
+                            onClick={() => moveItem(index, 1)}
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </PermissionTooltip>
                       </div>
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{item.value}</td>
@@ -184,66 +195,44 @@ export default function PhaseCatalogPage() {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-1">
-                        {!item.isActive ? (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span>
-                                  <Button
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                    disabled={!canWrite || restoreMutation.isPending}
-                                    onClick={() => canWrite && restoreMutation.mutate({ id: item.id })}
-                                  >
-                                    <RotateCcw className="h-3.5 w-3.5" />
-                                  </Button>
-                                </span>
-                              </TooltipTrigger>
-                              {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalogo fasi</TooltipContent>}
-                            </Tooltip>
-                          </TooltipProvider>
-                        ) : (
-                          <>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span>
-                                    <Button
-                                      size="icon-sm"
-                                      variant="ghost"
-                                      className={!canWrite ? 'opacity-50 cursor-not-allowed' : undefined}
-                                      disabled={!canWrite || isMutating}
-                                      onClick={() => canWrite && setItemDialog({ mode: 'edit', item })}
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </span>
-                                </TooltipTrigger>
-                                {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalogo fasi</TooltipContent>}
-                              </Tooltip>
-                            </TooltipProvider>
+                        {/* One tooltip for the whole actions cell — see the reorder arrows above. */}
+                        <PermissionTooltip
+                          hasPermission={canWrite}
+                          tooltip="Non hai i permessi per modificare il catalogo fasi"
+                          className="items-center gap-1 cursor-not-allowed"
+                        >
+                          {!item.isActive ? (
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              disabled={!canWrite || restoreMutation.isPending}
+                              onClick={() => restoreMutation.mutate({ id: item.id })}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : (
+                            <>
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                disabled={!canWrite || isMutating}
+                                onClick={() => setItemDialog({ mode: 'edit', item })}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
 
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <span>
-                                    <Button
-                                      size="icon-sm"
-                                      variant="ghost"
-                                      className={cn('text-destructive', !canWrite && 'opacity-50 cursor-not-allowed')}
-                                      disabled={!canWrite || isMutating}
-                                      onClick={() => canWrite && setDeletingItem(item)}
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </span>
-                                </TooltipTrigger>
-                                {!canWrite && <TooltipContent>Non hai i permessi per modificare il catalogo fasi</TooltipContent>}
-                              </Tooltip>
-                            </TooltipProvider>
-                          </>
-                        )}
+                              <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                className="text-destructive"
+                                disabled={!canWrite || isMutating}
+                                onClick={() => setDeletingItem(item)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </PermissionTooltip>
                       </div>
                     </td>
                   </tr>
@@ -285,8 +274,7 @@ export default function PhaseCatalogPage() {
         description={`Disattivare "${deletingItem?.label}"? Non sarà più disponibile nei nuovi record, ma i dati esistenti non vengono modificati.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingItem) removeMutation.mutate({ id: deletingItem.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -297,6 +285,18 @@ export default function PhaseCatalogPage() {
 // ─── Item Dialog ──────────────────────────────────────────────────────────────
 
 type DialogSubmitData = { value: string; label: string };
+
+/**
+ * The two fields the dialog collects, out of the phase input. The messages are spelled out here:
+ * the core schema carries no copy, and Zod's default for `min(1)` talks about string length
+ * rather than about the field being required.
+ */
+const PhaseFormSchema = PhaseInputSchema.pick({ value: true, label: true }).extend({
+  value: z.string().min(1, 'Il valore è obbligatorio').max(100, 'Massimo 100 caratteri'),
+  label: z.string().min(1, 'La label è obbligatoria').max(200, 'Massimo 200 caratteri'),
+});
+
+type PhaseFormData = z.infer<typeof PhaseFormSchema>;
 
 function PhaseItemDialog({
   state,
@@ -313,65 +313,83 @@ function PhaseItemDialog({
 }) {
   const initial = state.mode === 'edit' ? state.item : null;
 
-  const [value, setValue] = useState(initial?.value ?? '');
-  const [label, setLabel] = useState(initial?.label ?? '');
+  // The caller mounts this dialog only while it is open, so the defaults are seeded once per
+  // opening and need no reset effect.
+  const form = useForm<PhaseFormData>({
+    resolver: zodResolver(PhaseFormSchema),
+    defaultValues: { value: initial?.value ?? '', label: initial?.label ?? '' },
+  });
 
-  const canSubmit = value.trim().length > 0 && label.trim().length > 0;
+  const label = form.watch('label');
 
-  const handleSubmit = () => {
-    onSubmit({
-      value: value.trim(),
-      label: label.trim(),
-    });
+  const handleSubmit = (data: PhaseFormData) => {
+    onSubmit({ value: data.value.trim(), label: data.label.trim() });
   };
 
   return (
-    <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={open => { if (!open && !isLoading) onClose(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{state.mode === 'create' ? 'Aggiungi fase' : 'Modifica fase'}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="phase-value">Valore (chiave)</Label>
-            <Input
-              id="phase-value"
-              value={value}
-              onChange={e => setValue(e.target.value)}
-              placeholder="es. DESIGN"
-              disabled={state.mode === 'edit'}
-              autoFocus
-            />
-            {state.mode === 'create' && (
-              <p className="text-xs text-muted-foreground">Stringa identificativa, non modificabile dopo la creazione.</p>
-            )}
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="grid gap-4">
+            <div className="space-y-4 py-2">
+              <FormField
+                control={form.control}
+                name="value"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Valore (chiave)</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="es. DESIGN"
+                        disabled={state.mode === 'edit' || isLoading}
+                        autoFocus
+                        {...field}
+                      />
+                    </FormControl>
+                    {state.mode === 'create' && (
+                      <FormDescription className="text-xs">
+                        Stringa identificativa, non modificabile dopo la creazione.
+                      </FormDescription>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label htmlFor="phase-label">Label visualizzata</Label>
-            <Input
-              id="phase-label"
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="es. Design"
-            />
-          </div>
+              <FormField
+                control={form.control}
+                name="label"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Label visualizzata</FormLabel>
+                    <FormControl>
+                      <Input placeholder="es. Design" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          <div className="space-y-1.5">
-            <Label>Codice</Label>
-            <p className="text-sm text-muted-foreground">
-              Derivato automaticamente dalla posizione: "{previewCode} — {label || 'Label'}"
-            </p>
-          </div>
-        </div>
+              <div className="space-y-1.5">
+                <Label>Codice</Label>
+                <p className="text-sm text-muted-foreground">
+                  Derivato automaticamente dalla posizione: &quot;{previewCode} — {label || 'Label'}&quot;
+                </p>
+              </div>
+            </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit || isLoading}>
-            {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}>Annulla</Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? 'Salvataggio…' : state.mode === 'create' ? 'Aggiungi' : 'Salva'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

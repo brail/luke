@@ -1,52 +1,64 @@
-# Tools Directory
+# Repository Tooling
 
-Strumenti di manutenzione del monorepo.
+`tools/` contains repository-wide deterministic checks and their tests.
+Application runtime code does not depend on this directory.
 
-## 📁 Struttura
+## Drift checks
 
-```
-tools/
-├── codemods/
-│   └── eliminate-hardcoded-urls.ts  # Codemod ts-morph, supporta --dry-run
-├── reports/                         # Output storici degli script
-├── scripts/
-│   ├── check-docs-integrity.ts      # Link e marker luke-docs nei .md tracciati
-│   ├── check-skill-integrity.ts     # Path e simboli citati da .claude/skills/
-│   ├── validate-client-server-boundaries.ts
-│   └── lib/                         # Regole condivise fra gli script
-└── README.md                        # Questo file
-```
-
-## 🔍 Controlli di drift
-
-`check-docs-integrity` e `check-skill-integrity` girano in CI dietro
-`pnpm check:drift` e sono bloccanti. Entrambi derivano il proprio insieme di file
-da git, non da liste scritte a mano: il perché sta in `scripts/lib/gitPaths.ts`.
+Run the complete deterministic drift suite from the repository root:
 
 ```bash
 pnpm check:drift
 ```
 
-## 🧱 Boundary client/server
+The command runs these seven checks in order and stops on the first failure:
 
-Verifica che i file client di `apps/web/src` non importino `@luke/core/server`
-né moduli `node:`.
+| Checker                                                              | Contract                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`check-skill-integrity.ts`](scripts/check-skill-integrity.ts)       | Verifies paths, symbols, execution contracts, argument binding, the 500-line SKILL.md budget, no fan-out in Explore skills, existing skill invocations, writers citing protocol §7, and version-free templates of Claude skills.                                                                                                                                                                                                                                                                                                                |
+| [`check-docs-integrity.ts`](scripts/check-docs-integrity.ts)         | Verifies tracked Markdown markers, relative links and heading fragments, reachability from the repository README, a tracked README for every workspace declared by `pnpm-workspace.yaml`, the owned docs index surface, ADR index completeness and exact titles, and that every `ADR-NNN` citation in a tracked file names an existing ADR (`CHANGELOG.md` and the checker's own tests and fixtures excepted), and that no prose line of a tracked Markdown document outside `.claude/` carries an Italian token — a regression guard, incomplete by construction; code spans are not read, so a quoted UI label stays on one line. |
+| [`check-platform-integrity.ts`](scripts/check-platform-integrity.ts) | Verifies workspace, dependency, runtime, and security-tooling invariants, the Prisma relation invariants (explicit `onDelete`, an index each foreign key leads), that an emitting Turbo watch task depends on its own `build`, and that no pnpm override pins an exact version and each cites its advisory.                                                                                                                                                                             |
+| [`check-override-consumers.ts`](scripts/check-override-consumers.ts) | After `pnpm install`: verifies that no pnpm override holds an installed or workspace consumer below the range it declares (an upward unlock is allowed). |
+| [`check-tsconfig-integrity.ts`](scripts/check-tsconfig-integrity.ts) | Verifies the TypeScript configuration graph and runtime boundaries.                                                                                                                                                                                                                                                                                                                                            |
+| [`check-workflow-branches.ts`](scripts/check-workflow-branches.ts)   | Verifies that CI, security, and release workflows agree on the active release train.                                                                                                                                                                                                                                                                                                                           |
+| [`check-workflow-paths.ts`](scripts/check-workflow-paths.ts)         | Verifies documentation routing, workflow path filters, and aggregate-gate structure.                                                                                                                                                                                                                                                                                                                           |
+
+The documentation and skill checkers derive their corpora from git rather than
+from hand-maintained file inventories. Their shared git-path and reporting
+behavior lives in [`scripts/lib/`](scripts/lib/).
+
+Fragment validation covers inline Markdown links to headings in the tracked
+corpus, including same-file links and directory README indexes. Fenced examples
+and HTML comments are excluded. Reference-style links, HTML headings and
+block-container headings are not parsed. Targets containing custom HTML anchors
+are skipped as a documented parser limitation, not a per-file ignore mechanism.
+Frozen historical documents remain subject to structural checks.
+
+## Release gates
+
+These scripts implement release contracts used by the preparation script,
+GitHub Actions, or the pre-push hook:
+
+| Checker                                                              | Contract                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`check-release-train.ts`](scripts/check-release-train.ts)           | Validates an explicitly named release target against the reachable stable line and the live RC train.                                                                                                                                              |
+| [`check-release-provenance.ts`](scripts/check-release-provenance.ts) | Validates the tagged commit's git line and derives the registry tags it may publish.                                                                                                                                                               |
+| [`check-release-tree.ts`](scripts/check-release-tree.ts)             | Verifies that the exact tagged tree contains release notes for its tag and, for a graduation, is its last candidate unchanged; with `--github-output`, emits those notes for the GitHub Release.                                                                                                                     |
+| [`check-image-runtime.ts`](scripts/check-image-runtime.ts)           | Proves from inside each runtime image that the API store holds only its production closure and the web tree only what Next traced, then runs the native addons and a server smoke; run by CI's `images` job and by `release.yml` before each push. |
+
+Use `pnpm release:prepare <tag>` for release preparation rather than invoking
+these implementation scripts as a substitute for the supported workflow.
+
+## Verification
+
+The checker suites use throwaway git fixtures and live next to their
+implementations as `*.test.ts` files.
+Two suites cover contracts implemented outside this directory:
+`check-app-version-contract.test.ts` pins the `apps/web` build-version wiring,
+and `check-release-stable-line.test.ts` covers `scripts/release-prepare.sh`.
 
 ```bash
-npx tsx tools/scripts/validate-client-server-boundaries.ts
+pnpm lint:tools
+pnpm typecheck:tools
+pnpm test:tools
 ```
-
-Non è wired in CI né in husky — stesso stato di `pnpm codemod:check-urls`.
-
-## 🧹 Cleanup file inutili
-
-Rimosso. Era uno script one-shot dell'ottobre 2025 con 36 path scritti a mano,
-tutti già cancellati da tempo: con `set -e` abortiva sul primo `git rm`, dopo
-aver però già eseguito `git stash push` sul lavoro in corso. Le cinque categorie
-che puliva (`.backup`, `.d.ts`/`.map` sotto `src/`, `tsbuildinfo`, `/src`
-duplicata, `dev.db.backup.*`) sono oggi coperte da `.gitignore`.
-
-Anche gli import non utilizzati non hanno più uno script dedicato:
-`@typescript-eslint/no-unused-vars` è già `error` in `eslint.config.mjs`, e
-`eslint --fix` li rimuove lavorando sull'AST invece che per sostituzione di
-stringhe sulla riga di import.

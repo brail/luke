@@ -1,8 +1,13 @@
 'use client';
 
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
+import { z } from 'zod';
+
+import { calendarDateOf, formatCalendarDate, NUMERIC_DATE, VendorClosureDaysInOrder, VendorClosureUpsertBaseSchema } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
@@ -15,8 +20,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '../../../../../components/ui/form';
 import { Input } from '../../../../../components/ui/input';
-import { Label } from '../../../../../components/ui/label';
 import {
   Select,
   SelectContent,
@@ -54,6 +66,19 @@ const EMPTY_FORM: ClosureForm = {
 };
 
 /**
+ * The dialog's own shape of `holidays.upsertVendorClosure`: the date inputs hold the `yyyy-mm-dd`
+ * calendar days the mutation takes as they are, and `countryCode`/`notes` are plain strings that
+ * become null when left empty.
+ */
+const ClosureFormSchema: z.ZodType<ClosureForm, ClosureForm> = VendorClosureUpsertBaseSchema
+  .pick({ name: true, type: true, startDate: true, endDate: true })
+  .extend({
+    countryCode: z.string(),
+    notes: z.string().max(500, 'Massimo 500 caratteri'),
+  })
+  .check(VendorClosureDaysInOrder);
+
+/**
  * Card-based manager for a vendor's closure and extra-opening periods in the
  * active season.
  *
@@ -67,13 +92,17 @@ const EMPTY_FORM: ClosureForm = {
  */
 export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountryCode }: Props) {
   const { can } = usePermission();
-  const canUpdate = can('season_calendar:update');
+  const canUpdate = can('season_calendar:configure');
   const { season } = useAppContext();
 
   const [editTarget, setEditTarget] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [form, setForm] = useState<ClosureForm>(EMPTY_FORM);
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  const form = useForm<ClosureForm>({
+    resolver: zodResolver(ClosureFormSchema),
+    defaultValues: EMPTY_FORM,
+  });
 
   const { data: countries = [] } = trpc.holidays.listCountries.useQuery();
   const { data: closures = [], refetch } = trpc.holidays.listVendorClosures.useQuery(
@@ -86,7 +115,6 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
       toast.success(editTarget ? 'Periodo aggiornato' : 'Periodo aggiunto');
       setDialogOpen(false);
       setEditTarget(null);
-      setForm(EMPTY_FORM);
       void refetch();
     },
     onError: err => toast.error(getTrpcErrorMessage(err)),
@@ -117,37 +145,39 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
+  // The dialog stays mounted, so each opening seeds the form explicitly rather than relying on
+  // defaults that were fixed the first time it rendered.
   function openCreate() {
     setEditTarget(null);
-    setForm(EMPTY_FORM);
+    form.reset(EMPTY_FORM);
     setDialogOpen(true);
   }
 
   function openEdit(closure: (typeof closures)[number]) {
     setEditTarget(closure.id);
-    setForm({
+    form.reset({
       name: closure.name,
       countryCode: closure.countryCode ?? '',
-      startDate: String(closure.startDate).slice(0, 10),
-      endDate: String(closure.endDate).slice(0, 10),
+      startDate: calendarDateOf(new Date(closure.startDate)),
+      endDate: calendarDateOf(new Date(closure.endDate)),
       type: closure.type as 'CLOSURE' | 'OPEN',
       notes: closure.notes ?? '',
     });
     setDialogOpen(true);
   }
 
-  function handleSave() {
+  function handleSave(data: ClosureForm) {
     if (!season?.id) return;
     upsertMutation.mutate({
       id: editTarget ?? undefined,
       vendorId,
       seasonId: season.id,
-      countryCode: form.countryCode || null,
-      name: form.name,
-      startDate: new Date(form.startDate).toISOString(),
-      endDate: new Date(form.endDate).toISOString(),
-      type: form.type,
-      notes: form.notes || null,
+      countryCode: data.countryCode || null,
+      name: data.name,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      type: data.type,
+      notes: data.notes || null,
     });
   }
 
@@ -246,12 +276,15 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td> {/* 120px: caps closure-name column so the table doesn't stretch; no exact scale match */}
+                      {/* 120px: caps closure-name column so the table doesn't stretch; no exact scale match.
+                          Kept on its own line: trailing it after </td> leaves a whitespace text node,
+                          which is invalid directly inside <tr> and fails the row render. */}
+                      <td className="px-3 py-2 max-w-[120px] truncate" title={c.name}>{c.name}</td>
                       <td className="px-3 py-2 tabular-nums">
-                        {String(c.startDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(c.startDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-3 py-2 tabular-nums">
-                        {String(c.endDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(c.endDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-3 py-2">
                         <Badge variant={c.type === 'CLOSURE' ? 'destructive' : 'secondary'}>
@@ -291,7 +324,10 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
       </Card>
 
       {/* Edit/Create dialog */}
-      <Dialog open={dialogOpen} onOpenChange={open => { if (!open) { setDialogOpen(false); setForm(EMPTY_FORM); } }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={open => { if (!open && !upsertMutation.isPending) setDialogOpen(false); }}
+      >
         <DialogContent
           onPointerDownOutside={e => e.preventDefault()}
           onInteractOutside={e => e.preventDefault()}
@@ -299,87 +335,145 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
           <DialogHeader>
             <DialogTitle>{editTarget ? 'Modifica periodo' : 'Aggiungi periodo'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Nome</Label>
-              <Input
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="es. Capodanno cinese"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Paese</Label>
-              <Select
-                value={form.countryCode}
-                onValueChange={v => setForm(f => ({ ...f, countryCode: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleziona paese" />
-                </SelectTrigger>
-                <SelectContent>
-                  {countries.map(c => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.code} — {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Data inizio</Label>
-                <Input
-                  type="date"
-                  value={form.startDate}
-                  onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSave)} className="grid gap-4">
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Nome</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="es. Capodanno cinese"
+                          disabled={upsertMutation.isPending}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="countryCode"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Paese</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={upsertMutation.isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleziona paese" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {countries.map(c => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {c.code} — {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel>Data inizio</FormLabel>
+                        <FormControl>
+                          <Input type="date" disabled={upsertMutation.isPending} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel>Data fine</FormLabel>
+                        <FormControl>
+                          <Input type="date" disabled={upsertMutation.isPending} {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Tipo</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={upsertMutation.isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="CLOSURE">Chiusura</SelectItem>
+                          <SelectItem value="OPEN">Apertura extra</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel>Note</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Opzionale"
+                          disabled={upsertMutation.isPending}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Data fine</Label>
-                <Input
-                  type="date"
-                  value={form.endDate}
-                  onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <Select
-                value={form.type}
-                onValueChange={v => setForm(f => ({ ...f, type: v as 'CLOSURE' | 'OPEN' }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="CLOSURE">Chiusura</SelectItem>
-                  <SelectItem value="OPEN">Apertura extra</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Note</Label>
-              <Input
-                value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Opzionale"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-              Annulla
-            </Button>
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={upsertMutation.isPending || !form.name || !form.startDate || !form.endDate}
-            >
-              {upsertMutation.isPending ? 'Salvataggio…' : 'Salva'}
-            </Button>
-          </DialogFooter>
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDialogOpen(false)}
+                  disabled={upsertMutation.isPending}
+                >
+                  Annulla
+                </Button>
+                <Button type="submit" disabled={upsertMutation.isPending}>
+                  {upsertMutation.isPending ? 'Salvataggio…' : 'Salva'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 
@@ -390,7 +484,6 @@ export function VendorClosurePeriodManager({ vendorId, vendorName, vendorCountry
         description="Sei sicuro di voler eliminare questo periodo di chiusura?"
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget }); }}
         isLoading={deleteMutation.isPending}

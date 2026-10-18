@@ -13,9 +13,10 @@ import {
   type Permission,
 } from '@luke/core';
 
-import { auditActorName, buildAuditLogWhere } from '../lib/auditLog';
+import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubjects } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getUserTimeZone } from '../lib/userTimeZone';
 import { signAuditLogExportToken } from '../utils/downloadToken';
 
 /**
@@ -48,6 +49,14 @@ export interface AuditLogEntryDTO {
   actorId: string | null;
   actorName: string | null;
   actorEmail: string | null;
+  /**
+   * Who the event is *about* when there is no authenticated actor — pre-session flows
+   * (login, email verification, password reset) record `actorId: null` but always point
+   * `targetId` at the user. Null when the entry has a real actor, or when it is a genuine
+   * system/script event with no user behind it.
+   */
+  subjectName: string | null;
+  subjectEmail: string | null;
 }
 
 export interface AuditLogListOutput {
@@ -101,7 +110,7 @@ export const auditLogRouter = router({
     .use(requirePermission('audit:read_all'))
     .input(AuditLogListInputSchema)
     .query(async ({ ctx, input }): Promise<AuditLogListOutput> => {
-      const where = buildAuditLogWhere(input);
+      const where = buildAuditLogWhere(input, await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger));
 
       const [items, total] = await Promise.all([
         ctx.prisma.auditLog.findMany({
@@ -114,20 +123,29 @@ export const auditLogRouter = router({
         ctx.prisma.auditLog.count({ where }),
       ]);
 
+      // Attributes the actor-less rows (login/verify/reset) in one extra batched query
+      // instead of leaving the whole pre-auth trail rendered as an anonymous "Sistema".
+      const subjects = await resolveAuditSubjects(ctx.prisma, items);
+
       return {
-        items: items.map(entry => ({
-          id: entry.id,
-          action: entry.action,
-          targetType: entry.targetType,
-          targetId: entry.targetId,
-          result: entry.result,
-          metadata: entry.metadata,
-          ip: entry.ip,
-          createdAt: entry.createdAt,
-          actorId: entry.actorId,
-          actorName: auditActorName(entry.actor),
-          actorEmail: entry.actor?.email ?? null,
-        })),
+        items: items.map(entry => {
+          const subject = auditSubjectOf(entry, subjects);
+          return {
+            id: entry.id,
+            action: entry.action,
+            targetType: entry.targetType,
+            targetId: entry.targetId,
+            result: entry.result,
+            metadata: entry.metadata,
+            ip: entry.ip,
+            createdAt: entry.createdAt,
+            actorId: entry.actorId,
+            actorName: auditActorName(entry.actor),
+            actorEmail: entry.actor?.email ?? null,
+            subjectName: subject.name,
+            subjectEmail: subject.email,
+          };
+        }),
         total,
         page: input.page,
         limit: input.limit,
@@ -135,19 +153,21 @@ export const auditLogRouter = router({
     }),
 
   /**
-   * Signs a short-lived (5-minute) token to download the CSV export of the audit trail,
-   * filtered the same way as `list` — the raw `/maintenance/audit-log/export` route verifies
-   * it and streams the CSV.
+   * Signs a short-lived (5-minute) token to download the export of the audit trail,
+   * filtered the same way as `list` — the raw `/download/audit-log` route verifies
+   * it and streams the export as CSV or XLSX.
    *
    * @auth {audit:read_all}
    * @input {AuditLogFiltersSchema} — same filters accepted by `list`.
-   * @output {{ token: string }} — signed short-lived download token for the CSV export route.
+   * @output {{ token: string }} — signed short-lived download token for the export route.
    */
   getExportLink: protectedProcedure
     .use(requirePermission('audit:read_all'))
     .input(AuditLogFiltersSchema)
-    .mutation(({ input }) => {
-      const token = signAuditLogExportToken({ filters: input });
+    .mutation(async ({ ctx, input }) => {
+      // The zone is fixed when the link is made: the export reads the days as the page does.
+      const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
+      const token = signAuditLogExportToken({ filters: input, timeZone });
       return { token };
     }),
 });

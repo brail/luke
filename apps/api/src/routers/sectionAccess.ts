@@ -6,18 +6,24 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { sectionEnum, Roles } from '@luke/core';
+import { childSectionsOf, sectionAccessDefaultsSchema, sectionEnum } from '@luke/core';
 import type { Section } from '@luke/core';
-import { getRbacConfig, invalidateRbacCache, setRbacSectionDefaultsTx } from '@luke/core/server';
+import {
+  getRbacConfig,
+  invalidateRbacCache,
+  mergeSectionAccessDefaults,
+  setRbacSectionDefaultsTx,
+} from '@luke/core/server';
 
 import { logAudit } from '../lib/auditLog';
 import { acquireLastAdminLock } from '../lib/lastAdminGuard';
+import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure, adminProcedure } from '../lib/trpc';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import {
   setOverride,
   listOverridesForUser,
-  isAdminRecoverySection,
+  ADMIN_RECOVERY_SECTION,
   countRecoveryCapableAdmins,
   countRecoveryCapableAdminsAfterChange,
   getSectionDefaults,
@@ -27,10 +33,7 @@ import {
 const sectionSchema = sectionEnum;
 
 const setRoleDefaultsInput = z.object({
-  sectionAccessDefaults: z.record(
-    z.enum(Roles),
-    z.record(sectionEnum, z.enum(['enabled', 'disabled', 'auto']))
-  ),
+  sectionAccessDefaults: sectionAccessDefaultsSchema,
 });
 
 const setInput = z.object({
@@ -43,22 +46,25 @@ export const sectionAccessRouter = router({
   /**
    * Returns sectionAccessDefaults and disabledSections config used for client-side access evaluation.
    *
-   * @auth {authenticated}
+   * @auth {users:read}
    * @input {none}
    * @output {{ sectionAccessDefaults, disabledSections }}
    */
-  getDefaults: protectedProcedure.query(async ({ ctx }) => {
-    return getSectionDefaults(ctx.prisma);
-  }),
+  getDefaults: protectedProcedure
+    .use(requirePermission('users:read'))
+    .query(async ({ ctx }) => {
+      return getSectionDefaults(ctx.prisma);
+    }),
 
   /**
-   * Returns section access overrides for a specific user (admin only).
+   * Returns section access overrides for a specific user (`*:*`).
    *
-   * @auth {admin}
+   * @auth {*:*}
    * @input {{ userId: string }}
    * @output {{ section: Section, enabled: boolean }[]}
    */
-  getByUser: adminProcedure
+  getByUser: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(z.object({ userId: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
       const rows = await listOverridesForUser(ctx.prisma, input.userId);
@@ -75,7 +81,7 @@ export const sectionAccessRouter = router({
    * @input {none}
    * @output {{ section: Section, enabled: boolean }[]}
    */
-  getForMe: protectedProcedure.query(async ({ ctx }) => {
+  getForMe: selfProcedure.query(async ({ ctx }) => {
     const userId = ctx.session.user.id;
     const rows = await listOverridesForUser(ctx.prisma, userId);
     return rows.map(r => ({
@@ -93,34 +99,38 @@ export const sectionAccessRouter = router({
    * @input {none}
    * @output {Record<Section, boolean>}
    */
-  getEffectiveForMe: protectedProcedure.query(async ({ ctx }) => {
+  getEffectiveForMe: selfProcedure.query(async ({ ctx }) => {
     return computeEffectiveForUser(ctx.prisma, ctx.session.user.id, ctx.session.user.role);
   }),
 
   /**
    * Persists per-role section-access defaults to AppConfig (`rbac.sectionAccessDefaults`)
    * and invalidates the RBAC cache. This is the only reachable write path for that key —
-   * the generic config.set/update endpoints don't allow the `rbac` key prefix.
+   * the generic config.set/update endpoints don't allow the `rbac` key prefix. The map replaces
+   * the stored one; a role or section it omits keeps its static default (ADR-027).
    *
-   * @auth {admin}
-   * @input {{ sectionAccessDefaults: Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>> }}
+   * @auth {*:*}
+   * @input {{ sectionAccessDefaults: Partial<Record<Role, Partial<Record<Section, 'enabled'|'disabled'|'auto'>>>> }}
    * @output {{ success: true }}
    */
-  setRoleDefaults: adminProcedure
+  setRoleDefaults: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(setRoleDefaultsInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       await ctx.prisma.$transaction(async tx => {
-        // Safety check: prevent a config that removes settings access from
-        // ALL admins — unlike `set` (which touches one user at a
+        // Safety check: prevent a config that removes user administration
+        // from ALL admins — unlike `set` (which touches one user at a
         // time), here the write is on the role defaults: without a guard, a
-        // single admin could lock the entire system out of Settings,
-        // the only place reachable to undo the change.
+        // single admin could lock the entire system out of user
+        // administration, the only place reachable to undo the change.
         await acquireLastAdminLock(tx);
         const { disabledSections } = await getRbacConfig(tx, { bypassCache: true });
+        // Counted against the map the reader will build from this input, not the input itself:
+        // an omitted entry is the static default, never the permission fallback.
         const survivingAdmins = await countRecoveryCapableAdmins(
           tx,
-          input.sectionAccessDefaults,
+          mergeSectionAccessDefaults(input.sectionAccessDefaults),
           disabledSections
         );
 
@@ -128,7 +138,7 @@ export const sectionAccessRouter = router({
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message:
-              "Questa configurazione toglierebbe l'accesso ai settings a tutti gli amministratori.",
+              "Questa configurazione toglierebbe a tutti gli amministratori l'accesso alla gestione utenti.",
           });
         }
 
@@ -149,27 +159,38 @@ export const sectionAccessRouter = router({
           metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
         });
       } catch (err) {
-        ctx.logger.error({ err }, 'Audit log fallito dopo commit RBAC riuscito');
+        ctx.logger.error({ err }, 'Audit log failed after a successful RBAC commit');
       }
 
       return { success: true };
     }),
 
   /**
-   * Sets a section access override for a user; blocks removal of settings access from the last admin.
+   * Sets a section access override for a user; refuses to take `settings.users` (user administration)
+   * from the last administrator able to recover the system.
+   * A parent section is derived from its children, so it takes no override at all, `null` included:
+   * the overrides stored on parents before that rule were removed by migration (ADR-027).
    *
-   * @auth {admin}
+   * @auth {*:*}
    * @input {{ userId: string, section: sectionEnum, enabled: boolean | null }}
    * @output {UserSectionAccess | null} — null if override was removed (auto mode).
    */
-  set: adminProcedure
+  set: protectedProcedure
+    .use(requirePermission('*:*'))
     .input(setInput)
     .use(withRateLimit('sectionAccessSet'))
     .mutation(async ({ input, ctx }) => {
       const { userId, section, enabled } = input;
 
+      if (childSectionsOf(section).length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `La sezione ${section} dipende dalle sue sottosezioni: abilita o disabilita quelle.`,
+        });
+      }
+
       const result = await ctx.prisma.$transaction(async tx => {
-        // Safety check: prevent removing settings access from the last
+        // Safety check: prevent removing user administration from the last
         // admin — only if the target is an admin: revoking an override for a
         // viewer/editor doesn't touch the invariant at all. Lock acquired
         // before reading the role, like every other point that evaluates
@@ -179,10 +200,11 @@ export const sectionAccessRouter = router({
         // PROMOTION of the same `userId` (viewer/editor → admin): that
         // path doesn't acquire this lock, so a narrow, known window
         // remains, not closed by this reordering.
-        // Every recovery section, not just `settings`: removing
-        // `settings.users` from the last admin locks them out of
-        // user administration exactly as removing `settings` would.
-        if (isAdminRecoverySection(section) && enabled !== true) {
+        // The recovery section (`ADMIN_RECOVERY_SECTION`, `settings.users`):
+        // removing it from the last admin locks them out of user
+        // administration. `settings` never reaches here — a parent is
+        // refused above.
+        if (section === ADMIN_RECOVERY_SECTION && enabled !== true) {
           await acquireLastAdminLock(tx);
           const target = await tx.user.findUnique({
             where: { id: userId },
@@ -228,7 +250,7 @@ export const sectionAccessRouter = router({
           },
         });
       } catch (err) {
-        ctx.logger.error({ err }, 'Audit log fallito dopo commit sectionAccess.set riuscito');
+        ctx.logger.error({ err }, 'Audit log failed after a successful sectionAccess.set commit');
       }
 
       return result;

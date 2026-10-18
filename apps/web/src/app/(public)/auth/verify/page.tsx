@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import React, { useEffect, useRef, useState, Suspense } from 'react';
 
-import Logo from '../../../../components/Logo';
+import LogoLockup from '../../../../components/LogoLockup';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -18,7 +18,7 @@ import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
- * Componente interno con useSearchParams
+ * Inner component using useSearchParams.
  */
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -60,7 +60,7 @@ function VerifyEmailContent() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex justify-center mb-4">
-            <Logo size="xl" className="text-primary" />
+            <LogoLockup variant="stacked" />
           </div>
           <CardTitle className="text-2xl text-center">Verifica Email</CardTitle>
           <CardDescription className="text-center">
@@ -155,9 +155,9 @@ function VerifyEmailContent() {
 }
 
 /**
- * Pagina Verifica Email con Suspense boundary
- * Richiede token come query parameter
- * Auto-trigger della verifica in useEffect
+ * Email Verification page with a Suspense boundary.
+ * Requires the token as a query parameter.
+ * Triggers the verification automatically in useEffect.
  */
 export default function VerifyEmailPage() {
   return (

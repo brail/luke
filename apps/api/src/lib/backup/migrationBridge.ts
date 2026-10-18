@@ -25,6 +25,10 @@ import { finished, pipeline } from 'stream/promises';
 import { Client } from 'pg';
 
 import type { SchemaCompatibility, SchemaCompatibilityResult } from '@luke/core';
+import { PRISMA_MIGRATIONS_DIR, PRISMA_PACKAGE_ROOT } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
+
+import { toErrorMessage } from '../error';
 
 import { forEachArchiveEntry } from './archiveFormat';
 import { createPendingBackupRecord, getLatestMigrationName, runBackupJob, type BackupLogger } from './dumpPipeline';
@@ -32,7 +36,6 @@ import { buildPostgresUrl, parseDatabaseUrl, runCommand, runPgBinary } from './p
 import { openBackupArchiveStream, restoreDatabaseFromFile } from './restorePipeline';
 
 import type { PgConnectionParts } from './pgConnection';
-import type { PrismaClient } from '@prisma/client';
 
 const BRIDGE_TEMP_DIR = join(homedir(), '.luke', 'bridge-tmp');
 
@@ -46,11 +49,10 @@ function tempDatabaseNameFor(sourceBackupId: string): string {
 // server starts) — nothing in-app migrates it at runtime. Safe to cache indefinitely per process.
 let cachedBundledMigrationNames: string[] | undefined;
 
-/** Reads `prisma/migrations/` as bundled with this instance (folder names are timestamp-prefixed, so lexical sort = chronological order). */
+/** Reads `@luke/db`'s migration folder as bundled with this instance (folder names are timestamp-prefixed, so lexical sort = chronological order). */
 async function listBundledMigrationNames(): Promise<string[]> {
   if (cachedBundledMigrationNames) return cachedBundledMigrationNames;
-  const migrationsDir = join(__dirname, '../../../prisma/migrations');
-  const entries = await readdir(migrationsDir, { withFileTypes: true });
+  const entries = await readdir(PRISMA_MIGRATIONS_DIR, { withFileTypes: true });
   cachedBundledMigrationNames = entries.filter(e => e.isDirectory()).map(e => e.name).sort();
   return cachedBundledMigrationNames;
 }
@@ -101,10 +103,10 @@ async function stageOldDumpFromBackup(params: {
   destPath: string;
 }): Promise<void> {
   const { prisma, sourceBackup, destPath } = params;
-  const extract = await openBackupArchiveStream({ prisma, ...sourceBackup });
+  const { extract, done } = await openBackupArchiveStream({ prisma, ...sourceBackup });
 
   let dbDumpFound = false;
-  await forEachArchiveEntry(extract, async (header, entryStream) => {
+  const extracted = forEachArchiveEntry(extract, async (header, entryStream) => {
     if (header.name === 'db.dump') {
       dbDumpFound = true;
       await pipeline(entryStream, createWriteStream(destPath));
@@ -113,6 +115,7 @@ async function stageOldDumpFromBackup(params: {
     entryStream.resume();
     await finished(entryStream);
   });
+  await Promise.all([extracted, done]);
 
   if (!dbDumpFound) throw new Error('Pacchetto di backup senza voce db.dump');
 }
@@ -135,8 +138,12 @@ async function countUnfinishedMigrations(db: PgConnectionParts): Promise<number>
 
 /** Runs the exact same command `entrypoint.sh` runs at boot, pointed at the temp DB via an overridden `DATABASE_URL`. */
 async function runMigrateDeploy(db: PgConnectionParts): Promise<void> {
-  const cwd = join(__dirname, '../../../'); // apps/api — same cwd entrypoint.sh's WORKDIR sets
-  await runCommand('npx', ['prisma', 'migrate', 'deploy'], { cwd, env: { DATABASE_URL: buildPostgresUrl(db) } });
+  // `@luke/db` is where `prisma.config.ts`, the schema and the migrations live — the
+  // same directory entrypoint.sh runs the CLI from.
+  await runCommand('npx', ['prisma', 'migrate', 'deploy'], {
+    cwd: PRISMA_PACKAGE_ROOT,
+    env: { DATABASE_URL: buildPostgresUrl(db) },
+  });
 }
 
 async function dropTempDatabase(mainDb: PgConnectionParts, tempDbName: string, logger: BackupLogger): Promise<void> {
@@ -145,7 +152,7 @@ async function dropTempDatabase(mainDb: PgConnectionParts, tempDbName: string, l
     ['--if-exists', '--host', mainDb.host, '--port', mainDb.port, '--username', mainDb.user, tempDbName],
     mainDb.password
   ).catch(err => {
-    logger.error({ err, tempDatabase: tempDbName }, 'Migration bridge: drop del DB temporaneo fallito — richiede pulizia manuale');
+    logger.error({ err, tempDatabase: tempDbName }, 'Migration bridge: dropping the temporary DB failed — manual cleanup required');
   });
 }
 
@@ -178,7 +185,7 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
     // Defensive: shouldn't happen (migration names = unique timestamps, OLDER always implies
     // at least one element in the slice) — a safety net against a future refactor silently
     // breaking this invariant.
-    logger.error({ migratedBackupId }, 'Migration bridge: pendingMigrations vuoto, abort');
+    logger.error({ migratedBackupId }, 'Migration bridge: pendingMigrations empty, aborting');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
       data: { status: 'FAILED', errorMessage: 'Nessuna migrazione da applicare (stato inatteso)' },
@@ -236,18 +243,21 @@ export async function runMigrationBridgeJob(params: RunMigrationBridgeJobParams)
       throw new Error(`Snapshot pre-migrazione fallito: ${preMigSafetyResult?.errorMessage ?? 'errore sconosciuto'}`);
     }
 
-    logger.info({ migratedBackupId, migrations: pendingMigrations.length }, 'Migration bridge: applico le migrazioni mancanti');
+    logger.info({ migratedBackupId, migrations: pendingMigrations.length }, 'Migration bridge: applying the missing migrations');
     await runMigrateDeploy(tempDb);
 
-    logger.info({ migratedBackupId }, 'Migration bridge: salvo il risultato migrato');
+    logger.info({ migratedBackupId }, 'Migration bridge: saving the migrated result');
     await runBackupJob({
       prisma, backupId: migratedBackupId, scope: 'DB', logger,
       sourceConnection: tempDb, schemaMigrationNameOverride: currentSchemaMigrationName,
     });
     // runBackupJob handles COMPLETED/FAILED on this record by itself.
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error({ migratedBackupId, err: message }, 'Migration bridge: fallito');
+    // The error object, not its message: an AggregateError's own message is empty (#49), and
+    // pino serializes the stack and the inner errors. Credentials travel in the child's environment
+    // (PGPASSWORD, DATABASE_URL), never in its arguments, so none reaches this error.
+    const message = toErrorMessage(err);
+    logger.error({ migratedBackupId, err }, 'Migration bridge: failed');
     await prisma.backupRecord.update({
       where: { id: migratedBackupId },
       data: { status: 'FAILED', errorMessage: message.slice(0, 2000) },

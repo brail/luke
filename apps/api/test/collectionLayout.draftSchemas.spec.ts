@@ -24,31 +24,31 @@ const BASE_ROW = {
 };
 
 describe('CollectionRowQuotationDraftSchema', () => {
-  it('accetta un oggetto vuoto — tutti i campi opzionali, caso "nuova quotazione senza id"', () => {
+  it('accepts an empty object — every field optional, the "new quotation without id" case', () => {
     expect(CollectionRowQuotationDraftSchema.safeParse({}).success).toBe(true);
   });
 
-  it('accetta un id uuid valido (quotazione esistente da aggiornare)', () => {
+  it('accepts a valid uuid id (an existing quotation to update)', () => {
     const result = CollectionRowQuotationDraftSchema.safeParse({ id: '123e4567-e89b-12d3-a456-426614174000' });
     expect(result.success).toBe(true);
   });
 
-  it('rifiuta un id non-uuid', () => {
+  it('rejects a non-uuid id', () => {
     expect(CollectionRowQuotationDraftSchema.safeParse({ id: 'not-a-uuid' }).success).toBe(false);
   });
 
-  it('rifiuta sku non intero o minore di 1', () => {
+  it('rejects an sku that is not an integer or is below 1', () => {
     expect(CollectionRowQuotationDraftSchema.safeParse({ sku: 0 }).success).toBe(false);
     expect(CollectionRowQuotationDraftSchema.safeParse({ sku: 1.5 }).success).toBe(false);
     expect(CollectionRowQuotationDraftSchema.safeParse({ sku: 1 }).success).toBe(true);
   });
 
-  it('rifiuta retailPrice/supplierQuotation non positivi', () => {
+  it('rejects non-positive retailPrice/supplierQuotation', () => {
     expect(CollectionRowQuotationDraftSchema.safeParse({ retailPrice: 0 }).success).toBe(false);
     expect(CollectionRowQuotationDraftSchema.safeParse({ supplierQuotation: -1 }).success).toBe(false);
   });
 
-  it('ignora silenziosamente `rowId` e `order` se presenti — sono stati omessi dallo schema, il server li ricalcola sempre', () => {
+  it('silently ignores `rowId` and `order` if present — they were left out of the schema, the server always recomputes them', () => {
     const result = CollectionRowQuotationDraftSchema.safeParse({ rowId: 'whatever', order: 99 });
     expect(result.success).toBe(true);
     if (result.success) {
@@ -58,12 +58,12 @@ describe('CollectionRowQuotationDraftSchema', () => {
   });
 });
 
-describe('CollectionLayoutRowInputSchema — quotations e phaseChangeNote', () => {
-  it('accetta la riga senza quotations/phaseChangeNote (retrocompatibile con il flusso non bufferizzato)', () => {
+describe('CollectionLayoutRowInputSchema — quotations and phaseChangeNote', () => {
+  it('accepts the row without quotations/phaseChangeNote (backward compatible with the unbuffered flow)', () => {
     expect(CollectionLayoutRowInputSchema.safeParse(BASE_ROW).success).toBe(true);
   });
 
-  it('accetta un array di draft quotazioni valide', () => {
+  it('accepts an array of valid draft quotations', () => {
     const result = CollectionLayoutRowInputSchema.safeParse({
       ...BASE_ROW,
       quotations: [{ notes: 'nuova' }, { id: '123e4567-e89b-12d3-a456-426614174000', notes: 'esistente' }],
@@ -71,7 +71,7 @@ describe('CollectionLayoutRowInputSchema — quotations e phaseChangeNote', () =
     expect(result.success).toBe(true);
   });
 
-  it('rifiuta la riga se una delle draft quotazioni non è valida (propaga l\'errore dal nested schema)', () => {
+  it('rejects the row if one of the draft quotations is invalid (propagates the error from the nested schema)', () => {
     const result = CollectionLayoutRowInputSchema.safeParse({
       ...BASE_ROW,
       quotations: [{ id: 'not-a-uuid' }],
@@ -79,15 +79,15 @@ describe('CollectionLayoutRowInputSchema — quotations e phaseChangeNote', () =
     expect(result.success).toBe(false);
   });
 
-  it('accetta phaseChangeNote fino a 500 caratteri', () => {
+  it('accepts a phaseChangeNote of up to 500 characters', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: 'x'.repeat(500) }).success).toBe(true);
   });
 
-  it('rifiuta phaseChangeNote oltre 500 caratteri', () => {
+  it('rejects a phaseChangeNote over 500 characters', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: 'x'.repeat(501) }).success).toBe(false);
   });
 
-  it('accetta phaseChangeNote null/assente (nota facoltativa)', () => {
+  it('accepts a null or missing phaseChangeNote (the note is optional)', () => {
     expect(CollectionLayoutRowInputSchema.safeParse({ ...BASE_ROW, phaseChangeNote: null }).success).toBe(true);
     expect(CollectionLayoutRowInputSchema.safeParse(BASE_ROW).success).toBe(true);
   });

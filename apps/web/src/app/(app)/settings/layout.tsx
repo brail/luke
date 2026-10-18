@@ -3,8 +3,8 @@ import React from 'react';
 import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
 
 /**
- * Layout per sezione Settings
- * Protegge tutte le route sotto /settings con controllo accesso
+ * Layout for the Settings section.
+ * Protects every route under /settings with an access check.
  */
 export default async function SettingsLayout({
   children,

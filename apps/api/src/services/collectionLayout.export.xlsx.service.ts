@@ -2,23 +2,24 @@ import ExcelJS from 'exceljs';
 
 
 
+import { classifyMargin, retailMargin } from '@luke/core';
 import type { StorageBucket } from '@luke/core';
-
-import { imageFetchLimiter } from '../lib/export/concurrency';
-import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
-import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
-import { readFileBuffer } from '../storage';
-
-import { buildProgressLabelMap } from './collectionLayout.service';
-
-import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { PrismaClient,
   CollectionLayout,
   CollectionGroup,
   CollectionLayoutRow,
   Vendor,
   Brand,
-  Season } from '@prisma/client';
+  Season } from '@luke/db';
+
+import { imageFetchLimiter } from '../lib/export/concurrency';
+import { EMBED_OVERSAMPLE_FACTOR, extensionForExcelJs, resizeForEmbed } from '../lib/export/image';
+import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
+
+import { readAssetBuffer } from './asset.service';
+import { buildProgressLabelMap } from './collectionLayout.service';
+
+import type { QuotationWithParamSet } from './collectionLayout.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,21 +59,14 @@ type QuotationMarginResult = {
   fillColor: string;
 };
 
-function computeQuotationMargin(q: QuotationWithParamSet): QuotationMarginResult | null {
+export function computeQuotationMargin(q: QuotationWithParamSet): QuotationMarginResult | null {
   if (!q.pricingParameterSet || !q.supplierQuotation || !q.retailPrice) return null;
   if (q.supplierQuotation <= 0 || q.retailPrice <= 0) return null;
   const ps = q.pricingParameterSet;
-  const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC     = q.supplierQuotation + qc + ps.tools;
-  const withTransp = withQC + ps.transportInsuranceCost;
-  const withDuty   = withTransp * (1 + ps.duty / 100);
-  const landed     = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-  const wholesale  = q.retailPrice / ps.retailMultiplier;
-  const pct        = Math.round(((wholesale - landed) / wholesale) * 10000) / 100;
-  const status: 'green' | 'yellow' | 'red' =
-    pct >= ps.optimalMargin ? 'green'
-    : pct >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  const margin = retailMargin(q.supplierQuotation, q.retailPrice, ps) * 100;
+  const pct    = Math.round(margin * 100) / 100;
+  // Classified unrounded, as on screen and in the PDF: the rounded figure is for display.
+  const status = classifyMargin(margin, ps.optimalMargin);
   const fillColor = status === 'green' ? 'C8E6C9' : status === 'yellow' ? 'FFF9C4' : 'FFCDD2';
   return { pct, status, fillColor };
 }
@@ -129,26 +123,6 @@ function buildQuotationColumns(maxQ: number): ColDef[] {
 }
 
 // ─── Image helpers ────────────────────────────────────────────────────────────
-
-function getImageDimensions(buf: Buffer, key: string): { width: number; height: number } | null {
-  try {
-    if (key.toLowerCase().endsWith('.png')) {
-      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-    }
-    // JPEG: scan for SOF marker (FF C0–CF, excluding C4/C8/CC)
-    let i = 2;
-    while (i + 3 < buf.length) {
-      if (buf[i] !== 0xff) break;
-      const marker = buf[i + 1];
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5) };
-      }
-      const segLen = buf.readUInt16BE(i + 2);
-      i += 2 + segLen;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
 
 function fitInBox(imgW: number, imgH: number, boxW: number, boxH: number, padding: number) {
   const scale = Math.min((boxW - padding * 2) / imgW, (boxH - padding * 2) / imgH, 1);
@@ -208,24 +182,27 @@ export async function buildCollectionLayoutXlsx(
   headerRow.height = ROW_HEIGHT_WITH_IMAGE;
   headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
 
-  // Auto-filter
-  const lastColLetter = columnIndexToLetter(COLUMNS.length);
-  sheet.autoFilter = { from: 'A1', to: `${lastColLetter}1` };
+  // Auto-filter over the header row
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLUMNS.length } };
 
   // Fetch images
   const uniqueKeys = [...new Set(allRows.map(r => r.pictureKey).filter((k): k is string => !!k))];
-  const keyToBuffer = new Map<string, Buffer | null>();
+  const keyToImage = new Map<string, { buffer: Buffer; contentType: string; width: number | null; height: number | null } | null>();
   const limit = imageFetchLimiter();
   await Promise.all(
     uniqueKeys.map(key =>
       limit(async () => {
-        const buf = await readFileBuffer(prisma, pictureBucket, key, logger);
-        keyToBuffer.set(
-          key,
-          buf
-            ? await resizeForEmbed(buf, FOTO_COL_WIDTH_PX * EMBED_OVERSAMPLE_FACTOR, FOTO_ROW_HEIGHT_PX * EMBED_OVERSAMPLE_FACTOR, logger)
-            : null,
-        );
+        const result = await readAssetBuffer(prisma, pictureBucket, key, 'export', logger);
+        if (!result) {
+          keyToImage.set(key, null);
+          return;
+        }
+        const buffer = await resizeForEmbed(result.buffer, FOTO_COL_WIDTH_PX * EMBED_OVERSAMPLE_FACTOR, FOTO_ROW_HEIGHT_PX * EMBED_OVERSAMPLE_FACTOR, logger);
+        if (!buffer) {
+          keyToImage.set(key, null);
+          return;
+        }
+        keyToImage.set(key, { buffer, contentType: result.contentType, width: result.width, height: result.height });
       }),
     ),
   );
@@ -298,14 +275,12 @@ export async function buildCollectionLayoutXlsx(
         }
       }
 
-      const imageBuf = row.pictureKey ? keyToBuffer.get(row.pictureKey) ?? null : null;
-      if (imageBuf) {
-        const ext = detectExtension(row.pictureKey!);
-         
-        const imageId = wb.addImage({ buffer: imageBuf as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
-        const dims = getImageDimensions(imageBuf, row.pictureKey!);
-        const fit = dims
-          ? fitInBox(dims.width, dims.height, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 4)
+      const image = row.pictureKey ? keyToImage.get(row.pictureKey) ?? null : null;
+      if (image) {
+        const ext = extensionForExcelJs(image.contentType);
+        const imageId = wb.addImage({ buffer: image.buffer as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
+        const fit = image.width && image.height
+          ? fitInBox(image.width, image.height, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 4)
           : fitInBox(FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, FOTO_COL_WIDTH_PX, FOTO_ROW_HEIGHT_PX, 12);
         sheet.addImage(imageId, {
           tl: { col: FOTO_COL_INDEX + fit.colFrac, row: dataRowIndex + fit.rowFrac } as ExcelJS.Anchor,
@@ -336,22 +311,4 @@ export async function buildCollectionLayoutXlsx(
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
-}
-
-function columnIndexToLetter(colIndex: number): string {
-  let result = '';
-  let n = colIndex;
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    result = String.fromCharCode(65 + rem) + result;
-    n = Math.floor((n - 1) / 26);
-  }
-  return result;
-}
-
-function detectExtension(url: string): 'jpeg' | 'png' | 'gif' {
-  const lower = url.toLowerCase();
-  if (lower.includes('.png')) return 'png';
-  if (lower.includes('.gif')) return 'gif';
-  return 'jpeg';
 }

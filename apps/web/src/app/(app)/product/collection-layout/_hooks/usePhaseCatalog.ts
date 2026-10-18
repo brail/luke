@@ -14,12 +14,12 @@ export type Phase = RouterOutputs['phase']['list'][number];
  * Fetches the Phase catalog and derives the lookup shapes shared across collection-layout
  * components (row select, filter options, badge/order lookups).
  *
- * Una sola query, due usi distinti:
- * - `phaseById` è costruita su **tutte** le fasi, incluse le ritirate: serve a risolvere le
- *   etichette dello storico. Una riga che ha attraversato una fase poi disattivata continua a
- *   referenziarla, e senza di essa mostrerebbe un trattino al posto di un dato che esiste.
- * - `phases` e `phaseOptions` restano filtrate sulle attive: sono ciò che si può *scegliere*
- *   (picker, filtro colonna) e la base su cui si scala il colore del badge.
+ * One query, two distinct uses:
+ * - `phaseById` is built over **all** phases, retired ones included: it resolves the history
+ *   labels. A row that went through a phase later deactivated still references it, and without it
+ *   would show a dash in place of data that exists.
+ * - `phases` and `phaseOptions` stay filtered to active ones: they are what can be *chosen*
+ *   (picker, column filter) and the basis the badge colour scales on.
  */
 export function usePhaseCatalog() {
   const { data: allPhases = [] } = trpc.phase.list.useQuery(

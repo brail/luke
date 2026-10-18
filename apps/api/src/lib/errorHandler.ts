@@ -69,8 +69,6 @@ export function createStandardError(
  * Converts a `StandardError` into a `TRPCError` with the appropriate tRPC error code.
  */
 export function toTRPCError(error: StandardError): TRPCError {
-  // const httpStatus = getHttpStatusFromErrorCode(error.code);
-
   return new TRPCError({
     code: getTRPCCodeFromErrorCode(error.code),
     message: error.message,
@@ -89,6 +87,7 @@ function getTRPCCodeFromErrorCode(
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'PRECONDITION_FAILED'
   | 'INTERNAL_SERVER_ERROR' {
   switch (code) {
     case ErrorCode.VALIDATION_ERROR:
@@ -102,6 +101,10 @@ function getTRPCCodeFromErrorCode(
       return 'NOT_FOUND';
     case ErrorCode.CONFLICT:
       return 'CONFLICT';
+    // Incomplete configuration is the caller's to fix, so its text must reach them: a 5xx is
+    // masked in production.
+    case ErrorCode.CONFIG_ERROR:
+      return 'PRECONDITION_FAILED';
     default:
       return 'INTERNAL_SERVER_ERROR';
   }
@@ -184,7 +187,7 @@ export class SecureLogger {
 }
 
 /**
- * Factory helpers for common integration error scenarios (SMTP, storage, config).
+ * Factory helpers for integration error scenarios (currently SMTP).
  */
 export class IntegrationErrorHandler {
   static handleSMTPError(error: unknown): StandardError {
@@ -194,30 +197,6 @@ export class IntegrationErrorHandler {
       {
         originalError: error instanceof Error ? error.message : String(error),
         type: 'smtp_connection_failed',
-      }
-    );
-  }
-
-  static handleStorageError(provider: string, error: unknown): StandardError {
-    return createStandardError(
-      ErrorCode.STORAGE_ERROR,
-      `Errore connessione storage ${provider}`,
-      {
-        provider,
-        originalError: error instanceof Error ? error.message : String(error),
-        type: 'storage_connection_failed',
-      }
-    );
-  }
-
-  static handleConfigError(key: string, error: unknown): StandardError {
-    return createStandardError(
-      ErrorCode.CONFIG_ERROR,
-      `Errore salvataggio configurazione ${key}`,
-      {
-        configKey: key,
-        originalError: error instanceof Error ? error.message : String(error),
-        type: 'config_save_failed',
       }
     );
   }

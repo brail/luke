@@ -1,8 +1,7 @@
-import { TRPCClientError } from '@trpc/client';
 import { signOut, useSession } from 'next-auth/react';
 import { useCallback, useEffect, useRef } from 'react';
 
-import { debugError, debugLog } from '../lib/debug';
+import { debugLog } from '../lib/debug';
 import { trpc } from '../lib/trpc';
 
 /**
@@ -18,9 +17,9 @@ export function useSessionVerification() {
   // and firing signOut() (and its redirect) more than once.
   const loggedOutRef = useRef(false);
 
-  // Query per verificare la sessione (solo se autenticato)
+  // Query that verifies the session (only when authenticated)
   const { refetch: verifySession } = trpc.me.get.useQuery(undefined, {
-    enabled: false, // Non eseguire automaticamente
+    enabled: false, // Do not run automatically
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -28,7 +27,7 @@ export function useSessionVerification() {
   const forceLogout = useCallback(() => {
     if (loggedOutRef.current) return;
     loggedOutRef.current = true;
-    debugLog('Sessione invalida rilevata, logout e redirect a login');
+    debugLog('Invalid session detected, logging out and redirecting to login');
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -38,40 +37,29 @@ export function useSessionVerification() {
 
   const verifyImmediately = useCallback(async () => {
     if (loggedOutRef.current) return;
-    try {
-      debugLog('Verifica tokenVersion immediata...');
-      const result = await verifySession();
-
-      if (!result.data) {
-        forceLogout();
-        return;
-      }
-    } catch (error: unknown) {
-      const isAuthError =
-        error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED';
-      if (isAuthError) {
-        forceLogout();
-      } else {
-        debugError('Errore verifica sessione (transiente, ignorato):', error);
-      }
-    }
+    debugLog('Verifica tokenVersion immediata...');
+    // `refetch` resolves with `{ data, error }` and never throws. Only UNAUTHORIZED means a
+    // revoked session: a 429, a 5xx or a network error is transient, and the query keeps its last
+    // data on error, so `data` says nothing about this check.
+    const { error } = await verifySession();
+    if (error?.data?.code === 'UNAUTHORIZED') forceLogout();
   }, [verifySession, forceLogout]);
 
   const handleVisibilityChange = useCallback(() => {
     if (!document.hidden) {
-      debugLog('Tab riattivata, verifica sessione...');
+      debugLog('Tab reactivated, verifying session...');
       verifyImmediately();
     }
   }, [verifyImmediately]);
 
   const handleFocus = useCallback(() => {
-    debugLog('Window focus, verifica sessione...');
+    debugLog('Window focus, verifying session...');
     verifyImmediately();
   }, [verifyImmediately]);
 
   useEffect(() => {
     if (status === 'authenticated' && session?.accessToken) {
-      debugLog('Avvio verifica sessione immediata e periodica');
+      debugLog('Starting immediate and periodic session verification');
 
       verifyImmediately();
       intervalRef.current = setInterval(verifyImmediately, 10000);
@@ -83,7 +71,7 @@ export function useSessionVerification() {
     // Single cleanup always runs — removeEventListener is a no-op if listener was never added
     return () => {
       if (intervalRef.current) {
-        debugLog('Stop verifica periodica sessione');
+        debugLog('Stopping periodic session verification');
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }

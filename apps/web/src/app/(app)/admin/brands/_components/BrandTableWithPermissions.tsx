@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '../../../../../components/ui/table';
+import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -66,8 +67,11 @@ export function BrandTableWithPermissions({
   onRetry,
 }: BrandTableWithPermissionsProps) {
   const { can } = usePermission();
+  const fmt = useFormatDate();
   const canUpdate = can('brands:update');
   const canDelete = can('brands:delete');
+  // A permanent delete is admin-only (`*:*`); the resource's `:delete` only archives.
+  const canHardDelete = can('*:*');
   const canRead = can('brands:read');
 
   if (error) {
@@ -136,16 +140,16 @@ export function BrandTableWithPermissions({
           >
             Disattiva
           </PermissionButton>
-          {canDelete && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onHardDelete(brand)}
-              className="text-destructive hover:text-destructive"
-            >
-              Elimina
-            </Button>
-          )}
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i brand"
+            variant="outline"
+            size="sm"
+            onClick={() => onHardDelete(brand)}
+            className="text-destructive hover:text-destructive"
+          >
+            Elimina
+          </PermissionButton>
         </>
       );
     }
@@ -161,15 +165,17 @@ export function BrandTableWithPermissions({
         >
           Riattiva
         </PermissionButton>
-        {!brand.navBrandId && canDelete && (
-          <Button
+        {!brand.navBrandId && (
+          <PermissionButton
+            hasPermission={canHardDelete}
+            tooltip="Non hai i permessi per eliminare definitivamente i brand"
             variant="outline"
             size="sm"
             onClick={() => onHardDelete(brand)}
             className="text-destructive hover:text-destructive"
           >
             Elimina
-          </Button>
+          </PermissionButton>
         )}
       </>
     );
@@ -215,7 +221,7 @@ export function BrandTableWithPermissions({
                 </Badge>
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {new Date(brand.updatedAt).toLocaleDateString('it-IT')}
+                {fmt.date(brand.updatedAt)}
               </TableCell>
               <TableCell className="text-right">
                 {canRead && (

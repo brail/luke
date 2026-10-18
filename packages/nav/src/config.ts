@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@luke/db';
 
 /**
  * Connection parameters for the NAV SQL Server database.
@@ -11,8 +11,8 @@ export interface NavDbConfig {
   password: string;
   company: string;
   /**
-   * Imposta ApplicationIntent=ReadOnly sulla connessione mssql.
-   * Utile con SQL Server Availability Group (legge dalla replica secondaria).
+   * Sets ApplicationIntent=ReadOnly on the mssql connection.
+   * Useful with a SQL Server Availability Group (reads from the secondary replica).
    */
   readOnly: boolean;
 }
@@ -36,10 +36,10 @@ export type GetConfigFn = (
 export function sanitizeCompany(company: string): string {
   if (!/^[A-Za-z0-9 _\-.]+$/.test(company)) {
     throw new Error(
-      `NAV company name non valido: "${company}". Solo lettere, numeri, spazi e i caratteri _ - . sono ammessi.`,
+      `Invalid NAV company name: "${company}". Only letters, digits, spaces and the characters _ - . are allowed.`,
     );
   }
-  // Bracket-escaping: ] → ]] per evitare injection via SQL Server quoted identifiers
+  // Bracket-escaping: ] → ]] to prevent injection through SQL Server quoted identifiers
   return company.replace(/\]/g, ']]');
 }
 

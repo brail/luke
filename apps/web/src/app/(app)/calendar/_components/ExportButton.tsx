@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { buildApiUrl } from '@luke/core';
+import { buildSeasonCalendarExportUrl, type CalendarDate } from '@luke/core';
 
 import { Button } from '../../../../components/ui/button';
 import {
@@ -14,21 +14,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../../../components/ui/dropdown-menu';
+import { triggerBlobDownload } from '../../../../lib/download';
 
 interface Props {
   seasonId: string;
   brandIds: string[];
   view: 'list' | 'week' | 'month' | 'gantt' | 'day';
-  viewDate: Date;
+  /** The day shown; without one the export uses today. */
+  viewDate?: CalendarDate;
   disabled?: boolean;
 }
 
 async function downloadExport(
-  path: string,
+  url: string,
   filename: string,
   token: string
 ): Promise<void> {
-  const url = buildApiUrl(path);
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -37,15 +38,7 @@ async function downloadExport(
     throw new Error(`Export failed: ${res.status}`);
   }
 
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = objectUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(objectUrl);
+  triggerBlobDownload(await res.blob(), filename);
 }
 
 /**
@@ -58,7 +51,7 @@ async function downloadExport(
  * @param seasonId - Season whose calendar events are exported.
  * @param brandIds - Brand IDs included in the export scope.
  * @param view - Active calendar view name (passed to PDF export only).
- * @param viewDate - Currently visible date (passed to PDF export only).
+ * @param viewDate - Currently visible date (PDF export only).
  */
 export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: Props) {
   const { data: session } = useSession();
@@ -71,17 +64,13 @@ export function ExportButton({ seasonId, brandIds, view, viewDate, disabled }: P
       return;
     }
 
-    let qs = `seasonId=${encodeURIComponent(seasonId)}&brandIds=${encodeURIComponent(brandIds.join(','))}`;
-    if (format === 'pdf') {
-      qs += `&view=${encodeURIComponent(view)}&viewDate=${encodeURIComponent(viewDate.toISOString())}`;
-    }
-    const path = `/season-calendar/export/${format}?${qs}`;
+    const url = buildSeasonCalendarExportUrl(format, { seasonId, brandIds, view, viewDate });
     const ext = format === 'ical' ? 'ics' : format;
     const filename = `luke-calendar-${seasonId}.${ext}`;
 
     setLoading(true);
     try {
-      await downloadExport(path, filename, token);
+      await downloadExport(url, filename, token);
     } catch {
       toast.error('Esportazione fallita');
     } finally {

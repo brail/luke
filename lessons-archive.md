@@ -1,0 +1,142 @@
+# Lessons Archive
+
+Lessons moved out of `lessons.md` once they became fully covered by a
+deterministic check (an ESLint/semgrep rule, or a blocking CI/pre-push
+script) — control-hierarchy level 1 or 2 in `.claude/skills/luke-shared/audit-protocol.md`
+§3. At that point an LLM audit re-checking the pattern by reading prose is
+pure overhead: the machine already blocks it on every push, with or without
+this file being read.
+
+**Not read by the `luke-*` audit skills** — that's the whole point. This file
+exists for human/historical reference only, so `lessons.md` stays a working
+checklist instead of a monotonically growing one. `lessons.md` keeps a
+one-line pointer to each entry archived here.
+
+---
+
+## Bare `crypto.randomUUID()` in a client component crashes outside a secure context
+
+`settings/collection-control/page.tsx` called `crypto.randomUUID()` directly
+to generate React keys for `BandSetEditor`. In production, on a host reached
+over plain HTTP (not HTTPS/localhost), the Web Crypto API doesn't expose
+`randomUUID` — `TypeError: crypto.randomUUID is not a function`, the whole
+page replaced by the `app/error.tsx` error boundary. The correct pattern
+already existed in two places in the repo (`lib/trpc.tsx`,
+`CollectionRowDrawer.tsx`) but hadn't been applied here: known bug, known
+fix, simply not reused.
+
+Fixed in place with the fallback already used elsewhere:
+
+```ts
+crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)
+```
+
+but an inline fix doesn't prevent recurrence — explicitly asked to
+**promote to a rule** instead of just patching the file. Created
+`@luke/no-bare-client-random-uuid` in `packages/eslint-plugin-luke/rules/`:
+flags non-optional `crypto.randomUUID()` in any file with a `'use client'`
+directive at the top (Server Components run in Node, where the API is
+always available — the rule ignores them by construction, checking
+`Program.body[0]`). Wired into `eslint.config.mjs` scoped to
+`apps/web/src/**`, error level.
+
+**Rule**: a runtime bug caused by an API the code uses in exactly one place
+"by mistake" while it's already handled correctly elsewhere must be closed
+with an enforced ESLint rule, not just a fix at the call site — the next
+bare `crypto.randomUUID()` must be blocked at commit time, not discovered in
+production from a generic error with no stack trace visible to the user.
+
+**Archived 2026-08-26**: fully enforced by `@luke/no-bare-client-random-uuid`
+(error level, `apps/web/src/**`). Nothing left for an audit to manually check.
+
+---
+
+## A skill with `agent: Explore` cannot invoke subagents
+
+`luke-audit`, `luke-bugs` and `luke-security` declared `agent: Explore` and
+contained "Run 3 agents in parallel" with three detailed briefs. The Explore
+agent has every tool **except** Agent: the fan-out never happened, and
+silently degraded to a single pass. No error, no signal — just reports
+produced in a way different from what was declared, for months.
+
+The fix isn't switching to `agent: general-purpose`: those skills are
+read-only, and today the constraint is guaranteed by the agent type, which
+has no write tools. Unlocking subagents would have handed them Write and
+Edit, downgrading a structural invariant to a prose instruction.
+
+**Rules**:
+
+1. Before writing orchestration instructions in a skill, verify the
+   declared agent type has the Agent tool.
+2. Verified by `tools/scripts/check-skill-integrity.ts`, blocking in CI.
+3. Applies in general: an instruction the runtime can't execute doesn't
+   fail, it gets ignored. It's the most silent form of inert control.
+
+**Archived 2026-08-26**: fully enforced by `tools/scripts/check-skill-integrity.ts`
+(blocking in CI and pre-push). Nothing left for an audit to manually check.
+
+---
+
+## New rate-limited route: update BOTH maps (drift = runtime crash)
+
+Rate limiting lives in two separate maps that must stay in sync:
+
+- `RATE_LIMIT_CONFIG` in `apps/api/src/lib/ratelimit.ts` — consumed by `withRateLimit(routeName)`.
+- `DEFAULTS` in `apps/api/src/lib/rateLimitPolicy.ts` — consumed by `resolveRateLimitPolicy()` (cascade AppConfig → ENV → default).
+
+`withRateLimit('foo')` calls `resolveRateLimitPolicy('foo')`: if `foo` exists
+only in `RATE_LIMIT_CONFIG` but NOT in `DEFAULTS`, `DEFAULTS[routeName]` is
+`undefined` → `def.max` throws
+`Cannot read properties of undefined (reading 'max')` at runtime (not at
+compile time: the cast at the call site hides the drift from TypeScript).
+
+**Rule**: every new rate-limited route must be added in THREE places, kept
+in sync:
+1. `RATE_LIMIT_CONFIG` (`ratelimit.ts`)
+2. `DEFAULTS` (`rateLimitPolicy.ts`) — **mandatory, otherwise a crash**
+3. `RateLimitConfigSchema` (`packages/core/src/schemas/appConfig.ts`) — `.optional()` field, otherwise an AppConfig/ENV override is silently ignored by the resolver.
+
+Real regression: `navSyncTrigger` missing from `DEFAULTS` → NAV vendor sync
+crashing in production (hotfix v1.9.1).
+
+**Archived 2026-09-27**: fully enforced by `apps/api/test/ratelimit.spec.ts`, describe
+"Rate limit map consistency" (every `RATE_LIMIT_CONFIG` route has a policy default and a
+`RateLimitConfigSchema` field; unit suite, blocking in CI and pre-push). The ENV tier the
+lesson mentions was removed later (`805f4102`); the cascade is AppConfig → default.
+
+---
+
+## A runtime image copied the builder's full `node_modules` (2026-10-03)
+
+Both Dockerfiles ran a full `pnpm install` in the builder — every workspace,
+every devDependency — and the runner copied that tree. The API image held 1143
+store entries, 559 of them reached by no production dependency; the web image
+carried the whole workspace to run `next start`. It surfaced through an
+advisory, not a failure: GHSA-vfj7-8cjw-p6xm (`braces`, no fixed version) was
+reachable only through ESLint, yet it was on disk in both production images,
+and the `osv-scanner.toml` entry waiving it had to say so. Nothing could have
+caught it earlier: CI built no image, and the release pushed whatever it built.
+
+**Archived on arrival**: fully enforced from the day it was fixed.
+`tools/scripts/check-image-runtime.ts` runs inside each image — the API store
+against its production closure, the web tree against the list Next's traces
+produce — in CI's `images` job on every push and pull request, and in
+`release.yml` on the exact image before its tags are pushed. Decision and
+rejected alternatives:
+[ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md).
+
+---
+
+## A doc block left above another one documents nothing (2026-09-29)
+
+**What happened.** In X25 T4c I inserted a documented constant (`DAY_ONLY`) between
+`formatCriticalityTooltip` and its JSDoc. TypeScript attaches only the last of two stacked blocks,
+so the exported function lost its doc; tsc, lint and every test stayed green and the documentation
+audit caught it. The same shape had sat in `tools/scripts/check-platform-integrity.ts`: the doc of
+`PRISMA_GENERATE_SITE` stacked on another constant's, fifty lines from its declaration.
+
+**Rule.** A doc comment moves with its declaration. Enforced by ESLint `@luke/no-detached-jsdoc`
+(error, every linted TypeScript and JavaScript file). A corollary of "A new lint rule must be probed
+on a bait file": the rule first went into a config block that does not reach `tools/`, and reported
+zero on the repository while the known occurrence was still there — the per-area bait probe (one
+stacked and one blank-line-separated block, expected exactly 1 finding) is what exposed the scope.

@@ -2,10 +2,12 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Calculator } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import {
+  calculateCompanyMultiplier,
+  formatCompanyMultiplier,
   PricingParameterSetInputSchema,
   type PricingParameterSetInput,
   PRICING_CURRENCIES,
@@ -50,16 +52,22 @@ interface ParameterSetDialogProps {
 /**
  * Dialog for creating or editing a pricing parameter set.
  *
- * All monetary fields (duty, exchange rate, costs) are validated by
- * `PricingParameterSetInputSchema`. Currencies are limited to `PRICING_CURRENCIES`.
- * A live preview computes the effective landed cost for a sample supplier price.
+ * All fields are validated by `PricingParameterSetInputSchema`. Currencies are limited to
+ * `PRICING_CURRENCIES`. The company multiplier is computed live from the optimal margin.
  *
- * @param initialData - Pre-filled values in edit mode.
- * @param onSubmit - Called with validated data and optional makeDefault flag.
- * @param mode - Controls dialog title and whether `isDefault` toggle is shown.
+ * The form is mounted once per opening and reads `initialData` only then: a parent re-render (the
+ * session refetch when the tab regains focus) passes an equal but new object, and must not reset
+ * what is being typed.
+ *
+ * @param props.initialData - Pre-filled values in edit mode.
+ * @param props.onSubmit - Called with validated data and optional makeDefault flag.
+ * @param props.mode - Controls dialog title and whether `isDefault` toggle is shown.
  */
-export function ParameterSetDialog({
-  open,
+export function ParameterSetDialog(props: ParameterSetDialogProps) {
+  return props.open ? <ParameterSetForm {...props} /> : null;
+}
+
+function ParameterSetForm({
   onOpenChange,
   initialData,
   onSubmit,
@@ -76,28 +84,16 @@ export function ParameterSetDialog({
     },
   });
 
-  // Reset form and makeDefault state when dialog opens
-  useEffect(() => {
-    if (open) {
-      setMakeDefault(initialData?.isDefault ?? false);
-      form.reset(
-        initialData ?? {
-          name: '',
-          countryCode: '',
-        }
-      );
-    }
-  }, [open, initialData, form]);
-
-  // Calcola companyMultiplier live
+  // Compute companyMultiplier live, over the range the schema accepts (0 included, as the panel
+  // shows it); 0 only while the margin being typed is outside it.
   const optimalMargin = form.watch('optimalMargin');
   const companyMultiplier =
-    optimalMargin !== undefined && optimalMargin > 0 && optimalMargin < 100
-      ? Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100
+    optimalMargin !== undefined && optimalMargin >= 0 && optimalMargin < 100
+      ? calculateCompanyMultiplier(optimalMargin)
       : 0;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0 flex flex-col"> {/* vh: no Tailwind scale equivalent for viewport-relative height */}
         <DialogHeader className="px-6 py-4 border-b shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -111,7 +107,7 @@ export function ParameterSetDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(data => onSubmit(data, makeDefault))} className="flex flex-col flex-1 min-h-0">
           <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-6">
-            {/* Nome variante + Country Code */}
+            {/* Variant name + Country Code */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -154,7 +150,7 @@ export function ParameterSetDialog({
               />
             </div>
 
-            {/* Imposta come default (solo in edit) */}
+            {/* Set as default (edit only) */}
             {mode === 'edit' && (
               <div className="flex items-center justify-between rounded-md border px-4 py-3">
                 <div className="space-y-0.5">
@@ -173,7 +169,7 @@ export function ParameterSetDialog({
               </div>
             )}
 
-            {/* Valute */}
+            {/* Currencies */}
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}
@@ -426,7 +422,7 @@ export function ParameterSetDialog({
                   )}
                 />
 
-                {/* Moltiplicatore aziendale calcolato (sola lettura) */}
+                {/* Computed company multiplier (read-only) */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
                     Moltiplicatore Aziendale{' '}
@@ -435,7 +431,7 @@ export function ParameterSetDialog({
                     </Badge>
                   </label>
                   <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                    {companyMultiplier > 0 ? companyMultiplier.toFixed(2) : '—'}
+                    {companyMultiplier > 0 ? formatCompanyMultiplier(companyMultiplier) : '—'}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     = 1 / (1 − margine%)

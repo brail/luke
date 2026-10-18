@@ -1,4 +1,3 @@
-import { sectionEnum } from '@luke/core';
 import type { Role, Section } from '@luke/core';
 
 /**
@@ -15,6 +14,8 @@ export interface UserListItem {
   emailVerifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Null for an account that has never completed a login. */
+  lastLoginAt: string | null;
   identities: Array<{
     id: string;
     provider: 'LOCAL' | 'LDAP' | 'OIDC';
@@ -35,13 +36,11 @@ export type SortColumn =
   | 'isActive'
   | 'emailVerifiedAt'
   | 'createdAt'
+  | 'lastLoginAt'
   | 'provider';
 
 /** Sort direction. */
 export type SortOrder = 'asc' | 'desc';
-
-/** Identifiers for the actions available in the per-user dropdown menu. */
-export type UserAction = 'edit' | 'disable' | 'revokeSessions' | 'hardDelete';
 
 /**
  * Callbacks for each user action emitted by `UserActionsMenu`.
@@ -52,6 +51,8 @@ export interface UserActionHandlers {
   onHardDelete: (user: UserListItem) => void;
   onRevokeSessions: (user: UserListItem) => void;
   onManageAccess: (user: UserListItem) => void;
+  onForceLocalAccess: (user: UserListItem) => void;
+  onRevokeLocalAccess: (user: UserListItem) => void;
 }
 
 /**
@@ -69,14 +70,6 @@ export interface ToolbarHandlers {
   onRoleFilterChange: (value: string) => void;
   onCreateUser: () => void;
   onPageChange: (page: number) => void;
-}
-
-/**
- * Current sort state shared between the toolbar and the table.
- */
-export interface SortState {
-  sortBy: SortColumn;
-  sortOrder: SortOrder;
 }
 
 /**
@@ -99,18 +92,6 @@ export interface TableProps {
   isLoading?: boolean;
   error?: unknown;
 }
-
-/**
- * Per-section visibility overrides for a user.
- * A missing key means the role default applies; `true`/`false` is an explicit override.
- */
-export type SectionOverrideMap = Partial<Record<string, boolean>>;
-
-/**
- * Brand-scoped season access map.
- * `null` value means all seasons are allowed for that brand; a string array is an explicit allowlist.
- */
-export type SeasonAccessMap = Record<string, string[] | null>;
 
 /** Minimal user shape required by `ApproveUserDialog`. */
 export type UserForApproval = {
@@ -156,6 +137,3 @@ export const SECTION_LABELS: Record<Section, string> = {
   planning: 'Pianificazione',
   'settings.company': '↳ Azienda',
 };
-
-/** All valid section keys derived directly from `sectionEnum` — never duplicate manually. */
-export const ALL_SECTIONS: readonly Section[] = sectionEnum.options;

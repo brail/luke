@@ -34,7 +34,7 @@ async function main() {
   try {
     const row = await prisma.appConfig.findUnique({ where: { key: CONFIG_KEY } });
     if (!row) {
-      console.log(`ℹ️  Nessuna riga '${CONFIG_KEY}' trovata — nulla da migrare.`);
+      console.log(`ℹ️  No '${CONFIG_KEY}' row found — nothing to migrate.`);
       return;
     }
 
@@ -42,7 +42,7 @@ async function main() {
     try {
       parsed = JSON.parse(row.value);
     } catch (err) {
-      console.error(`❌ Valore di '${CONFIG_KEY}' non è JSON valido, abort senza scrivere:`, err);
+      console.error(`❌ The value of '${CONFIG_KEY}' is not valid JSON, aborting without writing:`, err);
       process.exit(1);
     }
 
@@ -53,7 +53,7 @@ async function main() {
       const oldValue = sectionMap[OLD_KEY];
       if (NEW_KEY in sectionMap) {
         console.warn(
-          `⚠️  ${role}: '${NEW_KEY}' già presente (valore '${sectionMap[NEW_KEY]}') — scarto '${OLD_KEY}' ('${oldValue}') senza sovrascrivere`
+          `⚠️  ${role}: '${NEW_KEY}' already present (value '${sectionMap[NEW_KEY]}') — discarding '${OLD_KEY}' ('${oldValue}') without overwriting`
         );
       } else {
         sectionMap[NEW_KEY] = oldValue;
@@ -64,16 +64,16 @@ async function main() {
     }
 
     if (changedRoles.length === 0) {
-      console.log(`ℹ️  Nessuna chiave '${OLD_KEY}' trovata — già migrato o mai impostato.`);
+      console.log(`ℹ️  No '${OLD_KEY}' key found — already migrated or never set.`);
       return;
     }
 
     console.log(
-      `\n${apply ? '✅' : '🔎 DRY RUN —'} ${changedRoles.length} ruolo/i da aggiornare: ${changedRoles.join(', ')}`
+      `\n${apply ? '✅' : '🔎 DRY RUN —'} ${changedRoles.length} role(s) to update: ${changedRoles.join(', ')}`
     );
 
     if (!apply) {
-      console.log('Nessuna scrittura eseguita — rilanciare con --apply per applicare.');
+      console.log('Nothing written — run again with --apply to apply.');
       return;
     }
 
@@ -82,10 +82,10 @@ async function main() {
       data: { value: JSON.stringify(parsed) },
     });
 
-    console.log(`✅ Scritto su '${CONFIG_KEY}'.`);
+    console.log(`✅ Written to '${CONFIG_KEY}'.`);
     console.log(
-      "⚠️  Cache RBAC in-memory non invalidata da questo script (processo separato dall'API) — " +
-        'riavviare i processi API oppure attendere fino a 60s prima di verificare.'
+      '⚠️  In-memory RBAC cache not invalidated by this script (a process separate from the API) — ' +
+        'restart the API processes or wait up to 60s before checking.'
     );
   } finally {
     await prisma.$disconnect();
@@ -93,6 +93,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('❌ Errore:', err);
+  console.error('❌ Error:', err);
   process.exit(1);
 });

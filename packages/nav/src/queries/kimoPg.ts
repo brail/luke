@@ -1,22 +1,23 @@
 /**
- * Kimo + Bidone — query PostgreSQL UNION di:
- *  - Step 0 (SO): ordini di vendita da nav_pf_sales_header / sales_line
- *  - Step 1 (BASKET): ordini KIMO-FASHION non ancora assegnati a un SO
+ * Kimo + Bidone — PostgreSQL UNION query of:
+ *  - Step 0 (SO): sales orders from nav_pf_sales_header / sales_line
+ *  - Step 1 (BASKET): KIMO-FASHION orders not yet assigned to an SO
  *
- * Replica fedelmente la logica Access (query #13/#14/#15 in kimo-test.txt):
- *  - SO filtrati per stagione + marchio (shortcutDimension2Code)
- *  - BASKET filtrati per marchio (kh.trademarkCode) + stagione (item.seasonCode)
- *    dove assignedSalesDocumentNo = '' e type IN (2, 20)
+ * Faithfully replicates the Access logic (queries #13/#14/#15 in kimo-test.txt):
+ *  - SO filtered by season + brand (shortcutDimension2Code)
+ *  - BASKET filtered by brand (kh.trademarkCode) + season (item.seasonCode)
+ *    where assignedSalesDocumentNo = '' and type IN (2, 20)
  */
+
+import type { PrismaClient } from '@luke/db';
 
 import { PgParams } from './pgParams.js';
 
 import type { PortafoglioParams } from '../statistics/portafoglio.js';
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** Stessi filtri del portafoglio: stagione+marchio obbligatori, agente/cliente opzionali. */
+/** Same filters as the portfolio: season+brand mandatory, agent/customer optional. */
 export type KimoParams = PortafoglioParams;
 
 export interface KimoRow {
@@ -24,7 +25,7 @@ export interface KimoRow {
   trademarkCode: string | null;
   salespersonCodeNav: string | null;
   salespersonName: string | null;
-  entryNo: string;              // BigInt serializzato come string
+  entryNo: string;              // BigInt serialized as a string
   no_: string | null;
   modelItemNo: string | null;
   colorCode: string | null;
@@ -64,10 +65,10 @@ export async function queryKimoFromPg(
 ): Promise<KimoRow[]> {
   const { seasonCode, trademarkCode, salespersonCode, customerCode } = params;
 
-  // Parametri base: $1 = seasonCode, $2 = trademarkCode
+  // Base parameters: $1 = seasonCode, $2 = trademarkCode
   const p = new PgParams([seasonCode, trademarkCode]);
 
-  // Filtri opzionali identici per entrambi i rami della UNION
+  // Optional filters, identical for both branches of the UNION
   let spFilterSo = '', spFilterBa = '';
   if (salespersonCode) {
     const ph = p.add(salespersonCode);
@@ -135,7 +136,7 @@ WHERE sh."sellingSeasonCode" = $1
 
 UNION ALL
 
--- ── Step 1: KIMO-FASHION Basket (ordini non ancora assegnati) ─────────────────
+-- ── Step 1: KIMO-FASHION Basket (orders not yet assigned) ─────────────────
 SELECT
   'BASKET'                                             AS "docType",
   kh."trademarkCode"                                   AS "trademarkCode",
@@ -214,6 +215,7 @@ GROUP BY
 ORDER BY "trademarkCode", "salespersonCodeNav"
   `;
 
+  // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2...); every value is bound as a parameter, never interpolated
   const rows = await prisma.$queryRawUnsafe<KimoRow[]>(sql, ...p.values);
   return rows;
 }

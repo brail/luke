@@ -1,26 +1,30 @@
 /**
- * Lightweight tRPC clients for server-side use (no React Query dependency).
+ * Lightweight tRPC client for server-side use (no React Query dependency).
  */
+
+import 'server-only';
 
 import { createTRPCClient, httpBatchLink } from '@trpc/client';
 
 import type { AppRouter } from '@luke/api';
 import { getApiBaseUrl } from '@luke/core';
 
+import { forwardedFor } from './clientIp';
+
 const trpcUrl = `${getApiBaseUrl()}/trpc`;
 
-/** Unauthenticated client — used during NextAuth credential resolution. */
-export const trpcAuth = createTRPCClient<AppRouter>({
-  links: [
-    httpBatchLink({
-      url: trpcUrl,
-      headers: () => ({ 'Content-Type': 'application/json' }),
-    }),
-  ],
-});
-
-/** Authenticated client factory — use when a Bearer token is available. */
-export function createAuthedTrpcClient(accessToken: string) {
+/**
+ * Authenticated client factory — use when a Bearer token is available.
+ *
+ * @param incomingHeaders - The headers of the request being served; the user's real IP in them is
+ *   forwarded as `X-Forwarded-For`: without it every call arrives from the web container's address,
+ *   and an IP-keyed rate-limit bucket on the API collapses onto one key shared by all users
+ *   (CLAUDE.md rule 13).
+ */
+export function createAuthedTrpcClient(
+  accessToken: string,
+  incomingHeaders: { get(name: string): string | null }
+) {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
@@ -28,6 +32,7 @@ export function createAuthedTrpcClient(accessToken: string) {
         headers: () => ({
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
+          ...forwardedFor(incomingHeaders),
         }),
       }),
     ],

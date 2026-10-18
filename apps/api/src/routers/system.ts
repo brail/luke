@@ -1,83 +1,32 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
-import { z } from 'zod';
+import { CalendarDigestRangeInputSchema } from '@luke/core';
 
 import { runDigestNow } from '../lib/calendarDigestScheduler';
 import { requirePermission } from '../lib/permissions';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-
-const BACKEND_DEP_KEYS = [
-  'fastify',
-  '@trpc/server',
-  '@prisma/client',
-  'zod',
-  'pino',
-  'argon2',
-  'mssql',
-  'nodemailer',
-  'next-auth',
-];
-
-function strip(v: string) {
-  return v.replace(/^[\^~>=<]+/, '');
-}
-
-function buildInfo() {
-  try {
-    const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8')) as {
-      version?: string;
-      dependencies?: Record<string, string>;
-    };
-    const deps = pkg.dependencies ?? {};
-    return {
-      version: pkg.version ?? 'unknown',
-      deps: BACKEND_DEP_KEYS
-        .filter(k => k in deps)
-        .map(k => ({ name: k, version: strip(deps[k]) })),
-    };
-  } catch {
-    return { version: 'unknown', deps: [] };
-  }
-}
-
-const info = buildInfo();
 
 export const systemRouter = router({
   /**
-   * Backend build/runtime info for the settings "About" panel: app version (from
-   * `package.json`), Node.js version, and a curated subset of backend dependency versions.
+   * Sends the caller their own calendar digest (the AuditLog change recap) for a date range, outside
+   * the scheduled 07:00 run — used for testing/re-sending. It bypasses the caller's digest opt-out
+   * and records no delivery row. See `runDigestNow`.
    *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {{ version: string, nodeVersion: string, deps: { name: string, version: string }[] }}
-   */
-  about: protectedProcedure.query(() => ({
-    version: info.version,
-    nodeVersion: process.version,
-    deps: info.deps,
-  })),
-
-  /**
-   * Manually triggers the calendar phase-alert digest email for a given date range, outside its
-   * normal cron schedule — used for testing/re-sending. See `runDigestNow`.
-   *
-   * @auth {config:update}
-   * @input {{ from: string, to: string }} — inclusive date range as `YYYY-MM-DD` strings.
+   * @auth {season_calendar:read}
+   * @input {CalendarDigestRangeInputSchema} — inclusive range of calendar dates (`YYYY-MM-DD`), read in
+   *   the caller's zone.
    * @output {{ ok: true }}
    */
   triggerCalendarDigest: protectedProcedure
-    .use(requirePermission('config:update'))
-    .input(z.object({
-      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    }))
+    // Re-sending your own calendar digest is a calendar action, not a configuration change. It was
+    // the only legitimate editor flow behind `config:update`.
+    .use(requirePermission('season_calendar:read'))
+    // Every calendar reader may re-send: each run rebuilds a range (at most 31 days) from the audit log.
+    // Shares the per-user `exportGeneration` budget with the PDF exports: a dedicated bucket would be
+    // a new `rateLimit.*` AppConfig key.
+    .use(withRateLimit('exportGeneration'))
+    .input(CalendarDigestRangeInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const range = {
-        start: new Date(`${input.from}T00:00:00`),
-        end: new Date(new Date(`${input.to}T00:00:00`).getTime() + 24 * 60 * 60 * 1000),
-      };
-      await runDigestNow(ctx.prisma, ctx.logger, range, ctx.session.user.id);
+      await runDigestNow(ctx.prisma, ctx.logger, input, ctx.session.user.id);
       return { ok: true };
     }),
 });

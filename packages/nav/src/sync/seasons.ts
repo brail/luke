@@ -1,10 +1,11 @@
+import type { PrismaClient, Prisma } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
-import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
+import { buildNavSyncFilter, buildWhereClause, createSyncRequest, navDateOrNull, processInBatches } from './utils.js';
 
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import type { PrismaClient, Prisma } from '@prisma/client';
 import type mssql from 'mssql';
 import type { Logger } from 'pino';
 
@@ -67,8 +68,8 @@ export async function syncSeasons(
   await processInBatches(rows, UPSERT_BATCH_SIZE, async row => {
     const navCode = row['Code'];
     const description = row['Description'] ?? '';
-    const startingDate = row['Starting Date'] ?? null;
-    const endingDate = row['Ending Date'] ?? null;
+    const startingDate = navDateOrNull(row['Starting Date']);
+    const endingDate = navDateOrNull(row['Ending Date']);
 
     try {
       // Atomic: NAV replica + local master data in a single transaction.
@@ -100,10 +101,10 @@ export async function syncSeasons(
       });
     } catch (err) {
       errors++;
-      logger.error({ entity, navCode, err }, 'NAV sync: errore upsert season');
+      logger.error({ entity, navCode, err }, 'NAV sync: season upsert error');
     }
   });
 
-  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completed');
   return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }

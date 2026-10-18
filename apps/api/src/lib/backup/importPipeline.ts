@@ -13,6 +13,8 @@
 
 import { randomUUID } from 'crypto';
 
+import type { BackupScope, PrismaClient } from '@luke/db';
+
 import { getStorageProvider } from '../../storage';
 import { getBackupRetentionDays } from '../configManager';
 
@@ -20,7 +22,6 @@ import { unwrapDekWithPassphrase, wrapDek } from './crypto';
 import { backupBlobKey, computeBackupExpiresAt } from './dumpPipeline';
 import { splitExportEnvelope } from './exportFormat';
 
-import type { BackupScope, PrismaClient } from '@prisma/client';
 
 /** Thrown for any client-fixable problem (bad passphrase, corrupt/truncated package, checksum mismatch) — the route maps this to a 400, anything else to a 500. */
 export class BackupImportValidationError extends Error {}

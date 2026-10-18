@@ -1,5 +1,7 @@
 'use client';
 
+import { type SyncedField, type UserSubmitPayload } from '../lib/userFormSchema';
+
 import {
   Dialog,
   DialogContent,
@@ -23,16 +25,12 @@ interface User {
   }>;
 }
 
-export interface UserDialogSubmitData {
-  email: string;
-  username: string;
-  firstName?: string;
-  lastName?: string;
-  password?: string;
-  confirmPassword?: string;
-  role: 'admin' | 'editor' | 'viewer';
-  isActive: boolean;
-}
+/**
+ * What the form hands back. Re-exported rather than redeclared: the previous local copy required
+ * `email`, `username` and `role`, which `syncedFields` is allowed to strip — the shape was stricter
+ * than the value, and only a cast inside `UserForm` kept the two apart.
+ */
+export type UserDialogSubmitData = UserSubmitPayload;
 
 interface UserDialogProps {
   open: boolean;
@@ -41,14 +39,7 @@ interface UserDialogProps {
   user?: User;
   onSubmit: (userData: UserDialogSubmitData) => void;
   isLoading?: boolean;
-  syncedFields?: (
-    | 'email'
-    | 'username'
-    | 'firstName'
-    | 'lastName'
-    | 'role'
-    | 'password'
-  )[];
+  syncedFields?: SyncedField[];
   isSelfEdit?: boolean;
   /** Whether the current user may reset another user's password (requires `*:*`). Defaults to `true` for callers that don't gate this (e.g. self-service create flows outside admin settings). */
   canResetPassword?: boolean;
@@ -73,20 +64,7 @@ export function UserDialog({
   isSelfEdit = false,
   canResetPassword = true,
 }: UserDialogProps) {
-  void open; // Usa il parametro open per evitare warning
-
-  const handleSubmit = (userData: {
-    email: string;
-    username: string;
-    firstName?: string;
-    lastName?: string;
-    password?: string;
-    confirmPassword?: string;
-    role: 'admin' | 'editor' | 'viewer';
-    isActive: boolean;
-  }) => {
-    onSubmit(userData);
-  };
+  void open; // Use the open parameter to avoid a warning
 
   const handleCancel = () => {
     onOpenChange(false);
@@ -112,7 +90,7 @@ export function UserDialog({
             ...user,
             provider: user?.identities?.[0]?.provider,
           }}
-          onSubmit={handleSubmit}
+          onSubmit={onSubmit}
           onCancel={handleCancel}
           isLoading={isLoading}
           syncedFields={syncedFields}

@@ -1,6 +1,10 @@
 {
+  // Node-only library: the Google Calendar sync and the ICS generator both run
+  // in `apps/api`, never in a browser. Neutral `lib: ES2022` from the base; the
+  // DOM this config used to carry came from TypeScript's `lib.es2022.full`
+  // default, not from anything the package needs.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
@@ -8,15 +12,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": false,
-    "emitDeclarationOnly": false,
-    "allowJs": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": ["src/**/*"],

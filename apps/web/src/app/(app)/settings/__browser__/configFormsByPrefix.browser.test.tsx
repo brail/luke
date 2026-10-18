@@ -1,0 +1,98 @@
+import { afterEach, expect, test, vi } from 'vitest';
+import { render } from 'vitest-browser-react';
+
+import MailPage from '../mail/page';
+import NavSettingsPage from '../nav/page';
+
+/**
+ * The mail and NAV forms read the first 100 config rows and looked their keys up in them: with more
+ * rows than that (93 registry keys today) they opened blank. They now ask for their own prefix.
+ */
+
+const h = vi.hoisted(() => ({ baseUrlFails: false, save: vi.fn() }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('next-auth/react', () => ({
+  useSession: () => ({ data: { user: { role: 'admin' }, accessToken: 't' } }),
+}));
+vi.mock('../../../../lib/trpc', () => {
+  const mutation = { useMutation: () => ({ mutate: vi.fn(), isPending: false }) };
+  const save = { useMutation: () => ({ mutate: h.save, isPending: false }) };
+  const settled = { isPending: false, error: null, refetch: vi.fn() };
+  const page = (items: { key: string; valuePreview: string }[]) => ({ ...settled, data: { items } });
+  // One object per query, as React Query keeps it: the pages reset their form when `data` changes.
+  const pages: Record<string, ReturnType<typeof page>> = {
+    smtp: page([
+      { key: 'smtp.host', valuePreview: 'smtp.example.test' },
+      { key: 'smtp.port', valuePreview: '2525' },
+    ]),
+    'integrations.nav': page([
+      { key: 'integrations.nav.host', valuePreview: 'nav.example.test' },
+      { key: 'integrations.nav.port', valuePreview: '1533' },
+    ]),
+    // Without a prefix, the first page holds 100 other rows, as on an install with many keys.
+    '': page(Array.from({ length: 100 }, (_, i) => ({ key: `app.other${i}`, valuePreview: 'x' }))),
+  };
+  const baseUrl = { ...settled, data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }] };
+  const baseUrlFailed = { ...settled, data: undefined, error: new Error('rete') };
+  const utils = { config: { invalidate: vi.fn() } };
+  return {
+    trpc: {
+      useUtils: () => utils,
+      config: {
+        list: {
+          useQuery: (input: { category?: string }) => pages[input.category ?? ''],
+        },
+        getMultiple: {
+          useQuery: () => (h.baseUrlFails ? baseUrlFailed : baseUrl),
+        },
+      },
+      integrations: {
+        mail: { saveConfig: save, test: mutation },
+        nav: { saveConfig: save, testConnection: mutation },
+      },
+    },
+  };
+});
+
+afterEach(() => {
+  h.baseUrlFails = false;
+  h.save.mockClear();
+});
+
+test('the mail form shows the saved SMTP server', async () => {
+  const screen = await render(<MailPage />);
+
+  await expect.element(screen.getByLabelText(/^Host SMTP/)).toHaveValue('smtp.example.test');
+  await expect.element(screen.getByLabelText(/^Porta/)).toHaveValue(2525);
+});
+
+test('the NAV form shows the saved server', async () => {
+  const screen = await render(<NavSettingsPage />);
+
+  await expect.element(screen.getByLabelText(/^Host/)).toHaveValue('nav.example.test');
+  await expect.element(screen.getByLabelText(/^Porta/)).toHaveValue(1533);
+});
+
+// `parseInt('') || 587` (or 1433) put the default back while typing and saved it unasked.
+test.each([
+  ['mail', MailPage, /^Host SMTP/],
+  ['NAV', NavSettingsPage, /^Host/],
+])('the %s form refuses an emptied port with a message', async (_, Page, host) => {
+  const screen = await render(<Page />);
+  await expect.element(screen.getByLabelText(host)).toBeVisible();
+  await screen.getByLabelText(/^Porta/).clear();
+  await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
+
+  await expect.element(screen.getByText('Inserisci una porta tra 1 e 65535')).toBeVisible();
+  expect(h.save).not.toHaveBeenCalled();
+});
+
+test('the mail form is not offered when the base URL cannot be read', async () => {
+  // Saving it would write the fallback over the stored `app.baseUrl` the links use.
+  h.baseUrlFails = true;
+  const screen = await render(<MailPage />);
+
+  await expect.element(screen.getByText('Errore nel caricamento')).toBeVisible();
+  expect(screen.getByLabelText(/^Host SMTP/).elements()).toHaveLength(0);
+});

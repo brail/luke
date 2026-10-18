@@ -20,7 +20,9 @@ import {
 } from '../../../../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/ui/tabs';
 import { useAppContext } from '../../../../contexts/AppContextProvider';
+import { useFormatDate } from '../../../../hooks/useFormatDate';
 import { triggerDownload } from '../../../../lib/download';
+import { syncStatusInfo } from '../../../../lib/navSyncStatus';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
@@ -32,19 +34,6 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = { salespersonCode: '', customerCode: '' };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.floor(ms / 1000);
-  if (totalSeconds < 60) return 'meno di un minuto';
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) return `${totalMinutes} minut${totalMinutes === 1 ? 'o' : 'i'}`;
-  const hours = Math.floor(totalMinutes / 60);
-  if (hours < 24) return `${hours} or${hours === 1 ? 'a' : 'e'}`;
-  const days = Math.floor(hours / 24);
-  return `${days} giorn${days === 1 ? 'o' : 'i'}`;
-}
 
 // ─── Progress bar hook ────────────────────────────────────────────────────────
 
@@ -213,7 +202,7 @@ function DownloadSection({
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Sync non disponibile</AlertTitle>
           <AlertDescription>
-            I dati non sono stati sincronizzati. Contatta l'amministratore.
+            I dati non sono stati sincronizzati. Contatta l&apos;amministratore.
           </AlertDescription>
         </Alert>
       )}
@@ -267,10 +256,11 @@ function DownloadSection({
   );
 }
 
-// ─── Component principale ─────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function StatisticsPage() {
   const { brand, season, isLoading: contextLoading } = useAppContext();
+  const fmt = useFormatDate();
 
   const [pfFilters, setPfFilters] = useState<Filters>(EMPTY_FILTERS);
   const [kimoFilters, setKimoFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -292,12 +282,6 @@ export default function StatisticsPage() {
     trpc.sales.statistics.portafoglio.getSyncState.useQuery(undefined, {
       refetchInterval: 60_000,
     });
-
-  const { data: pfSyncSchedule } =
-    trpc.integrations.nav.sync.getFilter.useQuery(
-      { entity: 'portafoglio' },
-      { refetchOnWindowFocus: false },
-    );
 
   const pfDownloadMutation = trpc.sales.statistics.portafoglio.download.useMutation({
     onSuccess: result => {
@@ -323,22 +307,8 @@ export default function StatisticsPage() {
     });
   };
 
-  // Stato sync portafoglio
-  const pfSyncStatusInfo = (() => {
-    const headerState = pfSyncState?.tables.find(t => t.tableName === 'nav_pf_sales_header');
-    if (!headerState?.lastSyncedAt) return null;
-    const lastSync = new Date(headerState.lastSyncedAt);
-    const elapsedSince = Date.now() - lastSync.getTime();
-    const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatDuration(elapsedSince)} fa)`;
-    const autoEnabled = pfSyncSchedule?.autoSyncEnabled ?? false;
-    let nextSyncLabel: string | null = null;
-    if (autoEnabled && pfSyncSchedule?.intervalMinutes) {
-      const intervalMs = pfSyncSchedule.intervalMinutes * 60 * 1000;
-      const remainingMs = Math.max(0, intervalMs - elapsedSince);
-      nextSyncLabel = remainingMs === 0 ? 'imminente' : `tra ${formatDuration(remainingMs)}`;
-    }
-    return { lastSyncLabel, nextSyncLabel };
-  })();
+  // Portafoglio sync state
+  const pfSyncStatusInfo = syncStatusInfo(pfSyncState, 'nav_pf_sales_header', fmt);
 
   // ── Kimo ─────────────────────────────────────────────────────────────────────
 
@@ -352,12 +322,6 @@ export default function StatisticsPage() {
     trpc.sales.statistics.kimo.getSyncState.useQuery(undefined, {
       refetchInterval: 60_000,
     });
-
-  const { data: kimoSyncSchedule } =
-    trpc.integrations.nav.sync.getFilter.useQuery(
-      { entity: 'kimo' },
-      { refetchOnWindowFocus: false },
-    );
 
   const kimoDownloadMutation = trpc.sales.statistics.kimo.download.useMutation({
     onSuccess: result => {
@@ -383,22 +347,8 @@ export default function StatisticsPage() {
     });
   };
 
-  // Stato sync kimo
-  const kimoSyncStatusInfo = (() => {
-    const headerState = kimoSyncState?.tables.find(t => t.tableName === 'nav_kimo_sales_header');
-    if (!headerState?.lastSyncedAt) return null;
-    const lastSync = new Date(headerState.lastSyncedAt);
-    const elapsedSince = Date.now() - lastSync.getTime();
-    const lastSyncLabel = `${lastSync.toLocaleString('it-IT', { dateStyle: 'short', timeStyle: 'short' })} (${formatDuration(elapsedSince)} fa)`;
-    const autoEnabled = kimoSyncSchedule?.autoSyncEnabled ?? false;
-    let nextSyncLabel: string | null = null;
-    if (autoEnabled && kimoSyncSchedule?.intervalMinutes) {
-      const intervalMs = kimoSyncSchedule.intervalMinutes * 60 * 1000;
-      const remainingMs = Math.max(0, intervalMs - elapsedSince);
-      nextSyncLabel = remainingMs === 0 ? 'imminente' : `tra ${formatDuration(remainingMs)}`;
-    }
-    return { lastSyncLabel, nextSyncLabel };
-  })();
+  // Kimo sync state
+  const kimoSyncStatusInfo = syncStatusInfo(kimoSyncState, 'nav_kimo_sales_header', fmt);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 

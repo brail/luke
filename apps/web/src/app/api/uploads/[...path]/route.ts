@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { buildApiUrl } from '@luke/core';
 
 import { auth } from '../../../../auth';
+import { forwardedFor } from '../../../../lib/clientIp';
 import { debugError } from '../../../../lib/debug';
 
 // Allow only safe path segments: alphanumeric, dots, dashes, underscores
@@ -12,7 +13,8 @@ const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
 /**
  * Handles GET /api/uploads/[...path]. Authenticated proxy that streams static files from the API
  * backend storage at `/uploads/<path>`. Validates each path segment against {@link SAFE_SEGMENT_RE}
- * to prevent path traversal attacks. Responses are cached immutably for one year.
+ * to prevent path traversal attacks. The cache policy is the API's: its `Cache-Control` is
+ * forwarded as is (`apps/api/src/plugins/storageUpload.ts`).
  * @auth {session-required}
  */
 export const GET = auth(async function GET(req) {
@@ -36,8 +38,9 @@ export const GET = auth(async function GET(req) {
     const filePath = pathSegments.join('/');
     const backendUrl = buildApiUrl(`/uploads/${filePath}`);
 
-    // Do NOT forward client cookies to the internal backend service
-    const response = await fetch(backendUrl, { method: 'GET' });
+    // Do NOT forward client cookies to the internal backend service — only the client IP, which
+    // the API's rate limit keys on (CLAUDE.md rule 13).
+    const response = await fetch(backendUrl, { method: 'GET', headers: forwardedFor(req.headers) });
 
     if (!response.ok) {
       return new NextResponse('File not found', { status: 404 });
@@ -50,7 +53,7 @@ export const GET = auth(async function GET(req) {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Cache-Control': response.headers.get('cache-control') ?? 'private, no-store',
       },
     });
   } catch (error) {

@@ -3,7 +3,7 @@
  * → gunzip → untar, staged entirely to local disk, then `pg_restore` + (optionally) file replay.
  *
  * Extraction is staged to local disk in full before any destructive step runs, for two reasons:
- * 1. The source blob stream (especially from MinIO) is not something we want to hold open for the
+ * 1. The source blob stream (especially from S3-compatible storage) is not something we want to hold open for the
  *    full duration of a potentially multi-minute `pg_restore` — read it to completion promptly.
  * 2. It lets the DB restore run to completion (or fail) before any file is touched, so a failed
  *    `pg_restore` never leaves storage files partially overwritten — only the DB was touched.
@@ -11,6 +11,10 @@
  * Unlike `runBackupJob`, this function DOES throw on failure — restore has no record of its own
  * to swallow errors into, and the caller (router) must know synchronously whether it succeeded,
  * e.g. to decide whether to keep Maintenance Mode active for the admin to investigate.
+ *
+ * Preserving the current audit trail is a stash-then-merge around the restore, not an exclusion
+ * from it — `pg_restore` cannot skip a table, and skipping one via its TOC breaks the restore of
+ * everything referencing it. See `stashPreservedTables`.
  *
  * Tar entry names are never trusted as filesystem paths (classic tar-extraction path-traversal
  * risk): the `db.dump` entry always stages to a fixed constant path, and `files/*` entries stage
@@ -26,18 +30,29 @@ import { finished, pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 
 import { APP_STORAGE_BUCKETS, type IStorageProvider, type StorageBucket } from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
 
 import { createArchiveExtractor, forEachArchiveEntry } from './archiveFormat';
+import { AUDIT_STAGE_PREFIX, auditStageIdent, newAuditStageSchema } from './auditStage';
 import { createBackupDecipher, unwrapDek } from './crypto';
-import { parseDatabaseUrl, runPgBinary } from './pgConnection';
+import { parseDatabaseUrl, pgBinaryMajorVersion, runCommand, runPgBinary } from './pgConnection';
 
 import type { BackupLogger } from './dumpPipeline';
 import type { PgConnectionParts } from './pgConnection';
-import type { PrismaClient } from '@prisma/client';
 
 const TEMP_DIR = join(homedir(), '.luke', 'restore-tmp');
+
+/**
+ * A restore refused for a reason the admin can act on: a pg_restore/pg_dump major that differs
+ * from the server's, an archive written by a newer pg_dump, or an archive that lacks the dump. Its
+ * message is written for the admin. Any other error out of the preflight is a server fault.
+ */
+export class RestorePreconditionError extends Error {
+  override name = 'RestorePreconditionError';
+}
 
 interface StagedFileEntry {
   bucket: StorageBucket;
@@ -47,8 +62,6 @@ interface StagedFileEntry {
 }
 
 export interface RestoreDatabaseFromFileOptions {
-  /** If true, `audit_logs` is excluded so the current audit trail is preserved untouched. Default `false`. */
-  excludeAuditLog?: boolean;
   /** DB to `pg_restore` into. Default: this instance's own database. The migration bridge
    *  overrides this to point at its disposable temp database instead. */
   db?: PgConnectionParts;
@@ -60,33 +73,313 @@ export interface RestoreDatabaseFromFileOptions {
 
 /**
  * Runs `pg_restore` from a local dump file into `options.db` (default: this instance's own
- * database). Deliberately strict: any non-zero exit (pg_restore can exit 1 even for warnings,
- * e.g. skipped GRANT/OWNER statements under --no-owner) is treated as failure. For a
- * disaster-recovery tool, a false "failed" that the admin has to double-check via stderr is far
- * preferable to a false "succeeded" on a restore that silently had issues.
+ * database). Restores the dump whole — selecting what to keep is not expressible here (see
+ * `stashPreservedTables`), so this function has exactly one job.
+ *
+ * Deliberately strict, in two ways. Any non-zero exit is a failure (pg_restore can exit 1 even
+ * for warnings, e.g. skipped GRANT/OWNER statements under --no-owner). And `--exit-on-error`
+ * turns pg_restore's *default* behaviour — log the error, carry on, exit 0 with a
+ * "warning: errors ignored on restore: N" line nobody reads — into a hard stop. Without it a
+ * restore that silently skipped half the tables reports success, which for a disaster-recovery
+ * tool is the worst possible outcome: a false "failed" costs an admin a look at stderr, a false
+ * "succeeded" costs the data.
+ *
+ * Note this makes the restore intolerant of a `pg_dump` newer than the destination server (a
+ * dump from pg_dump >= 17 carries `SET transaction_timeout`, unknown to a <= 16 server). That
+ * skew does not exist in the deployed setup — apps/api/Dockerfile pins postgresql16-client and
+ * every docker-compose file runs postgres:16-alpine — and tolerating it is not worth reopening
+ * the silent-partial-restore hole.
  */
 export async function restoreDatabaseFromFile(
   dumpPath: string,
   options: RestoreDatabaseFromFileOptions = {}
 ): Promise<void> {
-  const { excludeAuditLog = false, db = parseDatabaseUrl(), clean = true } = options;
+  const { db = parseDatabaseUrl(), clean = true } = options;
   await runPgBinary('pg_restore', [
     ...(clean ? ['--clean', '--if-exists'] : []),
+    '--exit-on-error',
     '--no-owner',
     '--no-privileges',
     '--host', db.host,
     '--port', db.port,
     '--username', db.user,
     '--dbname', db.database,
-    ...(excludeAuditLog ? ['--exclude-table=public.audit_logs'] : []),
     dumpPath,
   ], db.password);
+}
+
+/**
+ * Fails unless both `pg_restore` and `pg_dump` share a major version with the PostgreSQL server.
+ *
+ * `pg_restore` writes its own prologue into the stream it replays, and that prologue tracks the
+ * *client's* version: from 18 it emits `SET transaction_timeout = 0`, a parameter a 16 server does
+ * not know. With `--exit-on-error` that aborts the restore. Harmless in itself — it aborts on the
+ * prologue, before any DROP, so the database is left untouched — but it means the restore simply
+ * cannot run, and the error it surfaces ("unrecognized configuration parameter") says nothing
+ * about the actual cause.
+ *
+ * So it is checked up front, by the callers, before a safety snapshot is taken and Maintenance
+ * Mode is switched on. Failing here costs nothing; failing three steps later leaves an admin to
+ * undo the maintenance state by hand.
+ *
+ * Deployed instances always match — apps/api/Dockerfile installs postgresql16-client alongside
+ * the postgres:16-alpine service. A local `pnpm dev` does not: it spawns whatever `pg_restore` is
+ * on the developer's PATH, which is how this surfaced.
+ */
+export async function assertPgToolchainCompatible(prisma: PrismaClient): Promise<void> {
+  const [clientMajor, rows] = await Promise.all([
+    pgBinaryMajorVersion('pg_restore'),
+    prisma.$queryRaw<{ server_version: string }[]>(Prisma.sql`SHOW server_version`),
+  ]);
+
+  const serverMajor = Number.parseInt(rows[0]?.server_version ?? '', 10);
+  if (!Number.isFinite(serverMajor)) {
+    throw new Error(`Cannot determine the PostgreSQL server version ("${rows[0]?.server_version}")`);
+  }
+  if (clientMajor !== serverMajor) {
+    throw new RestorePreconditionError(
+      `pg_restore è alla major ${clientMajor}, il server PostgreSQL alla ${serverMajor}: un restore ` +
+      'con versioni disallineate fallisce a metà. Usa i binari client della stessa major del server ' +
+      `(in produzione l'immagine API installa postgresql${serverMajor}-client). In sviluppo locale ` +
+      `metti in PATH il client ${serverMajor} prima di quello di sistema.`
+    );
+  }
+
+  // `pg_dump` is checked too, and against the *server*, not against `pg_restore`. It writes the
+  // mandatory pre-restore safety snapshot, and a newer pg_dump happily dumps an older server —
+  // into an archive format this pg_restore cannot read back. The one artifact that has to stay
+  // restorable would be silently unusable, and nothing would say so until it was needed.
+  const dumpMajor = await pgBinaryMajorVersion('pg_dump');
+  if (dumpMajor !== serverMajor) {
+    throw new RestorePreconditionError(
+      `pg_dump è alla major ${dumpMajor}, il server PostgreSQL alla ${serverMajor}: lo snapshot di ` +
+      'sicurezza pre-restore verrebbe scritto in un formato che pg_restore non sa rileggere. ' +
+      `Allinea anche pg_dump alla major ${serverMajor} prima di procedere.`
+    );
+  }
+}
+
+/**
+ * Copies the tables a restore must not roll back into a staging schema: the audit trail and the
+ * backup inventory. What happens to each afterwards differs — see `mergeStashedAuditLog` and
+ * `restoreStashedBackupRecords` — but both have to be taken before `pg_restore` runs.
+ *
+ * Excluding `audit_logs` from the restore itself is not possible: `pg_restore` has no
+ * `--exclude-table` (that is a `pg_dump` flag), and filtering its TOC with `-L` instead leaves
+ * the table in place, whose `audit_logs_actorId_fkey` then blocks the `DROP TABLE public.users`
+ * that `--clean` needs — pg_restore logs that, carries on, and silently skips restoring the users
+ * table. So the trail goes to a staging schema instead, and the restore runs untouched.
+ *
+ * `CREATE TABLE ... AS SELECT` deliberately copies rows without constraints or foreign keys, so
+ * the copy survives the `users` drop; and the staging schema is absent from the archive's TOC, so
+ * `--clean` never sees it.
+ *
+ * A leftover staging schema means a previous restore died between stash and merge. Whether that
+ * copy still matters is a question with an answer, so it gets asked rather than assumed: if every
+ * row in it is already in `public.audit_logs`, the earlier restore never got as far as touching
+ * the table (a `pg_restore` that aborts on its prologue, say) and the copy is redundant — it is
+ * dropped and the restore proceeds. If it holds rows the live table does not, the previous run
+ * did wipe the trail and this copy is the only one left; that refuses, because clearing it to
+ * make room would destroy exactly what it exists to protect.
+ */
+export async function stashPreservedTables(prisma: PrismaClient): Promise<string> {
+  // Any schema from an earlier run: either left by a restore that died between stash and merge,
+  // or resurrected by a restore whose archive happened to contain one.
+  const leftovers = await listAuditStageSchemas(prisma);
+
+  for (const schema_name of leftovers) {
+    const ident = auditStageIdent(schema_name);
+
+    // A schema whose `audit_logs` never landed is a stash that died mid-creation. It protects
+    // nothing, and probing it below would fail with "relation does not exist" — an opaque error
+    // that would block every subsequent restore until an operator dropped the schema by hand.
+    const [{ present }] = await prisma.$queryRaw<{ present: boolean }[]>(Prisma.sql`
+      SELECT to_regclass(${`${schema_name}.audit_logs`}) IS NOT NULL AS present
+    `);
+    if (!present) {
+      await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
+      continue;
+    }
+
+    const [{ orphaned }] = await prisma.$queryRaw<{ orphaned: bigint }[]>(Prisma.sql`
+      SELECT count(*) AS orphaned
+      FROM ${ident}.audit_logs s
+      WHERE NOT EXISTS (SELECT 1 FROM public.audit_logs p WHERE p.id = s.id)
+    `);
+
+    if (orphaned > 0n) {
+      throw new Error(
+        `Schema "${schema_name}" holds ${orphaned} events the current audit log lacks: an earlier ` +
+        'restore stopped after overwriting it, and that copy is the only one left. Graft it back ' +
+        'or save it (or restore the pre-restore safety snapshot instead), then drop the schema ' +
+        'by hand before trying again.'
+      );
+    }
+
+    // Nothing in the copy that the live table has lost. Clear it rather than dead-ending an
+    // operator over a redundant copy.
+    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${ident} CASCADE`);
+  }
+
+  const schema = newAuditStageSchema();
+  const ident = auditStageIdent(schema);
+
+  // Raw SQL: a staging schema plus CREATE TABLE AS SELECT has no Prisma ORM equivalent.
+  // Parameterized `Prisma.sql` throughout, never $executeRawUnsafe.
+  //
+  // One transaction (PostgreSQL DDL is transactional): the schema and both copies appear together
+  // or not at all. Split across three statements, a failure after the first would leave an empty
+  // staging schema behind — a leftover the next run has to reason about for no reason.
+  await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`CREATE SCHEMA ${ident}`),
+    prisma.$executeRaw(
+      Prisma.sql`CREATE TABLE ${ident}.audit_logs AS SELECT * FROM public.audit_logs`
+    ),
+    // The enum columns are copied as text on purpose. `CREATE TABLE AS SELECT` would otherwise
+    // carry the `public."Backup*"` enum types into the staging table, and `pg_restore --clean`
+    // cannot then drop those types — it emits a plain `DROP TYPE`, which fails against the staging
+    // column still using it, and with `--exit-on-error` that aborts the whole restore.
+    prisma.$executeRaw(Prisma.sql`
+      CREATE TABLE ${ident}.backup_records AS
+      SELECT id, filename, scope::text AS scope, trigger::text AS trigger, status::text AS status,
+             "sizeBytesEncrypted", "checksumSha256", "ivHex", "authTagHex", "wrappedDekHex",
+             algorithm, "appVersion", "schemaMigrationName", "errorMessage", "createdById",
+             "startedAt", "completedAt", "expiresAt", "createdAt", "fileCount", label, "sourceBackupId"
+      FROM public.backup_records
+    `),
+  ]);
+  return schema;
+}
+
+/**
+ * Every staging schema currently in the database.
+ *
+ * `starts_with` rather than `LIKE`: the prefix begins with `_`, which LIKE reads as a
+ * single-character wildcard — the pattern would also match an unrelated schema, and
+ * `auditStageIdent` would then reject it and dead-end the restore.
+ */
+async function listAuditStageSchemas(prisma: PrismaClient): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ schema_name: string }[]>(Prisma.sql`
+    SELECT schema_name FROM information_schema.schemata
+    WHERE starts_with(schema_name::text, ${AUDIT_STAGE_PREFIX})
+  `);
+  return rows.map(r => r.schema_name);
+}
+
+/**
+ * Merges the stashed audit trail back after a restore, then drops the staging schema.
+ * Returns how many rows were reinstated.
+ *
+ * Union, not replacement: the restored snapshot's own entries stay, and `ON CONFLICT (id) DO
+ * NOTHING` keeps a row present in both from being duplicated. Excluding the table outright would
+ * have been the narrower promise and the worse one — it would discard every event written *after*
+ * the backup, which is most of what an admin wants to still be able to read afterwards.
+ *
+ * An `actorId` pointing at a user the restored snapshot does not contain is set to NULL rather
+ * than dropping the row: the same trade the schema already makes with `onDelete: SetNull` on
+ * `AuditLog.actor`, and the FK would reject the row otherwise. The event survives without its
+ * attribution.
+ */
+export async function mergeStashedAuditLog(prisma: PrismaClient, schema: string): Promise<number> {
+  const ident = auditStageIdent(schema);
+  const merged = await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO public.audit_logs
+      (id, "actorId", action, "targetType", "targetId", result, metadata, "traceId", ip, "createdAt")
+    SELECT s.id,
+           CASE WHEN u.id IS NULL THEN NULL ELSE s."actorId" END,
+           s.action, s."targetType", s."targetId", s.result,
+           s.metadata, s."traceId", s.ip, s."createdAt"
+    FROM ${ident}.audit_logs s
+    LEFT JOIN public.users u ON u.id = s."actorId"
+    ON CONFLICT (id) DO NOTHING
+  `);
+  return merged;
+}
+
+/**
+ * Puts the live backup inventory back after a restore, replacing whatever the snapshot contained.
+ *
+ * Replacement, not the union used for the audit trail, because `backup_records` describes what is
+ * in the storage bucket *now* and the restore does not touch that bucket. A snapshot's copy is
+ * stale in both directions: it resurrects records for backups deleted since (pointing at blobs
+ * that are gone) and erases records for backups taken since — including the mandatory
+ * pre-restore safety snapshot, which is created after the dump was written and would otherwise
+ * disappear at the very moment it becomes the way back.
+ *
+ * It also clears the phantom the snapshot leaves behind. A backup's own record is `RUNNING` while
+ * `pg_dump` reads the table, so every backup contains itself mid-flight; restoring that copy
+ * brings back a job that will never finish, and the UI polls it forever.
+ *
+ * `sourceBackupId` is filled in a second pass: it points at another row of this same table, and a
+ * single INSERT would have to emit parent before child. `createdById` gets the same NULL
+ * treatment as the audit trail's `actorId`, for the same reason.
+ */
+export async function restoreStashedBackupRecords(prisma: PrismaClient, schema: string): Promise<number> {
+  const ident = auditStageIdent(schema);
+
+  // One transaction. The DELETE empties the live inventory and only the INSERT refills it: run
+  // apart, an INSERT that failed on its own would leave the instance with no record of any backup
+  // at all — the pre-restore safety snapshot included, which is the only way back from a restore
+  // that went wrong.
+  const [, restored] = await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`DELETE FROM public.backup_records`),
+    prisma.$executeRaw(Prisma.sql`
+      INSERT INTO public.backup_records
+        (id, filename, scope, trigger, status, "sizeBytesEncrypted", "checksumSha256", "ivHex",
+         "authTagHex", "wrappedDekHex", algorithm, "appVersion", "schemaMigrationName",
+         "errorMessage", "createdById", "startedAt", "completedAt", "expiresAt", "createdAt",
+         "fileCount", label, "sourceBackupId")
+      SELECT s.id, s.filename, s.scope::"BackupScope", s.trigger::"BackupTrigger",
+             s.status::"BackupStatus", s."sizeBytesEncrypted", s."checksumSha256",
+             s."ivHex", s."authTagHex", s."wrappedDekHex", s.algorithm, s."appVersion",
+             s."schemaMigrationName", s."errorMessage",
+             CASE WHEN u.id IS NULL THEN NULL ELSE s."createdById" END,
+             s."startedAt", s."completedAt", s."expiresAt", s."createdAt",
+             s."fileCount", s.label, NULL
+      FROM ${ident}.backup_records s
+      LEFT JOIN public.users u ON u.id = s."createdById"
+    `),
+    prisma.$executeRaw(Prisma.sql`
+      UPDATE public.backup_records r
+      SET "sourceBackupId" = s."sourceBackupId"
+      FROM ${ident}.backup_records s
+      WHERE s.id = r.id
+        AND s."sourceBackupId" IS NOT NULL
+        AND EXISTS (SELECT 1 FROM public.backup_records p WHERE p.id = s."sourceBackupId")
+    `),
+  ]);
+
+  return restored;
+}
+
+/** Removes a staging schema once everything preserved in it has been put back. */
+export async function dropAuditStage(prisma: PrismaClient, schema: string): Promise<void> {
+  await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${auditStageIdent(schema)} CASCADE`);
+}
+
+/**
+ * Removes every staging schema, this run's included.
+ *
+ * Dropping only this run's is not enough: `pg_restore --clean` recreates whatever the archive
+ * contained, so an archive written while an older run's stash existed puts that schema back. It is
+ * stale by construction, and left behind it can hold rows the freshly restored `audit_logs` does
+ * not — which is what the *next* restore's leftover probe refuses to proceed past, dead-ending it
+ * until an operator intervenes. By the time this runs everything worth keeping has been put back.
+ */
+async function dropAllAuditStages(prisma: PrismaClient): Promise<void> {
+  for (const schema of await listAuditStageSchemas(prisma)) {
+    await prisma.$executeRaw(Prisma.sql`DROP SCHEMA ${auditStageIdent(schema)} CASCADE`);
+  }
 }
 
 /**
  * Downloads + decrypts a backup's blob into a ready-to-iterate tar extraction stream — shared by
  * a real restore (which also replays `files/*`) and the migration bridge (which only wants
  * `db.dump`, discarding everything else).
+ *
+ * `done` settles with the whole chain: a storage read error, a wrong auth tag or a corrupt gzip
+ * rejects it and destroys `extract`, so the caller awaits it together with its iteration of
+ * `extract` instead of the error escaping as an uncaught exception.
  */
 export async function openBackupArchiveStream(params: {
   prisma: PrismaClient;
@@ -94,7 +387,7 @@ export async function openBackupArchiveStream(params: {
   ivHex: string;
   authTagHex: string;
   wrappedDekHex: string;
-}): Promise<ReturnType<typeof createArchiveExtractor>> {
+}): Promise<{ extract: ReturnType<typeof createArchiveExtractor>; done: Promise<void> }> {
   const provider = await getStorageProvider(params.prisma);
   const { stream: blobStream } = await provider.get({ bucket: 'backups', key: params.filename });
 
@@ -103,11 +396,7 @@ export async function openBackupArchiveStream(params: {
   const gunzip = createGunzip();
   const extract = createArchiveExtractor();
 
-  blobStream.pipe(decipher);
-  decipher.pipe(gunzip);
-  gunzip.pipe(extract);
-
-  return extract;
+  return { extract, done: pipeline(blobStream, decipher, gunzip, extract) };
 }
 
 /** Parses a `files/<bucket>/<key...>` tar entry name. Returns `null` if the bucket isn't recognized. */
@@ -119,7 +408,7 @@ function parseFileEntryName(name: string): { bucket: StorageBucket; key: string 
   return { bucket: bucket as StorageBucket, key };
 }
 
-export interface RunRestoreJobParams {
+export interface StageBackupArchiveParams {
   prisma: PrismaClient;
   /** Storage key of the encrypted blob in the "backups" bucket. */
   filename: string;
@@ -127,15 +416,76 @@ export interface RunRestoreJobParams {
   ivHex: string;
   authTagHex: string;
   wrappedDekHex: string;
-  /** If true, `audit_logs` is excluded from the restore — the current audit trail is preserved untouched. */
-  preserveAuditLog: boolean;
-  /** Whether to also replay `files/*` entries back into the storage provider. */
+  /** Whether `files/*` entries should be kept for replay, or drained and discarded. */
   restoreFiles: boolean;
   logger: BackupLogger;
 }
 
-export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> {
-  const { filename, ivHex, authTagHex, wrappedDekHex, preserveAuditLog, restoreFiles, logger } = params;
+/** A backup unpacked on local disk, verified restorable, and not yet applied to anything. */
+export interface StagedRestore {
+  workDir: string;
+  dumpPath: string;
+  stagedFiles: StagedFileEntry[];
+}
+
+/**
+ * Verifies `pg_restore` can actually read a staged dump, by asking it to list the archive's
+ * contents — no connection, no writes.
+ *
+ * A custom-format archive carries a format version tied to the `pg_dump` that wrote it (16 writes
+ * 1.15, 18 writes 1.16), and `pg_restore` reads its own version and older, never newer. The raw
+ * refusal is "unsupported version (1.16) in file header", which names neither the tool that
+ * wrote the archive nor the one that cannot read it.
+ *
+ * Deployed instances never see this: the same pinned client writes and reads every backup. It
+ * shows up when the toolchain changes underneath existing backups — a developer's PATH, or an
+ * image whose client major moved — and on `.lukebak` packages imported from an instance that ran
+ * a different one.
+ *
+ * Only that refusal is a `RestorePreconditionError`. The same `catch` receives a `pg_restore` that
+ * could not start, was killed, or could not open the file: server faults, rethrown as plain errors.
+ * Telling them apart reads stderr, so the probe pins `LC_ALL=C`: a `pg_restore` built with NLS
+ * prints in the system language (a Homebrew one does even with an empty `LANG`), and `LC_ALL`
+ * overrides an inherited `LC_MESSAGES` or `LANGUAGE` where `LC_MESSAGES=C` alone would not.
+ */
+export async function assertDumpReadable(dumpPath: string, logger: BackupLogger): Promise<void> {
+  try {
+    // Listing an archive opens no connection, so there is no password to pass.
+    await runCommand('pg_restore', ['--list', dumpPath], { env: { LC_ALL: 'C' } });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    logger.error({ dumpPath, err: detail }, 'Restore: dump unreadable');
+
+    const clientMajor = await pgBinaryMajorVersion('pg_restore').catch(() => null);
+    const reader = `questo pg_restore${clientMajor ? ` (major ${clientMajor})` : ''}`;
+    const archiveVersion = /unsupported version \((\d+\.\d+)\) in file header/.exec(detail)?.[1];
+    if (archiveVersion) {
+      throw new RestorePreconditionError(
+        `Il dump del backup usa il formato archivio ${archiveVersion}, che ${reader} non sa leggere: ` +
+        'è stato scritto da un pg_dump più recente. Serve un pg_restore almeno di pari major, che a ' +
+        'sua volta deve coincidere con quella del server.',
+        { cause: err }
+      );
+    }
+    throw new Error(`The dump in the backup cannot be read by ${reader}. Detail: ${detail}`, {
+      cause: err,
+    });
+  }
+}
+
+/**
+ * Downloads, decrypts and unpacks a backup onto local disk, then checks the dump is restorable.
+ *
+ * Nothing here touches the database or the storage provider, which is the point: the caller runs
+ * this *before* taking the instance down for maintenance, so a backup that turns out to be
+ * unreadable — or a download that fails halfway — costs nothing but a temp directory. Staging to
+ * disk in full also means the (possibly S3-backed) blob stream is not held open across a
+ * multi-minute `pg_restore`, and that a failing restore cannot leave storage files half-replaced.
+ *
+ * The caller owns the returned directory and must pass it to `discardStagedRestore`.
+ */
+export async function stageBackupArchive(params: StageBackupArchiveParams): Promise<StagedRestore> {
+  const { filename, ivHex, authTagHex, wrappedDekHex, restoreFiles, logger } = params;
   const jobId = filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
   const workDir = join(TEMP_DIR, jobId);
   const dumpPath = join(workDir, 'db.dump');
@@ -144,16 +494,16 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
   try {
     await mkdir(filesDir, { recursive: true, mode: 0o700 });
 
-    const provider = await getStorageProvider(params.prisma);
-
-    logger.info({ filename }, 'Restore: download e decifratura archivio');
-    const extract = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
+    logger.info({ filename }, 'Restore: downloading and decrypting the archive');
+    const { extract, done } = await openBackupArchiveStream({ prisma: params.prisma, filename, ivHex, authTagHex, wrappedDekHex });
 
     const stagedFiles: StagedFileEntry[] = [];
     let fileIndex = 0;
+    let dumpFound = false;
 
-    await forEachArchiveEntry(extract, async (header, entryStream) => {
+    const extracted = forEachArchiveEntry(extract, async (header, entryStream) => {
       if (header.name === 'db.dump') {
+        dumpFound = true;
         await pipeline(entryStream, createWriteStream(dumpPath));
         return;
       }
@@ -170,19 +520,75 @@ export async function runRestoreJob(params: RunRestoreJobParams): Promise<void> 
       await pipeline(entryStream, createWriteStream(stagedPath));
       stagedFiles.push({ bucket: parsed.bucket, key: parsed.key, stagedPath, size: header.size ?? 0 });
     });
+    await Promise.all([extracted, done]);
 
-    logger.info({ filename }, 'Restore: avvio pg_restore');
-    await restoreDatabaseFromFile(dumpPath, { excludeAuditLog: preserveAuditLog });
-    logger.info({ filename }, 'Restore: database ripristinato, replay file storage');
-
-    if (restoreFiles) {
-      await replayStagedFiles(provider, stagedFiles);
+    if (!dumpFound) {
+      throw new RestorePreconditionError("L'archivio del backup non contiene il dump del database (voce \"db.dump\" assente)");
     }
+    await assertDumpReadable(dumpPath, logger);
 
-    logger.info({ filename, restoredFiles: stagedFiles.length }, 'Restore: completato');
-  } finally {
+    logger.info({ filename, files: stagedFiles.length }, 'Restore: archive extracted and verified');
+    return { workDir, dumpPath, stagedFiles };
+  } catch (err) {
     await rm(workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
+    throw err;
   }
+}
+
+export interface ApplyStagedRestoreParams {
+  prisma: PrismaClient;
+  staged: StagedRestore;
+  /** If true, the current audit trail is stashed before the restore and merged back after, so no
+   *  event is lost in either direction. See `stashPreservedTables`. */
+  preserveAuditLog: boolean;
+  /** Whether to also replay `files/*` entries back into the storage provider. */
+  restoreFiles: boolean;
+  logger: BackupLogger;
+}
+
+/**
+ * Applies a staged backup: this is the destructive half, and the only one.
+ *
+ * The database goes first and the storage files second, so a failing `pg_restore` leaves the
+ * files untouched rather than half-replaced.
+ */
+export async function applyStagedRestore(params: ApplyStagedRestoreParams): Promise<void> {
+  const { prisma, staged, preserveAuditLog, restoreFiles, logger } = params;
+
+  // Unconditional: the backup inventory is preserved on every restore. `preserveAuditLog` only
+  // decides whether the audit trail is merged back too, or left as the snapshot restored it.
+  const stashSchema = await stashPreservedTables(prisma);
+  const [{ rows }] = await prisma.$queryRaw<{ rows: bigint }[]>(
+    Prisma.sql`SELECT count(*) AS rows FROM ${auditStageIdent(stashSchema)}.audit_logs`
+  );
+  logger.info({ stashSchema, auditRows: Number(rows) }, 'Restore: current state set aside');
+
+  logger.info('Restore: starting pg_restore');
+  await restoreDatabaseFromFile(staged.dumpPath);
+
+  if (preserveAuditLog) {
+    const mergedRows = await mergeStashedAuditLog(prisma, stashSchema);
+    logger.info({ mergedRows }, 'Restore: activity log reattached');
+  }
+
+  // Always, independently of `preserveAuditLog`: the backup inventory has to match the storage
+  // bucket, which this restore did not touch. See `restoreStashedBackupRecords`.
+  const backupRecords = await restoreStashedBackupRecords(prisma, stashSchema);
+  logger.info({ backupRecords }, 'Restore: backup inventory restored');
+
+  await dropAllAuditStages(prisma);
+
+  if (restoreFiles) {
+    logger.info('Restore: database restored, replaying file storage');
+    await replayStagedFiles(await getStorageProvider(prisma), staged.stagedFiles);
+  }
+
+  logger.info({ restoredFiles: staged.stagedFiles.length }, 'Restore: completed');
+}
+
+/** Removes a staged restore's working directory. Safe to call more than once. */
+export async function discardStagedRestore(staged: StagedRestore): Promise<void> {
+  await rm(staged.workDir, { recursive: true, force: true }).catch(() => { /* best-effort cleanup */ });
 }
 
 async function replayStagedFiles(provider: IStorageProvider, files: StagedFileEntry[]): Promise<void> {

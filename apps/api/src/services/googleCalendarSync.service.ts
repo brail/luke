@@ -11,12 +11,12 @@ import {
   type SyncContext,
 } from '@luke/calendar';
 import type { Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
-import { getConfig } from '../lib/configManager.js';
+import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 
 import { getUserAllowedFunctionIds } from './context.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 interface SyncLogger {
   info(obj: unknown, msg?: string): void;
@@ -36,10 +36,10 @@ export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{
   const [authMode, domain, enabled] = await Promise.all([
     getConfig(prisma, 'integrations.google.authMode', false),
     getConfig(prisma, 'integrations.google.domain', false),
-    getConfig(prisma, 'integrations.google.calendarSync.enabled', false),
+    getConfigOrDefault(prisma, 'integrations.google.calendarSync.enabled'),
   ]);
 
-  if (!domain || enabled !== 'true') return null;
+  if (!domain || !enabled) return null;
 
   if (authMode === 'oauth_user') {
     const [clientId, clientSecret, refreshToken] = await Promise.all([
@@ -96,24 +96,6 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
     visibilityFunctionIds: m.visibilities.map(v => v.companyFunctionId),
     planningGroupName: m.planningGroupName,
   };
-}
-
-/**
- * Loads a calendar event and maps it to the MilestoneForSync shape expected by @luke/calendar.
- */
-export async function getMilestoneForSync(
-  milestoneId: string,
-  prisma: PrismaClient
-): Promise<MilestoneForSync> {
-  const m = await prisma.calendarEvent.findUniqueOrThrow({
-    where: { id: milestoneId },
-    include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
-  });
-  return mapMilestone({
-    ...m,
-    visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })),
-    planningGroupName: m.planningGroup.name,
-  });
 }
 
 // ─── SyncContext builder ──────────────────────────────────────────────────────
@@ -234,32 +216,25 @@ export async function syncOneMilestone(
 }
 
 /**
- * Deletes all Google Calendar events mapped to the given milestone and removes
- * the local mapping records. No-ops if the integration is disabled.
+ * Deletes the Google Calendar copies of events already deleted from Luke — the mappings went with
+ * them (cascade), so the caller reads `copies` before its delete (`deleteEvents`). Best effort: a
+ * copy Google refuses to delete is logged and stays in Google. No-ops if the integration is disabled.
  */
-export async function cleanupMilestoneEvents(
-  milestoneId: string,
+export async function deleteGoogleCopies(
+  copies: { googleCalendarId: string; googleEventId: string }[],
   prisma: PrismaClient,
   logger: SyncLogger
 ): Promise<void> {
+  if (copies.length === 0) return;
   const creds = await getConfiguredGoogleClient(prisma);
   if (!creds) return;
 
-  const mappings = await prisma.googleEventMapping.findMany({ where: { eventId: milestoneId } });
-
-  const results = await Promise.allSettled(
-    mappings.map(m => deleteEvent(m.googleCalendarId, m.googleEventId))
-  );
+  const results = await Promise.allSettled(copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId)));
   const failed = results.filter(r => r.status === 'rejected').length;
   if (failed > 0) {
-    logger.warn(
-      { milestoneId, failed, total: mappings.length },
-      'Alcuni eventi Google Calendar non sono stati eliminati — la mappatura locale viene comunque rimossa'
-    );
+    logger.warn({ failed, total: copies.length }, 'Some Google Calendar copies of deleted events were not deleted');
   }
-
-  await prisma.googleEventMapping.deleteMany({ where: { eventId: milestoneId } });
-  logger.info({ milestoneId, count: mappings.length }, 'Google Calendar events cleaned up');
+  logger.info({ count: copies.length - failed }, 'Google Calendar copies of deleted events removed');
 }
 
 /**

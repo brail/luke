@@ -5,11 +5,13 @@
  */
 
 import { hasPermission, type Permission, type Role } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
+import { getTraceId } from './error';
 import { signJWT, verifyJWT, type JWTPayload } from './jwt';
+import { logAccessDenied } from './permissions';
 import { verifyTokenVersion } from './tokenVersionCache';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 // Side-effect import: brings in @fastify/cookie's `declare module 'fastify'`
 // augmentation (reply.clearCookie) into any TS program that reaches this file,
@@ -77,7 +79,7 @@ export function verifyToken(token: string): JWTPayload | null {
 export function extractTokenFromRequest(
   request: FastifyRequest
 ): string | null {
-  // Solo Authorization header (cookie API rimosso)
+  // Authorization header only (the cookie API was removed)
   const authHeader = request.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     return authHeader.substring(7);
@@ -192,6 +194,10 @@ export async function requireSessionWithPermission(
     return null;
   }
   if (!hasPermission({ role: session.user.role as Role }, permission)) {
+    logAccessDenied(
+      { logger: request.log, traceId: getTraceId(request), session },
+      { deniedPermissions: [permission] }
+    );
     reply.code(403).send({ error: 'Forbidden' });
     return null;
   }

@@ -27,7 +27,7 @@ interface Props {
 
 /**
  * Picks which holiday calendar(s) count toward this event's working-days deadline countdown —
- * see docs/TASK_working_days_calendar_relevance.md. Defaults to "nessuna" (calendar days, current
+ * see docs/country-aware-working-days.md. Defaults to "nessuna" (calendar days, current
  * behavior unchanged) — this is opt-in, not something every event needs to set.
  *
  * The resolved country is never a free-text field: COMPANY comes from the company profile

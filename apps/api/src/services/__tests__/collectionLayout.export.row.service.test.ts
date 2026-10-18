@@ -8,14 +8,20 @@ import { randomBytes } from 'node:crypto';
 import sharp from 'sharp';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { readFileBuffer } from '../../storage';
+import type { PrismaClient } from '@luke/db';
+
+import * as pdf from '../../lib/export/pdf';
+import { readAssetBuffer } from '../asset.service';
 import { buildCollectionRowPdf, buildCollectionRowXlsx } from '../collectionLayout.export.row.service';
 
 import type { CollectionRowForExport, RowExportContext } from '../collectionLayout.export.row.service';
-import type { PrismaClient } from '@prisma/client';
 
-vi.mock('../../storage', () => ({
-  readFileBuffer: vi.fn(),
+vi.mock('../asset.service', () => ({
+  readAssetBuffer: vi.fn(),
+  // Every fixture in this file uses `logoKey: null`, which real `resolveLogoDataUri`
+  // short-circuits to `null` without touching storage — this mock mirrors exactly
+  // that, so it needs no per-test setup.
+  resolveLogoDataUri: vi.fn().mockResolvedValue(null),
 }));
 
 const mockPrisma = {
@@ -80,9 +86,9 @@ describe('buildCollectionRowPdf', () => {
 
   it('downscales a large source photo before embedding it (OOM regression)', async () => {
     const noise = await makeLargeJpeg();
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
 
-    const buffer = await buildCollectionRowPdf(makeCtx('huge.jpg'), mockPrisma, 'Tester', new Date());
+    const buffer = await buildCollectionRowPdf(makeCtx('huge.jpg'), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     // The full-size source photo (base64-encoded into the content stream) must
     // not survive into the output PDF — a single large photo embedded at
@@ -91,10 +97,21 @@ describe('buildCollectionRowPdf', () => {
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
   });
 
-  it('produces a valid non-empty PDF buffer when there is no photo (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+  it("writes the header's extraction time in the requester's zone, and names it", async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+    const header = vi.spyOn(pdf, 'buildBrandPageHeader');
 
-    const buffer = await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date());
+    // 20:05Z on March 1 is 05:05 on March 2 in Tokyo.
+    await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date('2032-03-01T20:05:00Z'), 'Asia/Tokyo');
+
+    expect(header.mock.calls.map(call => call[3]?.extractedInfo)).toContain('Tester — 02/03/2032, 05:05 (Asia/Tokyo)');
+    header.mockRestore();
+  });
+
+  it('produces a valid non-empty PDF buffer when there is no photo (smoke test)', async () => {
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
+
+    const buffer = await buildCollectionRowPdf(makeCtx(null), mockPrisma, 'Tester', new Date(), 'Europe/Rome');
 
     expect(buffer.length).toBeGreaterThan(0);
     expect(buffer.subarray(0, 4).toString('ascii')).toBe('%PDF');
@@ -108,7 +125,7 @@ describe('buildCollectionRowXlsx', () => {
 
   it('downscales a large source photo before embedding it (OOM regression)', async () => {
     const noise = await makeLargeJpeg();
-    vi.mocked(readFileBuffer).mockResolvedValue(noise);
+    vi.mocked(readAssetBuffer).mockResolvedValue({ buffer: noise, contentType: 'image/jpeg', width: 1500, height: 1500 });
 
     const buffer = await buildCollectionRowXlsx(makeCtx('huge.jpg'), mockPrisma);
 
@@ -116,7 +133,7 @@ describe('buildCollectionRowXlsx', () => {
   });
 
   it('produces a valid non-empty XLSX buffer when there is no photo (smoke test)', async () => {
-    vi.mocked(readFileBuffer).mockResolvedValue(null);
+    vi.mocked(readAssetBuffer).mockResolvedValue(null);
 
     const buffer = await buildCollectionRowXlsx(makeCtx(null), mockPrisma);
 

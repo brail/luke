@@ -6,14 +6,15 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
 import pino from 'pino';
 
-import { calcBackoffDelay } from '@luke/core';
+import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant, parseConfigValue } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
-import { getConfig } from './configManager';
+import { getConfig, getConfigOrDefault } from './configManager';
 
-import type { PrismaClient } from '@prisma/client';
 import type Mail from 'nodemailer/lib/mailer';
 
 const logger = pino({ level: 'info' });
@@ -36,28 +37,32 @@ export interface SmtpConfig {
  * Reads and assembles the SMTP configuration from AppConfig.
  * The `smtp.pass` key is decrypted automatically.
  *
- * @throws {Error} If any required SMTP key (host, port, user, pass, from) is missing.
+ * @throws {TRPCError} PRECONDITION_FAILED if any required SMTP key (host, port, user, pass, from) is
+ *   missing: an admin fixes it in the mail settings, so the text must not be masked as a 5xx.
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
     getConfig(prisma, 'smtp.host', false),
     getConfig(prisma, 'smtp.port', false),
-    getConfig(prisma, 'smtp.secure', false),
+    getConfigOrDefault(prisma, 'smtp.secure'),
     getConfig(prisma, 'smtp.user', false),
-    getConfig(prisma, 'smtp.pass', true), // Decifrare password
+    getConfig(prisma, 'smtp.pass', true), // Decrypt the password
     getConfig(prisma, 'smtp.from', false),
   ]);
 
   if (!host || !port || !user || !pass || !from) {
-    throw new Error(
-      'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.port, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.'
-    );
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message:
+        'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.port, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.',
+    });
   }
 
   return {
     host,
-    port: parseInt(port, 10),
-    secure: secure === 'true',
+    // Parsed by the key's own registry schema — `port` is guaranteed non-null by the guard above.
+    port: parseConfigValue('smtp.port', port),
+    secure,
     auth: {
       user,
       pass,
@@ -108,7 +113,7 @@ export async function sendEmail(
     try {
       await transporter.sendMail(mailOptions);
 
-      logger.info({ to, subject, attempt: attempt + 1 }, 'Email inviata');
+      logger.info({ to, subject, attempt: attempt + 1 }, 'Email sent');
       return;
     } catch (error) {
       const isLastAttempt = attempt === retries - 1;
@@ -120,10 +125,11 @@ export async function sendEmail(
             attempts: retries,
             error: error instanceof Error ? error.message : 'Unknown',
           },
-          'Email fallita dopo tutti i retry'
+          'Email failed after all retries'
         );
         throw new Error(
-          `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`
+          `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error }
         );
       }
       await new Promise(resolve => setTimeout(resolve, calcBackoffDelay(attempt, 250, 1000)));
@@ -135,23 +141,23 @@ export async function sendEmail(
 }
 
 /**
- * Carica template testo e sostituisce placeholder
+ * Loads a plain-text email template and fills its `{{key}}` placeholders in one pass, so a value
+ * that itself contains `{{otherKey}}` stays as it is. The replacement is a function: a string one
+ * would read `$&` and the like in the value. A placeholder with no variable is left in place.
  */
 function loadTextTemplate(
   templateName: string,
   variables: Record<string, string>
 ): string {
   const templatePath = join(__dirname, '../templates', `${templateName}.txt`);
-  let template = readFileSync(templatePath, 'utf-8');
-  Object.entries(variables).forEach(([key, value]) => {
-    template = template.replace(new RegExp(`{{${key}}}`, 'g'), value);
-  });
-  return template;
+  return readFileSync(templatePath, 'utf-8').replace(/\{\{(\w+)\}\}/g, (placeholder, key: string) =>
+    Object.hasOwn(variables, key) ? variables[key] : placeholder
+  );
 }
 
-// Logo per email: "L" su sfondo slate come fallback (Gmail e client che strippano SVG),
-// SVG con cerchi bianchi posizionato absolute sopra (copre la "L" nei client che lo supportano).
-// Tecnica: <td position:relative> + <span>L</span> in flow + <svg position:absolute top:0 left:0>
+// Email logo: an "L" on a slate background as the fallback (Gmail and clients that strip SVG),
+// with an SVG of white circles positioned absolutely on top (it covers the "L" in clients that support it).
+// Technique: <td position:relative> + <span>L</span> in flow + <svg position:absolute top:0 left:0>
 const LOGO_TD =
   '<td style="width:72px;height:72px;background-color:#1e293b;border-radius:8px;text-align:center;vertical-align:middle;position:relative;">' +
   '<span style="color:#fff;font-size:28px;font-weight:700;line-height:72px;display:block;">L</span>' +
@@ -171,8 +177,20 @@ const LOGO_TD =
   '</svg>' +
   '</td>';
 
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
 /**
- * Genera template HTML branded con logo Luke (DRY)
+ * `text` as HTML text or attribute content — the one way user-entered text (a name, a title, a
+ * reason) enters an email body. Interpolated raw, it would put real markup or a link inside a
+ * trusted Luke email.
+ */
+export function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, c => HTML_ESCAPES[c]!);
+}
+
+/**
+ * The branded HTML email with the Luke logo. `message` is HTML: the caller escapes any user-entered
+ * text it interpolates; `buttonUrl` is escaped here.
  */
 function generateBrandedHtml(
   title: string,
@@ -182,8 +200,7 @@ function generateBrandedHtml(
   buttonUrl: string,
   note: string
 ): string {
-  const year = new Date().getFullYear();
-  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:40px 40px 32px;text-align:center;border-bottom:1px solid #e5e7eb"><table cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>${LOGO_TD}</tr></table><h1 style="margin:16px 0 0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:-.5px">Luke</h1></td></tr><tr><td style="padding:40px"><h2 style="margin:0 0 24px;font-size:24px;font-weight:600;color:#1e293b">${heading}</h2><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569">${message}</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0"><tr><td align="center"><a href="${buttonUrl}" style="display:inline-block;padding:14px 32px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:16px;font-weight:600;letter-spacing:.3px">${buttonText}</a></td></tr></table><p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#64748b">Se il pulsante non funziona, copia questo link:<br/><span style="color:#3b82f6;word-break:break-all">${buttonUrl}</span></p><table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:24px;border-top:1px solid #e5e7eb"><tr><td><p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8"><strong>Nota:</strong> ${note}</p></td></tr></table></td></tr><tr><td style="padding:24px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:13px;text-align:center;color:#94a3b8">© ${year} Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
+  return `<!doctype html><html lang="it"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>${title}</title></head><body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background-color:#f9fafb"><table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;padding:40px 20px"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background-color:#fff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1)"><tr><td style="padding:40px 40px 32px;text-align:center;border-bottom:1px solid #e5e7eb"><table cellpadding="0" cellspacing="0" style="margin:0 auto"><tr>${LOGO_TD}</tr></table><h1 style="margin:16px 0 0;font-size:28px;font-weight:700;color:#1e293b;letter-spacing:-.5px">Luke</h1></td></tr><tr><td style="padding:40px"><h2 style="margin:0 0 24px;font-size:24px;font-weight:600;color:#1e293b">${heading}</h2><p style="margin:0 0 24px;font-size:16px;line-height:1.6;color:#475569">${message}</p><table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0"><tr><td align="center"><a href="${escapeHtml(buttonUrl)}" style="display:inline-block;padding:14px 32px;background-color:#1e293b;color:#f8fafc;text-decoration:none;border-radius:6px;font-size:16px;font-weight:600;letter-spacing:.3px">${buttonText}</a></td></tr></table><p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:#64748b">Se il pulsante non funziona, copia questo link:<br/><span style="color:#3b82f6;word-break:break-all">${escapeHtml(buttonUrl)}</span></p><table width="100%" cellpadding="0" cellspacing="0" style="margin-top:32px;padding-top:24px;border-top:1px solid #e5e7eb"><tr><td><p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8"><strong>Nota:</strong> ${note}</p></td></tr></table></td></tr><tr><td style="padding:24px 40px;background-color:#f8fafc;border-top:1px solid #e5e7eb;border-radius:0 0 8px 8px"><p style="margin:0;font-size:13px;text-align:center;color:#94a3b8">© Luke. Tutti i diritti riservati.</p></td></tr></table></td></tr></table></body></html>`;
 }
 
 /**
@@ -213,7 +230,6 @@ export async function sendPasswordResetEmail(
 
   const text = loadTextTemplate('reset', {
     resetUrl,
-    year: new Date().getFullYear().toString(),
   });
 
   await sendEmail(prisma, to, subject, html, text);
@@ -246,7 +262,6 @@ export async function sendEmailVerificationEmail(
 
   const text = loadTextTemplate('verify', {
     verifyUrl,
-    year: new Date().getFullYear().toString(),
   });
 
   await sendEmail(prisma, to, subject, html, text);
@@ -269,7 +284,7 @@ export async function sendAccountApprovedEmail(
   const html = generateBrandedHtml(
     'Account Attivato - Luke',
     'Il tuo account è stato attivato!',
-    `Ciao ${displayName}! Il tuo account su Luke è stato approvato da un amministratore. Puoi ora accedere al sistema con le tue credenziali.`,
+    `Ciao ${escapeHtml(displayName)}! Il tuo account su Luke è stato approvato da un amministratore. Puoi ora accedere al sistema con le tue credenziali.`,
     'Accedi ora',
     loginUrl,
     'Se non hai richiesto questo account, contatta il tuo amministratore di sistema.'
@@ -278,7 +293,6 @@ export async function sendAccountApprovedEmail(
   const text = loadTextTemplate('approved', {
     firstName: displayName,
     loginUrl,
-    year: new Date().getFullYear().toString(),
   });
 
   await sendEmail(prisma, to, subject, html, text);
@@ -287,18 +301,23 @@ export async function sendAccountApprovedEmail(
 /**
  * Sends a branded notice that a maintenance window has been scheduled or started.
  * `reason` is the free-text message the admin entered when scheduling/activating, if any.
+ * `timeZone` is the recipient's (`resolveUserTimeZone`): the time is written there, with the
+ * zone's short name.
  */
 export async function sendMaintenanceScheduledEmail(
   prisma: PrismaClient,
   to: string,
   scheduledAt: Date,
   reason: string | null,
-  baseUrl: string
+  baseUrl: string,
+  timeZone: string
 ): Promise<void> {
   const subject = 'Manutenzione programmata - Luke';
-  const whenLabel = scheduledAt.toLocaleString('it-IT', { dateStyle: 'full', timeStyle: 'short' });
+  const whenLabel = formatInstant(scheduledAt, timeZone, {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+  }, DEFAULT_LOCALE);
   const message = reason
-    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${reason}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
+    ? `È stata programmata una manutenzione del sistema per ${whenLabel}.<br/><br/><strong>Motivo:</strong> ${escapeHtml(reason)}<br/><br/>Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`
     : `È stata programmata una manutenzione del sistema per ${whenLabel}. Salva il lavoro in corso prima di quel momento: durante la manutenzione l'accesso sarà bloccato.`;
 
   const html = generateBrandedHtml(

@@ -12,13 +12,14 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import type { PrismaClient, NavSyncFilter } from '@luke/db';
+
 import {
   registerPortafoglioSyncScheduler,
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../portafoglioSyncScheduler';
 
-import type { PrismaClient, NavSyncFilter } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -89,7 +90,7 @@ describe('portafoglioSyncScheduler', () => {
       await onReadyHandler();
 
       expect(mockFastify.log.info).toHaveBeenCalledWith(
-        expect.stringContaining('Portafoglio sync scheduler: avviato')
+        expect.stringContaining('Portafoglio sync scheduler: started')
       );
     });
   });
@@ -269,7 +270,7 @@ describe('portafoglioSyncScheduler', () => {
       await onCloseHandler();
 
       expect(mockFastify.log.info).toHaveBeenCalledWith(
-        expect.stringContaining('Portafoglio sync scheduler: fermato')
+        expect.stringContaining('Portafoglio sync scheduler: stopped')
       );
     });
 

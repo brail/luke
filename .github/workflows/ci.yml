@@ -3,6 +3,24 @@ name: CI
 on:
   push:
     branches: [main, develop-2.2]
+    # Documentation ownership surface: a push confined to these paths skips CI
+    # and docs.yml runs the drift check instead. Anything not listed — a new
+    # Markdown location, CHANGELOG.md, .github/**, a non-Markdown file under
+    # docs/ — runs the full pipeline. Push only: `pull_request` stays
+    # unfiltered so the required checks on main always report. Pinned and
+    # explained by tools/scripts/check-workflow-paths.ts.
+    paths-ignore:
+      - 'docs/**/*.md'
+      - 'README.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - 'lessons.md'
+      - 'lessons-archive.md'
+      - 'OPERATIONS.md'
+      - 'apps/*/README.md'
+      - 'packages/*/README.md'
+      - 'tools/README.md'
+      - '.claude/skills/**/*.md'
   # `types:` is pinned because GitHub's default set omits `edited`, which is
   # what retargeting a pull request fires: without it, moving a PR onto either
   # protected target produces no new run and the required checks stay Pending
@@ -10,17 +28,16 @@ on:
   pull_request:
     branches: [main, develop-2.2]
     types: [opened, synchronize, reopened, edited]
-  # Invocabile da release.yml: un tag non fa scattare i trigger push/pull_request,
-  # quindi senza questo non esisterebbe alcuna esecuzione di CI da cui dipendere
-  # prima di costruire le immagini.
+  # Callable from release.yml: a tag fires neither the push nor the pull_request
+  # trigger, so without this there would be no CI run to depend on before the
+  # images are built.
   workflow_call:
 
 jobs:
-  # Lint, typecheck e unit test stanno insieme perché condividono esattamente lo
-  # stesso ambiente e nessuno dei tre ha bisogno di un database. Separarli
-  # costava un secondo setup completo (checkout + install + prisma generate) per
-  # guadagnare un parallelismo che `pnpm test` — cache turbo, nessun servizio —
-  # non giustifica.
+  # Lint, typecheck and unit tests share one job because they need exactly the
+  # same environment and none of them needs a database. Splitting them cost a
+  # second full setup (checkout + install + prisma generate) to buy parallelism
+  # that `pnpm test` — turbo cache, no services — does not justify.
   checks:
     name: Lint, TypeCheck & Unit Tests
     runs-on: ubuntu-latest
@@ -34,20 +51,111 @@ jobs:
       - name: TypeCheck
         run: pnpm typecheck
 
-      # I file sotto test/ non rientrano in tsconfig.json (rootDir: src).
-      # Senza questo step il codice di test può marcire a livello di tipi senza segnalazione.
+      # Files under test/ are outside tsconfig.json (rootDir: src). Without this
+      # step, test code could rot at the type level without anything reporting it.
       - name: TypeCheck (test)
         run: pnpm typecheck:test
 
-      # Skill e documentazione affermano fatti sulla codebase (path, simboli,
-      # link) che possono driftare in silenzio: `luke-test` ha istruito per mesi
-      # ad aggiungere le spec a un file eliminato. Qui quei fatti diventano
-      # bloccanti.
+      # The drift checkers under tools/ are release gates, but tools/ is not a
+      # workspace: `turbo run lint`/`typecheck` never saw it and tsx executes
+      # TypeScript without checking it, so a type error in a gate would ship
+      # silently. Its own standalone Node config covers it.
+      - name: Lint & TypeCheck (tools)
+        run: pnpm lint:tools && pnpm typecheck:tools
+
+      # `scripts/` at the repository root is not a workspace either. It used to
+      # sit inside the root tsconfig's `**/*.ts` include, but nothing ever
+      # compiled that program — `pnpm typecheck` is `turbo run typecheck` and
+      # turbo runs per-workspace scripts — so `rc-prod-clone.ts`, which drives a
+      # production backup/restore, was checked by no gate at all. Its own step
+      # rather than an extra command on the tools one: a distinct surface that
+      # can break for its own reasons deserves a distinct red X.
+      - name: TypeCheck (root scripts)
+        run: pnpm typecheck:root
+
+      # The checkers are release gates, so their own behavior is regression
+      # tested: each invariant has a fixture proving it goes red. A checker only
+      # ever seen green is assumed to block, not known to.
+      - name: Control-plane tests
+        run: pnpm test:tools
+
+      # Skills and docs state facts about the codebase (paths, symbols, links)
+      # that can drift silently: for months `luke-test` told readers to add specs
+      # to a deleted file. Here those facts become blocking.
       - name: Docs & skills drift
         run: pnpm check:drift
 
       - name: Unit tests
         run: pnpm test
+
+      # `@luke/core` is ESM-only while `apps/api` and `packages/calendar` emit
+      # CommonJS and `require()` it, which Node can only do for a synchronous
+      # ESM graph. Every other tier above loads core through an ESM loader
+      # (vitest, Vite, Next), so a top-level `await` entering that graph would
+      # be green everywhere here and first fail as an API container that will
+      # not boot. This step is the only one that requires the built package.
+      - name: Module contract (require(esm))
+        run: pnpm test:module-contract
+
+      # The Next server/client boundary is enforced by the bundler and by
+      # nothing earlier: a module that imports a Node builtin and reaches the
+      # `[Client Component Browser]` layer fails `next build` with "Module not
+      # found: Can't resolve 'fs'", while lint and tsc stay green (Monorepo
+      # Audit Cycle 10, mutations 1–4). Before this step that build ran only in
+      # the Docker builder stage at tag time, so such a leak surfaced at
+      # release, not at push. Bounded to `apps/web`: no image, nothing
+      # published, `.next` discarded with the runner. The dependency builds are
+      # the Turbo tasks the TypeCheck step already cached. Last in the job by
+      # design: the cheaper gates above it report first.
+      #
+      # Cache-safe for the variables it models: Turbo runs in its default
+      # strict env mode, and the `@luke/web#build` entry in `turbo.json`
+      # declares `INTERNAL_API_URL` (the rewrites branch in `next.config.js`)
+      # and `NEXT_PUBLIC_*` (inlined into the bundle) as hashed inputs — a
+      # different value is a different build, never a cache hit — and
+      # `NEXTAUTH_SECRET`, `NEXT_TELEMETRY_DISABLED` and `NODE_OPTIONS` as
+      # passthrough: they decide whether the build runs, not what it produces,
+      # so they are visible to the task and absent from its hash. Anything
+      # else the application reads from the environment is neither passed nor
+      # hashed here. `NODE_ENV` is not set because `next build` forces
+      # `production` itself.
+      #
+      # This is what a production build needs to execute its own code paths,
+      # not a claim of parity with the Docker image. Hostnames are reserved
+      # `.invalid` names: the build inlines and records them but resolves
+      # nothing. `INTERNAL_API_URL` is set so the rewrites branch is exercised
+      # rather than skipped; the secret is a placeholder no runtime reads; the
+      # heap is the one the Dockerfile documents for the TypeScript phase.
+      - name: Build (web)
+        run: pnpm turbo run build --filter=@luke/web
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXTAUTH_SECRET: ci-build-placeholder-never-read-at-runtime
+          NEXT_PUBLIC_API_URL: http://web.luke.invalid
+          INTERNAL_API_URL: http://api.luke.invalid:3001
+          # Set so this build inlines NEXT_PUBLIC_APP_VERSION exactly as the Docker build does
+          # (whose `ARG APP_VERSION` defaults to the same sentinel). Without it, turbo's strict env
+          # mode filters the variable out and CI would exercise the un-inlined code shape while the
+          # image exercises the inlined one.
+          NEXT_PUBLIC_APP_VERSION: dev
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  # Own job, not a step in `checks`: the browser download is the dominant cost
+  # here and would otherwise delay lint/typecheck feedback for every push. Same
+  # reasoning that already keeps integration and migrations separate — anything
+  # needing infrastructure the other steps do not.
+  browser:
+    name: Browser Component Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+
+      - name: Install Chromium for Vitest Browser Mode
+        run: pnpm --filter @luke/web exec playwright install --with-deps chromium
+
+      - name: Browser component tests
+        run: pnpm test:browser
 
   integration:
     name: Integration Tests
@@ -74,6 +182,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
+
+      # The backup/restore suite spawns pg_dump and pg_restore. A client newer than the server
+      # emits statements the server rejects (SET transaction_timeout, from pg_dump 17 on), which
+      # --exit-on-error correctly refuses — so the suite would skip and protect nothing. Pin the
+      # client to the service container's major, the pairing production runs
+      # (apps/api/Dockerfile: postgresql16-client against postgres:16-alpine). The PATH entry is
+      # what actually decides: /usr/bin/pg_dump is a wrapper that otherwise picks the newest
+      # installed version.
+      - name: Pin PostgreSQL client to 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
 
       - name: Integration tests
         run: pnpm test:integration
@@ -110,61 +231,68 @@ jobs:
           PGPASSWORD=luke_migrate psql -h localhost -U luke -d luke_migrate \
             -c 'CREATE DATABASE luke_shadow;'
 
-      # Stesso comando di entrypoint.sh in produzione: se fallisce qui,
-      # sarebbe fallito al deploy.
+      # Same command as entrypoint.sh in production: if it fails here, it would
+      # have failed at deploy.
       - name: Apply migrations from scratch
-        run: pnpm --filter @luke/api exec prisma migrate deploy
+        run: pnpm --filter @luke/db exec prisma migrate deploy
 
-      # schema.prisma e prisma/migrations/ possono divergere silenziosamente.
-      # --exit-code: 0 nessuna differenza, 2 drift rilevato.
+      # The .prisma files and prisma/migrations/ can diverge silently.
+      # --exit-code: 0 no difference, 2 drift detected.
       - name: Schema drift check
         run: |
-          pnpm --filter @luke/api exec prisma migrate diff \
+          pnpm --filter @luke/db exec prisma migrate diff \
             --from-migrations ./prisma/migrations \
-            --to-schema ./prisma/schema.prisma \
+            --to-schema ./prisma \
             --exit-code
 
-  # The web image is the only place `next build` runs on this branch, and it is
-  # built here from the real Dockerfile so a missing build prerequisite fails at
-  # pull-request time instead of at tag time. v2.1.5 published an API image and
-  # no web image because the builder stage never built `@luke/api`, whose
-  # declarations `apps/web/tsconfig.json` references; nothing before the release
-  # run executed that ordering.
+  # Builds both runtime images from the same Dockerfiles release.yml uses — with
+  # their default build arguments, where the release passes the channel's
+  # hostnames and version — without pushing, and proves what each contains from
+  # inside it (tools/scripts/check-image-runtime.ts):
+  # the API's store holds its production closure and nothing else, and its native
+  # addons run; the web image holds only what Next traced, and its server answers.
+  # Until this job, the first build of a Dockerfile change was a release tag, and
+  # nothing ever looked inside an image. A matrix without fail-fast, so each image
+  # fails on its own evidence.
   #
-  # A host-level `turbo run build --filter=@luke/web` would not have caught it:
-  # turbo builds workspace dependencies itself, so a Dockerfile missing that
-  # step still succeeds. Only building the image exercises the ordering the
-  # release actually uses.
-  #
-  # `push: false`, no registry login, no cache: nothing is published, and no
-  # cached layer may stand in for a step this job exists to execute. The build
-  # args are disposable non-secret placeholders on reserved `.invalid`
-  # hostnames, which the build inlines but never resolves.
-  web-image:
-    name: Web Image Build
+  # Pull requests read the cache and never write it: the Actions cache is
+  # capped per repository, and one full builder stage per pull request ref
+  # would evict the train's.
+  images:
+    name: Image (${{ matrix.image }})
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [api, web]
     steps:
       - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build web image (no push)
+      - name: Build
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: apps/web/Dockerfile
-          push: false
-          build-args: |
-            NEXT_PUBLIC_API_URL=http://web.luke.invalid
-            INTERNAL_API_URL=http://api.luke.invalid:3001
-            APP_VERSION=ci
+          file: apps/${{ matrix.image }}/Dockerfile
+          load: true
+          tags: luke-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=gha,scope={0},mode=max', matrix.image) || '' }}
 
-  # The aggregate gate: the stable candidate context for `main`'s ruleset,
-  # which today still requires the individual job names and cannot keep that
-  # list in step with this file. The switch is a separate remote change, made
-  # once this context has reported on a real pull request; until then this job
-  # reports like any other.
+      - name: Image size
+        run: docker image ls luke-${{ matrix.image }}:ci
+
+      - name: Check runtime contents
+        run: >-
+          docker run --rm -v "$PWD/tools/scripts:/check:ro" --entrypoint node
+          luke-${{ matrix.image }}:ci /check/check-image-runtime.ts ${{ matrix.image }}
+
+  # The aggregate gate: the one context `main`'s ruleset requires in place of
+  # the individual job names, a list it could not keep in step with this file.
+  # Its `needs` is what lets one name stand for all of them, and
+  # tools/scripts/check-workflow-paths.ts pins that
+  # list to ci.yml's own jobs, along with the rest of this job.
   #
   # `always()` is what makes it a gate rather than a passenger: without it a
   # failed, cancelled or skipped dependency would skip this job too, and a
@@ -172,13 +300,17 @@ jobs:
   # context once the ruleset names it. Running unconditionally, it accepts the
   # literal `success` and nothing else, and counts its arguments first because
   # a `needs` that resolved to nothing would otherwise leave the loop with no
-  # iterations at all. The unquoted `$RESULTS` is that word split, deliberately.
+  # iterations at all. The unquoted `$RESULTS`
+  # is that word split, deliberately: shellcheck's SC2086 here is the intended
+  # behaviour, and a one-line `run:` cannot carry a disable directive.
   #
   # `shell:` is spelled out because the script's semantics are bash's, and the
-  # runner default is not part of any contract.
+  # runner default is not part of any contract: whatever interprets this line
+  # decides whether it asserts anything at all — `shell: echo {0}` would print
+  # it and exit 0.
   gate:
     name: CI gate
-    needs: [checks, integration, migrations, web-image]
+    needs: [checks, browser, integration, migrations, images]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

@@ -5,29 +5,34 @@
  *
  * Split into DB-fetching functions (per row or per layout) and pure functions operating on
  * already-fetched data, so batch callers (e.g. a whole layout's criticality) can fetch the
- * calendar/events/thresholds once and reuse them across rows instead of refetching per row.
+ * calendar/events/thresholds/time zone once and reuse them across rows instead of refetching per row.
  */
 
 import pino from 'pino';
 
 import {
-  daysBetween,
-  workingDaysBetween,
-  isWorkingDay,
-  eventDeadline,
+  calendarDateIn,
+  calendarDateOf,
+  calendarDaysBetween,
+  deadlineDay,
+  deadlineReachedAt,
+  eventCalendarDays,
+  isWorkingDate,
+  workingDaysBetweenDates,
   CollectionAlertThresholdsSchema,
   type AlertBand,
   type AlertBandEmphasis,
+  type CalendarDate,
   type CalendarDaysRelevance,
+  type CalendarHoliday,
   type CollectionAlertThresholds,
-  type WorkingDayHoliday,
 } from '@luke/core';
+import type { Prisma, PrismaClient } from '@luke/db';
 
-import { getConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault } from '../lib/configManager';
 
 import { resolveCompanyCountryCode } from './companyProfile.service';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
@@ -141,6 +146,25 @@ export async function resolveAlertThresholds(prisma: PrismaClient): Promise<Coll
 }
 
 /**
+ * What every countdown in one request is measured with: the configured bands and the business time
+ * zone (`app.defaultTimezone`) that decides which day it is. Resolved once per top-level call and
+ * passed down, like the thresholds were on their own.
+ */
+export interface AlertContext {
+  thresholds: CollectionAlertThresholds;
+  timeZone: string;
+}
+
+/** Reads both halves of `AlertContext`; neither read throws (each falls back to its default). */
+export async function resolveAlertContext(prisma: PrismaClient): Promise<AlertContext> {
+  const [thresholds, timeZone] = await Promise.all([
+    resolveAlertThresholds(prisma),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
+  return { thresholds, timeZone };
+}
+
+/**
  * Picks the band set for a phase: its override if configured, else the global default.
  * Keyed by `Phase.value` (the stable business key), not `Phase.id` — a generated UUID that
  * differs per environment/seed and would silently stop matching if config were copied across environments.
@@ -152,14 +176,26 @@ function bandsForPhase(thresholds: CollectionAlertThresholds, phaseValue: string
   return thresholds.default.bands;
 }
 
-// ─── Working-days deadline countdown (docs/TASK_working_days_calendar_relevance.md) ─────────────
+/**
+ * The band for a day count under the reached rule (docs/country-aware-working-days.md, "Endpoint
+ * convention"): a reached deadline is late even while the count is still 0 — a timed deadline
+ * passed earlier today, a weekend deadline seen on Monday in working days. The −1 only picks the
+ * band; callers return the real count, so no day of delay is ever invented in what the user reads.
+ */
+function bandFor(bands: AlertBand[], days: number, reached: boolean): AlertBand {
+  const bandDays = reached && days >= 0 ? -1 : days;
+  return bands.find(b => bandDays >= b.minDaysToDeadline && (b.maxDaysToDeadline === null || bandDays < b.maxDaysToDeadline))
+    ?? bands[bands.length - 1];
+}
+
+// ─── Working-days deadline countdown (docs/country-aware-working-days.md) ─────────────
 
 /** Pre-fetched data shared across every day-count resolution in one request — company's home
  * country plus every `Holiday` row for any country code that could be needed (company + every
  * vendor country in scope). Built once per top-level call, not per row. */
 interface WorkingDaysContext {
   companyCountryCode: string | null;
-  holidays: WorkingDayHoliday[];
+  holidays: CalendarHoliday[];
 }
 
 /** Empty context — used whenever nothing in scope has opted into working-days (the common case,
@@ -180,27 +216,15 @@ async function buildWorkingDaysContext(
 ): Promise<WorkingDaysContext> {
   const companyCountryCode = await resolveCompanyCountryCode(prisma);
   const countryCodes = [...new Set([companyCountryCode, ...vendorCountryCodes].filter((c): c is string => !!c))];
-  const holidays = countryCodes.length === 0 ? [] : await prisma.holiday.findMany({
+  const rows = countryCodes.length === 0 ? [] : await prisma.holiday.findMany({
     where: { countryCode: { in: countryCodes } },
     select: { countryCode: true, startDate: true, endDate: true },
   });
+  // `@db.Date` columns: UTC midnights, read as the calendar dates they are.
+  const holidays = rows.map(h => ({ countryCode: h.countryCode, startDate: calendarDateOf(h.startDate), endDate: calendarDateOf(h.endDate) }));
   return { companyCountryCode, holidays };
 }
 
-/**
- * Resolves the day count between two dates, honoring `relevance` when set: `null` keeps the
- * existing plain-calendar-days behavior (`daysBetween`, unchanged for every event not explicitly
- * opted in). When set, resolves the country list for the mode and switches to `workingDaysBetween`:
- * - `COMPANY` → `[companyCountryCode]`
- * - `VENDOR` → `[vendorCountryCode]`
- * - `BOTH` → both (a day only counts if it's a working day in *both* — `workingDaysBetween`
- *   excludes a date if it's a holiday in *either* listed country, which gives this for free)
- *
- * If the relevant country is unknown (company profile has no country set, or the row has no
- * vendor/the vendor has no country), degrades to weekend-only — `holidays: []` is passed
- * explicitly rather than `countryCodes: []`, because `isWorkingDay` treats an empty country list
- * as "apply every fetched holiday regardless of country," the opposite of what's wanted here.
- */
 /** Whether a `calendarDaysRelevance` value makes the company's holiday calendar count. Shared by
  * `resolveDaysCount` (the deadline countdown) and `resolveHolidayOverlapsForGroup` (the freeze-time
  * warning) so the two can't drift on what each relevance mode means. */
@@ -213,15 +237,30 @@ function appliesToVendor(relevance: CalendarDaysRelevance): boolean {
   return relevance === 'VENDOR' || relevance === 'BOTH';
 }
 
+/**
+ * Resolves the day count between two calendar dates, honoring `relevance` when set: `null` keeps
+ * the plain-calendar-days behavior (`calendarDaysBetween`, unchanged for every event not explicitly
+ * opted in). When set, resolves the country list for the mode and switches to
+ * `workingDaysBetweenDates`:
+ * - `COMPANY` → `[companyCountryCode]`
+ * - `VENDOR` → `[vendorCountryCode]`
+ * - `BOTH` → both (a day only counts if it's a working day in *both* — `workingDaysBetweenDates`
+ *   excludes a date if it's a holiday in *either* listed country, which gives this for free)
+ *
+ * If the relevant country is unknown (company profile has no country set, or the row has no
+ * vendor/the vendor has no country), degrades to weekend-only — `holidays: []` is passed
+ * explicitly rather than `countryCodes: []`, because `isWorkingDate` treats an empty country list
+ * as "apply every fetched holiday regardless of country," the opposite of what's wanted here.
+ */
 function resolveDaysCount(
-  from: Date,
-  to: Date,
+  from: CalendarDate,
+  to: CalendarDate,
   relevance: CalendarDaysRelevance | null,
   vendorCountryCode: string | null,
   ctx: WorkingDaysContext
 ): { days: number; daysMode: 'calendar' | 'working'; relevantCountryCodes: string[] } {
   if (!relevance) {
-    return { days: daysBetween(from, to), daysMode: 'calendar', relevantCountryCodes: [] };
+    return { days: calendarDaysBetween(from, to), daysMode: 'calendar', relevantCountryCodes: [] };
   }
 
   const countryCodes: string[] = [];
@@ -233,10 +272,10 @@ function resolveDaysCount(
   }
 
   if (countryCodes.length === 0) {
-    return { days: workingDaysBetween(from, to, [], []), daysMode: 'working', relevantCountryCodes: [] };
+    return { days: workingDaysBetweenDates(from, to, [], []), daysMode: 'working', relevantCountryCodes: [] };
   }
 
-  return { days: workingDaysBetween(from, to, countryCodes, ctx.holidays), daysMode: 'working', relevantCountryCodes: countryCodes };
+  return { days: workingDaysBetweenDates(from, to, countryCodes, ctx.holidays), daysMode: 'working', relevantCountryCodes: countryCodes };
 }
 
 /** One event flagged as landing on a non-working day, for `resolveHolidayOverlapsForGroup`. */
@@ -265,15 +304,16 @@ export interface HolidayOverlapEntry {
  *   calendar and once per distinct vendor country among the group's rows.
  */
 export async function resolveHolidayOverlapsForGroup(planningGroupId: string, prisma: PrismaClient): Promise<HolidayOverlapEntry[]> {
-  const [events, rows] = await Promise.all([
+  const [events, rows, timeZone] = await Promise.all([
     prisma.calendarEvent.findMany({
       where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null } },
-      select: { id: true, title: true, startAt: true, calendarDaysRelevance: true },
+      select: { id: true, title: true, startAt: true, allDay: true, calendarDaysRelevance: true },
     }),
     prisma.collectionLayoutRow.findMany({
       where: { planningGroupId, vendorId: { not: null } },
       select: { vendor: { select: { countryCode: true, name: true } } },
     }),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
   ]);
   if (events.length === 0) return [];
 
@@ -291,10 +331,13 @@ export async function resolveHolidayOverlapsForGroup(planningGroupId: string, pr
   for (const event of events) {
     const flag = (reason: HolidayOverlapEntry['reason'], vendorName?: string) =>
       overlaps.push({ eventId: event.id, eventTitle: event.title, eventStartAt: event.startAt, reason, vendorName });
+    // The day the event lands on: an all-day value is its own date, a timed one is read in the
+    // business zone.
+    const [day] = eventCalendarDays(event.startAt, null, event.allDay, timeZone);
 
-    // Empty countryCodes/holidays reduces isWorkingDay to a pure weekend check — same definition
+    // Empty countryCodes/holidays reduces isWorkingDate to a pure weekend check — same definition
     // of "weekend" the company/vendor checks below build on, no separate day-of-week logic here.
-    if (!isWorkingDay(event.startAt, [], [])) {
+    if (!isWorkingDate(day, [], [])) {
       // Weekend already explains it regardless of relevance/country — skip the holiday checks
       // below, they'd just re-flag the same event for the same reason.
       flag('weekend');
@@ -302,12 +345,12 @@ export async function resolveHolidayOverlapsForGroup(planningGroupId: string, pr
     }
 
     const relevance = event.calendarDaysRelevance!;
-    if (appliesToCompany(relevance) && workingDaysCtx.companyCountryCode && !isWorkingDay(event.startAt, [workingDaysCtx.companyCountryCode], workingDaysCtx.holidays)) {
+    if (appliesToCompany(relevance) && workingDaysCtx.companyCountryCode && !isWorkingDate(day, [workingDaysCtx.companyCountryCode], workingDaysCtx.holidays)) {
       flag('company');
     }
     if (appliesToVendor(relevance)) {
       for (const [countryCode, vendorName] of vendorsByCountry) {
-        if (!isWorkingDay(event.startAt, [countryCode], workingDaysCtx.holidays)) {
+        if (!isWorkingDate(day, [countryCode], workingDaysCtx.holidays)) {
           flag('vendor', vendorName);
         }
       }
@@ -442,44 +485,22 @@ export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaCl
   return getMissingPhasesForCompletion(events, row.phase?.order ?? null);
 }
 
-/** DB-fetching counterpart of `getActivePhaseFromEvents` for single-row callers. */
-export async function getActivePhaseForRow(rowId: string, prisma: PrismaClient): Promise<ActivePhaseResult> {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-    select: { phase: { select: { order: true } } },
-  });
-  if (!row) return { status: 'no-calendar' };
-
-  const events = await getApplicableEventsForRow(rowId, prisma);
-  return getActivePhaseFromEvents(events, row.phase?.order ?? null);
-}
-
-/**
- * Resolves the deadline for an active-phase result: always the event's current `endAt ?? startAt`,
- * live and freely editable even after freeze. The frozen baseline (`baselineStartAt`/`baselineEndAt`,
- * written once by `freezePlanningGroup`) is a separate, fixed commitment — it must never feed the
- * criticality countdown, or rescheduling an event during the season would leave the alert pinned to
- * a dead date forever. No lead-time recompute. Pure — no I/O.
- */
-function deadlineFromActivePhase(active: ActivePhaseResult) {
-  if (active.status !== 'active') return null;
-  return { event: active.event, deadline: eventDeadline(active.event) };
-}
-
 /**
  * Resolves the display fields for the row's next phase, at the same point in time / working-days
  * context as the active phase's own countdown. Pure — no I/O. Split out of `criticalityFromActivePhase`
  * so that function can take an early return instead of nesting this behind a ternary.
  */
-function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, vendorCountryCode: string | null, workingDaysCtx: WorkingDaysContext) {
+function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, timeZone: string, vendorCountryCode: string | null, workingDaysCtx: WorkingDaysContext) {
+  const due = deadlineDay(nextEvent, timeZone);
   const { days, daysMode, relevantCountryCodes } = resolveDaysCount(
-    now, eventDeadline(nextEvent), nextEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    calendarDateIn(now, timeZone), due, nextEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
   return {
     phaseId: nextEvent.phaseId,
     eventTitle: nextEvent.title,
-    deadline: eventDeadline(nextEvent),
+    deadlineDay: due,
     daysUntil: days,
+    reached: now >= deadlineReachedAt(nextEvent, timeZone),
     daysMode,
     relevantCountryCodes,
   };
@@ -487,8 +508,9 @@ function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, vendorCou
 
 /**
  * Computes the criticality band for an active-phase result at a given point in time, against the
- * given thresholds. Pure — no I/O — so batch callers can reuse one `thresholds`/`workingDaysCtx`
- * fetch across rows.
+ * given thresholds, counting days from today in the business zone to the deadline's day. `reached`
+ * says whether the deadline has passed — the count alone cannot (0 on the due day either way). Pure
+ * — no I/O — so batch callers can reuse one `alert`/`workingDaysCtx` fetch across rows.
  *
  * @param nextEvent - The row's next applicable event past `active`, already resolved by the caller
  *   via `getNextPhaseFromEvents` — every caller needs it anyway (to decide whether `workingDaysCtx`
@@ -497,49 +519,47 @@ function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, vendorCou
  *   `calendarDaysRelevance` is `VENDOR` or `BOTH`).
  * @param workingDaysCtx - Pre-fetched company country + holidays, from `buildWorkingDaysContext`.
  */
-function criticalityFromActivePhase(
+export function criticalityFromActivePhase(
   rowId: string,
   active: ActivePhaseResult,
   nextEvent: CalendarEventWithContext | null,
-  thresholds: CollectionAlertThresholds,
+  alert: AlertContext,
   now: Date,
   vendorCountryCode: string | null,
   workingDaysCtx: WorkingDaysContext
 ) {
-  const deadlineInfo = deadlineFromActivePhase(active);
-  if (!deadlineInfo) return null;
+  if (active.status !== 'active') return null;
+  // The event's live date, never the frozen baseline (`baselineStartAt`/`baselineEndAt`, written
+  // once by `freezePlanningGroup`): `deadlineDay`/`deadlineReachedAt` read its current
+  // `endAt ?? startAt`, so rescheduling an event during the season moves the countdown with it
+  // instead of pinning the alert to a dead date. No lead-time recompute.
+  const { event } = active;
 
+  const { timeZone } = alert;
+  const due = deadlineDay(event, timeZone);
   const { days: daysToDeadline, daysMode, relevantCountryCodes } = resolveDaysCount(
-    now, deadlineInfo.deadline, deadlineInfo.event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
+    calendarDateIn(now, timeZone), due, event.calendarDaysRelevance, vendorCountryCode, workingDaysCtx
   );
-  const bands = bandsForPhase(thresholds, deadlineInfo.event.phase?.value ?? null);
-  const band = bands.find(b => daysToDeadline >= b.minDaysToDeadline && (b.maxDaysToDeadline === null || daysToDeadline < b.maxDaysToDeadline))
-    ?? bands[bands.length - 1];
+  const reached = now >= deadlineReachedAt(event, timeZone);
+  const band = bandFor(bandsForPhase(alert.thresholds, event.phase?.value ?? null), daysToDeadline, reached);
 
   return {
     state: 'active' as const,
     rowId,
-    eventId: deadlineInfo.event.id,
-    eventTitle: deadlineInfo.event.title,
-    eventStartAt: deadlineInfo.event.startAt,
-    phaseId: deadlineInfo.event.phaseId,
-    deadline: deadlineInfo.deadline,
+    eventId: event.id,
+    eventTitle: event.title,
+    // Both as calendar dates, the deadline being the day `daysToDeadline` counts to: what the
+    // client shows, with no zone of its own to read an instant in.
+    eventStartDay: eventCalendarDays(event.startAt, event.endAt, event.allDay, timeZone)[0],
+    phaseId: event.phaseId,
+    deadlineDay: due,
     daysToDeadline,
+    reached,
     daysMode,
     relevantCountryCodes,
     band,
-    nextPhase: nextEvent ? nextPhaseInfo(nextEvent, now, vendorCountryCode, workingDaysCtx) : null,
+    nextPhase: nextEvent ? nextPhaseInfo(nextEvent, now, timeZone, vendorCountryCode, workingDaysCtx) : null,
   };
-}
-
-/**
- * Resolves the deadline for a single row's active phase (see `deadlineFromActivePhase`).
- *
- * @returns `null` if the row has no active phase.
- */
-export async function computeDeadline(rowId: string, prisma: PrismaClient) {
-  const active = await getActivePhaseForRow(rowId, prisma);
-  return deadlineFromActivePhase(active);
 }
 
 /**
@@ -548,37 +568,47 @@ export async function computeDeadline(rowId: string, prisma: PrismaClient) {
  * concluded ahead of the deadline, negative means after it — same sign convention as the live
  * `daysToDeadline`, and counted with the same calendar/working-days rules so the two are comparable.
  *
+ * `late` means the completion came at or after the moment the deadline was reached — the same rule
+ * as the live `reached`, measured at `completedAt` — so a completion later on the due day of a timed
+ * deadline is late with a count of 0.
+ *
  * Pure — no I/O. No countdown: a concluded row has stopped moving, so the only thing left to say is
- * whether it made it. Recomputed from `completedAt` on every read rather than persisted, matching
- * `deadlineFromActivePhase`'s decision to always measure against the event's live date — rescheduling
- * a milestone after the fact re-scores the outcome instead of leaving it pinned to a dead date.
+ * whether it made it. Recomputed from `completedAt` on every read rather than persisted, matching the
+ * active countdown's decision to always measure against the event's live date — rescheduling a
+ * milestone after the fact re-scores the outcome instead of leaving it pinned to a dead date.
  */
 export function completionOutcome(
   rowId: string,
   completedAt: Date,
   completionEvent: CalendarEventWithContext | null,
-  thresholds: CollectionAlertThresholds,
+  alert: AlertContext,
   vendorCountryCode: string | null,
   workingDaysCtx: WorkingDaysContext
 ) {
-  const deadline = completionEvent ? eventDeadline(completionEvent) : null;
+  const { timeZone, thresholds } = alert;
+  // The day the row was concluded, in the business zone: the day its delta counts from, and the only
+  // completion date readers show (the instant itself decides only `late`).
+  const completedDay = calendarDateIn(completedAt, timeZone);
   // No reference milestone: only the completion date remains, no invented delta.
-  const counted = completionEvent && deadline
-    ? resolveDaysCount(completedAt, deadline, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
+  const due = completionEvent ? deadlineDay(completionEvent, timeZone) : null;
+  const counted = completionEvent && due
+    ? resolveDaysCount(completedDay, due, completionEvent.calendarDaysRelevance, vendorCountryCode, workingDaysCtx)
     : { days: null, daysMode: 'calendar' as const, relevantCountryCodes: [] as string[] };
+  // With no deadline to measure against, the completion can't be late.
+  const late = completionEvent ? completedAt >= deadlineReachedAt(completionEvent, timeZone) : false;
 
   return {
     state: 'completed' as const,
     rowId,
-    completedAt,
+    completedDay,
     eventId: completionEvent?.id ?? null,
     eventTitle: completionEvent?.title ?? null,
-    deadline,
+    deadlineDay: due,
     daysVsDeadline: counted.days,
+    late,
     daysMode: counted.daysMode,
     relevantCountryCodes: counted.relevantCountryCodes,
-    // With no deadline to measure against, the completion can't be late.
-    band: counted.days === null || counted.days >= 0 ? thresholds.completedBand : thresholds.completedLateBand,
+    band: late ? thresholds.completedLateBand : thresholds.completedBand,
   };
 }
 
@@ -587,17 +617,16 @@ export function completionOutcome(
  * (or default) alert thresholds. `null` means no alert applies — the row has no active phase and
  * has not been marked as concluded.
  *
- * Does its own row query (phase + vendor country in one shot) rather than delegating to
- * `getActivePhaseForRow` — that helper only selects `phase`, and a second `findUnique` just to
- * also get `vendor.countryCode` would be a redundant round-trip on the same row.
+ * Does its own row query, selecting phase, completion and vendor country in one shot, so a single
+ * `findUnique` serves the whole computation.
  */
 export async function computeCriticality(rowId: string, now: Date, prisma: PrismaClient) {
-  const [row, thresholds] = await Promise.all([
+  const [row, alert] = await Promise.all([
     prisma.collectionLayoutRow.findUnique({
       where: { id: rowId },
       select: { completedAt: true, phase: { select: { order: true } }, vendor: { select: { countryCode: true } } },
     }),
-    resolveAlertThresholds(prisma),
+    resolveAlertContext(prisma),
   ]);
   if (!row) return null;
 
@@ -616,24 +645,24 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
   if (row.completedAt) {
     const completionEvent = getCompletionDeadlineEvent(events);
     const workingDaysCtx = await workingDaysContextFor(completionEvent);
-    return completionOutcome(rowId, row.completedAt, completionEvent, thresholds, vendorCountryCode, workingDaysCtx);
+    return completionOutcome(rowId, row.completedAt, completionEvent, alert, vendorCountryCode, workingDaysCtx);
   }
 
   const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
   const nextEvent = getNextPhaseFromEvents(events, active);
   const workingDaysCtx = await workingDaysContextFor(active.status === 'active' ? active.event : null, nextEvent);
 
-  return criticalityFromActivePhase(rowId, active, nextEvent, thresholds, now, vendorCountryCode, workingDaysCtx);
+  return criticalityFromActivePhase(rowId, active, nextEvent, alert, now, vendorCountryCode, workingDaysCtx);
 }
 
 /**
  * Computes the criticality band for every row in a layout with a single calendar/events fetch and
- * a single thresholds fetch, instead of once per row — the batch counterpart of `computeCriticality`
- * used by the Phase 6.1/6.2 dashboards.
+ * a single thresholds + time zone fetch, instead of once per row — the batch counterpart of
+ * `computeCriticality` used by the Phase 6.1/6.2 dashboards.
  *
- * @param thresholds - Pass an already-resolved value when calling this for multiple layouts in the
- *   same request (e.g. `computeSaturationHeatmap`) — thresholds aren't layout-scoped, so refetching
- *   per layout would be redundant. Defaults to resolving them internally for single-layout callers.
+ * @param alert - Pass an already-resolved value when calling this for multiple layouts in the same
+ *   request (e.g. `computeSaturationHeatmap`) — neither half is layout-scoped, so refetching per
+ *   layout would be redundant. Defaults to resolving it internally for single-layout callers.
  * @returns One entry per row that has an active phase or has been marked as concluded; rows with
  *   neither are omitted.
  */
@@ -641,10 +670,10 @@ export async function computeCriticalityForLayout(
   collectionLayoutId: string,
   now: Date,
   prisma: PrismaClient,
-  thresholds?: CollectionAlertThresholds,
+  alert?: AlertContext,
   options?: { activeOnly?: boolean }
 ) {
-  const [rows, events, resolvedThresholds] = await Promise.all([
+  const [rows, events, resolvedAlert] = await Promise.all([
     prisma.collectionLayoutRow.findMany({
       // `activeOnly` excludes already-completed rows at query time, for consumers that would
       // discard them anyway (the bottleneck index): by season's end they're the majority of the
@@ -657,7 +686,7 @@ export async function computeCriticalityForLayout(
       },
     }),
     getCalendarEventsForLayout(collectionLayoutId, prisma),
-    thresholds ? Promise.resolve(thresholds) : resolveAlertThresholds(prisma),
+    alert ? Promise.resolve(alert) : resolveAlertContext(prisma),
   ]);
 
   // Applicable events depend only on the planning group, not on the row: filtering and
@@ -704,8 +733,8 @@ export async function computeCriticalityForLayout(
       const vendorCountryCode = entry.row.vendor?.countryCode ?? null;
       // See `computeCriticality`: completion replaces the countdown, whatever phase the row is on.
       const criticality = entry.completedAt
-        ? completionOutcome(entry.row.id, entry.completedAt, entry.completionEvent, resolvedThresholds, vendorCountryCode, workingDaysCtx)
-        : criticalityFromActivePhase(entry.row.id, entry.active, entry.nextEvent, resolvedThresholds, now, vendorCountryCode, workingDaysCtx);
+        ? completionOutcome(entry.row.id, entry.completedAt, entry.completionEvent, resolvedAlert, vendorCountryCode, workingDaysCtx)
+        : criticalityFromActivePhase(entry.row.id, entry.active, entry.nextEvent, resolvedAlert, now, vendorCountryCode, workingDaysCtx);
       return criticality ? { ...criticality, productCategory: entry.row.productCategory } : null;
     })
     .filter((r): r is NonNullable<typeof r> => r !== null);
@@ -722,16 +751,16 @@ export async function computeSaturationHeatmap(
   now: Date,
   prisma: PrismaClient
 ) {
-  const [layouts, thresholds] = await Promise.all([
+  const [layouts, alert] = await Promise.all([
     prisma.collectionLayout.findMany({
       where: { seasonId, brandId: { in: brandIds } },
       select: { id: true, brandId: true },
     }),
-    resolveAlertThresholds(prisma),
+    resolveAlertContext(prisma),
   ]);
 
   const perLayoutRows = await Promise.all(
-    layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, thresholds).then(rows => ({ layout, rows })))
+    layouts.map(layout => computeCriticalityForLayout(layout.id, now, prisma, alert).then(rows => ({ layout, rows })))
   );
 
   const cellCounts = new Map<string, { brandId: string; productCategory: string; label: string; color: string; emphasis: AlertBandEmphasis; count: number }>();
@@ -759,6 +788,17 @@ export async function computeSaturationHeatmap(
 }
 
 /**
+ * Bottleneck order: by start date, then title and id — every milestone on the same business day
+ * ties on the date, and the rows it is aggregated from come in no defined order.
+ */
+export function byEventStartDay(
+  a: { eventStartDay: CalendarDate; eventTitle: string; eventId: string },
+  b: { eventStartDay: CalendarDate; eventTitle: string; eventId: string },
+): number {
+  return a.eventStartDay.localeCompare(b.eventStartDay) || a.eventTitle.localeCompare(b.eventTitle) || a.eventId.localeCompare(b.eventId);
+}
+
+/**
  * Bottleneck index (Phase 6.2): for a single layout, counts rows per criticality band grouped by
  * their active event — identifies which specific milestone is holding up the most rows.
  *
@@ -772,14 +812,14 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
     .filter(r => r.state === 'active');
 
   const byEvent = new Map<string, {
-    eventId: string; eventTitle: string; eventStartAt: Date;
+    eventId: string; eventTitle: string; eventStartDay: CalendarDate;
     bands: Map<string, { label: string; color: string; emphasis: AlertBandEmphasis; count: number }>;
   }>();
 
   for (const row of rows) {
     let eventEntry = byEvent.get(row.eventId);
     if (!eventEntry) {
-      eventEntry = { eventId: row.eventId, eventTitle: row.eventTitle, eventStartAt: row.eventStartAt, bands: new Map() };
+      eventEntry = { eventId: row.eventId, eventTitle: row.eventTitle, eventStartDay: row.eventStartDay, bands: new Map() };
       byEvent.set(row.eventId, eventEntry);
     }
     const bandEntry = eventEntry.bands.get(row.band.label);
@@ -792,5 +832,5 @@ export async function computeBottleneckByEvent(collectionLayoutId: string, now: 
 
   return Array.from(byEvent.values())
     .map(e => ({ ...e, bands: Array.from(e.bands.values()) }))
-    .sort((a, b) => a.eventStartAt.getTime() - b.eventStartAt.getTime());
+    .sort(byEventStartDay);
 }

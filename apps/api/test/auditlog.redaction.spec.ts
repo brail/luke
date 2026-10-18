@@ -9,9 +9,9 @@
  * redaction that actually runs — on a compliance surface.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { sanitizeMetadata } from '../src/lib/auditLog';
+import { collectUnlistedAuditKeys, sanitizeMetadata } from '../src/lib/auditLog';
 
 /**
  * Narrows the result of `sanitizeMetadata`, which is `unknown` by construction:
@@ -26,7 +26,7 @@ import { sanitizeMetadata } from '../src/lib/auditLog';
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(
-      `Atteso un oggetto da sanitizeMetadata, ricevuto ${
+      `Expected an object from sanitizeMetadata, got ${
         Array.isArray(value) ? 'array' : typeof value
       }`
     );
@@ -47,7 +47,7 @@ function at(value: unknown, path: string): unknown {
     if (Array.isArray(acc)) {
       const index = Number(key);
       if (!Number.isInteger(index)) {
-        throw new Error(`Segmento "${key}" non è un indice valido per un array`);
+        throw new Error(`Segment "${key}" is not a valid array index`);
       }
       return acc[index];
     }
@@ -56,8 +56,8 @@ function at(value: unknown, path: string): unknown {
 }
 
 describe('sanitizeMetadata', () => {
-  describe('Campi sensibili (blacklist)', () => {
-    it('dovrebbe redattare password e varianti', () => {
+  describe('Sensitive fields (blacklist)', () => {
+    it('should redact password and its variants', () => {
       const input = {
         username: 'test',
         password: 'secret123',
@@ -77,7 +77,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.newPassword).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare token e varianti', () => {
+    it('should redact token and its variants', () => {
       const input = {
         username: 'test',
         token: 'abc123',
@@ -97,7 +97,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.bearerToken).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare secret e varianti', () => {
+    it('should redact secret and its variants', () => {
       const input = {
         username: 'test',
         secret: 'secret123',
@@ -115,7 +115,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.jwtSecret).toBe('***REDACTED***');
     });
 
-    it('dovrebbe redattare credential e varianti', () => {
+    it('should redact credential and its variants', () => {
       const input = {
         username: 'test',
         credentials: 'cred123',
@@ -136,8 +136,8 @@ describe('sanitizeMetadata', () => {
     });
   });
 
-  describe('Campi sicuri (whitelist)', () => {
-    it('dovrebbe preservare campi whitelisted', () => {
+  describe('Safe fields (whitelist)', () => {
+    it('should preserve whitelisted fields', () => {
       const input = {
         username: 'testuser',
         email: 'test@test.com',
@@ -156,14 +156,14 @@ describe('sanitizeMetadata', () => {
       expect(sanitized).toEqual(input);
     });
 
-    it('dovrebbe preservare i campi del diff fase/gruppo di pianificazione (cambio fase riga collezione)', () => {
+    it('should keep the phase/planning group diff fields (collection row phase change)', () => {
       // Added for the consolidation of the collection row drawer audit log
       // (buffered phase/group, committed in a single COLLECTION_ROW_UPDATE):
       // without a whitelist these used to end up '[REDACTED]', gutting the metadata.
       const input = {
         oldPhaseId: 'phase-1',
         newPhaseId: 'phase-2',
-        phaseChangeNote: 'Motivazione del cambio',
+        phaseChangeNote: 'Reason for the change',
         oldPlanningGroupId: 'group-1',
         newPlanningGroupId: 'group-2',
       };
@@ -174,8 +174,8 @@ describe('sanitizeMetadata', () => {
     });
   });
 
-  describe('Oggetti nested', () => {
-    it('dovrebbe redattare ricorsivamente oggetti nested', () => {
+  describe('Nested objects', () => {
+    it('should redact nested objects recursively', () => {
       const input = {
         username: 'test',
         user: {
@@ -203,7 +203,7 @@ describe('sanitizeMetadata', () => {
       expect(at(sanitized, 'user.profile.credentials')).toBe('***REDACTED***');
     });
 
-    it('dovrebbe gestire array di oggetti', () => {
+    it('should handle arrays of objects', () => {
       const input = {
         users: [
           { username: 'user1', password: 'pass1' },
@@ -225,23 +225,36 @@ describe('sanitizeMetadata', () => {
   });
 
   describe('Edge cases', () => {
-    it('dovrebbe gestire valori null e undefined', () => {
-      const input = {
-        username: 'test',
-        password: null,
-        token: undefined,
-        email: 'test@test.com',
-      };
-
-      const sanitized = asRecord(sanitizeMetadata(input));
+    it('redacts null, but omits undefined entirely', () => {
+      // The two are not the same thing. `null` is a value the call site chose to pass, so a
+      // blacklisted key holding it is redacted like any other. `undefined` is the key not
+      // applying to this event — emitting `***REDACTED***` for it would suggest a token was
+      // present and hidden, which is worse than saying nothing in a trail people read to find
+      // out what happened. Omitting it is also what lets a call site write
+      // `oldStartAt: dateChanged ? … : undefined` instead of a spread the type cannot see.
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          username: 'test',
+          password: null,
+          token: undefined,
+          email: 'test@test.com',
+        }),
+      );
 
       expect(sanitized.username).toBe('test');
       expect(sanitized.email).toBe('test@test.com');
       expect(sanitized.password).toBe('***REDACTED***');
-      expect(sanitized.token).toBe('***REDACTED***');
+      expect('token' in sanitized).toBe(false);
     });
 
-    it('dovrebbe gestire stringhe vuote', () => {
+    it('should serialize Dates as ISO instead of emptying them', () => {
+      // `Object.entries(new Date())` is empty, so walking a Date as a plain object stored `{}`.
+      const sanitized = asRecord(sanitizeMetadata({ createdAt: new Date('2026-08-27T10:00:00Z') }));
+
+      expect(sanitized.createdAt).toBe('2026-08-27T10:00:00.000Z');
+    });
+
+    it('should handle empty strings', () => {
       const input = {
         username: '',
         password: '',
@@ -255,7 +268,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitized.email).toBe('test@test.com');
     });
 
-    it('dovrebbe gestire numeri e booleani', () => {
+    it('should handle numbers and booleans', () => {
       const input = {
         id: 123,
         isActive: true,
@@ -274,7 +287,7 @@ describe('sanitizeMetadata', () => {
   });
 
   describe('DoS protection', () => {
-    it('dovrebbe limitare la profondità di ricorsione', () => {
+    it('should limit the recursion depth', () => {
       // Create an object with depth > 5
       let deepObj: any = { value: 'test' };
       for (let i = 0; i < 10; i++) {
@@ -288,7 +301,7 @@ describe('sanitizeMetadata', () => {
       expect(sanitizedStr).toContain('[REDACTED:MAX_DEPTH]');
     });
 
-    it('dovrebbe gestire array molto profondi', () => {
+    it('should handle very deep arrays', () => {
       const input = {
         deepArray: [
           {
@@ -319,7 +332,7 @@ describe('sanitizeMetadata', () => {
   });
 
   describe('Pattern matching case-insensitive', () => {
-    it('dovrebbe redattare pattern indipendentemente dal case', () => {
+    it('should redact patterns regardless of case', () => {
       const input = {
         PASSWORD: 'pass1',
         Password: 'pass2',
@@ -348,25 +361,110 @@ describe('sanitizeMetadata', () => {
     });
   });
 
-  describe('Chiavi non whitelisted', () => {
-    it('dovrebbe redattare chiavi non in whitelist', () => {
-      const input = {
-        username: 'test', // whitelisted
-        email: 'test@test.com', // whitelisted
-        unknownField: 'value1',
-        customData: 'value2',
-        internalId: 'value3',
-        sessionData: 'value4',
-      };
+  describe('Keys not whitelisted', () => {
+    const UNLISTED = {
+      username: 'test', // whitelisted
+      email: 'test@test.com', // whitelisted
+      unknownField: 'value1',
+    };
 
-      const sanitized = asRecord(sanitizeMetadata(input));
+    it('in production it redacts the key and carries on', () => {
+      // The shipped behaviour, unchanged: an audit write is not the place to start failing
+      // requests over a metadata key. `vi.stubEnv` because the branch is chosen per call.
+      vi.stubEnv('NODE_ENV', 'production');
+      try {
+        const sanitized = asRecord(
+          sanitizeMetadata({ ...UNLISTED, customData: 'value2', internalId: 'value3' }),
+        );
 
-      expect(sanitized.username).toBe('test');
-      expect(sanitized.email).toBe('test@test.com');
-      expect(sanitized.unknownField).toBe('[REDACTED]');
-      expect(sanitized.customData).toBe('[REDACTED]');
-      expect(sanitized.internalId).toBe('[REDACTED]');
-      expect(sanitized.sessionData).toBe('[REDACTED]');
+        expect(sanitized.username).toBe('test');
+        expect(sanitized.email).toBe('test@test.com');
+        expect(sanitized.unknownField).toBe('[REDACTED]');
+        expect(sanitized.customData).toBe('[REDACTED]');
+        expect(sanitized.internalId).toBe('[REDACTED]');
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('outside production it throws, naming the key', () => {
+      // The gate. `AuditMetadata` cannot see a key arriving through a spread or a bare variable,
+      // so this runtime check is the only thing between a drifting call site and a column of
+      // `[REDACTED]` nobody reads for months.
+      expect(() => sanitizeMetadata(UNLISTED)).toThrow(/unknownField.*SAFE_KEY_LIST/s);
+    });
+
+    it('names the full path, not just the leaf', () => {
+      // A bare key name is not enough to find the call site when it is three levels inside a
+      // procedure input captured by `withAuditLog`.
+      expect(() => sanitizeMetadata({ input: { nested: { deep: 1 } } })).toThrow(
+        /input\.nested\.deep/,
+      );
+    });
+
+    it('the collector collects instead of throwing, and uninstalls itself', () => {
+      // A red suite stops at the first violation and hides the rest, so enumerating a batch has to
+      // come before gating it. The restore function matters as much as the collector: leaving one
+      // installed would silently disarm the gate for every test that follows.
+      const seen: string[] = [];
+      const restore = collectUnlistedAuditKeys(p => seen.push(p));
+      try {
+        sanitizeMetadata({ unknownField: 'v', input: { alsoUnknown: 1 } });
+      } finally {
+        restore();
+      }
+
+      expect(seen).toEqual(['unknownField', 'input.alsoUnknown']);
+      // Gate armed again.
+      expect(() => sanitizeMetadata({ unknownField: 'v' })).toThrow(/SAFE_KEY_LIST/);
+    });
+
+    it('does not throw for a key the blacklist catches', () => {
+      // The blacklist firing is the design working. Treating it as drift would ask every call
+      // site to pre-declare the secrets it is *not* passing.
+      expect(() => sanitizeMetadata({ apiToken: 'x' })).not.toThrow();
+      expect(asRecord(sanitizeMetadata({ apiToken: 'x' })).apiToken).toBe('***REDACTED***');
+    });
+
+    it('should redact array contents under a non-whitelisted key', () => {
+      // Regression: the non-whitelisted branch used to recurse into arrays, and primitives
+      // inside them fell through to the `return obj` for primitives — so every string in
+      // `{ errors: [...] }` was persisted verbatim while a plain string under the same key
+      // was redacted. Objects inside the array are still filtered by their own keys.
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          notAllowlisted: ['leaked-1', { username: 'kept', password: 'nope' }],
+          changedFields: ['name'],
+        })
+      );
+
+      expect(at(sanitized, 'notAllowlisted.0')).toBe('[REDACTED]');
+      expect(at(sanitized, 'notAllowlisted.1.username')).toBe('kept');
+      expect(at(sanitized, 'notAllowlisted.1.password')).toBe('***REDACTED***');
+      // ...while an allowlisted key keeps its array contents.
+      expect(sanitized.changedFields).toEqual(['name']);
+    });
+  });
+
+  describe('Error messages (free text)', () => {
+    it('should keep the message but mask embedded credentials', () => {
+      const sanitized = asRecord(
+        sanitizeMetadata({
+          errorMessage: 'connect failed for sqlserver://nav:Hunter2@10.0.0.5:1433',
+          error: 'login rejected (password=Hunter2)',
+        })
+      );
+
+      expect(sanitized.errorMessage).toBe('connect failed for sqlserver://***:***@10.0.0.5:1433');
+      // The trailing `)` is swallowed with the value: erring toward over-masking on a
+      // free-text field is the right side to err on.
+      expect(sanitized.error).toBe('login rejected (password=***');
+    });
+
+    it('should truncate long messages', () => {
+      const sanitized = asRecord(sanitizeMetadata({ error: 'x'.repeat(500) }));
+
+      expect(sanitized.error).toHaveLength(200);
     });
   });
 });

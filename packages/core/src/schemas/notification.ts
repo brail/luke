@@ -9,38 +9,17 @@ export const notificationCategoryEnum = z.enum([
 ]);
 export type NotificationCategory = z.infer<typeof notificationCategoryEnum>;
 
-/** Full notification as returned by the API — includes read state and optional deep-link. */
-export const notificationSchema = z.object({
-  id: z.string(),
-  category: notificationCategoryEnum,
-  title: z.string(),
-  message: z.string(),
-  link: z.string().nullable(),
-  data: z.record(z.string(), z.unknown()).nullable(),
-  isRead: z.boolean(),
-  readAt: z.date().nullable(),
-  createdAt: z.date(),
-});
-export type Notification = z.infer<typeof notificationSchema>;
-
 /** Sentinel `eventKey` value marking a category-level preference row (as opposed to a specific event-level override). */
 export const CATEGORY_LEVEL_EVENT_KEY = '';
 
-/** Per-category (or per-event, when `eventKey` is set) notification preference controlling whether the user receives notifications for that scope. */
-export const notificationPreferenceSchema = z.object({
-  category: notificationCategoryEnum,
-  eventKey: z.string(),
-  enabled: z.boolean(),
-});
-export type NotificationPreference = z.infer<typeof notificationPreferenceSchema>;
-
 /**
- * Fine-grained event keys within the CALENDAR category, one per `notifyCalendarChange` call site
- * in `seasonCalendar.ts`. Lets a user opt out of a specific event type (e.g. reschedules) while
- * keeping the rest of the CALENDAR category enabled — an optional override on top of the
- * coarser per-category toggle, not a replacement for it.
+ * Fine-grained event keys within the CALENDAR category: a user can opt out of one type (e.g.
+ * reschedules) and keep the rest of the category. A key can only mute: the per-category toggle stays
+ * the master switch. Three kinds, kept apart so each sender takes only its own:
+ * change notices (one per `notifyCalendarChange` call site in `seasonCalendar.ts`), deadline notices
+ * (the deadline scheduler) and the daily email digest.
  */
-export const CALENDAR_EVENT_KEYS = [
+export const CALENDAR_CHANGE_KEYS = [
   'CALENDAR_CREATE',
   'CALENDAR_UPDATE',
   'CALENDAR_RESCHEDULE',
@@ -51,4 +30,14 @@ export const CALENDAR_EVENT_KEYS = [
   'CALENDAR_APPLY_TEMPLATE',
   'CALENDAR_CLONE',
 ] as const;
+export type CalendarChangeKey = typeof CALENDAR_CHANGE_KEYS[number];
+
+/** Deadline notices: an event coming due, an event overdue, collection rows late on a phase. */
+export const CALENDAR_DEADLINE_KEYS = ['CALENDAR_DEADLINE_UPCOMING', 'CALENDAR_DEADLINE_OVERDUE', 'CALENDAR_PHASE_OVERDUE'] as const;
+
+/** The daily calendar email digest. */
+export const CALENDAR_DIGEST_KEY = 'CALENDAR_DIGEST';
+
+/** Every CALENDAR event key a preference can be stored for. */
+export const CALENDAR_EVENT_KEYS = [...CALENDAR_CHANGE_KEYS, ...CALENDAR_DEADLINE_KEYS, CALENDAR_DIGEST_KEY] as const;
 export type CalendarEventKey = typeof CALENDAR_EVENT_KEYS[number];

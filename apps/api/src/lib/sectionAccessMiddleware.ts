@@ -1,29 +1,38 @@
 /**
  * tRPC middleware for section-level access control.
- * Enforces the four-tier precedence: kill switch > user override > role default > RBAC permission.
- * Delegates evaluation to `effectiveSectionAccess` from @luke/core.
+ * Guards one section without children, resolved by `effectiveSectionAccess` from @luke/core with
+ * the four-tier precedence (kill switch, on the section or an ancestor > user override > role
+ * default > RBAC permission). A section with children is refused when the guard is built.
  */
 
 import { TRPCError } from '@trpc/server';
 
 import {
+  childSectionsOf,
   effectiveSectionAccess,
   type Section,
 } from '@luke/core';
 import { getRbacConfig } from '@luke/core/server';
 
-import { getOverride } from '../services/sectionAccess.service';
-
+import { logAccessDenied } from './permissions';
 import { t } from './t';
 
 /**
- * Creates a tRPC middleware that guards a named section.
- * Precedence: kill switch > user override > role default > RBAC permission fallback.
+ * Creates a tRPC middleware that guards a named section, resolved by `effectiveSectionAccess`.
  *
- * @param section - Section identifier to protect (e.g. `'product.pricing'`).
+ * @param section - Section without children to protect (e.g. `'settings.storage'`).
  * @returns tRPC middleware that throws `FORBIDDEN` when access is denied.
+ * @throws {Error} When `section` has children: a parent is on as soon as any child is (ADR-025),
+ *   so guarding one lets through a user whose own section is off. Thrown when the procedure is
+ *   built, at module load, so the API does not start with such a guard.
  */
 export function withSectionAccess(section: Section) {
+  if (childSectionsOf(section).length > 0) {
+    throw new Error(
+      `withSectionAccess('${section}'): a section with children cannot guard a procedure — name the section the procedure belongs to`
+    );
+  }
+
   return t.middleware(async ({ ctx, next }) => {
     if (!ctx.session?.user) {
       throw new TRPCError({
@@ -34,43 +43,28 @@ export function withSectionAccess(section: Section) {
 
     const user = ctx.session.user;
 
-    // Fetch override and RBAC config in parallel (disabledSections lives inside rbacConfig)
+    // The one row for `section`: a section without children reads only its own override. No
+    // `.catch(() => null)` on the read: an unreadable override must fail the request, not silently
+    // fall through to the role default and widen access.
     const [override, rbacConfig] = await Promise.all([
-      getOverride(ctx.prisma, user.id, section).catch(() => null),
+      ctx.prisma.userSectionAccess.findUnique({
+        where: { userId_section: { userId: user.id, section } },
+      }),
       getRbacConfig(ctx.prisma),
     ]);
-    const { disabledSections } = rbacConfig;
 
-    // 1. Kill switch: if the section is globally disabled, deny access
-    if (disabledSections.includes(section)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: `Sezione ${section} temporaneamente disabilitata`,
-      });
-    }
-
-    // 2. User override: if the user has a specific override, honor it
-    if (override) {
-      if (!override.enabled) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: `Accesso negato alla sezione ${section} (override utente)`,
-        });
-      }
-      // If the override is enabled, proceed without further checks
-      return next();
-    }
-
-    // 3. effectiveSectionAccess evaluates: role defaults → RBAC permission fallback
+    // One resolver, the core's: this middleware used to re-implement the kill switch and the
+    // override levels inline, a second copy that would disagree with the core.
     const allowed = effectiveSectionAccess({
       role: user.role,
       sectionAccessDefaults: rbacConfig.sectionAccessDefaults,
-      userOverride: undefined, // Already checked above
+      userOverrides: override ? new Map([[section, override.enabled]]) : null,
       section,
-      disabledSections,
+      disabledSections: rbacConfig.disabledSections,
     });
 
     if (!allowed) {
+      logAccessDenied(ctx, { section });
       throw new TRPCError({
         code: 'FORBIDDEN',
         message: `Accesso negato alla sezione ${section}`,

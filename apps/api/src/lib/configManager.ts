@@ -11,19 +11,32 @@ import pino from 'pino';
 import { z } from 'zod';
 
 import {
+  DEFAULT_PASSWORD_POLICY,
   type AppConfigKey,
   type AppConfigValue,
+  type PasswordPolicy,
   parseConfigValue,
+  validateConfigValue,
+  APP_CONFIG_DEFAULTS,
+  type AppConfigKeyWithDefault,
+  type BackupScheduleSettings,
+  type BackupScopeField,
   CRITICAL_CONFIG_KEYS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
+  type LdapStrategy,
   Roles,
 } from '@luke/core';
-import { getMasterKey, invalidateRbacCache } from '@luke/core/server';
+import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
+import type { Prisma, PrismaClient } from '@luke/db';
+
+import {
+  countRecoveryCapable,
+  loadAdminRecoveryOverrides,
+} from '../services/sectionAccess.service';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
 
-import type { BackupScope, Prisma, PrismaClient } from '@prisma/client';
 
 const logger = pino({ level: 'info' });
 
@@ -42,7 +55,7 @@ export interface LdapConfig {
   groupSearchBase: string;
   groupSearchFilter: string;
   roleMapping: Record<string, string>;
-  strategy: 'local-first' | 'ldap-first' | 'local-only' | 'ldap-only';
+  strategy: LdapStrategy;
 }
 
 // Exported for reuse by other AES-256-GCM modules (e.g. apps/api/src/lib/backup/crypto.ts)
@@ -86,7 +99,7 @@ export function decryptValue(encrypted: string): string {
 
   if (parts.length !== 3) {
     throw new Error(
-      'Formato encrypted non valido. Atteso: iv:authTag:ciphertext'
+      'Invalid encrypted format. Expected: iv:authTag:ciphertext'
     );
   }
 
@@ -107,23 +120,6 @@ export function decryptValue(encrypted: string): string {
 }
 
 /**
- * Upserts a configuration entry in the database.
- *
- * @param prisma - Prisma client.
- * @param key - Configuration key (dot-notation, must conform to AppConfigRegistry).
- * @param value - Value to store.
- * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
- *
- * @example
- * // Store plaintext value
- * await saveConfig(prisma, "app.name", "Luke", false);
- *
- * @example
- * // Store encrypted value
- * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
- */
-
-/**
  * Keys read by `getRbacConfig`'s cache — any write here must invalidate it,
  * or the RBAC-aware last-admin guards (`lastAdminGuard.ts`,
  * `sectionAccess.ts`) can evaluate against a stale kill-switch/defaults value
@@ -134,11 +130,18 @@ const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
 /**
  * `app.sections.disabled` is the RBAC kill switch: it beats every other
  * access layer, including the admin `*:*` fallback (see
- * `effectiveSectionAccess`). Disabling `'settings'` while an admin exists
- * would lock everyone — admins included — out of the only in-app place to
- * undo it. Guarded here, the single chokepoint every write to this key goes
- * through (generic `config.set`/`config.update`, gated only by the
- * editor-shared `config:update` permission — no admin check upstream).
+ * `effectiveSectionAccess`). A list that leaves no admin able to reach user
+ * administration would lock everyone — admins included — out of the only
+ * in-app place to undo it. Guarded here, the single chokepoint every write to
+ * this key goes through (generic `config.set`/`config.update`, gated only by
+ * `config:update` — no `*:*` check upstream).
+ *
+ * The guard asks that question directly, through the same recovery count the
+ * other last-admin guards use, rather than looking for `'settings'` in the
+ * list: disabling `settings.users` alone locks administration out too, and so
+ * does disabling every `settings.*` child, since a parent is derived from its
+ * children (ADR-025). A list that does not make things worse is accepted, so
+ * a system with no recovery-capable admin (a fresh install) stays writable.
  */
 async function saveSectionsDisabledGuarded(
   prisma: PrismaClient,
@@ -147,26 +150,27 @@ async function saveSectionsDisabledGuarded(
   encrypt: boolean
 ): Promise<void> {
   await prisma.$transaction(async tx => {
-    let disabled: string[];
-    try {
-      disabled = z.array(z.string()).parse(JSON.parse(rawValue));
-    } catch {
+    // Parsed here rather than threaded in from `saveConfig`'s validation: there `key` is the open
+    // `AppConfigKey`, so the parsed value is the union of every config type and narrowing it to
+    // `string[]` would need a cast. A second parse of a ten-element array is the cheaper price.
+    const disabled = parseConfigValue('app.sections.disabled', rawValue);
+
+    // Lock before reading, like every other writer of the last-admin invariant.
+    await acquireLastAdminLock(tx);
+    const { sectionAccessDefaults, disabledSections: current } = await getRbacConfig(tx, {
+      bypassCache: true,
+    });
+    // One read under the lock, both counts from it: the list before and after differ, the
+    // administrators do not.
+    const admins = await loadAdminRecoveryOverrides(tx);
+    const before = countRecoveryCapable(admins, sectionAccessDefaults, current);
+    const after = countRecoveryCapable(admins, sectionAccessDefaults, disabled);
+    if (before > 0 && after === 0) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: 'app.sections.disabled deve essere un array JSON di stringhe',
+        message:
+          "Questa configurazione toglierebbe a tutti gli amministratori l'accesso alla gestione utenti — nessun modo di annullarla dall'app.",
       });
-    }
-
-    if (disabled.includes('settings')) {
-      await acquireLastAdminLock(tx);
-      const adminCount = await tx.user.count({ where: { role: 'admin', isActive: true } });
-      if (adminCount > 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            "Questa configurazione disabiliterebbe Settings per tutti, admin inclusi — nessun modo di annullarla dall'app.",
-        });
-      }
     }
 
     await tx.appConfig.upsert({
@@ -177,33 +181,108 @@ async function saveSectionsDisabledGuarded(
   });
 }
 
+/**
+ * Upserts a configuration entry in the database.
+ *
+ * The key is an `AppConfigKey`, and the value is parsed by that key's registry schema before it is
+ * written: reads had a typed variant (`getTypedConfig`) and writes had none, so the registry
+ * described what the application expected to find rather than what it was allowed to store. A
+ * caller outside the registry now fails `tsc`, and a value the schema rejects fails here instead
+ * of at the first read in production.
+ *
+ * Validation runs on the plaintext, before `encryptValue`: no registry schema describes a
+ * ciphertext, so validating after would test the hex blob against a rule written for the secret.
+ *
+ * @param prisma - Prisma client.
+ * @param key - Configuration key declared in `AppConfigRegistry`.
+ * @param value - Value to store, as the string form the registry schema parses.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
+ * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema.
+ *
+ * @example
+ * // Store plaintext value
+ * await saveConfig(prisma, "app.name", "Luke", false);
+ *
+ * @example
+ * // Store encrypted value
+ * await saveConfig(prisma, "auth.ldap.bindPassword", "secret123", true);
+ */
+
 export async function saveConfig(
   prisma: PrismaClient,
-  key: string,
+  key: AppConfigKey,
   value: string,
   encrypt: boolean = false
 ): Promise<void> {
-  const finalValue = encrypt ? encryptValue(value) : value;
-
   if (key === 'app.sections.disabled') {
-    await saveSectionsDisabledGuarded(prisma, value, finalValue, encrypt);
-  } else {
-    await prisma.appConfig.upsert({
-      where: { key },
-      update: {
-        value: finalValue,
-        isEncrypted: encrypt,
-        updatedAt: new Date(),
-      },
-      create: {
-        key,
-        value: finalValue,
-        isEncrypted: encrypt,
-      },
+    const row = prepareConfigWrite({ key, value, encrypt });
+    await saveSectionsDisabledGuarded(prisma, value, row.value, encrypt);
+    invalidateRbacCache();
+    return;
+  }
+  await saveConfigs(prisma, [{ key, value, encrypt }]);
+}
+
+/**
+ * A key `saveConfigs` may write: every registry key but the kill switch, whose guard runs its own
+ * transaction under the last-admin lock (`saveSectionsDisabledGuarded`) and which no form writes.
+ */
+type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
+
+/** One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. */
+export type ConfigWrite =
+  | { key: BatchConfigKey; value: string; encrypt?: boolean }
+  | { key: BatchConfigKey; value: null };
+
+/** Validates a value against its registry schema and encrypts it when asked: the stored form. */
+function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
+  const validation = validateConfigValue(write.key, write.value);
+  if (!validation.success) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Valore non valido per '${write.key}': ${validation.message}`,
     });
   }
+  const encrypt = write.encrypt ?? false;
+  return { key: write.key, value: encrypt ? encryptValue(write.value) : write.value, encrypt };
+}
 
-  if (RBAC_CACHE_KEYS.test(key)) {
+/**
+ * Saves several keys as one change — a settings form, which must not be left half-written.
+ *
+ * Every value is validated against its registry schema, and encrypted when asked, before anything
+ * is written; then all the writes run in one transaction, in order: an upsert for a value, a
+ * `deleteMany` for `null` (removing an absent key is not an error). Either every key changes or
+ * none does. What it guarantees is one atomic write, not a consistent snapshot for a reader that
+ * issues several reads across the commit. The RBAC cache is invalidated only after the commit.
+ *
+ * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema; nothing is written.
+ */
+export async function saveConfigs(
+  prisma: PrismaClient,
+  writes: readonly ConfigWrite[]
+): Promise<void> {
+  // Excluded by the key type too; refused here as well for a caller that reaches it through a cast.
+  if (writes.some(write => (write.key as AppConfigKey) === 'app.sections.disabled')) {
+    throw new Error('saveConfigs cannot write app.sections.disabled: use saveConfig, which runs its guard');
+  }
+  const rows = writes.map(write => (write.value === null ? write : prepareConfigWrite(write)));
+
+  await prisma.$transaction(async tx => {
+    for (const row of rows) {
+      if (row.value === null) {
+        await tx.appConfig.deleteMany({ where: { key: row.key } });
+      } else {
+        await tx.appConfig.upsert({
+          where: { key: row.key },
+          update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
+          create: { key: row.key, value: row.value, isEncrypted: row.encrypt },
+        });
+      }
+    }
+  });
+
+  if (rows.some(row => RBAC_CACHE_KEYS.test(row.key))) {
     invalidateRbacCache();
   }
 }
@@ -249,9 +328,9 @@ export async function getConfig(
           key,
           error: error instanceof Error ? error.message : 'Unknown error',
         },
-        'Errore decifratura config'
+        'Config decryption error'
       );
-      throw new Error(`Impossibile decifrare configurazione: ${key}`);
+      throw new Error(`Impossibile decifrare configurazione: ${key}`, { cause: error });
     }
   }
 
@@ -274,9 +353,67 @@ export async function getTypedConfig<K extends AppConfigKey>(
 ): Promise<AppConfigValue<K>> {
   const raw = await getConfig(prisma, key);
   if (raw === null) {
-    throw new Error(`Configurazione '${key}' non trovata`);
+    throw new Error(`Configuration '${key}' not found`);
   }
   return parseConfigValue(key, raw);
+}
+
+/**
+ * Reads a key that has a declared default, always returning a usable parsed value.
+ *
+ * This is what most readers actually wanted. `getConfig` hands back a raw string or `null`, so
+ * every call site re-implemented the same two steps — a fallback and a coercion — and the copies
+ * drifted apart: `storage.local.enableProxy` was read three different ways, and the `s3.endpoint`
+ * fallback disagreed between the provider and the settings page. Here the fallback comes from
+ * `APP_CONFIG_DEFAULTS` and the parse from the registry, so neither is a call site's business.
+ *
+ * A stored value that no longer validates falls back too, with a warning: refusing to serve a
+ * storage provider because one row is malformed would take the app down for a bad edit. Where the
+ * fallback would silently do the wrong thing — the storage provider's `storage.type`, the backup's
+ * `backup.schedule.scope` — the reader uses `getStoredConfigOrDefault` instead. `saveConfig`
+ * validates, so an invalid row is a legacy or hand-written one.
+ */
+export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
+  prisma: PrismaClient,
+  key: K,
+): Promise<AppConfigValue<K>> {
+  const raw = await getConfig(prisma, key, false);
+  return parseConfigOrDefault(
+    raw,
+    key,
+    // The default is declared in the string form AppConfig stores, and a test proves every entry
+    // parses; this is the same schema that test uses. Parsed eagerly: with a stored row it is a
+    // wasted Zod parse of a short literal, next to the query this read already makes.
+    parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
+  );
+}
+
+/** A stored AppConfig value the registry refuses, for a reader that must not fall back. */
+export class InvalidStoredConfigError extends Error {
+  constructor(readonly key: AppConfigKey, readonly raw: string, options?: ErrorOptions) {
+    super(`Invalid AppConfig '${key}': '${raw}'`, options);
+    this.name = 'InvalidStoredConfigError';
+  }
+}
+
+/**
+ * Reads a key that has a declared default like `getConfigOrDefault`, but refuses a stored value the
+ * registry rejects instead of falling back, for keys whose default would silently do the wrong thing:
+ * a `local` storage type misplaces every file, a `DB` backup scope drops them from every backup.
+ * No row → the default; an invalid row → `InvalidStoredConfigError`; a database error propagates.
+ * Read without decrypting, as `getConfigOrDefault` reads: an encrypted row is reported invalid.
+ */
+export async function getStoredConfigOrDefault<K extends AppConfigKeyWithDefault>(
+  prisma: PrismaClient,
+  key: K,
+): Promise<AppConfigValue<K>> {
+  const raw = await getConfig(prisma, key, false);
+  if (raw === null) return parseConfigValue(key, APP_CONFIG_DEFAULTS[key]);
+  try {
+    return parseConfigValue(key, raw);
+  } catch (error) {
+    throw new InvalidStoredConfigError(key, raw, { cause: error });
+  }
 }
 
 /**
@@ -314,43 +451,29 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
   }
 }
 
-/**
- * Returns all configuration entries, optionally decrypting encrypted values.
- *
- * @param prisma - Prisma client.
- * @param decrypt - When `true`, encrypted values are decrypted. Defaults to `true`.
- * @returns Array of configuration records.
- */
-export async function listConfigs(
-  prisma: PrismaClient,
-  decrypt: boolean = true
-): Promise<Array<{ key: string; value: string; isEncrypted: boolean }>> {
-  const configs = await prisma.appConfig.findMany({
-    orderBy: { key: 'asc' },
-  });
+/** A stored value as the config router hands it out: an encrypted one is never decrypted, only `null`. */
+function maskedValue(row: { value: string; isEncrypted: boolean }): string | null {
+  return row.isEncrypted ? null : row.value;
+}
 
-  return configs.map(config => ({
-    key: config.key,
-    value:
-      config.isEncrypted && decrypt
-        ? (() => {
-            try {
-              return decryptValue(config.value);
-            } catch (error) {
-              logger.error(
-                {
-                  key: config.key,
-                  error:
-                    error instanceof Error ? error.message : 'Unknown error',
-                },
-                'Errore decifratura config'
-              );
-              return '[ERRORE DECIFRATURA]';
-            }
-          })()
-        : config.value,
-    isEncrypted: config.isEncrypted,
-  }));
+/**
+ * The stored values of `keys`, one entry per requested key in their order, masked like
+ * `listConfigsPaged`; `found` says whether the key is stored. One read answers existence and
+ * encryption together, so no write can land between the two.
+ */
+export async function getConfigsMasked(
+  prisma: PrismaClient,
+  keys: string[]
+): Promise<{ key: string; value: string | null; found: boolean }[]> {
+  const rows = await prisma.appConfig.findMany({
+    where: { key: { in: keys } },
+    select: { key: true, value: true, isEncrypted: true },
+  });
+  const stored = new Map(rows.map(row => [row.key, row]));
+  return keys.map(key => {
+    const row = stored.get(key);
+    return { key, value: row ? maskedValue(row) : null, found: row !== undefined };
+  });
 }
 
 /**
@@ -467,7 +590,7 @@ export async function listConfigsPaged(
     key: item.key,
     category: item.key.split('.')[0] || 'misc',
     isEncrypted: item.isEncrypted,
-    valuePreview: item.isEncrypted ? null : item.value, // Passa sempre il valore completo
+    valuePreview: maskedValue(item),
     updatedAt: item.updatedAt.toISOString(),
   }));
 
@@ -481,13 +604,19 @@ export async function listConfigsPaged(
 }
 
 /**
- * Permanently deletes a configuration entry from the database.
+ * Permanently deletes a configuration entry from the database. A no-op when the key is absent.
+ *
+ * `key` stays a `string` where `saveConfig` takes an `AppConfigKey`: a delete cannot persist a bad
+ * value, and requiring registry membership here would leave a row whose key was later dropped from
+ * the registry with no way to remove it from the app.
  */
 export async function deleteConfig(
   prisma: PrismaClient,
   key: string
 ): Promise<void> {
-  await prisma.appConfig.delete({
+  // `deleteMany`, not `delete`: clearing a key that is already absent is the intended outcome of
+  // every caller here, and `delete` turns that into a P2025 the caller would have to swallow.
+  await prisma.appConfig.deleteMany({
     where: { key },
   });
 
@@ -497,60 +626,14 @@ export async function deleteConfig(
 }
 
 /**
- * Reads and decrypts a secret value from the database.
- * Unlike `getConfig`, this function enforces that the entry must be encrypted;
- * calling it on a plaintext entry throws rather than returning the raw value.
- *
- * @returns Decrypted secret value.
- * @throws {Error} If the key does not exist, is not encrypted, or decryption fails.
+ * The eight numeric getters below are one line each: `getConfigOrDefault` fetches, the registry
+ * schema enforces the bounds, and `APP_CONFIG_DEFAULTS` supplies the fallback for a missing or
+ * out-of-range value. They used to share a `getBoundedNumericConfig` helper that took `min`, `max`
+ * and `defaultValue` from each call site — one place, but a second declaration: seven of the eight
+ * `max` bounds existed *only* there, so `saveConfig` accepted `auditLog.retentionDays: 99999`,
+ * stored it, and the reader quietly returned 365. `security.tokenVersionCacheTTL` was worse — the
+ * schema allowed `0` while the reader clamped anything under 10s back to the default.
  */
-export async function getSecret(
-  prisma: PrismaClient,
-  key: string
-): Promise<string> {
-  const config = await prisma.appConfig.findUnique({
-    where: { key },
-  });
-
-  if (!config) {
-    throw new Error(`Segreto '${key}' non trovato in AppConfig`);
-  }
-
-  if (!config.isEncrypted) {
-    throw new Error(
-      `La configurazione '${key}' non è cifrata. Usa getConfig() per valori non cifrati.`
-    );
-  }
-
-  try {
-    return decryptValue(config.value);
-  } catch (error) {
-    logger.error(
-      { key, error: error instanceof Error ? error.message : 'Unknown error' },
-      'Errore decifratura segreto'
-    );
-    throw new Error(`Impossibile decifrare segreto: ${key}`);
-  }
-}
-
-/**
- * Reads a numeric AppConfig value, clamped to `[min, max]`. Missing keys and out-of-range or
- * non-numeric values both fall back to `defaultValue` — shared by every "TTL-style" getter below
- * so the fetch/parse/bounds-check boilerplate lives in one place.
- */
-async function getBoundedNumericConfig(
-  prisma: PrismaClient,
-  key: string,
-  { defaultValue, min, max }: { defaultValue: number; min: number; max: number }
-): Promise<number> {
-  const config = await getConfig(prisma, key, false);
-  if (!config) return defaultValue;
-
-  const value = parseInt(config, 10);
-  if (isNaN(value) || value < min || value > max) return defaultValue;
-
-  return value;
-}
 
 /**
  * Reads the tokenVersion cache TTL from AppConfig.
@@ -559,9 +642,7 @@ async function getBoundedNumericConfig(
  * @returns TTL in milliseconds. Defaults to 60 000 ms (60 s).
  */
 export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'security.tokenVersionCacheTTL', {
-    defaultValue: 60000, min: 10000, max: 600000,
-  });
+  return getConfigOrDefault(prisma, 'security.tokenVersionCacheTTL');
 }
 
 /**
@@ -573,9 +654,7 @@ export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
  * @returns TTL in milliseconds. Defaults to 900 000 ms (15 min).
  */
 export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'editLock.ttlMs', {
-    defaultValue: 900000, min: 300000, max: 3600000,
-  });
+  return getConfigOrDefault(prisma, 'editLock.ttlMs');
 }
 
 /**
@@ -584,21 +663,7 @@ export function getEditLockTtlMs(prisma: PrismaClient): Promise<number> {
  * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
  */
 export function getBackupRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'backup.retentionDays', {
-    defaultValue: 30, min: 1, max: 3650,
-  });
-}
-
-/**
- * Reads the minimum number of completed backups the retention sweep must always keep,
- * even if they're past their retention window.
- *
- * @returns Minimum backup count to retain. Defaults to 3; invalid values fall back to the default.
- */
-export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'backup.retentionMinCount', {
-    defaultValue: 3, min: 0, max: 1000,
-  });
+  return getConfigOrDefault(prisma, 'backup.retentionDays');
 }
 
 /**
@@ -607,9 +672,7 @@ export function getBackupRetentionMinCount(prisma: PrismaClient): Promise<number
  * @returns Retention window in days. Defaults to 365; invalid values fall back to the default.
  */
 export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'auditLog.retentionDays', {
-    defaultValue: 365, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'auditLog.retentionDays');
 }
 
 /**
@@ -619,9 +682,7 @@ export function getAuditLogRetentionDays(prisma: PrismaClient): Promise<number> 
  * @returns Retention window in days. Defaults to 3650 (10 years); invalid values fall back to the default.
  */
 export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'auditLog.criticalRetentionDays', {
-    defaultValue: 3650, min: 1, max: 36500,
-  });
+  return getConfigOrDefault(prisma, 'auditLog.criticalRetentionDays');
 }
 
 /**
@@ -631,9 +692,7 @@ export function getAuditLogCriticalRetentionDays(prisma: PrismaClient): Promise<
  * @returns Retention window in days. Defaults to 90; invalid values fall back to the default.
  */
 export function getNotificationRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'notification.retentionDays', {
-    defaultValue: 90, min: 1, max: 3650,
-  });
+  return getConfigOrDefault(prisma, 'notification.retentionDays');
 }
 
 /**
@@ -643,19 +702,7 @@ export function getNotificationRetentionDays(prisma: PrismaClient): Promise<numb
  * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
  */
 export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise<number> {
-  return getBoundedNumericConfig(prisma, 'notification.dedupRetentionDays', {
-    defaultValue: 30, min: 1, max: 3650,
-  });
-}
-
-/** Automatic-backup schedule + retention settings, resolved from AppConfig with the scheduler's own defaults. */
-export interface BackupScheduleSettings {
-  enabled: boolean;
-  dailyTime: string;
-  scope: BackupScope;
-  retentionDays: number;
-  retentionMinCount: number;
-  notifyOnFailure: boolean;
+  return getConfigOrDefault(prisma, 'notification.dedupRetentionDays');
 }
 
 /**
@@ -673,9 +720,22 @@ function parseConfigOrDefault<K extends AppConfigKey>(
   } catch (error) {
     logger.warn(
       { key, error: error instanceof Error ? error.message : 'Unknown error' },
-      'Valore AppConfig non valido, uso fallback'
+      'Invalid AppConfig value, using fallback'
     );
     return fallback;
+  }
+}
+
+/**
+ * The stored backup scope, or `null` with the stored value when the registry refuses it: a scheduled
+ * backup must not quietly fall back to `DB` and stop including the files.
+ */
+async function readBackupScope(prisma: PrismaClient): Promise<BackupScopeField> {
+  try {
+    return { scope: await getStoredConfigOrDefault(prisma, 'backup.schedule.scope') };
+  } catch (error) {
+    if (error instanceof InvalidStoredConfigError) return { scope: null, storedScope: error.raw };
+    throw error;
   }
 }
 
@@ -684,52 +744,48 @@ function parseConfigOrDefault<K extends AppConfigKey>(
  * scheduler tick and the admin settings UI, so both agree on defaults for unset keys.
  */
 export async function getBackupScheduleSettings(prisma: PrismaClient): Promise<BackupScheduleSettings> {
-  const [enabledRaw, dailyTimeRaw, scopeRaw, notifyRaw, retentionDays, retentionMinCount] = await Promise.all([
-    getConfig(prisma, 'backup.schedule.enabled', false),
-    getConfig(prisma, 'backup.schedule.dailyTime', false),
-    getConfig(prisma, 'backup.schedule.scope', false),
-    getConfig(prisma, 'backup.notifyOnFailure', false),
-    getBackupRetentionDays(prisma),
-    getBackupRetentionMinCount(prisma),
-  ]);
+  const [enabled, dailyTime, scope, notifyOnFailure, retentionDays, retentionMinCount] =
+    await Promise.all([
+      getConfigOrDefault(prisma, 'backup.schedule.enabled'),
+      getConfigOrDefault(prisma, 'backup.schedule.dailyTime'),
+      readBackupScope(prisma),
+      getConfigOrDefault(prisma, 'backup.notifyOnFailure'),
+      getConfigOrDefault(prisma, 'backup.retentionDays'),
+      getConfigOrDefault(prisma, 'backup.retentionMinCount'),
+    ]);
 
   return {
-    // z.coerce.boolean() treats any non-empty string (including the literal "false") as true —
-    // explicit string comparison sidesteps that footgun for these two, unlike dailyTime/scope below.
-    enabled: enabledRaw === 'true',
-    dailyTime: parseConfigOrDefault(dailyTimeRaw, 'backup.schedule.dailyTime', '03:00'),
-    scope: parseConfigOrDefault(scopeRaw, 'backup.schedule.scope', 'DB'),
+    enabled,
+    dailyTime,
+    ...scope,
     retentionDays,
     retentionMinCount,
-    notifyOnFailure: notifyRaw !== 'false',
+    notifyOnFailure,
   };
 }
 
 /**
  * Reads the password policy from AppConfig.
- * Individual keys are read concurrently; missing keys fall back to secure defaults.
- * The `minLength` is always clamped to a minimum of 8 characters.
+ * Individual keys are read concurrently; a missing or unparseable key falls back to its secure
+ * default, which includes anything below the registry's minimum length.
  *
  * @returns Password policy with validated constraints.
  */
-export async function getPasswordPolicy(prisma: PrismaClient): Promise<{
-  minLength: number;
-  requireUppercase: boolean;
-  requireLowercase: boolean;
-  requireDigit: boolean;
-  requireSpecialChar: boolean;
-}> {
+export async function getPasswordPolicy(prisma: PrismaClient): Promise<PasswordPolicy> {
   const [minLength, requireUppercase, requireLowercase, requireDigit, requireSpecialChar] =
     await Promise.all([
-      getTypedConfig(prisma, 'security.password.minLength').catch(() => 12),
-      getTypedConfig(prisma, 'security.password.requireUppercase').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireLowercase').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireDigit').catch(() => true),
-      getTypedConfig(prisma, 'security.password.requireSpecialChar').catch(() => true),
+      getTypedConfig(prisma, 'security.password.minLength').catch(() => DEFAULT_PASSWORD_POLICY.minLength),
+      getTypedConfig(prisma, 'security.password.requireUppercase').catch(() => DEFAULT_PASSWORD_POLICY.requireUppercase),
+      getTypedConfig(prisma, 'security.password.requireLowercase').catch(() => DEFAULT_PASSWORD_POLICY.requireLowercase),
+      getTypedConfig(prisma, 'security.password.requireDigit').catch(() => DEFAULT_PASSWORD_POLICY.requireDigit),
+      getTypedConfig(prisma, 'security.password.requireSpecialChar').catch(() => DEFAULT_PASSWORD_POLICY.requireSpecialChar),
     ]);
 
   return {
-    minLength: Math.max(minLength, 8), // Min assoluto: 8 caratteri
+    // No clamp: the floor is `AppConfigRegistry`'s `.min(8)`, so a stored value below it fails to
+    // parse and the `.catch()` above already returned the secure default. Clamping as well meant
+    // two floors that disagreed — 7 became 8, while 4 became 12.
+    minLength,
     requireUppercase,
     requireLowercase,
     requireDigit,
@@ -813,7 +869,7 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   } catch (error) {
     logger.warn(
       { error: error instanceof Error ? error.message : 'Unknown error' },
-      'Errore parsing/validazione roleMapping, usando mapping vuoto'
+      'roleMapping parse/validation error, using an empty mapping'
     );
     roleMapping = {};
   }
@@ -836,7 +892,9 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
 
 /**
  * Reads the LDAP resilience configuration (circuit breaker, retries, timeouts) from AppConfig.
- * Each key is read independently; missing keys fall back to the LdapResilienceSchema defaults.
+ * Each key is read independently: an absent one reads its `APP_CONFIG_DEFAULTS` entry, an invalid
+ * one the same with a warning, and a database failure throws — as `getLdapConfig`, read beside it
+ * on the login path, already does.
  *
  * @returns Validated `LdapResilienceConfig` object.
  */
@@ -845,12 +903,12 @@ export async function getLdapResilienceConfig(
 ): Promise<LdapResilienceConfig> {
   const [timeoutMs, maxRetries, baseDelayMs, breakerFailureThreshold, breakerCooldownMs, halfOpenMaxAttempts] =
     await Promise.all([
-      getTypedConfig(prisma, 'auth.ldap.resilience.timeoutMs').catch(() => 3000),
-      getTypedConfig(prisma, 'auth.ldap.resilience.maxRetries').catch(() => 2),
-      getTypedConfig(prisma, 'auth.ldap.resilience.baseDelayMs').catch(() => 200),
-      getTypedConfig(prisma, 'auth.ldap.resilience.breakerFailureThreshold').catch(() => 5),
-      getTypedConfig(prisma, 'auth.ldap.resilience.breakerCooldownMs').catch(() => 10000),
-      getTypedConfig(prisma, 'auth.ldap.resilience.halfOpenMaxAttempts').catch(() => 1),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.timeoutMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.maxRetries'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.baseDelayMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.breakerFailureThreshold'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.breakerCooldownMs'),
+      getConfigOrDefault(prisma, 'auth.ldap.resilience.halfOpenMaxAttempts'),
     ]);
 
   return LdapResilienceSchema.parse({

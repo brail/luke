@@ -1,29 +1,6 @@
 import { z } from 'zod';
 
 /**
- * Shape of a single AppConfig record as persisted in the database (generic KV entry).
- */
-export const AppConfigSchema = z.object({
-  /** Configuration identifier key */
-  key: z.string().min(1),
-
-  /** Configuration value (generic serializable object) */
-  value: z.unknown(),
-
-  /** Configuration version for managing updates */
-  version: z.number().int().positive(),
-
-  /** Configuration creation date */
-  createdAt: z.date(),
-
-  /** Last update date */
-  updatedAt: z.date(),
-});
-
-/** TypeScript type inferred from `AppConfigSchema`. */
-export type AppConfig = z.infer<typeof AppConfigSchema>;
-
-/**
  * Rate limiting policy for a single endpoint category.
  * `keyBy` controls whether the limit is per IP address or per authenticated user.
  */
@@ -71,21 +48,23 @@ export const RateLimitConfigSchema = z.object({
 
 /**
  * LDAP connection resilience settings — timeouts, retries, and circuit-breaker parameters.
- * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`.
+ * All values correspond to individual AppConfig keys under `auth.ldap.resilience.*`, whose
+ * bounds live on the registry schema and defaults in `APP_CONFIG_DEFAULTS` (`config.ts`), once:
+ * this is only the shape the reader assembles from values the registry has already validated.
  */
 export const LdapResilienceSchema = z.object({
   /** Timeout for LDAP operation in milliseconds */
-  timeoutMs: z.number().int().positive().default(3000),
+  timeoutMs: z.number().int(),
   /** Maximum number of retries for failed operations */
-  maxRetries: z.number().int().min(0).default(2),
+  maxRetries: z.number().int(),
   /** Base delay for exponential backoff in milliseconds */
-  baseDelayMs: z.number().int().min(10).default(200),
+  baseDelayMs: z.number().int(),
   /** Failure threshold to open circuit breaker */
-  breakerFailureThreshold: z.number().int().min(1).default(5),
+  breakerFailureThreshold: z.number().int(),
   /** Circuit breaker cooldown in milliseconds */
-  breakerCooldownMs: z.number().int().min(500).default(10000),
-  /** Maximum number of attempts in half-open state */
-  halfOpenMaxAttempts: z.number().int().min(1).default(1),
+  breakerCooldownMs: z.number().int(),
+  /** Probes the directory must answer, one at a time, to close the breaker from half-open */
+  halfOpenMaxAttempts: z.number().int(),
 });
 
 /**
@@ -104,8 +83,9 @@ export const AlertBandEmphasisSchema = z.enum(['outline', 'soft', 'solid']);
  * `maxDaysToDeadline: null` means "no upper bound" (furthest-out band).
  */
 export const AlertBandSchema = z.object({
-  minDaysToDeadline: z.number().int(),
-  maxDaysToDeadline: z.number().int().nullable(),
+  // `{ error }` names an emptied field (NaN), reported in English otherwise (see `intInRange`).
+  minDaysToDeadline: z.number({ error: 'I giorni di ogni fascia devono essere numeri interi' }).int('I giorni di ogni fascia devono essere numeri interi'),
+  maxDaysToDeadline: z.number({ error: 'I giorni di ogni fascia devono essere numeri interi' }).int('I giorni di ogni fascia devono essere numeri interi').nullable(),
   color: z.string().min(1),
   label: z.string().min(1),
   /** Defaulted so blobs written before emphasis existed keep parsing (and keep rendering as before). */

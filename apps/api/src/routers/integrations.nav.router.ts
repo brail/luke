@@ -4,24 +4,37 @@
  * for Microsoft Dynamics NAV (SQL Server)
  */
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { navConfigSchema } from '@luke/core';
-import { createSyncRequest, getNavDbConfig, getPool, closePool, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
+import { createSyncRequest, getNavDbConfig, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
+import { getConfig, saveConfigs } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
   createStandardError,
   toTRPCError,
 } from '../lib/errorHandler';
-import { pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
+import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
-import { withRateLimit } from '../lib/ratelimit';
+import { enforceRateLimit } from '../lib/ratelimit';
+import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
+import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
+
+/**
+ * A NAV date column as a calendar day: `null` when NAV left it blank, or when it lies outside the
+ * supported range, so one bad value empties its cell instead of failing the whole preview
+ * (ADR-035 §Bounds, §External dates).
+ */
+function navCalendarDate(value: Date | null): CalendarDate | null {
+  const date = navDateOrNull(value);
+  return date && isInstantInRange(date, { allDay: true }) ? calendarDateOf(date) : null;
+}
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
 
@@ -31,11 +44,11 @@ const navSyncRouter = router({
    *
    * @auth {config:read}
    * @input {{ entity: "vendor" | "brand" | "season" }}
-   * @output {Array<{ navNo, name, city, countryCode, blocked }>}
+   * @output {Array<{ navNo, name, city, countryCode, blocked, startingDate, endingDate }>} — season days as `YYYY-MM-DD`
    */
   preview: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
+    .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .query(async ({ input, ctx }) => {
       const config = await getNavDbConfig(ctx.prisma, getConfig);
       const pool = await getPool(config);
@@ -60,6 +73,8 @@ const navSyncRouter = router({
           city: null,
           countryCode: null,
           blocked: 0,
+          startingDate: null,
+          endingDate: null,
         }));
       }
 
@@ -85,9 +100,11 @@ const navSyncRouter = router({
         return result.recordset.map(row => ({
           navNo: row['Code'],
           name: row['Description'] ?? '',
-          city: row['Starting Date']?.toISOString().slice(0, 10) ?? null,
-          countryCode: row['Ending Date']?.toISOString().slice(0, 10) ?? null,
+          city: null,
+          countryCode: null,
           blocked: 0,
+          startingDate: navCalendarDate(row['Starting Date']),
+          endingDate: navCalendarDate(row['Ending Date']),
         }));
       }
 
@@ -121,6 +138,8 @@ const navSyncRouter = router({
         city: row['City'] ?? null,
         countryCode: row['Country_Region Code'] ?? null,
         blocked: row['Blocked'] ?? 0,
+        startingDate: null,
+        endingDate: null,
       }));
     }),
 
@@ -177,11 +196,7 @@ const navSyncRouter = router({
    */
   saveSyncSchedule: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({
-      entity: z.enum(['vendor', 'brand', 'season', 'portafoglio', 'kimo']),
-      autoSyncEnabled: z.boolean(),
-      intervalMinutes: z.number().int().min(1).max(1440),
-    }))
+    .input(NavSyncScheduleInputSchema)
     .mutation(async ({ input, ctx }) => {
       const filter = await ctx.prisma.navSyncFilter.upsert({
         where: { entity: input.entity },
@@ -208,7 +223,7 @@ const navSyncRouter = router({
 
       ctx.logger.info(
         { entity: input.entity, autoSyncEnabled: input.autoSyncEnabled, intervalMinutes: input.intervalMinutes },
-        'NavSyncFilter pianificazione aggiornata'
+        'NavSyncFilter schedule updated'
       );
 
       return filter;
@@ -223,7 +238,7 @@ const navSyncRouter = router({
    */
   getFilter: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(z.object({ entity: z.string().min(1) }))
+    .input(z.object({ entity: z.enum(NAV_SYNC_ENTITIES) }))
     .query(async ({ input, ctx }) => {
       return ctx.prisma.navSyncFilter.findUnique({
         where: { entity: input.entity },
@@ -240,7 +255,7 @@ const navSyncRouter = router({
   saveFilter: protectedProcedure
     .use(requirePermission('config:update'))
     .input(z.object({
-      entity: z.string().min(1),
+      entity: z.enum(NAV_SYNC_ENTITIES),
       mode: z.enum(['all', 'whitelist', 'exclude']),
       navNos: z.array(z.string()),
       active: z.boolean().optional(),
@@ -264,7 +279,7 @@ const navSyncRouter = router({
 
       ctx.logger.info(
         { entity: input.entity, mode: input.mode, navNosCount: navNos.length },
-        'NavSyncFilter aggiornato'
+        'NavSyncFilter updated'
       );
 
       return filter;
@@ -279,10 +294,25 @@ const navSyncRouter = router({
    */
   run: protectedProcedure
     .use(requirePermission('config:update'))
-    .use(withRateLimit('navSyncTrigger'))
-    .input(z.object({ entity: z.enum(['vendor', 'brand', 'season']) }))
+    .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .mutation(async ({ input, ctx }) => {
-      const report = await runNavSync(ctx.prisma, getConfig, undefined, input.entity);
+      // One manual sync per entity per window, not one for all three: syncing vendors must not
+      // block brands. Keyed by user and entity here, where the entity is known, whatever `keyBy`
+      // the policy carries (the AppConfig override has no writer). The scheduler lock below keeps
+      // two syncs of one entity apart, so at most one per entity runs at a time.
+      const policy = await resolveRateLimitPolicy('navSyncTrigger', ctx.prisma);
+      enforceRateLimit('navSyncTrigger', `${ctx.session.user.id}:${input.entity}`, policy);
+
+      // The same lock as the scheduled sync of this entity, so the two never overlap.
+      const report = await withSchedulerLock(ctx.prisma, `nav-sync:${input.entity}`, () =>
+        runNavSync(ctx.prisma, getConfig, undefined, input.entity),
+      )();
+      if (!report) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Sincronizzazione già in corso per questa entità, riprova tra poco',
+        });
+      }
 
       const durationMs = report.completedAt.getTime() - report.startedAt.getTime();
 
@@ -411,67 +441,79 @@ export const navRouter = router({
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(navConfigSchema)
-    .mutation(async ({ input, ctx }) => {
-      // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
-      const passwordUpdated = !!input.password && input.password.length > 0;
+    .mutation(({ input, ctx }) =>
+      // The whole change, from reading the previous values to the resume, runs alone: two
+      // overlapping saves would otherwise strand a pause or resume the scheduler under each other.
+      navConfigChanges.run(async () => {
+        // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
+        const passwordUpdated = !!input.password && input.password.length > 0;
 
-      // Reads the current values to detect connection changes
-      const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
-        getConfig(ctx.prisma, 'integrations.nav.host', false),
-        getConfig(ctx.prisma, 'integrations.nav.port', false),
-        getConfig(ctx.prisma, 'integrations.nav.database', false),
-        getConfig(ctx.prisma, 'integrations.nav.user', false),
-        getConfig(ctx.prisma, 'integrations.nav.company', false),
-      ]);
+        // Reads the current values to detect connection changes
+        const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
+          getConfig(ctx.prisma, 'integrations.nav.host', false),
+          getConfig(ctx.prisma, 'integrations.nav.port', false),
+          getConfig(ctx.prisma, 'integrations.nav.database', false),
+          getConfig(ctx.prisma, 'integrations.nav.user', false),
+          getConfig(ctx.prisma, 'integrations.nav.company', false),
+        ]);
 
-      const connectionChanged =
-        prevHost !== input.host ||
-        prevPort !== input.port.toString() ||
-        prevDatabase !== input.database ||
-        prevUser !== input.user ||
-        prevCompany !== input.company ||
-        passwordUpdated;
+        const connectionChanged =
+          prevHost !== input.host ||
+          prevPort !== input.port.toString() ||
+          prevDatabase !== input.database ||
+          prevUser !== input.user ||
+          prevCompany !== input.company ||
+          passwordUpdated;
 
-      // If the connection changed, resets the mssql pool (old credentials no longer valid)
-      if (connectionChanged) {
-        await pauseNavScheduler();
+        // A changed connection pauses the scheduler before the write and closes the pool only once
+        // the new settings are committed: closing it first let a tick in between reopen it with the
+        // old credentials. A failed save leaves the pool as it was.
+        if (connectionChanged) await pauseNavScheduler();
         try {
-          await closePool();
+          await saveConfigs(ctx.prisma, [
+            { key: 'integrations.nav.host', value: input.host },
+            { key: 'integrations.nav.port', value: input.port.toString() },
+            { key: 'integrations.nav.database', value: input.database },
+            { key: 'integrations.nav.user', value: input.user },
+            { key: 'integrations.nav.company', value: input.company },
+            { key: 'integrations.nav.readOnly', value: input.readOnly.toString() },
+            { key: 'integrations.nav.syncEnabled', value: input.syncEnabled.toString() },
+            ...(passwordUpdated
+              ? [{ key: 'integrations.nav.password' as const, value: input.password!, encrypt: true }]
+              : []),
+          ]);
+          if (connectionChanged) {
+            try {
+              await closePool();
+            } catch (err) {
+              // The settings are committed; only the old connection survives, until the next
+              // successful save or a restart closes it.
+              ctx.logger.error({ err }, 'NAV pool close failed after the configuration was saved');
+            }
+          }
         } finally {
-          await resumeNavScheduler();
+          if (connectionChanged) resumeNavScheduler();
         }
-      }
 
-      await saveConfig(ctx.prisma, 'integrations.nav.host', input.host, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.port', input.port.toString(), false);
-      await saveConfig(ctx.prisma, 'integrations.nav.database', input.database, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.user', input.user, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.company', input.company, false);
-      await saveConfig(ctx.prisma, 'integrations.nav.readOnly', input.readOnly.toString(), false);
-      await saveConfig(ctx.prisma, 'integrations.nav.syncEnabled', input.syncEnabled.toString(), false);
+        ctx.logger.info(
+          { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
+          'NAV configuration saved'
+        );
 
-      if (passwordUpdated) {
-        await saveConfig(ctx.prisma, 'integrations.nav.password', input.password!, true);
-      }
+        await logAudit(ctx, {
+          action: 'CONFIG_NAV_UPDATE',
+          targetType: 'Config',
+          result: 'SUCCESS',
+          metadata: { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
+        });
 
-      ctx.logger.info(
-        { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
-        'Configurazione NAV salvata'
-      );
-
-      await logAudit(ctx, {
-        action: 'CONFIG_NAV_UPDATE',
-        targetType: 'Config',
-        result: 'SUCCESS',
-        metadata: { host: input.host, port: input.port, database: input.database, user: input.user, company: input.company, readOnly: input.readOnly, passwordUpdated, connectionChanged },
-      });
-
-      return {
-        success: true,
-        message: 'Configurazione NAV salvata con successo',
-        connectionChanged,
-      };
-    }),
+        return {
+          success: true,
+          message: 'Configurazione NAV salvata con successo',
+          connectionChanged,
+        };
+      })
+    ),
 
   /**
    * Tests the NAV SQL Server connection using the stored credentials.

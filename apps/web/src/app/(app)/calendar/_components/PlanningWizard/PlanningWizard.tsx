@@ -1,8 +1,10 @@
 'use client';
 
 import { Info } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+import { type CalendarDate, wallTimeIn } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Button } from '../../../../../components/ui/button';
@@ -13,14 +15,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { narrowRouterOutput, trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
+import { eventDays, expectedDates, isStaleListError, moveEventTo, sortByFirstDay } from '../../utils';
 import { FreezePlanningGroupWizard } from '../FreezePlanningGroupWizard';
 
 import { EventStep } from './EventStep';
 import { useVendorClosures } from './useVendorClosures';
-import { useWizardLock } from './useWizardLock';
+import { EXPIRED_MESSAGE, SCOPE_CHANGED_MESSAGE, computeLockTargets, useWizardLock } from './useWizardLock';
 
 import type { CalendarEventItem } from '../types';
 import type { HolidayMap } from '../useHolidays';
@@ -40,6 +43,8 @@ interface Props {
   planningGroupId: string;
   brandId: string;
   seasonId: string;
+  /** The reader zone when the wizard opens: each event's first date is read in it, and moves are made in it. */
+  zone: string;
   /** Events just created by the `applyTemplate` call for `planningGroupId` — not the whole calendar. */
   events: CalendarEventItem[];
   holidayDates: HolidayMap;
@@ -56,29 +61,68 @@ interface Props {
  * Draft dates are client-only until the user advances past a step — no autosave per keystroke —
  * so back/forth navigation never leaves a half-written state.
  */
-export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, events, holidayDates }: Props) {
+export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGroupId, brandId, seasonId, zone: openingZone, events, holidayDates }: Props) {
+  // The zone the wizard opened with (ADR-035): the drafts are read in it once, so a profile change
+  // while it is open neither reorders the steps nor turns a draft into an unrequested move.
+  const [zone] = useState(openingZone);
   const sortedEvents = useMemo(
-    () => [...events].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime()),
-    [events]
+    () => sortByFirstDay(events, zone),
+    [events, zone]
   );
 
   const [stepIndex, setStepIndex] = useState(0);
   const [phase, setPhase] = useState<'stepping' | 'freeze'>('stepping');
-  const [draftDates, setDraftDates] = useState<Map<string, Date>>(
-    () => new Map(sortedEvents.map(m => [m.id, new Date(m.startAt)]))
+  // Each event's first date as the user moves it; saving moves the whole event by the difference.
+  const [draftDates, setDraftDates] = useState<Map<string, CalendarDate>>(
+    () => new Map(sortedEvents.map(m => [m.id, eventDays(m, zone)[0]]))
   );
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
 
-  const { data: rawLayout } = trpc.collectionLayout.get.useQuery({ brandId, seasonId }, { enabled: open });
-  const layout = narrowRouterOutput<WizardLayout | null | undefined>(rawLayout);
-  const lockTargets = useMemo(() => {
-    const targets: { entityType: 'SEASON_CALENDAR' | 'COLLECTION_LAYOUT'; entityId: string }[] = [
-      { entityType: 'SEASON_CALENDAR', entityId: calendarId },
-    ];
-    if (layout?.id) targets.push({ entityType: 'COLLECTION_LAYOUT', entityId: layout.id });
-    return targets;
-  }, [calendarId, layout?.id]);
+  const layoutQuery = trpc.collectionLayout.get.useQuery({ brandId, seasonId }, { enabled: open });
+  const layout = narrowRouterOutput<WizardLayout | null | undefined>(layoutQuery.data);
+  const lockTargets = useMemo(
+    () => computeLockTargets(calendarId, layout?.id, layoutQuery.status),
+    [calendarId, layout?.id, layoutQuery.status]
+  );
   const lock = useWizardLock(lockTargets, open);
+
+  /**
+   * Whether a lock is held *right now* — not whether one ever was. `EventStep` renders only under
+   * this, which is what makes "no session was ever usable" a proof that no draft date can exist.
+   */
+  const isReady = lock.status === 'held';
+  const heldUntil = lock.status === 'held' ? lock.expiresAt : null;
+
+  /**
+   * A held session can still be degraded: a rejected heartbeat means the lock may already be gone,
+   * and a changed layout means it no longer covers what it was taken for. Either way the session
+   * cannot vouch for a write, so mutation and the freeze hand-off are gated on this, not on
+   * `isReady`.
+   */
+  const canMutate = lock.status === 'held' && lock.renewError === null && !lock.scopeChanged;
+
+  /**
+   * Three failures that used to be one `displayError`, kept apart because they differ in exactly
+   * the way that matters at the exit: whether a usable session — and therefore an unsaved edit —
+   * could ever have existed.
+   */
+  const sessionEverUsable = lock.status === 'held' || (lock.status === 'lost' && lock.wasHeld);
+  const lockError = lock.status === 'lost'
+    ? lock.message
+    : lock.status === 'held'
+      ? lock.renewError ?? (lock.scopeChanged ? SCOPE_CHANGED_MESSAGE : null)
+      : null;
+  /**
+   * A failed `collectionLayout.get` leaves the target set unknown — `computeLockTargets` refuses to
+   * guess and returns `null`, so no lock is ever attempted and no `lockError` fires for this cause.
+   * Only counted *before* the session became usable: once a lock is held, the discovery query
+   * failing says nothing about whether it is still held (`useWizardLock` keeps the granted set), so
+   * surfacing it would turn a healthy session into an apparently broken one.
+   */
+  const discoveryError = layoutQuery.isError && !sessionEverUsable
+    ? getTrpcErrorMessage(layoutQuery.error)
+    : null;
+  const displayError = lockError ?? discoveryError;
 
   const currentEvent = sortedEvents[stepIndex] ?? null;
 
@@ -88,31 +132,57 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
   }, [layout, planningGroupId]);
   const closedDates = useVendorClosures(relevantVendorIds, seasonId);
 
+  const utils = trpc.useUtils();
   const updateMilestone = trpc.seasonCalendar.updateMilestone.useMutation({
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
-  if (lock.expired) {
-    toast.error('Sessione di pianificazione scaduta — ricomincia');
+  /**
+   * Expiry is a lifecycle transition, so it is handled in an effect rather than in the render body.
+   * Rendering it meant calling the parent's setState during this component's render (`onClose` is
+   * `setPostApplyWizard(null)` in `calendar/page.tsx`) and emitting the toast once per render
+   * attempt instead of once per expiry — twice under React's double-invoked render, and again on
+   * every re-render until the parent got around to unmounting the wizard.
+   *
+   * The latch, not the dependency array, is what makes it exactly once: `onClose` is an inline
+   * arrow at the call site, so its identity changes on every parent render.
+   */
+  const expired = lock.status === 'lost' && lock.cause === 'expired';
+  const expiryHandledRef = useRef(false);
+  useEffect(() => {
+    if (!expired || expiryHandledRef.current) return;
+    expiryHandledRef.current = true;
+    toast.error(EXPIRED_MESSAGE);
     onClose();
-    return null;
-  }
+  }, [expired, onClose]);
+
+  if (expired) return null;
 
   /**
    * Only exit vector: any close attempt (overlay click, Escape, X, Annulla) opens the confirm
-   * step instead — except when `lock.error` is set, since there's no in-progress edit to lose
-   * (the session was never usable) and forcing a confirm just adds a click the user can't avoid.
+   * step instead — except when no session was ever usable, which is the one case where skipping it
+   * is *provable* rather than merely likely: draft dates change only through `EventStep`, and
+   * `EventStep` renders only under `isReady`. A discovery error arriving after readiness is not
+   * that case, and used to take this exit and discard the user's edits without asking.
    */
-  const requestClose = () => { if (lock.error) { onClose(); return; } setExitConfirmOpen(true); };
+  const requestClose = () => { if (!sessionEverUsable) { onClose(); return; } setExitConfirmOpen(true); };
   const confirmExit = () => { setExitConfirmOpen(false); onClose(); };
 
   const handleNext = async () => {
-    if (!currentEvent) return;
+    // The handler enforces the full condition itself rather than trusting the button's `disabled`
+    // to have been computed from the same inputs: `canMutate` is the only thing that may open an
+    // `updateMilestone` or the freeze hand-off, and it is false for every degraded session.
+    if (!canMutate || !currentEvent) return;
 
     const draft = draftDates.get(currentEvent.id);
-    const dateChanged = draft && draft.getTime() !== new Date(currentEvent.startAt).getTime();
-    if (dateChanged) {
-      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: draft.toISOString() } });
+    // The end moves with the start (an all-day event keeps its length in days, a timed one its
+    // duration); a start-only write used to leave a multi-day event's end behind.
+    const moved = draft && moveEventTo(currentEvent, draft, zone);
+    if (moved) {
+      await updateMilestone.mutateAsync({ id: currentEvent.id, data: { startAt: moved.startAt, endAt: moved.endAt ?? undefined }, expected: expectedDates(currentEvent) });
     }
 
     if (stepIndex < sortedEvents.length - 1) {
@@ -123,7 +193,17 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
     setPhase('freeze');
   };
 
-  const handleBack = () => setStepIndex(i => Math.max(0, i - 1));
+  /**
+   * Gated on the same condition as the step body it navigates, not merely on `isReady`: with a
+   * degraded session the step is replaced by the error banner, so moving `stepIndex` under it would
+   * silently change which event the user resumes on once the degradation clears. `canMutate` is
+   * exactly the step's render condition — when the lock is held, `displayError` is set by precisely
+   * `renewError`/`scopeChanged`, so `!displayError && isReady` and `canMutate` cannot disagree.
+   */
+  const handleBack = () => {
+    if (!canMutate) return;
+    setStepIndex(i => Math.max(0, i - 1));
+  };
 
   if (phase === 'freeze') {
     return (
@@ -132,6 +212,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
         onClose={() => setPhase('stepping')}
         onFrozen={onFrozen}
         planningGroupId={planningGroupId}
+        zone={zone}
         milestones={sortedEvents}
       />
     );
@@ -151,35 +232,40 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <DialogTitle>Pianificazione guidata</DialogTitle>
           </DialogHeader>
 
-          {lock.error && (
+          {displayError && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {lock.error}
+              {displayError}
             </p>
           )}
 
-          {!lock.error && currentEvent && (
+          {!displayError && !isReady && (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              Preparazione sessione di pianificazione…
+            </p>
+          )}
+
+          {!displayError && isReady && currentEvent && (
             <div className="space-y-4 py-2">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 Evento {stepIndex + 1} di {sortedEvents.length}
-                {lock.expiresAt && ` — sessione valida fino alle ${lock.expiresAt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`}
-                {lock.expiresAt && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3 w-3 cursor-help shrink-0" />
-                      </TooltipTrigger>
-                      <TooltipContent className="max-w-xs">
-                        La sessione blocca calendario e collection layout per altri utenti mentre pianifichi.
-                        Si rinnova automaticamente finché resti nella wizard — scade solo se la lasci aperta e inattiva a lungo.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                {heldUntil && ` — sessione valida fino alle ${wallTimeIn(heldUntil, zone)}`}
+                {heldUntil && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="h-3 w-3 cursor-help shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      La sessione blocca calendario e collection layout per altri utenti mentre pianifichi.
+                      Si rinnova automaticamente finché resti nella wizard — scade solo se la lasci aperta e inattiva a lungo.
+                    </TooltipContent>
+                  </Tooltip>
                 )}
               </p>
 
               <EventStep
                 event={currentEvent}
-                draftDate={draftDates.get(currentEvent.id) ?? new Date(currentEvent.startAt)}
+                zone={zone}
+                draftDate={draftDates.get(currentEvent.id) ?? eventDays(currentEvent, zone)[0]}
                 onDraftDateChange={d => setDraftDates(prev => new Map(prev).set(currentEvent.id, d))}
                 holidayDates={holidayDates}
                 closedDates={closedDates}
@@ -187,7 +273,7 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             </div>
           )}
 
-          {!lock.error && !currentEvent && (
+          {!displayError && isReady && !currentEvent && (
             <p className="text-sm text-muted-foreground py-4 text-center">Nessun evento da pianificare</p>
           )}
 
@@ -195,12 +281,12 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
             <Button variant="ghost" onClick={requestClose}>
               Annulla
             </Button>
-            <Button variant="outline" onClick={handleBack} disabled={stepIndex === 0}>
+            <Button variant="outline" onClick={handleBack} disabled={!canMutate || stepIndex === 0}>
               Indietro
             </Button>
             <Button
               onClick={handleNext}
-              disabled={!currentEvent || updateMilestone.isPending || !!lock.error}
+              disabled={!canMutate || !currentEvent || updateMilestone.isPending}
             >
               {updateMilestone.isPending
                 ? 'Salvataggio…'
@@ -219,7 +305,6 @@ export function PlanningWizard({ open, onClose, onFrozen, calendarId, planningGr
         description="Le modifiche non ancora salvate in questo passaggio andranno perse e la sessione di pianificazione (lock su calendario e layout) verrà rilasciata."
         confirmText="Esci"
         cancelText="Continua la pianificazione"
-        variant="destructive"
         actionType="warning"
         onConfirm={confirmExit}
       />

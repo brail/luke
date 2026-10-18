@@ -1,0 +1,284 @@
+/**
+ * The write path answers to `AppConfigRegistry`.
+ *
+ * `getTypedConfig` has always parsed reads through the registry schema; writes went through
+ * `saveConfig(key: string, value: string)` and consulted nothing. So the registry described what
+ * the application expected to find rather than what it was allowed to store, and the only write
+ * validation in the codebase was a hand-written `if (key === 'security.password.minLength')` —
+ * the general rule, approximated for the one key someone had needed it for.
+ *
+ * What is pinned here is the runtime half. The compile-time half — a key outside the registry, or
+ * a value whose type no longer matches, failing `tsc` at the call site that writes it — is covered
+ * by `configWriteAuthority.types.spec.ts`, because a type error cannot be asserted at runtime.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+
+import { CONFIG_SECRET_PLACEHOLDER } from '@luke/core';
+
+import { getConfig } from '../src/lib/configManager';
+
+import { setupTestDb, createCallerAs, expectToThrow } from './helpers';
+
+describe('AppConfig write authority', () => {
+  let testPrisma: Awaited<ReturnType<typeof setupTestDb>>;
+
+  beforeEach(async () => {
+    testPrisma = await setupTestDb();
+  });
+
+  describe('the key must be registered', () => {
+    it('refuses a well-formed key that no registry entry declares', async () => {
+      const caller = await createCallerAs('admin');
+
+      // Correct dot-notation, allowed prefix, and until now a successful write: the prefix
+      // allowlist was the only gate, so any `app.*` string created a row nothing could ever read.
+      await expectToThrow(
+        caller.config.set({ key: 'app.whatever', value: 'x', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.whatever' } })).toBeNull();
+    });
+
+    it('still refuses a registered key the prefix allowlist keeps off the generic endpoint', async () => {
+      const caller = await createCallerAs('admin');
+
+      // `backup.retentionDays` is in the registry, written by its own router. Registry membership
+      // is not a licence for `config.set` to reach it — the two gates are independent, and leaning
+      // on the registry alone would have opened every `backup.*`, `rbac.*` and `rateLimit` key.
+      await expectToThrow(
+        caller.config.set({ key: 'backup.retentionDays', value: '30', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+    });
+  });
+
+  describe('the value must satisfy the key’s schema', () => {
+    it('refuses a value below the floor the registry declares', async () => {
+      const caller = await createCallerAs('admin');
+
+      await expectToThrow(
+        caller.config.set({ key: 'security.password.minLength', value: '4', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+
+      expect(
+        await testPrisma.appConfig.findUnique({ where: { key: 'security.password.minLength' } }),
+      ).toBeNull();
+    });
+
+    it('refuses the four password toggles set to something that is not a boolean', async () => {
+      const caller = await createCallerAs('admin');
+
+      // These four are what makes the password policy authoritative. A value the schema cannot
+      // read is not a policy anyone chose — before, it was stored and then silently ignored.
+      await expectToThrow(
+        caller.config.set({
+          key: 'security.password.requireDigit',
+          value: 'nope',
+          encrypt: false,
+        }),
+        { code: 'BAD_REQUEST' },
+      );
+    });
+
+    it('refuses a malformed JSON blob instead of letting it surface as a 500 on first read', async () => {
+      const caller = await createCallerAs('admin');
+
+      // JSON-blob keys go through `jsonConfigSchema`, which reports a bad parse via `ctx.addIssue`
+      // rather than throwing out of `safeParse`. Written the obvious way — `.transform(s =>
+      // Schema.parse(JSON.parse(s)))` — this would leave as a `SyntaxError` 500, not a BAD_REQUEST.
+      await expectToThrow(
+        caller.config.set({ key: 'app.sections.disabled', value: '{not json', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+    });
+
+    it('validates the plaintext, not the ciphertext', async () => {
+      const caller = await createCallerAs('admin');
+
+      // `saveConfig` encrypts after validating. Validating after would test a hex blob against a
+      // rule written for the secret — `min(1)` would pass for every value, valid or not.
+      await expectToThrow(
+        caller.config.set({ key: 'auth.ldap.url', value: 'not-a-url', encrypt: true }),
+        { code: 'BAD_REQUEST' },
+      );
+
+      await caller.config.set({
+        key: 'auth.ldap.url',
+        value: 'ldaps://dc.example.com',
+        encrypt: true,
+      });
+      expect(await getConfig(testPrisma, 'auth.ldap.url', true)).toBe('ldaps://dc.example.com');
+    });
+  });
+
+  describe('importJson', () => {
+    it('skips the invalid entry, imports the rest, and names what it skipped', async () => {
+      const caller = await createCallerAs('admin');
+
+      // The restore path. It already wrapped each item in its own try/catch and reported through
+      // `errorCount`/`errors[]`, so a throwing `saveConfig` gives "skip and report" with no new
+      // code and no change to the contract — a backup carrying one stale value still restores.
+      const result = await caller.config.importJson({
+        items: [
+          { key: 'app.name', value: 'Luke', encrypt: false },
+          { key: 'security.password.minLength', value: '4', encrypt: false },
+          { key: 'app.locale', value: 'it', encrypt: false },
+        ],
+      });
+
+      expect(result.successCount).toBe(2);
+      expect(result.errorCount).toBe(1);
+      expect(result.errors[0].key).toBe('security.password.minLength');
+
+      expect((await testPrisma.appConfig.findUnique({ where: { key: 'app.name' } }))?.value).toBe(
+        'Luke',
+      );
+      expect(
+        await testPrisma.appConfig.findUnique({ where: { key: 'security.password.minLength' } }),
+      ).toBeNull();
+    });
+
+    it('re-importing an export leaves every secret as it was and names the keys it skipped', async () => {
+      const caller = await createCallerAs('admin');
+      await caller.config.set({ key: 'auth.ldap.bindPassword', value: 'real-secret', encrypt: true });
+      await caller.config.set({ key: 'app.name', value: 'Luke', encrypt: false });
+
+      // The file the config page writes: `encrypt` is the export's `isEncrypted`, and the secret's
+      // value is the placeholder. Free-text schemas accept the placeholder, so the registry alone
+      // stored it, encrypted, over the secret. The extra row is a hand-edited file: the refusal does
+      // not depend on `encrypt`.
+      const exported = await caller.config.exportJson({ includeValues: true });
+      const result = await caller.config.importJson({
+        items: [
+          ...exported.configs.map(c => ({ key: c.key, value: c.value, encrypt: c.isEncrypted })),
+          { key: 'auth.ldap.bindDN', value: CONFIG_SECRET_PLACEHOLDER, encrypt: false },
+        ],
+      });
+
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'auth.ldap.bindDN' } })).toBeNull();
+      expect(result.successCount).toBe(1);
+      expect(result.errors.map(e => e.key).sort()).toEqual([
+        'auth.ldap.bindDN',
+        'auth.ldap.bindPassword',
+      ]);
+    });
+
+    it('every writer of the generic router refuses the placeholder, not only the import', async () => {
+      const caller = await createCallerAs('admin');
+      await caller.config.set({ key: 'auth.ldap.bindPassword', value: 'real-secret', encrypt: true });
+
+      await expectToThrow(
+        caller.config.set({
+          key: 'auth.ldap.bindPassword',
+          value: CONFIG_SECRET_PLACEHOLDER,
+          encrypt: true,
+        }),
+        { code: 'BAD_REQUEST' },
+      );
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
+    });
+  });
+
+  describe('absence is the absence of the key', () => {
+    it('removes the row rather than writing an empty string for it', async () => {
+      const caller = await createCallerAs('admin');
+      const s3Config = {
+        type: 's3',
+        endpoint: 'minio.example.com',
+        port: 9000,
+        useSSL: true,
+        accessKey: 'ak',
+        secretKey: 'sk',
+        region: 'us-east-1',
+        presignedPutTtl: 3600,
+        presignedGetTtl: 3600,
+      } as const;
+
+      await caller.storage.saveConfig({ ...s3Config, publicBaseUrl: 'https://cdn.example.com' });
+      expect(
+        (await testPrisma.appConfig.findUnique({ where: { key: 'storage.s3.publicBaseUrl' } }))
+          ?.value,
+      ).toBe('https://cdn.example.com');
+
+      // Clearing the field means "derive the URL from the endpoint", which every reader spells as
+      // a falsy check. Writing `''` would have been a second way to say what `null` already says,
+      // and one `z.string().url()` cannot describe.
+      await caller.storage.saveConfig({ ...s3Config, publicBaseUrl: '' });
+      expect(
+        await testPrisma.appConfig.findUnique({ where: { key: 'storage.s3.publicBaseUrl' } }),
+      ).toBeNull();
+    });
+  });
+
+  describe('a row whose key has left the registry', () => {
+    it('stays visible and deletable, and refuses a new write', async () => {
+      const caller = await createCallerAs('admin');
+
+      // What a pre-v1.3.0 seed left behind: `app.version` was seeded as '0.1.0' and read by
+      // `public.appInfo` until d30fef4 removed both. The registry entry outlived them and was
+      // dropped once the git tag became the sole release identity. Written straight to the table
+      // because no supported path creates it any more — that is the point.
+      await testPrisma.appConfig.create({
+        data: { key: 'app.version', value: '0.1.0', isEncrypted: false },
+      });
+
+      // Nothing filters listing or export through the registry, so an administrator can still see
+      // the orphan row. That visibility is what makes it removable rather than invisible clutter.
+      const listed = await caller.config.list({ q: 'app.version' });
+      expect(listed.items).toHaveLength(1);
+      expect(listed.items[0]).toMatchObject({ key: 'app.version', valuePreview: '0.1.0' });
+
+      const exported = await caller.config.exportJson({ includeValues: true });
+      expect(exported.configs).toContainEqual(
+        expect.objectContaining({ key: 'app.version', value: '0.1.0' }),
+      );
+
+      // The compatibility boundary: reading a historical row is fine, writing the key is not.
+      await expectToThrow(
+        caller.config.set({ key: 'app.version', value: '3.0.0', encrypt: false }),
+        { code: 'BAD_REQUEST' },
+      );
+      expect(
+        (await testPrisma.appConfig.findUnique({ where: { key: 'app.version' } }))?.value,
+      ).toBe('0.1.0');
+
+      // `deleteConfig` takes a plain string precisely so a key dropped from the registry does not
+      // become a row the application can no longer remove.
+      await caller.config.delete({ key: 'app.version' });
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.version' } })).toBeNull();
+    });
+  });
+
+  // `config.delete` used to skip the prefix gate every other write runs, so the generic settings
+  // page could remove rows only their own routers write — the section-access defaults, the SMTP
+  // password, the maintenance state — and nothing on that page could put them back.
+  describe('config.delete stays inside the router prefixes', () => {
+    it('refuses a key another router owns, and leaves the row in place', async () => {
+      const caller = await createCallerAs('admin');
+      await testPrisma.appConfig.create({
+        data: { key: 'rbac.sectionAccessDefaults', value: '{}', isEncrypted: false },
+      });
+
+      await expectToThrow(caller.config.delete({ key: 'rbac.sectionAccessDefaults' }), {
+        code: 'BAD_REQUEST',
+      });
+      expect(
+        await testPrisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } }),
+      ).not.toBeNull();
+    });
+
+    it('refuses app.baseUrl, whose default would point every email link at localhost', async () => {
+      const caller = await createCallerAs('admin');
+      await testPrisma.appConfig.create({
+        data: { key: 'app.baseUrl', value: 'https://luke.example.com', isEncrypted: false },
+      });
+
+      await expectToThrow(caller.config.delete({ key: 'app.baseUrl' }), { code: 'CONFLICT' });
+      expect(await testPrisma.appConfig.findUnique({ where: { key: 'app.baseUrl' } })).not.toBeNull();
+    });
+  });
+});

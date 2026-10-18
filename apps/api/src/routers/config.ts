@@ -6,16 +6,28 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import {
+  AppConfigRegistry,
+  CONFIG_ROUTER_KEY_REGEX,
+  CONFIG_ROUTER_PREFIXES,
+  CONFIG_SECRET_PLACEHOLDER,
+  ConfigImportItemSchema,
+  isAppConfigKey,
+  isConfigRouterKey,
+  isUndeletableConfigKey,
+  type AppConfigKey,
+} from '@luke/core';
+
 import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
-  getConfig,
-  // listConfigs,
+  getConfigsMasked,
   listConfigsPaged,
   deleteConfig,
+  decryptValue,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { requirePermission } from '../lib/permissions';
+import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
@@ -24,76 +36,41 @@ import {
 } from '../lib/trpc';
 
 /**
- * Critical keys that cannot be deleted
- * These keys are essential to the system's operation and security
+ * Refuses a key outside `CONFIG_ROUTER_PREFIXES`: the first gate of every write, `config.delete`
+ * included. Deletion stops here and does not ask for registry membership, so a row the registry no
+ * longer declares can still be removed under these prefixes.
  */
-const CRITICAL_KEYS = new Set([
-  // Authentication and authorization
-  'auth.strategy',
-  'auth.nextAuthSecret', // Legacy, still present in the seed
-  'auth.ldap.url',
-  'auth.ldap.searchBase',
-  'auth.ldap.searchFilter',
-
-  // Remove non-existent keys (derived via HKDF, not in DB):
-  // 'nextauth.secret', // NON esiste nel DB, derivato via HKDF
-  // 'jwt.secret', // NON esiste nel DB, derivato via HKDF
-  // 'security.encryption.key', // NON esiste, master key in ~/.luke/secret.key
-
-  // Mail and Storage (on-demand, not critical for boot)
-  // 'mail.smtp', // On-demand, creato dall'admin
-  // 'storage.smb', // On-demand, creato dall'admin
-  // 'storage.drive', // On-demand, creato dall'admin
-]);
-
-/**
- * Allowed prefixes for configuration keys
- */
-const ALLOWED_PREFIXES = new Set([
-  'app',
-  'auth',
-  'mail',
-  'storage',
-  'security',
-  'integrations',
-]);
-
-/**
- * Generates a dynamic regex for validating key format
- */
-function getKeyRegex(): RegExp {
-  const categories = Array.from(ALLOWED_PREFIXES).join('|');
-  return new RegExp(`^(${categories})(\\.[a-zA-Z0-9_-]+)+$`);
-}
-
-/**
- * Regex for validating key format
- */
-const KEY_REGEX = getKeyRegex();
-
-/**
- * Checks whether a key is critical
- */
-function isCriticalKey(key: string): boolean {
-  return CRITICAL_KEYS.has(key);
-}
-
-/**
- * Validates the format and prefix of a key
- */
-function validateKey(key: string): void {
-  if (!KEY_REGEX.test(key)) {
+function assertRouterPrefix(key: string): void {
+  if (!isConfigRouterKey(key)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Formato chiave non valido. Deve iniziare con una categoria supportata (${Array.from(ALLOWED_PREFIXES).join(', ')})`,
+      message: `Prefisso non ammesso: ${key.split('.')[0]}. Prefissi consentiti: ${CONFIG_ROUTER_PREFIXES.join(', ')}`,
     });
   }
+}
 
-  const prefix = key.split('.')[0];
-  if (!ALLOWED_PREFIXES.has(prefix)) {
+/**
+ * Validates the prefix of a key, then narrows it to a registered `AppConfigKey`.
+ *
+ * Two independent gates, and the second does not subsume the first. Registry membership says the
+ * key exists and names a schema; `CONFIG_ROUTER_PREFIXES` says the *generic* endpoint may reach it
+ * at all. Registered keys outside those prefixes (`backup.*`, `rbac.*`, `auditLog.*`, `rateLimit`,
+ * …) are written through the routers that own them, and dropping the prefix check to lean on the
+ * registry alone would quietly open every one of them to `config.set` (and to `config.delete`,
+ * which runs only the first gate).
+ *
+ * There is no format check here: `CONFIG_ROUTER_KEY_REGEX` is built from the same prefixes, so
+ * anything it would have caught is caught by one of the two gates below — a malformed key cannot
+ * equal one of the registry's literals. The regex still guards the `config.set` input schema, where
+ * it reports a bad format before the mutation runs.
+ */
+function validateKey(key: string): asserts key is AppConfigKey {
+  assertRouterPrefix(key);
+
+  if (!isAppConfigKey(key)) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Prefisso non ammesso: ${prefix}. Prefissi consentiti: ${Array.from(ALLOWED_PREFIXES).join(', ')}`,
+      message: `Chiave non dichiarata in AppConfigRegistry: ${key}`,
     });
   }
 }
@@ -108,21 +85,13 @@ function redact(value: string | null, max: number = 32): string | null {
 }
 
 /**
- * Schema for retrieving a configuration
- */
-const GetConfigSchema = z.object({
-  key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
-  decrypt: z.boolean().optional().default(false),
-});
-
-/**
  * Schema for setting a configuration
  */
 const SetConfigSchema = z.object({
   key: z
     .string()
     .min(1, 'Chiave configurazione non può essere vuota')
-    .regex(KEY_REGEX, 'Formato chiave non valido'),
+    .regex(CONFIG_ROUTER_KEY_REGEX, 'Formato chiave non valido'),
   value: z.string(),
   encrypt: z.boolean().optional().default(false),
   category: z.string().optional(), // override categoria dedotta
@@ -167,11 +136,11 @@ const ListConfigsSchema = z.object({
  * Schema for viewing a configuration value in a safe mode
  *
  * @example
- * // Masked mode (any authenticated user)
+ * // Masked mode (requires config:read — admin only today)
  * { key: "auth.ldap.password", mode: "masked" }
  *
  * @example
- * // Raw mode (admin only, generates an audit log)
+ * // Raw mode (requires config:update, generates an audit log)
  * { key: "auth.ldap.password", mode: "raw" }
  */
 const ViewValueSchema = z.object({
@@ -179,8 +148,8 @@ const ViewValueSchema = z.object({
   key: z.string().min(1),
   /**
    * Display mode:
-   * - 'masked': encrypted values show [ENCRYPTED], available to all authenticated users
-   * - 'raw': decrypts encrypted values, requires admin role and generates a mandatory audit log
+   * - 'masked': encrypted values show [ENCRYPTED]; requires config:read (admin only today)
+   * - 'raw': decrypts encrypted values, requires config:update and generates a mandatory audit log
    */
   mode: z.enum(['masked', 'raw']).default('masked'),
 });
@@ -206,34 +175,21 @@ const ExportJsonSchema = z.object({
 });
 
 /**
- * Schema for JSON import with validation
+ * Schema for JSON import: the rows of the file the config page exports (`ConfigImportItemSchema`).
  *
  * @example
  * {
  *   "items": [
  *     {"key": "app.name", "value": "Luke", "encrypt": false},
- *     {"key": "auth.ldap.password", "value": "secret", "encrypt": true},
+ *     {"key": "auth.ldap.bindPassword", "value": "secret", "encrypt": true},
  *     {"key": "auth.ldap.url", "value": null, "encrypt": true} // value: null is skipped
  *   ]
  * }
  */
 const ImportJsonSchema = z.object({
-  /** Array of configurations to import */
-  items: z.array(
-    z.object({
-      /** Key of the configuration (must respect the allowed format and prefixes) */
-      key: z.string().min(1),
-      /** Value of the configuration (null = skip this item) */
-      value: z.string().nullable(),
-      /** Whether to encrypt the value (true = encrypt, false/null = plaintext) */
-      encrypt: z.boolean().optional().nullable(),
-    })
-  ),
+  items: z.array(ConfigImportItemSchema),
 });
 
-/**
- * Router for configuration management
- */
 /**
  * Helper for upserting a configuration
  * Handles validation, saving, and audit logging
@@ -245,24 +201,17 @@ async function upsertConfig(
   encrypt: boolean,
   options: { strictUpdate?: boolean; source?: string } = {}
 ) {
-  // Validates the key
+  // Validates the key and narrows it to an AppConfigKey. The value is validated by `saveConfig`
+  // against the registry schema — there is no per-key special case here any more.
   validateKey(key);
 
-  // Special validation for password policy (security)
-  if (key === 'security.password.minLength') {
-    const minLength = parseInt(value, 10);
-    if (isNaN(minLength) || minLength < 8) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Password minLength non può essere inferiore a 8 caratteri',
-      });
-    }
-    if (minLength > 128) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Password minLength non può essere superiore a 128 caratteri',
-      });
-    }
+  // The registry cannot catch the placeholder: it passes every free-text schema, a password's
+  // included. `importJson` reports it as a per-item error and goes on with the other items.
+  if (value === CONFIG_SECRET_PLACEHOLDER) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: `Valore non valido per '${key}': ${CONFIG_SECRET_PLACEHOLDER} è il segnaposto dell'export, non un valore`,
+    });
   }
 
   // If strictUpdate=true, verifies that the configuration exists
@@ -290,14 +239,14 @@ async function upsertConfig(
     metadata: {
       key,
       isEncrypted: encrypt,
-      valueRedacted: encrypt ? '[ENCRYPTED]' : redact(value),
+      valueRedacted: encrypt ? CONFIG_SECRET_PLACEHOLDER : redact(value),
       source: options.source,
     },
   });
 
   return {
     key,
-    value: encrypt ? '[CIFRATO]' : value,
+    value: encrypt ? CONFIG_SECRET_PLACEHOLDER : value,
     isEncrypted: encrypt,
     message: `Configurazione '${key}' ${
       options.strictUpdate ? 'aggiornata' : 'salvata'
@@ -307,7 +256,8 @@ async function upsertConfig(
 
 export const configRouter = router({
   /**
-   * Lists AppConfig entries with pagination, filtering by key prefix, category, and encryption status.
+   * Lists AppConfig entries with pagination: search by key substring, filter by category (key prefix)
+   * and encryption status.
    *
    * @auth {config:read}
    * @input {ListConfigsSchema} — q, category, isEncrypted, sortBy, sortDir, page, pageSize.
@@ -329,54 +279,9 @@ export const configRouter = router({
     }),
 
   /**
-   * Fetches a single AppConfig value by key; decrypt=true requires admin role.
+   * Views a config value in masked or raw mode; raw mode requires config:update and generates an audit log.
    *
-   * @auth {config:read; admin required for decrypt=true}
-   * @input {GetConfigSchema} — key, optional decrypt flag.
-   * @output {{ key, value, isEncrypted }} — value is [ENCRYPTED] if encrypted and not decrypted.
-   */
-  get: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(GetConfigSchema)
-    .query(async ({ input, ctx }) => {
-    // If decrypt=true, verifies that the user is admin
-    if (input.decrypt && ctx.session?.user?.role !== 'admin') {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Accesso negato: richiesto ruolo admin per decrittare valori',
-      });
-    }
-
-    const config = await ctx.prisma.appConfig.findUnique({
-      where: { key: input.key },
-    });
-
-    if (!config) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: `Configurazione '${input.key}' non trovata`,
-      });
-    }
-
-    let finalValue = config.value;
-    if (input.decrypt && config.isEncrypted) {
-      const { decryptValue } = await import('../lib/configManager.js');
-      finalValue = decryptValue(config.value);
-    } else if (!input.decrypt && config.isEncrypted) {
-      finalValue = '[ENCRYPTED]';
-    }
-
-    return {
-      key: input.key,
-      value: finalValue,
-      isEncrypted: config.isEncrypted,
-    };
-  }),
-
-  /**
-   * Views a config value in masked or raw mode; raw mode requires admin and generates an audit log.
-   *
-   * @auth {config:read; admin required for mode=raw}
+   * @auth {config:read; config:update for mode=raw}
    * @input {ViewValueSchema} — key, mode ("masked" | "raw").
    * @output {{ key, value, isEncrypted, mode }} — value is [ENCRYPTED] in masked mode for secrets.
    */
@@ -384,12 +289,13 @@ export const configRouter = router({
     .use(requirePermission('config:read'))
     .input(ViewValueSchema)
     .query(async ({ input, ctx }) => {
-      // If mode=raw, verifies that the user is admin
-      if (input.mode === 'raw' && ctx.session?.user?.role !== 'admin') {
+      // A raw value is shown in the clear: it takes at least what writing it takes.
+      if (input.mode === 'raw' && !can(ctx, 'config:update')) {
+        logAccessDenied(ctx, { deniedPermissions: ['config:update'] });
         throw new TRPCError({
           code: 'FORBIDDEN',
           message:
-            'Accesso negato: richiesto ruolo admin per visualizzare valori raw',
+            'Accesso negato: serve il permesso di modificare la configurazione per visualizzare valori raw',
         });
       }
 
@@ -408,12 +314,11 @@ export const configRouter = router({
 
       if (input.mode === 'masked') {
         // Masked mode: shows a placeholder if encrypted, otherwise the full value
-        value = config.isEncrypted ? '[ENCRYPTED]' : config.value;
+        value = config.isEncrypted ? CONFIG_SECRET_PLACEHOLDER : config.value;
       } else {
         // Raw mode: decrypts if encrypted, otherwise the normal value
         if (config.isEncrypted) {
           try {
-            const { decryptValue } = await import('../lib/configManager.js');
             value = decryptValue(config.value);
           } catch (error) {
             ctx.logger.error(
@@ -421,7 +326,7 @@ export const configRouter = router({
                 key: input.key,
                 error: error instanceof Error ? error.message : 'Unknown error',
               },
-              'Errore decifratura config'
+              'Config decryption failed'
             );
             throw new TRPCError({
               code: 'INTERNAL_SERVER_ERROR',
@@ -468,7 +373,8 @@ export const configRouter = router({
     }),
 
   /**
-   * Deletes a single AppConfig entry; blocked for critical keys.
+   * Deletes a single AppConfig entry under `CONFIG_ROUTER_PREFIXES`; blocked for the keys
+   * `isUndeletableConfigKey` names.
    *
    * @auth {config:update}
    * @input {DeleteConfigSchema} — key to delete.
@@ -479,6 +385,8 @@ export const configRouter = router({
     .use(withRateLimit('configMutations'))
     .input(DeleteConfigSchema)
     .mutation(async ({ input, ctx }) => {
+      assertRouterPrefix(input.key);
+
       // Verifies that the configuration exists
       const existingConfig = await ctx.prisma.appConfig.findUnique({
         where: { key: input.key },
@@ -491,8 +399,8 @@ export const configRouter = router({
         });
       }
 
-      // Critical key protection
-      if (isCriticalKey(input.key)) {
+      // Undeletable key protection
+      if (isUndeletableConfigKey(input.key)) {
         throw new TRPCError({
           code: 'CONFLICT',
           message: `La chiave '${input.key}' è critica e non può essere eliminata`,
@@ -534,53 +442,25 @@ export const configRouter = router({
     }),
 
   /**
-   * Fetches multiple AppConfig values in a single request; returns partial results on missing keys.
+   * Fetches multiple AppConfig values in a single request, one result per requested key, in order.
+   * `found` says whether the key is stored; an encrypted value comes back as `null`, as in `list`
+   * (`viewValue` is the audited way to read one).
    *
-   * @auth {config:read; admin required for decrypt=true}
-   * @input {{ keys: string[], decrypt?: boolean }} — list of config keys, optional decrypt flag.
-   * @output {Array<{ key, value, found, error? }>}
+   * @auth {config:read}
+   * @input {{ keys: string[] }} — list of config keys.
+   * @output {Array<{ key, value, found }>}
    */
   getMultiple: protectedProcedure
     .use(requirePermission('config:read'))
     .input(
       z.object({
-        keys: z.array(
-          z.string().min(1, 'Chiave configurazione non può essere vuota')
-        ),
-        decrypt: z.boolean().optional().default(false),
+        // No caller needs more keys than the registry declares: the import dialog sends only those.
+        keys: z
+          .array(z.string().min(1, 'Chiave configurazione non può essere vuota'))
+          .max(Object.keys(AppConfigRegistry).length),
       })
     )
-    .query(async ({ input, ctx }) => {
-      if (input.decrypt && ctx.session.user.role !== 'admin') {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Accesso negato: richiesto ruolo admin per decrittare valori',
-        });
-      }
-
-      const results = await Promise.all(
-        input.keys.map(async key => {
-          try {
-            const value = await getConfig(ctx.prisma, key, input.decrypt);
-            return {
-              key,
-              value,
-              found: true,
-            };
-          } catch (error) {
-            return {
-              key,
-              value: null,
-              found: false,
-              error:
-                error instanceof Error ? error.message : 'Errore sconosciuto',
-            };
-          }
-        })
-      );
-
-      return results;
-    }),
+    .query(({ input, ctx }) => getConfigsMasked(ctx.prisma, input.keys)),
 
   /**
    * Upserts multiple AppConfig entries in one call; returns per-key success/error results.
@@ -632,33 +512,6 @@ export const configRouter = router({
     }),
 
   /**
-   * Checks whether an AppConfig key exists and whether its value is encrypted.
-   *
-   * @auth {config:read}
-   * @input {{ key: string }}
-   * @output {{ key, exists: boolean, isEncrypted?: boolean }}
-   */
-  exists: protectedProcedure
-    .use(requirePermission('config:read'))
-    .input(
-      z.object({
-        key: z.string().min(1, 'Chiave configurazione non può essere vuota'),
-      })
-    )
-    .query(async ({ input, ctx }) => {
-      const config = await ctx.prisma.appConfig.findUnique({
-        where: { key: input.key },
-        select: { key: true, isEncrypted: true },
-      });
-
-      return {
-        key: input.key,
-        exists: !!config,
-        isEncrypted: config?.isEncrypted,
-      };
-    }),
-
-  /**
    * Exports all AppConfig entries as JSON; encrypted values are always shown as [ENCRYPTED].
    *
    * @auth {config:update}
@@ -685,7 +538,7 @@ export const configRouter = router({
         isEncrypted: config.isEncrypted,
         value: input.includeValues
           ? config.isEncrypted
-            ? '[ENCRYPTED]' // Never decrypt secrets in the export
+            ? CONFIG_SECRET_PLACEHOLDER // Never decrypt secrets in the export
             : config.value
           : null,
         updatedAt: config.updatedAt.toISOString(),
@@ -711,7 +564,9 @@ export const configRouter = router({
     }),
 
   /**
-   * Imports a batch of AppConfig entries from JSON; skips items with null values.
+   * Imports a batch of AppConfig entries from JSON; skips items with null values. An item carrying
+   * `CONFIG_SECRET_PLACEHOLDER` is refused and reported in `errors`, so re-importing an export leaves
+   * every secret as it was.
    *
    * @auth {config:update}
    * @input {ImportJsonSchema} — array of { key, value, encrypt? } items.
@@ -719,6 +574,7 @@ export const configRouter = router({
    */
   importJson: protectedProcedure
     .use(requirePermission('config:update'))
+    .use(withRateLimit('configMutations'))
     .input(ImportJsonSchema)
     .mutation(async ({ input, ctx }) => {
       const results = {

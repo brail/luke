@@ -11,10 +11,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import { getConfig } from '../src/lib/configManager';
 import { clearRateLimitConfigCache, resolveRateLimitPolicy } from '../src/lib/rateLimitPolicy';
 
-import type { PrismaClient } from '@prisma/client';
 
 vi.mock('../src/lib/configManager', () => ({
   getConfig: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock('../src/lib/configManager', () => ({
 // getConfig is mocked above: prisma is never actually read in these tests.
 const fakePrisma = {} as unknown as PrismaClient;
 
-describe('resolveRateLimitPolicy — cache del blob AppConfig rateLimit', () => {
+describe('resolveRateLimitPolicy — cache of the AppConfig rateLimit blob', () => {
   beforeEach(() => {
     clearRateLimitConfigCache();
     vi.mocked(getConfig).mockReset();
@@ -35,14 +36,14 @@ describe('resolveRateLimitPolicy — cache del blob AppConfig rateLimit', () => 
     vi.useRealTimers();
   });
 
-  it('due risoluzioni per rotte diverse entro il TTL leggono AppConfig una sola volta', async () => {
+  it('two resolutions for different routes within the TTL read AppConfig once', async () => {
     await resolveRateLimitPolicy('login', fakePrisma);
     await resolveRateLimitPolicy('loginByUsername', fakePrisma);
 
     expect(getConfig).toHaveBeenCalledTimes(1);
   });
 
-  it('dopo la scadenza del TTL, la risoluzione successiva rilegge AppConfig', async () => {
+  it('after the TTL expires, the next resolution reads AppConfig again', async () => {
     await resolveRateLimitPolicy('login', fakePrisma);
     vi.advanceTimersByTime(2001);
     await resolveRateLimitPolicy('login', fakePrisma);
@@ -50,7 +51,7 @@ describe('resolveRateLimitPolicy — cache del blob AppConfig rateLimit', () => 
     expect(getConfig).toHaveBeenCalledTimes(2);
   });
 
-  it('un valore AppConfig valido resta quello servito dalla cache finché non scade', async () => {
+  it('a valid AppConfig value stays the one served by the cache until it expires', async () => {
     vi.mocked(getConfig).mockResolvedValue(
       JSON.stringify({ login: { max: 1, timeWindow: '30s', keyBy: 'ip' } })
     );

@@ -1,14 +1,15 @@
 import {
   CompanyAddressSchema,
   CompanyExportSettingsSchema,
+  DEFAULT_LOCALE,
+  formatInstant,
   type CompanyAddress,
   type CompanyExportSettings,
 } from '@luke/core';
-
+import type { PrismaClient } from '@luke/db';
 
 import { readFileBuffer } from '../../storage/index.js';
 
-import type { PrismaClient } from '@prisma/client';
 import type { Content, TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
 
 
@@ -111,6 +112,14 @@ function configurePdfMake(): typeof pdfMake {
   }
 
   return pdfMake;
+}
+
+/**
+ * `at` as an export header writes it: in `timeZone`, the reader's, which it names (ADR-035
+ * §Formatting) — `01/07/2026 (Europe/Rome)`.
+ */
+export function formatExportInstant(at: Date, timeZone: string, preset: Readonly<Intl.DateTimeFormatOptions>): string {
+  return `${formatInstant(at, timeZone, preset, DEFAULT_LOCALE)} (${timeZone})`;
 }
 
 /**
@@ -271,7 +280,12 @@ export async function fetchCompanyExportContext(
 
     let companyLogoDataUri: string | null = null;
     if (profile.logoKey) {
-      const buf = await readFileBuffer(prisma, 'company-assets', profile.logoKey, logger);
+      // A storage failure costs the logo only, not the export settings and address read above —
+      // same policy as `resolveLogoDataUri` for brand logos.
+      const buf = await readFileBuffer(prisma, 'company-assets', profile.logoKey, logger).catch((err: unknown) => {
+        logger?.warn({ err }, 'fetchCompanyExportContext: failed to read the company logo');
+        return null;
+      });
       if (buf) {
         const key = profile.logoKey.toLowerCase();
         if (key.endsWith('.png'))        companyLogoDataUri = `data:image/png;base64,${buf.toString('base64')}`;

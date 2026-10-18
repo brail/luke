@@ -48,10 +48,9 @@ import { trpc } from '../../../../../lib/trpc';
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
-// Schema per il form (omit planId — viene passato dall'esterno)
+// Form schema (omits planId — it is passed in from outside)
 const FormSchema = MerchandisingPlanRowInputSchema.omit({ planId: true }).extend({
   pricingParameterSetId: z.string().optional().nullable(),
-  assignedUserId: z.string().optional().nullable(),
 });
 type FormValues = z.infer<typeof FormSchema>;
 
@@ -145,7 +144,6 @@ export function MerchandisingRowDialog({
       wholesaleEu: null,
       pricingNotes: '',
       generalNotes: '',
-      assignedUserId: null,
     },
   });
 
@@ -179,12 +177,11 @@ export function MerchandisingRowDialog({
         wholesaleEu: row.wholesaleEu ? Number(row.wholesaleEu) : null,
         pricingNotes: row.pricingNotes ?? '',
         generalNotes: row.generalNotes ?? '',
-        assignedUserId: row.assignedUserId ?? null,
       });
     } else if (mode === 'create') {
       form.reset();
     }
-  }, [mode, row, open]);
+  }, [mode, row, open, form]);
 
   const handleSubmit = (values: FormValues) => {
     onSubmit(values);
@@ -203,7 +200,6 @@ export function MerchandisingRowDialog({
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} className="flex flex-col flex-1 min-h-0">
             <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
-              {/* Identificazione */}
               <div className="grid grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
@@ -498,7 +494,6 @@ export function MerchandisingRowDialog({
                 />
               </div>
 
-              {/* Note generali */}
               <FormField
                 control={form.control}
                 name="generalNotes"
@@ -561,7 +556,6 @@ export function MerchandisingRowDialog({
           description={`Sei sicuro di voler eliminare la riga "${row?.articleCode ?? ''}"? Verranno eliminate anche specsheet e immagini associate. Operazione irreversibile.`}
           confirmText="Elimina"
           cancelText="Annulla"
-          variant="destructive"
           actionType="delete"
           onConfirm={() => { setConfirmDelete(false); onDelete(); }}
           isLoading={false}

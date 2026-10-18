@@ -3,6 +3,10 @@
 import { AlertCircle, ArrowLeft, Copy, LayoutGrid, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { COLLECTION_GENDER, type CollectionGender } from '@luke/core';
+
+import { PermissionButton } from '../../../../../components/PermissionButton';
+import { PermissionTooltip } from '../../../../../components/PermissionTooltip';
 import { Alert, AlertDescription } from '../../../../../components/ui/alert';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -21,7 +25,7 @@ import { cn } from '../../../../../lib/utils';
 interface EmptyCollectionLayoutStateProps {
   brandId: string;
   seasonId: string;
-  onCreateEmpty: (availableGenders: string[]) => void;
+  onCreateEmpty: (availableGenders: CollectionGender[]) => void;
   onCopyFromSeason: (fromSeasonId: string, rows: { id: string; copyQuotations: boolean }[]) => void;
   isLoading?: boolean;
 }
@@ -30,7 +34,7 @@ const GENDER_OPTIONS = [
   { label: 'Solo Uomo', value: ['MAN'] },
   { label: 'Solo Donna', value: ['WOMAN'] },
   { label: 'Uomo + Donna', value: ['MAN', 'WOMAN'] },
-] as const;
+] as const satisfies readonly { label: string; value: readonly CollectionGender[] }[];
 
 function genderKey(v: readonly string[]) {
   return [...v].sort().join(',');
@@ -58,7 +62,7 @@ export function EmptyCollectionLayoutState({
   const { can } = usePermission();
   const canUpdate = can('collection_layout:update');
 
-  const [selectedGenders, setSelectedGenders] = useState<string[]>(['MAN', 'WOMAN']);
+  const [selectedGenders, setSelectedGenders] = useState<CollectionGender[]>([...COLLECTION_GENDER]);
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
@@ -84,15 +88,17 @@ export function EmptyCollectionLayoutState({
     setRowSelections(new Map(allRows.map(r => [r.id, { included: true, copyQuotations: true }])));
   }, [sourceLayout]);
 
-  const allRowIds = sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)) ?? [];
+  const sourceRowIds = new Set(sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)));
+  // A row deleted from the source after the dialog loaded it stays in the map, where no checkbox
+  // reaches it: only rows still in the source can be copied.
   const selectedRows = [...rowSelections.entries()]
-    .filter(([, s]) => s.included)
+    .filter(([id, s]) => s.included && sourceRowIds.has(id))
     .map(([id, s]) => ({ id, copyQuotations: s.copyQuotations }));
 
   function setAllIncluded(included: boolean) {
     setRowSelections(prev => {
       const next = new Map(prev);
-      for (const id of allRowIds) {
+      for (const id of sourceRowIds) {
         const cur = next.get(id) ?? { included: false, copyQuotations: true };
         next.set(id, { ...cur, included });
       }
@@ -128,12 +134,24 @@ export function EmptyCollectionLayoutState({
     });
   }
 
+  // Another source season has other rows: the selection made for the previous one must not reach
+  // the copy, so the next step starts again from all of the new season's rows.
+  function chooseSourceSeason(id: string) {
+    if (id === selectedFromSeasonId) return;
+    setSelectedFromSeasonId(id);
+    clearRowSelections();
+  }
+
+  function clearRowSelections() {
+    setRowSelections(new Map());
+    rowSelectionsInitialized.current = false;
+  }
+
   function resetDialogState() {
     setIsCopyDialogOpen(false);
     setSelectedFromSeasonId(null);
     setStep(1);
-    setRowSelections(new Map());
-    rowSelectionsInitialized.current = false;
+    clearRowSelections();
   }
 
   function handleCopy() {
@@ -163,47 +181,67 @@ export function EmptyCollectionLayoutState({
       {/* Gender selector */}
       <div className="space-y-2">
         <p className="text-sm font-medium text-muted-foreground">Gender disponibili nel layout</p>
-        <div className="flex gap-2 justify-center">
-          {GENDER_OPTIONS.map(opt => (
-            <button
-              key={genderKey(opt.value)}
-              type="button"
-              onClick={() => setSelectedGenders([...opt.value])}
-              disabled={!canUpdate}
-              className={cn(
-                'px-4 py-2 rounded-md border text-sm font-medium transition-colors',
-                selectedKey === genderKey(opt.value)
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-border hover:border-primary/50 hover:bg-muted/50',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        {/* One tooltip for the whole group: the three toggles are disabled for the same single
+            reason, so one tab stop and one message beat the sentence repeated three times. */}
+        <PermissionTooltip
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare il collection layout"
+          className="w-full justify-center"
+        >
+          <div className="flex gap-2 justify-center">
+            {GENDER_OPTIONS.map(opt => (
+              <button
+                key={genderKey(opt.value)}
+                type="button"
+                onClick={() => setSelectedGenders([...opt.value])}
+                disabled={!canUpdate}
+                className={cn(
+                  'px-4 py-2 rounded-md border text-sm font-medium transition-colors',
+                  selectedKey === genderKey(opt.value)
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border hover:border-primary/50 hover:bg-muted/50',
+                  // `pointer-events-none` is what lets the tooltip work: a disabled
+                  // <button> dispatches no pointer events, so without it the wrapper span
+                  // never sees the hover and the message stays keyboard-only.
+                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </PermissionTooltip>
       </div>
 
       <div className="flex gap-3 flex-wrap justify-center">
         {seasons.length > 0 && (
-          <Button
+          <PermissionButton
+            hasPermission={canUpdate}
+            tooltip="Non hai i permessi per creare il collection layout"
             variant="outline"
             onClick={() => setIsCopyDialogOpen(true)}
-            disabled={!canUpdate || isLoading}
+            disabled={isLoading}
           >
             <Copy className="h-4 w-4 mr-2" />
             Copia da stagione precedente
-          </Button>
+          </PermissionButton>
         )}
-        <Button onClick={() => onCreateEmpty(selectedGenders)} disabled={!canUpdate || isLoading}>
+        <PermissionButton
+          hasPermission={canUpdate}
+          tooltip="Non hai i permessi per creare il collection layout"
+          onClick={() => onCreateEmpty(selectedGenders)}
+          disabled={isLoading}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Crea layout vuoto
-        </Button>
+        </PermissionButton>
       </div>
 
+      {/* The dialog only opens from the `canUpdate`-gated button above, so the `!canUpdate`
+          guards inside it are defence in depth on a state no user can reach — no tooltip needed. */}
       <Dialog open={isCopyDialogOpen} onOpenChange={open => { if (!open) resetDialogState(); }}>
         <DialogContent className={step === 2 ? 'max-w-2xl' : 'max-w-md'}>
-          {/* ── Step 1: scegli stagione ─────────────────────── */}
+          {/* ── Step 1: pick the source season ──────────────── */}
           {step === 1 && (
             <>
               <DialogHeader>
@@ -216,8 +254,9 @@ export function EmptyCollectionLayoutState({
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {seasons.map(s => (
                   <button
+                    type="button"
                     key={s.id}
-                    onClick={() => setSelectedFromSeasonId(s.id)}
+                    onClick={() => chooseSourceSeason(s.id)}
                     className={cn(
                       'w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors',
                       selectedFromSeasonId === s.id
@@ -244,7 +283,7 @@ export function EmptyCollectionLayoutState({
             </>
           )}
 
-          {/* ── Step 2: scegli righe ────────────────────────── */}
+          {/* ── Step 2: pick the rows to copy ───────────────── */}
           {step === 2 && (
             <>
               <DialogHeader>
@@ -256,12 +295,20 @@ export function EmptyCollectionLayoutState({
 
               <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
                 <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                <AlertDescription className="text-xs text-amber-800 dark:text-amber-300">
-                  Il campo <strong>fase</strong> verrà azzerato in tutte le righe copiate. Le foto non vengono copiate.
+                <AlertDescription className="space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                  <p>
+                    Vengono copiati gruppi, righe, le quotazioni scelte e le colonne nascoste. Non vengono
+                    copiati <strong>fase</strong>, foto, stato concluso e revisione, budget SKU.
+                  </p>
+                  <p>
+                    Ogni riga va nel gruppo di pianificazione con lo stesso nome nella stagione di destinazione,
+                    altrimenti in quello predefinito; ogni quotazione nel set di parametri con lo stesso nome,
+                    altrimenti in nessuno. Un prezzo resta solo se il set di destinazione ha la stessa valuta.
+                  </p>
                 </AlertDescription>
               </Alert>
 
-              {/* Shortcut globali */}
+              {/* Global shortcuts */}
               <div className="flex flex-wrap gap-2 text-xs">
                 <Button variant="ghost" size="xs" onClick={() => setAllIncluded(true)}>
                   Seleziona tutte

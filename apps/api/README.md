@@ -1,265 +1,612 @@
-# Luke API
+# apps/api — Luke Backend
 
 <!-- luke-docs:start:overview -->
-Backend di Luke — Fastify 5 + tRPC 11 + Prisma 7 su PostgreSQL 16. Espone tutte le procedure tRPC per dashboard, campionario, pricing, calendario milestone, statistiche NAV e gestione utenti. Include RBAC granulare `Resource:Action`, audit log su ogni mutazione, autenticazione locale/LDAP configurabile via AppConfig, e sicurezza enterprise (helmet, rate-limit, HKDF-SHA256, tokenVersion multi-layer).
+Luke's backend: Fastify + tRPC + Prisma on PostgreSQL. It serves every tRPC procedure behind the dashboard — collection layout, pricing, milestone calendar, NAV sales statistics, user and company management — on the `/trpc` endpoint, plus the plain HTTP health and readiness probes documented below. It also owns the cross-cutting controls: granular `Resource:Action` RBAC, an audit log on every mutation, local/LDAP authentication selected by `auth.strategy` in AppConfig, and the security baseline (Helmet headers, per-IP and per-account rate limiting, HKDF-SHA256 derived secrets, multi-layer `tokenVersion` session revocation).
 <!-- luke-docs:end:overview -->
 
-## Security Headers
+## LDAP resilience and authentication fallback
 
-L'API implementa una baseline completa di HTTP security headers tramite Helmet, configurata centralmente in `src/lib/helmet.ts`.
+`src/lib/ldapClient.ts` owns the resilient LDAP client; its settings come from
+`auth.ldap.resilience.*` in AppConfig.
 
-### Configurazione per Ambiente
+Every operation is retried with exponential backoff while it gets no usable
+answer: nothing came back (a refused or reset connection, an unreachable host, a
+TLS failure, a timeout), or the directory answered `busy` (51) or `unavailable`
+(52). Any other LDAP result — a rejected password, a missing entry, an exceeded
+time limit — is an answer and is final. The client tells the two apart by where
+the error arises, not by its message: what ldapts rejects a bind or a search
+with is either a result code or a failure to get an answer, and a search filter
+is parsed before anything is sent.
 
-| Header                      | Valore                                                        | Dev | Test | Prod |
-| --------------------------- | ------------------------------------------------------------- | --- | ---- | ---- |
-| `X-Content-Type-Options`    | `nosniff`                                                     | ✅  | ✅   | ✅   |
-| `Referrer-Policy`           | `no-referrer`                                                 | ✅  | ✅   | ✅   |
-| `X-DNS-Prefetch-Control`    | `off`                                                         | ✅  | ✅   | ✅   |
-| `X-Frame-Options`           | `DENY`                                                        | ✅  | ✅   | ✅   |
-| `Content-Security-Policy`   | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | ❌  | ✅   | ✅   |
-| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains`                         | ❌  | ❌   | ✅   |
+The circuit breaker guards one step: the service-account bind that opens every
+login. That bind carries nothing about the person logging in, so nothing a
+caller types can move the breaker; the search, the user's own bind and the group
+lookup are never counted, in either direction. With the defaults in
+`APP_CONFIG_DEFAULTS` (`packages/core/src/schemas/config.ts`) it opens after five consecutive service
+binds without a usable answer, and a service bind the directory answers — a
+refusal included — zeroes the count. While it is open a login is refused before
+any connection. After the ten-second cooldown it is half-open: one login at a
+time is let through as a probe and every other is refused;
+`halfOpenMaxAttempts` probes the directory answers — a refusal included — close
+it (one by default), and a probe without a usable answer reopens it. There is one breaker per directory URL for
+the whole process, shared by the client every login creates.
 
-### Policy di Sicurezza
+Two consequences of guarding that step alone:
 
-- **CSP**: Configurazione minimale per API JSON-only, disabilitata in development
-- **HSTS**: Solo in produzione con 180 giorni di durata
-- **Frame Protection**: Blocco completo embedding in iframe
-- **Content Type**: Prevenzione MIME sniffing
-- **Referrer**: Nessuna informazione referrer esposta
-- **DNS Prefetch**: Disabilitato per prevenire leak DNS
+- **The service account is a setup requirement.** Without both a bind DN and a
+  bind password the directory is searched anonymously, the first thing sent
+  already carries the username, and there is nothing for the breaker to guard:
+  it never opens, during an outage every login waits out its own timeouts, and
+  the outage is answered as wrong credentials (see the table below).
+- A failure past the service bind — the bind answered, the search hanging —
+  leaves the breaker closed. Each login waits out its own timeouts.
 
-### Test di Verifica
+| Condition | Client behavior |
+|-----------|-----------------|
+| Circuit open and cooldown not elapsed, or half-open with a probe in flight | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), nothing sent |
+| Invalid credentials during a bind (49) | `UNAUTHORIZED`, without retry |
+| Any other directory result except 51 and 52 | The ldapts error, without retry |
+| A search filter that does not parse | `BAD_REQUEST`, before anything is sent |
+| No answer, or 51/52, on every attempt | `SERVICE_UNAVAILABLE` (`LdapUnavailableError`), the last error as its cause |
 
-I security headers sono verificati automaticamente tramite test end-to-end:
+`src/services/auth.service.ts` selects `local-only`, `ldap-only`, `local-first`
+or `ldap-first` using `auth.strategy`. `src/lib/ldapAuth.ts` runs the LDAP half
+of a login, and what it does with a failure depends on whether the username has
+been sent to the directory yet:
+
+| Where the LDAP login stopped | `authenticateViaLdap` | Answer when nobody is authenticated | Audit `reason` |
+|------------------------------|-----------------------|-------------------------------------|----------------|
+| Before the username is sent: incomplete configuration, breaker open, service-account bind refused or left without an answer | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
+| LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| After the directory verified the password: the user record could not be written | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+
+The answer is decided by what happens before the username is on the wire, and
+by nothing else. A 503 for a failure met after that point would tell a caller
+with no password which usernames the directory knows, so such a failure is
+answered like a wrong password and recorded in the audit row, with its
+`errorCode`, as what it was. The last row needs the password.
+
+Every failure, thrown or returned, counts as no LDAP login, so each strategy's
+local fallback applies first: under `ldap-first` and `local-first` a user with a
+LOCAL credential and the right password logs in while LDAP is down, and the
+table describes the answer only when nobody was authenticated. This is not a
+guarantee that local fallback happens only during an LDAP outage. Local fallback
+still requires an active Luke account, a LOCAL identity with a stored credential
+and a valid local password. Disabling only the directory account does not
+necessarily disable that local access path.
+
+A bind proves a password only if it is a simple bind of a named entry: an empty
+password is refused before anything is sent, and an entry whose DN is empty or
+is the name of a SASL mechanism is never bound as. The group lookup decides only
+the role of a user created at first login, so its failure — or that of the
+service-account rebind before it — does not fail the login.
+
+On the web side the two answers that say nothing about the account reach the
+login page as the `code` of the Auth.js sign-in result. `unavailable`, for a
+`SERVICE_UNAVAILABLE` (this one, or maintenance mode's), is thrown by
+`apps/web/src/lib/loginAuthorize.ts`. `throttled`, for a rate-limited login, is
+written by the route wrapper (`app/api/auth/[...nextauth]/route.ts`, through
+`throttledSignIn` in `lib/loginThrottleContext.ts`) together with the `429`.
+
+Under `ldap-only` the directory decides every login, with one exception: once
+LDAP has not authenticated them, an administrator with a LOCAL credential can
+log in with it. The `AUTH_LOGIN` row records it as `provider: 'local'` with
+`strategy: 'ldap-only'`, and the administrators get an in-app notification (best
+effort: muted for whoever turned the category off). There is no condition on why
+LDAP refused, because a directory answering from the wrong subtree cannot be
+told from an unknown user. Nobody else has a local path: a non-administrator's
+correct local password is refused as a wrong one would be, before any check that
+could answer differently, and audited as `local_login_not_allowed` — a reason that
+replaces the LDAP one, while the row keeps its `errorCode`.
+
+What this costs: under `ldap-only` a local administrator password is always a
+live login path, for every administrator who has one — the seeded account, one
+given local access on purpose, a local account later promoted — and nothing done
+in the directory revokes it. LDAP provisioning creates no LOCAL credential.
+
+**Setup requirement.** Before choosing `ldap-only`, make sure at least one
+administrator can log in locally: active, approved, with a verified email when
+`auth.requireEmailVerification` is on, and a local password somebody knows. A
+forced local access counts only once its reset link has been used. The LDAP
+settings page refuses `ldap-only` with LDAP disabled, and when no administrator
+is active, approved, verified where required and holds a LOCAL credential under
+their current username. That check sees a credential row, not whether anyone
+knows the password: an unused forced local access passes it. Both are checks at
+the moment of saving, and Maintenance → Config writes the same keys without
+them.
+
+While LDAP authenticates nobody and no such administrator exists, nobody can get
+in. Changing the `auth.strategy` row in the database (it is read on every login)
+restores the local fallback to the users who hold a LOCAL credential, but gives
+nobody a password: that is what the command below is for.
+
+## Recovering administrator access
+
+When no administrator can sign in, `db:grant-local-access` issues a single-use
+password-reset link for one named administrator, from a shell in the API
+container:
 
 ```bash
-pnpm -F @luke/api test security.headers.spec.ts
+node dist-scripts/scripts/grant-local-access.js --username <administrator> --dry-run
+node dist-scripts/scripts/grant-local-access.js --username <administrator>
 ```
 
-I test verificano:
+It prints the target database (host, port, name — never credentials), the
+account it found, the application origin the link points to and what issuing
+it does, then asks for the username to be typed back; `--yes` replaces that
+confirmation in a non-interactive run, and without a terminal and without
+`--yes` it refuses. `--dry-run` runs every check and writes nothing.
 
-- Presenza di tutti gli header base
-- Configurazione CSP corretta per ambiente
-- Assenza HSTS in test/development
-- Snapshot invariabile della configurazione
+**The link is a credential.** Whoever opens it first sets that administrator's
+password, so whoever can read the terminal output — scrollback, a recorded
+console session, a shared screen — can take the account. It is printed once,
+on standard output, and nowhere else: not in the logs, the audit row or the
+notification. Open it directly, over HTTPS, and clear the terminal afterwards.
+It works once, for 30 minutes. When `app.baseUrl` is not stored, or is not an
+http(s) URL, only the path is printed, to be opened on the application's host.
 
-## Sviluppo
+What it does, in one transaction with its audit row: it creates the LOCAL
+identity if the account has none (with a password nobody knows), deletes the
+account's other reset tokens — every reset link sent before stops working, even
+if the new one is never used — and issues the new one. The password and the open
+sessions change only when the link is used, through the normal reset page,
+which applies the password policy and signs out every session. Under `ldap-only`
+the administrator then signs in through the break-glass path above; under the
+other strategies, through the local one. Every issuance writes a
+`USER_LOCAL_ACCESS_FORCED` row (`source: 'cli'`) and notifies the administrators
+in-app — best effort: muted for whoever turned the category off, and a failed
+notification is only reported on standard error.
+
+What it never does: create an administrator, change a role, reactivate, approve
+or verify. It refuses an unknown username, a non-administrator, a deactivated
+account, and a LOCAL identity it cannot use (left under an old username by a
+rename, or belonging to another account). An account pending approval, or with
+an unverified email while `auth.requireEmailVerification` is on, is refused
+unless `--anyway` is given; the link is then issued, but the sign-in keeps being
+refused until that state is changed. A deactivated account must be reactivated
+before the command will run at all; approval and verification can be changed
+before or after. Each is a decision of its own, made in the database and
+recorded nowhere else:
+
+```sql
+UPDATE users SET "isActive" = true WHERE username = '<administrator>';
+UPDATE users SET "pendingApproval" = false WHERE username = '<administrator>';
+UPDATE users SET "emailVerifiedAt" = now() WHERE username = '<administrator>';
+```
+
+## Password reset and email verification audit events
+
+These action names are recorded for the password-reset and email-verification
+flows, by the authentication service (`src/services/auth.service.ts`) unless the
+table names another emitter:
+
+| Action | Flow |
+|--------|------|
+| `PASSWORD_RESET_REQUESTED` | Password-reset requests |
+| `PASSWORD_CHANGED` | Password-reset confirmation |
+| `EMAIL_VERIFICATION_SENT` | Email-verification requests; emitted by `src/lib/emailHelpers.ts` |
+| `EMAIL_VERIFIED` | Email-verification confirmation |
+| `USER_LOCAL_ACCESS_FORCED` | A reset link issued to give an account local access. Written by `users.forceLocalAccess` (success and failure), and by `db:grant-local-access` (`source: 'cli'`) only for a link it issued: a refusal, a dry run or a rolled-back attempt writes no row |
+
+These names do not imply success: inspect the audit row's `result` and available
+metadata, such as `reason`. Failure paths also use these actions, with two
+exceptions: a wrong password on `auth.resendVerification` is recorded as
+`AUTH_LOGIN_FAILED`, like a failed login, and its refusal of an address already
+verified writes no row. A generic
+success response to a password-reset request does not prove that an email was
+sent; the service deliberately avoids disclosing whether the account exists.
+
+## Transactional email
+
+`src/lib/mailer.ts` sends three kinds of mail with the SMTP settings in
+AppConfig: a password-reset link, an email-verification link and the approval
+notice of a pending LDAP account. Each body is a plain-text template in
+`src/templates/` (`reset.txt`, `verify.txt`, `approved.txt`) plus a branded HTML
+version built in `mailer.ts`. The maintenance notices (scheduled and ended) and
+the daily calendar digest go through the same `sendEmail` / `sendBulkEmail`,
+with bodies built in code.
+
+- **Password reset** — for an active account with a LOCAL identity.
+  `auth.requestPasswordReset` answers the same generic message whether or not
+  the address exists. The link `{app.baseUrl}/auth/reset?token=…` works once,
+  for 30 minutes; using it sets the password and signs out every session.
+- **Email verification** — any active account with a real, unverified address
+  can get a link: a signed-in user for their own address
+  (`auth.requestEmailVerification`), an administrator for any user
+  (`auth.requestEmailVerificationAdmin`), and a login refused for an unverified
+  email, with the password just entered (`auth.resendVerification`). The link
+  `{app.baseUrl}/auth/verify?token=…` works once, for 24 hours, and issuing one
+  deletes the account's earlier verification links. A link is also mailed
+  automatically after `me.changeEmail` and `auth.submitPendingEmail`, and on a
+  first LDAP sign-in whose directory entry carries a real address. An
+  administrator creating a user sends nothing.
+- **Tokens** — 32 random bytes, mailed as 64 hex characters; only their SHA-256
+  hash is stored (`UserToken`). A used token is deleted; an expired one is
+  refused but stays in the table.
+- **Required verification** — with `auth.requireEmailVerification` set to
+  `true`, a local login with an unverified address is refused and the login
+  page offers a new link. LDAP logins are not subject to it.
+
+SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte
+when `true`, STARTTLS otherwise), `smtp.user`, `smtp.pass` (stored encrypted)
+and `smtp.from`; every link starts with `app.baseUrl`, whose default — and
+seeded value — is `http://localhost:3000`, so set the public origin before
+relying on email links. They are set on the mail
+settings page (`integrations.mail.*`), which can also send a test email — to
+the address given, or to `smtp.from` when none is. Rate limits on these flows
+are in [OPERATIONS.md — Buckets](../../OPERATIONS.md#buckets). Deliverability
+depends on the sending domain's SPF, DKIM and DMARC records, an operator task.
+
+## User provisioning and administrator protections
+
+An LDAP login creates the Luke user on first sign-in and, on every later one,
+updates only `firstName` and `lastName` from the directory
+(`src/lib/ldapAuth.ts`); the email and the role are never overwritten after
+creation. For an LDAP account `users.update` refuses changes to the fields the
+directory owns — username, first and last name, password (`getLockedFields` in
+`src/services/users.service.ts`). There is no separate sync job.
+
+`users.*` refuses, for the caller's own account: deactivating it (update or
+soft delete), changing its role, setting its password through the admin path
+(`me.changePassword` is the route, and it asks for the current password) and
+deleting it permanently. Demoting, deactivating or deleting an administrator is
+refused when it would leave no active administrator able to reach user
+management (`assertNotLastAdminWithSettingsAccess` in `src/lib/lastAdminGuard.ts`,
+serialized by an advisory lock).
+
+## Security headers
+
+`src/lib/helmet.ts` is the single Helmet configuration; `server.ts` applies it
+with the environment name derived from `NODE_ENV` (`development`, `production`,
+anything else `test`).
+
+| Header | Value | Development | Test | Production |
+| --- | --- | --- | --- | --- |
+| `X-Content-Type-Options` | `nosniff` | ✅ | ✅ | ✅ |
+| `Referrer-Policy` | `no-referrer` | ✅ | ✅ | ✅ |
+| `X-DNS-Prefetch-Control` | `off` | ✅ | ✅ | ✅ |
+| `X-Frame-Options` | `DENY` | ✅ | ✅ | ✅ |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | ❌ | ✅ | ✅ |
+| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains` (180 days) | ❌ | ❌ | ✅ |
+
+The CSP is the minimal one for a JSON-only API. `test/security.headers.spec.ts`
+pins the test-environment set — the base headers, the CSP, no HSTS — and a
+snapshot of the configuration. It builds its own Fastify instance with
+`buildHelmetConfig('test')` (`test/helpers.ts`), so it proves that configuration,
+not the development or production one, and not its wiring in `server.ts`:
 
 ```bash
-# Installazione dipendenze
-pnpm install
-
-# Avvio in development
-pnpm -F @luke/api dev
-
-# Test
-pnpm -F @luke/api test
-
-# Build
-pnpm -F @luke/api build
+pnpm --filter @luke/api test security.headers.spec.ts
 ```
 
-## Health & Readiness Checks
+## Running the API locally
 
-L'API implementa un sistema completo di health checks per Kubernetes e monitoring.
+```bash
+pnpm --filter @luke/api dev     # tsx watch, reads apps/api/.env
+pnpm --filter @luke/api test    # unit tests
+pnpm --filter @luke/api build   # dist/ and dist-scripts/ (never while pnpm dev runs)
+```
 
-### Endpoints Disponibili
+**Set `NODE_ENV=development` in `apps/api/.env` yourself.** The `dev` script is
+`tsx watch --env-file=.env --import ./src/instrument.ts`; nothing sets the variable for you, `apps/api/.env`
+is gitignored, and `isDevelopment()` compares with `'development'` exactly. Left
+unset, the local API runs as neither development nor production: CSP on, `info`
+logs without pino-pretty, and the global rate limit at 100 requests per minute
+with no loopback exemption. The symptom is not a clear error but sporadic 429s,
+which the browser shows as an unreachable backend and the end-to-end suite as
+failed logins.
 
-| Endpoint      | Scopo           | Status Code | Descrizione                                              |
-| ------------- | --------------- | ----------- | -------------------------------------------------------- |
-| `/livez`      | Liveness Probe  | 200         | Verifica che il processo sia attivo                      |
-| `/readyz`     | Readiness Probe | 200/503     | Verifica che il sistema sia pronto per servire richieste |
-| `/healthz`    | Legacy Health   | 200         | Endpoint di compatibilità                                |
-| `/api/health` | Detailed Health | 200         | Status dettagliato con uptime e versione                 |
+## Health and readiness
 
-### Comportamento Readiness (`/readyz`)
+| Endpoint | Answers | Used by |
+| --- | --- | --- |
+| `/healthz` | `200` with `{ status, timestamp }`; checks nothing | the API container healthcheck in `docker-compose.prod.yml` and `docker-compose.rc.yml`, the health Docker and Portainer report — keep it |
+| `/livez` | `200` while the process runs | liveness, for an orchestrator that wants one |
+| `/readyz` | `200` when every readiness check passes, `503` otherwise | readiness |
+| `/api/health` | `200` with uptime, version and environment | manual checks |
+| `/` | discovery payload listing the endpoints | — |
 
-Il sistema esegue verifiche modulari in parallelo:
-
-- **Database**: Connessione e query di test
-- **Secrets**: Verifica derivazione segreti JWT
-- **LDAP**: Connessione LDAP (se abilitato)
-
-**Status Codes:**
-
-- `200`: Tutti i check passano → sistema pronto
-- `503`: Almeno un check fallisce → sistema non pronto
-
-**Payload di Risposta:**
+`/readyz` runs its checks in parallel (`src/observability/readiness.ts`):
+`database` (a `SELECT 1`), `secrets` (derives `api.jwt`) and `ldap` (a
+connection when LDAP is enabled, skipped otherwise). The response carries each
+check's status:
 
 ```json
 {
-  "status": "ready|unready",
-  "timestamp": "2024-01-01T00:00:00.000Z",
-  "checks": {
-    "database": "ok",
-    "secrets": "ok",
-    "ldap": "ok"
-  }
+  "status": "ready",
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "checks": { "database": "ok", "secrets": "ok", "ldap": "ok" }
 }
 ```
 
-### Bootstrap Fail-Fast
+The secrets check fails only when secret derivation fails. It does **not** detect
+a missing or replaced master key: `getMasterKey` creates a new key when the file
+is absent, and the probe derives `api.jwt` without being able to tell one key
+from another. See [ADR-020](../../docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
-Durante l'avvio, il server esegue verifiche critiche che devono passare:
+### Bootstrap fail-fast
 
-1. **Database Connection**: `prisma.$connect()`
-2. **Master Key**: `validateMasterKey()`
-3. **Secret Derivation**: `deriveSecret('api.jwt')`
+The process exits with code 1 when any of these fails at startup:
 
-Se qualsiasi verifica fallisce, il processo termina con `process.exit(1)` per garantire che il server non si avvii in uno stato inconsistente.
+1. `createTrustProxy` while the Fastify instance is built — in production,
+   `LUKE_TRUSTED_PROXY_CIDR` missing or invalid;
+2. `assertEnvPolicy()` — in production, a forbidden variable in the environment
+   (see the environment table below);
+3. `checkBootstrapDependencies` — `prisma.$connect()`, `validateMasterKey()` and
+   `deriveSecret('api.jwt')`;
+4. `validateCriticalConfig` — in production, a key in `CRITICAL_CONFIG_KEYS`
+   missing or invalid (elsewhere it logs a warning).
 
-### Configurazione Kubernetes
+**Known limit — this is not a guarantee that the master key is the expected one.**
+`validateMasterKey()` only checks that the key file is 32 bytes, and when the
+file is **absent** `getMasterKey()` creates a new one, so the check passes. A lost
+or replaced master key therefore does not stop startup here; it surfaces later as
+decryption failures at the point of use, or at boot only when a key listed in
+`CRITICAL_CONFIG_KEYS` is itself stored encrypted, since `validateCriticalConfig`
+reads those through the decrypting reader. See
+[ADR-020](../../docs/decisions/020-master-key-scope-and-rotation-limits.md).
 
-```yaml
-livenessProbe:
-  httpGet:
-    path: /livez
-    port: 3001
-  initialDelaySeconds: 10
-  periodSeconds: 10
+## Raw HTTP routes
 
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: 3001
-  initialDelaySeconds: 5
-  periodSeconds: 5
-  failureThreshold: 3
-```
+Besides `/trpc` and the probes, the API registers plain Fastify routes for
+streamed bodies. Every browser-facing one lives under `/upload/` (POST) or
+`/download/` (GET), the two prefixes the web forwards wholesale — except
+`/api/sse`, which the web forwards by name. `test/rawRouteProxy.spec.ts` fails
+the build on a route registered outside them that is not on its short list of
+exempt paths (the probes, `/`, `/api/sse`, `/uploads/:bucket/*`). They use three
+authentication models:
 
-## Endpoints
+| Route | Authentication |
+| --- | --- |
+| `POST /upload/brand-logo/temp`, `/upload/brand-logo/:brandId`, `/upload/company-logo`, `/upload/collection-row-picture/temp`, `/upload/collection-row-picture/:rowId`, `/upload/specsheet-image/:specsheetId`, `/upload/backup-import` | Bearer API token plus the route's permission (`requireSessionWithPermission` in `src/lib/auth.ts`) |
+| `GET /download/season-calendar/{ical,pdf,xlsx}` | Bearer API token (`authenticateRequest`), then the caller's brand and function scope |
+| `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header |
+| `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, consumed when the stream opens |
 
-- **Health**: `/api/health` - Status dell'API
-- **Liveness**: `/livez` - Kubernetes liveness probe
-- **Readiness**: `/readyz` - Kubernetes readiness probe
-- **tRPC**: `/trpc` - Endpoint principale tRPC
+`GET /uploads/:bucket/*` (`src/plugins/storageUpload.ts`) checks no session: it
+is reached only by the web's authenticated `/api/uploads/[...path]` proxy over
+the internal network.
 
-## Configurazione
+## Configuration
 
-L'API supporta configurazione tramite:
-
-- Variabili d'ambiente
-- Database configuration (tramite tRPC)
-- File di configurazione
-
-Vedi `src/lib/config.ts` per dettagli.
+Runtime configuration lives in the `AppConfig` table. `src/lib/configManager.ts` reads it and
+validates each key against `AppConfigRegistry` (`packages/core/src/schemas/config.ts`); admins
+edit it from the settings pages through tRPC. Environment variables carry only the bootstrap
+values in the environment table below, and no configuration file is read. Rationale:
+[ADR-018](../../docs/decisions/018-runtime-configuration-and-bootstrap-environment.md).
 
 ### Hardening & Shutdown semantics
 
-- Error handling globale: Fastify `setErrorHandler` e hook `onError` loggano in modo strutturato con `traceId` da header `x-luke-trace-id`. In produzione i messaggi sono generici (niente stack in response).
-- tRPC `errorFormatter`: uniforma il body errore evitando leak di dettagli. `onError` tRPC logga `code` e `message` redatti.
-- Process guards: `SIGTERM`/`SIGINT` eseguono graceful shutdown con timeout; `uncaughtException`/`unhandledRejection` loggano a livello `fatal`, tentano `app.close()` best-effort, poi `process.exit(1)`.
-- Timeout: Fastify usa `requestTimeout` e `connectionTimeout` conservativi. Le integrazioni esterne (es. LDAP) rispettano `AbortController` per abort controllato.
+- Global error handling: Fastify's `setErrorHandler` and the `onError` hook log in a structured way, with the `traceId` from the `x-luke-trace-id` header. In production the messages are generic, and no stack reaches a response.
+- tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs the path, the code, the original message and the cause's message, unredacted.
+- Process guards (`src/lib/gracefulShutdown.ts`, the only shutdown path): `SIGTERM`/`SIGINT` close Fastify, running its `onClose` hooks, and disconnect Prisma within 5 s, then shut telemetry down within 2 s whatever the close did, then exit — 0 if the close was clean, 1 otherwise. `uncaughtException`/`unhandledRejection` log at `fatal`, run the same close, then `process.exit(1)`. `src/instrument.ts` registers no signal handler of its own.
+- Timeouts: `requestTimeout` is 6 minutes, aligned with the Next.js proxy timeout and the NAV pool, and `connectionTimeout` is disabled. The LDAP client relies on its own operation timeouts; it does not abort a request in flight.
 
-## Router tRPC
+## tRPC Routers
 
 <!-- luke-docs:start:trpc-routers -->
-| Namespace | Descrizione |
+| Namespace | Description |
 |-----------|-------------|
-| `auditLog.*` | Consultazione audit trail — lookup "ultima modifica" per entità e pagina export completa |
-| `auth.*` | Autenticazione, logout, cambio password, reset password, verifica email |
-| `brand.*` | Gestione brand (CRUD, soft delete, logo upload) |
-| `catalog.*` | Liste master Brand/Season per selezione context, filtrate per whitelist utente |
-| `collectionCatalog.*` | Catalogo collezione |
-| `collectionLayout.*` | Piano campionario — layout, gruppi, righe, quote, drag-and-drop |
-| `collectionLayoutRevision.*` | Revisioni piano campionario (snapshot ISO 9001) |
-| `company.*` | Profilo aziendale, funzioni, team e scopi brand |
-| `config.*` | Chiavi AppConfig — configurazione runtime centralizzata |
-| `context.*` | Contesto utente corrente (brand/stagione attivi) |
-| `dashboard.*` | Widget dashboard — dati KPI, avanzamento stagione, ordini settimanali |
-| `editLock.*` | Lock di sessione del planning wizard (acquire/release/assert) |
-| `feedback.*` | Sistema feedback interno |
-| `health.*` | Health check e status API |
-| `holidays.*` | Festività nazionali e periodi di chiusura fornitori |
-| `integrations.google.*` | OAuth 2.0 Google Calendar — flusso di autorizzazione e binding |
-| `integrations.importExport.*` | Import ed export di dati |
-| `integrations.auth.*` | Configurazione e test connessione LDAP |
-| `integrations.mail.*` | Configurazione SMTP e invio email di test |
-| `integrations.nav.*` | Configurazione NAV, trigger sync manuale, log sync |
-| `integrations.storage.*` | Configurazione provider storage (locale / MinIO) |
-| `maintenance.backup.*` | Backup/restore del database applicativo |
-| `maintenance.mode.*` | Modalità manutenzione (lock scrittura, banner utenti) |
-| `me.*` | Profilo utente corrente, sessioni attive, revoca sessioni |
-| `merchandisingPlan.*` | Piano merchandising — specsheet, componenti, immagini |
-| `notifications.*` | Notifiche utente e preferenze notifica |
-| `phase.*` | Catalogo Phase unificato (stato produzione riga + calendario) |
-| `phaseAlert.*` | Motore alert di saturazione fase — calcolo on-demand, nessun risultato persistito |
-| `phaseHistory.*` | Storico transizioni di fase per dashboard di stagnazione predittiva |
-| `planningGroup.*` | CRUD PlanningGroup — scoping di CalendarEvent e CollectionLayoutRow |
-| `pricing.*` | Motore prezzi — parameter set, calcolo forward/inverse/margin |
-| `public.*` | Endpoint pubblici senza autenticazione |
-| `sales.*` | Statistiche portafoglio ordini e report Vendite+Bidone KIMO (replica NAV `nav_pf_*` / `nav_kimo_*`) |
-| `season.*` | Gestione stagioni (CRUD, soft delete) |
-| `seasonCalendar.*` | Calendario milestones stagionali, dipendenze, solver |
-| `sectionAccess.*` | Visibilità sezioni RBAC per utente (override user-level) |
-| `storage.*` | Upload file, conferma FileObject, download presigned URL |
-| `system.*` | Info di sistema e trigger manuale del digest calendario |
-| `users.*` | Gestione utenti — merge di `core` (CRUD), `admin` (revoca sessioni, verifica email) e `preferences.*` |
-| `vendors.*` | Gestione fornitori (CRUD, soft delete, periodi di chiusura) |
+| `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
+| `auth.*` | Login, API token refresh, password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
+| `brand.*` | Brand management (CRUD, soft delete, logo upload) |
+| `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
+| `collectionCatalog.*` | Collection catalog items |
+| `collectionLayout.*` | Collection plan — layout, groups, rows, quotations, drag-and-drop ordering |
+| `collectionLayoutRevision.*` | Collection plan revisions (ISO 9001 snapshots) |
+| `company.*` | Company profile, functions, teams and brand scopes |
+| `config.*` | AppConfig keys — centralized runtime configuration |
+| `context.*` | Current user context (active brand/season) |
+| `dashboard.*` | Dashboard widgets — KPI data, season progress, weekly sales |
+| `editLock.*` | Planning wizard session lock (acquireMany/renew/release) |
+| `feedback.*` | Internal feedback system |
+| `holidays.*` | National holidays and vendor closure periods |
+| `integrations.auth.*` | LDAP configuration and connection test |
+| `integrations.google.*` | Google Calendar OAuth 2.0 — authorization flow and binding |
+| `integrations.importExport.*` | Placeholder for data import and export: both procedures are stubs, not implemented |
+| `integrations.mail.*` | SMTP configuration and test email delivery |
+| `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
+| `maintenance.backup.*` | Backup and restore of the application database |
+| `maintenance.mode.*` | Maintenance mode (write lock, user-facing banner) |
+| `me.*` | Current user: profile, self-service email change, password change, time zone, login history, session revocation, daily greeting |
+| `merchandisingPlan.*` | Merchandising plan — specsheets, components, images |
+| `notifications.*` | User notifications and notification preferences |
+| `phase.*` | Unified Phase catalog (row production status + calendar) |
+| `phaseAlert.*` | Phase saturation alert engine — computed on demand, nothing persisted |
+| `phaseHistory.*` | Phase transition history for the predictive stagnation dashboard |
+| `planningGroup.*` | PlanningGroup CRUD — scoping for CalendarEvent and CollectionLayoutRow |
+| `pricing.*` | Pricing engine — parameter sets, forward/inverse/margin calculation |
+| `public.*` | Public endpoints, no authentication |
+| `sales.*` | Order portfolio statistics and the KIMO sales+returns report (NAV replicas `nav_pf_*` / `nav_kimo_*`) |
+| `season.*` | Season management (CRUD, soft delete) |
+| `seasonCalendar.*` | Seasonal milestone calendar, planning groups, templates and Google sync |
+| `sectionAccess.*` | RBAC section visibility: per-user overrides and per-role defaults |
+| `storage.*` | Upload slots and FileObject confirmation (presigned S3 uploads), S3 connection test, storage configuration |
+| `system.*` | Manual calendar digest trigger (sends the caller their own digest) |
+| `users.*` | User management — merge of `core` (CRUD), `admin` (pending LDAP user approval, session revocation, email-verification override, local-access bypass) and `preferences.*` |
+| `vendors.*` | Vendor management (CRUD, soft delete, closure periods) |
 <!-- luke-docs:end:trpc-routers -->
 
-## Packages interni utilizzati
+## Internal Packages
 
 <!-- luke-docs:start:internal-deps -->
-- `@luke/core` — Schemi Zod, RBAC (`requirePermission`), `AppConfigRegistry`, `getConfigValue`, utility URL e storage, crypto server-only (`@luke/core/server`)
-- `@luke/nav` — Sync layer NAV, `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`, sync/query dedicati Portafoglio e KIMO (`syncPortafoglioNow`, `syncKimoNow`, `queryPortafoglioFromPg`, `queryKimoFromPg`)
-- `@luke/calendar` — Sync Google Calendar, solver dipendenze milestone, generazione feed iCal
+- `@luke/core` — Zod schemas, RBAC permissions and section access (`hasPermission`; the `requirePermission` middleware itself lives in `src/lib/permissions.ts`), `AppConfigRegistry` and `APP_CONFIG_DEFAULTS`, URL and storage utilities, server-only crypto (`@luke/core/server`)
+- `@luke/db` — Prisma schema, migrations, generated client and `createPrismaClient`; every Prisma type is imported from here, never from `@prisma/client`
+- `@luke/nav` — NAV sync layer: `runNavSync`, `testNavConnection`, `queryPortafoglioOrdini`, plus the dedicated Portafoglio and KIMO sync/query entry points (`syncPortafoglioNow`, `syncKimoNow`, `queryPortafoglioFromPg`, `queryKimoFromPg`)
+- `@luke/calendar` — Google Calendar sync and iCal feed generation
 <!-- luke-docs:end:internal-deps -->
 
-## Variabili d'ambiente
+## Environment Variables
 
 <!-- luke-docs:start:env -->
-| Variabile | Default | Descrizione |
-|-----------|---------|-------------|
-| `DATABASE_URL` | — | URL connessione PostgreSQL (richiesta) |
-| `PORT` | `3001` | Porta di ascolto del server |
-| `HOST` | `0.0.0.0` | Indirizzo di bind del server |
-| `NODE_ENV` | `development` | Runtime mode (`development` / `production` / `test`) |
-| `LUKE_CORS_ALLOWED_ORIGINS` | — | Origini CORS ammesse in produzione (separare con virgola) |
-| `OTEL_*` | — | OpenTelemetry — export trace (standard OTEL env vars) |
-| `LOG_LEVEL` | `info` | Livello log Pino (`trace` / `debug` / `info` / `warn` / `error`) |
-| `APP_VERSION` | `dev` | Versione applicativa iniettata a build-time (Docker `ARG`/`ENV` dal git tag in CI) — non un segreto, mai letta da AppConfig per evitare drift dall'immagine in esecuzione |
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `DATABASE_URL` | connection URL | — | PostgreSQL connection string. Required. |
+| `PORT` | number | `3001` | Server listen port |
+| `HOST` | address | `0.0.0.0` | Server bind address |
+| `NODE_ENV` | enum | unset | Runtime mode: `development` or `production`. Any other value, or none, runs as neither — see [Running the API locally](#running-the-api-locally); `test` also registers a test-only error route |
+| `LUKE_CORS_ALLOWED_ORIGINS` | comma-separated list | — | Allowed CORS origins outside development; in development every origin is reflected and the variable is ignored. Unset, `localhost:3000` and `:5173` are allowed when `NODE_ENV` is neither development nor production, and no origin in production |
+| `LUKE_TRUSTED_PROXY_CIDR` | comma-separated addresses/ranges | — | The range the reverse proxy speaks from. `X-Forwarded-*` is honoured only at hop 0 and only from inside this range, so `keyBy: 'ip'` rate limits and audit rows cannot be steered by a forged header. Missing or invalid in production, the server refuses to start (`src/lib/trustProxy.ts`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | URL | — | OTLP trace collector. Tracing stays off while this is empty |
+| `OTEL_ENABLED` | boolean | `true` | Set to `false` to disable tracing even with an endpoint configured (`src/instrument.ts`) |
+| `LOG_LEVEL` | enum | `info` | Pino level of the tracing bootstrap logger (`src/instrument.ts`) and the LDAP logger (`src/lib/ldapAuth.ts`) only. The Fastify server logger is `warn` in production and `info` otherwise; most module loggers are fixed at `info` |
+| `APP_VERSION` | string | absent | Release identity injected at build time as a Docker `ARG`/`ENV` from the git tag in CI. Not a secret, and never read from AppConfig so a running image cannot disagree with itself about which release it is. Absent means "no release identity"; display surfaces fall back to `dev` (`src/lib/appVersion.ts`) |
 
-Al boot, `assertEnvPolicy()` in `src/server.ts` verifica che nessuna variabile vietata sia presente (pattern bloccati: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In produzione: `exit(1)`. Tutto il resto va in AppConfig (database).
+At boot, `assertEnvPolicy()` in `src/server.ts` checks that no forbidden variable is present (blocked patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `NEXTAUTH_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`). In production it calls `exit(1)`; elsewhere it warns. Everything else belongs in AppConfig (database), not in the environment.
 <!-- luke-docs:end:env -->
+
+### Local trace collector
+
+For an API process running on the host, this disposable collector exposes OTLP
+gRPC and the Jaeger UI on loopback. It follows the
+[Jaeger all-in-one example](https://www.jaegertracing.io/docs/2.21/getting-started/)
+with only the two ports needed here:
+
+```bash
+docker run --rm --name luke-jaeger \
+  -p 127.0.0.1:4317:4317 \
+  -p 127.0.0.1:16686:16686 \
+  cr.jaegertracing.io/jaegertracing/jaeger:2.21.0
+```
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317` in the API process
+environment and leave `OTEL_ENABLED` unset or set to `true`. Both scripts preload
+the instrumentation bootstrap before the server: `start` with `--require` on
+`src/instrument.ts`'s compiled output, `dev` with tsx's `--import` on the source
+(tsx's `--require` cannot load this import graph: startup fails with
+`ERR_METHOD_NOT_IMPLEMENTED`).
+
+Open `http://localhost:16686` to inspect traces for service `@luke/api`.
+The collector uses transient in-memory storage: stopping it loses the traces.
+This command is documentation-verified, not an end-to-end tracing smoke test.
 
 ## Database
 
 <!-- luke-docs:start:database -->
-PostgreSQL 16 via Prisma 7. Schema in `apps/api/prisma/schema.prisma`.
+PostgreSQL through Prisma. The schema, the migrations and the generated client all live in `@luke/db` (`packages/db/prisma/*.prisma`, a flat multi-file layout split by domain); what stays here is the seed and the domain `db:*` scripts, which apply business rules and import `apps/api/src/`.
 
 ```bash
-pnpm --filter @luke/api prisma:studio   # Apre Prisma Studio (browser)
-pnpm --filter @luke/api db:seed         # Seed iniziale (primo avvio)
-pnpm --filter @luke/api db:bootstrap    # Bootstrap sviluppo con dati di esempio
+pnpm --filter @luke/db prisma:studio    # Open Prisma Studio in the browser
+pnpm --filter @luke/api db:seed         # Initial seed; reads DATABASE_URL from the shell, not apps/api/.env
+pnpm --filter @luke/api db:bootstrap    # Development only: reset the database, then seed admin and base config
 ```
 
-In produzione `entrypoint.sh` esegue `prisma migrate deploy` prima dell'avvio del server. Le migration sono versionata in `prisma/migrations/`.
+Creating a migration is a workflow of its own, not a single command: see [`docs/prisma-migration-workflow.md`](../../docs/prisma-migration-workflow.md). Run any `prisma` CLI command from `packages/db/`, the only directory that resolves config, schema and migrations together. In production `entrypoint.sh` runs `prisma migrate deploy` before the server starts; the migrations are version-controlled in `packages/db/prisma/migrations/`.
 
-**Model principali** (78 totali): `User`, `Identity`, `LocalCredential`, `AppConfig`, `AuditLog`, `FileObject`, `Brand`, `Season`, `Vendor`, `VendorClosurePeriod`, `Phase`, `PlanningGroup`, `EditLock`, `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionLayoutRevision`, `PricingParameterSet`, `MerchandisingPlan`, `SeasonCalendar`, `CalendarEvent`, `MilestoneTemplate`, `GoogleCalendarBinding`, `GoogleEventMapping`, `NavVendor`, `NavBrand`, `NavSeason`, `NavPfSalesHeader`, `NavPfSalesLine`, `NavKimoSalesHeader`, `NavKimoSalesLine`, `CompanyProfile`, `CompanyTeam`, `Notification`, `DashboardConfig`, `BackupRecord`, `HolidayCountry`, `Holiday`, `SchedulerLock`.
+**80 models**, grouped by the schema file that owns them:
+
+- `identity.prisma` — `User`, `Identity`, `LocalCredential`, `UserToken`, `UserSectionAccess`, `UserPreference`
+- `platform.prisma` — `AppConfig`, `AuditLog`, `FileObject`, `EditLock`, `SchedulerLock`, `BackupRecord`, `Notification`, `NotificationPreference`, `NotificationDedupKey`, `DashboardConfig`, `DashboardTask`, `FeedbackSubmission`
+- `catalog.prisma` — `Brand`, `Season`, `Vendor`, `PricingParameterSet`, `NavSyncFilter`, `NavVendor`, `NavBrand`, `NavSeason`
+- `collection.prisma` — `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionRowQuotation`, `CollectionRowPhaseHistory`, `CollectionCatalogItem`, and the four `*Revision` snapshot models
+- `merchandising.prisma` — `MerchandisingPlan`, `MerchandisingPlanRow`, `MerchandisingSpecsheet`, `MerchandisingComponent`, `MerchandisingImage`
+- `calendar.prisma` — `SeasonCalendar`, `PlanningGroup`, `CalendarEvent`, `MilestoneTemplate`, `MilestoneTemplateItem`, `Phase`, `HolidayCountry`, `Holiday`, `VendorClosurePeriod`, `GoogleCalendarBinding`, `GoogleEventMapping`, `CalendarDigestDelivery` (one row per daily digest email); `CalendarEventVisibility` and `MilestoneTemplateItemVisibility` grant company-function visibility, while `CalendarEventUserVisibility` and `CalendarEventPersonalNote` are per-user
+- `company.prisma` — `CompanyProfile`, `CompanyFunction`, `CompanyTeam`, `CompanyTeamMembership`, `CompanyTeamBrandScope`
+- `nav-analytics.prisma` — the `NavPf*` order-portfolio replica and `NavKimoSalesHeader` / `NavKimoSalesLine`
+
+`schema.prisma` itself holds only the `generator` and `datasource` blocks.
 <!-- luke-docs:end:database -->
+
+### All-day event dates
+
+An all-day event is stored at the UTC midnight of its date. The API refuses any write that would leave an all-day row off midnight — moving only one end of a row already stored that way included — and refuses to clone one; older clients wrote the local midnight of whoever entered the event. `db:fix-allday-dates` rereads every all-day row in `Europe/Rome` and moves it to the UTC midnight of that day — the day a user in Rome picked, wrong only for a row entered from another zone — then resyncs the affected Google calendars (`--no-sync` skips that). Read the `--dry-run` list before applying it, and run it before users edit on a web that reads the stored date: changing such a row's dates in the event form writes the dates it shows, a day early for a row entered in Rome; a save that leaves them alone keeps them. The image pins `TZ=UTC`, so in the API container the compiled script takes the zone on its own command line:
+
+```bash
+pnpm --filter @luke/api db:fix-allday-dates --dry-run                        # development
+TZ=Europe/Rome node dist-scripts/scripts/fix-allday-event-dates.js --dry-run   # API container
+```
+
+### Calendar date range
+
+Calendar values must lie in the bounds ADR-035 §Bounds sets, outside which the calendar-date
+helpers throw: calendar days from 1900-01-01 to 9999-12-30 (a planning group's `anchorDate`, a
+holiday's and a vendor closure's days, an all-day event's days at UTC midnight), timed event
+instants in [1900-01-02, 9999-12-30), and event baselines as any instant whose UTC day is an
+accepted day. Migrations `20260929224334_calendar_dates_in_supported_years` and
+`20261012220000_user_timezone_and_calendar_date_bounds` enforce them with CHECK constraints,
+validated when they are added — on a database holding a row out of range, `migrate deploy` fails
+and `entrypoint.sh` stops the API from starting. Count such rows before deploying; every count must
+be 0:
+
+```sql
+SELECT count(*) AS events_out_of_range FROM calendar_events WHERE NOT (
+  CASE WHEN "allDay"
+    THEN "startAt" >= '1900-01-01' AND "startAt" < '9999-12-31' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-01' AND "endAt" < '9999-12-31'))
+    ELSE "startAt" >= '1900-01-02' AND "startAt" < '9999-12-30' AND ("endAt" IS NULL OR ("endAt" >= '1900-01-02' AND "endAt" < '9999-12-30'))
+  END
+  AND ("baselineStartAt" IS NULL OR ("baselineStartAt" >= '1900-01-01' AND "baselineStartAt" < '9999-12-31'))
+  AND ("baselineEndAt" IS NULL OR ("baselineEndAt" >= '1900-01-01' AND "baselineEndAt" < '9999-12-31')));
+SELECT count(*) AS groups_out_of_range FROM planning_groups WHERE "anchorDate" IS NOT NULL AND "anchorDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS holidays_out_of_range FROM holidays WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+SELECT count(*) AS closures_out_of_range FROM vendor_closure_periods WHERE "startDate" NOT BETWEEN '1900-01-01' AND '9999-12-30' OR "endDate" NOT BETWEEN '1900-01-01' AND '9999-12-30';
+```
+
+A row out of range was typed wrong (a year entered as `26`): correct its date by hand. If a
+migration has already failed, correct the rows, mark it rolled back with `prisma migrate resolve
+--rolled-back <migration>` (from `packages/db/`, against that database) and deploy again.
+
+### Operational scripts
+
+The `db:*` scripts in `scripts/` run in development through pnpm, with their
+arguments right after the script name — pnpm passes a literal `--` through, and
+`db:grant-local-access` rejects it; all but `db:nav-reset` read `apps/api/.env`, and that
+one takes the environment of the shell. The image compiles them to
+`dist-scripts/`, so in the API container — the database publishes no port — the
+same script runs as `node dist-scripts/scripts/<file>.js`. Never run `db:bootstrap`
+there: the image contains it, and it resets the database with no production
+guard (`db:nav-reset` refuses to run in production).
+
+| pnpm script | File | Purpose |
+|---|---|---|
+| `db:check-config-rows` | `check-config-rows.ts` | Read-only report: AppConfig rows the registry no longer declares, stored values their schema refuses, and whether `app.baseUrl` is stored |
+| `db:grant-local-access` | `grant-local-access.ts` | Single-use reset link for an administrator — see [Recovering administrator access](#recovering-administrator-access) |
+| `db:repair-auto-revision-photos` | `repair-auto-revision-photos.ts` | One-shot repair of automatic-revision photos; dry run first, then `--apply` |
+| `db:fix-allday-dates` | `fix-allday-event-dates.ts` | Moves all-day events to UTC midnight — see [All-day event dates](#all-day-event-dates) |
+| `db:migrate-storage` | `migrate-storage.ts` | Copies every file from one storage provider to another, keeping bucket and key; dry run unless `--apply` |
+| `db:backfill-asset-derivatives` | `backfill-asset-derivatives.ts` | Generates the thumb/card/export derivatives of image masters uploaded before the asset pipeline |
+| `db:complete-stranded-rows` | `complete-stranded-rows.ts` | Closes collection rows left open on a deactivated phase |
+| `db:harden-google-acl` | `harden-google-calendar-acl.ts` | Reapplies the per-function reader list and the read-only domain rule to every provisioned Google calendar |
+| `db:migrate-rbac-section-key` | `migrate-rbac-controllo-to-control.ts` | Renames the stored section key `product.controllo` to `product.control` |
+| `db:bootstrap` | `dev-bootstrap.ts` | Development only: resets the database, then seeds the administrator and the base configuration |
+| `db:nav-reset` | `nav-reset.ts` | Development only: restores the "NAV connection just configured" state |
 
 ## NAV Sync
 
 <!-- luke-docs:start:nav -->
-Il sync NAV usa `packages/nav` con connessione diretta SQL Server via mssql. La configurazione (server, database, company, credenziali) è salvata cifrata in AppConfig — nessuna env var.
+NAV sync runs through `packages/nav`, which talks to SQL Server directly via `mssql`. Its configuration lives in AppConfig under `integrations.nav.*`, with the password stored encrypted — no environment variable, and `packages/nav` never imports from `apps/api`: the config arrives injected as a `GetConfigFn`.
 
-Pattern: sync **unidirezionale NAV → Luke**. Ogni entità ha una tabella replica `nav_*` (fedele a NAV) e una tabella locale arricchita (`vendors`, `brands`, `seasons`). Il sync non scrive mai su NAV, non tocca `isActive`, non riattiva entità disabilitate manualmente.
+The pattern is a **one-way NAV → Luke sync**. Each entity has a `nav_*` replica table faithful to NAV and an enriched local table (`vendors`, `brands`, `seasons`). The sync never writes back to NAV, never touches `isActive`, and never reactivates an entity that was disabled by hand.
 
-Entità sincronizzate: **Vendor** (differenziale watermark), **Brand** (full sync), **Season** (full sync), **Portafoglio ordini** (replica `nav_pf_*` per statistiche vendite), **KIMO** (replica `nav_kimo_*` per il report Vendite+Bidone).
+Synchronized entities: **Vendor** (watermark differential), **Brand** (full sync), **Season** (full sync), **order portfolio** (`nav_pf_*` replica behind sales statistics), **KIMO** (`nav_kimo_*` replica behind the sales+returns report). Each entity is synced inside its own try/catch, so one failure does not block the others.
 
-Trigger sync: manuale via `/settings/nav-sync` nel frontend (Vendor/Brand/Season) o via `sales.statistics.kimo.triggerSync` (KIMO), oppure job periodico configurabile via AppConfig.
+Triggers: manually from `/settings/nav-sync` in the frontend — `integrations.nav.sync.run` for Vendor/Brand/Season, `sales.statistics.portafoglio.triggerSync` for the order portfolio, `sales.statistics.kimo.triggerSync` for KIMO — and through `navSyncScheduler.ts`, `portafoglioSyncScheduler.ts` and `kimoSyncScheduler.ts`. Their per-entity intervals are stored in `NavSyncFilter` rows. Every scheduled run takes a `SchedulerLock` row so two instances cannot sync the same entity concurrently.
+
+Table naming, NAV-side details and the decisions behind them: [`docs/nav-integration.md`](../../docs/nav-integration.md).
 <!-- luke-docs:end:nav -->
 
 ## Storage
 
 <!-- luke-docs:start:storage -->
-Il layer storage è astratto da `IStorageProvider` (da `@luke/core`). Il provider attivo è selezionato da `storage.type` in AppConfig — `local` o `minio` — senza env var né ricompilazione.
+The storage layer is abstracted behind `IStorageProvider` (from `@luke/core`). The active provider is selected by `storage.type` in AppConfig — `local` or `s3` — with no environment variable and no rebuild. Files are never handled outside a provider implementation, and destination paths are always produced by the builder functions rather than assembled by hand.
 
-**Upload a due fasi**: il file è caricato come `FileObject` pending (`confirmedAt = null`); la conferma avviene nella stessa transaction Prisma che crea l'entità. File pending abbandonati sono rimossi dal job di cleanup periodico.
+**Two-phase upload**: the file is written as a pending `FileObject` (`confirmedAt = null`); confirmation happens in the same Prisma transaction that creates the owning entity. Abandoned pending files are reclaimed by the periodic cleanup (`setupTempFileCleanup` in `src/server.ts`).
 
-**Bucket validi**: `uploads`, `exports`, `assets`, `brand-logos`, `collection-row-pictures`, `collection-row-pictures-revisions`, `merchandising-specsheet-images`, `company-assets`
+**Valid buckets** are declared once, in `APP_STORAGE_BUCKETS` (`packages/core/src/storage/types.ts`); `isValidBucket()` in `packages/core/src/storage/config.ts` derives from that tuple and additionally admits the internal `backups` bucket. The list is deliberately not repeated here — a second copy would drift from the type that gates it.
 
-Le immagini sono servite attraverso il proxy Next.js `/api/uploads/[...path]` — i bucket restano privati (non esposti pubblicamente).
+Images are served through the Next.js proxy `/api/uploads/[...path]`, so the buckets stay private and are never exposed directly.
 <!-- luke-docs:end:storage -->
+
+### Provider implementation status
+
+The storage factory in `src/storage/index.ts` implements local filesystem and
+S3-compatible storage. `SambaStorageProvider` and `GDriveStorageProvider` are
+unimplemented extension ideas, not available providers.
+
+The legacy `storage.smb` and `storage.drive` AppConfig keys still have
+registered Zod schemas. No dedicated procedure writes them any more, though the
+generic `config.*` write procedures still accept them (`storage` is an allowed
+prefix and both keys are registered), and no storage provider or web UI reads
+them. Storage configuration (local / S3) goes through
+`storage.getConfig`/`saveConfig`.

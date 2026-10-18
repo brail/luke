@@ -1,10 +1,17 @@
 {
   "name": "eslint-plugin-luke",
-  "version": "2.1.6",
   "private": true,
   "type": "module",
   "main": "./index.js",
   "exports": {
     ".": "./index.js"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test \"rules/__tests__/*.test.js\""
+  },
+  "devDependencies": {
+    "@typescript-eslint/parser": "^8.68.0",
+    "eslint": "^10.9.1"
   }
 }

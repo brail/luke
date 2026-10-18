@@ -1,50 +1,50 @@
-# ADR-008 — AppConfig KV System e Env Policy
+# ADR-008 — AppConfig KV System and Env Policy
 
 ## Status
 
-Potentially stale — review needed
+Superseded by [018 — Database-Backed Runtime Configuration and Bootstrap-Only Environment](018-runtime-configuration-and-bootstrap-environment.md)
 
-## Contesto
+## Context
 
-Il progetto ha bisogno di gestire configurazioni applicative sensibili (credenziali SMTP, bind LDAP, endpoint storage, token OAuth, `app.baseUrl`) in modo sicuro, senza esporle in file `.env` che finirebbero in versione o nei log di deploy.
+The project needs to manage sensitive application configuration (SMTP credentials, LDAP bind, storage endpoints, OAuth tokens, `app.baseUrl`) securely, without exposing it in `.env` files that would end up in version control or in deploy logs.
 
-Le env var tradizionali presentano problemi strutturali:
-- Richiedono rebuild o restart per ogni cambio
-- Finiscono facilmente in log, dump di processo, export CI
-- Non supportano cifratura nativa
-- Non hanno audit trail
+Traditional env vars have structural problems:
+- They require a rebuild or restart for every change
+- They easily end up in logs, process dumps, CI exports
+- They do not support native encryption
+- They have no audit trail
 
-Al contempo, alcune variabili **devono** stare in `.env` per vincoli di framework: Prisma richiede `DATABASE_URL` prima del boot DB, NextAuth richiede `NEXTAUTH_SECRET` a compile-time, Next.js bake `NEXT_PUBLIC_*` nel bundle client.
+At the same time, some variables **must** live in `.env` because of framework constraints: Prisma requires `DATABASE_URL` before the DB boots, NextAuth requires `NEXTAUTH_SECRET` at compile time, Next.js bakes `NEXT_PUBLIC_*` into the client bundle.
 
-## Decisione
+## Decision
 
-Separazione netta tra **bootstrap infrastrutturale** (`.env`) e **configurazione applicativa** (AppConfig su PostgreSQL).
+A clean separation between **infrastructure bootstrap** (`.env`) and **application configuration** (AppConfig on PostgreSQL).
 
-### `.env` ammette solo
+### `.env` allows only
 
 **API**: `DATABASE_URL`, `PORT`, `HOST`, `NODE_ENV`, `LUKE_CORS_ALLOWED_ORIGINS`, `OTEL_*`, `LOG_LEVEL`
 
 **Web**: `INTERNAL_API_URL`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_FRONTEND_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `COOKIE_SECURE`
 
-### AppConfig (tabella KV PostgreSQL)
+### AppConfig (PostgreSQL KV table)
 
-Tutto il resto vive in `AppConfig` come coppie `key → value` (stringa). `AppConfigRegistry` in `packages/core/src/schemas/config.ts` è la single source of truth: ogni chiave ha schema Zod, tipo e flag `sensitive`.
+Everything else lives in `AppConfig` as `key → value` pairs (string). `AppConfigRegistry` in `packages/core/src/schemas/config.ts` is the single source of truth: every key has a Zod schema, a type and a `sensitive` flag.
 
-- Valori sensibili cifrati con AES-256-GCM (master key `~/.luke/secret.key`)
-- Lettura via `getConfigValue(prisma, key)` o tRPC config router
-- Nessun `process.env.*` nel codice applicativo
+- Sensitive values encrypted with AES-256-GCM (master key `~/.luke/secret.key`)
+- Read via `getConfigValue(prisma, key)` or the tRPC config router
+- No `process.env.*` in application code
 
-### Enforcement automatico
+### Automatic enforcement
 
-`assertEnvPolicy()` in `apps/api/src/server.ts` blocca il boot in produzione se trova pattern vietati: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`.
+`assertEnvPolicy()` in `apps/api/src/server.ts` blocks boot in production if it finds forbidden patterns: `SMTP_*`, `LDAP_*`, `JWT_*`, `*_SECRET`, `*_PASSWORD`, `*_API_KEY`, `*_TOKEN`.
 
-- **Produzione**: `process.exit(1)` — il server non parte
-- **Sviluppo**: warning esplicito in console
+- **Production**: `process.exit(1)` — the server does not start
+- **Development**: explicit warning in the console
 
-## Conseguenze
+## Consequences
 
-- Ogni nuova chiave di configurazione richiede aggiornamento di `AppConfigRegistry` con schema Zod — non si può aggiungere config "di nascosto"
-- I deploy non hanno segreti applicativi nelle env var di container/Portainer
-- L'audit trail di ogni cambio configurazione è garantito dal router tRPC `config.*`
-- Se il DB non è raggiungibile al boot, la configurazione applicativa non è disponibile — il server fa fail-fast
-- `assertEnvPolicy()` va aggiornato se si aggiungono pattern di env var vietati non ancora coperti
+- Every new configuration key requires updating `AppConfigRegistry` with a Zod schema — config cannot be added "secretly"
+- Deploys have no application secrets in container/Portainer env vars
+- The audit trail of every configuration change is guaranteed by the `config.*` tRPC router
+- If the DB is not reachable at boot, the application configuration is not available — the server fails fast
+- `assertEnvPolicy()` must be updated if forbidden env var patterns not yet covered are added

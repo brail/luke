@@ -1,23 +1,26 @@
 /**
  * Raw Fastify route for downloading a passphrase-protected, instance-portable backup export
- * package (`.lukebak`). Same streaming rationale as `backupDownload.ts` (payload can be many
- * GB) — the only difference is the response body is the export envelope (header + original
- * ciphertext), built by prepending `encodeExportHeader(payload.header)` to the same blob stream
- * `backupDownload.ts` sends unchanged.
+ * package (`.lukebak`). Deliberately not a tRPC procedure and not the generic
+ * `/uploads/:bucket/*` proxy: the payload can be many GB, so it must stream (see
+ * `streamRawResponse`), and the "backups" bucket is excluded from the generic proxy on purpose.
+ * The response body is the export envelope: `encodeExportHeader(payload.header)` followed by the
+ * stored ciphertext, unchanged.
  *
- * Authorized the same way as `backupDownload.ts`: a short-lived signed token
- * (`maintenance.backup.prepareExport` mints it) rather than a Bearer session — the permission
- * check (`maintenance:backup_export`) already happened when the token was minted.
+ * Authorized via a short-lived signed token (`maintenance.backup.prepareExport` mints it) rather
+ * than a Bearer session, since a plain browser navigation can't set an Authorization header; the
+ * permission check (`maintenance:backup_export`) already happened when the token was minted.
  */
 
-import { PassThrough, type Readable } from 'stream';
+import { PassThrough } from 'stream';
+import { pipeline } from 'stream/promises';
+
+import type { PrismaClient } from '@luke/db';
 
 import { encodeExportHeader } from '../lib/backup/exportFormat';
 import { getStorageProvider } from '../storage';
 import { verifyExportToken } from '../utils/downloadToken';
 import { streamRawResponse } from '../utils/streamResponse';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 export async function registerBackupExportDownloadRoute(
@@ -25,7 +28,7 @@ export async function registerBackupExportDownloadRoute(
   prisma: PrismaClient
 ): Promise<void> {
   fastify.get<{ Params: { id: string }; Querystring: { token?: string } }>(
-    '/maintenance/backup/:id/export',
+    '/download/backup/:id/export',
     async (request, reply) => {
       let payload;
       try {
@@ -51,8 +54,10 @@ export async function registerBackupExportDownloadRoute(
 
         const combined = new PassThrough();
         combined.write(encodeExportHeader(payload.header));
-        (stream as Readable).on('error', err => combined.destroy(err));
-        (stream as Readable).pipe(combined);
+        // `pipeline`, so a client that goes away (which destroys `combined`) also closes the storage
+        // stream. Nothing to log here: a source failure reaches `streamRawResponse`'s `onError`, and
+        // a client leaving is not an error.
+        pipeline(stream, combined).catch(() => {});
 
         streamRawResponse(
           reply,

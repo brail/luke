@@ -10,13 +10,14 @@ import type {
   CollectionRowQuotationInput,
   CollectionRowQuotationUpdate,
 } from '@luke/core';
-
 import type {
   Prisma,
   PrismaClient,
   CollectionRowQuotation,
   PricingParameterSet,
-} from '@prisma/client';
+} from '@luke/db';
+
+import { isForeignKeyViolation } from '../lib/error.js';
 
 export type QuotationWithParamSet = CollectionRowQuotation & {
   pricingParameterSet: PricingParameterSet | null;
@@ -25,6 +26,31 @@ export type QuotationWithParamSet = CollectionRowQuotation & {
 const QUOTATION_INCLUDE = {
   pricingParameterSet: true,
 } as const;
+
+// One answer for both ways a set can be unusable: never in scope, or deleted since it was chosen.
+function paramSetOutOfScope(): TRPCError {
+  return new TRPCError({
+    code: 'BAD_REQUEST',
+    message: 'Il set di parametri non esiste più o non appartiene al brand/stagione corrente',
+  });
+}
+
+/**
+ * Runs a quotation write whose parameter sets `assertParamSetsInScope` has checked. The check goes
+ * stale only if a set is deleted before the write commits: `removeParameterSet` refuses a set in
+ * use, so a write that loses that race meets the foreign key, and the refusal gets the check's
+ * answer instead of a 500. Inside a transaction the error still propagates, and it rolls back whole.
+ */
+async function writeCheckedQuotations<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (isForeignKeyViolation(err, 'collection_row_quotations_pricingParameterSetId_fkey')) {
+      throw paramSetOutOfScope();
+    }
+    throw err;
+  }
+}
 
 /**
  * Ensures every referenced pricing parameter set belongs to the row's brand+season — shared by
@@ -48,10 +74,7 @@ async function assertParamSetsInScope(
     paramSets.filter(ps => ps.brandId === layout.brandId && ps.seasonId === layout.seasonId).map(ps => ps.id)
   );
   if (paramSetIds.some(id => !validIds.has(id))) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: 'Il set di parametri non appartiene al brand/stagione corrente',
-    });
+    throw paramSetOutOfScope();
   }
 }
 
@@ -84,18 +107,20 @@ export async function createQuotation(
     where: { rowId: input.rowId },
   });
 
-  return prisma.collectionRowQuotation.create({
-    data: {
-      rowId: input.rowId,
-      order: input.order ?? existingCount,
-      pricingParameterSetId: input.pricingParameterSetId ?? null,
-      retailPrice: input.retailPrice ?? null,
-      supplierQuotation: input.supplierQuotation ?? null,
-      notes: input.notes ?? null,
-      sku: input.sku ?? null,
-    },
-    include: QUOTATION_INCLUDE,
-  }) as Promise<QuotationWithParamSet>;
+  return writeCheckedQuotations(() =>
+    prisma.collectionRowQuotation.create({
+      data: {
+        rowId: input.rowId,
+        order: input.order ?? existingCount,
+        pricingParameterSetId: input.pricingParameterSetId ?? null,
+        retailPrice: input.retailPrice ?? null,
+        supplierQuotation: input.supplierQuotation ?? null,
+        notes: input.notes ?? null,
+        sku: input.sku ?? null,
+      },
+      include: QUOTATION_INCLUDE,
+    }) as Promise<QuotationWithParamSet>
+  );
 }
 
 /**
@@ -123,18 +148,20 @@ export async function updateQuotation(
     await assertParamSetsInScope([input.pricingParameterSetId], layout, prisma);
   }
 
-  return prisma.collectionRowQuotation.update({
-    where: { id: quotationId },
-    data: {
-      ...(input.order !== undefined && { order: input.order }),
-      ...('pricingParameterSetId' in input && { pricingParameterSetId: input.pricingParameterSetId ?? null }),
-      ...('retailPrice' in input && { retailPrice: input.retailPrice ?? null }),
-      ...('supplierQuotation' in input && { supplierQuotation: input.supplierQuotation ?? null }),
-      ...('notes' in input && { notes: input.notes ?? null }),
-      ...('sku' in input && { sku: input.sku ?? null }),
-    },
-    include: QUOTATION_INCLUDE,
-  }) as Promise<QuotationWithParamSet>;
+  return writeCheckedQuotations(() =>
+    prisma.collectionRowQuotation.update({
+      where: { id: quotationId },
+      data: {
+        ...(input.order !== undefined && { order: input.order }),
+        ...('pricingParameterSetId' in input && { pricingParameterSetId: input.pricingParameterSetId ?? null }),
+        ...('retailPrice' in input && { retailPrice: input.retailPrice ?? null }),
+        ...('supplierQuotation' in input && { supplierQuotation: input.supplierQuotation ?? null }),
+        ...('notes' in input && { notes: input.notes ?? null }),
+        ...('sku' in input && { sku: input.sku ?? null }),
+      },
+      include: QUOTATION_INCLUDE,
+    }) as Promise<QuotationWithParamSet>
+  );
 }
 
 /**
@@ -243,7 +270,7 @@ export async function syncRowQuotations(
   // deleteMany and the per-draft writes touch disjoint sets of rows (`deletedIds` is the complement
   // of `submittedIds`) — run in parallel instead of in sequence, same principle already applied to
   // the locks in editLock.service.ts (Promise.all on tx).
-  const [, writes] = await Promise.all([
+  const [, writes] = await writeCheckedQuotations(() => Promise.all([
     deletedIds.length > 0
       ? prisma.collectionRowQuotation.deleteMany({ where: { id: { in: deletedIds }, rowId } })
       : Promise.resolve(undefined),
@@ -269,7 +296,7 @@ export async function syncRowQuotations(
             })) as QuotationWithParamSet };
       })
     ),
-  ]);
+  ]));
 
   return {
     created: writes.filter(w => w.kind === 'created').map(w => w.quotation),

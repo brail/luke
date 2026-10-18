@@ -13,7 +13,7 @@ import {
 } from '../services/brandScope.service';
 
 /** Milliseconds in a day: durations here stay fractional (average to one decimal), so
- * they don't go through `daysBetween`, which rounds to whole UTC days. */
+ * they are never rounded to whole calendar days. */
 const MS_PER_DAY = 86_400_000;
 
 /**

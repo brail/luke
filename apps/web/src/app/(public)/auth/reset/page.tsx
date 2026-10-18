@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import React, { useState, useEffect, Suspense } from 'react';
 
-import Logo from '../../../../components/Logo';
+import LogoLockup from '../../../../components/LogoLockup';
+import { PasswordValidationIndicators } from '../../../../components/PasswordValidationIndicators';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -16,11 +17,13 @@ import {
 } from '../../../../components/ui/card';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { usePasswordPolicy } from '../../../../hooks/usePasswordValidation';
+import { evaluatePassword } from '../../../../lib/passwordChecks';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 /**
- * Componente interno con useSearchParams
+ * Inner component using useSearchParams.
  */
 function ResetPasswordContent() {
   const router = useRouter();
@@ -33,6 +36,7 @@ function ResetPasswordContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const policy = usePasswordPolicy();
 
   // tRPC mutations
   const requestResetMutation = trpc.auth.requestPasswordReset.useMutation();
@@ -44,7 +48,7 @@ function ResetPasswordContent() {
   }, []);
 
   /**
-   * Handler per richiesta reset password
+   * Handler for the password reset request.
    */
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,22 +74,23 @@ function ResetPasswordContent() {
   };
 
   /**
-   * Handler per conferma reset password con token
+   * Handler for the password reset confirmation with a token.
    */
   const handleConfirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess('');
 
-    // Validazione password match
-    if (newPassword !== confirmPassword) {
-      setError('Le password non corrispondono');
+    // Against the configured policy, not a number written here: this page announced 12 characters
+    // and no complexity requirement at all, then relayed a server rejection listing four more it had
+    // never mentioned.
+    const evaluation = evaluatePassword(newPassword, confirmPassword, policy);
+    if (evaluation.confirmError) {
+      setError(evaluation.confirmError);
       return;
     }
-
-    // Validazione lunghezza minima
-    if (newPassword.length < 12) {
-      setError('La password deve essere di almeno 12 caratteri');
+    if (!evaluation.isValid) {
+      setError(`Password non valida: ${evaluation.errors.join(', ')}`);
       return;
     }
 
@@ -121,7 +126,7 @@ function ResetPasswordContent() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex justify-center mb-4">
-            <Logo size="xl" className="text-primary" />
+            <LogoLockup variant="stacked" />
           </div>
           <CardTitle className="text-2xl text-center">
             {token ? 'Reimposta Password' : 'Reset Password'}
@@ -133,7 +138,7 @@ function ResetPasswordContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Form richiesta reset (senza token) */}
+          {/* Reset request form (no token) */}
           {!token && (
             <form onSubmit={handleRequestReset} className="space-y-4">
               <div className="space-y-2">
@@ -176,7 +181,7 @@ function ResetPasswordContent() {
             </form>
           )}
 
-          {/* Form conferma reset (con token) */}
+          {/* Reset confirmation form (with token) */}
           {token && (
             <form onSubmit={handleConfirmReset} className="space-y-4">
               <div className="space-y-2">
@@ -184,13 +189,18 @@ function ResetPasswordContent() {
                 <Input
                   id="newPassword"
                   type="password"
-                  placeholder="Nuova password (min 12 caratteri)"
+                  placeholder={`Nuova password (min ${policy.minLength} caratteri)`}
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={policy.minLength}
+                />
+                <PasswordValidationIndicators
+                  password={newPassword}
+                  confirmPassword={confirmPassword}
+                  showConfirmPassword
                 />
               </div>
 
@@ -205,7 +215,7 @@ function ResetPasswordContent() {
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
-                  minLength={12}
+                  minLength={policy.minLength}
                 />
               </div>
 
@@ -241,9 +251,9 @@ function ResetPasswordContent() {
 }
 
 /**
- * Pagina Reset Password con Suspense boundary
- * - Senza token: form per richiedere reset via email
- * - Con token: form per impostare nuova password
+ * Password Reset page with a Suspense boundary.
+ * - Without a token: form to request a reset by email
+ * - With a token: form to set a new password
  */
 export default function ResetPasswordPage() {
   return (

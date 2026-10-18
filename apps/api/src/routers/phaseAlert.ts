@@ -30,7 +30,13 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ rowId: string }}
-   * @output {{ rowId, eventId, phaseId, deadline, daysToDeadline, band } | null}
+   * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartDay, phaseId, deadlineDay,
+   *   daysToDeadline, reached, daysMode, relevantCountryCodes, band, nextPhase }
+   *   | { state: 'completed', rowId, completedDay, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
+   *   daysMode, relevantCountryCodes, band } | null} — counts in the business time zone;
+   *   `reached`/`late` decide lateness, the count stays real; `deadlineDay`/`eventStartDay` are
+   *   calendar dates — an all-day event's own, a timed one's in that zone — and `completedDay` is
+   *   the completion's day in that zone.
    */
   criticalityForRow: protectedProcedure
     .use(requirePermission('collection_alert:read'))
@@ -67,7 +73,7 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
-   * @output {{ rowId, eventId, phaseId, deadline, daysToDeadline, band }[]} — rows with no active
+   * @output {Array<same union as `criticalityForRow`, plus productCategory>} — rows with no active
    *   phase (not yet frozen calendar / all phases completed) are omitted.
    */
   criticalityForLayout: protectedProcedure
@@ -95,7 +101,7 @@ export const phaseAlertRouter = router({
    * Overwrites `collectionControl.alertThresholds` — the admin-configured criticality bands
    * consumed by `resolveAlertThresholds`. Same `config:update` gate as the other AppConfig-backed
    * settings pages (mail/ldap/storage), not `collection_alert:*` — `COLLECTION_ALERT` only grants
-   * `read` in `RESOURCE_ACTIONS`, and this is config administration, not alert-engine usage.
+   * `read` in `VALID_RESOURCE_ACTIONS`, and this is config administration, not alert-engine usage.
    *
    * @auth {config:update}
    * @input {CollectionAlertThresholdsSchema} — default bands + optional per-Phase overrides.
@@ -127,7 +133,7 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ seasonId: string, brandIds: string[] }}
-   * @output {{ brandId, productCategory, label, color, count }[]}
+   * @output {{ brandId, productCategory, label, color, emphasis, count }[]}
    */
   saturationHeatmap: protectedProcedure
     .use(requirePermission('collection_alert:read'))
@@ -142,7 +148,8 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
-   * @output {{ eventId, eventTitle, eventStartAt, bands: { label, color, count }[] }[]} — sorted by eventStartAt.
+   * @output {{ eventId, eventTitle, eventStartDay, bands: { label, color, emphasis, count }[] }[]} — sorted by
+   *   eventStartDay (a calendar date, as for `criticalityForRow`), then title and id.
    */
   bottleneckByEvent: protectedProcedure
     .use(requirePermission('collection_alert:read'))

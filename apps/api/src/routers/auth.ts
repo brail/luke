@@ -1,6 +1,8 @@
 /**
  * tRPC router for authentication
- * Handles login, logout, and session verification
+ * Handles login, API token refresh, password reset, email verification and the LDAP
+ * pending-approval email flow. Logout is NextAuth `signOut()` on the web side; revoking every
+ * session is `me.revokeAllSessions`.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -9,41 +11,52 @@ import { z } from 'zod';
 import {
   RequestPasswordResetSchema,
   ConfirmPasswordResetSchema,
-  RequestEmailVerificationSchema,
   ConfirmEmailVerificationSchema,
   RequestEmailVerificationAdminSchema,
+  SubmitPendingEmailSchema,
 } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { isSyntheticLdapEmail } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import {
   router,
-  publicProcedure,
   protectedProcedure,
-  adminProcedure,
+  publicProcedure,
+  selfProcedure,
+  type Context,
 } from '../lib/trpc';
 import {
   authenticateUser,
-  logoutAllSessions,
   requestPasswordReset,
   confirmPasswordReset,
-  requestEmailVerification,
   confirmEmailVerification,
+  verifyCredentials,
 } from '../services/auth.service';
 
 /**
- * Masks an email address for exposure from an unauthenticated public endpoint
- * (e.g. `a***@luke.com`), keeping the domain visible for recognizability.
+ * Sends a verification link through the shared helper. Its refusals — an unknown or inactive user
+ * (NOT_FOUND), a synthetic LDAP address (BAD_REQUEST) — reach the caller as they are, not as a
+ * masked 500; a failed send becomes an INTERNAL_SERVER_ERROR carrying its cause.
  */
-function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
-  return `${local[0]}***@${domain}`;
+async function sendVerificationLink(
+  ctx: Context,
+  options: Parameters<typeof sendVerificationEmail>[1]
+) {
+  try {
+    return await sendVerificationEmail(ctx.prisma, options, ctx);
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: error instanceof Error ? error.message : 'Errore invio email',
+      cause: error,
+    });
+  }
 }
 
 /**
@@ -68,52 +81,17 @@ export const authRouter = router({
   login: publicProcedure
     .use(withRateLimit('login'))
     .input(LoginSchema)
-    .use(withIdempotency())
+    // Public: no session yet, so the key is not scoped to a user.
+    .use(withIdempotency({ scope: 'anonymous' }))
     .mutation(async ({ input, ctx }) => {
       return await authenticateUser(ctx, input);
     }),
 
   /**
-   * Logs out the current session; cookie removal is handled by NextAuth on the web layer.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {{ success: true, message: string }}
-   */
-  logout: protectedProcedure.mutation(async ({ ctx: _ctx }) => {
-    // Cookie API removed: Web handles logout via NextAuth signOut()
-    return { success: true, message: 'Logout effettuato con successo' };
-  }),
-
-  /**
-   * Invalidates all sessions for the current user by incrementing tokenVersion.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {Result from logoutAllSessions().}
-   */
-  logoutAll: protectedProcedure.mutation(async ({ ctx }) => {
-    return await logoutAllSessions(ctx);
-  }),
-
-  /**
-   * Returns the current authenticated user's session info.
-   *
-   * @auth {authenticated}
-   * @input {none}
-   * @output {{ user: SessionUser }} — user object from the current session.
-   */
-  me: protectedProcedure.query(async ({ ctx }) => {
-    // The session is already verified by the middleware
-    return {
-      user: ctx.session.user,
-    };
-  }),
-
-  /**
    * Re-mints a fresh API access token for the current session.
-   * `protectedProcedure` already validates the Bearer (expired → UNAUTHORIZED) and the
-   * `tokenVersion` (revoked → UNAUTHORIZED): the web callback uses it to
+   * `selfProcedure` — a `protectedProcedure` — already validates the Bearer
+   * (expired → UNAUTHORIZED) and the `tokenVersion` (revoked → UNAUTHORIZED):
+   * the web callback uses it to
    * renew the embedded accessToken before it expires, preventing a still-valid
    * NextAuth session from sending an expired API JWT (`jwt expired`).
    *
@@ -121,7 +99,7 @@ export const authRouter = router({
    * @input {none}
    * @output {{ token: string, tokenVersion: number }}
    */
-  refreshToken: protectedProcedure.mutation(async ({ ctx }) => {
+  refreshToken: selfProcedure.mutation(async ({ ctx }) => {
     // Role and tokenVersion are re-read from the database, not from the session claim.
     // Re-signing from the claim turned refresh into an authority recycle: a
     // demoted user would endlessly renew a token that still said
@@ -184,17 +162,48 @@ export const authRouter = router({
     }),
 
   /**
-   * Generates an email-verification token and sends the verification link.
+   * Sends the caller a link to verify their own email address.
    *
-   * @auth {public}
-   * @input {RequestEmailVerificationSchema} — email address to verify.
-   * @output {Success confirmation.}
+   * Takes no address. It used to take one from anyone, and its answers told an unknown address from
+   * a verified one, a sent mail or a failed send. On the caller's own account the real outcome,
+   * a failed send included, is the answer.
+   *
+   * @auth {authenticated — own account}
+   * @input {none}
+   * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} BAD_REQUEST for an LDAP account still on its synthetic address, which
+   *   reaches nobody; INTERNAL_SERVER_ERROR if the email cannot be sent.
    */
-  requestEmailVerification: publicProcedure
-    .use(withRateLimit('passwordReset')) // Uses the same policy
-    .input(RequestEmailVerificationSchema)
+  requestEmailVerification: selfProcedure
+    // Per user: every caller is signed in, and a shared office IP must not throttle colleagues.
+    .use(withRateLimit('userMutations'))
+    .mutation(async ({ ctx }) => {
+      const userId = ctx.session.user.id;
+      return sendVerificationLink(ctx, { userId, reason: 'user_requested', actorId: userId });
+    }),
+
+  /**
+   * Sends a new verification link to an account that login refuses until its email is verified
+   * (`auth.requireEmailVerification`), the one way back that needs no session. It proves the
+   * password first, as a login does (`verifyCredentials`: strategy, the per-account bucket shared
+   * with login, the failure audit), so it tells a caller without it nothing about the account.
+   *
+   * @auth {public — password-verified}
+   * @input {LoginSchema} — username and password.
+   * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} UNAUTHORIZED for wrong credentials; PRECONDITION_FAILED for an address
+   *   already verified; whatever `verifyCredentials` and `sendVerificationLink` throw.
+   */
+  resendVerification: publicProcedure
+    .use(withRateLimit('passwordReset'))
+    .input(LoginSchema)
     .mutation(async ({ input, ctx }) => {
-      return await requestEmailVerification(ctx, input.email);
+      const { user } = await verifyCredentials(ctx, input);
+      if (user.emailVerifiedAt) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Email già verificata: puoi accedere.' });
+      }
+      // Pre-session: no actor; the helper's audit row carries the account as its target.
+      return sendVerificationLink(ctx, { userId: user.id, reason: 'user_requested' });
     }),
 
   /**
@@ -212,88 +221,78 @@ export const authRouter = router({
     }),
 
   /**
-   * Checks whether a username belongs to an LDAP user awaiting admin approval.
+   * Saves a real email for an LDAP user awaiting approval whose directory entry has none, and sends
+   * the verification email to it. The caller proves the password first, exactly as a login does
+   * (`verifyCredentials`: strategy, the per-account bucket shared with login, the failure audit).
    *
-   * @auth {public}
-   * @input {{ username: string }} — username to check.
-   * @output {{ isPending: boolean, needsEmail: boolean, maskedEmail: string | null }} — pending status,
-   *   whether a real email is needed, and (if not) the masked address the verification mail was sent to.
-   */
-  getPendingStatus: publicProcedure
-    .use(withRateLimit('pendingEmail'))
-    .input(z.object({ username: z.string().min(1) }))
-    .query(async ({ input, ctx }) => {
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username: input.username,
-          isActive: true,
-          pendingApproval: true,
-        },
-        select: { email: true },
-      });
-
-      if (!user) return { isPending: false, needsEmail: false, maskedEmail: null };
-
-      const needsEmail = isSyntheticLdapEmail(user.email);
-
-      return {
-        isPending: true,
-        needsEmail,
-        maskedEmail: needsEmail ? null : maskEmail(user.email),
-      };
-    }),
-
-  /**
-   * Saves a real email for an LDAP pending user and sends the verification email.
+   * Before the password is proven, every refusal that depends on the account reads like a wrong
+   * password. After it, a refusal says what it is and is audited: an account whose address cannot
+   * be set here is a PRECONDITION_FAILED (an address already set is changed by an administrator),
+   * and an address another account holds is a CONFLICT.
    *
-   * @auth {public}
-   * @input {{ username: string, email: string }} — LDAP username and the email to register.
+   * @auth {public — password-verified}
+   * @input {SubmitPendingEmailSchema} — username, password and the email to register.
    * @output {{ success: true }}
+   * @throws {TRPCError} BAD_REQUEST for a synthetic new address, before any credential check;
+   *   UNAUTHORIZED for wrong credentials; PRECONDITION_FAILED for an account that is not (or
+   *   stopped being, before the write) an active pending LDAP one with a synthetic address;
+   *   CONFLICT for a taken address; whatever else `verifyCredentials` throws.
    */
   submitPendingEmail: publicProcedure
     .use(withRateLimit('pendingEmail'))
-    .input(
-      z.object({
-        username: z.string().min(1),
-        email: z.string().email('Email non valida').toLowerCase().trim(),
-      })
-    )
+    .input(SubmitPendingEmailSchema)
     .mutation(async ({ input, ctx }) => {
       const { username, email } = input;
-
-      // Find LDAP user pending approval
-      const user = await ctx.prisma.user.findFirst({
-        where: {
-          username,
-          isActive: true,
-          pendingApproval: true,
-        },
-        include: {
-          identities: { where: { provider: 'LDAP' } },
-        },
-      });
-
-      if (!user || user.identities.length === 0) {
-        // Generic response to prevent enumeration
-        return { success: true };
+      // A synthetic address is not one to be contacted at, and saving one would leave the account
+      // as eligible as before, so the flow could run again.
+      if (isSyntheticLdapEmail(email)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email non valida' });
       }
+      const { user } = await verifyCredentials(ctx, input);
 
-      // Check email uniqueness (excludes the user itself)
-      const existing = await ctx.prisma.user.findFirst({
-        where: { email, id: { not: user.id } },
-      });
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Email già in uso da un altro account',
+      // The password is proven from here on: a refusal can say what it is, and leaves a row.
+      const notSettable = async (reason: 'address_already_set' | 'account_changed', message: string) => {
+        await logAudit(ctx, {
+          action: 'PENDING_USER_EMAIL_SUBMITTED',
+          targetType: 'User',
+          targetId: user.id,
+          result: 'FAILURE',
+          metadata: { username, reason },
         });
+        return new TRPCError({ code: 'PRECONDITION_FAILED', message });
+      };
+      if (!isSyntheticLdapEmail(user.email)) {
+        throw await notSettable(
+          'address_already_set',
+          'Indirizzo email già registrato: per cambiarlo contatta un amministratore.'
+        );
       }
 
-      await ctx.prisma.user.update({
-        where: { id: user.id },
-        data: { email },
-      });
+      // Conditional write (rule 3), which is also the eligibility check: an account that is not
+      // active, pending and LDAP — or stopped being one, or got an address from another submit,
+      // since the user above was read — matches nothing. The address's uniqueness is the
+      // database's constraint, not a read before the write.
+      let written: { count: number };
+      try {
+        written = await ctx.prisma.user.updateMany({
+          where: {
+            id: user.id,
+            isActive: true,
+            pendingApproval: true,
+            email: user.email,
+            identities: { some: { provider: 'LDAP' } },
+          },
+          data: { email, emailVerifiedAt: null },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso da un altro account' });
+        }
+        throw err;
+      }
+      if (written.count === 0) {
+        throw await notSettable('account_changed', "L'account è cambiato nel frattempo: accedi di nuovo.");
+      }
 
       await logAudit(ctx, {
         action: 'PENDING_USER_EMAIL_SUBMITTED',
@@ -319,38 +318,25 @@ export const authRouter = router({
     }),
 
   /**
-   * Admin-triggered email verification for a specific user by userId.
+   * Sends a user a link to verify their email address, on behalf of whoever manages users. It
+   * mails the address the account already has, changes nothing on it and returns no token, which is
+   * why `users:update` is enough.
    *
-   * @auth {users:update (admin)}
+   * @auth {users:update}
    * @input {RequestEmailVerificationAdminSchema} — userId of the target user.
    * @output {Result from sendVerificationEmail().}
+   * @throws {TRPCError} NOT_FOUND for an unknown or inactive user, BAD_REQUEST for a synthetic
+   *   LDAP address, INTERNAL_SERVER_ERROR if the email cannot be sent.
    */
-  requestEmailVerificationAdmin: adminProcedure
+  requestEmailVerificationAdmin: protectedProcedure
     .use(requirePermission('users:update'))
     .use(withRateLimit('userMutations'))
     .input(RequestEmailVerificationAdminSchema)
     .mutation(async ({ input, ctx }) => {
-      const { userId } = input;
-
-      try {
-        const result = await sendVerificationEmail(
-          ctx.prisma,
-          {
-            userId,
-            reason: 'admin_initiated',
-            actorId: ctx.session.user.id,
-          },
-          ctx
-        );
-
-        return result;
-      } catch (error) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message:
-            error instanceof Error ? error.message : 'Errore invio email',
-          cause: error,
-        });
-      }
+      return sendVerificationLink(ctx, {
+        userId: input.userId,
+        reason: 'admin_initiated',
+        actorId: ctx.session.user.id,
+      });
     }),
 });

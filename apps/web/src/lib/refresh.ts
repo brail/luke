@@ -5,15 +5,14 @@ import { trpc } from './trpc';
  * Use these as the `invalidate` option in `useStandardMutation` to ensure
  * consistent and de-duplicated cache invalidation after mutations.
  *
- * @returns Object with invalidation functions keyed by domain
- *   (`me`, `users`, `storageConfig`, `storageFiles`, `ldapConfig`,
- *   `context`, `company`, `allStorage`).
+ * @returns Object with invalidation functions keyed by domain.
  *
  * @example
  * ```typescript
  * const refresh = useRefresh();
+ * const changeEmailMutation = trpc.me.changeEmail.useMutation();
  * const { mutate } = useStandardMutation({
- *   mutateFn: trpc.me.updateProfile.mutateAsync,
+ *   mutateFn: changeEmailMutation.mutateAsync,
  *   invalidate: refresh.me,
  * });
  * ```
@@ -25,7 +24,12 @@ export function useRefresh() {
     // User profile
     me: () => utils.me.get.invalidate(),
 
-    // Users list (attivi e pending)
+    // Everything: the server reads some dates in the user's zone (the audit log's day filter) and
+    // returns that zone with the profile, and any query may come to depend on it; a change of zone
+    // is rare enough to refetch them all.
+    timeZone: () => utils.invalidate(),
+
+    // Users lists (active and pending)
     users: async () => {
       await Promise.all([
         utils.users.list.invalidate(),
@@ -36,16 +40,6 @@ export function useRefresh() {
     // Storage config
     storageConfig: () => utils.storage.getConfig.invalidate(),
 
-    // Storage files
-    storageFiles: (bucket?: string) =>
-      utils.storage.list.invalidate(bucket ? { bucket } : undefined),
-
-    // LDAP integration
-    ldapConfig: () => utils.integrations.auth.getLdapConfig.invalidate(),
-
-    // Context management
-    context: () => utils.context.get.invalidate(),
-
     // Company structure (functions, teams)
     company: async () => {
       await Promise.all([
@@ -54,12 +48,5 @@ export function useRefresh() {
         utils.company.team.getById.invalidate(),
       ]);
     },
-
-    // Helper compositi per invalidazioni multiple
-    allStorage: () =>
-      Promise.all([
-        utils.storage.getConfig.invalidate(),
-        utils.storage.list.invalidate(),
-      ]),
   };
 }

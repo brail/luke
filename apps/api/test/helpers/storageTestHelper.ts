@@ -5,7 +5,11 @@
 
 import { Readable } from 'stream';
 
-import type { Context } from '../../src/lib/trpc';
+import { StorageObjectNotFoundError } from '@luke/core';
+import type { StorageBucket } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
+
+import { resetStorageProvider } from '../../src/storage';
 
 export interface MockFileObject {
   id: string;
@@ -60,12 +64,13 @@ export class MockStorageProvider {
   }
 
   async get(params: {
-    bucket: string;
+    bucket: StorageBucket;
     key: string;
   }): Promise<{ stream: NodeJS.ReadableStream }> {
     const file = this.files.get(`${params.bucket}/${params.key}`);
     if (!file) {
-      throw new Error(`File not found: ${params.bucket}/${params.key}`);
+      // The provider contract: absence is its own error.
+      throw new StorageObjectNotFoundError(params.bucket, params.key);
     }
 
     return {
@@ -115,58 +120,6 @@ export class MockStorageProvider {
     this.files.clear();
     this.nextId = 1;
   }
-}
-
-/**
- * Creates a test context with a mock storage provider
- */
-export async function createTestContextWithMockStorage(): Promise<
-  Context & { mockStorage: MockStorageProvider }
-> {
-  const { createContextForRole } = await import('./testContext');
-  const context = await createContextForRole();
-
-  const mockStorage = new MockStorageProvider();
-
-  // Mock the storage provider in the context
-  const originalPrisma = context.prisma;
-  context.prisma = {
-    ...originalPrisma,
-    fileObject: {
-      ...originalPrisma.fileObject,
-      create: async (data: any) => {
-        // Simulate fileObject creation in the DB
-        const fileObject = await originalPrisma.fileObject.create(data);
-        return fileObject;
-      },
-      findFirst: async (params: any) => {
-        // For moveTempLogoToBrand tests
-        if (params.where?.bucket === 'temp-brand-logos') {
-          const files = mockStorage.getFilesByBucket('temp-brand-logos');
-          if (files.length > 0) {
-            const file = files[0];
-            return {
-              id: file.id,
-              bucket: file.bucket,
-              key: file.key,
-              contentType: file.contentType,
-              size: file.size,
-              createdAt: file.createdAt,
-            };
-          }
-        }
-        return originalPrisma.fileObject.findFirst(params);
-      },
-      delete: async (params: any) => {
-        return originalPrisma.fileObject.delete(params);
-      },
-    },
-  } as any;
-
-  return {
-    ...context,
-    mockStorage,
-  };
 }
 
 /**
@@ -220,4 +173,42 @@ export function createValidJpegBuffer(): Buffer {
 export function createInvalidImageBuffer(): Buffer {
   // Txt file with a .png extension
   return Buffer.from('This is not an image file');
+}
+
+/**
+ * Helper to create valid WebP images for tests (RIFF container header)
+ */
+export function createValidWebpBuffer(): Buffer {
+  const riffHeader = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF"
+  const webpData = Buffer.from('test webp content');
+  return Buffer.concat([riffHeader, webpData]);
+}
+
+/**
+ * Seeds AppConfig for the local storage provider pointed at `basePath`, then resets
+ * the cached provider singleton so the next `getStorageProvider()` call picks it
+ * up. Every asset-pipeline integration test needs this exact sequence: `appRouter`
+ * is imported eagerly by `test/setup.procedureUsage.ts` (a `setupFiles` entry, for
+ * the procedure-coverage gate) before any single test file's own `vi.mock` hoisting
+ * can run, and it now reaches `services/asset.service.ts` (hence `../storage`)
+ * through `collectionLayout.ts`'s `resolveVariantUrls` — a module already evaluated
+ * by an earlier file can't be retroactively mocked, so real local storage on a
+ * throwaway temp directory is what these tests actually exercise.
+ */
+export async function seedLocalStorageConfig(
+  prisma: PrismaClient,
+  basePath: string,
+  options: { maxFileSizeMB?: number } = {},
+): Promise<void> {
+  const rows: Array<{ key: string; value: string }> = [
+    { key: 'storage.type', value: 'local' },
+    { key: 'storage.local.basePath', value: basePath },
+    { key: 'storage.local.maxFileSizeMB', value: String(options.maxFileSizeMB ?? 50) },
+    { key: 'storage.local.enableProxy', value: 'true' },
+    { key: 'storage.derivatives.enabled', value: 'true' },
+  ];
+  for (const row of rows) {
+    await prisma.appConfig.create({ data: { key: row.key, value: row.value, isEncrypted: false } });
+  }
+  resetStorageProvider();
 }

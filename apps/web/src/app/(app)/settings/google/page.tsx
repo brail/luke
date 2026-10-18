@@ -5,10 +5,13 @@ import { CheckCircle, FileJson, LogOut, Unplug } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
-import { z } from 'zod';
+import { toast } from 'sonner';
+
+import { googleWorkspaceConfigSchema, type GoogleWorkspaceConfig } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
+import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
@@ -34,30 +37,11 @@ import {
 import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
 import { trpc } from '../../../../lib/trpc';
 
-const baseSchema = z.object({
-  authMode: z.enum(['service_account', 'oauth_user']),
-  domain: z.string().min(1, 'Workspace domain obbligatorio').or(z.literal('')),
-  calendarSyncEnabled: z.boolean(),
-});
+import { useGoogleOAuthCallback } from './useGoogleOAuthCallback';
 
-const schema = z.discriminatedUnion('authMode', [
-  baseSchema.extend({
-    authMode: z.literal('service_account'),
-    serviceEmail: z.string().email('Email non valida').or(z.literal('')),
-    serviceKey: z.string().optional(),
-    impersonateEmail: z.string().email('Email non valida').or(z.literal('')),
-  }),
-  baseSchema.extend({
-    authMode: z.literal('oauth_user'),
-    oauthClientId: z.string().min(1, 'Client ID obbligatorio').or(z.literal('')),
-    oauthClientSecret: z.string().optional(),
-  }),
-]);
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = GoogleWorkspaceConfig;
 
 interface ServiceAccountJson {
   client_email?: string;
@@ -66,7 +50,6 @@ interface ServiceAccountJson {
 }
 
 export default function GoogleWorkspacePage() {
-  const toast = useToast();
   const utils = trpc.useUtils();
   const { can } = usePermission();
   const canUpdate = can('config:update');
@@ -82,7 +65,7 @@ export default function GoogleWorkspacePage() {
   const [jsonError, setJsonError] = useState('');
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(googleWorkspaceConfigSchema),
     defaultValues: {
       authMode: 'service_account',
       domain: '',
@@ -95,7 +78,7 @@ export default function GoogleWorkspacePage() {
 
   const authMode = form.watch('authMode');
 
-  const { data: config, isLoading } = trpc.integrations.google.getConfig.useQuery();
+  const { data: config, isPending, error, refetch } = trpc.integrations.google.getConfig.useQuery();
 
   useEffect(() => {
     if (!config) return;
@@ -127,9 +110,9 @@ export default function GoogleWorkspacePage() {
   // Handle OAuth callback: exchange code if present in URL
   const exchangeMutation = trpc.integrations.google.exchangeOAuthCode.useMutation({
     onSuccess: (data) => {
-      toast.success(`Account Google connesso: ${data.userEmail}`);
+      toast.success(data.userEmail ? `Account Google connesso: ${data.userEmail}` : 'Account Google connesso');
       setHasOauthToken(true);
-      setOauthUserEmail(data.userEmail);
+      setOauthUserEmail(data.userEmail ?? '');
       void utils.integrations.google.getConfig.invalidate();
     },
     onError: (error) => {
@@ -137,19 +120,7 @@ export default function GoogleWorkspacePage() {
     },
   });
 
-  useEffect(() => {
-    const code = searchParams.get('oauth_code');
-    const oauthError = searchParams.get('oauth_error');
-    if (oauthError) {
-      toast.error('Autorizzazione Google negata');
-    }
-    if (code && !exchangeMutation.isPending) {
-      const redirectUri = `${window.location.origin}/api/google/oauth/callback`;
-      exchangeMutation.mutate({ code, redirectUri });
-      // Clean URL
-      window.history.replaceState({}, '', '/settings/google');
-    }
-  }, []);
+  useGoogleOAuthCallback(searchParams, exchangeMutation, toast);
 
   const saveMutation = trpc.integrations.google.saveConfig.useMutation({
     onSuccess: () => {
@@ -227,36 +198,17 @@ export default function GoogleWorkspacePage() {
     getOAuthUrlMutation.mutate({ redirectUri });
   };
 
-  const onSubmit = (data: FormValues) => {
-    if (data.authMode === 'service_account') {
-      saveMutation.mutate({
-        authMode: 'service_account',
-        serviceEmail: data.serviceEmail,
-        serviceKey: data.serviceKey?.trim() || undefined,
-        impersonateEmail: data.impersonateEmail || undefined,
-        domain: data.domain,
-        calendarSyncEnabled: data.calendarSyncEnabled,
-      });
-    } else {
-      saveMutation.mutate({
-        authMode: 'oauth_user',
-        oauthClientId: data.oauthClientId,
-        oauthClientSecret: data.oauthClientSecret?.trim() || undefined,
-        domain: data.domain,
-        calendarSyncEnabled: data.calendarSyncEnabled,
-      });
-    }
-  };
-
   return (
     <SettingsFormShell
       title="Google Workspace"
       description="Integrazione con Google Workspace. Le credenziali sono condivise tra tutti i prodotti Google (Calendar, Drive, ecc.)."
-      isLoading={isLoading}
+      isPending={isPending}
+      error={error}
+      hasData={!!config}
+      onRetry={() => void refetch()}
     >
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* Modalità autenticazione */}
+        <form onSubmit={form.handleSubmit(values => saveMutation.mutate(values))} className="space-y-6">
           <SectionCard
             title="Modalità autenticazione"
             description="Scegli come Luke si autentica con Google."
@@ -371,7 +323,7 @@ export default function GoogleWorkspacePage() {
                       <FormItem className="col-span-2">
                         <FormLabel>Impersonazione utente (DWD — opzionale)</FormLabel>
                         <FormControl>
-                          <Input type="email" placeholder="luke@azienda.com" disabled={!canUpdate} {...field} />
+                          <Input type="email" placeholder="luke@azienda.com" disabled={!canUpdate} {...field} value={field.value ?? ''} />
                         </FormControl>
                         <FormDescription>
                           Richiede Domain-Wide Delegation in Google Admin Console. Se vuoto: Luke usa l&apos;identità del service account.
@@ -451,25 +403,21 @@ export default function GoogleWorkspacePage() {
                   control={form.control}
                   name="oauthClientSecret"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder={hasOauthClientSecret ? '•••••••• (già configurato)' : 'GOCSPX-...'}
-                          disabled={!canUpdate}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {hasOauthClientSecret ? 'Già configurato e cifrato.' : 'Client secret dell\'app OAuth.'}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
+                    <SensitiveField
+                      label={<>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</>}
+                      hasValue={hasOauthClientSecret}
+                      placeholder={hasOauthClientSecret ? undefined : 'GOCSPX-...'}
+                      description={
+                        hasOauthClientSecret
+                          ? 'Già configurato e cifrato. Lascia vuoto per mantenerlo invariato.'
+                          : 'Client secret dell\'app OAuth.'
+                      }
+                      disabled={!canUpdate}
+                      field={field}
+                    />
                   )}
                 />
 
-                {/* Connessione account */}
                 <div className="rounded-lg border p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -521,7 +469,6 @@ export default function GoogleWorkspacePage() {
             </SectionCard>
           )}
 
-          {/* Prodotti */}
           <SectionCard title="Prodotti" description="Abilita le integrazioni specifiche per prodotto Google.">
             <FormField
               control={form.control}

@@ -13,6 +13,8 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { describe, it, expect, beforeAll } from 'vitest';
 
+import type { PrismaClient } from '@luke/db';
+
 import {
   createCallerWithSession,
   createTestUser,
@@ -20,7 +22,6 @@ import {
 } from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
-import type { PrismaClient } from '@prisma/client';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;
@@ -45,7 +46,7 @@ beforeAll(async () => {
 });
 
 describe('CompanyTeam invariants', () => {
-  it('il nome del team è unico dentro la stessa function', async () => {
+  it('the team name is unique within the same function', async () => {
     const functionId = await createFunction();
     const caller = createCallerWithSession(adminSession);
 
@@ -57,7 +58,7 @@ describe('CompanyTeam invariants', () => {
     ).rejects.toThrow();
   });
 
-  it('lo stesso nome è ammesso in function diverse', async () => {
+  it('the same name is allowed in different functions', async () => {
     const [fnA, fnB] = await Promise.all([createFunction(), createFunction()]);
     const caller = createCallerWithSession(adminSession);
 
@@ -68,7 +69,7 @@ describe('CompanyTeam invariants', () => {
     expect(second.name).toBe('Condiviso');
   });
 
-  it('delete di un team inesistente → NOT_FOUND, non un errore Prisma grezzo', async () => {
+  it('delete of a nonexistent team → NOT_FOUND, not a raw Prisma error', async () => {
     const caller = createCallerWithSession(adminSession);
 
     // The router catches P2025 and translates it: without that catch the client
@@ -80,7 +81,7 @@ describe('CompanyTeam invariants', () => {
     );
   });
 
-  it('create con brandIds popola i brand scope nella stessa transazione', async () => {
+  it('create with brandIds populates the brand scopes in the same transaction', async () => {
     const functionId = await createFunction();
     const caller = createCallerWithSession(adminSession);
 
@@ -98,7 +99,7 @@ describe('CompanyTeam invariants', () => {
     expect(scopes.map(s => s.brandId)).toEqual([brand.id]);
   });
 
-  it('update con brandIds sostituisce gli scope, non li accumula', async () => {
+  it('update with brandIds replaces the scopes, it does not accumulate them', async () => {
     const functionId = await createFunction();
     const caller = createCallerWithSession(adminSession);
 
@@ -121,7 +122,7 @@ describe('CompanyTeam invariants', () => {
     expect(scopes.map(s => s.brandId)).toEqual([brandB.id]);
   });
 
-  it('update con brandIds omesso lascia gli scope invariati', async () => {
+  it('update without brandIds leaves the scopes unchanged', async () => {
     const functionId = await createFunction();
     const caller = createCallerWithSession(adminSession);
 

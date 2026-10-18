@@ -1,829 +1,338 @@
 # Luke - Operational Tuning
 
-Documentazione operativa per SRE/DevOps su configurazioni runtime, rate-limiting, idempotency, session management, security headers e health checks.
+Operational reference for the API's runtime protections whose behavior is
+configurable, or differs from what their names suggest — the password policy,
+rate limiting, idempotency and error responses — and for four operator tasks:
+signing in when LDAP is unreachable, email deliverability, the reverse proxy's
+network and the release build's repository variables. Security headers and
+the health and readiness probes are documented in the
+[API documentation](apps/api/README.md); session revocation is decided in
+[ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
 
-## Indice
+## Contents
 
-- [Security Hardcoded Values](#security-hardcoded-values)
-- [Rate Limiting](#rate-limiting)
+- [Password policy](#password-policy)
+- [Rate limiting](#rate-limiting)
 - [Idempotency](#idempotency)
-- [Session Management](#session-management)
-- [Security Headers](#security-headers)
-- [Readiness & Health Checks](#readiness--health-checks)
-- [Configurazioni per Ambiente](#configurazioni-per-ambiente)
-- [Test Automatici](#test-automatici)
-- [Standard Aggiornamento Dati Client](#standard-aggiornamento-dati-client)
-- [Riferimenti Correlati](#riferimenti-correlati)
+- [Error responses](#error-responses)
+- [Signing in when LDAP is unreachable](#signing-in-when-ldap-is-unreachable)
+- [Email deliverability](#email-deliverability)
+- [Reverse proxy](#reverse-proxy)
+- [Release build variables](#release-build-variables)
+- [Related documentation](#related-documentation)
 
 ---
 
-## Security Hardcoded Values
+## Password policy
 
-Alcuni valori di sicurezza sono **intenzionalmente hardcoded** per prevenire misconfigurazioni e garantire la sicurezza del sistema:
+AppConfig persists values as strings: password-policy flags use `"true"` and
+`"false"`, not JSON booleans. The authoritative keys and validation rules live
+in [AppConfigRegistry](packages/core/src/schemas/config.ts).
 
-### JWT Configuration
+`security.password.minLength` accepts integers from 8 to 128. Writes through
+`saveConfig` reject values outside that range. When reading an absent or invalid
+stored value, `getPasswordPolicy` falls back to the corresponding field of
+`DEFAULT_PASSWORD_POLICY`; for minimum length that default is 12. A stored
+value below 8 therefore falls back to 12 rather than being clamped to 8.
+See [the configuration reader](apps/api/src/lib/configManager.ts).
 
-```typescript
-// apps/api/src/lib/jwt.ts
-const JWT_CONFIG = {
-  algorithm: 'HS256', // Fisso: algoritmo sicuro
-  clockTolerance: 30, // Fisso: 30 secondi di tolleranza
-  defaultExpiresIn: '7d', // Fisso: 7 giorni di validità
-  issuer: 'luke-api', // Fisso: identificatore issuer
-  audience: 'luke-web', // Fisso: identificatore audience
-};
-```
-
-### HSTS Configuration
-
-```typescript
-// apps/api/src/lib/helmet.ts
-const HSTS_CONFIG = {
-  maxAge: 15552000, // Fisso: 180 giorni (NIST recommendation)
-  includeSubDomains: true, // Fisso: include sottodomini
-  preload: true, // Fisso: abilita preload
-};
-```
-
-### CSP Directives
-
-```typescript
-// apps/api/src/lib/helmet.ts
-const CSP_DIRECTIVES = {
-  defaultSrc: ["'self'"], // Fisso: solo self
-  scriptSrc: ["'self'"], // Fisso: no inline scripts
-  styleSrc: ["'self'", "'unsafe-inline'"], // Fisso: inline styles permessi
-  imgSrc: ["'self'", 'data:', 'https:'], // Fisso: immagini sicure
-  connectSrc: ["'self'"], // Fisso: solo self per XHR
-  fontSrc: ["'self'"], // Fisso: solo self per font
-  objectSrc: ["'none'"], // Fisso: no object/embed
-  mediaSrc: ["'self'"], // Fisso: solo self per media
-  frameSrc: ["'none'"], // Fisso: no iframe
-  baseUri: ["'self'"], // Fisso: solo self per base
-  formAction: ["'self'"], // Fisso: solo self per form
-  frameAncestors: ["'none'"], // Fisso: no embedding
-  upgradeInsecureRequests: [], // Fisso: upgrade HTTP a HTTPS
-};
-```
-
-### Encryption Configuration
-
-```typescript
-// apps/api/src/lib/configManager.ts
-const ENCRYPTION_CONFIG = {
-  algorithm: 'aes-256-gcm', // Fisso: algoritmo sicuro
-  keyLength: 32, // Fisso: 256 bit
-  ivLength: 16, // Fisso: 128 bit IV
-  tagLength: 16, // Fisso: 128 bit tag
-  saltLength: 32, // Fisso: 256 bit salt
-};
-```
-
-### Password Hashing
-
-```typescript
-// apps/api/src/lib/password.ts
-const ARGON2_CONFIG = {
-  type: argon2.argon2id, // Fisso: argon2id (resistente a side-channel)
-  memoryCost: 2 ** 16, // Fisso: 64 MB
-  timeCost: 3, // Fisso: 3 iterazioni
-  parallelism: 1, // Fisso: 1 thread
-  hashLength: 32, // Fisso: 256 bit hash
-};
-```
-
-### Perché Hardcoded?
-
-1. **Sicurezza**: Prevenire misconfigurazioni che potrebbero compromettere la sicurezza
-2. **Consistenza**: Garantire che tutti gli ambienti usino configurazioni sicure
-3. **Audit**: Valori fissi sono più facili da auditare e verificare
-4. **Performance**: Evitare overhead di lettura da database per valori critici
-5. **Compliance**: Rispettare standard di sicurezza (NIST, OWASP)
-
-### Configurazioni Parametrizzabili
-
-Le seguenti configurazioni **possono** essere modificate via AppConfig:
-
-- Rate limiting policies
-- Session duration e refresh
-- LDAP/SMTP timeouts
-- Password policy (con minimi hardcoded)
-- CORS origins (con fallback sicuri)
+The special-character requirement uses the explicit `PASSWORD_SPECIAL_CHARS`
+allowlist in [the shared password schema](packages/core/src/schemas/password.ts).
+A tilde, backtick or space does not satisfy that requirement; this does not
+mean those characters are forbidden elsewhere in a password.
 
 ---
 
-## Rate Limiting
+## Rate limiting
 
-### Configurazione per Rotta
+Each rate limit is a named bucket. The API resolves a bucket's policy from the
+first source that yields a valid one:
 
-| Endpoint            | AppConfig Key               | ENV Vars Pattern                    | Default Max | Default Window | Key By | Dev     | Prod   |
-| ------------------- | --------------------------- | ----------------------------------- | ----------- | -------------- | ------ | ------- | ------ |
-| `auth.login`        | `rateLimit.login`           | `LUKE_RATE_LIMIT_LOGIN_*`           | 5 req       | 1m             | IP     | 20 req  | 5 req  |
-| `me.changePassword` | `rateLimit.passwordChange`  | `LUKE_RATE_LIMIT_PASSWORDCHANGE_*`  | 3 req       | 15m            | userId | 20 req  | 3 req  |
-| `config.*`          | `rateLimit.configMutations` | `LUKE_RATE_LIMIT_CONFIGMUTATIONS_*` | 20 req      | 1m             | userId | 100 req | 20 req |
-| `users.*`           | `rateLimit.userMutations`   | `LUKE_RATE_LIMIT_USERMUTATIONS_*`   | 10 req      | 1m             | userId | 50 req  | 10 req |
+1. **AppConfig** — the `rateLimit` key, a JSON object keyed by bucket name. Each
+   entry is `{ "max": <positive integer>, "timeWindow": "<n>s" | "<n>m" | "<n>h",
+   "keyBy": "ip" | "userId" | "username" }`, and `keyBy` defaults to `"ip"` when
+   omitted. The schema is `RateLimitConfigSchema` in
+   [`packages/core/src/schemas/appConfig.ts`](packages/core/src/schemas/appConfig.ts).
+2. **Defaults** — `RATE_LIMIT_POLICY_DEFAULTS` in
+   [`apps/api/src/lib/rateLimitPolicy.ts`](apps/api/src/lib/rateLimitPolicy.ts).
 
-### Risoluzione Policy (AppConfig → ENV → Default)
+The seed (`db:seed`, and `db:bootstrap` through it) writes a `rateLimit` row with
+production values for `login`, `passwordChange`, `passwordReset`,
+`configMutations` (20) and `userMutations` (10), so on a seeded database those
+buckets hold those values in development too. No settings page edits the row,
+and the generic `config.*` writers refuse its prefix: it is changed in the
+database.
 
-**Ordine di precedenza:**
+Consequences of that resolution:
 
-1. **AppConfig** (database): `rateLimit` key con JSON object
-2. **Environment**: `LUKE_RATE_LIMIT_*` variables
-3. **Default**: Valori hardcoded sicuri
+- **The AppConfig value is validated as a whole.** If any entry fails the schema —
+  a non-positive `max`, an unknown `keyBy`, a `timeWindow` shorter than two
+  characters — no bucket takes its AppConfig override, and every bucket falls
+  through to its default. A JSON syntax error has the same effect. The syntax
+  error is logged as a warning; the schema failure is not. A `timeWindow` of two
+  or more characters that does not parse (`1x`, `0m`) affects only its own
+  bucket, which keeps its default, and is logged.
+- **`keyBy` must suit the endpoint.** Omitted, it means `ip`. `userId` on a
+  bucket whose endpoint has no session (`login`, `passwordReset`,
+  `pendingEmail`), or `username` on any bucket but `loginByUsername`, leaves the
+  bucket unable to derive its key: every request through it fails with
+  `INTERNAL_SERVER_ERROR` (`Rate limit check failed`).
+- **`loginByUsername` is always keyed by the submitted username**, lower-cased,
+  whatever its `keyBy` says: an override changes only its `max` and
+  `timeWindow`.
+- **There is no environment tier.** `LUKE_RATE_LIMIT_<BUCKET>_*` variables were
+  read until 2026-09-27 without validation (a non-numeric maximum disabled the
+  limit) and sat outside the bootstrap-only environment policy in `CLAUDE.md`;
+  they are now ignored.
 
-#### Configurazione AppConfig
+### Buckets
 
-```json
-{
-  "rateLimit": {
-    "login": { "max": 10, "timeWindow": "2m", "keyBy": "ip" },
-    "passwordChange": { "max": 5, "timeWindow": "20m", "keyBy": "userId" },
-    "configMutations": { "max": 30, "timeWindow": "1m", "keyBy": "userId" },
-    "userMutations": { "max": 15, "timeWindow": "1m", "keyBy": "userId" }
-  }
-}
-```
+Code defaults at the time of writing; the source of truth is
+`RATE_LIMIT_POLICY_DEFAULTS`. "Development" means `isDevelopment()` is true.
 
-#### Configurazione ENV
+| Bucket | Keyed by | Window | Max | Max in development |
+|---|---|---|---:|---:|
+| `login` | IP | 1m | 5 | 5 |
+| `loginByUsername` | username | 15m | 10 | 10 |
+| `passwordChange` | user | 15m | 3 | 3 |
+| `passwordReset` | IP | 15m | 3 | 3 |
+| `configMutations` | user | 1m | 20 | 100 |
+| `userMutations` | user | 1m | 10 | 100 |
+| `brandMutations` | user | 1m | 10 | 100 |
+| `sectionAccessSet` | user | 1m | 20 | 100 |
+| `pendingEmail` | IP | 15m | 10 | 100 |
+| `ldapTest` | user | 15m | 3 | 100 |
+| `companyStructureMutations` | user | 1m | 30 | 100 |
+| `navSyncTrigger` | user and NAV entity | 10m | 1 | 1 |
+| `exportGeneration` | user | 1m | 10 | 100 |
 
-```bash
-# Override singole rotte
-export LUKE_RATE_LIMIT_LOGIN_MAX=10
-export LUKE_RATE_LIMIT_LOGIN_WINDOW=2m
-export LUKE_RATE_LIMIT_LOGIN_KEY_BY=ip
+`auth.login` applies two buckets to the same attempt: `login` by IP and
+`loginByUsername` by the submitted username, so a password spray spread across
+many addresses is still limited per account. The other public endpoints that
+verify the account's current password pair an IP bucket with the same
+`loginByUsername` bucket, so their attempts count against the account's login
+limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
+(`passwordReset`).
 
-export LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX=5
-export LUKE_RATE_LIMIT_PASSWORDCHANGE_WINDOW=20m
-export LUKE_RATE_LIMIT_PASSWORDCHANGE_KEY_BY=userId
-```
+### Store
 
-**Formato timeWindow**: Supporta `30s`, `1m`, `2h` (secondi, minuti, ore)
+- In memory and per process: one map per bucket, holding at most 999 keys —
+  the insert that brings a map to 1,000 evicts its earliest key.
+- A **fixed** window starts at a key's first request and restarts once it has
+  elapsed. It does not slide.
+- When a map is full, the key inserted earliest is evicted, whether or not it is
+  still active: eviction follows insertion order, not recent use. With 1,000 or
+  more distinct keys on one bucket within a window, a counter can be dropped
+  before its window ends.
+- Expired entries are removed every 60 seconds.
+- Counters are not shared between processes, which is one of the reasons
+  [ADR-011](docs/decisions/011-single-instance-scaling-constraint.md) keeps the
+  API single-instance.
 
-### Testing Rate Limits
+### Global limiter
 
-#### Test Login Rate Limit
-
-```bash
-# Prime 5 richieste OK
-for i in {1..5}; do
-  curl -X POST http://localhost:3001/trpc/auth.login \
-    -H "Content-Type: application/json" \
-    -d '{"username":"admin","password":"wrong"}'
-done
-
-# 6a richiesta → TOO_MANY_REQUESTS
-curl -X POST http://localhost:3001/trpc/auth.login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"wrong"}'
-```
-
-**Output errore:**
-
-```json
-{
-  "error": {
-    "code": "TOO_MANY_REQUESTS",
-    "message": "Rate limit exceeded for login. Max 5 requests per 1 minute(s)."
-  }
-}
-```
-
-#### Test Password Change Rate Limit
-
-```bash
-# Test con utente autenticato
-TOKEN="your-jwt-token"
-for i in {1..3}; do
-  curl -X POST http://localhost:3001/trpc/me.changePassword \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "Idempotency-Key: $(uuidgen)" \
-    -d '{"currentPassword":"old","newPassword":"new123!"}'
-done
-```
-
-### Store e Cleanup
-
-- **Store**: In-memory LRU cache (max 1000 keys per rotta)
-- **Cleanup**: Automatico ogni minuto
-- **TTL**: Window sliding con cleanup automatico
-- **Key extraction**: IP per endpoint pubblici, userId per endpoint autenticati
+A second limiter runs before tRPC on every route but one: `@fastify/rate-limit`
+in `apps/api/src/server.ts`, 100 requests per minute per IP — 2,000 in
+development, where the loopback addresses (`127.0.0.1`, `::1`,
+`::ffff:127.0.0.1`) are exempt. File serving, `GET /uploads/:bucket/*`, is out
+of it: every picture on a page is one request, and a photo-heavy collection
+layout spent the whole budget on one uncached load. The only caller of that
+route is the web's authenticated `/api/uploads` proxy, and responses carry a
+private, immutable one-year cache; the residual is that a signed-in user can
+download files without a rate ceiling. It is not configurable through the
+`rateLimit` key, and `skipOnError` lets requests through when the limiter itself
+fails. Its 429 has its own body — `{ statusCode, error, message, retryAfter }` —
+and no `error.data.code`.
 
 ---
 
 ## Idempotency
 
-### Header e Formato
+Mutations that chain `withIdempotency()` accept an `Idempotency-Key` header
+carrying a UUID v4: `auth.login`, `me.changePassword`, `config.set`,
+`config.update`, `config.setMultiple`, `users.create` and `users.update`.
+Queries are never deduplicated.
 
-**Header richiesto**: `Idempotency-Key: <UUID-v4>`
+- **The header is optional.** Without it the mutation runs with no protection.
+- **Same key and same input within five minutes:** the stored result is returned
+  and the mutation does not run again. The request is identified by a SHA-256
+  hash of the method, the procedure path and the serialized input.
+- **Same key, different input:** `CONFLICT` (HTTP 409).
+- **A key that is not a UUID v4:** `BAD_REQUEST` (HTTP 400).
+- **Only successes are stored.** tRPC hands a failure to the middleware as a
+  result (`ok: false`) rather than an exception, and the middleware stores only
+  `ok: true`. A retry with the same key after a failure runs the mutation again,
+  whatever its input: a failed request leaves nothing to conflict with.
+- **A request still in progress holds its key.** The key is reserved before the
+  mutation runs, so a second request with the same key while the first is still
+  running gets `CONFLICT` (HTTP 409) — same input or not — and is never executed;
+  retry once the first has answered. The reservation lasts until that request
+  settles, however long it takes: it does not expire, and a client disconnect
+  does not end it.
+- **Keys belong to the caller.** A key is filed under the session user, so two
+  users never share one: neither replays the other's result nor is blocked by it.
+  `auth.login`, which has no session yet, uses one anonymous scope.
+- **Too many requests in progress:** with 1,000 reservations held, a request
+  with a new key gets `TOO_MANY_REQUESTS` (HTTP 429); a stored result is still
+  replayed and a running key still answers `CONFLICT`.
 
-**Formato UUID v4**: `550e8400-e29b-41d4-a716-446655440000`
+The store is in memory and per process: at most 1,000 stored results, a
+five-minute TTL, expired entries removed every minute. When full it evicts the
+result inserted earliest, as the rate-limit store does; reservations are kept
+apart and never evicted. Nothing is shared between processes (ADR-011) and
+everything is lost on restart, so this is not durable exactly-once execution: a
+mutation that commits just before a crash, before its result is stored, runs
+again when retried.
 
-### Configurazione
-
-| Parametro    | Valore                       | Descrizione          |
-| ------------ | ---------------------------- | -------------------- |
-| **TTL**      | 5 minuti                     | Cache automatica     |
-| **Max Size** | 1000 keys                    | LRU eviction         |
-| **Hash**     | SHA256(method + path + body) | Validazione univoca  |
-| **Cleanup**  | Ogni minuto                  | Rimozione automatica |
-
-### Endpoint Protetti
-
-| Endpoint              | Descrizione                      | Esempio          |
-| --------------------- | -------------------------------- | ---------------- |
-| `auth.login`          | Prevenzione doppi login          | Login duplicato  |
-| `me.changePassword`   | Prevenzione doppi cambi password | Password change  |
-| `config.set/update`   | Prevenzione doppi aggiornamenti  | Config mutations |
-| `users.create/update` | Prevenzione doppi aggiornamenti  | User mutations   |
-
-### Comportamento
-
-#### Richiesta Duplicata (Stesso Body)
-
-```bash
-# Prima chiamata: esegue e salva risultato
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
-
-# Seconda chiamata: ritorna risultato cached (no duplicato)
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
-```
-
-#### Conflitto (Stessa Key, Body Diverso)
-
-```bash
-# Prima chiamata
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"user1","email":"user1@test.com","password":"Test123!","role":"viewer"}'
-
-# Seconda chiamata con body diverso → 409 Conflict
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000" \
-  -d '{"username":"user2","email":"user2@test.com","password":"Test123!","role":"viewer"}'
-```
-
-**Output conflitto:**
-
-```json
-{
-  "error": {
-    "code": "CONFLICT",
-    "message": "Idempotency-Key already used with different request body. Each key must identify a single operation."
-  }
-}
-```
-
-#### Formato UUID Invalido
-
-```bash
-curl -X POST http://localhost:3001/trpc/users.create \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: not-a-uuid" \
-  -d '{"username":"test","email":"test@test.com","password":"Test123!","role":"viewer"}'
-```
-
-**Output errore:**
-
-```json
-{
-  "error": {
-    "code": "BAD_REQUEST",
-    "message": "Invalid Idempotency-Key format. Must be a valid UUID v4."
-  }
-}
-```
-
-### Best Practices
-
-1. **Genera UUID v4** per ogni operazione unica
-2. **Usa stessa key** per retry della stessa operazione
-3. **Non riutilizzare key** per operazioni diverse
-4. **Gestisci 409 Conflict** nel client (nuova key per operazione diversa)
-5. **Non usare per query** (solo mutation hanno bisogno di idempotency)
+Implementation: [`idempotencyTrpc.ts`](apps/api/src/lib/idempotencyTrpc.ts) and
+[`idempotency.ts`](apps/api/src/lib/idempotency.ts).
 
 ---
 
-## Session Management
+## Error responses
 
-### TTL Configurazione per Ambiente
+The tRPC error formatter ([`error.ts`](apps/api/src/lib/error.ts)) decides which
+message reaches the client:
 
-| Ambiente  | maxAge | updateAge | API JWT expiresIn | Cookie Secure | Cookie SameSite |
-| --------- | ------ | --------- | ----------------- | ------------- | --------------- |
-| **Dev**   | 8h     | 4h        | 8h                | false         | lax             |
-| **Stage** | 8h     | 4h        | 8h                | true          | lax             |
-| **Prod**  | 8h     | 4h        | 8h                | true          | lax             |
+- A 4xx (`error.data.httpStatus` below 500) keeps its message in every
+  environment: it is written for the caller.
+- A failed input validation is a `BAD_REQUEST` whose message is the first Zod
+  issue's text, not the list of every issue.
+- A 5xx, including any error a procedure did not expect, reads
+  `Internal server error` in production. The original message and its cause
+  still reach the `tRPC error` log line.
 
-### TokenVersion Flow
+Clients and operators branch on `error.data.code` and `error.data.httpStatus`,
+never on the message text:
 
-#### Quando Incrementa
+| Condition | `error.data.code` | HTTP |
+|---|---|---|
+| Rate limit exceeded | `TOO_MANY_REQUESTS` | 429 |
+| Login that LDAP could not complete — which failures count is in the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback) | `SERVICE_UNAVAILABLE` | 503 |
+| Idempotency key reused with a different input, or a request with the same key still in progress | `CONFLICT` | 409 |
+| Too many idempotent requests in progress | `TOO_MANY_REQUESTS` | 429 |
+| Idempotency key that is not a UUID v4 | `BAD_REQUEST` | 400 |
 
-- **Cambio password**: `me.changePassword`
-- **Revoca sessioni**: `me.revokeAllSessions`
-- **Admin revoca**: Admin revoca sessioni di altri utenti
-- **Disabilita utente**: Admin disabilita utente (opzionale)
+A `BAD_REQUEST` from a failed input parse also carries `error.data.zodIssues` —
+every issue as `{ path, message }`, the path in full (`data.retailMultiplier`),
+where the message keeps only the first; a 5xx never carries it.
 
-#### Cache e Invalidazione
+Rate-limit errors also carry `error.data.retryAfterSeconds` — the bucket's whole
+window, not the time left; the idempotency 429 does not. Their message is a
+generic `Troppe richieste. Riprova più tardi.`: a 4xx reaches every client, so
+the bucket and its limit are logged instead (`Rate limit exceeded`, with
+`routeName`, `key` — the client IP or the account —, `max`, `windowMs`). A `requirePermission` refusal likewise reads
+`Accesso negato`. Every Resource:Action or section refusal — `requirePermission`,
+`withSectionAccess`, a manual `can()`/`hasPermission()` guard,
+`requireSessionWithPermission` on a raw route — writes the same `Permission
+denied` warning, with `traceId`, `userId`, `userRole` and either
+`requestedPermissions`/`deniedPermissions` or `section`. Brand-scope, ownership and
+last-admin refusals do not write it.
 
-| Parametro         | Valore                  | Descrizione                          |
-| ----------------- | ----------------------- | ------------------------------------ |
-| **Cache TTL**     | 60s                     | `security.tokenVersionCacheTTL`      |
-| **Invalidazione** | Immediata               | Dopo increment tokenVersion          |
-| **Verifica**      | Ogni richiesta protetta | JWT.tokenVersion === DB.tokenVersion |
+The [global limiter](#global-limiter)'s 429 has its own body and no
+`error.data.code`.
 
-#### Architettura Multi-Layer
+---
 
-```
-Admin revoca sessioni → tokenVersion incrementato nel DB
-├── API: Verifica tokenVersion → 401 Unauthorized ✅
-├── NextAuth: Verifica tokenVersion nel callback jwt → return null → Logout automatico ✅
-├── Middleware: Verifica tokenVersion su navigazione → Redirect a /login ✅
-└── Client: Verifica periodica ogni 10s + su focus → Redirect immediato ✅
-```
+## Signing in when LDAP is unreachable
 
-### Cookie Security Flags
+Under `ldap-only`, a directory outage refuses every login that has no local
+path. In order:
 
-#### Development
+1. **An administrator with a LOCAL credential signs in with it.** Under
+   `ldap-only` that path is always open to administrators (the break-glass rule in
+   the [API documentation](apps/api/README.md#ldap-resilience-and-authentication-fallback));
+   the login is audited as `provider: 'local'` and notifies the administrators.
+   That administrator can then switch `auth.strategy` to `local-first` from the
+   LDAP settings page, which saves the whole LDAP form with it, until the
+   directory is back.
+2. **No administrator knows a local password.** From a shell in the API
+   container, `node dist-scripts/scripts/grant-local-access.js --username
+   <administrator>` issues a single-use reset link;
+   [Recovering administrator access](apps/api/README.md#recovering-administrator-access)
+   explains its checks and why the printed link is a credential.
+3. **Nobody can sign in to change the strategy.** `auth.strategy` is read on
+   every login, so changing the row restores the local fallback to every user
+   with a LOCAL credential; it gives nobody a password:
 
-```typescript
-cookies: {
-  sessionToken: {
-    name: 'next-auth.session-token',
-    options: {
-      httpOnly: true,
-      secure: false, // HTTP OK in dev
-      sameSite: 'lax',
-      path: '/',
-    },
-  },
-}
-```
+   ```sql
+   UPDATE app_configs SET value = 'local-first', "updatedAt" = now() WHERE key = 'auth.strategy';
+   ```
 
-#### Production
+   The statement writes no audit row. Record it in the incident notes, and once
+   an administrator can sign in, save the strategy again from the LDAP settings
+   page so that the audit log carries the strategy in force.
 
-```typescript
-cookies: {
-  sessionToken: {
-    name: 'next-auth.session-token',
-    options: {
-      httpOnly: true,
-      secure: true, // Solo HTTPS
-      sameSite: 'lax',
-      path: '/',
-    },
-  },
-}
-```
+Users who exist only in the directory wait for it either way. Prevention is the
+setup requirement in the API documentation: before choosing `ldap-only`, make
+sure at least one administrator can log in locally.
 
-### Testing Session Management
+---
 
-#### Verifica Cookie in DevTools
+## Email deliverability
 
-1. **Apri DevTools** → Application → Cookies
-2. **Verifica flags**:
-   - `httpOnly: true` ✅
-   - `secure: false` (dev) / `secure: true` (prod) ✅
-   - `sameSite: lax` ✅
-3. **Test logout**: Cookie deve essere rimosso
+Password-reset and verification links leave through the SMTP server set on the
+mail settings page ([Transactional email](apps/api/README.md#transactional-email)).
+In production the domain of `smtp.from` needs:
 
-#### Test TokenVersion
+- an **SPF** record that authorizes that SMTP server to send for it;
+- **DKIM** signing, configured on the SMTP service;
+- a **DMARC** policy — optional, recommended against spoofing.
+
+Without them the links tend to land in spam or be rejected. The test email on
+the mail settings page checks delivery end to end.
+
+---
+
+## Reverse proxy
+
+The reverse proxy (Nginx Proxy Manager, a container on the same host) reaches
+each stack's web service over an external network that only the two of them
+share: `luke-proxy` for production, `luke-rc-proxy` for the RC. The web
+publishes no host port, and the proxy forwards by container name —
+`http://luke-web-1:3000`, `http://luke-rc-web-rc-1:3000` — which depends on
+the stack names `luke` and `luke-rc`. The proxy is on neither stack's `edge`
+or `data` network, so it never reaches apps/api, postgres or the storage, and
+apps/api keeps trusting only its `edge` subnet (`LUKE_TRUSTED_PROXY_CIDR`).
+
+Create each network and connect the proxy once per host, before the stack's
+first deploy, which stops while its network is missing:
 
 ```bash
-# 1. Login e ottieni token
-TOKEN=$(curl -X POST http://localhost:3001/trpc/auth.login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"changeme"}' | jq -r '.result.token')
+docker network create luke-proxy
+docker network connect luke-proxy nginx-proxy-manager
+```
 
-# 2. Cambia password (incrementa tokenVersion)
-curl -X POST http://localhost:3001/trpc/me.changePassword \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"currentPassword":"changeme","newPassword":"newpass123!"}'
+The network outlives the stack, so recreating the stack keeps the connection.
+Recreating the proxy's own container drops it: connect it again, or declare
+both networks as `external` in the proxy's own stack so that its deploy
+restores them.
 
-# 3. Vecchio token ora è invalido
-curl -H "Authorization: Bearer $TOKEN" \
-  http://localhost:3001/trpc/me.get
-# → 401 Unauthorized
+A manual `docker network connect` can still put the proxy on an `edge` or
+`data` network. After any change to the proxy, list its networks: its own,
+`luke-proxy`, `luke-rc-proxy`, and none ending in `_edge` or `_data`.
+
+```bash
+docker inspect nginx-proxy-manager --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
 ```
 
 ---
 
-## Security Headers
+## Release build variables
 
-### Headers per Ambiente
-
-| Header                      | Value                                                         | Dev | Test | Prod | Note                          |
-| --------------------------- | ------------------------------------------------------------- | --- | ---- | ---- | ----------------------------- |
-| `X-Content-Type-Options`    | `nosniff`                                                     | ✅  | ✅   | ✅   | Prevenzione MIME sniffing     |
-| `Referrer-Policy`           | `no-referrer`                                                 | ✅  | ✅   | ✅   | Nessuna informazione referrer |
-| `X-DNS-Prefetch-Control`    | `off`                                                         | ✅  | ✅   | ✅   | Prevenzione leak DNS          |
-| `X-Frame-Options`           | `DENY`                                                        | ✅  | ✅   | ✅   | Blocco embedding iframe       |
-| `Content-Security-Policy`   | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'` | ❌  | ✅   | ✅   | CSP minimale API-only         |
-| `Strict-Transport-Security` | `max-age=15552000; includeSubDomains`                         | ❌  | ❌   | ✅   | HSTS solo produzione          |
-
-### Policy di Sicurezza
-
-#### CSP (Content Security Policy)
-
-- **Produzione**: Configurazione minimale per API JSON-only
-- **Sviluppo**: Disabilitata per evitare problemi di sviluppo
-- **Directives**: `default-src 'none'`, `frame-ancestors 'none'`, `base-uri 'none'`
-
-#### HSTS (HTTP Strict Transport Security)
-
-- **Produzione**: 180 giorni, includeSubDomains, no preload
-- **Sviluppo/Test**: Disabilitato
-
-### Testing Security Headers
-
-#### Verifica Headers con curl
-
-```bash
-# Verifica tutti gli header
-curl -I http://localhost:3001/
-
-# Output atteso (Development):
-# X-Content-Type-Options: nosniff
-# Referrer-Policy: no-referrer
-# X-DNS-Prefetch-Control: off
-# X-Frame-Options: DENY
-
-# Output atteso (Production):
-# X-Content-Type-Options: nosniff
-# Referrer-Policy: no-referrer
-# X-DNS-Prefetch-Control: off
-# X-Frame-Options: DENY
-# Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'
-# Strict-Transport-Security: max-age=15552000; includeSubDomains
-```
-
-#### Test Automatici
-
-```bash
-# Esegui test automatici per security headers
-pnpm -F @luke/api test security.headers.spec.ts
-```
-
-I test verificano:
-
-- Presenza di tutti gli header base
-- Configurazione CSP corretta per ambiente
-- Assenza HSTS in test/development
-- Snapshot invariabile della configurazione
+`release.yml` builds the web image with
+`NEXT_PUBLIC_API_URL=http://<hostname>`, baked into the client bundle, which
+builds its API URLs from it. The hostname comes from a GitHub repository
+variable: `PUBLIC_HOSTNAME` for a stable tag, `RC_PUBLIC_HOSTNAME` for an rc tag.
+Set both under the repository's Actions variables before tagging. An unset or
+empty variable does not fail the build — it bakes `http://` — and a new hostname
+needs a new image. The scheme is fixed to `http://` in the workflow.
 
 ---
 
-## Readiness & Health Checks
-
-### Endpoint Disponibili
-
-| Endpoint      | Tipo            | Status  | Checks              | Descrizione                   |
-| ------------- | --------------- | ------- | ------------------- | ----------------------------- |
-| `/livez`      | Liveness        | 200     | Process alive       | Event loop responsive         |
-| `/readyz`     | Readiness       | 200/503 | DB + Secrets + LDAP | Sistema pronto per richieste  |
-| `/healthz`    | Legacy Health   | 200     | Basic               | Endpoint di compatibilità     |
-| `/api/health` | Detailed Health | 200     | Extended            | Status dettagliato con uptime |
-
-### Semantica Status Codes
-
-#### Liveness (`/livez`)
-
-- **200**: Processo attivo, event loop responsive
-- **Sempre 200**: Se il server risponde, il processo è vivo
-
-#### Readiness (`/readyz`)
-
-- **200**: Tutti i check passano → sistema pronto
-- **503**: Almeno un check fallisce → sistema non pronto
-
-### Checks Eseguiti
-
-#### Database
-
-- **Test**: `SELECT 1` query
-- **Timeout**: 2 secondi
-- **Fallback**: 503 se DB non raggiungibile
-
-#### Secrets
-
-- **Test**: Derivazione segreti JWT via HKDF
-- **Fallback**: 503 se master key non disponibile
-
-#### LDAP (Opzionale)
-
-- **Test**: Bind LDAP con timeout 2s
-- **Fallback**: 503 se LDAP abilitato ma non raggiungibile
-- **Skip**: Se LDAP disabilitato, check passa
-
-### Esempi di Output
-
-#### Readiness OK (200)
-
-```bash
-curl -sSf http://localhost:3001/readyz
-```
-
-```json
-{
-  "status": "ready",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "checks": {
-    "database": "ok",
-    "secrets": "ok",
-    "ldap": "ok"
-  }
-}
-```
-
-#### Readiness Failed (503)
-
-```bash
-curl -sSf http://localhost:3001/readyz
-```
-
-```json
-{
-  "status": "unready",
-  "timestamp": "2024-01-15T10:30:00.000Z",
-  "checks": {
-    "database": "ok",
-    "secrets": "ok",
-    "ldap": "failed: LDAP timeout"
-  }
-}
-```
-
-### Bootstrap Fail-Fast
-
-Durante l'avvio, il server esegue verifiche critiche che devono passare:
-
-1. **Database Connection**: `prisma.$connect()`
-2. **Master Key**: `validateMasterKey()`
-3. **Secret Derivation**: `deriveSecret('api.jwt')`
-
-Se qualsiasi verifica fallisce, il processo termina con `process.exit(1)` per garantire che il server non si avvii in uno stato inconsistente.
-
-### Configurazione Kubernetes
-
-```yaml
-livenessProbe:
-  httpGet:
-    path: /livez
-    port: 3001
-  initialDelaySeconds: 10
-  periodSeconds: 10
-
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: 3001
-  initialDelaySeconds: 5
-  periodSeconds: 5
-  failureThreshold: 3
-```
-
-### Troubleshooting
-
-#### Readiness Failed - Database
-
-```bash
-# Verifica connessione database
-curl http://localhost:3001/readyz
-# Output: "database": "failed: Connection refused"
-```
-
-#### Readiness Failed - Secrets
-
-```bash
-# Verifica master key
-ls -la ~/.luke/secret.key
-# Output: -rw------- 1 user user 32 Jan 15 10:30 ~/.luke/secret.key
-```
-
-#### Readiness Failed - LDAP
-
-```bash
-# Verifica configurazione LDAP
-curl http://localhost:3001/trpc/config.get?input=%7B%22key%22%3A%22auth.ldap.url%22%7D
-# Output: Configurazione LDAP o "LDAP disabled, skipped"
-```
-
----
-
-## Configurazioni per Ambiente
-
-### Rate Limiting
-
-| Ambiente  | Login     | Password Change | Config Mutations | User Mutations |
-| --------- | --------- | --------------- | ---------------- | -------------- |
-| **Dev**   | 20 req/1m | 20 req/15m      | 100 req/1m       | 50 req/1m      |
-| **Stage** | 10 req/1m | 10 req/15m      | 50 req/1m        | 25 req/1m      |
-| **Prod**  | 5 req/1m  | 3 req/15m       | 20 req/1m        | 10 req/1m      |
-
-### Idempotency
-
-| Ambiente  | TTL   | Max Size | Cleanup Interval |
-| --------- | ----- | -------- | ---------------- |
-| **Dev**   | 5 min | 1000     | 1 min            |
-| **Stage** | 5 min | 1000     | 1 min            |
-| **Prod**  | 5 min | 1000     | 1 min            |
-
-### Session Management
-
-| Ambiente  | maxAge | updateAge | Cookie Secure | Cookie SameSite |
-| --------- | ------ | --------- | ------------- | --------------- |
-| **Dev**   | 8h     | 4h        | false         | lax             |
-| **Stage** | 8h     | 4h        | true          | lax             |
-| **Prod**  | 8h     | 4h        | true          | lax             |
-
-### Security Headers
-
-| Ambiente  | CSP | HSTS      | X-Frame-Options |
-| --------- | --- | --------- | --------------- |
-| **Dev**   | ❌  | ❌        | DENY            |
-| **Stage** | ✅  | ❌        | DENY            |
-| **Prod**  | ✅  | ✅ (180d) | DENY            |
-
-### Readiness Check Timeouts
-
-| Ambiente  | Database | Secrets | LDAP |
-| --------- | -------- | ------- | ---- |
-| **Dev**   | 2s       | 1s      | 2s   |
-| **Stage** | 2s       | 1s      | 2s   |
-| **Prod**  | 2s       | 1s      | 2s   |
-
-### ENV Vars per Ambiente
-
-#### Development
-
-```bash
-# Rate limiting permissivo
-export LUKE_RATE_LIMIT_LOGIN_MAX=20
-export LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX=20
-export LUKE_RATE_LIMIT_CONFIGMUTATIONS_MAX=100
-export LUKE_RATE_LIMIT_USERMUTATIONS_MAX=50
-
-# CORS per sviluppo
-export LUKE_CORS_ALLOWED_ORIGINS="http://localhost:3000,http://localhost:5173"
-```
-
-#### Staging
-
-```bash
-# Rate limiting intermedio
-export LUKE_RATE_LIMIT_LOGIN_MAX=10
-export LUKE_RATE_LIMIT_PASSWORDCHANGE_MAX=10
-export LUKE_RATE_LIMIT_CONFIGMUTATIONS_MAX=50
-export LUKE_RATE_LIMIT_USERMUTATIONS_MAX=25
-
-# CORS per staging
-export LUKE_CORS_ALLOWED_ORIGINS="https://staging.example.com"
-```
-
-#### Production
-
-```bash
-# Rate limiting conservativo (usa defaults)
-# Nessuna ENV var necessaria, usa valori hardcoded
-
-# CORS per produzione
-export LUKE_CORS_ALLOWED_ORIGINS="https://app.example.com,https://admin.example.com"
-```
-
----
-
-## Test Automatici
-
-```bash
-# Test security headers
-pnpm -F @luke/api test security.headers.spec.ts
-
-# Test session hardening
-pnpm -F @luke/api test session.hardening.spec.ts
-
-# Test rate limiting
-pnpm -F @luke/api test ratelimit.spec.ts
-
-# Test idempotency
-pnpm -F @luke/api test idempotency.spec.ts
-
-# Test readiness
-pnpm -F @luke/api test readyz.spec.ts
-```
-
----
-
-## Standard Aggiornamento Dati Client
-
-Il frontend utilizza uno standard uniforme per l'aggiornamento dei dati dopo le mutation, eliminando duplicazioni e garantendo coerenza.
-
-### Pattern Consigliato
-
-Usare `useStandardMutation` per tutte le mutation tRPC:
-
-```typescript
-import { useStandardMutation } from '@/lib/useStandardMutation';
-import { useRefresh } from '@/lib/refresh';
-import { trpc } from '@/lib/trpc';
-
-const refresh = useRefresh();
-
-const { mutate, isPending } = useStandardMutation({
-  mutateFn: trpc.endpoint.mutateAsync,
-  invalidate: refresh.resourceName,
-  onSuccessMessage: 'Operazione completata con successo',
-  onErrorMessage: 'Errore durante l'operazione',
-});
-
-// Uso
-await mutate({ ...data });
-```
-
-### Invalidazioni Disponibili
-
-Il hook `useRefresh()` fornisce invalidazioni standardizzate:
-
-- **`refresh.me()`** - Profilo utente corrente
-- **`refresh.users()`** - Lista utenti
-- **`refresh.storageConfig()`** - Configurazione storage
-- **`refresh.storageFiles(bucket?)`** - File storage
-- **`refresh.ldapConfig()`** - Configurazione LDAP
-- **`refresh.allStorage()`** - Storage config + files
-
-### Callback Personalizzate
-
-Per logica aggiuntiva dopo successo/errore:
-
-```typescript
-const { mutate } = useStandardMutation({
-  mutateFn: trpc.users.create.mutateAsync,
-  invalidate: refresh.users,
-  onSuccessMessage: 'Utente creato',
-  onSuccess: data => {
-    setDialogOpen(false);
-    router.push(`/users/${data.id}`);
-  },
-});
-```
-
-### Anti-Pattern da Evitare
-
-❌ **NO**: Chiamate manuali a `refetch()`  
-✅ **SÌ**: Invalidazioni centralizzate via `refresh.*`
-
-❌ **NO**: Duplicazione di `onSuccess`/`onError` ad-hoc  
-✅ **SÌ**: Messaggi standardizzati via `onSuccessMessage`
-
-❌ **NO**: `refetchOnWindowFocus: true` (default React Query)  
-✅ **SÌ**: Disabilitato globalmente per evitare refetch non necessari
-
-### Configurazione React Query
-
-Le mutation hanno i seguenti default:
-
-```typescript
-// apps/web/src/lib/trpc.tsx
-defaultOptions: {
-  queries: {
-    staleTime: 60 * 1000, // 1 minuto
-    retry: 1,
-    refetchOnWindowFocus: false, // No refetch automatici
-  },
-  mutations: {
-    retry: false, // No retry per evitare duplicazioni
-  },
-}
-```
-
-### File Coinvolti
-
-- `apps/web/src/lib/refresh.ts` - Invalidazioni centralizzate
-- `apps/web/src/lib/useStandardMutation.ts` - Wrapper mutation standard
-- `apps/web/src/lib/trpc.tsx` - Configurazione React Query defaults
-
----
-
-## Riferimenti Correlati
-
-- [README.md](README.md) - Documentazione principale del progetto
-- [API_SETUP.md](API_SETUP.md) - Setup e utilizzo dell'API con esempi pratici
-- [APP_CONFIG.md](APP_CONFIG.md) - Gestione configurazioni centralizzate (AppConfig)
-- [SETUP_STATUS.md](SETUP_STATUS.md) - Registro tecnico interno e roadmap
-
----
-
-**Luke** - Operational tuning per applicazioni enterprise sicure e scalabili
+## Related documentation
+
+- [README.md](README.md) - Main project documentation
+- [API documentation](apps/api/README.md) - API reference, security headers, health and readiness checks, LDAP resilience, [recovering administrator access](apps/api/README.md#recovering-administrator-access) when nobody can sign in, and local tracing
+- [Frontend documentation](apps/web/README.md) - Includes the client data-refresh standard after mutations
+- [NAV integration](docs/nav-integration.md) - Master-data sync, the order-portfolio and KIMO replicas, and their schedules

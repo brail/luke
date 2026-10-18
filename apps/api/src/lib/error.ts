@@ -3,10 +3,11 @@
  * Registers Fastify's global error handler and exposes the tRPC error formatter.
  */
 
-import { Prisma } from '@prisma/client';
 import { TRPCError } from '@trpc/server';
+import { ZodError } from 'zod';
 
 import { isProduction } from '@luke/core';
+import { Prisma } from '@luke/db';
 
 import { isRateLimitExceededCause } from './rateLimitError';
 
@@ -21,9 +22,16 @@ import type {
 
 const isProd = isProduction();
 
-/** Extracts a readable message from any caught value. */
+/**
+ * Extracts a readable message from any caught value. An empty `message` falls back to what else the
+ * error carries: Node's dual-stack connect failure is an `AggregateError` whose own message is
+ * empty, with the real reasons in `errors` (#49).
+ */
 export function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (!(err instanceof Error)) return String(err);
+  if (err.message) return err.message;
+  if (err instanceof AggregateError && err.errors.length > 0) return err.errors.map(toErrorMessage).join('; ');
+  return 'code' in err && typeof err.code === 'string' ? `${err.name}: ${err.code}` : err.name;
 }
 
 /** Extracts a stable error code for audit logging: tRPC code, Prisma error code, or 'UNKNOWN'. */
@@ -31,6 +39,18 @@ export function toErrorCode(err: unknown): string {
   if (err instanceof TRPCError) return err.code;
   if (err instanceof Prisma.PrismaClientKnownRequestError) return err.code;
   return 'UNKNOWN';
+}
+
+/**
+ * `true` when `err` is Prisma's foreign-key violation (P2003) on the named constraint — and only on
+ * that one, so a failure on another relation keeps its own answer.
+ */
+export function isForeignKeyViolation(err: unknown, constraint: string): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2003') return false;
+  // With the PostgreSQL driver adapter the constraint is reported under
+  // `meta.driverAdapterError.cause.constraint.index`; `meta` is typed as an open record.
+  const adapterError = err.meta?.driverAdapterError as { cause?: { constraint?: { index?: string } } } | undefined;
+  return adapterError?.cause?.constraint?.index === constraint;
 }
 
 /**
@@ -90,9 +110,9 @@ function mapHttpStatus(err: unknown): number {
 
 function safeMessage(err: unknown): string {
   if (!isProd) return err instanceof Error ? err.message : 'Errore interno';
-  // In produzione non esporre messaggi di back-end
+  // In production, do not expose back-end messages
   if (err instanceof TRPCError) {
-    // Mantieni messaggi user-facing per errori noti
+    // Keep the user-facing message of known errors
     if (
       [
         'BAD_REQUEST',
@@ -157,30 +177,64 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
 }
 
 /**
- * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus an optional
- * `retryAfterSeconds` on `data`, populated for `TOO_MANY_REQUESTS` errors so clients can
- * render an accurate `Retry-After` without recomputing the rate-limit window themselves.
+ * One issue of a failed input parse. `path` is the full dotted path (`data.retailMultiplier`), not
+ * its first segment: most mutations nest their fields, so `z.flattenError`'s first-segment
+ * grouping filed every issue under `data`. `''` for an issue on the input itself.
+ */
+export interface ZodIssueData {
+  path: string;
+  message: string;
+}
+
+/**
+ * Error shape returned to tRPC clients: `TRPCDefaultErrorShape` plus, on `data`:
+ * - `retryAfterSeconds`, populated for rate-limit errors (not every `TOO_MANY_REQUESTS`) so
+ *   clients can render an upper-bound `Retry-After` (the whole window) without recomputing it;
+ * - `zodIssues`, for a 4xx whose cause is a `ZodError`: the message keeps only the first issue,
+ *   and this keeps every issue with the field it belongs to.
  */
 export interface LukeErrorShape extends TRPCDefaultErrorShape {
-  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number };
+  data: TRPCDefaultErrorShape['data'] & { retryAfterSeconds?: number; zodIssues?: ZodIssueData[] };
+}
+
+/**
+ * A 4xx is the caller's to fix, and its message is written for them, so it passes in every
+ * environment. A 5xx can carry internals (driver errors, hosts, paths), so production replaces
+ * it; the original still reaches the `tRPC error` log line in `server.ts`.
+ * A failed input parse carries `ZodError`'s JSON dump of every issue as its message; the first
+ * issue's own message replaces it, which is what a form bound to the same schema would show.
+ */
+function clientMessage(shape: TRPCDefaultErrorShape, error: TRPCError): string {
+  if (shape.data.httpStatus >= 500) return isProd ? 'Internal server error' : shape.message;
+  if (error.cause instanceof ZodError && error.message === error.cause.message) {
+    return error.cause.issues[0]?.message ?? shape.message;
+  }
+  return shape.message;
 }
 
 /**
  * tRPC error formatter compatible with `initTRPC.create({ errorFormatter })`.
- * Replaces internal error messages with a generic string in production, and surfaces
+ * Decides which message reaches the client (see `clientMessage`) and surfaces
  * `retryAfterSeconds` for rate-limit errors (see `rateLimitError.ts`).
  */
 export const trpcErrorFormatter: TRPCErrorFormatter<Context, LukeErrorShape> = ({ shape, error }) => {
   const retryAfterSeconds = isRateLimitExceededCause(error.cause)
     ? error.cause.retryAfterSeconds
     : undefined;
+  // A 4xx only: an output that breaks its schema is a 500 with a ZodError cause too, and its
+  // paths describe the server's schema, not anything the caller sent.
+  const zodIssues: ZodIssueData[] | undefined =
+    shape.data.httpStatus < 500 && error.cause instanceof ZodError
+      ? error.cause.issues.map(issue => ({ path: issue.path.map(String).join('.'), message: issue.message }))
+      : undefined;
 
   return {
     ...shape,
-    message: isProd ? 'Internal server error' : shape.message,
+    message: clientMessage(shape, error),
     data: {
       ...shape.data,
       ...(retryAfterSeconds !== undefined && { retryAfterSeconds }),
+      ...(zodIssues !== undefined && { zodIssues }),
     },
   };
 };

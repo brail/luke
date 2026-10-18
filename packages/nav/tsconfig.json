@@ -1,6 +1,10 @@
 {
+  // Node-only library: `packages/nav` talks to SQL Server over `mssql` and is
+  // consumed exclusively by `apps/api`. It inherits the neutral `lib: ES2022`
+  // from the base and adds nothing browser-shaped — until this config named a
+  // `lib` at all, TypeScript's `lib.es2022.full` default gave it DOM.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
@@ -8,15 +12,6 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "noEmit": false,
-    "emitDeclarationOnly": false,
-    "allowJs": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": ["src/**/*"],

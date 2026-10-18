@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from 'react';
 
-import { DEFAULT_CLOCKS_TIMEZONES, type ClocksSettings } from '@luke/core';
+import {
+  DEFAULT_CLOCKS_TIMEZONES,
+  DEFAULT_LOCALE,
+  formatInstant,
+  NUMERIC_TIME,
+  wallClockDate,
+  type ClocksSettings,
+} from '@luke/core';
 
 import { cn } from '../../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
@@ -19,27 +26,15 @@ const TZ_LABELS: Record<string, string> = {
 };
 
 function formatTime(tz: string, now: Date): string {
-  return new Intl.DateTimeFormat('it-IT', {
-    timeZone: tz,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(now);
+  return formatInstant(now, tz, NUMERIC_TIME, DEFAULT_LOCALE);
 }
 
 function getLabel(tz: string): string {
-  return TZ_LABELS[tz] ?? tz.split('/').pop()?.replace('_', ' ') ?? tz;
+  return TZ_LABELS[tz] ?? tz.split('/').pop()?.replaceAll('_', ' ') ?? tz;
 }
 
 function getShanghaiHour(now: Date): number {
-  return parseInt(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Shanghai',
-      hour: '2-digit',
-      hour12: false,
-    }).format(now),
-    10
-  );
+  return wallClockDate(now, 'Asia/Shanghai').getUTCHours();
 }
 
 function getCnWindowStatus(shanghaiHour: number): { open: boolean; suffix: string } {
@@ -59,6 +54,7 @@ function getCnWindowStatus(shanghaiHour: number): { open: boolean; suffix: strin
  */
 export function ClocksWidget({ settings }: { settings?: Record<string, unknown> }) {
   const [now, setNow] = useState<Date | null>(null);
+  // Valid zones: the settings are checked on save, and dropped on read when stored before that.
   const timezones = (settings as ClocksSettings | undefined)?.timezones ?? [...DEFAULT_CLOCKS_TIMEZONES];
 
   useEffect(() => {
@@ -66,7 +62,8 @@ export function ClocksWidget({ settings }: { settings?: Record<string, unknown> 
     const timer = setInterval(() => {
       setNow(prev => {
         const next = new Date();
-        if (prev && prev.getMinutes() === next.getMinutes()) return prev;
+        // A new minute of the instant is a new minute on every clock (zone offsets are whole minutes).
+        if (prev && Math.floor(prev.getTime() / 60_000) === Math.floor(next.getTime() / 60_000)) return prev;
         return next;
       });
     }, 1000);

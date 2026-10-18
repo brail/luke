@@ -9,6 +9,7 @@ import { TRPCProvider } from '../lib/trpc';
 import { MaintenanceGate } from './maintenance/MaintenanceGate';
 import { SessionVerification } from './SessionVerification';
 import { TimezoneUpdateDialog } from './TimezoneUpdateDialog';
+import { TooltipProvider } from './ui/tooltip';
 
 /**
  * Root provider tree for the application.
@@ -16,6 +17,9 @@ import { TimezoneUpdateDialog } from './TimezoneUpdateDialog';
  * Composes `SessionProvider` (NextAuth), `TRPCProvider` (tRPC + React Query), `SseProvider`
  * (single shared SSE connection, see its own docstring), and mounts global singleton
  * components: `TimezoneUpdateDialog` and `SessionVerification`.
+ *
+ * A single `TooltipProvider` wraps the tree: `Tooltip.Root` throws without a provider ancestor,
+ * so every tooltip in the app depends on this one — see the comment on it.
  *
  * `MaintenanceGate` renders before `{children}` (unlike the other singletons, which are
  * portal/dialog-style and position-agnostic) so its banner sits above the entire app,
@@ -26,10 +30,19 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <TRPCProvider>
         <SseProvider>
-          <MaintenanceGate />
-          {children}
-          <TimezoneUpdateDialog />
-          <SessionVerification />
+          {/* One provider for the whole app. Radix groups the open delay per provider:
+              `skipDelayDuration` is the window in which moving to another tooltip *of the same
+              provider* opens it instantly. With one provider per control that grouping never
+              applied, so every neighbouring button re-waited the full `delayDuration`.
+              Delay 0 is what the app has always shown: shadcn's sidebar used to mount its own
+              provider with delay 0 around the whole (app) layout, so 700ms applied to public
+              pages only. Tune the delay here, the one place it lives. */}
+          <TooltipProvider delayDuration={0} skipDelayDuration={300}>
+            <MaintenanceGate />
+            {children}
+            <TimezoneUpdateDialog />
+            <SessionVerification />
+          </TooltipProvider>
         </SseProvider>
       </TRPCProvider>
     </SessionProvider>

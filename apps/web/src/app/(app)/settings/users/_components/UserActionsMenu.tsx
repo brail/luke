@@ -9,6 +9,8 @@ import {
   Mail,
   Settings2,
   Shield,
+  KeyRound,
+  Lock,
   X,
 } from 'lucide-react';
 import React from 'react';
@@ -39,7 +41,7 @@ interface UserActionsMenuProps {
  * Dropdown action menu for a single user row, with self-action guards.
  * @param user - The user the actions apply to.
  * @param currentUserId - ID of the currently logged-in user, used to block self-destructive actions.
- * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access).
+ * @param handlers - Callbacks for each available action (edit, disable, hard-delete, revoke sessions, manage access, force/revoke local access).
  */
 export function UserActionsMenu({
   user,
@@ -52,17 +54,20 @@ export function UserActionsMenu({
 
   const canUpdate = can('users:update');
   const canDelete = can('users:delete');
+  // Section overrides are an administrator's alone (`sectionAccess.set` requires `*:*`).
+  const canManageAccess = can('*:*');
 
   // Mutation tRPC
   const sendVerifyMutation =
     trpc.auth.requestEmailVerificationAdmin.useMutation();
   const forceVerifyMutation = trpc.users.forceVerifyEmail.useMutation();
 
-  // Mutations standardizzate
+  // Standard mutations
   const { mutate: sendVerify } = useStandardMutation({
     mutateFn: sendVerifyMutation.mutateAsync,
     onSuccessMessage: 'Email di verifica inviata',
     onErrorMessage: 'Errore invio email',
+    entityMessages: { INTERNAL_SERVER_ERROR: 'Impossibile inviare email. Verifica SMTP.' },
   });
 
   const { mutate: forceVerify } = useStandardMutation({
@@ -72,7 +77,7 @@ export function UserActionsMenu({
     onErrorMessage: 'Errore',
   });
 
-  // Se non ha nessun permesso di modifica, non mostrare il menu
+  // Without any edit permission, do not show the menu
   if (!canUpdate && !canDelete) return null;
 
   const handleEdit = () => {
@@ -89,7 +94,7 @@ export function UserActionsMenu({
   };
 
   const handleRevokeSessions = () => {
-    // Protezione: impedisci auto-revoca
+    // Guard: no self-revocation
     if (isSelfAction) {
       toast.error(
         'Non puoi revocare le tue stesse sessioni da qui. Usa il profilo personale.'
@@ -108,6 +113,23 @@ export function UserActionsMenu({
     handlers.onHardDelete(user);
   };
 
+  const handleRevokeLocalAccess = () => {
+    // Same self-lockout guard as revoke-sessions (this also bumps tokenVersion,
+    // ending the caller's own session mid-action) — mirrors the server-side check.
+    if (isSelfAction) {
+      toast.error('Non puoi revocare il tuo stesso accesso locale.');
+      return;
+    }
+    handlers.onRevokeLocalAccess(user);
+  };
+
+  const hasExternalIdentity = user.identities.some(
+    identity => identity.provider !== 'LOCAL'
+  );
+  const hasLocalIdentity = user.identities.some(
+    identity => identity.provider === 'LOCAL'
+  );
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -123,7 +145,7 @@ export function UserActionsMenu({
             Modifica
           </DropdownMenuItem>
         )}
-        {canUpdate && (
+        {canManageAccess && (
           <DropdownMenuItem onClick={() => handlers.onManageAccess(user)}>
             <Settings2 className="mr-2 h-4 w-4" />
             Gestisci accesso
@@ -178,6 +200,27 @@ export function UserActionsMenu({
         {canUpdate && (
           <>
             <DropdownMenuSeparator />
+            {hasExternalIdentity && (
+              <DropdownMenuItem
+                onClick={() => handlers.onForceLocalAccess(user)}
+                className="text-orange-600 focus:text-orange-600"
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                {hasLocalIdentity
+                  ? 'Reinvia link accesso locale'
+                  : 'Forza accesso locale'}
+              </DropdownMenuItem>
+            )}
+            {hasLocalIdentity && hasExternalIdentity && (
+              <DropdownMenuItem
+                onClick={handleRevokeLocalAccess}
+                disabled={isSelfAction}
+                className="text-orange-600 focus:text-orange-600"
+              >
+                <Lock className="mr-2 h-4 w-4" />
+                Revoca accesso locale
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onClick={handleRevokeSessions}
               className="text-orange-600 focus:text-orange-600"

@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+import { TimedInstantSchema } from './dates.js';
+
 export const MaintenanceModeStatusSchema = z.enum(['INACTIVE', 'SCHEDULED', 'ACTIVE']);
 
 /** Default warning thresholds (minutes before activation) when the admin doesn't override them. */
@@ -11,7 +13,7 @@ export const DEFAULT_WARNING_LEAD_MINUTES = [15, 5, 1];
 
 export const MaintenanceModeScheduleInputSchema = z
   .object({
-    scheduledAt: z.string().datetime(),
+    scheduledAt: TimedInstantSchema,
     message: z.string().max(500).trim().optional(),
     forceLogout: z.boolean().default(false),
     warningLeadMinutes: z.array(z.number().int().positive()).max(10).default(DEFAULT_WARNING_LEAD_MINUTES),

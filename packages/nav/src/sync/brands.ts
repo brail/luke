@@ -1,10 +1,11 @@
+import type { PrismaClient, Prisma } from '@luke/db';
+
 import { sanitizeCompany } from '../config.js';
 
 import { buildNavSyncFilter, buildWhereClause, createSyncRequest, processInBatches } from './utils.js';
 
 import type { NavDbConfig } from '../config.js';
 import type { SyncResult } from './vendors.js';
-import type { PrismaClient, Prisma } from '@prisma/client';
 import type mssql from 'mssql';
 import type { Logger } from 'pino';
 
@@ -96,10 +97,10 @@ export async function syncBrands(
       });
     } catch (err) {
       errors++;
-      logger.error({ entity, navCode, err }, 'NAV sync: errore upsert brand');
+      logger.error({ entity, navCode, err }, 'NAV sync: brand upsert error');
     }
   });
 
-  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completato');
+  logger.info({ entity, filterMode, upserted: rows.length, errors }, 'NAV sync: completed');
   return { entity, upserted: rows.length - errors, skipped: false, filterMode };
 }

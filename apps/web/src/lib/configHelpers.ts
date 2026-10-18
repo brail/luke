@@ -1,57 +1,10 @@
 /**
  * Helper utilities for the AppConfig management UI.
- * Provides constants, validators, and formatters used by the configuration pages.
- * Must be kept in sync with the backend config router for key-format rules.
+ * Provides validators and formatters used by the configuration pages. The key rules themselves
+ * (prefixes, format, keys that cannot be deleted) live in `@luke/core`, shared with the API.
  */
 
-/**
- * Supported top-level config categories (must match the backend).
- */
-export const CATEGORIES = [
-  'auth',
-  'app',
-  'security',
-  'mail',
-  'storage',
-  'pricing',
-  'ui',
-  'integrations',
-] as const;
-
-/**
- * Patterns matching config keys that cannot be deleted.
- * Must stay in sync with the backend `CRITICAL_CONFIG_KEYS` list.
- */
-export const CRITICAL_KEY_PATTERNS = [
-  /^auth\.ldap\..+/,
-  /^auth\.oidc\..+/,
-  /^jwt\..+/,
-  /^nextauth\..+/,
-  /^mail\.smtp\..+/,
-  /^storage\.(smb|gdrive)\..+/,
-  /^security\..+/,
-  /^app\.(baseUrl|encryptionKey)$/,
-];
-
-/**
- * Builds the regex used to validate config key format: `<category>.<segment>[.<segment>...]`.
- * Must stay in sync with the backend key-format validation.
- */
-export function getKeyRegex(): RegExp {
-  const categories = CATEGORIES.join('|');
-  return new RegExp(`^(${categories})(\\.[a-zA-Z0-9_-]+)+$`);
-}
-
-/** Pre-built key-format regex (convenience re-export of `getKeyRegex()`). */
-export const KEY_REGEX = getKeyRegex();
-
-/**
- * Returns `true` if the given key matches one of the critical-key patterns
- * and therefore cannot be deleted.
- */
-export function isCriticalKey(key: string): boolean {
-  return CRITICAL_KEY_PATTERNS.some(pattern => pattern.test(key));
-}
+import { calendarDateIn, CONFIG_ROUTER_KEY_REGEX, CONFIG_ROUTER_PREFIXES, isAppConfigKey, wallTimeIn } from '@luke/core';
 
 /**
  * Extracts the category prefix from a config key (the segment before the first `.`).
@@ -109,49 +62,15 @@ export function formatJsonCompact(jsonString: string): string {
 export function formatJsonExpanded(jsonString: string): string {
   try {
     const parsed = JSON.parse(jsonString);
-    return JSON.stringify(parsed, null, 2); // Con indentazione
+    return JSON.stringify(parsed, null, 2); // With indentation
   } catch {
     return jsonString; // If not valid JSON, return original
   }
 }
 
 /**
- * Returns the Lucide icon name associated with a config category.
- * Falls back to `'Settings'` for unknown categories.
- */
-export function getCategoryIcon(category: string): string {
-  const iconMap: Record<string, string> = {
-    auth: 'Shield',
-    app: 'Settings',
-    security: 'Lock',
-    mail: 'Mail',
-    storage: 'HardDrive',
-    pricing: 'DollarSign',
-    ui: 'Palette',
-  };
-  return iconMap[category] || 'Settings';
-}
-
-/**
- * Returns the Tailwind badge class pair (`bg-*` + `text-*`) for a config category.
- * Falls back to `'bg-gray-100 text-gray-800'` for unknown categories.
- */
-export function getCategoryColor(category: string): string {
-  const colorMap: Record<string, string> = {
-    auth: 'bg-blue-100 text-blue-800',
-    app: 'bg-gray-100 text-gray-800',
-    security: 'bg-red-100 text-red-800',
-    mail: 'bg-green-100 text-green-800',
-    storage: 'bg-purple-100 text-purple-800',
-    pricing: 'bg-yellow-100 text-yellow-800',
-    ui: 'bg-pink-100 text-pink-800',
-  };
-  return colorMap[category] || 'bg-gray-100 text-gray-800';
-}
-
-/**
- * Validates a config key against the expected format (`<category>.<segment>...`).
- * Returns `{ valid: true }` or `{ valid: false, error: string }`.
+ * Validates a config key the way `config.set` will: the format (`<category>.<segment>...`) and
+ * membership in `AppConfigRegistry`. Returns `{ valid: true }` or `{ valid: false, error: string }`.
  */
 export function validateConfigKey(key: string): {
   valid: boolean;
@@ -161,11 +80,15 @@ export function validateConfigKey(key: string): {
     return { valid: false, error: 'Chiave non può essere vuota' };
   }
 
-  if (!KEY_REGEX.test(key)) {
+  if (!CONFIG_ROUTER_KEY_REGEX.test(key)) {
     return {
       valid: false,
-      error: `Formato chiave non valido. Deve iniziare con una categoria supportata (${CATEGORIES.join(', ')})`,
+      error: `Formato chiave non valido. Deve iniziare con una categoria supportata (${CONFIG_ROUTER_PREFIXES.join(', ')})`,
     };
+  }
+
+  if (!isAppConfigKey(key)) {
+    return { valid: false, error: `Chiave non dichiarata in AppConfigRegistry: ${key}` };
   }
 
   return { valid: true };
@@ -187,25 +110,10 @@ export function validateConfigValue(value: string): {
 }
 
 /**
- * Generates a timestamped filename for a config export, e.g.
- * `luke-config-export-2026-06-28T14-30-00.json`.
+ * The file name of a config export taken at `exportedAt` (the server's time), read in `timeZone`
+ * (the reader zone) like the API's other exports, e.g. `luke-config-export-20260628-1430.json`.
  */
-export function generateExportFileName(): string {
-  const now = new Date();
-  const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
-  return `luke-config-export-${timestamp}.json`;
-}
-
-/**
- * Formats a date as `dd/MM/yyyy, HH:mm` using the `it-IT` locale.
- */
-export function formatDate(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('it-IT', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export function generateExportFileName(exportedAt: Date | string, timeZone: string): string {
+  const at = new Date(exportedAt);
+  return `luke-config-export-${calendarDateIn(at, timeZone).replaceAll('-', '')}-${wallTimeIn(at, timeZone).replace(':', '')}.json`;
 }

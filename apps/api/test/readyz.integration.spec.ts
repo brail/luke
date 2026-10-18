@@ -3,7 +3,6 @@
  * Verifies bootstrap fail-fast behavior and /readyz endpoint
  */
 
-import { PrismaClient } from '@prisma/client';
 import {
   describe,
   it,
@@ -14,6 +13,7 @@ import {
 } from 'vitest';
 
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
+import { PrismaClient } from '@luke/db';
 
 import {
   checkBootstrapDependencies,
@@ -68,7 +68,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
   });
 
   describe('checkBootstrapDependencies', () => {
-    it('dovrebbe completare con successo quando tutte le dipendenze sono OK', async () => {
+    it('should complete successfully when every dependency is OK', async () => {
       // Mock all dependencies as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -84,14 +84,14 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       // Verifies that logs were called
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Connessione database stabilita'
+        'Database connection established'
       );
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Segreti JWT derivati con successo'
+        'JWT secrets derived successfully'
       );
     });
 
-    it('dovrebbe fallire quando validateMasterKey restituisce false', async () => {
+    it('should fail when validateMasterKey returns false', async () => {
       // Mock master key not available
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -99,14 +99,14 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
-      ).rejects.toThrow('Master key non disponibile o invalida');
+      ).rejects.toThrow('Master key unavailable or invalid');
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Master key non disponibile o invalida'
+        'Master key unavailable or invalid'
       );
     });
 
-    it('dovrebbe fallire quando deriveSecret lancia errore', async () => {
+    it('should fail when deriveSecret throws', async () => {
       // Mock master key OK but secret derivation fails
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -120,15 +120,15 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
       ).rejects.toThrow(
-        'Impossibile derivare segreti JWT: Secret derivation failed'
+        'Failed to derive JWT secrets: Secret derivation failed'
       );
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        'Impossibile derivare segreti JWT: Secret derivation failed'
+        'Failed to derive JWT secrets: Secret derivation failed'
       );
     });
 
-    it('dovrebbe fallire quando la connessione DB fallisce', async () => {
+    it('should fail when the DB connection fails', async () => {
       // Mock DB disconnected
       const mockPrisma = {
         $connect: vi
@@ -144,7 +144,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       expect(mockLogger.error).toHaveBeenCalledWith(
         { error: expect.any(Error) },
-        'Errore verifica dipendenze bootstrap'
+        'Bootstrap dependency check error'
       );
     });
   });
@@ -159,7 +159,7 @@ describe('/readyz Endpoint Behavior', () => {
   });
 
   describe('runReadinessChecks', () => {
-    it('dovrebbe restituire allOk=true quando tutti i check passano', async () => {
+    it('should return allOk=true when every check passes', async () => {
       // Mock all checks as OK
       (
         validateMasterKey as MockedFunction<typeof validateMasterKey>
@@ -177,7 +177,7 @@ describe('/readyz Endpoint Behavior', () => {
       expect(result.timestamp).toBeDefined();
     });
 
-    it('dovrebbe restituire allOk=false quando il database fallisce', async () => {
+    it('should return allOk=false when the database fails', async () => {
       // Mock DB disconnected
       const mockPrisma = {
         $queryRaw: vi
@@ -193,7 +193,7 @@ describe('/readyz Endpoint Behavior', () => {
       );
     });
 
-    it('dovrebbe restituire allOk=false quando secrets fallisce', async () => {
+    it('should return allOk=false when secrets fail', async () => {
       // Mock secrets fails
       (deriveSecret as MockedFunction<typeof deriveSecret>).mockImplementation(
         () => {
@@ -209,7 +209,7 @@ describe('/readyz Endpoint Behavior', () => {
       );
     });
 
-    it('dovrebbe gestire errori in check paralleli', async () => {
+    it('should handle errors in parallel checks', async () => {
       // Mock a check that throws an unhandled exception
       const mockPrisma = {
         $queryRaw: vi.fn().mockImplementation(() => {

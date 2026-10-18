@@ -1,0 +1,21 @@
+rules:
+  - id: luke-replace-dynamic-string
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Pass a function as the replacement of `replace`/`replaceAll` when the
+      text is not a literal: a string replacement reads `$&`, `` $` ``, `$'` and
+      `$$` in the value, so what lands in the result is not the value. Write
+      `.replace(pattern, () => value)`. A named function passed as the
+      replacement is fine: mark that call with a reasoned `// nosemgrep`.
+    patterns:
+      - pattern-either:
+          - pattern: $X.replace($P, $V)
+          - pattern: $X.replaceAll($P, $V)
+      # A literal replacement means what it says; an inline function receives the value as is.
+      # A template literal is not exempt: an interpolated value carries the same `$` patterns.
+      - pattern-not: $X.$M($P, "...")
+      - pattern-not: $X.$M($P, (...) => $BODY)
+      - pattern-not: $X.$M($P, function (...) { ... })
+      # Next's `router.replace(url, { scroll })`: an options object is never a string replacement.
+      - pattern-not: $X.$M($P, {...})

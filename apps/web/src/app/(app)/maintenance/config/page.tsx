@@ -23,26 +23,26 @@ import {
 } from '../../../../lib/useConfigQuery';
 
 /**
- * Pagina gestione configurazioni con CRUD completo
+ * Configuration management page with full CRUD.
  *
- * Questa pagina fornisce un'interfaccia completa per la gestione delle configurazioni
- * del sistema, includendo:
+ * This page provides a complete interface for managing the system configuration,
+ * including:
  *
- * - **Ricerca e filtri**: per chiave, categoria, tipo di cifratura
- * - **Ordinamento**: per chiave o data di aggiornamento
- * - **Paginazione**: per gestire grandi quantità di configurazioni
- * - **CRUD sicuro**: create, read, update, delete con validazioni
- * - **Import/Export**: operazioni batch con anteprima e validazione
- * - **Protezioni di sicurezza**: mai mostrare segreti in chiaro, blocchi per chiavi critiche
+ * - **Search and filters**: by key, category, encryption type
+ * - **Sorting**: by key or update date
+ * - **Pagination**: to handle large numbers of configuration entries
+ * - **Safe CRUD**: create, read, update, delete with validation
+ * - **Import/Export**: batch operations with preview and validation
+ * - **Security safeguards**: never show secrets in the clear, locks on critical keys
  *
- * Utilizza il hook `useConfigQuery` per centralizzare la logica tRPC e ridurre
- * il boilerplate del componente.
+ * Uses the `useConfigQuery` hook to centralize the tRPC logic and cut the component
+ * boilerplate.
  */
 export default function MaintenanceConfigPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  // Stati per ricerca e filtri
+  // State for search and filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterEncrypted, setFilterEncrypted] = useState<boolean | undefined>();
   const [filterCategory, setFilterCategory] = useState<string | undefined>();
@@ -51,7 +51,7 @@ export default function MaintenanceConfigPage() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
-  // Stati per dialog
+  // State for the dialogs
   const [selectedConfig, setSelectedConfig] = useState<Config | null>(null);
   const [deleteConfigKey, setDeleteConfigKey] = useState<string | null>(null);
   const [viewValue, setViewValue] = useState('');
@@ -59,7 +59,7 @@ export default function MaintenanceConfigPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
 
-  // Hook centralizzato per query e mutations - riduce boilerplate significativamente
+  // One hook for the queries and mutations, which cuts the boilerplate
   const { data, isLoading, error, saveConfig, deleteConfig, isAnyLoading } =
     useConfigQuery({
       q: searchTerm,
@@ -87,13 +87,14 @@ export default function MaintenanceConfigPage() {
   };
 
   const handleViewValue = (config: Config) => {
-    // Solo per valori non cifrati - sicurezza garantita dal componente Table
+    // Only for unencrypted values - safety guaranteed by the Table component
     setViewValue(config.valuePreview || config.value || '');
     setViewValueKey(config.key);
   };
 
   const handleSaveConfig = async (formData: ConfigFormData) => {
-    await saveConfig(formData);
+    // `handleNewConfig` clears the selection, `handleEditConfig` sets it.
+    await saveConfig(formData, { isNew: selectedConfig === null });
     setEditDialogOpen(false);
     setSelectedConfig(null);
   };
@@ -121,14 +122,13 @@ export default function MaintenanceConfigPage() {
 
   const handleImportSuccess = () => {
     setImportDialogOpen(false);
-    // L'invalidazione è gestita automaticamente dal hook
   };
 
   const handleOpenImport = () => {
     setImportDialogOpen(true);
   };
 
-  // Skeleton per loading
+  // Loading skeleton
   const SkeletonRow = () => (
     <tr>
       <td>
@@ -157,7 +157,7 @@ export default function MaintenanceConfigPage() {
           description="Gestisci le configurazioni del sistema con ricerca, filtri e protezioni di sicurezza"
         />
 
-        {/* Toolbar con ricerca e filtri */}
+        {/* Toolbar with search and filters */}
         <SectionCard
           title="Ricerca e Filtri"
           description="Cerca e filtra le configurazioni del sistema"
@@ -171,7 +171,7 @@ export default function MaintenanceConfigPage() {
             onFilterCategoryChange={setFilterCategory}
           />
 
-          {/* Azioni in seconda riga */}
+          {/* Actions on a second row */}
           <div className="flex gap-2 mt-4">
             <ConfigExportButton disabled={!canUpdate} />
             <Button
@@ -194,7 +194,7 @@ export default function MaintenanceConfigPage() {
           </div>
         </SectionCard>
 
-        {/* Tabella Configurazioni */}
+        {/* Configuration table */}
         <SectionCard
           title="Configurazioni Sistema"
           description="Lista delle configurazioni con ordinamento e paginazione"
@@ -275,7 +275,7 @@ export default function MaintenanceConfigPage() {
           )}
         </SectionCard>
 
-        {/* Dialog per modifica/creazione */}
+        {/* Edit/create dialog */}
         {editDialogOpen && (
           <ConfigEditDialog
             onOpenChange={() => {
@@ -288,7 +288,7 @@ export default function MaintenanceConfigPage() {
           />
         )}
 
-        {/* Dialog per eliminazione */}
+        {/* Delete dialog */}
         {deleteConfigKey && (
           <ConfigDeleteDialog
             onOpenChange={() => setDeleteConfigKey(null)}
@@ -298,7 +298,7 @@ export default function MaintenanceConfigPage() {
           />
         )}
 
-        {/* Dialog per visualizzazione valore */}
+        {/* Value view dialog */}
         {viewValue && (
           <ConfigValueDialog
             onOpenChange={() => {
@@ -310,7 +310,7 @@ export default function MaintenanceConfigPage() {
           />
         )}
 
-        {/* Dialog per import */}
+        {/* Import dialog */}
         {importDialogOpen && (
           <ConfigImportDialog
             onOpenChange={() => setImportDialogOpen(false)}

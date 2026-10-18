@@ -36,7 +36,7 @@ export function OrganizationTab() {
     if (functions.length > 0 && !selectedFunctionId) {
       setSelectedFunctionId(functions[0].id);
     }
-  }, [functions]);
+  }, [functions, selectedFunctionId]);
 
   const selectedFunction = functions.find(f => f.id === selectedFunctionId);
 

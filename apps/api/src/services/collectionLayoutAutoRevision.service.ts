@@ -16,13 +16,21 @@
  * window where two concurrent triggers both pass it. Losing that race surfaces as P2002 and is
  * treated as "already done", not as an error. Manual revisions are untouched — their `milestoneId`
  * is null, and Postgres treats NULLs as distinct in a unique index.
+ *
+ * A row photo gone from storage does not fail a revision (see `createRevision`); any other failure
+ * does, and is logged. The date trigger tries again every tick while the event is within the
+ * lookback, so a failure lasting the whole window loses that revision; the phase trigger does not
+ * retry, and the group's next phase change snapshots the layout as it is then.
  */
 
-import { Prisma } from '@prisma/client';
+import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt } from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient } from '@luke/db';
+
+import { copyToImmutableBucket } from '../storage/index.js';
 
 import { createRevision } from './collectionLayoutRevision.service.js';
 
-import type { PrismaClient } from '@prisma/client';
 
 /**
  * Labels stamped on the revisions these triggers create. They are display text, not a contract:
@@ -44,9 +52,6 @@ type ServiceLogger = {
   warn: (obj: object, msg: string) => void;
   info: (obj: object, msg: string) => void;
 };
-
-/** Photos stay in their original bucket rather than being copied to the immutable one (V2 simplification). */
-const identityCopyPhoto = async (sourceKey: string): Promise<string> => sourceKey;
 
 type TriggerEvent = {
   id: string;
@@ -105,10 +110,11 @@ async function createAutoRevision(
   revisionTypeValue: string,
   notes: string,
   actorUserId: string,
+  logger?: ServiceLogger,
 ): Promise<boolean> {
-  let revision;
+  let created;
   try {
-    revision = await createRevision(
+    created = await createRevision(
       {
         collectionLayoutId: event.collectionLayoutId,
         revisionTypeValue,
@@ -117,12 +123,18 @@ async function createAutoRevision(
         notes,
       },
       actorUserId,
-      identityCopyPhoto,
+      // Into the immutable revisions bucket, as a manual revision does: every reader resolves a
+      // revision's `pictureKey` there, and the live object goes when the row photo is replaced.
+      sourceKey => copyToImmutableBucket(prisma, sourceKey),
       prisma,
     );
   } catch (err) {
     if (isDuplicateRevision(err)) return false;
     throw err;
+  }
+  const { revision, missingPhotoRowIds } = created;
+  if (missingPhotoRowIds.length > 0) {
+    logger?.warn({ revisionId: revision.id, missingPhotoRowIds }, 'Auto-revision created without the row photos gone from storage');
   }
 
   await prisma.auditLog.create({
@@ -137,6 +149,7 @@ async function createAutoRevision(
         revisionTypeValue,
         eventId: event.id,
         collectionLayoutId: event.collectionLayoutId,
+        missingPhotoRowIds: missingPhotoRowIds.length > 0 ? missingPhotoRowIds : undefined,
       },
     },
   });
@@ -147,8 +160,9 @@ async function createAutoRevision(
 // ─── Trigger A: event deadline reached ────────────────────────────────────────
 
 /**
- * Snapshots the layout of every phase-linked calendar event whose deadline (`endAt ?? startAt`) has
- * passed within the lookback window and that has no `MILESTONE_DATA` revision yet. Events whose
+ * Snapshots the layout of every phase-linked calendar event whose deadline was reached within the
+ * lookback window and that has no `MILESTONE_DATA` revision yet — reached as `deadlineReachedAt`
+ * defines it in the business zone (an all-day deadline at the end of its day). Events whose
  * brand+season has no collection layout are skipped.
  *
  * Failures are per-event: one broken layout never blocks the others.
@@ -158,26 +172,37 @@ async function createAutoRevision(
 export async function createRevisionsForReachedEvents(
   prisma: PrismaClient,
   now: Date,
+  timeZone: string,
   logger?: ServiceLogger,
 ): Promise<number> {
   const lookbackFrom = new Date(now.getTime() - REACHED_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  // A superset: a deadline is reached up to DEADLINE_REACH_MARGIN_MS after its stored value, never
+  // before, so the exact window is applied below on the reached instant.
+  const storedFrom = new Date(lookbackFrom.getTime() - DEADLINE_REACH_MARGIN_MS);
 
-  const events = await prisma.calendarEvent.findMany({
+  const fetched = await prisma.calendarEvent.findMany({
     where: {
       cancelledAt: null,
       phaseId: { not: null },
-      // Deadline is endAt when set, startAt otherwise — expressed as two mutually exclusive branches.
+      // The stored deadline is endAt when set, startAt otherwise — two mutually exclusive branches.
       OR: [
-        { endAt: { gte: lookbackFrom, lte: now } },
-        { endAt: null, startAt: { gte: lookbackFrom, lte: now } },
+        { endAt: { gte: storedFrom, lte: now } },
+        { endAt: null, startAt: { gte: storedFrom, lte: now } },
       ],
     },
     select: {
       id: true,
       title: true,
+      startAt: true,
+      endAt: true,
+      allDay: true,
       planningGroup: { select: { name: true } },
       calendar: { select: { brandId: true, seasonId: true } },
     },
+  });
+  const events = fetched.filter(e => {
+    const reachedAt = deadlineReachedAt(e, timeZone);
+    return reachedAt >= lookbackFrom && reachedAt <= now;
   });
   if (events.length === 0) return 0;
 
@@ -213,10 +238,11 @@ export async function createRevisionsForReachedEvents(
         AUTO_REVISION_TYPE_DATE,
         `Evento raggiunto: "${event.title}" — Gruppo: "${event.planningGroupName}"`,
         actorUserId,
+        logger,
       );
       if (done) created += 1;
     } catch (err) {
-      logger?.warn({ err, eventId: event.id }, 'Auto-revision (data raggiunta) failed');
+      logger?.warn({ err, eventId: event.id }, 'Auto-revision (deadline reached) failed');
     }
   }
 
@@ -232,6 +258,8 @@ export async function createRevisionsForReachedEvents(
  * row without a phase means nothing is complete yet.
  *
  * Called after a row phase transition. Never throws: a revision failure must not fail the row save.
+ * Unlike the date trigger, the first failure ends the call: every pending event snapshots the same
+ * layout, so the next one would fail the same way while the row save waits.
  *
  * @returns The number of revisions created.
  */
@@ -282,12 +310,13 @@ export async function createRevisionsForCompletedPhase(
         AUTO_REVISION_TYPE_PHASE,
         `Fase completata: "${event.title}" — Gruppo: "${event.planningGroupName}"`,
         actorUserId,
+        logger,
       );
       if (done) created += 1;
     }
     return created;
   } catch (err) {
-    logger?.warn({ err, collectionLayoutId, planningGroupId }, 'Auto-revision (fase completata) failed');
+    logger?.warn({ err, collectionLayoutId, planningGroupId }, 'Auto-revision (phase completed) failed');
     return 0;
   }
 }

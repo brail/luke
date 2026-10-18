@@ -1,0 +1,35 @@
+{
+  "name": "@luke/db",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "rm -rf src/generated dist && prisma generate && tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "prisma:studio": "set -a && . ../../apps/api/.env && set +a && prisma studio",
+    "prisma:push": "set -a && . ../../apps/api/.env && set +a && prisma db push",
+    "db:migrate:new": "bash scripts/new-migration.sh"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
+    "prisma": "7.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "typescript": "^6.0.3"
+  }
+}

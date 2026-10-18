@@ -3,12 +3,13 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Download, FileText } from 'lucide-react';
 import { useSession } from 'next-auth/react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import {
   CollectionLayoutRowInputSchema,
+  type CollectionGender,
   type CollectionLayoutRowInput,
   buildCollectionRowPictureUploadUrl,
   buildTempCollectionRowPictureUploadUrl,
@@ -44,6 +45,15 @@ import {
   type PricingParameterSet,
   type QuotationState,
 } from './CollectionRowSections';
+import {
+  buildRowFormValues,
+  enabledParameterSetIdsFor,
+  resolveDefaultGender,
+  resolveDefaultGroupId,
+  useRowDrawerForm,
+} from './useRowDrawerForm';
+
+import type { VendorListItem } from './VendorCombobox';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,7 +67,7 @@ interface CollectionRowDrawerProps {
   defaultGroupId?: string;
   groups: CollectionGroup[];
   parameterSets: PricingParameterSet[];
-  availableGenders: string[];
+  availableGenders: CollectionGender[];
   brandId: string;
   seasonId: string;
   onSubmit: (data: CollectionLayoutRowInput) => void;
@@ -71,56 +81,11 @@ interface CollectionRowDrawerProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildDefaultValues(
-  defaultGroupId?: string,
-  groups: CollectionGroup[] = [],
-  availableGenders: string[] = ['MAN', 'WOMAN'],
-  defaultPlanningGroupId?: string
-): CollectionLayoutRowInput {
-  return {
-    groupId: defaultGroupId ?? groups[0]?.id ?? '',
-    planningGroupId: defaultPlanningGroupId,
-    gender: availableGenders[0] ?? 'MAN',
-    vendorId: null,
-    line: '',
-    article: null,
-    status: 'NEW',
-    skuForecast: 1,
-    qtyForecast: null,
-    productCategory: '',
-    strategy: null,
-    styleStatus: null,
-    phaseId: null,
-    designer: null,
-    pictureKey: null,
-    pendingPictureFileObjectId: null,
-    styleNotes: null,
-    materialNotes: null,
-    colorNotes: null,
-    toolingNotes: null,
-    toolingQuotation: null,
-  };
-}
-
 function missingForecastLabels(data: CollectionLayoutRowInput): string[] {
   const missing: string[] = [];
   if (data.skuForecast == null) missing.push('SKU Forecast');
   if (data.qtyForecast == null) missing.push('Qty Forecast');
   return missing;
-}
-
-function rowToQuotationState(q: CollectionRow['quotations'][number]): QuotationState {
-  return {
-    id: q.id,
-    rowId: q.rowId,
-    order: q.order,
-    pricingParameterSetId: q.pricingParameterSetId ?? null,
-    retailPrice: q.retailPrice ?? null,
-    supplierQuotation: q.supplierQuotation ?? null,
-    notes: q.notes ?? null,
-    sku: q.sku ?? null,
-    isNew: false,
-  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -158,73 +123,49 @@ export function CollectionRowDrawer({
   isLoading = false,
   canUpdate = true,
 }: CollectionRowDrawerProps) {
-  const [previewPictureUrl, setPreviewPictureUrl] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
-  const [quotations, setQuotations] = useState<QuotationState[]>([]);
-  const [phaseChangeNote, setPhaseChangeNote] = useState('');
   const [pendingData, setPendingData] = useState<CollectionLayoutRowInput | null>(null);
   const [changeGroupOpen, setChangeGroupOpen] = useState(false);
   const [changePhaseOpen, setChangePhaseOpen] = useState(false);
   const { data: session } = useSession();
 
-  const { data: vendorsList } = trpc.vendors.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  const [pickedVendor, setPickedVendor] = useState<VendorListItem | null>(null);
   const { data: planningGroups = [], isLoading: planningGroupsLoading } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
     { enabled: open }
   );
   const defaultPlanningGroupId = planningGroups[0]?.id;
+  const resolvedGroupId = resolveDefaultGroupId(defaultGroupId, groups);
+  const resolvedGender = resolveDefaultGender(availableGenders);
 
+  // `useForm()` only ever reads `defaultValues` at this component instance's first render — the
+  // parent (`page.tsx`) keys `CollectionRowDrawer` on `rowDrawerKey` (bumped by `openRowDrawer`)
+  // so a new editing session (a different row, or a close/reopen) is always a fresh mount, and
+  // `buildRowFormValues` gives that first render the actual row's data (or fresh create defaults)
+  // directly, instead of blank fields that only get corrected once `useRowDrawerForm`'s effect
+  // runs after paint.
   const form = useForm<CollectionLayoutRowInput>({
     resolver: zodResolver(CollectionLayoutRowInputSchema),
-    defaultValues: buildDefaultValues(defaultGroupId, groups, availableGenders),
+    defaultValues: buildRowFormValues(mode, row, resolvedGroupId, resolvedGender, defaultPlanningGroupId),
   });
+
+  const {
+    previewPictureUrl,
+    setPreviewPictureUrl,
+    quotations,
+    setQuotations,
+    phaseChangeNote,
+    setPhaseChangeNote,
+    applyPictureUpload,
+    applyPictureRemoval,
+  } = useRowDrawerForm({ form, open, mode, row, resolvedGroupId, resolvedGender, defaultPlanningGroupId });
 
   const currentVendorId = form.watch('vendorId');
   const currentPhaseId = form.watch('phaseId');
   const enabledParameterSetIds = useMemo(
-    () => vendorsList?.items.find(v => v.id === currentVendorId)?.enabledParameterSets.map(p => p.id) ?? [],
-    [currentVendorId, vendorsList?.items]
+    () => enabledParameterSetIdsFor(currentVendorId, [pickedVendor, row?.vendor]),
+    [currentVendorId, pickedVendor, row?.vendor]
   );
-
-  useEffect(() => {
-    setPhaseChangeNote('');
-    if (!open) {
-      setPreviewPictureUrl(null);
-      return;
-    }
-    if (mode === 'edit' && row) {
-      form.reset({
-        groupId: row.groupId,
-        planningGroupId: row.planningGroupId,
-        gender: row.gender,
-        vendorId: row.vendorId ?? null,
-        line: row.line,
-        article: row.article ?? null,
-        status: row.status,
-        skuForecast: row.skuForecast,
-        qtyForecast: row.qtyForecast,
-        productCategory: row.productCategory,
-        strategy: row.strategy ?? null,
-        styleStatus: row.styleStatus ?? null,
-        pricePositioning: row.pricePositioning ?? null,
-        phaseId: row.phaseId ?? null,
-        designer: row.designer ?? null,
-        pictureKey: row.pictureKey ?? null,
-        pendingPictureFileObjectId: null,
-        styleNotes: row.styleNotes ?? null,
-        materialNotes: row.materialNotes ?? null,
-        colorNotes: row.colorNotes ?? null,
-        toolingNotes: row.toolingNotes ?? null,
-        toolingQuotation: row.toolingQuotation ?? null,
-      });
-      setPreviewPictureUrl(row.pictureUrl ?? null);
-      setQuotations((row.quotations ?? []).map(rowToQuotationState));
-    } else {
-      form.reset(buildDefaultValues(defaultGroupId, groups, availableGenders, defaultPlanningGroupId));
-      setPreviewPictureUrl(null);
-      setQuotations([]);
-    }
-  }, [open, mode, row?.id, defaultGroupId, defaultPlanningGroupId]);
 
   const title = mode === 'create' ? 'Nuova riga' : (row?.line ?? 'Modifica riga');
 
@@ -256,12 +197,12 @@ export function CollectionRowDrawer({
       const result = await res.json();
       URL.revokeObjectURL(blobUrl);
       setPreviewPictureUrl(result.publicUrl);
-      form.setValue('pendingPictureFileObjectId', result.fileObjectId);
+      applyPictureUpload(result.fileObjectId);
       onPictureUploaded?.();
     } catch (err: unknown) {
       URL.revokeObjectURL(blobUrl);
       setPreviewPictureUrl(null);
-      form.setValue('pendingPictureFileObjectId', null);
+      applyPictureUpload(null);
       toast.error(err instanceof Error ? err.message : 'Errore durante upload foto');
     } finally {
       setIsUploadingPicture(false);
@@ -269,8 +210,7 @@ export function CollectionRowDrawer({
   };
 
   const handlePictureRemove = () => {
-    form.setValue('pictureKey', null);
-    form.setValue('pendingPictureFileObjectId', null);
+    applyPictureRemoval();
     setPreviewPictureUrl(null);
   };
 
@@ -290,9 +230,9 @@ export function CollectionRowDrawer({
     onError: e => toast.error(getTrpcErrorMessage(e, { default: "Errore durante l'esportazione PDF" })),
   });
 
-  // ─── Quotation handlers — tutti locali, nessuna mutation di rete: bufferizzano su `quotations`,
-  // il commit reale avviene al Salva (submitRow → onSubmit → collectionLayout.rows.update/create,
-  // che sincronizza le quotazioni nella stessa transazione della riga) ─────────────────
+  // ─── Quotation handlers — all local, no network mutation: they buffer into `quotations`,
+  // the real commit happens on Save (submitRow → onSubmit → collectionLayout.rows.update/create,
+  // which syncs the quotations in the same transaction as the row) ─────────────────
   const handleAddQuotation = () => {
     if (!row?.id) return;
     setQuotations(prev => [...prev, {
@@ -398,6 +338,8 @@ export function CollectionRowDrawer({
                   <VendorSection
                     control={form.control}
                     canUpdate={canUpdate}
+                    vendor={row?.vendor ?? null}
+                    onVendorPicked={setPickedVendor}
                   />
                   <div>
                     <SectionHeader title="Forecast" />

@@ -3,61 +3,41 @@
  * Handles SMTP configuration and testing
  */
 
+import { TRPCError } from '@trpc/server';
 import * as nodemailer from 'nodemailer';
-import { z } from 'zod';
+
+import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
-import {
-  ErrorCode,
-  createStandardError,
-  toTRPCError,
-  IntegrationErrorHandler,
-  SecureLogger,
-} from '../lib/errorHandler';
+import { saveConfigs } from '../lib/configManager';
+import { toTRPCError, IntegrationErrorHandler, SecureLogger } from '../lib/errorHandler';
+import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-
-// Schema for SMTP configuration
-const smtpConfigSchema = z.object({
-  host: z.string().min(1, 'Host SMTP è obbligatorio'),
-  port: z.number().min(1).max(65535, 'Porta deve essere tra 1 e 65535'),
-  secure: z.boolean().default(false),
-  user: z.string().min(1, 'User SMTP è obbligatorio'),
-  pass: z.string().optional(), // Optional for update without changing password
-  from: z.string().min(1, 'Email mittente è obbligatoria'),
-  baseUrl: z.string().url('Base URL deve essere un URL valido'),
-});
 
 export const mailRouter = router({
   /**
    * Saves the SMTP configuration to AppConfig; password is stored encrypted.
    *
    * @auth {config:update}
-   * @input {smtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
+   * @input {mailSmtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
    * @output {{ success: true, message: string }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(smtpConfigSchema)
+    .input(mailSmtpConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // Saves each field separately in AppConfig
-      await saveConfig(ctx.prisma, 'smtp.host', input.host, false);
-      await saveConfig(ctx.prisma, 'smtp.port', input.port.toString(), false);
-      await saveConfig(
-        ctx.prisma,
-        'smtp.secure',
-        input.secure.toString(),
-        false
-      );
-      await saveConfig(ctx.prisma, 'smtp.user', input.user, false);
-      await saveConfig(ctx.prisma, 'smtp.from', input.from, false);
-      await saveConfig(ctx.prisma, 'app.baseUrl', input.baseUrl, false);
-
-      // Saves password only if provided (encrypted)
-      if (input.pass && input.pass.length > 0) {
-        await saveConfig(ctx.prisma, 'smtp.pass', input.pass, true);
-      }
+      // One change: a failure leaves the stored SMTP settings as they were. A blank password keeps
+      // the stored one.
+      await saveConfigs(ctx.prisma, [
+        { key: 'smtp.host', value: input.host },
+        { key: 'smtp.port', value: input.port.toString() },
+        { key: 'smtp.secure', value: input.secure.toString() },
+        { key: 'smtp.user', value: input.user },
+        { key: 'smtp.from', value: input.from },
+        { key: 'app.baseUrl', value: input.baseUrl },
+        ...(input.pass ? [{ key: 'smtp.pass' as const, value: input.pass, encrypt: true }] : []),
+      ]);
 
       ctx.logger.info(
         {
@@ -69,7 +49,7 @@ export const mailRouter = router({
           baseUrl: input.baseUrl,
           passwordUpdated: !!input.pass,
         },
-        'Configurazione SMTP salvata'
+        'SMTP configuration saved'
       );
 
       // Audit log
@@ -100,54 +80,33 @@ export const mailRouter = router({
    */
   test: protectedProcedure
     .use(requirePermission('config:read'))
-    .input(
-      z.object({
-        testEmail: z.string().email().optional(),
-      })
-    )
+    .input(mailTestSchema)
     .mutation(async ({ input, ctx }) => {
       try {
         const logger = new SecureLogger(ctx.logger);
 
-        // Fetches SMTP configuration from individual AppConfig fields
-        const [host, port, secure, user, pass, from] = await Promise.all([
-          getConfig(ctx.prisma, 'smtp.host', false),
-          getConfig(ctx.prisma, 'smtp.port', false),
-          getConfig(ctx.prisma, 'smtp.secure', false),
-          getConfig(ctx.prisma, 'smtp.user', false),
-          getConfig(ctx.prisma, 'smtp.pass', true), // Decrypts password
-          getConfig(ctx.prisma, 'smtp.from', false),
-        ]);
+        // `getSmtpConfig` already reads these six keys, checks them and coerces port and secure;
+        // this procedure kept its own copy, down to a second `parseInt` and a second
+        // `=== 'true'`. Its "incomplete configuration" error was thrown inside this same `try`,
+        // so it reached `handleSMTPError` exactly as the one from `getSmtpConfig` now does.
+        const smtp = await getSmtpConfig(ctx.prisma);
 
-        // Verifies all fields are configured
-        if (!host || !port || !user || !pass || !from) {
-          const standardError = createStandardError(
-            ErrorCode.CONFIG_ERROR,
-            'Configurazione SMTP incompleta. Verifica che tutti i campi siano configurati.'
-          );
-          throw toTRPCError(standardError);
-        }
-
-        // Creates nodemailer transporter
         const transporter = nodemailer.createTransport({
-          host,
-          port: parseInt(port, 10),
-          secure: secure === 'true', // true for SSL/TLS, false for STARTTLS
-          auth: {
-            user,
-            pass,
-          },
+          host: smtp.host,
+          port: smtp.port,
+          secure: smtp.secure, // true for SSL/TLS, false for STARTTLS
+          auth: smtp.auth,
         });
 
         // Verifies the connection
         await transporter.verify();
 
         // Determines recipient: parameter or configured sender
-        const recipient = input.testEmail || from;
+        const recipient = input.testEmail || smtp.from;
 
         // Sends test email
         const testEmail = {
-          from,
+          from: smtp.from,
           to: recipient,
           subject: 'Luke - Test Email Configurazione SMTP',
           text: "Questa è un'email di test da Luke. Se ricevi questa email, la configurazione SMTP funziona correttamente!",
@@ -156,7 +115,7 @@ export const mailRouter = router({
 
         await transporter.sendMail(testEmail);
 
-        logger.info('Email di test inviata con successo', {
+        logger.info('Test email sent successfully', {
           to: recipient,
           subject: testEmail.subject,
         });
@@ -167,6 +126,11 @@ export const mailRouter = router({
           sentTo: recipient,
         };
       } catch (error: unknown) {
+        // An incomplete configuration arrives as PRECONDITION_FAILED, which the admin can act on.
+        if (error instanceof TRPCError) throw error;
+        // The reason goes nowhere else: the client sees a fixed text and the error's cause is
+        // a plain object the request log renders empty.
+        ctx.logger.warn({ err: error }, 'SMTP test failed');
         const standardError = IntegrationErrorHandler.handleSMTPError(error);
         throw toTRPCError(standardError);
       }

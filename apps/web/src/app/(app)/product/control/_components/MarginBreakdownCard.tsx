@@ -9,17 +9,17 @@ import {
   CardHeader,
   CardTitle,
 } from '../../../../../components/ui/card';
-import { MARGIN_STATUS_CHART_COLOR, computeRowMargin } from '../../_shared/pricingCalc';
+import { MARGIN_STATUS_CHART_COLOR, MARGIN_STATUS_LABEL, computeRowMargin } from '../../_shared/pricingCalc';
 
 import type { CollectionStatsCardProps } from './CollectionStatistics';
 
 const MISSING_COLOR = 'hsl(var(--muted-foreground) / 0.35)';
 
 /**
- * Requisito 2: quante righe hanno margine in target (verde), vicino al target
- * (giallo), sotto target (rosso), e quante non hanno ancora dati sufficienti
- * per calcolarlo. Riusa computeRowMargin/computeMarginStatus verbatim — nessuna
- * nuova soglia, restano quelle di PricingParameterSet.optimalMargin per riga.
+ * Requirement 2: how many rows have a margin on target (green), near the target
+ * (yellow), below target (red), and how many do not have enough data yet
+ * to compute it. Reuses computeRowMargin/classifyMargin verbatim — no
+ * new threshold, they stay those of PricingParameterSet.optimalMargin per row.
  */
 export function MarginBreakdownCard({ rows, parameterSets }: CollectionStatsCardProps) {
   const { segments, total } = useMemo(() => {
@@ -32,9 +32,9 @@ export function MarginBreakdownCard({ rows, parameterSets }: CollectionStatsCard
       else red++;
     }
     const segs = [
-      { key: 'green', label: 'In target', count: green, color: MARGIN_STATUS_CHART_COLOR.green },
-      { key: 'yellow', label: 'Vicino al target', count: yellow, color: MARGIN_STATUS_CHART_COLOR.yellow },
-      { key: 'red', label: 'Sotto target', count: red, color: MARGIN_STATUS_CHART_COLOR.red },
+      { key: 'green', label: MARGIN_STATUS_LABEL.green, count: green, color: MARGIN_STATUS_CHART_COLOR.green },
+      { key: 'yellow', label: MARGIN_STATUS_LABEL.yellow, count: yellow, color: MARGIN_STATUS_CHART_COLOR.yellow },
+      { key: 'red', label: MARGIN_STATUS_LABEL.red, count: red, color: MARGIN_STATUS_CHART_COLOR.red },
       { key: 'missing', label: 'Senza dato margine', count: missing, color: MISSING_COLOR },
     ];
     return { segments: segs, total: rows.length };

@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server';
 
 import { getRbacConfig } from '@luke/core/server';
+import type { Prisma } from '@luke/db';
 
 import { countRecoveryCapableAdminsAfterChange } from '../services/sectionAccess.service';
 
-import type { Prisma } from '@prisma/client';
 
 const LAST_ADMIN_LOCK_KEY = 'last-admin-guard';
 
@@ -36,8 +36,8 @@ export async function assertNotLastAdmin(
 }
 
 /**
- * Same as `assertNotLastAdmin`, but also checks effective access to every
- * section in `ADMIN_RECOVERY_SECTIONS` (kill switch + role defaults + personal
+ * Same as `assertNotLastAdmin`, but also checks effective access to
+ * `ADMIN_RECOVERY_SECTION` (kill switch + role defaults + personal
  * overrides), not just role count. Demoting/deactivating/deleting `userId` must
  * never leave zero admins able to administer users — the only in-app path to
  * undo an RBAC misconfiguration (see the guards `set`/`setRoleDefaults` in

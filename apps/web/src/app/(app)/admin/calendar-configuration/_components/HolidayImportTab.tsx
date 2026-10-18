@@ -4,6 +4,8 @@ import { CalendarDays, Download, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
+import { calendarDateOf, formatCalendarDate, NUMERIC_DATE, parseCalendarDate } from '@luke/core';
+
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
@@ -11,12 +13,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../../../../compone
 import { Checkbox } from '../../../../../components/ui/checkbox';
 import { Input } from '../../../../../components/ui/input';
 import { Label } from '../../../../../components/ui/label';
+import { useFormatDate } from '../../../../../hooks/useFormatDate';
 import { usePermission } from '../../../../../hooks/usePermission';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_OPTIONS = [CURRENT_YEAR - 1, CURRENT_YEAR, CURRENT_YEAR + 1, CURRENT_YEAR + 2];
+/** A previewed holiday's `YYYY-MM-DD`, written as the saved ones are. */
+function formatPreviewDay(date: string): string {
+  const day = parseCalendarDate(date);
+  return day ? formatCalendarDate(day, NUMERIC_DATE) : date;
+}
 
 /**
  * Tab for importing and managing public holidays used by the calendar engine.
@@ -29,7 +35,14 @@ export function HolidayImportTab() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
+  // The current year is today's in the profile zone, taken once (React's pattern for state set during
+  // render): a preview left open past midnight still imports the year it showed. The choices wait for it.
+  const { today } = useFormatDate();
+  const [currentYear, setCurrentYear] = useState<number>();
+  if (currentYear === undefined && today) setCurrentYear(Number(today.slice(0, 4)));
+  const yearOptions = currentYear === undefined ? [] : [currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+  const [chosenYear, setChosenYear] = useState<number>();
+  const selectedYear = chosenYear ?? currentYear;
   const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
   const [previewRows, setPreviewRows] = useState<
     Array<{ code: string; name: string; nameEn: string | null; date: string }> | null
@@ -43,8 +56,10 @@ export function HolidayImportTab() {
   });
 
   const previewMutation = trpc.holidays.previewImport.useQuery(
-    { countryCodes: selectedCountries, year: selectedYear },
-    { enabled: false },
+    // `year` is set before the preview can run: both actions wait for it.
+    { countryCodes: selectedCountries, year: selectedYear ?? 0 },
+    // On demand, and not retried: a refusal is the import's, and asking again fetches every country again.
+    { enabled: false, retry: false },
   );
 
   const confirmMutation = trpc.holidays.confirmImport.useMutation({
@@ -79,11 +94,17 @@ export function HolidayImportTab() {
       return;
     }
     const result = await previewMutation.refetch();
+    // A refused preview is the import that would be refused: say why rather than show no holidays.
+    if (result.error) {
+      setPreviewRows(null);
+      toast.error(getTrpcErrorMessage(result.error));
+      return;
+    }
     setPreviewRows(result.data ?? []);
   }
 
   function handleConfirm() {
-    if (!previewRows) return;
+    if (!previewRows || selectedYear === undefined) return;
     confirmMutation.mutate({ countryCodes: selectedCountries, year: selectedYear });
   }
 
@@ -102,12 +123,12 @@ export function HolidayImportTab() {
           <div className="flex items-center gap-3">
             <Label className="w-16 shrink-0">Anno</Label>
             <div className="flex gap-2">
-              {YEAR_OPTIONS.map(y => (
+              {yearOptions.map(y => (
                 <Button
                   key={y}
                   variant={selectedYear === y ? 'default' : 'outline'}
                   size="sm"
-                  onClick={() => { setSelectedYear(y); setPreviewRows(null); }}
+                  onClick={() => { setChosenYear(y); setPreviewRows(null); }}
                 >
                   {y}
                 </Button>
@@ -141,7 +162,7 @@ export function HolidayImportTab() {
               variant="outline"
               size="sm"
               onClick={handlePreview}
-              disabled={!canUpdate || selectedCountries.length === 0 || previewMutation.isFetching}
+              disabled={!canUpdate || selectedCountries.length === 0 || selectedYear === undefined || previewMutation.isFetching}
             >
               Anteprima
             </Button>
@@ -181,7 +202,7 @@ export function HolidayImportTab() {
                         <td className="px-4 py-2">
                           <Badge variant="outline">{row.code}</Badge>
                         </td>
-                        <td className="px-4 py-2 tabular-nums">{row.date}</td>
+                        <td className="px-4 py-2 tabular-nums">{formatPreviewDay(row.date)}</td>
                         <td className="px-4 py-2">{row.name}</td>
                         <td className="px-4 py-2 text-muted-foreground">{row.nameEn ?? '—'}</td>
                       </tr>
@@ -238,10 +259,10 @@ export function HolidayImportTab() {
                         <Badge variant="outline">{h.countryCode}</Badge>
                       </td>
                       <td className="px-4 py-2 tabular-nums">
-                        {String(h.startDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(h.startDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-4 py-2 tabular-nums">
-                        {String(h.endDate).slice(0, 10)}
+                        {formatCalendarDate(calendarDateOf(new Date(h.endDate)), NUMERIC_DATE)}
                       </td>
                       <td className="px-4 py-2">{h.name}</td>
                       <td className="px-4 py-2 text-muted-foreground">{h.nameEn ?? '—'}</td>
@@ -273,7 +294,6 @@ export function HolidayImportTab() {
         description="Sei sicuro di voler eliminare questa festività? L'operazione è irreversibile."
         confirmText="Elimina"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (deleteTarget) deleteMutation.mutate({ id: deleteTarget }); }}
         isLoading={deleteMutation.isPending}

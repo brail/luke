@@ -1,0 +1,330 @@
+/**
+ * `AppConfigRegistry`'s parsing contract for the values it is actually consulted for.
+ *
+ * Two things are pinned here, both of them cases where a setting could be stored and not applied.
+ *
+ * Booleans: AppConfig holds strings, and `z.coerce.boolean()` follows JavaScript truthiness, so
+ * `"false"` parses as `true`. A key declared that way can be switched on and never off — the value
+ * sits in the database, the admin sees it, and nothing acts on it. Fifteen keys were affected and
+ * only the four password ones had any test; the eleven others govern LDAP, S3 TLS, backup
+ * scheduling and email verification.
+ *
+ * The password prefilter: the floor no configuration can go below. Nothing on the server side
+ * asserted it, so lowering it turned nothing red outside the web bundle.
+ */
+
+import { describe, it, expect } from 'vitest';
+
+import {
+  APP_CONFIG_DEFAULTS,
+  AppConfigRegistry,
+  CONFIG_ROUTER_KEY_REGEX,
+  CONFIG_ROUTER_PREFIXES,
+  CRITICAL_CONFIG_KEYS,
+  UNDELETABLE_CONFIG_KEYS,
+  isAppConfigKey,
+  isConfigRouterKey,
+  isUndeletableConfigKey,
+  parseConfigValue,
+  validateConfigValue,
+  type AppConfigKey,
+  type AppConfigValue,
+} from '../config.js';
+import { passwordPrefilterSchema } from '../password.js';
+
+/** Every boolean key in the registry — the property must hold for all of them, not a sample. */
+const BOOLEAN_KEYS = [
+  'auth.requireEmailVerification',
+  'auth.ldap.enabled',
+  'smtp.secure',
+  'storage.local.enableProxy',
+  'storage.s3.useSSL',
+  'storage.derivatives.enabled',
+  'integrations.nav.readOnly',
+  'integrations.nav.syncEnabled',
+  'integrations.google.calendarSync.enabled',
+  'backup.schedule.enabled',
+  'backup.notifyOnFailure',
+  'security.password.requireUppercase',
+  'security.password.requireLowercase',
+  'security.password.requireDigit',
+  'security.password.requireSpecialChar',
+] as const;
+
+describe('boolean settings can be switched off', () => {
+  for (const key of BOOLEAN_KEYS) {
+    it(`${key} reads "false" as false`, () => {
+      const schema = AppConfigRegistry[key];
+      expect(schema.parse('false')).toBe(false);
+      expect(schema.parse('true')).toBe(true);
+    });
+  }
+
+  it('refuses a value that is neither, instead of guessing', () => {
+    // `"1"`, `"yes"` and `""` used to coerce, three of them to `true`. Refusing surfaces a
+    // malformed row through the caller's fallback rather than silently enabling a control.
+    const schema = AppConfigRegistry['auth.ldap.enabled'];
+    for (const raw of ['1', '0', 'yes', 'TRUE', '']) {
+      expect(schema.safeParse(raw).success).toBe(false);
+    }
+  });
+});
+
+describe('the password prefilter is the floor', () => {
+  it('refuses fewer than 8 characters', () => {
+    expect(passwordPrefilterSchema.safeParse('Ab1!efg').success).toBe(false);
+  });
+
+  it('accepts exactly 8 and exactly 128', () => {
+    expect(passwordPrefilterSchema.safeParse('Ab1!efgh').success).toBe(true);
+    expect(passwordPrefilterSchema.safeParse('x'.repeat(128)).success).toBe(true);
+  });
+
+  it('refuses more than 128, which is what bounds the input reaching argon2', () => {
+    expect(passwordPrefilterSchema.safeParse('x'.repeat(129)).success).toBe(false);
+  });
+
+  it('carries no complexity rule: that is the policy’s job', () => {
+    // Deliberate. A schema compiled into the bundle cannot know what an installation configured,
+    // and duplicating the rules here is how the copies drifted in the first place.
+    expect(passwordPrefilterSchema.safeParse('abcdefgh').success).toBe(true);
+  });
+});
+
+describe('the registry declares one floor for minLength', () => {
+  it('refuses anything below 8 and above 128', () => {
+    const schema = AppConfigRegistry['security.password.minLength'];
+    expect(schema.safeParse('7').success).toBe(false);
+    expect(schema.safeParse('129').success).toBe(false);
+    expect(schema.safeParse('8').success).toBe(true);
+  });
+});
+
+describe('the registry is consulted on the write path, not only on the read path', () => {
+  it('narrows a key that exists and rejects one that does not', () => {
+    expect(isAppConfigKey('security.password.minLength')).toBe(true);
+    expect(isAppConfigKey('app.test')).toBe(false);
+    // A prefix that is registered does not make its children registered.
+    expect(isAppConfigKey('security.password')).toBe(false);
+  });
+
+  it('does not carry app.version, whose reader was retired', () => {
+    // Declared for the `public.appInfo` reader removed in d30fef4, along with its seed row. The
+    // release identity is `APP_VERSION`, injected from the git tag (apps/api/src/lib/appVersion.ts);
+    // a registered key would be a second, admin-writable one that could disagree with it.
+    expect(isAppConfigKey('app.version')).toBe(false);
+  });
+
+  it('does not carry security.cors.developmentOrigins, which nothing ever read', () => {
+    // CORS comes from the LUKE_CORS_ALLOWED_ORIGINS bootstrap variable. A stored row stays inert
+    // and deletable (prefix-gated, see below), as app.version's did.
+    expect(isAppConfigKey('security.cors.developmentOrigins')).toBe(false);
+  });
+
+  it('does not mistake inherited Object properties for registered keys', () => {
+    // `key in registry` would answer true for every one of these, and `saveConfig` would then
+    // hand `AppConfigRegistry['toString']` to `safeParse`.
+    expect(isAppConfigKey('toString')).toBe(false);
+    expect(isAppConfigKey('constructor')).toBe(false);
+    expect(isAppConfigKey('__proto__')).toBe(false);
+  });
+
+  it('rejects a value its key’s schema refuses', () => {
+    const result = validateConfigValue('security.password.minLength', '4');
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts the string form the value arrives in, not the parsed form', () => {
+    // Everything reaching AppConfig is a string; a schema that only accepted `8` would reject
+    // every real write.
+    expect(validateConfigValue('security.password.minLength', '12').success).toBe(true);
+    expect(validateConfigValue('storage.s3.useSSL', 'false').success).toBe(true);
+    expect(validateConfigValue('app.sections.disabled', '["pricing"]').success).toBe(true);
+  });
+
+  it('refuses the empty string for keys whose absence means "not configured"', () => {
+    // These four used to be written as `''` to mean unset, which no schema here can describe.
+    // The write paths delete the key instead — see `integrations.google.router.ts`.
+    expect(validateConfigValue('integrations.google.oauth.userEmail', '').success).toBe(false);
+    expect(validateConfigValue('integrations.google.oauth.refreshToken', '').success).toBe(false);
+    expect(validateConfigValue('integrations.google.impersonateEmail', '').success).toBe(false);
+    expect(validateConfigValue('storage.s3.publicBaseUrl', '').success).toBe(false);
+  });
+
+  it('accepts both sender formats the mail settings form offers', () => {
+    // `.email()` refused the named form, so saving the mail page failed at `smtp.from`, after
+    // host, port, secure and user had already been written.
+    expect(validateConfigValue('smtp.from', 'noreply@example.com').success).toBe(true);
+    expect(validateConfigValue('smtp.from', 'Luke <noreply@example.com>').success).toBe(true);
+    expect(validateConfigValue('smtp.from', 'not-an-email').success).toBe(false);
+    expect(validateConfigValue('smtp.from', 'Luke <noreply@example>').success).toBe(false);
+  });
+
+  it('covers the two keys assembled from a variable', () => {
+    // `storage.${provider}` is the only interpolated key in the codebase. Registered, so the JSON
+    // blob it writes is validated like every other value instead of being exempt by construction.
+    for (const provider of ['smb', 'drive'] as const) {
+      expect(isAppConfigKey(`storage.${provider}`)).toBe(true);
+    }
+    expect(
+      validateConfigValue('storage.smb', JSON.stringify({ host: 'nas', path: '/share' })).success,
+    ).toBe(true);
+    expect(validateConfigValue('storage.smb', JSON.stringify({ host: '' })).success).toBe(false);
+  });
+});
+
+describe('every registry entry composes safely under safeParse', () => {
+  // The property, over the whole registry rather than a sample. Nine entries were written
+  // `z.string().transform(s => Schema.parse(JSON.parse(s)))`, where a throw inside the transform
+  // propagates through `safeParse` instead of landing in `result.error` — so `safeParse` returning
+  // a verdict was true for the scalar keys and a lie for the JSON ones. `jsonConfigSchema` is what
+  // makes it uniform, and this is what catches the tenth JSON key added the obvious way.
+  const GARBAGE = ['{not json', '', 'null', '[]', '{}', 'true', '-1', 'x'.repeat(300)];
+
+  it.each(Object.keys(AppConfigRegistry))('%s never throws out of safeParse', key => {
+    const schema = AppConfigRegistry[key as keyof typeof AppConfigRegistry];
+    for (const raw of GARBAGE) {
+      expect(() => schema.safeParse(raw)).not.toThrow();
+    }
+  });
+
+  it('reports a malformed JSON blob as an issue, not an exception', () => {
+    const result = AppConfigRegistry['rateLimit'].safeParse('{not json');
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].message).toContain('JSON');
+  });
+});
+
+describe('every declared default is a value its own key would accept', () => {
+  // The binding that keeps `APP_CONFIG_DEFAULTS` honest. Its keys are checked by `satisfies`, but
+  // nothing in the type system says `'8333'` is a valid port or that `'true'` is how this registry
+  // spells a boolean — and a default that its own schema rejects is invisible until a fresh
+  // install reads it, which is the one moment nobody is watching.
+  it.each(Object.entries(APP_CONFIG_DEFAULTS))('%s = %s', (key, raw) => {
+    const result = validateConfigValue(key as keyof typeof AppConfigRegistry, raw);
+    expect(result.success ? null : result.message).toBeNull();
+  });
+});
+
+describe('app.defaultTimezone is an IANA zone', () => {
+  // The business zone every shared deadline, lock and countdown is counted in. `Intl` also takes a
+  // fixed offset, which has no daylight-saving rules and is refused like any unknown name.
+  it.each(['Europe/Rome', 'Asia/Shanghai', 'America/Los_Angeles', 'UTC'])('accepts %s', value => {
+    expect(validateConfigValue('app.defaultTimezone', value).success).toBe(true);
+  });
+
+  it.each(['Europe/Nowhere', '+01:00', ''])('rejects %j', value => {
+    expect(validateConfigValue('app.defaultTimezone', value).success).toBe(false);
+  });
+
+  it('reads a value stored in another case as the zone it names, not as the fallback', () => {
+    expect(parseConfigValue('app.defaultTimezone', 'asia/shanghai')).toBe('Asia/Shanghai');
+  });
+});
+
+describe('numeric bounds are declared once, on the schema', () => {
+  // Seven of these `max` values used to exist only inside `configManager.getBoundedNumericConfig`,
+  // so `saveConfig` validated a write against a schema that had no upper bound, stored it, and the
+  // reader then quietly substituted the default. `tokenVersionCacheTTL` was the worst of the set:
+  // the schema accepted 0 while the reader clamped anything under 10s back to 60s.
+  it.each([
+    ['security.tokenVersionCacheTTL', '5000', '60000'],
+    ['auditLog.retentionDays', '99999', '365'],
+    ['auditLog.criticalRetentionDays', '99999', '3650'],
+    ['notification.retentionDays', '99999', '90'],
+    ['notification.dedupRetentionDays', '99999', '30'],
+    ['backup.retentionDays', '99999', '30'],
+    ['backup.retentionMinCount', '99999', '3'],
+    ['editLock.ttlMs', '99999999', '900000'],
+    // The S3 provider refuses more than a day; the registry used to store it anyway.
+    ['storage.s3.presignedGetTtl', '86401', '86400'],
+    ['storage.s3.presignedPutTtl', '86401', '86400'],
+  ] as const)('%s rejects %s and accepts %s', (key, outOfRange, inRange) => {
+    expect(validateConfigValue(key, outOfRange).success).toBe(false);
+    expect(validateConfigValue(key, inRange).success).toBe(true);
+  });
+});
+
+type IntegerConfigKey = {
+  [K in AppConfigKey]: AppConfigValue<K> extends number ? K : never;
+}[AppConfigKey];
+
+/** A valid stored value for every integer key (its default where it has one): `tsc` fails on a key left out. */
+const VALID_INTEGER: Record<IntegerConfigKey, string> = {
+  'smtp.port': '587',
+  'security.password.minLength': '12',
+  'security.tokenVersionCacheTTL': '60000',
+  'security.session.maxAge': '28800',
+  'security.session.updateAge': '3600',
+  'storage.local.maxFileSizeMB': '50',
+  'storage.s3.port': '8333',
+  'storage.s3.presignedPutTtl': '3600',
+  'storage.s3.presignedGetTtl': '3600',
+  'editLock.ttlMs': '900000',
+  'auth.ldap.resilience.timeoutMs': '3000',
+  'auth.ldap.resilience.maxRetries': '2',
+  'auth.ldap.resilience.baseDelayMs': '200',
+  'auth.ldap.resilience.breakerFailureThreshold': '5',
+  'auth.ldap.resilience.breakerCooldownMs': '10000',
+  'auth.ldap.resilience.halfOpenMaxAttempts': '1',
+  'integrations.nav.port': '1433',
+  'integrations.github.feedbackSyncIntervalMs': '86400000',
+  'backup.retentionDays': '30',
+  'backup.retentionMinCount': '3',
+  'auditLog.retentionDays': '365',
+  'auditLog.criticalRetentionDays': '3650',
+  'notification.retentionDays': '90',
+  'notification.dedupRetentionDays': '30',
+};
+// `Object.entries` widens the keys to `string`.
+const INTEGER_SAMPLES = Object.entries(VALID_INTEGER) as [IntegerConfigKey, string][];
+
+describe('integer settings accept only plain decimal digits', () => {
+  // `z.coerce.number()` is `Number(input)`: it read `''` and blanks as 0 and took `'1e3'`, `'0x10'`,
+  // `'587.0'` and padded values, so an emptied `auth.ldap.resilience.maxRetries` was stored as 0. Each
+  // key's own valid value is the base, so a key with a high minimum (`editLock.ttlMs`) cannot pass by
+  // its bounds alone.
+  it.each(INTEGER_SAMPLES)('%s accepts %s and none of its other spellings', (key, valid) => {
+    expect(validateConfigValue(key, valid).success).toBe(true);
+    const other = [` ${valid}`, `${valid} `, `${valid}e0`, `0x${Number(valid).toString(16)}`, `+${valid}`, `0${valid}`, `${valid}.0`, '', '  '];
+    for (const raw of other) expect(validateConfigValue(key, raw).success, raw).toBe(false);
+  });
+
+  it.each(INTEGER_SAMPLES)('%s accepts 0 only where its minimum is 0', key => {
+    const zeroAllowed = key === 'auth.ldap.resilience.maxRetries' || key === 'backup.retentionMinCount';
+    expect(validateConfigValue(key, '0').success).toBe(zeroAllowed);
+  });
+});
+
+// The generic config router and the settings UI both read these rules from here. They used to
+// keep three copies: the UI offered categories no key belonged to, blocked deletes the API allowed
+// and offered two deletes the API refused (`auth.strategy`, `auth.nextAuthSecret`).
+describe('the generic config router has one set of key rules', () => {
+  it('accepts, by format, every registered key under its prefixes and no other', () => {
+    const prefixes = new Set<string>(CONFIG_ROUTER_PREFIXES);
+    for (const key of Object.keys(AppConfigRegistry)) {
+      const routable = prefixes.has(key.split('.')[0]);
+      expect(CONFIG_ROUTER_KEY_REGEX.test(key), key).toBe(routable);
+    }
+  });
+
+  it('protects only keys the write procedures accept, boot-critical ones included', () => {
+    for (const key of UNDELETABLE_CONFIG_KEYS) {
+      expect(CONFIG_ROUTER_KEY_REGEX.test(key), key).toBe(true);
+    }
+    for (const key of CRITICAL_CONFIG_KEYS) {
+      expect(isUndeletableConfigKey(key), key).toBe(true);
+    }
+  });
+
+  it('gates deletion by prefix alone, so an orphaned row under the prefixes stays removable', () => {
+    expect(isConfigRouterKey('app.version')).toBe(true);
+    expect(isConfigRouterKey('rbac.sectionAccessDefaults')).toBe(false);
+    expect(isConfigRouterKey('maintenance.mode.state')).toBe(false);
+  });
+
+  it('protects app.baseUrl, whose default would silently point every email link at localhost', () => {
+    expect(isUndeletableConfigKey('app.baseUrl')).toBe(true);
+    expect(isUndeletableConfigKey('security.password.minLength')).toBe(false);
+  });
+});

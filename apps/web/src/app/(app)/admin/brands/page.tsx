@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { toast } from 'sonner';
 
 import type { RouterOutputs } from '@luke/api';
+import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 import type { BrandInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
@@ -66,7 +67,7 @@ export default function BrandsPage() {
 
   const updateMutation = trpc.brand.update.useMutation({
     onSuccess: updatedBrand => {
-      invalidateContext(updatedBrand.id);
+      invalidateContext();
       setIsDialogOpen(false);
       setEditingBrand(null);
       toast.success('Brand aggiornato con successo');
@@ -82,7 +83,7 @@ export default function BrandsPage() {
 
   const removeMutation = trpc.brand.remove.useMutation({
     onSuccess: removedBrand => {
-      invalidateContext(removedBrand.id);
+      invalidateContext();
       toast.success('Brand disattivato');
 
       if (currentBrand?.id === removedBrand.id) {
@@ -96,7 +97,7 @@ export default function BrandsPage() {
 
   const restoreMutation = trpc.brand.restore.useMutation({
     onSuccess: restoredBrand => {
-      invalidateContext(restoredBrand.id);
+      invalidateContext();
       toast.success(`Brand "${restoredBrand.name}" riattivato`);
     },
     onError: error => {
@@ -106,7 +107,7 @@ export default function BrandsPage() {
 
   const unlinkMutation = trpc.brand.unlink.useMutation({
     onSuccess: unlinkedBrand => {
-      invalidateContext(unlinkedBrand.id);
+      invalidateContext();
       setUnlinkingBrand(null);
       toast.success(`Brand "${unlinkedBrand.name}" scollegato da NAV e disattivato`);
     },
@@ -209,8 +210,7 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler disattivare il brand "${deletingBrand?.name}"? Potrà essere riattivato in seguito.`}
         confirmText="Disattiva"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
+        actionType="disable"
         onConfirm={() => { if (deletingBrand) removeMutation.mutate({ id: deletingBrand.id }); }}
         isLoading={removeMutation.isPending}
       />
@@ -222,7 +222,6 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler scollegare "${unlinkingBrand?.name}" da NAV? Il brand verrà disattivato e il codice NAV "${unlinkingBrand?.navBrandId}" tornerà disponibile per la sincronizzazione automatica.`}
         confirmText="Scollega e disattiva"
         cancelText="Annulla"
-        variant="destructive"
         actionType="delete"
         onConfirm={() => { if (unlinkingBrand) unlinkMutation.mutate({ id: unlinkingBrand.id }); }}
         isLoading={unlinkMutation.isPending}
@@ -235,9 +234,11 @@ export default function BrandsPage() {
         description={`Sei sicuro di voler eliminare "${hardDeletingBrand?.name}"? Questa operazione è irreversibile.`}
         confirmText="Elimina definitivamente"
         cancelText="Annulla"
-        variant="destructive"
-        actionType="delete"
-        onConfirm={() => { if (hardDeletingBrand) hardDeleteMutation.mutate({ id: hardDeletingBrand.id }); }}
+        actionType="hardDelete"
+        confirmPhrase={HARD_DELETE_CONFIRM_PHRASE}
+        onConfirm={phrase => {
+          if (hardDeletingBrand && phrase) hardDeleteMutation.mutate({ id: hardDeletingBrand.id, confirmPhrase: phrase });
+        }}
         isLoading={hardDeleteMutation.isPending}
       />
 

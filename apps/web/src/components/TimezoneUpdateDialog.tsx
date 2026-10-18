@@ -4,6 +4,8 @@ import { Globe } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useState, useEffect } from 'react';
 
+import { isValidTimeZone, sameTimeZone } from '@luke/core';
+
 import { debugWarn } from '../lib/debug';
 import { useRefresh } from '../lib/refresh';
 import { trpc } from '../lib/trpc';
@@ -19,25 +21,51 @@ import {
   DialogFooter,
 } from './ui/dialog';
 
+/** The browser's zone, or `null` when it cannot be read or is not one the server accepts. */
+function readBrowserZone(): string | null {
+  try {
+    // eslint-disable-next-line @luke/no-implicit-zone-date -- reading the browser zone is this dialog's job: it proposes it as the profile zone (ADR-035)
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone && isValidTimeZone(zone) ? zone : null;
+  } catch (error) {
+    debugWarn('Unable to detect the browser timezone:', error);
+    return null;
+  }
+}
+
 /**
  * Auto-shown dialog that prompts the user to update their timezone when a browser mismatch is detected.
  *
- * Appears at most once per session, with a 2-second delay after login to avoid a flash.
- * Compares the browser's `Intl.DateTimeFormat` timezone against the value from `me.get`.
- * Calls `me.updateTimezone` on confirmation.
+ * Judged once per session, when the profile zone first arrives, and shown 2 seconds later to avoid a
+ * flash. Compares the browser's `Intl.DateTimeFormat` timezone with the stored profile zone as zones,
+ * not strings: an alias of the same zone (`Asia/Kolkata`, `Asia/Calcutta`) is no mismatch. Reads the
+ * stored value through its own `me.get` rather than `useFormatDate`, deliberately: a zone this
+ * browser cannot use is exactly the one worth replacing, and this globally mounted dialog must not
+ * raise the hook's "dates not shown" toast on every page. Calls `me.updateTimezone` on confirmation.
  */
 export function TimezoneUpdateDialog() {
   const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
-  const [detectedTimezone, setDetectedTimezone] = useState<string | null>(null);
-  const [hasShownForSession, setHasShownForSession] = useState(false);
   const refresh = useRefresh();
 
-  // Usa i dati aggiornati dall'API invece della sessione NextAuth
+  // Use the fresh data from the API instead of the NextAuth session
   const { data: userData } = trpc.me.get.useQuery(undefined, {
     enabled: !!session?.accessToken,
-    staleTime: 5 * 60 * 1000, // 5 minuti - riduce richieste API
+    staleTime: 5 * 60 * 1000, // 5 minutes - reduces API requests
   });
+  const userTz = userData?.timezone;
+
+  // Judged once per session, when the profile zone first arrives (React's pattern for state set
+  // during render): a zone the user picks later is not questioned. Logging out starts over.
+  const [judged, setJudged] = useState<{ detected: string | null } | null>(null);
+  if (status === 'unauthenticated' && judged) {
+    setJudged(null);
+    setOpen(false);
+  }
+  if (status === 'authenticated' && session?.user && userTz && !judged) setJudged({ detected: readBrowserZone() });
+  // A mismatch only when the zones differ: one the profile resolves in the meantime (another tab, the
+  // profile form) drops out.
+  const detectedTimezone = judged?.detected && userTz && !sameTimeZone(judged.detected, userTz) ? judged.detected : null;
 
   // Mutation tRPC
   const updateTimezoneMutation = trpc.me.updateTimezone.useMutation();
@@ -45,46 +73,24 @@ export function TimezoneUpdateDialog() {
   const { mutate: updateTimezone, isPending: isUpdatingTimezone } =
     useStandardMutation({
       mutateFn: updateTimezoneMutation.mutateAsync,
-      invalidate: refresh.me,
+      invalidate: refresh.timeZone,
       onSuccessMessage: 'Fuso orario aggiornato con successo',
       onErrorMessage: 'Errore aggiornamento',
       onSuccess: () => setOpen(false),
     });
 
+  // Shown 2 seconds after the mismatch is found, to avoid a flash on load; once closed, in any way,
+  // it stays closed.
   useEffect(() => {
-    // Reset flag when session changes (login/logout)
-    if (status === 'unauthenticated') {
-      setHasShownForSession(false);
-      setDetectedTimezone(null);
-      setOpen(false);
-      return;
-    }
-
-    // Mostra dialog solo al primo accesso post-login
-    if (status === 'authenticated' && !hasShownForSession) {
-      // Rileva timezone dal browser
-      try {
-        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-        const userTz = userData?.timezone; // Usa dati dall'API
-
-        // Se diverso e sessione attiva, mostra dialog solo una volta per sessione
-        if (browserTz && userTz && browserTz !== userTz && session?.user) {
-          setDetectedTimezone(browserTz);
-          setHasShownForSession(true);
-          // Show dialog only after 2 seconds to avoid flash on load
-          setTimeout(() => setOpen(true), 2000);
-        }
-      } catch (error) {
-        // Ignora errori di rilevamento timezone
-        debugWarn('Impossibile rilevare timezone browser:', error);
-      }
-    }
-  }, [userData?.timezone, session?.user, status, hasShownForSession]);
+    if (!detectedTimezone) return;
+    const timer = setTimeout(() => setOpen(true), 2000);
+    return () => clearTimeout(timer);
+  }, [detectedTimezone]);
 
   const handleUpdate = () => {
     if (!detectedTimezone) return;
 
-    // Invia solo il timezone aggiornato
+    // Send only the updated timezone
     updateTimezone({
       timezone: detectedTimezone,
     });
@@ -92,8 +98,8 @@ export function TimezoneUpdateDialog() {
 
   const handleDismiss = () => {
     setOpen(false);
-    // Non mostrare più per questa sessione
-    setDetectedTimezone(null);
+    // Do not show it again for this session
+    setJudged({ detected: null });
   };
 
   if (!detectedTimezone || !session?.user) return null;
@@ -115,7 +121,7 @@ export function TimezoneUpdateDialog() {
           <div className="rounded-lg bg-muted p-3">
             <p className="text-sm font-medium">Attuale:</p>
             <p className="text-sm text-muted-foreground">
-              {userData?.timezone}
+              {userTz}
             </p>
           </div>
           <div className="rounded-lg bg-primary/10 p-3">

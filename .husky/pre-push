@@ -1,27 +1,43 @@
-# Blocca push di tag se manca la entry corrispondente in CHANGELOG.md
-while read local_ref local_sha remote_ref remote_sha; do
+# Early feedback on a release tag: does the tree being pushed claim the version
+# the tag names — and, for a graduation, is it its last candidate unchanged?
+# Same checker `.github/workflows/release.yml` runs after the push, on the same
+# object, so this verdict predicts that one.
+#
+# It is not enforcement. `--no-verify` skips it and a clone that never ran
+# `pnpm install` does not have it — `release.yml` is the authority. The
+# graduation half compares with the candidate tags this clone holds, so missing
+# or stale ones give a wrong early verdict, not none: `release:prepare` fetches
+# them, and release.yml, which fetches its own, decides.
+#
+# What it replaced asked about the **working tree** rather than the object being
+# pushed, and resolved its expectation with `git describe --tags --abbrev=0` —
+# the topologically nearest tag, not the one being pushed. A second tag on the
+# same commit made it fail a correct tree; pushing an older still-correct tag
+# after HEAD moved on failed a legitimate push; with no tag reachable it
+# compared against `0.0.0-<branch>`.
+tags=0
+while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
     refs/tags/v*)
       tag="${remote_ref#refs/tags/}"
-      version="${tag#v}"
-      if ! grep -q "^## \[$version\]" CHANGELOG.md; then
-        echo ""
-        echo "❌ Tag $tag mancante in CHANGELOG.md"
-        echo "   Aggiungi una entry [$version] o rigenera con:"
-        echo "   pnpm changelog:tag --tag $tag"
-        echo ""
-        exit 1
-      fi
 
-      # Le versioni nei package.json devono combaciare col tag: è ciò che finisce
-      # nell'immagine e in `/about`. `eslint-plugin-luke` è rimasto a
-      # `1.10.0-dev.0` per diverse release senza che nulla protestasse, e
-      # `calendar` è nato già fuori sync.
-      if ! pnpm sync-version:check > /dev/null 2>&1; then
+      # A tag deletion sends the all-zero SHA and names no tree to check.
+      case "$local_sha" in
+        0000000000000000000000000000000000000000) continue ;;
+      esac
+      tags=$((tags + 1))
+
+      # `$local_sha` is the tag object for an annotated tag and the commit for a
+      # lightweight one; `<rev>^{tree}` peels either.
+      #
+      # stdin is redirected because this loop *is* stdin: git feeds one line per
+      # pushed ref, and `git push origin main v2.2.0` delivers two. A child that
+      # read from the inherited stdin would swallow the ref records still to come.
+      if ! pnpm exec tsx tools/scripts/check-release-tree.ts \
+        --tag "$tag" --rev "$local_sha" </dev/null; then
         echo ""
-        echo "❌ package.json non allineati al tag $tag."
-        echo "   Dettaglio: pnpm sync-version:check"
-        echo "   Correggi:  pnpm sync-version"
+        echo "   $tag not pushed: the commit it names fails the release tree check above."
+        echo "   Delete it (git tag -d $tag), fix what the check names, tag again."
         echo ""
         exit 1
       fi
@@ -29,24 +45,89 @@ while read local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
-# Unit test prima del push. Non in pre-commit: là serve latenza bassa e il ciclo
-# di lavoro ne farebbe a meno. I test di integrazione restano fuori: richiedono
-# Docker, e un hook che dipende da un container non è affidabile.
-echo "🧪 Unit test..."
-if ! pnpm test; then
+# One release tag per push (CLAUDE.md, "Versioning & Release"): each one is a
+# separate `release.yml` run, and GitHub creates no push event at all for a
+# push that carries more than three tags — `--tags` can silently release none.
+if [ "$tags" -gt 1 ]; then
   echo ""
-  echo "❌ Test falliti — push bloccato."
-  echo "   Per saltare (solo se sai perché): git push --no-verify"
+  echo "❌ $tags release tags in one push — push them one at a time:"
+  echo "   git push origin vX.Y.Z   (never --tags)"
   echo ""
   exit 1
 fi
 
-# Drift di skill e documentazione: ~2s, nessuna infrastruttura. Sta qui e non in
-# pre-commit per la stessa ragione degli unit test — là serve latenza bassa.
-echo "📐 Drift skill/docs..."
+# Everything below reads or rebuilds the workspace `dist`, which must not race
+# the `pnpm dev` watchers (the script says why). Hooks run at the worktree root.
+sh scripts/assert-no-dev.sh || exit 1
+
+# Lint first: CI's `checks` job fails on it, and it is the cheapest gate. It has
+# no `^build` (turbo.json), so it reads `dist` without rebuilding it.
+echo "🧹 Lint..."
+if ! pnpm lint --output-logs=errors-only; then
+  echo ""
+  echo "❌ Lint failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# Typecheck before the unit tests. `test` types nothing and `typecheck` alone
+# only covers the build graph: `apps/api/tsconfig.json` includes `src/**` and
+# nothing else, so `test/`, `scripts/` and `prisma/` are reached only by
+# `typecheck:test`. That is how an `Array.prototype.at` got into CI while the
+# hook printed eight green tasks locally — green, but not those.
+echo "🔎 Typecheck..."
+if ! pnpm turbo run typecheck typecheck:test --output-logs=errors-only; then
+  echo ""
+  echo "❌ Typecheck failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# The checkers under tools/ are release gates but tools/ is not a workspace:
+# `turbo run typecheck` does not see it and tsx runs TypeScript without checking
+# it. They have their own tsconfig and ESLint block, Node-only.
+echo "🔧 Control plane (tools/)..."
+if ! pnpm lint:tools || ! pnpm typecheck:tools || ! pnpm test:tools; then
+  echo ""
+  echo "❌ Lint/typecheck of tools/ failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# `scripts/` at the repository root is not a workspace either, so `turbo run
+# typecheck` does not see it. Mirrors CI's own "TypeCheck (root scripts)" step:
+# a gate that runs only in CI is the failure `lessons.md` Postscript 2 records —
+# eight green tasks in the hook while a type error went out.
+echo "📜 Root scripts..."
+if ! pnpm typecheck:root; then
+  echo ""
+  echo "❌ Typecheck of the root scripts failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# Unit tests before the push. Not in pre-commit: there latency matters and the
+# work cycle would do without them. Integration tests stay out — they need
+# Docker, and a hook that depends on a container is not reliable.
+echo "🧪 Unit tests..."
+if ! pnpm test; then
+  echo ""
+  echo "❌ Tests failed — push blocked."
+  echo "   To skip (only if you know why): git push --no-verify"
+  echo ""
+  exit 1
+fi
+
+# Skill and documentation drift: ~2s, no infrastructure. Here and not in
+# pre-commit for the same reason as the unit tests — there latency matters.
+echo "📐 Skill/docs drift..."
 if ! pnpm check:drift; then
   echo ""
-  echo "❌ Drift rilevato — push bloccato."
+  echo "❌ Drift detected — push blocked."
   echo ""
   exit 1
 fi

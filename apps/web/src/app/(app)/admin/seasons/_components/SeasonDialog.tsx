@@ -107,7 +107,7 @@ export function SeasonDialog({
             }
       );
     }
-  }, [open]);
+  }, [open, form, season]);
 
   const handleSubmit = async (data: SeasonFormData) => {
     await onSubmit(data);
@@ -124,7 +124,6 @@ export function SeasonDialog({
 
         <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            {/* Codice */}
             <div className="space-y-2">
               <Label htmlFor="code" className="flex items-center gap-2">
                 Codice *
@@ -145,7 +144,7 @@ export function SeasonDialog({
               )}
             </div>
 
-            {/* Anno (opzionale, descrittivo) */}
+            {/* Year (optional, descriptive) */}
             <div className="space-y-2">
               <Label htmlFor="year">Anno</Label>
               <Input
@@ -165,7 +164,6 @@ export function SeasonDialog({
             </div>
           </div>
 
-          {/* Nome */}
           <div className="space-y-2">
             <Label htmlFor="name" className="flex items-center gap-2">
               Nome *
@@ -186,7 +184,7 @@ export function SeasonDialog({
             )}
           </div>
 
-          {/* Collega a NAV */}
+          {/* Link to NAV */}
           {season?.navSeasonId ? (
             <div className="space-y-2">
               <Label className="flex items-center gap-2">
@@ -197,7 +195,7 @@ export function SeasonDialog({
                 {season.navSeasonId}
               </div>
               <p className="text-xs text-muted-foreground">
-                Collegamento bloccato. Usa "Scollega da NAV" per rimuoverlo.
+                Collegamento bloccato. Usa &quot;Scollega da NAV&quot; per rimuoverlo.
               </p>
             </div>
           ) : navSeasons.length > 0 && (
@@ -223,7 +221,6 @@ export function SeasonDialog({
             </div>
           )}
 
-          {/* Stato attivo */}
           <div className="flex items-center gap-3">
             <Switch
               id="isActive"

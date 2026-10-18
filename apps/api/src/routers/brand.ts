@@ -8,12 +8,14 @@ import { TRPCError } from '@trpc/server';
 
 import {
   BrandInputSchema,
+  BrandHardDeleteInputSchema,
   BrandIdSchema,
   BrandListInputSchema,
   BrandUpdateInputSchema,
   normalizeCode,
   type Role,
 } from '@luke/core';
+import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { confirmPendingFile } from '../lib/pendingFile';
@@ -24,7 +26,6 @@ import { router, protectedProcedure } from '../lib/trpc';
 import { getUserAllowedBrandIds } from '../services/context.service.js';
 import { deleteObjectByKey } from '../storage';
 
-import type { Prisma } from '@prisma/client';
 
 const BRAND_SELECT = {
   id: true,
@@ -149,7 +150,7 @@ export const brandRouter = router({
             userId: ctx.session!.user.id,
           });
           // A dead id is an error, not a no-op. The realistic trigger isn't a
-          // malicious id: it's the hourly reaper that swept up the pending file
+          // malicious id: it's the pending-file reaper that swept up the file
           // while the user was distracted. Without this, the brand saves without
           // a logo and the UI says "created" — data loss with a success toast.
           if (!confirmedKey) {
@@ -372,14 +373,18 @@ export const brandRouter = router({
   /**
    * Permanently deletes a brand; blocked if it has a NAV link or active dependencies.
    *
-   * @auth {brands:delete}
-   * @input {BrandIdSchema} — brand UUID.
+   * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
+   * body and never reaches the audit log — the same as any other malformed field.
+   *
+   * @auth {*:*} — admin only. `brands:delete` is not enough: a permanent delete is not the
+   *   archive that permission is for.
+   * @input {BrandHardDeleteInputSchema} — brand UUID plus the typed confirmation.
    * @output {{ success: true }}
    */
   hardDelete: protectedProcedure
-    .use(requirePermission('brands:delete'))
+    .use(requirePermission('*:*'))
     .use(withRateLimit('brandMutations'))
-    .input(BrandIdSchema)
+    .input(BrandHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
       const brand = await ctx.prisma.brand.findUnique({ where: { id: input.id } });
 

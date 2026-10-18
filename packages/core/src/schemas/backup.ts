@@ -4,7 +4,11 @@
 
 import { z } from 'zod';
 
-/** Literal confirmation phrase the admin must type to enable a restore — checked server-side too, not just as UI friction. */
+import { typedConfirmation } from './confirmation.js';
+import { WallTimeSchema } from './dates.js';
+import { intInRange } from './number.js';
+
+/** Confirmation phrase the restore dialog makes the admin type. */
 export const BACKUP_RESTORE_CONFIRM_PHRASE = 'RIPRISTINA';
 
 export const BackupScopeSchema = z.enum(['DB', 'DB_AND_FILES']);
@@ -38,18 +42,12 @@ export const BackupIdSchema = z.object({
   id: z.string().uuid('ID backup non valido'),
 });
 
-/**
- * Input schema for a restore. `confirmPhrase` must equal `BACKUP_RESTORE_CONFIRM_PHRASE` —
- * validated server-side as a deliberate friction point for an irreversible operation, not merely
- * a UI-level nicety.
- */
+/** Input schema for a restore. See {@link typedConfirmation} for what `confirmPhrase` does and does not guarantee. */
 export const BackupRestoreInputSchema = z.object({
   id: z.string().uuid('ID backup non valido'),
   preserveAuditLog: z.boolean(),
   restoreFiles: z.boolean(),
-  confirmPhrase: z.literal(BACKUP_RESTORE_CONFIRM_PHRASE, {
-    message: `Devi digitare esattamente "${BACKUP_RESTORE_CONFIRM_PHRASE}" per confermare`,
-  }),
+  confirmPhrase: typedConfirmation(BACKUP_RESTORE_CONFIRM_PHRASE),
 });
 
 /**
@@ -89,7 +87,7 @@ export const BackupExportInputSchema = z.object({
   passphrase: BackupExportPassphraseSchema,
 });
 
-/** Multipart text fields accompanying an uploaded export package on `/maintenance/backup/import`. */
+/** Multipart text fields accompanying an uploaded export package on `/upload/backup-import`. */
 export const BackupImportFieldsSchema = z.object({
   passphrase: BackupExportPassphraseSchema,
   label: BackupLabelSchema,
@@ -149,10 +147,11 @@ export const BackupRecordSchema = z.object({
 /** Form/input schema for the automatic-backup schedule + retention settings (one AppConfig key each). */
 export const BackupScheduleConfigSchema = z.object({
   enabled: z.boolean(),
-  dailyTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Formato orario non valido (HH:mm)'),
-  scope: BackupScopeSchema,
-  retentionDays: z.number().int().min(1).max(3650),
-  retentionMinCount: z.number().int().min(0).max(1000),
+  dailyTime: WallTimeSchema,
+  // The form's message for an unchosen scope; the shared enum keeps Zod's, which lists the values.
+  scope: z.enum(BackupScopeSchema.options, { error: 'Scegli il contenuto del backup' }),
+  retentionDays: intInRange(1, 3650, 'Inserisci un numero di giorni tra 1 e 3650'),
+  retentionMinCount: intInRange(0, 1000, 'Inserisci un numero tra 0 e 1000'),
   notifyOnFailure: z.boolean(),
 });
 
@@ -171,3 +170,13 @@ export type PassphraseWrappedDek = z.infer<typeof PassphraseWrappedDekSchema>;
 export type BackupExportHeader = z.infer<typeof BackupExportHeaderSchema>;
 export type BackupRecord = z.infer<typeof BackupRecordSchema>;
 export type BackupScheduleConfig = z.infer<typeof BackupScheduleConfigSchema>;
+
+/**
+ * The stored schedule as `maintenance.backup.getScheduleConfig` reports it. `scope` is `null` when
+ * the stored value is not a scope — a hand edit or an older version: the routers refuse one — with
+ * that value in `storedScope`, so the page shows it and asks for a choice instead of a default.
+ */
+export type BackupScheduleSettings = Omit<BackupScheduleConfig, 'scope'> & BackupScopeField;
+
+/** The scope of `BackupScheduleSettings`: a valid one, or `null` with the stored value. */
+export type BackupScopeField = { scope: BackupScope; storedScope?: undefined } | { scope: null; storedScope: string };

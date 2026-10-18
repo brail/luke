@@ -3,6 +3,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { toast } from 'sonner';
 
 import { navConfigSchema, type NavConfigInput } from '@luke/core';
 
@@ -25,12 +26,11 @@ import {
 import { Input } from '../../../../components/ui/input';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
-import { useToast } from '../../../../hooks/useToast';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 export default function NavSettingsPage() {
-  const toast = useToast();
   const { can } = usePermission();
   const canUpdate = can('config:update');
   const [hasPassword, setHasPassword] = useState(false);
@@ -51,7 +51,9 @@ export default function NavSettingsPage() {
     },
   });
 
-  const { data: existingConfigs, isLoading } = trpc.config.list.useQuery({
+  // By prefix: the first page of all configs would miss these keys once there are more than 100 rows.
+  const { data: existingConfigs, isPending, error, refetch } = trpc.config.list.useQuery({
+    category: 'integrations.nav',
     page: 1,
     pageSize: 100,
   });
@@ -85,8 +87,11 @@ export default function NavSettingsPage() {
     }
   }, [existingConfigs, form]);
 
+  const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
     onSuccess: data => {
+      // The cached rows predate the save: coming back to the page must not refill the old values.
+      void utils.config.invalidate();
       setHasPassword(true);
       setTestStatus('idle');
       setTestMessage('');
@@ -134,7 +139,10 @@ export default function NavSettingsPage() {
     <SettingsFormShell
       title="Configurazione Microsoft NAV"
       description="Gestisci la connessione a Microsoft Dynamics NAV tramite SQL Server"
-      isLoading={isLoading}
+      isPending={isPending}
+      error={error}
+      hasData={!!existingConfigs}
+      onRetry={() => void refetch()}
     >
       <SectionCard
         title="Connessione SQL Server"
@@ -161,7 +169,6 @@ export default function NavSettingsPage() {
                 )}
               />
 
-              {/* Porta */}
               <FormField
                 control={form.control}
                 name="port"
@@ -175,7 +182,7 @@ export default function NavSettingsPage() {
                         type="number"
                         placeholder="1433"
                         {...field}
-                        onChange={e => field.onChange(parseInt(e.target.value) || 1433)}
+                        {...numberInputProps(field.value, field.onChange)}
                       />
                     </FormControl>
                     <FormDescription>Porta SQL Server (default: 1433)</FormDescription>
@@ -202,7 +209,6 @@ export default function NavSettingsPage() {
                 )}
               />
 
-              {/* Utente */}
               <FormField
                 control={form.control}
                 name="user"
@@ -258,7 +264,6 @@ export default function NavSettingsPage() {
               )}
             />
 
-            {/* Sola lettura */}
             <FormField
               control={form.control}
               name="readOnly"
@@ -281,7 +286,6 @@ export default function NavSettingsPage() {
               )}
             />
 
-            {/* Sync abilitato */}
             <FormField
               control={form.control}
               name="syncEnabled"
@@ -324,7 +328,6 @@ export default function NavSettingsPage() {
         </Form>
       </SectionCard>
 
-      {/* Test connessione */}
       <SectionCard
         title="Test Connessione"
         description="Verifica autenticazione SQL Server, accesso al database e nome Company"

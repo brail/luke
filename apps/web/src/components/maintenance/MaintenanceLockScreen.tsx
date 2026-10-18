@@ -2,7 +2,7 @@
 
 import { ShieldAlert } from 'lucide-react';
 
-import Logo from '../Logo';
+import LogoLockup from '../LogoLockup';
 
 interface MaintenanceLockScreenProps {
   message: string | null;
@@ -18,7 +18,7 @@ export function MaintenanceLockScreen({ message }: MaintenanceLockScreenProps) {
     // z-[100]: must outrank every shadcn dialog/popover/overlay (default z-50) so the lock screen can't be dismissed underneath one
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-sm">
       <div className="mx-4 flex max-w-md flex-col items-center gap-4 text-center">
-        <Logo size="xl" className="text-primary" />
+        <LogoLockup variant="stacked" />
         <ShieldAlert className="h-10 w-10 text-amber-500" />
         <h1 className="text-xl font-semibold">Sistema in manutenzione</h1>
         <p className="text-sm text-muted-foreground">

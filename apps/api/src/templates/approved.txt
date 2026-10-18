@@ -11,7 +11,7 @@ Puoi ora accedere al sistema con il tuo username:
 Se hai domande, contatta il tuo amministratore di sistema.
 
 ---
-© {{year}} Luke. Tutti i diritti riservati.
+© Luke. Tutti i diritti riservati.
 
 
 

@@ -14,13 +14,13 @@
  */
 
 import { BackupImportFieldsSchema } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { requireSessionWithPermission } from '../lib/auth';
 import { BackupImportValidationError, runImportJob } from '../lib/backup/importPipeline';
 
 import type { Context } from '../lib/trpc';
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 /** Safely extracts the string `.value` from a parsed @fastify/multipart form field. */
@@ -36,7 +36,7 @@ export async function registerBackupImportRoute(
   fastify: FastifyInstance,
   prisma: PrismaClient
 ): Promise<void> {
-  fastify.post('/maintenance/backup/import', async (request, reply) => {
+  fastify.post('/upload/backup-import', async (request, reply) => {
     const session = await requireSessionWithPermission(request, reply, 'maintenance:backup_restore', prisma);
     if (!session) return;
 

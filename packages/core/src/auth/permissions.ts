@@ -10,7 +10,7 @@
  * - `resource:action` = specific action (e.g. 'brands:create')
  */
 
-import type { Role } from '../rbac';
+import type { Role } from '../rbac.js';
 
 /**
  * Available resources in the Luke system. Each entry represents a functional entity or domain area.
@@ -63,6 +63,7 @@ export const ACTIONS = {
   BACKUP_EXPORT: 'backup_export',
   MODE_MANAGE: 'mode_manage',
   READ_ALL: 'read_all',
+  CONFIGURE: 'configure',
 } as const;
 
 export type Action = (typeof ACTIONS)[keyof typeof ACTIONS] | '*';
@@ -93,11 +94,11 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'backup_export', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
   [RESOURCES.PRICING]: ['read', 'update'] as const,
-  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions'] as const,
+  [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions', 'configure'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SALES]: ['read'] as const,
+  [RESOURCES.SALES]: ['read', 'sync'] as const,
   [RESOURCES.MERCHANDISING_PLAN]: ['create', 'read', 'update', 'delete'] as const,
-  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel'] as const,
+  [RESOURCES.SEASON_CALENDAR]: ['create', 'read', 'update', 'delete', 'sync', 'export', 'freeze', 'unfreeze', 'uncancel', 'configure'] as const,
   [RESOURCES.MILESTONE_TEMPLATE]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.PHASE_CATALOG]: ['read', 'update'] as const,
   [RESOURCES.COLLECTION_ALERT]: ['read'] as const,
@@ -109,22 +110,24 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
 /**
  * Base permission set for each role. Admin receives `*:*` wildcard; editor and viewer
  * receive explicit resource:action grants. Used by `hasPermission` and `expandRole`.
+ *
+ * A role writes only to a resource it sees through a default-visible section;
+ * `sectionHierarchy.test.ts` pins it (ADR-038).
  */
 export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   admin: [
     '*:*', // Complete wildcard - full access
   ],
   editor: [
-    // Brands: full access
-    'brands:*',
-    // Seasons: full access
-    'seasons:*',
-    // Users: read and update (no delete)
+    // Brands, seasons, users: read-only — their sections are admin-only by default
+    'brands:read',
+    'seasons:read',
     'users:read',
-    'users:update',
-    // Config: read and update
-    'config:read',
-    'config:update',
+    // Config: none. `config:update` gates 27 endpoints — SMTP, LDAP, the auth strategy, Google
+    // OAuth and S3 credentials, the password policy — and only one of them also checks section
+    // access, so the `settings: false` an editor has in SECTION_ACCESS_DEFAULTS only ever hid the
+    // pages, never the endpoints behind them. The two layers CLAUDE.md requires to stay in sync
+    // disagreed, and RBAC was the permissive one.
     // Audit: read-only
     'audit:read',
     // Dashboard: read
@@ -136,8 +139,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'collection_layout:update',
     'collection_layout:revise',
     'collection_layout:view_revisions',
-    // Vendors: full access
-    'vendors:*',
+    // Vendors: read-only, same reason as brands
+    'vendors:read',
     // Sales: read statistics
     'sales:read',
     // Merchandising Plan: read and update
@@ -166,8 +169,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'seasons:read',
     // Users: read-only
     'users:read',
-    // Config: read-only
-    'config:read',
+    // Config: none, same reason as the editor above — the settings endpoints it gates do not check
+    // section access, so the permission reached further than the hidden pages suggested.
     // Audit: read-only
     'audit:read',
     // Dashboard: read
@@ -204,13 +207,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
  *
  * @param user - User object with role
  * @param permission - Permission to verify (e.g. 'brands:create')
- * @param context - Optional context for ABAC (future)
  * @returns true if the user has the permission, false otherwise
  *
  * @example
  * ```typescript
- * hasPermission({role: 'editor'}, 'brands:create') // true
- * hasPermission({role: 'viewer'}, 'brands:delete') // false
+ * hasPermission({role: 'editor'}, 'collection_layout:update') // true
+ * hasPermission({role: 'editor'}, 'brands:create') // false
  * hasPermission({role: 'admin'}, 'users:read') // true (wildcard)
  * ```
  */
@@ -250,7 +252,7 @@ export function hasPermission(
  *
  * @example
  * ```typescript
- * expandRole('editor')
+ * expandRole('admin')
  * // ['brands:create', 'brands:read', 'brands:update', 'brands:delete', ...]
  * ```
  */

@@ -5,9 +5,19 @@
 
 import { TRPCError } from '@trpc/server';
 
-import { calculateCompanyMultiplier, roundRetailPrice, type PricingParameterSetInput } from '@luke/core';
-
-import type { PrismaClient, PricingParameterSet } from '@prisma/client';
+import {
+  calcMaxSupplierCost,
+  calculateCompanyMultiplier,
+  isInPricingRange,
+  priceForward,
+  priceInverse,
+  priceMargin,
+  retailMargin,
+  suggestRetailPrice,
+  type PricingParameterSetInput,
+} from '@luke/core';
+import { Prisma } from '@luke/db';
+import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 // ─────────────────────────────────────────────────────────────────
 // Internal types
@@ -81,180 +91,135 @@ export interface MarginResult {
 
 /**
  * Forward calculation: given a purchase price, computes the retail price through
- * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail.
+ * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail
+ * (`priceForward`).
  *
- * @returns Breakdown of every intermediate step plus the rounded retail price.
+ * @returns Breakdown of every intermediate step plus the suggested retail price (the first
+ *   commercial threshold whose margin reaches the target, `suggestRetailPrice`), and the margin that
+ *   price leaves over the purchase price.
+ * @throws {TRPCError} BAD_REQUEST if the raw retail price is out of the range the proposal accepts.
  */
 export function calculateForward(
   purchasePrice: number,
   params: CalcParams
 ): ForwardResult {
-  const {
-    qualityControlPercent,
-    transportInsuranceCost,
-    duty,
-    exchangeRate,
-    italyAccessoryCosts,
-    tools,
-    retailMultiplier,
-    optimalMargin,
-    purchaseCurrency,
-    sellingCurrency,
-  } = params;
-
-  const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
-
-  // Step 1–2: QC + tools
-  const qualityControlCost = purchasePrice * (qualityControlPercent / 100);
-  const priceWithQC = purchasePrice + qualityControlCost + tools;
-
-  // Step 3: Transport + insurance
-  const priceWithTransport = priceWithQC + transportInsuranceCost;
-
-  // Step 4–5: Duty
-  const dutyCost = priceWithTransport * (duty / 100);
-  const priceWithDuty = priceWithTransport + dutyCost;
-
-  // Step 6: Currency conversion + Italy costs
-  const landedCost = priceWithDuty / exchangeRate + italyAccessoryCosts;
-
-  // Step 7–9: Multipliers and rounding
-  const wholesalePrice = landedCost * companyMultiplier;
-  const retailPriceRaw = wholesalePrice * retailMultiplier;
-  const retailPrice = roundRetailPrice(retailPriceRaw);
-
-  // Step 10: Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
+  const f = priceForward(purchasePrice, params);
+  if (!isInPricingRange(f.retailPriceRaw)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: "Prezzo di acquisto fuori dall'intervallo calcolabile",
+    });
+  }
+  const retailPrice = suggestRetailPrice(purchasePrice, params);
 
   return {
     mode: 'forward',
     purchasePrice,
-    qualityControlCost: Math.round(qualityControlCost * 100) / 100,
-    priceWithQC: Math.round(priceWithQC * 100) / 100,
-    transportInsuranceCost,
-    priceWithTransport: Math.round(priceWithTransport * 100) / 100,
-    dutyCost: Math.round(dutyCost * 100) / 100,
-    priceWithDuty: Math.round(priceWithDuty * 100) / 100,
-    italyAccessoryCosts,
-    landedCost: Math.round(landedCost * 100) / 100,
-    companyMultiplier,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    retailPriceRaw: Math.round(retailPriceRaw * 100) / 100,
+    qualityControlCost: round2(f.qualityControlCost),
+    priceWithQC: round2(f.priceWithQC),
+    transportInsuranceCost: params.transportInsuranceCost,
+    priceWithTransport: round2(f.priceWithTransport),
+    dutyCost: round2(f.dutyCost),
+    priceWithDuty: round2(f.priceWithDuty),
+    italyAccessoryCosts: params.italyAccessoryCosts,
+    landedCost: round2(f.landedCost),
+    companyMultiplier: f.companyMultiplier,
+    wholesalePrice: round2(f.wholesalePrice),
+    retailPriceRaw: ceil2(f.retailPriceRaw),
     retailPrice,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    purchaseCurrency,
-    sellingCurrency,
+    companyMargin: retailMargin(purchasePrice, retailPrice, params),
+    purchaseCurrency: params.purchaseCurrency,
+    sellingCurrency: params.sellingCurrency,
   };
 }
 
 /**
  * Inverse calculation: given a retail price, computes the maximum allowable purchase price
- * while maintaining the target margin. Reverses the forward chain step by step.
+ * while maintaining the target margin (`priceInverse`).
  *
- * @returns Breakdown of every intermediate step plus the floor-rounded purchase price.
+ * @returns Breakdown of every intermediate step plus the maximum purchase price (the largest tenth
+ *   whose margin reaches the target, `calcMaxSupplierCost`), and the margin the retail price leaves
+ *   over it.
+ * @throws {TRPCError} BAD_REQUEST if the retail price does not cover the fixed costs (not even 0.1
+ *   reaches the target), or if the raw purchase price is out of the range the proposal accepts.
  */
 export function calculateInverse(
   retailPrice: number,
   params: CalcParams
 ): InverseResult {
-  const {
-    qualityControlPercent,
-    transportInsuranceCost,
-    duty,
-    exchangeRate,
-    italyAccessoryCosts,
-    tools,
-    retailMultiplier,
-    optimalMargin,
-    purchaseCurrency,
-    sellingCurrency,
-  } = params;
-
-  const companyMultiplier = calculateCompanyMultiplier(optimalMargin);
-
-  // Step 1–2: Remove multipliers
-  const wholesalePrice = retailPrice / retailMultiplier;
-  const landedCost = wholesalePrice / companyMultiplier;
-
-  // Step 3: Remove Italy accessory costs
-  const priceWithoutAccessories = landedCost - italyAccessoryCosts;
-
-  // Step 4–5: Remove duty
-  const priceWithoutDuty = priceWithoutAccessories / (1 + duty / 100);
-  const dutyCost = priceWithoutAccessories - priceWithoutDuty;
-
-  // Step 6: Convert to purchase currency + remove transport
-  const priceWithoutTransport =
-    priceWithoutDuty * exchangeRate - transportInsuranceCost;
-
-  // Step 7–8: Remove QC and tools
-  const purchasePriceBeforeTools =
-    priceWithoutTransport / (1 + qualityControlPercent / 100);
-  const qualityControlCost = priceWithoutTransport - purchasePriceBeforeTools;
-  const purchasePriceRaw = purchasePriceBeforeTools - tools;
-
-  // Step 9: Round down (floor), 1 decimal
-  const purchasePrice = Math.floor(purchasePriceRaw * 10) / 10;
-
-  // Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
+  const i = priceInverse(retailPrice, params);
+  const purchasePrice = calcMaxSupplierCost(retailPrice, params);
+  if (purchasePrice === null) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: isInPricingRange(i.purchasePriceRaw)
+        ? 'Il prezzo retail non copre i costi fissi: nessun prezzo di acquisto lo raggiunge'
+        : "Prezzo retail fuori dall'intervallo calcolabile",
+    });
+  }
 
   return {
     mode: 'inverse',
     retailPrice,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    landedCost: Math.round(landedCost * 100) / 100,
-    priceWithoutAccessories: Math.round(priceWithoutAccessories * 100) / 100,
-    dutyCost: Math.round(dutyCost * 100) / 100,
-    priceWithoutDuty: Math.round(priceWithoutDuty * 100) / 100,
-    priceWithoutTransport: Math.round(priceWithoutTransport * 100) / 100,
-    qualityControlCost: Math.round(qualityControlCost * 100) / 100,
-    purchasePriceRaw: Math.round(purchasePriceRaw * 100) / 100,
+    wholesalePrice: round2(i.wholesalePrice),
+    landedCost: round2(i.landedCost),
+    priceWithoutAccessories: round2(i.priceWithoutAccessories),
+    dutyCost: round2(i.dutyCost),
+    priceWithoutDuty: round2(i.priceWithoutDuty),
+    priceWithoutTransport: round2(i.priceWithoutTransport),
+    qualityControlCost: round2(i.qualityControlCost),
+    purchasePriceRaw: floor2(i.purchasePriceRaw),
     purchasePrice,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    purchaseCurrency,
-    sellingCurrency,
+    companyMargin: retailMargin(purchasePrice, retailPrice, params),
+    purchaseCurrency: params.purchaseCurrency,
+    sellingCurrency: params.sellingCurrency,
   };
 }
 
 /**
  * Margin-only calculation: given both purchase and retail prices, computes the actual
- * company margin without rounding either input.
+ * company margin without rounding either input — the landed cost forward from the purchase
+ * price, the wholesale backward from the retail price.
  */
 export function calculateMarginOnly(
   purchasePrice: number,
   retailPrice: number,
   params: CalcParams
 ): MarginResult {
-  const companyMultiplier = calculateCompanyMultiplier(params.optimalMargin);
-
-  // Calculate landed cost from the purchase price (forward up to landedCost)
-  const qualityControlCost =
-    purchasePrice * (params.qualityControlPercent / 100);
-  const priceWithQC = purchasePrice + qualityControlCost + params.tools;
-  const priceWithTransport = priceWithQC + params.transportInsuranceCost;
-  const dutyCost = priceWithTransport * (params.duty / 100);
-  const priceWithDuty = priceWithTransport + dutyCost;
-  const landedCost =
-    priceWithDuty / params.exchangeRate + params.italyAccessoryCosts;
-
-  // Calculate wholesale from the retail price (inverse first step)
-  const wholesalePrice = retailPrice / params.retailMultiplier;
-
-  // Actual company margin
-  const companyMargin = (wholesalePrice - landedCost) / wholesalePrice;
+  const m = priceMargin(purchasePrice, retailPrice, params);
 
   return {
     mode: 'margin',
     purchasePrice,
     retailPrice,
-    landedCost: Math.round(landedCost * 100) / 100,
-    wholesalePrice: Math.round(wholesalePrice * 100) / 100,
-    companyMargin: Math.round(companyMargin * 10000) / 10000,
-    companyMultiplier,
+    landedCost: round2(m.landedCost),
+    wholesalePrice: round2(m.wholesalePrice),
+    companyMargin: m.companyMargin,
+    companyMultiplier: calculateCompanyMultiplier(params.optimalMargin),
     purchaseCurrency: params.purchaseCurrency,
     sellingCurrency: params.sellingCurrency,
   };
+}
+
+/**
+ * Presentation rounding of a money amount. Margins are left unrounded: views classify them with
+ * `classifyMargin` before rounding them for display.
+ */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * A raw price shown above its proposal, to the cent in the proposal's direction (retail up, purchase
+ * down): a raw BT of 48.398 reads 48.39 above a BT of 48.3, not 48.40. Display only; the 1e-6 cent
+ * absorbs float noise on an exact cent.
+ */
+function ceil2(value: number): number {
+  return Math.ceil(value * 100 - 1e-6) / 100;
+}
+
+function floor2(value: number): number {
+  return Math.floor(value * 100 + 1e-6) / 100;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -482,10 +447,15 @@ export async function updateParameterSet(
 }
 
 /**
- * Deletes a pricing parameter set. If it was the default, automatically promotes
- * the next set (by orderIndex then createdAt) to default.
+ * Deletes a pricing parameter set that nothing uses. If it was the default, promotes the next set
+ * (by orderIndex then createdAt) to default.
+ *
+ * A set still linked to a collection quotation or a merchandising row is refused: both foreign keys
+ * are `onDelete: SetNull`, so deleting it would silently unlink those rows and drop their purchase
+ * price and margin.
  *
  * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
+ * @throws {TRPCError} CONFLICT if a quotation or a merchandising row still uses the set.
  */
 export async function removeParameterSet(
   id: string,
@@ -493,32 +463,64 @@ export async function removeParameterSet(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  const target = await prisma.pricingParameterSet.findFirst({
-    where: { id, brandId, seasonId },
-  });
-
-  if (!target) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Set parametri non trovato',
-    });
-  }
-
-  await prisma.$transaction(async tx => {
-    await tx.pricingParameterSet.delete({ where: { id } });
-
-    // If it was the default, promote the first one remaining
-    if (target.isDefault) {
-      const next = await tx.pricingParameterSet.findFirst({
-        where: { brandId, seasonId },
-        orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-      });
-      if (next) {
-        await tx.pricingParameterSet.update({
-          where: { id: next.id },
-          data: { isDefault: true },
+  await prisma.$transaction(
+    async tx => {
+      // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL"). A write that links a
+      // quotation or a merchandising row to this set takes FOR KEY SHARE on it for its foreign-key
+      // check, and FOR UPDATE is the only row lock that excludes it. So the counts below, read after
+      // the lock, see every link committed before it, and a link attempted after it waits, then
+      // fails its foreign key once the set is gone. This guards the references only: concurrent
+      // changes to the default flag are not serialised here.
+      const locked = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT id FROM pricing_parameter_sets
+        WHERE id = ${id} AND "brandId" = ${brandId} AND "seasonId" = ${seasonId}
+        FOR UPDATE
+      `);
+      if (locked.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Set parametri non trovato',
         });
       }
-    }
-  });
+
+      const [quotations, merchandisingRows] = await Promise.all([
+        tx.collectionRowQuotation.count({
+          where: { pricingParameterSetId: id },
+        }),
+        tx.merchandisingPlanRow.count({ where: { pricingParameterSetId: id } }),
+      ]);
+      if (quotations + merchandisingRows > 0) {
+        const uses = [
+          quotations > 0 &&
+            `${quotations} ${quotations === 1 ? 'quotazione' : 'quotazioni'}`,
+          merchandisingRows > 0 &&
+            `${merchandisingRows} ${merchandisingRows === 1 ? 'riga' : 'righe'} di merchandising`,
+        ].filter(Boolean);
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `Set parametri in uso da ${uses.join(' e ')}: ${
+            quotations + merchandisingRows === 1 ? 'riassegnala' : 'riassegnale'
+          } prima di eliminarlo`,
+        });
+      }
+
+      // `isDefault` is read here, under the lock, not before the transaction.
+      const deleted = await tx.pricingParameterSet.delete({ where: { id } });
+      if (deleted.isDefault) {
+        const next = await tx.pricingParameterSet.findFirst({
+          where: { brandId, seasonId },
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+        });
+        if (next) {
+          await tx.pricingParameterSet.update({
+            where: { id: next.id },
+            data: { isDefault: true },
+          });
+        }
+      }
+    },
+    // Stated rather than inherited: the reasoning above holds under READ COMMITTED, where each
+    // statement reads what was committed before it started.
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  );
 }

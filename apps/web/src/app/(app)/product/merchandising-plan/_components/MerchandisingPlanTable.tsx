@@ -105,7 +105,7 @@ export function MerchandisingPlanTable({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Filtro gender */}
+          {/* Gender filter */}
           <select
             className="text-sm border rounded-md px-2 py-1 bg-background"
             value={filterGender}
@@ -119,7 +119,7 @@ export function MerchandisingPlanTable({
             ))}
           </select>
 
-          {/* Filtro categoria */}
+          {/* Category filter */}
           <select
             className="text-sm border rounded-md px-2 py-1 bg-background"
             value={filterCategory}
@@ -141,7 +141,7 @@ export function MerchandisingPlanTable({
         </div>
       </div>
 
-      {/* Tabella */}
+      {/* Table */}
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>

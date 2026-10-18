@@ -1,0 +1,34 @@
+{
+  // TypeScript for the deterministic control plane: the drift checkers and the
+  // boundary validator under `tools/`.
+  //
+  // These are release gates — `pnpm check:drift` runs them in CI and in
+  // `.husky/pre-push` — and until they got a config of their own they were
+  // reachable by no typecheck at all. `tools/` is not a workspace, so
+  // `turbo run typecheck` never sees it, and `tsx` executes TypeScript by
+  // stripping types without checking them. A type error in a gate would have
+  // shipped silently.
+  //
+  // Node-only, and now says so by inheriting the neutral base's `lib: ES2022`
+  // rather than restating it: the base is the runtime-neutral half this file
+  // used to have to duplicate, back when the root config was a Next/browser
+  // configuration it could not safely extend.
+  //
+  // CommonJS, not ESM: `lib/report.ts` uses `__dirname`, relative imports carry
+  // no `.js` extension, and the nearest `package.json` declares no `"type"`.
+  // `module: NodeNext` resolves that to CJS, which is what actually runs.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true,
+    // `check-image-runtime.ts` runs inside the images under plain Node, which
+    // strips types but resolves no extensionless import, so it names its one
+    // relative import by the real `.ts` file. Every other script keeps the
+    // extensionless form tsx resolves.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

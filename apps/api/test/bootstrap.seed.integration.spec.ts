@@ -10,8 +10,10 @@
  * - seedContextData creates a usable brand, season, and pricing parameter set
  */
 
-import { PrismaClient } from '@prisma/client';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+
+import { classifyMargin } from '@luke/core';
+import { PrismaClient } from '@luke/db';
 
 import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
 import { calculateForward } from '../src/services/pricing.service';
@@ -33,7 +35,7 @@ describe('Bootstrap & Seed', () => {
     await prisma.appConfig.deleteMany();
   });
 
-  it('seedAdminUser crea admin se non esiste', async () => {
+  it('seedAdminUser creates the admin if it does not exist', async () => {
     await seedAdminUser(prisma);
 
     const admin = await prisma.user.findFirst({
@@ -56,7 +58,7 @@ describe('Bootstrap & Seed', () => {
     expect(admin?.identities[0].localCredential).toBeTruthy();
   });
 
-  it('seedAdminUser è idempotente', async () => {
+  it('seedAdminUser is idempotent', async () => {
     // First run
     await seedAdminUser(prisma);
     const count1 = await prisma.user.count();
@@ -95,7 +97,7 @@ describe('Bootstrap & Seed', () => {
     expect(authStrategy?.value).toBe('local-first');
   });
 
-  it('seedAppConfigs è idempotente', async () => {
+  it('seedAppConfigs is idempotent', async () => {
     // First run
     await seedAppConfigs(prisma);
     const count1 = await prisma.appConfig.count();
@@ -107,7 +109,7 @@ describe('Bootstrap & Seed', () => {
     expect(count2).toBe(count1); // No duplication
   });
 
-  it('nessuna configurazione LDAP nel seed', async () => {
+  it('no LDAP configuration in the seed', async () => {
     await seedAppConfigs(prisma);
 
     const ldapConfigs = await prisma.appConfig.findMany({
@@ -117,7 +119,7 @@ describe('Bootstrap & Seed', () => {
     expect(ldapConfigs.length).toBe(0);
   });
 
-  it('configurazioni critiche sono presenti', async () => {
+  it('critical configuration keys are present', async () => {
     await seedAppConfigs(prisma);
 
     const criticalKeys = [
@@ -145,7 +147,7 @@ describe('Bootstrap & Seed', () => {
     expect(locale?.value).toBe('it-IT');
   });
 
-  it('rateLimit è un JSON valido', async () => {
+  it('rateLimit is valid JSON', async () => {
     await seedAppConfigs(prisma);
 
     const rateLimitConfig = await prisma.appConfig.findUnique({
@@ -176,7 +178,7 @@ describe('Bootstrap & Seed', () => {
       await prisma.season.deleteMany();
     });
 
-    it('crea brand, stagione e set parametri pricing', async () => {
+    it('creates brand, season and pricing parameter set', async () => {
       await seedContextData(prisma);
 
       const brand = await prisma.brand.findUnique({ where: { code: 'ACME' } });
@@ -196,7 +198,7 @@ describe('Bootstrap & Seed', () => {
       });
     });
 
-    it('è idempotente', async () => {
+    it('is idempotent', async () => {
       await seedContextData(prisma);
       await seedContextData(prisma);
 
@@ -205,19 +207,24 @@ describe('Bootstrap & Seed', () => {
       expect(await prisma.pricingParameterSet.count()).toBe(1);
     });
 
-    it('il set parametri produce un calcolo forward coerente', async () => {
+    it('the parameter set produces a consistent forward calculation', async () => {
       await seedContextData(prisma);
       const set = await prisma.pricingParameterSet.findFirstOrThrow();
 
       const result = calculateForward(100, set);
 
       // Doesn't assert the exact number — that would be a tautological test of the
-      // formula. Asserts the two properties that make the seed *usable*: retail
-      // exceeds the purchase cost, and the margin hits the declared target. A set
-      // with inconsistent values would still pass the two tests above and would
-      // only break the smoke test, downstream.
+      // formula. Asserts what makes the seed *usable*: retail exceeds the purchase
+      // cost, the wholesale price carries the declared target margin (within the
+      // multiplier's 2-decimal rounding, under half a point), and the rounded
+      // retail price keeps the margin out of red. A set with inconsistent
+      // values would still pass the two tests above and would only break the smoke
+      // test, downstream.
       expect(result.retailPrice).toBeGreaterThan(100);
-      expect(result.companyMargin * 100).toBeCloseTo(set.optimalMargin, 1);
+      expect(
+        ((result.wholesalePrice - result.landedCost) / result.wholesalePrice) * 100
+      ).toBeCloseTo(set.optimalMargin, 0);
+      expect(classifyMargin(result.companyMargin * 100, set.optimalMargin)).not.toBe('red');
     });
   });
 });

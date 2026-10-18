@@ -3,6 +3,7 @@ export {
   testGoogleConnection,
   generateOAuthUrl,
   exchangeOAuthCode,
+  MissingRefreshTokenError,
   type CalendarConfig,
   type GoogleCalendarClient,
 } from './google/client.js';

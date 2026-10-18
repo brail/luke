@@ -6,8 +6,11 @@
 import { randomUUID } from 'crypto';
 
 import helmet from '@fastify/helmet';
-import { PrismaClient } from '@prisma/client';
 import Fastify from 'fastify';
+import { expect, onTestFinished } from 'vitest';
+
+import { hasPermission, ROLE_PERMISSIONS, type Permission } from '@luke/core';
+import { PrismaClient } from '@luke/db';
 
 import { buildHelmetConfig } from '../src/lib/helmet';
 import { hashPassword } from '../src/lib/password';
@@ -74,6 +77,7 @@ export async function createTestUser(
   
   const user = await testPrisma.user.create({
     data: {
+      timezone: 'Europe/Rome',
       email: `${role}-${uniqueId}@test.com`,
       username: `${role}-${uniqueId}`,
       firstName: role.charAt(0).toUpperCase() + role.slice(1),
@@ -147,6 +151,22 @@ export async function createCallerAs(
   const { session } = await createTestUser(role);
   const ctx = createTestContext(session);
   return appRouter.createCaller(ctx);
+}
+
+/**
+ * Grants the editor `permission` until the current test ends. For a guard that must refuse a
+ * holder of `permission` without `*:*`, a caller no built-in non-admin role is any more.
+ */
+export function grantEditor(permission: Permission) {
+  ROLE_PERMISSIONS.editor.push(permission);
+  // The API's permission checks call this same `hasPermission`: a grant it stopped seeing (a frozen
+  // or precomputed table) would leave every refusal test green.
+  expect(hasPermission({ role: 'editor' }, permission)).toBe(true);
+  onTestFinished(() => {
+    // The entry pushed above is the last one; an earlier copy of the same grant stays.
+    const index = ROLE_PERMISSIONS.editor.lastIndexOf(permission);
+    if (index !== -1) ROLE_PERMISSIONS.editor.splice(index, 1);
+  });
 }
 
 /**
@@ -254,7 +274,8 @@ export async function expectUnauthorized(
   } catch (error: any) {
     if (error.code !== expectedCode) {
       throw new Error(
-        `Expected error code '${expectedCode}', got '${error.code}': ${error.message}`
+        `Expected error code '${expectedCode}', got '${error.code}': ${error.message}`,
+        { cause: error }
       );
     }
   }
@@ -315,6 +336,14 @@ export async function buildTestServer() {
  * When adding an export to a `helpers/` module, add it here too — that's
  * what keeps the check active.
  */
+export {
+  createCalendarFixture,
+  expectedOf,
+  grantBrandAccess,
+  type CalendarFixture,
+  type CalendarFixtureOptions,
+  type BrandAccessGrant,
+} from './helpers/calendarFixture';
 export { createContextForRole } from './helpers/testContext';
 export { createSilentLogger } from './helpers/logger';
 export {
@@ -327,9 +356,10 @@ export {
 } from './helpers/database';
 export {
   MockStorageProvider,
-  createTestContextWithMockStorage,
   createTestFile,
   createValidPngBuffer,
   createValidJpegBuffer,
+  createValidWebpBuffer,
   createInvalidImageBuffer,
+  seedLocalStorageConfig,
 } from './helpers/storageTestHelper';

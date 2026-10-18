@@ -1,12 +1,20 @@
 'use client';
 
-import { Image, Plus, Trash2, X } from 'lucide-react';
+import { ImageIcon, Plus, Trash2, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { calcMaxSupplierCost, formatPhaseLabel, type CollectionLayoutRowInput } from '@luke/core';
+import {
+  calcMaxSupplierCost,
+  classifyMargin,
+  formatMarginPct,
+  formatPhaseLabel,
+  priceMargin,
+  type CollectionGender,
+  type CollectionLayoutRowInput,
+  type MarginStatus,
+} from '@luke/core';
 
-import { NumberInput } from '../../../../../components/NumberInput';
 import { PermissionButton } from '../../../../../components/PermissionButton';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
@@ -31,11 +39,12 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 import { cn } from '../../../../../lib/utils';
+import { MARGIN_STATUS_TEXT_CLASS } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
 
 import { CriticalitySituation } from './CriticalityBadge';
 import { RowCompletionToggle } from './RowCompletionToggle';
-import { VendorCombobox } from './VendorCombobox';
+import { VendorCombobox, type VendorListItem } from './VendorCombobox';
 
 import type { PricingParameterSet } from '../../_shared/pricingCalc';
 import type { Control } from 'react-hook-form';
@@ -51,7 +60,6 @@ export type CollectionGroup = RouterOutputs['collectionLayout']['get'] extends i
   : never;
 
 export type CollectionRow = CollectionGroup extends { rows: Array<infer R> } ? R : never;
-export type CollectionRowQuotation = CollectionRow extends { quotations: Array<infer Q> } ? Q : never;
 
 export type { PricingParameterSet };
 
@@ -84,7 +92,7 @@ export function SectionHeader({ title }: { title: string }) {
 /**
  * Fixed-height label for the compact Pianificazione fields. Forces phase and
  * planning-group labels to the same height so the two selects below them align
- * even when the phase label carries criticality/variance badges. Shared so the
+ * even when the phase label carries the criticality badge. Shared so the
  * height can't drift between the fields.
  */
 const PLANNING_FIELD_LABEL = 'flex h-6 items-center';
@@ -111,8 +119,8 @@ type QuotationCalc = {
   bt: number | null;
   lc: number | null;
   ws: number | null;
-  marginPct: number | null;
-  marginStatus: 'green' | 'yellow' | 'red' | null;
+  margin: number | null;
+  marginStatus: MarginStatus | null;
   targetMargin: number;
 };
 
@@ -120,31 +128,21 @@ function calcQuotationFields(q: QuotationState, ps: PricingParameterSet | null):
   if (!ps) return null;
 
   // BT only needs retail + param set
-  const bt = q.retailPrice && q.retailPrice > 0
-    ? Math.round(calcMaxSupplierCost(q.retailPrice, ps) * 100) / 100
-    : null;
+  const bt = q.retailPrice && q.retailPrice > 0 ? calcMaxSupplierCost(q.retailPrice, ps) : null;
 
   // LC / WS / margin need supplier quotation too
   if (!q.supplierQuotation || q.supplierQuotation <= 0 || !q.retailPrice || q.retailPrice <= 0) {
-    return { bt, lc: null, ws: null, marginPct: null, marginStatus: null, targetMargin: ps.optimalMargin };
+    return { bt, lc: null, ws: null, margin: null, marginStatus: null, targetMargin: ps.optimalMargin };
   }
 
-  const qc = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC = q.supplierQuotation + qc + ps.tools;
-  const withTransport = withQC + ps.transportInsuranceCost;
-  const withDuty = withTransport * (1 + ps.duty / 100);
-  const lc = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-  const ws = q.retailPrice / ps.retailMultiplier;
-  const marginPct = ((ws - lc) / ws) * 100;
-  const marginStatus: 'green' | 'yellow' | 'red' =
-    marginPct >= ps.optimalMargin ? 'green'
-    : marginPct >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  // One call: the landed cost and wholesale shown are the margin's own inputs.
+  const m = priceMargin(q.supplierQuotation, q.retailPrice, ps);
+  const marginStatus = classifyMargin(m.companyMargin * 100, ps.optimalMargin);
   return {
     bt,
-    lc: Math.round(lc * 100) / 100,
-    ws: Math.round(ws * 100) / 100,
-    marginPct: Math.round(marginPct * 10) / 10,
+    lc: Math.round(m.landedCost * 100) / 100,
+    ws: Math.round(m.wholesalePrice * 100) / 100,
+    margin: m.companyMargin,
     marginStatus,
     targetMargin: ps.optimalMargin,
   };
@@ -196,12 +194,12 @@ function CatalogSelectField({ control, name, label, options, canUpdate, nullable
   );
 }
 
-// ─── Section: Identificazione ─────────────────────────────────────────────────
+// ─── Section: Identification ──────────────────────────────────────────────────
 
 interface IdentificationSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
-  availableGenders: string[];
+  availableGenders: CollectionGender[];
   groups: CollectionGroup[];
 }
 
@@ -238,10 +236,9 @@ export function IdentificationSection({
     <div className="space-y-4">
       <SectionHeader title="Identificazione" />
 
-      {/* gruppo */}
       <GroupSelectField control={control} canUpdate={canUpdate} groups={groups} />
 
-      {/* gender | categoria */}
+      {/* gender | category */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -288,7 +285,7 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* linea | articolo */}
+      {/* line | article */}
       <div className="grid grid-cols-2 gap-4">
         <FormField
           control={control}
@@ -376,7 +373,7 @@ export function IdentificationSection({
         />
       </div>
 
-      {/* posizionamento prezzo */}
+      {/* price positioning */}
       <div className="grid grid-cols-2 gap-4">
         <CatalogSelectField
           control={control}
@@ -401,23 +398,22 @@ interface PlanningSectionProps {
   onRequestChangePlanningGroup?: () => void;
   /** Edit mode only — opens the "Cambia fase" confirmation dialog instead of editing inline. */
   onRequestChangePhase?: () => void;
-  /** Present only in edit mode — enables the criticality/variance badges next to the phase field. */
+  /** Present only in edit mode — enables the criticality badge next to the phase field. */
   rowId?: string;
-  /** Valorizzato = riga conclusa: fase e gruppo si bloccano finché non viene riaperta. */
+  /** Set = completed row: phase and group are locked until it is reopened. */
   completedAt?: Date | string | null;
-  /** Obbligatoria: il toggle compare solo in edit mode, dove il drawer la passa sempre. */
+  /** Mandatory: the toggle appears only in edit mode, where the drawer always passes it. */
   onCompletionChanged: () => void;
 }
 
 /**
  * Planning/status band shown full-width above the identity grid: planning group
- * and phase, with the criticality and scheduling-variance badges those two
- * fields drive. Kept apart from the identity fields so process/status reads at
- * a glance.
+ * and phase, with the criticality badge those two fields drive. Kept apart from
+ * the identity fields so process/status reads at a glance.
  *
- * Ospita anche il controllo di conclusione: è lo stato che blocca proprio i due campi qui sotto,
- * quindi sta accanto a loro invece che nell'header del drawer (dove collideva con la X di chiusura,
- * ed era l'unico `DialogHeader` dell'app con un'azione allineata a destra).
+ * It also hosts the completion control: that is the state that locks exactly the two fields below,
+ * so it sits next to them instead of in the drawer header (where it collided with the close X, and
+ * was the only `DialogHeader` in the app with a right-aligned action).
  */
 export function PlanningSection({
   control,
@@ -439,7 +435,7 @@ export function PlanningSection({
         {mode === 'edit' && rowId && (
           <RowCompletionToggle
             rowId={rowId}
-            completedAt={completedAt ?? null}
+            isCompleted={isCompleted}
             canUpdate={canUpdate}
             onChanged={onCompletionChanged}
           />
@@ -455,7 +451,7 @@ export function PlanningSection({
           isCompleted={isCompleted}
         />
 
-        {/* gruppo di pianificazione */}
+        {/* planning group */}
         <PlanningGroupSelectField
           control={control}
           canUpdate={canUpdate}
@@ -470,11 +466,11 @@ export function PlanningSection({
 }
 
 /**
- * Bottone di modifica di un campo che una riga conclusa congela. `PermissionButton` gestisce il
- * gate generico "disabilitato + tooltip che spiega perché": qui la ragione è di stato, non di
- * permesso, e il suo prop `tooltip` è una stringa libera che lo dice ("riaprila per…").
- * `disabled` resta separato per il caso senza permesso di scrittura, dove il blocco per stato non
- * c'entra e non va spiegato.
+ * Edit button for a field that a completed row freezes. `PermissionButton` handles the generic
+ * "disabled + tooltip explaining why" gate: here the reason is state, not permission, and its
+ * `tooltip` prop is a free string that says so ("riaprila per…").
+ * `disabled` stays separate for the case with no write permission, where the state lock does not
+ * apply and needs no explaining.
  */
 function LockableChangeButton({
   label,
@@ -505,7 +501,7 @@ function LockableChangeButton({
   );
 }
 
-// ─── Section: Fase ────────────────────────────────────────────────────────────
+// ─── Section: Phase ───────────────────────────────────────────────────────────
 
 interface PhaseSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
@@ -518,7 +514,7 @@ interface PhaseSelectFieldProps {
   onRequestChange?: () => void;
   /** Present only in edit mode — enables the "Situazione" criticality block under the field. */
   rowId?: string;
-  /** Riga conclusa: il cambio fase è bloccato finché non viene riaperta (stesso guard lato server). */
+  /** Completed row: the phase change is locked until it is reopened (same guard server-side). */
   isCompleted?: boolean;
 }
 
@@ -580,17 +576,21 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, is
   );
 }
 
-// ─── Section: Fornitore ───────────────────────────────────────────────────────
+// ─── Section: Vendor ──────────────────────────────────────────────────────────
 
 interface VendorSectionProps {
   control: Control<CollectionLayoutRowInput>;
   canUpdate: boolean;
+  /** The row's current vendor, for its label; null when creating or when the row has none. */
+  vendor: CollectionRow['vendor'] | null;
+  /** Called with the vendor the user picks, or null when they clear it. */
+  onVendorPicked: (vendor: VendorListItem | null) => void;
 }
 
 /**
  * Form section for selecting the vendor of a collection row via `VendorCombobox`.
  */
-export function VendorSection({ control, canUpdate }: VendorSectionProps) {
+export function VendorSection({ control, canUpdate, vendor, onVendorPicked }: VendorSectionProps) {
   return (
     <FormField
       control={control}
@@ -599,7 +599,15 @@ export function VendorSection({ control, canUpdate }: VendorSectionProps) {
         <FormItem>
           <FormLabel>Fornitore</FormLabel>
           <FormControl>
-            <VendorCombobox value={field.value ?? null} onChange={field.onChange} disabled={!canUpdate} />
+            <VendorCombobox
+              value={field.value ?? null}
+              selectedVendor={vendor}
+              onChange={(vendorId, picked) => {
+                field.onChange(vendorId);
+                onVendorPicked(picked);
+              }}
+              disabled={!canUpdate}
+            />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -670,7 +678,7 @@ export function PictureSidePanel({
               'h-36 w-full rounded-md border-2 border-dashed flex items-center justify-center bg-muted/20',
               canUpdate ? 'border-muted-foreground/25 hover:border-primary/40 hover:bg-muted/30' : 'border-muted'
             )}>
-              <Image className="h-10 w-10 text-muted-foreground/50" />
+              <ImageIcon className="h-10 w-10 text-muted-foreground/50" />
             </div>
           )}
           {canUpdate && (
@@ -685,7 +693,7 @@ export function PictureSidePanel({
   );
 }
 
-// ─── Section: Gruppo ──────────────────────────────────────────────────────────
+// ─── Section: Group ───────────────────────────────────────────────────────────
 
 interface GroupSelectFieldProps {
   control: Control<CollectionLayoutRowInput>;
@@ -721,7 +729,7 @@ export function GroupSelectField({ control, canUpdate, groups }: GroupSelectFiel
   );
 }
 
-// ─── Section: Gruppo di pianificazione ────────────────────────────────────────
+// ─── Section: Planning group ──────────────────────────────────────────────────
 
 interface PlanningGroupOption { id: string; name: string; isDefault: boolean; }
 
@@ -734,7 +742,7 @@ interface PlanningGroupSelectFieldProps {
    * side effect of an unrelated field save. */
   mode: 'create' | 'edit';
   onRequestChange?: () => void;
-  /** Riga conclusa: il cambio gruppo è bloccato finché non viene riaperta (stesso guard lato server). */
+  /** Completed row: the group change is locked until it is reopened (same guard server-side). */
   isCompleted?: boolean;
 }
 
@@ -812,7 +820,8 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
           <FormItem>
             <FormLabel>SKU Forecast</FormLabel>
             <FormControl>
-              <NumberInput
+              <Input
+                type="number"
                 {...field}
                 value={field.value == null || isNaN(field.value as number) ? '' : field.value}
                 onChange={e => {
@@ -836,7 +845,8 @@ export function ForecastSection({ control, canUpdate }: ForecastSectionProps) {
           <FormItem>
             <FormLabel>Qty Forecast</FormLabel>
             <FormControl>
-              <NumberInput
+              <Input
+                type="number"
                 {...field}
                 value={field.value == null || isNaN(field.value as number) ? '' : field.value}
                 onChange={e => {
@@ -876,8 +886,8 @@ interface PricingFooterSectionProps {
  * and the tooling quotation field.
  *
  * Only parameter sets enabled for the selected vendor are available for
- * selection. Margin is computed live via `computeRowMargin` and displayed as a
- * colour-coded indicator.
+ * selection. Each quotation's BT, landed cost and margin are computed live
+ * (`calcQuotationFields`) and the margin displayed as a colour-coded badge.
  *
  * @param quotations - Current quotation list managed by the parent drawer.
  * @param enabledParameterSetIds - IDs of parameter sets enabled for the vendor.
@@ -907,7 +917,7 @@ export function PricingFooterSection({
     <div className="space-y-4">
       <SectionHeader title="Pricing" />
 
-      {/* Impianti € + note impianti */}
+      {/* Tooling cost € + tooling notes */}
       <div className="flex items-start gap-4">
         <FormField
           control={control}
@@ -916,7 +926,8 @@ export function PricingFooterSection({
             <FormItem className="flex items-center gap-3 space-y-0 shrink-0">
               <FormLabel className="shrink-0 text-sm">Impianti (€)</FormLabel>
               <FormControl>
-                <NumberInput
+                <Input
+                  type="number"
                   className="w-28"
                   placeholder="0.00"
                   step={0.01}
@@ -1039,7 +1050,8 @@ export function PricingFooterSection({
                                 {sellSym}
                               </span>
                             )}
-                            <NumberInput
+                            <Input
+                              type="number"
                               inputSize="sm"
                               className={cn('w-[88px]', sellSym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
@@ -1061,7 +1073,8 @@ export function PricingFooterSection({
                                 {buySym}
                               </span>
                             )}
-                            <NumberInput
+                            <Input
+                              type="number"
                               inputSize="sm"
                               className={cn('w-[88px]', buySym && 'pl-5')} // 88px: price input width tuned for currency values; no exact scale match
                               placeholder="0.00"
@@ -1092,17 +1105,15 @@ export function PricingFooterSection({
 
                         {/* M% */}
                         <td className="px-3 py-1.5 text-center">
-                          {calc?.marginPct != null && calc.marginStatus ? (
+                          {calc?.margin != null && calc.marginStatus ? (
                             <Badge
                               variant="outline"
                               className={cn(
-                                'text-xs px-1.5',
-                                calc.marginStatus === 'green' && 'border-green-500 text-green-700 bg-green-50 dark:bg-green-950/20 dark:text-green-400',
-                                calc.marginStatus === 'yellow' && 'border-amber-500 text-amber-700 bg-amber-50 dark:bg-amber-950/20 dark:text-amber-400',
-                                calc.marginStatus === 'red' && 'border-red-500 text-red-700 bg-red-50 dark:bg-red-950/20 dark:text-red-400'
+                                'text-xs px-1.5 border-current bg-current/10',
+                                MARGIN_STATUS_TEXT_CLASS[calc.marginStatus]
                               )}
                             >
-                              {calc.marginPct.toFixed(1)}%
+                              {formatMarginPct(calc.margin)}
                             </Badge>
                           ) : (
                             <span className="text-muted-foreground/40 text-xs">—</span>
@@ -1129,7 +1140,8 @@ export function PricingFooterSection({
 
                         {/* SKU (peso per media margine) */}
                         <td className="px-2 py-1.5">
-                          <NumberInput
+                          <Input
+                            type="number"
                             inputSize="sm"
                             className="w-14 text-center"
                             placeholder="—"

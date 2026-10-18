@@ -1,42 +1,51 @@
 import { z } from 'zod';
 
+import { HardDeleteConfirmSchema } from './confirmation.js';
+import { passwordPrefilterSchema } from './password.js';
+
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
-  /** ID univoco dell'utente (UUID v4) */
+  /** Unique user ID (UUID v4) */
   id: z.string().uuid(),
 
-  /** Email dell'utente (validata come formato email) */
+  /** User email (validated as an email format) */
   email: z.string().email(),
 
-  /** Username dell'utente */
+  /** User username */
   username: z.string(),
 
-  /** Nome dell'utente */
+  /** User first name */
   firstName: z.string().default(''),
 
-  /** Cognome dell'utente */
+  /** User last name */
   lastName: z.string().default(''),
 
-  /** Ruolo dell'utente nel sistema */
+  /** User role in the system */
   role: z.enum(['admin', 'editor', 'viewer']),
 
-  /** Stato di attivazione dell'utente */
+  /** User activation state */
   isActive: z.boolean(),
 
-  /** Data di creazione dell'utente */
+  /** User creation date */
   createdAt: z.date(),
 
-  /** Data dell'ultimo aggiornamento */
+  /** Last update date */
   updatedAt: z.date(),
 });
 
-/** Input schema for creating a user. Password must be at least 12 characters (policy enforced server-side). */
+/**
+ * Input schema for creating a user.
+ *
+ * `password` is only prefiltered here (8-128). The effective minimum and the complexity rules come
+ * from the configured policy and are applied server-side — a schema compiled into the bundle cannot
+ * know what an installation chose.
+ */
 export const CreateUserInputSchema = z.object({
   email: z.string().email('Email non valida'),
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
-  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri'),
+  password: passwordPrefilterSchema,
   role: z.enum(['admin', 'editor', 'viewer']),
 });
 
@@ -52,8 +61,83 @@ export const UpdateUserInputSchema = z.object({
   lastName: z.string().optional().or(z.literal('')),
   role: z.enum(['admin', 'editor', 'viewer']).optional(),
   isActive: z.boolean().optional(),
-  password: z.string().min(12, 'Password deve essere di almeno 12 caratteri').optional(),
+  password: passwordPrefilterSchema.optional(),
 });
+
+/**
+ * Every field of `UpdateUserInputSchema` that a cross-user update can carry.
+ *
+ * `id` addresses the target rather than mutating it. `password` is excluded
+ * because it structurally never reaches the router's `updateData`: it lives on
+ * `LocalCredential`, not `User`, so it is destructured out and keeps its own
+ * `*:*` guard. It is privileged — it is simply enforced on a different path,
+ * named here rather than omitted silently.
+ */
+type UserUpdatableField = Exclude<keyof UpdateUserInput, 'id' | 'password'>;
+
+/**
+ * The fields a caller holding `users:update` **but not** `*:*` may change on
+ * someone else's account. This is the allow-list, and it is the only list.
+ *
+ * Everything else in `UpdateUserInputSchema` is privileged **by derivation**
+ * (`privilegedUserUpdateFields`), not by enumeration. That direction is the
+ * whole point: a field added to the schema tomorrow is denied to such a caller
+ * by default, instead of being writable until somebody remembers to classify it.
+ *
+ * No built-in role is such a caller today — `users:update` is admin-only — so
+ * the list holds only for a future role granted `users:update` without `*:*`.
+ *
+ * The first version of this fix named the sensitive fields instead — which
+ * closed the concrete email takeover while leaving the defect class intact,
+ * since every future field would still have defaulted to permitted.
+ *
+ * `isActive` is here as a deliberate product decision, not by omission: such a
+ * caller deactivating a user was an existing capability, bounded by the
+ * self-deactivation guard and `assertNotLastAdminWithSettingsAccess`. It is
+ * account state, not authentication identity. Removing it from this list would
+ * be a behavioural change to make on its own merits.
+ */
+export const USER_EDITOR_UPDATABLE_FIELDS = [
+  'firstName',
+  'lastName',
+  'isActive',
+] as const satisfies readonly UserUpdatableField[];
+
+/** A field a `users:update` holder without `*:*` may change on another account. */
+export type UserEditorUpdatableField = (typeof USER_EDITOR_UPDATABLE_FIELDS)[number];
+
+/** A field whose mutation on another account requires `*:*`. */
+export type PrivilegedUserUpdateField = Exclude<
+  UserUpdatableField,
+  UserEditorUpdatableField
+>;
+
+/**
+ * The privileged complement, derived from the schema rather than listed.
+ *
+ * Reading the shape at runtime is what makes the default deny: a new key in
+ * `UpdateUserInputSchema` appears here automatically, with no edit to this file
+ * and nothing to remember. The router and the regression matrix both consume
+ * this, so neither can drift from the schema or from each other.
+ */
+export function privilegedUserUpdateFields(): PrivilegedUserUpdateField[] {
+  const editorPermitted = USER_EDITOR_UPDATABLE_FIELDS as readonly string[];
+  return Object.keys(UpdateUserInputSchema.shape).filter(
+    (field): field is PrivilegedUserUpdateField =>
+      field !== 'id' && field !== 'password' && !editorPermitted.includes(field)
+    // The predicate mirrors `UserUpdatableField` minus the allow-list, which is
+    // exactly `PrivilegedUserUpdateField`; TypeScript cannot narrow a string
+    // key of a Zod shape to that union on its own.
+  );
+}
+
+/** Schema for identifying a single user by UUID — shared across the users sub-routers. */
+export const UserIdSchema = z.object({
+  id: z.string().uuid('ID utente non valido'),
+});
+
+/** Input schema for permanently deleting a user — an id alone is not enough. */
+export const UserHardDeleteInputSchema = UserIdSchema.merge(HardDeleteConfirmSchema);
 
 export type User = z.infer<typeof UserSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;

@@ -12,17 +12,17 @@ export default defineConfig({
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
   /**
-   * Sempre seriale, non solo in CI, per due motivi indipendenti.
+   * Always serial, not only in CI, for two independent reasons.
    *
-   * 1. La pulizia in `brand-crud.smoke.spec.ts` cancella *tutti* i brand con
-   *    prefisso `SMOKE-`: in parallelo un worker cancellerebbe il brand che un
-   *    altro sta ancora usando.
-   * 2. Margine sul rate limit dell'API. In sviluppo localhost è in allowList,
-   *    ma puntando la suite a un ambiente non-dev valgono i 100 req/min per IP —
-   *    e con più worker li si supera.
+   * 1. The cleanup in `brand-crud.smoke.spec.ts` deletes *every* brand with the
+   *    `SMOKE-` prefix: in parallel, one worker would delete the brand another
+   *    one is still using.
+   * 2. Headroom on the API rate limit. In development localhost is on the
+   *    allowList, but with the suite pointed at a non-dev environment the
+   *    100 req/min per IP apply — and more workers exceed them.
    *
-   * Uno smoke pre-release può permettersi il minuto in più. Per lo stesso motivo
-   * niente `fullyParallel`: sarebbe inerte con un solo worker.
+   * A pre-release smoke run can afford the extra minute. For the same reason,
+   * no `fullyParallel`: it would be inert with a single worker.
    */
   workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
@@ -49,7 +49,7 @@ export default defineConfig({
   },
 
   projects: [
-    /* Autentica una volta e deposita lo storageState per il progetto `smoke`. */
+    /* Authenticates once and stores the storageState for the `smoke` project. */
     { name: 'smoke-setup', testMatch: /auth\.setup\.ts$/ },
     {
       name: 'smoke',
@@ -69,8 +69,8 @@ export default defineConfig({
         timeout: 120 * 1000, // 2 minutes
       },
 
-  /* Pre-flight su API e frontend. Nessun globalTeardown: la suite non lascia
-     stato globale da smontare — la pulizia dei brand di test è per-spec. */
+  /* Pre-flight on the API and the frontend. No globalTeardown: the suite leaves no
+     global state to tear down — test-brand cleanup is per spec. */
   globalSetup: require.resolve('./tests/global-setup.ts'),
 
   /* Test timeout */

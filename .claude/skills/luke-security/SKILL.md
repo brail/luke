@@ -7,8 +7,11 @@ description: >
   sharp-edges and insecure-defaults plugins.
   Use when asked to audit security or find vulnerabilities.
   Scoping: default = diff vs merge-base. /luke-security apps/api | --since <ref> | --full
+argument-hint: '[--full|--since <ref>|<path> [--since <ref>]]'
 context: fork
 agent: Explore
+background: false
+disallowed-tools: Edit, Write, NotebookEdit
 ---
 
 # Luke Security Audit
@@ -16,18 +19,39 @@ agent: Explore
 Read-only. Do NOT modify any file.
 Every finding needs a concrete attack scenario — no theoretical issues.
 
-**Leggi per primo `.claude/skills/luke-shared/audit-protocol.md`** e applicalo
-integralmente: scoping sul diff (§1), soppressione via baseline (§2), sezione
-obbligatoria "Promozione a regola" (§3), `lessons.md` come input di check (§4).
+**Read `.claude/skills/luke-shared/audit-protocol.md` first** and apply it in
+full: diff scoping (§1), baseline suppression (§2), the mandatory "Promotion
+to rule" section (§3), `lessons.md` as a check input (§4), and the
+constraint/heuristic classification (§8).
 
-Scope: risolvilo secondo §1 del protocollo condiviso — `$ARGUMENTS` vuoto significa
-**diff vs merge-base**, non intero monorepo.
+**This skill owns the systematic exploit hunt** for the application
+(`.claude/skills/luke-shared/governance-map.md`). Two boundaries:
 
-Eccezione allo scoping: i controlli su autenticazione, sessione e gestione dei
-token vanno valutati **sempre a livello di sistema**, anche quando il diff non li
-tocca. Un bypass nasce spesso dall'interazione fra codice nuovo e un controllo
-esistente altrove: qui limitare la lettura al diff nasconde proprio la classe di
-problemi che questa skill cerca.
+- **Dependency and supply-chain advisories are not yours.** A vulnerable
+  package, an override that still resolves to a patched version, a deprecated
+  security-sensitive dependency: `/luke-deps security`. The mechanical
+  correctness of a security gate — a scanner chain that does not fail closed —
+  is `/luke-deps platform`. What belongs here is the semantics: a recurring
+  injection pattern with no Semgrep rule is yours to propose (§3).
+- **`/luke-bugs` escalates to you.** It reports runtime defects and no longer
+  keeps its own IDOR / rate-limit / secret-exposure checklist. A bug carrying
+  `Security escalation: YES` arrives with a scenario but no exploitability
+  judgement — that judgement is this skill's job. Re-derive it from the code;
+  an escalation is a pointer, not a finding you inherit.
+
+**Invocation arguments:** $ARGUMENTS
+
+Resolve the invocation arguments above per `audit-protocol.md` §1 **before**
+running any git scope derivation. The whole bound value is the scope selector
+here — this skill takes no mode. If it is empty, use the protocol default —
+diff vs merge-base, not the whole monorepo. If it carries an explicit selector,
+that selector wins and the default is never derived.
+
+Exception to scoping: authentication, session, and token-handling checks must
+always be evaluated **at the system level**, even when the diff doesn't touch
+them. A bypass often arises from the interaction between new code and an
+existing control elsewhere — limiting the read to the diff here would hide
+exactly the class of problems this skill looks for.
 
 ---
 
@@ -42,9 +66,9 @@ If either plugin is not installed, note it in the report and continue.
 
 ---
 
-## Phase 2 — Aree di controllo
+## Phase 2 — Check Areas
 
-Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-protocol.md` §6.
+Three areas, one single pass. See the fan-out note in `../luke-shared/audit-protocol.md` §6.
 
 ### 1 — Authentication, Session & Token Security
 
@@ -55,7 +79,7 @@ Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-p
 5. **Password reset token entropy**: token generation using `Math.random()` or tokens shorter than 32 bytes (64 hex chars) — CRITICAL
 6. **Missing auth on tRPC procedures**: public procedures (no `requirePermission`) returning or modifying non-public data. Check especially: `getById` procedures, anything under `product.*` or `admin.*` routers
 7. **Privilege escalation via role assignment**: user update procedures — can non-admin change their own role or another user's role?
-8. **Admin-only endpoints reachable by editor**: `pricing:update`, `users:delete`, `maintenance:update`, `settings:update` — verify not reachable by editor through any code path
+8. **Admin-only endpoints reachable by editor**: every operation ADR-038 lists under "Admin-only operations" (`docs/decisions/038-resource-action-permissions-grants-follow-section-visibility.md`) and ADR-029 under "Admin-only operations" and "Maintenance" (`docs/decisions/029-resource-action-permissions-one-builder-logged-refusals.md`), plus any procedure called only from a page hidden to editor by default — verify not reachable by editor through any code path
 
 ---
 
@@ -76,7 +100,8 @@ Tre aree, un passaggio solo. Vedi la nota sul fan-out in `../luke-shared/audit-p
 **Sensitive data exposure:**
 
 1. tRPC responses including encrypted config values or password fields:
-   - `getNavConfig` must return `hasPassword: boolean`, not the password
+   - `config.list` must return `valuePreview: null` for every encrypted entry
+     (the NAV password included), never the stored value
    - `getLdapConfig` must return `hasBindPassword: boolean`, not the credential
    - User queries must not return password hash
 2. TRPCError messages including SQL error details, file paths, stack traces, or internal IDs sent to frontend
@@ -116,10 +141,10 @@ Fix:
 \`\`\`typescript
 // proposed fix
 \`\`\`
-Test di regressione: <file di destinazione + asserzione chiave>
+Regression test: <target file + key assertion>
 
-### Promozione a regola
-<sezione obbligatoria — vedi §3 del protocollo condiviso>
+### Promotion to rule
+<mandatory section — see §3 of the shared protocol>
 ```
 
 ### Rules

@@ -20,6 +20,7 @@ import {
   CompanyTeamMembershipRemoveInputSchema,
   CompanyTeamMembershipUpdateRoleInputSchema,
 } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { createNotification } from '../lib/notifications.js';
@@ -29,7 +30,6 @@ import { withRateLimit } from '../lib/ratelimit.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { deleteObjectByKey } from '../storage';
 
-import type { PrismaClient } from '@prisma/client';
 
 // ─── Profile ────────────────────────────────────────────────────────────────
 
@@ -161,32 +161,6 @@ const companyFunctionRouter = router({
           _count: { select: { teams: true } },
         },
       });
-    }),
-
-  /**
-   * Returns a company function by ID, including its teams and their membership counts.
-   *
-   * @auth company_function:read
-   * @input { id }
-   * @output CompanyFunction with teams
-   */
-  getById: protectedProcedure
-    .use(requirePermission('company_function:read'))
-    .input(z.object({ id: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const fn = await ctx.prisma.companyFunction.findUnique({
-        where: { id: input.id },
-        include: {
-          teams: {
-            include: {
-              _count: { select: { memberships: true } },
-            },
-            orderBy: [{ name: 'asc' }],
-          },
-        },
-      });
-      if (!fn) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
-      return fn;
     }),
 
   /**

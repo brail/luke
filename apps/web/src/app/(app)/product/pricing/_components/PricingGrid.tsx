@@ -155,9 +155,9 @@ export function PricingGrid({ sets }: PricingGridProps) {
                       return (
                         <TableCell
                           key={set.id}
-                          className={`text-sm tabular-nums ${fob <= 0 ? 'text-muted-foreground/50' : ''}`}
+                          className={`text-sm tabular-nums ${fob === null ? 'text-muted-foreground/50' : ''}`}
                         >
-                          {fob > 0 ? fob.toFixed(1) : '—'}
+                          {fob !== null ? fob.toFixed(1) : '—'}
                         </TableCell>
                       );
                     })}

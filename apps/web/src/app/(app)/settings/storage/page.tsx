@@ -1,15 +1,14 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
-import { APP_STORAGE_BUCKETS } from '@luke/core';
+import { storageSaveConfigSchema, type StorageSaveConfig } from '@luke/core';
 
-import { PageHeader } from '../../../../components/PageHeader';
 import { SectionCard } from '../../../../components/SectionCard';
+import { SensitiveField } from '../../../../components/settings/SensitiveField';
+import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -26,55 +25,23 @@ import { Label } from '../../../../components/ui/label';
 import { RadioGroup, RadioGroupItem } from '../../../../components/ui/radio-group';
 import { Switch } from '../../../../components/ui/switch';
 import { usePermission } from '../../../../hooks/usePermission';
+import { numberInputProps } from '../../../../lib/numberInput';
 import { useRefresh } from '../../../../lib/refresh';
 import { trpc } from '../../../../lib/trpc';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const onNumberChange = (onChange: (v: number) => void) =>
-  (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.valueAsNumber);
-
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-const localSchema = z.object({
-  type: z.literal('local'),
-  basePath: z
-    .string()
-    .min(1, 'Path richiesto')
-    .regex(
-      /^(\/|~\/)[a-zA-Z0-9_./-]*$/,
-      'Path deve iniziare con / oppure ~/'
-    ),
-  maxFileSizeMB: z.number().int().min(1).max(1000),
-  enableProxy: z.boolean(),
-});
-
-const minioSchema = z.object({
-  type: z.literal('minio'),
-  endpoint: z.string().min(1, 'Endpoint richiesto'),
-  port: z.number().int().min(1).max(65535),
-  useSSL: z.boolean(),
-  accessKey: z.string().min(1, 'Access key richiesta'),
-  secretKey: z.string().min(1, 'Secret key richiesta'),
-  region: z.string().min(1, 'Region richiesta'),
-  publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
-  presignedPutTtl: z.number().int().min(60).max(86400),
-  presignedGetTtl: z.number().int().min(60).max(86400),
-});
-
-const formSchema = z.discriminatedUnion('type', [localSchema, minioSchema]);
-type StorageForm = z.infer<typeof formSchema>;
+type StorageForm = StorageSaveConfig;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function StoragePage() {
-  const { status } = useSession();
   const refresh = useRefresh();
   const { can } = usePermission();
   const canUpdate = can('config:update');
 
-  const { data: config, isLoading } = trpc.storage.getConfig.useQuery(undefined);
+  const { data: config, isPending, error, refetch } = trpc.storage.getConfig.useQuery(undefined);
 
   const saveConfigMutation = trpc.storage.saveConfig.useMutation();
   const { mutate: saveConfig, isPending: isSaving } = useStandardMutation({
@@ -84,13 +51,23 @@ export default function StoragePage() {
     onErrorMessage: 'Errore durante il salvataggio',
   });
 
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; presignedUrlBase?: string } | null>(null);
-  const testMutation = trpc.storage.testMinioConnection.useMutation();
+  // The page is never sent the secret, so a blank field means "keep it" — and with none stored
+  // there is nothing to keep: say so on the field instead of after a round trip.
+  const submit = (data: StorageForm) => {
+    if (data.type === 's3' && !data.secretKey?.trim() && !config?.s3.hasSecretKey) {
+      form.setError('secretKey', { message: 'Secret key richiesta' });
+      return;
+    }
+    saveConfig(data);
+  };
+
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; presignedUrlBase?: string; publicBaseUrlConfigured?: boolean } | null>(null);
+  const testMutation = trpc.storage.testS3Connection.useMutation();
   const handleTestConnection = async () => {
     setTestResult(null);
     try {
       const result = await testMutation.mutateAsync();
-      setTestResult({ success: true, message: result.message, presignedUrlBase: result.presignedUrlBase });
+      setTestResult({ success: true, message: result.message, presignedUrlBase: result.presignedUrlBase, publicBaseUrlConfigured: result.publicBaseUrlConfigured });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Connessione fallita';
       setTestResult({ success: false, message: msg });
@@ -98,7 +75,7 @@ export default function StoragePage() {
   };
 
   const form = useForm<StorageForm>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(storageSaveConfigSchema),
     defaultValues: {
       type: 'local',
       basePath: '',
@@ -111,18 +88,18 @@ export default function StoragePage() {
 
   useEffect(() => {
     if (!config) return;
-    if (config.type === 'minio') {
+    if (config.type === 's3') {
       form.reset({
-        type: 'minio',
-        endpoint: config.minio.endpoint,
-        port: config.minio.port,
-        useSSL: config.minio.useSSL,
-        accessKey: config.minio.accessKey,
-        secretKey: config.minio.secretKey,
-        region: config.minio.region,
-        publicBaseUrl: config.minio.publicBaseUrl || '',
-        presignedPutTtl: config.minio.presignedPutTtl,
-        presignedGetTtl: config.minio.presignedGetTtl,
+        type: 's3',
+        endpoint: config.s3.endpoint,
+        port: config.s3.port,
+        useSSL: config.s3.useSSL,
+        accessKey: config.s3.accessKey,
+        secretKey: '',
+        region: config.s3.region,
+        publicBaseUrl: config.s3.publicBaseUrl || '',
+        presignedPutTtl: config.s3.presignedPutTtl,
+        presignedGetTtl: config.s3.presignedGetTtl,
       });
     } else {
       form.reset({
@@ -134,24 +111,20 @@ export default function StoragePage() {
     }
   }, [config, form]);
 
-  const disabled = !canUpdate || isLoading || isSaving;
-
-  if (status === 'loading') {
-    return <div className="flex items-center justify-center p-8 text-muted-foreground">Caricamento...</div>;
-  }
+  const disabled = !canUpdate || isSaving;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Configurazione Storage"
-        description="Gestisci il provider di storage per il salvataggio dei file"
-      />
-
+    <SettingsFormShell
+      title="Configurazione Storage"
+      description="Gestisci il provider di storage per il salvataggio dei file"
+      isPending={isPending}
+      error={error}
+      hasData={!!config}
+      onRetry={() => void refetch()}
+    >
       <Form {...form}>
         <form
-          onSubmit={form.handleSubmit(data =>
-            saveConfig(data.type === 'local' ? { ...data, buckets: [...APP_STORAGE_BUCKETS] } : data)
-          )}
+          onSubmit={form.handleSubmit(submit)}
           className="space-y-6"
         >
 
@@ -166,7 +139,7 @@ export default function StoragePage() {
                     <RadioGroup
                       value={field.value}
                       onValueChange={(val: string) => {
-                        if (val === 'local' || val === 'minio') {
+                        if (val === 'local' || val === 's3') {
                           if (val === 'local') {
                             form.reset({
                               type: 'local',
@@ -176,16 +149,16 @@ export default function StoragePage() {
                             });
                           } else {
                             form.reset({
-                              type: 'minio',
-                              endpoint: config?.minio.endpoint || 'minio',
-                              port: config?.minio.port ?? 9000,
-                              useSSL: config?.minio.useSSL ?? false,
-                              accessKey: config?.minio.accessKey || '',
-                              secretKey: config?.minio.secretKey || '',
-                              region: config?.minio.region || 'us-east-1',
-                              publicBaseUrl: config?.minio.publicBaseUrl || '',
-                              presignedPutTtl: config?.minio.presignedPutTtl ?? 3600,
-                              presignedGetTtl: config?.minio.presignedGetTtl ?? 3600,
+                              type: 's3',
+                              endpoint: config?.s3.endpoint || 'seaweedfs',
+                              port: config?.s3.port ?? 8333,
+                              useSSL: config?.s3.useSSL ?? false,
+                              accessKey: config?.s3.accessKey || '',
+                              secretKey: '',
+                              region: config?.s3.region || 'us-east-1',
+                              publicBaseUrl: config?.s3.publicBaseUrl || '',
+                              presignedPutTtl: config?.s3.presignedPutTtl ?? 3600,
+                              presignedGetTtl: config?.s3.presignedGetTtl ?? 3600,
                             });
                           }
                         }
@@ -208,19 +181,19 @@ export default function StoragePage() {
                         </div>
                       </Label>
                       <Label
-                        htmlFor="type-minio"
+                        htmlFor="type-s3"
                         className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
-                          storageType === 'minio' ? 'border-primary bg-primary/5' : 'border-border'
+                          storageType === 's3' ? 'border-primary bg-primary/5' : 'border-border'
                         } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
                       >
-                        <RadioGroupItem value="minio" id="type-minio" className="mt-0.5" />
+                        <RadioGroupItem value="s3" id="type-s3" className="mt-0.5" />
                         <div>
                           <div className="flex items-center gap-2 font-medium">
-                            MinIO (S3-compatible)
+                            Storage S3-compatibile
                             <Badge variant="secondary" className="text-xs">Raccomandato</Badge>
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            Object storage enterprise. Supporta upload presigned direttamente dal browser.
+                            Object storage enterprise (SeaweedFS o altro provider S3-compatibile). Supporta upload presigned direttamente dal browser.
                           </div>
                         </div>
                       </Label>
@@ -260,7 +233,7 @@ export default function StoragePage() {
                     <FormItem>
                       <FormLabel>Dimensione massima file (MB)</FormLabel>
                       <FormControl>
-                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" onChange={onNumberChange(field.onChange)} />
+                        <Input {...field} type="number" min={1} max={1000} disabled={disabled} className="w-32" {...numberInputProps(field.value, field.onChange)} />
                       </FormControl>
                       <FormDescription>Range: 1 – 1000 MB. Default: 50 MB.</FormDescription>
                       <FormMessage />
@@ -277,9 +250,9 @@ export default function StoragePage() {
                         <FormLabel>Proxy Next.js</FormLabel>
                         <FormDescription>
                           Se attivo, i file vengono serviti tramite <code>/api/uploads/…</code> — il server
-                          Next.js fa da proxy verso l'API. Nella topologia standard di produzione (unico
+                          Next.js fa da proxy verso l&apos;API. Nella topologia standard di produzione (unico
                           ingress pubblico sul container web, API non esposta direttamente) va lasciato
-                          attivo. Disabilitarlo solo se l'API è raggiungibile direttamente dal browser
+                          attivo. Disabilitarlo solo se l&apos;API è raggiungibile direttamente dal browser
                           (Public Base URL configurato).
                         </FormDescription>
                       </div>
@@ -294,10 +267,10 @@ export default function StoragePage() {
             </SectionCard>
           )}
 
-          {/* ── MinIO config ──────────────────────────────────────────────── */}
-          {storageType === 'minio' && (
+          {/* ── S3 config ──────────────────────────────────────────────────── */}
+          {storageType === 's3' && (
             <>
-              <SectionCard title="Connessione MinIO" description="Parametri di connessione al server MinIO">
+              <SectionCard title="Connessione S3" description="Parametri di connessione al server storage S3-compatibile">
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                     <FormField
@@ -307,9 +280,9 @@ export default function StoragePage() {
                         <FormItem className="sm:col-span-2">
                           <FormLabel>Endpoint</FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="minio" disabled={disabled} />
+                            <Input {...field} placeholder="seaweedfs" disabled={disabled} />
                           </FormControl>
-                          <FormDescription>Hostname o IP del server MinIO (senza protocollo).</FormDescription>
+                          <FormDescription>Hostname o IP del server storage (senza protocollo).</FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -321,7 +294,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>Porta</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={1} max={65535} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -350,7 +323,7 @@ export default function StoragePage() {
                         <FormItem className="flex items-center justify-between rounded-lg border p-3">
                           <div>
                             <FormLabel>HTTPS / TLS</FormLabel>
-                            <FormDescription>Attiva se MinIO usa SSL.</FormDescription>
+                            <FormDescription>Attiva se il server storage usa SSL.</FormDescription>
                           </div>
                           <FormControl>
                             <Switch checked={field.value} onCheckedChange={field.onChange} disabled={disabled} />
@@ -362,7 +335,7 @@ export default function StoragePage() {
                 </div>
               </SectionCard>
 
-              <SectionCard title="Credenziali MinIO" description="Access key e secret key (cifrate in DB)">
+              <SectionCard title="Credenziali S3" description="Access key e secret key (cifrate in DB)">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <FormField
                     control={form.control}
@@ -381,13 +354,17 @@ export default function StoragePage() {
                     control={form.control}
                     name="secretKey"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Secret Key</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="password" autoComplete="new-password" disabled={disabled} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                      <SensitiveField
+                        label={<>Secret Key {!config?.s3.hasSecretKey && <span className="text-red-500">*</span>}</>}
+                        hasValue={config?.s3.hasSecretKey ?? false}
+                        description={
+                          config?.s3.hasSecretKey
+                            ? 'Già salvata e cifrata. Lascia vuoto per mantenerla invariata.'
+                            : undefined
+                        }
+                        disabled={disabled}
+                        field={field}
+                      />
                     )}
                   />
                 </div>
@@ -404,13 +381,13 @@ export default function StoragePage() {
                         <FormControl>
                           <Input
                             {...field}
-                            placeholder="https://minio.example.com"
+                            placeholder="https://s3.example.com"
                             disabled={disabled}
                           />
                         </FormControl>
                         <FormDescription>
                           URL base per i bucket pubblici (brand-logos, collection-row-pictures).
-                          Se vuoto, viene costruito dall'endpoint e porta.
+                          Se vuoto, viene costruito dall&apos;endpoint e porta.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -425,7 +402,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned PUT (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per upload diretto. Default: 3600 (1h).</FormDescription>
                           <FormMessage />
@@ -439,7 +416,7 @@ export default function StoragePage() {
                         <FormItem>
                           <FormLabel>TTL presigned GET (secondi)</FormLabel>
                           <FormControl>
-                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} onChange={onNumberChange(field.onChange)} />
+                            <Input {...field} type="number" min={60} max={86400} disabled={disabled} {...numberInputProps(field.value, field.onChange)} />
                           </FormControl>
                           <FormDescription>Validità URL per download firmati. Default: 3600 (1h).</FormDescription>
                           <FormMessage />
@@ -452,9 +429,9 @@ export default function StoragePage() {
             </>
           )}
 
-          {/* ── MinIO test connection ─────────────────────────────────────── */}
-          {storageType === 'minio' && (
-            <SectionCard title="Test connessione" description="Verifica la connettività con il server MinIO salvato">
+          {/* ── S3 test connection ────────────────────────────────────────── */}
+          {storageType === 's3' && (
+            <SectionCard title="Test connessione" description="Verifica la connettività con il server storage salvato">
               <div className="space-y-3">
                 <Button
                   type="button"
@@ -462,7 +439,7 @@ export default function StoragePage() {
                   onClick={handleTestConnection}
                   disabled={testMutation.isPending}
                 >
-                  {testMutation.isPending ? 'Test in corso…' : 'Testa connessione MinIO'}
+                  {testMutation.isPending ? 'Test in corso…' : 'Testa connessione S3'}
                 </Button>
                 {testResult && (
                   <div className={`rounded-lg border p-3 text-sm ${testResult.success ? 'border-green-500/30 bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-300' : 'border-red-500/30 bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-300'}`}>
@@ -470,8 +447,8 @@ export default function StoragePage() {
                     {testResult.success && testResult.presignedUrlBase && (
                       <div className="mt-1 text-xs opacity-80">
                         URL presigned generati da: <code className="font-mono">{testResult.presignedUrlBase}</code>
-                        {testResult.presignedUrlBase.includes('minio') && (
-                          <span className="ml-2 text-amber-700 dark:text-amber-400">⚠ hostname Docker non raggiungibile dal browser — imposta Public Base URL</span>
+                        {!testResult.publicBaseUrlConfigured && (
+                          <span className="ml-2 text-amber-700 dark:text-amber-400">⚠ Public Base URL non impostato — l&apos;endpoint sopra potrebbe non essere raggiungibile dal browser</span>
                         )}
                       </div>
                     )}
@@ -522,24 +499,24 @@ export default function StoragePage() {
                 <div className="rounded-lg border bg-card p-3">
                   <div className="text-xs text-muted-foreground">Endpoint (interno)</div>
                   <div className="mt-1 font-mono text-sm">
-                    {config.minio.useSSL ? 'https' : 'http'}://{config.minio.endpoint}:{config.minio.port}
+                    {config.s3.useSSL ? 'https' : 'http'}://{config.s3.endpoint}:{config.s3.port}
                   </div>
                 </div>
                 <div className="rounded-lg border bg-card p-3">
                   <div className="text-xs text-muted-foreground">Public Base URL (browser)</div>
                   <div className="mt-1 font-mono text-sm truncate">
-                    {config.minio.publicBaseUrl || <span className="text-muted-foreground italic">non impostato</span>}
+                    {config.s3.publicBaseUrl || <span className="text-muted-foreground italic">non impostato</span>}
                   </div>
                 </div>
                 <div className="rounded-lg border bg-card p-3">
                   <div className="text-xs text-muted-foreground">Region</div>
-                  <div className="mt-1 font-semibold">{config.minio.region}</div>
+                  <div className="mt-1 font-semibold">{config.s3.region}</div>
                 </div>
               </>
             )}
           </div>
         </SectionCard>
       )}
-    </div>
+    </SettingsFormShell>
   );
 }

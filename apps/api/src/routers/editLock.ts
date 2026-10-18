@@ -7,22 +7,38 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { Permission } from '@luke/core';
+import type { LockEntityType } from '@luke/db';
 
-import { can } from '../lib/permissions';
+import { can, logAccessDenied } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
-import { router, protectedProcedure } from '../lib/trpc';
+import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.service';
 
 import type { Context } from '../lib/trpc';
 
-const LockEntityTypeSchema = z.enum(['SEASON_CALENDAR', 'COLLECTION_LAYOUT']);
+// Bound to the Prisma enum: an entry the enum does not have fails to compile.
+const LOCK_ENTITY_TYPES = ['SEASON_CALENDAR', 'COLLECTION_LAYOUT'] as const satisfies readonly LockEntityType[];
+const LockEntityTypeSchema = z.enum(LOCK_ENTITY_TYPES);
 const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.string().uuid() });
 const AcquireManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 const ReleaseManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 
-/** SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout update rights. */
-function permissionFor(entityType: z.infer<typeof LockEntityTypeSchema>): Permission {
-  return entityType === 'SEASON_CALENDAR' ? 'season_calendar:update' : 'collection_layout:update';
+/**
+ * SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout
+ * update rights. Exhaustive over the Prisma enum: a new lock type fails to compile here instead of
+ * silently inheriting one of these permissions.
+ */
+function permissionFor(entityType: LockEntityType): Permission {
+  switch (entityType) {
+    case 'SEASON_CALENDAR':
+      return 'season_calendar:update';
+    case 'COLLECTION_LAYOUT':
+      return 'collection_layout:update';
+    default: {
+      const unhandled: never = entityType;
+      throw new Error(`Unhandled lock entity type: ${String(unhandled)}`);
+    }
+  }
 }
 
 /**
@@ -31,8 +47,11 @@ function permissionFor(entityType: z.infer<typeof LockEntityTypeSchema>): Permis
  */
 function assertLockPermissions(ctx: Context, entities: { entityType: z.infer<typeof LockEntityTypeSchema> }[]) {
   const requiredPermissions = [...new Set(entities.map(e => permissionFor(e.entityType)))];
-  const missing = requiredPermissions.some(p => !can(ctx, p));
-  if (missing) throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
+  const missing = requiredPermissions.filter(p => !can(ctx, p));
+  if (missing.length > 0) {
+    logAccessDenied(ctx, { requestedPermissions: requiredPermissions, deniedPermissions: missing });
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Permesso mancante' });
+  }
 }
 
 export const editLockRouter = router({
@@ -46,6 +65,7 @@ export const editLockRouter = router({
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to lock.
    * @output {EditLock[]} — the upserted lock records (locked by the caller, with new expiresAt).
    */
+  // nosemgrep: luke-procedure-requires-permission -- assertLockPermissions checks every entity type's permission (AND), which requirePermission's array form (OR) cannot express
   acquireMany: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
@@ -63,6 +83,7 @@ export const editLockRouter = router({
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to renew.
    * @output {EditLock[]} — the renewed lock records with pushed-out expiresAt.
    */
+  // nosemgrep: luke-procedure-requires-permission -- same AND check as acquireMany, via assertLockPermissions
   renew: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
@@ -80,7 +101,7 @@ export const editLockRouter = router({
    * @input {ReleaseManyInputSchema} — non-empty array of { entityType, entityId } to release.
    * @output {{ success: true }}
    */
-  release: protectedProcedure
+  release: selfProcedure
     .use(withRateLimit('configMutations'))
     .input(ReleaseManyInputSchema)
     .mutation(async ({ input, ctx }) => {

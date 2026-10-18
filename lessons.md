@@ -1,234 +1,413 @@
 # Lessons Log
 
-Regole nate da correzioni ricevute durante lo sviluppo. Ogni volta che Claude
-viene corretto, aggiunge qui una regola per non ripetere l'errore
-(vedi CLAUDE.md → Regole di ingaggio).
+Rules born from corrections received during development. Every time Claude
+gets corrected, it adds a rule here to avoid repeating the mistake.
 
-Formato: `## <regola in una riga>` sotto la categoria giusta, con contesto,
-root cause e fix. Nuove categorie ammesse quando serve.
+Format: `### <rule in one line>` under the `##` category whose **readers** need
+it — file by audience, not topic — with context, root cause and fix. New
+categories allowed when needed.
+
+**Who reads what.** The `luke-*` skills read the Always row plus their own
+rows, never the whole file (`.claude/skills/luke-shared/audit-protocol.md` §4).
+A category missing from this table is read by every reader until it gets a row.
+
+| Category                    | Read by                                                      |
+| --------------------------- | ------------------------------------------------------------ |
+| Working Practice            | **Always** — every reader                                    |
+| TypeScript & Next.js        | luke-audit, luke-bugs                                        |
+| Prisma & PostgreSQL         | luke-audit, luke-bugs, luke-security                         |
+| tRPC & Fastify              | luke-audit, luke-bugs, luke-security                         |
+| Dependencies                | luke-deps                                                    |
+| Rate Limiting               | luke-audit, luke-bugs, luke-security                         |
+| Pentest / External Security | luke-security                                                |
+| Integration Tests           | luke-audit, luke-bugs, luke-test                             |
+| CI / Security Gates         | luke-deps                                                    |
+| Release / Docker            | luke-deps                                                    |
+| Branch management           | luke-deps                                                    |
+| Audit Log                   | luke-audit, luke-bugs, luke-security                         |
+| React & UI                  | luke-audit, luke-bugs                                        |
+| Turbo & Build               | luke-deps                                                    |
+| Skills & Agents             | no skill — whoever edits `.claude/skills/`                   |
+| Documentation & Comments    | luke-audit                                                   |
+| Browser & Local Test Runs   | luke-deps, luke-test                                         |
+
+**Archival policy**: once a lesson becomes fully covered by a deterministic
+check (an ESLint/semgrep rule, or a blocking CI/pre-push script — control
+hierarchy level 1-2 in `.claude/skills/luke-shared/audit-protocol.md` §3),
+trim it here to one line: `### <one line> — enforced by <mechanism>. See
+lessons-archive.md.` and move the full narrative to `lessons-archive.md`,
+which the `luke-*` audit skills don't read. Each audit run reads the lessons
+routed to it (§4 of the protocol); a lesson a machine already blocks on every
+push shouldn't also cost tokens there.
 
 ---
 
 ## TypeScript & Next.js
 
-### `as any` vietato — usare `as Route` per redirect con typedRoutes
+### Typed routes: refresh the local route types, never cast a route that exists
 
-Con `typedRoutes: true` in `next.config.js`, `redirect()` richiede un tipo `Route`.
-Per path validi a runtime ma non nel manifest statico (es. route group `(app)`), usare:
+With `typedRoutes: true`, `Link`, `redirect()` and the router accept only routes
+in the generated manifest (`.next/types`). CI's `tsc` never sees it — `next
+build` enforces it (`ci.yml`, "Build (web)"). Locally, `tsc` reads whatever the
+last build or `next typegen` wrote: a page added since is unknown, a deleted one
+still resolves. Run `pnpm --filter @luke/web exec next typegen` and restore
+`apps/web/next-env.d.ts` (it rewrites the import paths; never commit that)
+instead of casting. Six `as any` casts on sidebar links existed only to dodge a
+stale manifest, and would have let a misspelt route through (removed
+2026-10-04). `as Route` stays for a string no manifest can know, such as a path
+built at runtime; `as any` never.
 
-```typescript
-import type { Route } from 'next';
-redirect('/app/dashboard' as Route);
-```
-
-Mai `as any` — viola strict mode. Pattern già usato in `NotificationDropdown.tsx`.
-
-### `crypto.randomUUID()` bare in un componente client crasha fuori da secure context
-
-`settings/collection-control/page.tsx` chiamava `crypto.randomUUID()` diretto per
-generare le key React di `BandSetEditor`. In produzione, su un host raggiunto
-via HTTP semplice (non HTTPS/localhost), il Web Crypto API non espone
-`randomUUID` — `TypeError: crypto.randomUUID is not a function`, pagina intera
-sostituita dall'error boundary di `app/error.tsx`. Il pattern corretto esisteva
-già in due punti del repo (`lib/trpc.tsx`, `CollectionRowDrawer.tsx`) ma non era
-stato applicato qui: bug noto, fix noto, semplicemente non riusato.
-
-Corretto in loco con il fallback già in uso altrove:
-
-```ts
-crypto.randomUUID?.() || Math.random().toString(36).substring(2) + Date.now().toString(36)
-```
-
-ma un fix inline non impedisce la ricorrenza — richiesto esplicitamente di
-**promuovere a regola** invece di limitarsi a patchare il file. Creata
-`@luke/no-bare-client-random-uuid` in `packages/eslint-plugin-luke/rules/`:
-segnala `crypto.randomUUID()` non-opzionale in qualunque file con direttiva
-`'use client'` in testa (i Server Component girano in Node, dove l'API è
-sempre disponibile — la regola li ignora per costruzione, controllando `Program.body[0]`).
-Wired in `eslint.config.mjs` scoping su `apps/web/src/**`, error.
-
-**Regola**: un bug di runtime dovuto a un'API che il codice usa in un solo
-posto "per errore" mentre altrove è già gestita correttamente va chiuso con
-una regola ESLint enforced, non con la sola correzione del call site — il
-prossimo `crypto.randomUUID()` bare va bloccato al commit, non scoperto in
-produzione da un errore generico senza stack trace visibile all'utente.
+### Bare `crypto.randomUUID()` in a client component — enforced by ESLint `@luke/no-bare-client-random-uuid` (error, `apps/web/src/**`). See `lessons-archive.md`.
 
 ---
 
 ## Prisma & PostgreSQL
 
-### Soft-delete + slug uniqueness: usare partial index PostgreSQL
+### Soft-delete + slug uniqueness: use a PostgreSQL partial index
 
-Quando un modello ha soft-delete (`isActive: Boolean`) e uno slug che deve restare unico tra i record attivi, la soluzione corretta è un **partial unique index PostgreSQL**:
+When a model has soft-delete (`isActive: Boolean`) and a slug that must stay
+unique among active records, the correct solution is a **PostgreSQL partial
+unique index**:
 
 ```sql
 CREATE UNIQUE INDEX IF NOT EXISTS "company_functions_slug_active_key"
   ON "company_functions"("slug") WHERE "isActive" = true;
 ```
 
-Prisma non supporta partial indexes nel DSL — va aggiunto a mano nella migration SQL.
-Rimuovere `@unique` dallo slug in schema.prisma e aggiungere `@@index([slug])` per le query.
+Prisma doesn't support partial indexes in its DSL — it has to be added by
+hand in the migration SQL. Remove `@unique` from the slug in schema.prisma
+and add `@@index([slug])` for queries.
 
-Nel router aggiungere guard esplicita in `create` (distingue slug-attivo vs slug-disattivato con messaggio chiaro) e procedure `restore` con anti-collision check.
+In the router, add an explicit guard in `create` (distinguishes
+active-slug vs. deactivated-slug with a clear message) and a `restore`
+procedure with an anti-collision check.
 
-**Alternativa DB-agnostica** (se mai si cambia DB): al soft-delete, nullare lo slug e salvarlo in `slugOriginal`. `NULL != NULL` in SQL → `@unique` funziona su tutti i DB. Per ora over-engineering: il progetto è locked su PostgreSQL.
+**DB-agnostic alternative** (if the DB ever changes): on soft-delete, null
+out the slug and save it in `slugOriginal`. `NULL != NULL` in SQL → `@unique`
+works across every DB. For now this is over-engineering: the project is
+locked to PostgreSQL.
 
-### `prisma migrate deploy` su DB dev locale può bloccarsi per drift con `db push`
+### `prisma migrate deploy` on the local dev DB can get stuck on drift with `db push`
 
-Il workflow per nuove migration usa `db push` (porta 5432) — questo NON scrive su
-`_prisma_migrations`. Se in passato è stato lanciato `migrate deploy` sullo stesso DB,
-può fallire a metà lasciando una riga `finished_at = NULL` che blocca ogni deploy successivo.
+The workflow for new migrations uses `db push` (port 5432) — this does NOT
+write to `_prisma_migrations`. If `migrate deploy` was run on the same DB in
+the past, it can fail halfway through, leaving a row with
+`finished_at = NULL` that blocks every subsequent deploy.
 
-Diagnosi e fix completi: `docs/prisma-migration-workflow.md` → Troubleshooting.
-Regola: mai `resolve --applied` senza aver verificato che il DB rifletta davvero quello stato.
+Full diagnosis and fix: `docs/prisma-migration-workflow.md` → Troubleshooting.
+Rule: never `resolve --applied` without having verified that the DB actually
+reflects that state.
+
+### A read-only `psql` session: `PGOPTIONS='-c default_transaction_read_only=on'`
+
+`PGOPTIONS` carries server command-line options, so each setting takes `-c`;
+without it the server refuses the connection ("invalid command-line argument for
+server process") before any query runs — 2026-10-12, a read-only count handed to
+the owner for RC and production. Rule: `docker exec -e PGOPTIONS='-c
+default_transaction_read_only=on' -i <container> psql …`, and try a command meant
+for the owner on a throwaway Postgres first.
+
+### A data migration translates from the old reader, not from a summary of it (2026-10-01)
+
+**What happened.** Planning the migration of pre-ADR-025 section overrides (R2), I described the old
+role default as "stored value, or the permission fallback when absent". The old reader has two
+different absences: a section missing from a role the stored map contains falls to the permission
+fallback, but a role the map does not contain keeps the whole static table. With a map that omits
+the viewer role, the plan would have inserted `admin.brands = true` for a viewer whose parent
+override was `true` — widening access in a migration meant to preserve it. Codex found it in the
+first review round, by reading `getRbacConfig`'s per-role spread next to the plan.
+
+**Rule.** Before writing a migration that preserves behaviour, derive its "before" value as one
+function from the old reader's code, branch by branch (which key is absent, which value is invalid,
+which flag it ignores), and use that single function everywhere the migration needs the old value.
+Test each absence separately, including the one where the containing object itself is missing.
 
 ---
 
 ## tRPC & Fastify
 
-### tRPC 11.18 + Fastify: UNSUPPORTED_MEDIA_TYPE / Unable to transform
+### A wrapper that forwards `err.message` forwards everything its `try` can throw (2026-09-26)
 
-**Problema**: upgrade tRPC 11.8→11.18 introduce protocollo streaming JSONL (`trpc-accept: application/jsonl`). Sia `httpBatchLink` che `httpBatchStreamLink` danno errori runtime.
+**What happened.** Planning X15 (let 4xx tRPC messages reach clients in
+production), I cleared the three backup-restore preflight sites that turn a
+caught error into `PRECONDITION_FAILED` with the caught message. Two arguments:
+the audience is an admin, and "the same texts already reach the admin through
+the `Backup.errorMessage` tooltip". Both were wrong. The review traced the `try`
+blocks: they also catch a Prisma driver error, filesystem errors carrying local
+paths, and `pg_restore` stderr. And the tooltip path belongs to the backup job;
+the restore has no record of its own, so this response was the only exit.
 
-**Root cause**: tRPC 11.18 aggiunge `isDataStream()` check — lancia `UNSUPPORTED_MEDIA_TYPE` se una procedura ritorna un oggetto con valori `Promise` o `AsyncIterable` in path non-streaming. Il Fastify custom content-type parser interferisce con `incomingMessageToRequest`.
-
-**Fix**: usare `httpBatchStreamLink` (import da `@trpc/client`, non `@trpc/react-query`) + aggiungere `trpc-accept: application/jsonl` esplicito nelle headers custom del client. Indagare quale procedura ritorna Promise-valued fields non awaited.
+**Rule.** Before accepting a site that puts a caught error's message into a
+client-visible response, list what the `try` block can actually throw — every
+awaited call, down to the driver, the filesystem and child processes — not what
+its authors wrote it to throw. A refusal written for the reader gets its own
+error type and keeps its code; anything else is a server fault. "Only an admin
+sees it" limits the exposure, it does not make the text safe. And a claim that a
+text "already reaches" some surface is a path claim: trace that path for this
+caller, not for a neighbouring one.
 
 ---
 
 ## Dependencies
 
-### Non duplicare librerie per lo stesso scopo
+### Don't duplicate libraries for the same purpose
 
-Se una libreria è già installata nel progetto (es. `pdfmake`), usarla — mai aggiungerne un'altra che fa la stessa cosa (es. `pdfkit`). Controllare sempre `package.json` prima di installare nuove dipendenze.
+If a library is already installed in the project (e.g. `pdfmake`), use it —
+never add another one that does the same thing (e.g. `pdfkit`). Always check
+`package.json` before installing new dependencies.
+
+### tRPC 11.18 + Fastify: UNSUPPORTED_MEDIA_TYPE / Unable to transform
+
+**Problem**: upgrading tRPC 11.8→11.18 introduces the JSONL streaming
+protocol (`trpc-accept: application/jsonl`). Both `httpBatchLink` and
+`httpBatchStreamLink` throw runtime errors.
+
+**Root cause**: tRPC 11.18 adds an `isDataStream()` check — it throws
+`UNSUPPORTED_MEDIA_TYPE` if a procedure returns an object with `Promise` or
+`AsyncIterable` values on a non-streaming path. The Fastify custom
+content-type parser interferes with `incomingMessageToRequest`.
+
+**Fix**: use `httpBatchStreamLink` (imported from `@trpc/client`, not
+`@trpc/react-query`) + add an explicit `trpc-accept: application/jsonl`
+header in the client's custom headers. Investigate which procedure returns
+non-awaited Promise-valued fields.
+
+The custom `application/json` parser in `apps/api/src/server.ts` is gone
+(#95): tRPC's Fastify adapter registers its own parser in its own plugin
+scope, which covers its routes, and Fastify 5's built-in one already accepts
+a `charset` suffix.
 
 ---
 
 ## Rate Limiting
 
-### Nuova route rate-limited: aggiornare ENTRAMBE le mappe (drift = crash runtime)
+### New rate-limited route: keep `RATE_LIMIT_CONFIG`, the policy defaults and `RateLimitConfigSchema` in step — enforced by `apps/api/test/ratelimit.spec.ts` ("Rate limit map consistency", unit suite, blocking in CI and pre-push). See `lessons-archive.md`.
 
-Il rate limit vive in due mappe separate che devono restare in sync:
+### A `keyBy: 'ip'` bucket on a server-to-server call is silently useless
 
-- `RATE_LIMIT_CONFIG` in `apps/api/src/lib/ratelimit.ts` — consumata da `withRateLimit(routeName)`.
-- `DEFAULTS` in `apps/api/src/lib/rateLimitPolicy.ts` — consumata da `resolveRateLimitPolicy()` (cascata AppConfig → ENV → default).
+**Problem**: a Strix pentest against RC reports `/api/auth/callback/credentials`
+with no observable throttling (18 attempts, all `200 OK`, no `429`).
 
-`withRateLimit('foo')` chiama `resolveRateLimitPolicy('foo')`: se `foo` esiste solo in `RATE_LIMIT_CONFIG` ma NON in `DEFAULTS`, `DEFAULTS[routeName]` è `undefined` → `def.max` lancia `Cannot read properties of undefined (reading 'max')` a runtime (non a compile-time: il cast al call site nasconde il drift a TypeScript).
+**Root cause**: `auth.login` already had `withRateLimit('login')` (5/60s,
+`keyBy: 'ip'`), but `apps/web/src/auth.ts` calls `auth.login`
+**server-to-server** (direct fetch to `INTERNAL_API_URL`, doesn't go through
+the reverse proxy). Without explicitly forwarding the original client's IP,
+`ctx.req.ip` on apps/api always resolves to the same internal address (the
+web container) for **any** user — a bucket shared by the whole app instead
+of being per-attacker. On top of that, NextAuth v5 always responds `200`
+when `authorize()` returns `null`, so even a limiter that does trigger is
+invisible from the outside: the pentest's observation doesn't prove the
+protection is missing, it only proves the signal doesn't cross that boundary.
 
-**Regola**: ogni nuova route rate-limited va aggiunta in TRE posti in sync:
-1. `RATE_LIMIT_CONFIG` (`ratelimit.ts`)
-2. `DEFAULTS` (`rateLimitPolicy.ts`) — **obbligatorio, altrimenti crash**
-3. `RateLimitConfigSchema` (`packages/core/src/schemas/appConfig.ts`) — campo `.optional()`, altrimenti un override AppConfig/ENV viene silenziosamente ignorato dal resolver.
+**Rule**: a `keyBy: 'ip'` bucket added on an endpoint also reachable via a
+server-to-server call (not just browser→proxy→api) must always come with
+(1) explicit forwarding of the real IP on that internal call and (2) a test
+that demonstrates *per-attacker* behavior — a test on the config's shape
+isn't enough. See `apps/api/test/ratelimit.integration.spec.ts`, describe
+`blocks valid credentials too`, and CLAUDE.md → Development Patterns #12/#13.
 
-Regressione reale: `navSyncTrigger` mancante da `DEFAULTS` → sync fornitori NAV in crash in produzione (hotfix v1.9.1).
+### Login endpoint: an IP bucket alone doesn't stop password-spray
 
-### Bucket `keyBy: 'ip'` su una chiamata server-to-server è silenziosamente inutile
+A `keyBy: 'ip'` bucket stops an attacker hammering a single IP, but not a
+spray distributed across many IPs against a single account. Login (and
+every credential-verification endpoint) must **always** have a second
+`keyBy` bucket on identity (username/account) in addition to the IP one.
+Pattern: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts` —
+the second bucket is checked inside `verifyCredentials()` (`auth.service.ts`),
+which every public endpoint verifying the account's current password calls (`authenticateUser`,
+`auth.submitPendingEmail`, `auth.resendVerification`), not via `withRateLimit()`, because the key
+(username) lives in the procedure's input, not in `ctx`.
 
-**Problema**: pentest Strix su RC segnala `/api/auth/callback/credentials` senza throttling osservabile (18 tentativi, tutti `200 OK`, nessun `429`).
+---
 
-**Root cause**: `auth.login` aveva già `withRateLimit('login')` (5/60s, `keyBy: 'ip'`), ma `apps/web/src/auth.ts` chiama `auth.login` **server-to-server** (fetch diretta a `INTERNAL_API_URL`, non passa dal reverse proxy). Senza inoltrare esplicitamente l'IP del client originale, `ctx.req.ip` su apps/api risolve sempre allo stesso indirizzo interno (il container web) per **qualunque** utente — un bucket condiviso da tutta l'app invece che per-attaccante. In più, NextAuth v5 risponde sempre `200` quando `authorize()` ritorna `null`, quindi anche un limiter che scatta è invisibile dall'esterno: l'osservazione del pentest non prova che manchi la protezione, prova solo che il segnale non attraversa quel confine.
+## Pentest / External Security
 
-**Regola**: un bucket `keyBy: 'ip'` aggiunto su un endpoint raggiungibile anche via una chiamata server-to-server (non solo browser→proxy→api) va sempre accompagnato da (1) inoltro esplicito dell'IP reale su quella chiamata interna e (2) un test che dimostri il comportamento *per-attaccante* — non basta il test sul formato della config. Vedi `apps/api/test/ratelimit.integration.spec.ts`, describe `blocks valid credentials too`, e CLAUDE.md → Development Patterns #12/#13.
+### Strix (or other) scans must be pointed ONLY at real deployed hostnames
 
-### Endpoint di login: bucket IP da solo non ferma il password-spray
+**Problem**: a Strix scan against `http://host.docker.internal:3000` reported
+"development mode information disclosure" (stack trace, absolute paths,
+`next-devtools` exposed).
 
-Un bucket `keyBy: 'ip'` ferma un attaccante che martella un IP, ma non uno spray distribuito su molti IP contro un singolo account. Login (e ogni endpoint credential-verification) deve avere **sempre** un secondo bucket `keyBy` sull'identità (username/account) oltre a quello IP. Pattern: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts` — il secondo bucket è verificato direttamente in `authenticateUser()` (`auth.service.ts`), non tramite `withRateLimit()`, perché la chiave (username) vive nell'input della procedura, non in `ctx`.
+**Root cause**: the scanner was running inside a Docker container on the
+same machine as the developer; `host.docker.internal` is the Docker Desktop
+alias that resolves to the host — it simply reached the local `pnpm dev`
+(`next dev`, dev mode by design), not a real environment. Verified:
+Dockerfile/every `docker-compose*.yml`/CI always run a production
+`next build` (today served by Next's standalone server, `node
+apps/web/server.js`); no real deploy path can ever serve dev mode.
 
-## Pentest / Sicurezza esterna
+**Rule**: a security scan must **always** be pointed at a genuinely deployed
+hostname (`rc.luke.febos.local`, prod domain), never at
+`localhost`/`host.docker.internal`. A "development mode disclosure" against
+either of these is a false positive by construction, not a finding to triage.
 
-### Scan Strix (o altri) vanno puntati SOLO su hostname reali deployati
+### An absolute security claim over an external system cannot be defended with machinery (2026-09-30)
 
-**Problema**: uno scan Strix contro `http://host.docker.internal:3000` ha segnalato "development mode information disclosure" (stack trace, path assoluti, `next-devtools` esposti).
+**What happened.** Planning the LDAP outage reporting (an unreachable directory was answered as
+"invalid credentials"), I wrote the requirement as "the public answer never depends on which
+username was typed" and then defended it across three review rounds by adding mechanism: an answer
+chosen per phase, a login-wide circuit breaker, a decoy bind for absent users. Each round found a
+way around it, because the property is not Luke's to guarantee: authentication is delegated to a
+directory that may treat one entry differently from another, and every public availability signal
+fed by an operation that carries the candidate — the 503, and the shared breaker's state — is a
+possible channel.
 
-**Root cause**: lo scanner girava dentro un container Docker sulla stessa macchina dello sviluppatore; `host.docker.internal` è l'alias Docker Desktop che risolve all'host — ha semplicemente raggiunto il `pnpm dev` locale (`next dev`, dev mode per design), non un ambiente reale. Verificato: Dockerfile/tutti i `docker-compose*.yml`/CI buildano sempre `next build` + `next start` con `NODE_ENV=production`; nessun path di deploy reale può servire dev mode.
+**Rule.** For behaviour delegated to a system Luke does not control, claim only what holds by
+construction, and take the rest to the owner as an explicit decision instead of engineering around
+it. Here the constructible boundary was "what happens before the candidate is sent": the
+configuration check and the service-account bind. Driving the 503 and the breaker from that alone
+made the design smaller than the one it replaced. A second failed review round on the same
+requirement is the signal to reopen the requirement, not to add a third mechanism.
 
-**Regola**: uno scan di sicurezza va **sempre** puntato su un hostname realmente deployato (`rc.luke.febos.local`, dominio prod), mai su `localhost`/`host.docker.internal`. Un "development mode disclosure" contro uno di questi due è un falso positivo per costruzione, non un finding da triagare.
+---
 
-## Test di integrazione
+## Integration Tests
 
-### L'ordine dei file di test non è alfabetico né stabile
+### Test file order is neither alphabetical nor stable
 
-Vitest usa un proprio sequencer: due esecuzioni su macchine diverse possono
-eseguire i file in ordine diverso. Ogni suite che assume "un'altra ha già
-creato le tabelle" o "un'altra ha già pulito i dati" funziona **per caso**.
+Vitest has its own sequencer: two runs on different machines can execute
+files in a different order. Any suite that assumes "another one has already
+created the tables" or "another one has already cleaned the data" works
+**by accident**.
 
-Regressione reale: il job CI `integration` è fallito al primo giro con 40 test
-rossi, mentre in locale passava da mesi. Due cause, entrambe invisibili su un
-database già popolato:
+Real regression: the `integration` CI job failed on its very first run with
+40 red tests, while it had been passing locally for months. Two causes, both
+invisible on an already-populated database:
 
-- `resetTestData()` memoizzava l'elenco tabelle **anche quando vuoto**. Su un
-  database senza schema la query tornava zero righe, venivano memoizzate, e da
-  lì in poi la funzione era un no-op silenzioso per tutto il file: i test
-  giravano senza isolamento e collidevano sui dati a codice fisso.
-- quattro suite costruivano le fixture con `createTestPrismaClient()` in
-  `beforeAll`, prima di qualunque `ensureTestSchema()`.
+- `resetTestData()` memoized the table list **even when empty**. On a
+  database with no schema the query returned zero rows, they got memoized,
+  and from then on the function was a silent no-op for the rest of the
+  file: tests ran without isolation and collided on fixed-code data.
+- four suites built fixtures with `createTestPrismaClient()` in `beforeAll`,
+  before any `ensureTestSchema()`.
 
-**Regole**:
+**Rules**:
 
-1. Una suite di integrazione ottiene il client **solo** da `setupTestDb()` o
-   `createTestContext()` — mai da `createTestPrismaClient()` diretto. Entrambi
-   garantiscono lo schema e troncano.
-2. Mai memoizzare un risultato vuoto se il vuoto è uno stato transitorio: o si
-   garantisce la precondizione prima di calcolarlo, o non si memoizza.
-3. Un helper di isolamento che non riesce a isolare deve **sollevare**, non
-   proseguire: test senza isolamento passano verdi e non provano niente.
-4. Prima di dichiarare verde una suite di integrazione, provarla almeno una
-   volta su un database vergine (`DROP SCHEMA public CASCADE; CREATE SCHEMA
-   public;`). Un DB di sviluppo accumula stato che maschera le dipendenze
-   d'ordine.
+1. An integration suite gets its client **only** from `setupTestDb()` or
+   `createTestContext()` — never from `createTestPrismaClient()` directly.
+   Both guarantee the schema and truncate.
+2. Never memoize an empty result if empty is a transient state: either
+   guarantee the precondition before computing it, or don't memoize it.
+3. An isolation helper that fails to isolate must **throw**, not proceed:
+   tests without isolation pass green and prove nothing.
+4. Before declaring an integration suite green, run it at least once against
+   a pristine database (`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`).
+   A development DB accumulates state that masks ordering dependencies.
 
-## CI / Gate di sicurezza
+### A new integration test that calls a procedure needs the full suite before the push
 
-### Un job `schedule` gira solo se il workflow esiste sul branch di default
+`apps/api/test/procedure-coverage.ts` declares, per router, how many tRPC procedures no integration
+spec invokes, and the gate fails when the measured count differs. It is checked only on a full run: a
+partial one (`vitest run --config vitest.integration.config.mts <spec>`) prints `[procedure-coverage]
+partial run … gate not applied`. A test added to `configDefaults.integration.spec.ts` started calling
+`maintenance.backup.getScheduleConfig`; the full suite had been run before the test was written, the
+spec alone after, and CI failed on "9 uninvoked procedures declared, 8 measured" (2026-10-10, `cd3e3ae5`).
 
-GitHub esegue i trigger `schedule` usando i file di workflow del **branch di
-default**, non del branch dove il file è stato scritto. Un `cron` su un workflow
-che vive solo su un branch di sviluppo non parte mai, e non produce alcun
-errore: semplicemente non esiste alcuna esecuzione.
+**Rule:** when a unit adds, removes or changes which procedures an integration spec calls, the last gate
+before the commit is a full `pnpm test:integration:local` (dev stopped); a changed count is updated with
+its reason in `procedure-coverage.ts`, in the same commit.
 
-Regressione reale: `security.yml` aveva `osv-push` con `continue-on-error: true`
-("report-only sui push") e `osv-weekly` bloccante, con il commento *"il fail
-settimanale è il segnale vero"*. Ma `security.yml` esisteva solo su
-`develop-2.1`, mai su `main`: in 24 esecuzioni del workflow, zero da schedule.
-L'unico job che girava era volutamente non bloccante, e quello bloccante non
-aveva un file da eseguire. Sono passate inosservate 24 vulnerabilità note — 3
-critiche (CVSS 9.1) su `next-auth`/`@auth/core`, fra cui un bypass di
-autenticazione via omoglifi nella normalizzazione email.
+### A test that starts from a sub-router skips composition
 
-**Regole**:
+`brand.integration.spec.ts` used `brandRouter.createCaller(ctx)`. But
+`router({ brand: brandRouter })` does **not** preserve `brandRouter`:
+`createRouterFactory` rebuilds an aggregate from it, and the imported
+sub-router keeps its own separate `_def.procedures` map. The test was
+therefore exercising a path production never takes — production always
+enters through `appRouter`.
 
-1. Prima di affidare un controllo a un `schedule`, verificare che il workflow
-   sia sul branch di default: `git ls-tree --name-only origin/main .github/workflows/`.
-2. Controllare che sia davvero partito almeno una volta:
-   `gh run list --workflow <nome> --limit 30 --json event -q '.[].event' | sort | uniq -c`.
-   Zero `schedule` significa che il gate non esiste.
-3. `continue-on-error: true` su un job di sicurezza va accompagnato da un gate
-   che blocca davvero, e quel gate va verificato in esecuzione — non solo scritto.
-4. Un workflow che risulta `success` non dice che i suoi job siano passati:
-   `continue-on-error` maschera il fallimento a livello di run. Guardare i job:
+Found by the procedure-coverage gate, which measures invocations against
+`appRouter`: the best-tested router in the repo showed up as 7/7 not invoked.
+
+**Rule**: in tRPC tests, build the caller from `appRouter` and descend to
+the namespace (`appRouter.createCaller(ctx).brand`), never from the
+imported sub-router. Call-site shape stays identical.
+
+### `vi.mock` doesn't always intercept: assert on the effect, not on the spy
+
+In the company logo test, `vi.mock('../src/storage', ...)` never reached the
+import of `deleteObjectByKey` done by `routers/company.ts` — not with that
+specifier nor with `'../src/storage/index.js'`. The router called the real
+function, the best-effort `catch` swallowed it, and the spy stayed at zero
+calls. Diagnosed only by putting `(fn as any)._isMockFunction` inside a
+temporary throw.
+
+**Rule**: when a module mock doesn't intercept, before fighting resolution
+it's worth asking whether the effect is observable elsewhere.
+`deleteObjectByKey` also deletes the `FileObject` row, so
+
+```ts
+expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
+```
+
+is shorter than fighting the mock **and** stronger: it proves the real
+function ran, not that a stub was called.
+
+Only applies when the effect is real and observable. If the collaborator is
+genuinely external (network, SMTP), the mock remains the only way and has
+to be made to work.
+
+---
+
+## CI / Security Gates
+
+### A `schedule` job only runs if the workflow exists on the default branch
+
+GitHub runs `schedule` triggers using the workflow files from the **default
+branch**, not the branch where the file was written. A `cron` on a workflow
+that only lives on a development branch never fires, and produces no error:
+there's simply no execution at all.
+
+Real regression: `security.yml` had `osv-push` with
+`continue-on-error: true` ("report-only on pushes") and a blocking
+`osv-weekly`, with the comment *"the weekly failure is the real signal"*.
+But `security.yml` only existed on `develop-2.1`, never on `main`: across 24
+workflow executions, zero came from `schedule`. The only job that ran was
+deliberately non-blocking, and the blocking one had no file to run from. 24
+known vulnerabilities went unnoticed — 3 critical (CVSS 9.1) in
+`next-auth`/`@auth/core`, including an authentication bypass via homoglyphs
+in email normalization.
+
+**Rules**:
+
+1. Before relying on a `schedule` for a check, verify the workflow is on the
+   default branch: `git ls-tree --name-only origin/main .github/workflows/`.
+2. Check that it actually fired at least once:
+   `gh run list --workflow <name> --limit 30 --json event -q '.[].event' | sort | uniq -c`.
+   Zero `schedule` events means the gate doesn't exist.
+3. `continue-on-error: true` on a security job must be paired with a gate
+   that actually blocks, and that gate must be verified in execution — not
+   just written.
+4. A workflow that shows `success` doesn't mean its jobs passed:
+   `continue-on-error` masks the failure at the run level. Look at the jobs:
    `gh run view <id> --json jobs -q '.jobs[] | "\(.conclusion)\t\(.name)"'`.
 
-### Gli `overrides` di pnpm possono pinnare una versione vulnerabile
+### pnpm `overrides` can pin a vulnerable version
 
-`pnpm-workspace.yaml` conteneva `brace-expansion@1: '1.1.16'` e analoghi, aggiunti
-per deduplicare. Quando è uscita GHSA-mh99-v99m-4gvg (range `<= 5.0.7`, fix solo
-in 5.0.8) l'override ha continuato a forzare la versione vulnerabile, e
-`pnpm update` non poteva farci nulla: l'override vince.
+`pnpm-workspace.yaml` contained `brace-expansion@1: '1.1.16'` and similar,
+added to deduplicate. When GHSA-mh99-v99m-4gvg came out (range `<= 5.0.7`,
+fix only in 5.0.8) the override kept forcing the vulnerable version, and
+`pnpm update` couldn't do anything about it: the override wins.
 
-**Regola**: un override che pinna una versione **esatta** è debito a scadenza. Se
-si pinna, pinnare un range (`'>=x.y.z'`) e rivedere gli override ad ogni finding
-di `pnpm security:deps`.
+**Rule**: an override that pins an **exact** version is debt with an
+expiry date. If you pin, pin a range (`'>=x.y.z'`) and review the overrides
+on every `pnpm security:deps` finding.
 
-### Le negazioni in `.gitignore` non rientrano sotto una directory esclusa
+**Enforced since 2026-10-04** for the exact-pin half: P15 in
+`tools/scripts/check-platform-integrity.ts` refuses an exact override and one
+whose own comment names no GHSA or CVE id. Reviewing the block on every finding
+stays manual.
 
-`.gitignore` conteneva `.claude/`. Aggiungere `!.claude/skills/**` sotto quella
-riga **non** avrebbe funzionato: un pattern che esclude una directory fa sì che
-git non la percorra affatto, e nessuna negazione al suo interno può più
-riammettere nulla. Il fix sarebbe stato scritto, committato, e silenziosamente
-inerte — con le skill ancora fuori da git.
+### Negations in `.gitignore` don't reach inside an excluded directory
 
-La forma corretta esclude il **contenuto** un livello sotto, perché `*` non
-matcha `/`:
+`.gitignore` contained `.claude/`. Adding `!.claude/skills/**` below that
+line **would not** have worked: a pattern that excludes a directory makes
+git skip traversing it entirely, and no negation inside it can re-include
+anything. The fix would have been written, committed, and silently inert —
+with the skills still outside git.
+
+The correct form excludes the **content** one level below, because `*`
+doesn't match `/`:
 
 ```gitignore
 .claude/*
@@ -238,229 +417,603 @@ matcha `/`:
 .claude/settings.local.json
 ```
 
-**Regole**:
+**Rules**:
 
-1. Per riammettere qualcosa dentro una directory ignorata, escludere `dir/*`,
-   mai `dir/`.
-2. Verificare sempre con l'**exit code**, non con l'output: `git check-ignore -v`
-   stampa la regola anche quando è una negazione (prefissata `!`), quindi
-   "ha stampato qualcosa" non significa "è ignorato". Usare
-   `git check-ignore -q <file>` — 0 = ignorato, 1 = tracciabile.
-3. Controprova finale: `git add -An <dir>` elenca esattamente ciò che entrerebbe.
+1. To re-include something inside an ignored directory, exclude `dir/*`,
+   never `dir/`.
+2. Always verify with the **exit code**, not the output:
+   `git check-ignore -v` prints the rule even when it's a negation (prefixed
+   `!`), so "it printed something" doesn't mean "it's ignored". Use
+   `git check-ignore -q <file>` — 0 = ignored, 1 = trackable.
+3. Final cross-check: `git add -An <dir>` lists exactly what would be staged.
 
-### Una skill con `agent: Explore` non può invocare subagenti
+### A checker that reads local state passes locally and fails in CI
 
-`luke-audit`, `luke-bugs` e `luke-security` dichiaravano `agent: Explore` e
-contenevano "Run 3 agents in parallel" con tre brief dettagliati. L'agente
-Explore ha tutti i tool **tranne** Agent: il fan-out non è mai avvenuto, e
-degradava in silenzio a un passaggio singolo. Nessun errore, nessun segnale —
-solo report prodotti in un modo diverso da quello dichiarato, per mesi.
+`check-skill-integrity.ts` checked the existence of paths cited by the
+skills. `luke-docs` cites `.planning/ROADMAP.md`, which `.gitignore`
+excludes: it exists on the disk of whoever's working, not in a clean
+checkout. Green locally, red on the first push — inside the very script
+written to catch checks that read the wrong world.
 
-Il fix non è passare a `agent: general-purpose`: quelle skill sono read-only, e
-oggi il vincolo è garantito dal tipo di agente, che non ha tool di scrittura.
-Sbloccare i subagenti avrebbe consegnato loro Write ed Edit, degradando un
-invariante strutturale a un'istruzione in prosa.
+**Rule**: a verification script must only make claims about what the repo
+actually contains. If a path is excluded from git, its existence isn't a
+verifiable fact: `git check-ignore -q -- <path>` (exit 0 = ignored) and skip it.
 
-**Regole**:
+It took **three red CI runs**, and each relapse added one more detail.
 
-1. Prima di scrivere istruzioni di orchestrazione in una skill, verificare che
-   il tipo di agente dichiarato abbia il tool Agent.
-2. Verificato da `tools/scripts/check-skill-integrity.ts`, bloccante in CI.
-3. Vale in generale: un'istruzione che il runtime non può eseguire non fallisce,
-   viene ignorata. È la forma più silenziosa di controllo inerte.
-
-### Un test che parte da un sotto-router salta la composizione
-
-`brand.integration.spec.ts` usava `brandRouter.createCaller(ctx)`. Ma
-`router({ brand: brandRouter })` **non conserva** `brandRouter`:
-`createRouterFactory` ne ricostruisce un aggregato, e il sotto-router importato
-mantiene una propria mappa `_def.procedures` separata. Il test esercitava quindi
-un percorso che la produzione non prende mai — la produzione entra sempre da
-`appRouter`.
-
-Trovato dal gate di copertura procedure, che misura le invocazioni su
-`appRouter`: il router meglio testato del repo risultava 7/7 non invocato.
-
-**Regola**: nei test tRPC, costruire il caller da `appRouter` e scendere al
-namespace (`appRouter.createCaller(ctx).brand`), mai dal sotto-router importato.
-La forma dei call site resta identica.
-
-### Un checker che legge stato locale passa in locale e fallisce in CI
-
-`check-skill-integrity.ts` verificava l'esistenza dei path citati dalle skill.
-`luke-docs` cita `.planning/ROADMAP.md`, che `.gitignore` esclude: esiste sul
-disco di chi lavora, non in un checkout pulito. Verde in locale, rosso al primo
-push — dentro lo script scritto proprio per intercettare controlli che leggono
-il mondo sbagliato.
-
-**Regola**: uno script di verifica deve pronunciarsi solo su ciò che il repo
-contiene. Se un path è escluso da git, la sua esistenza non è un fatto
-verificabile: `git check-ignore -q -- <path>` (exit 0 = ignorato) e si salta.
-
-Ci sono volute **tre CI rosse**, e ogni ricaduta ha aggiunto un dettaglio.
-
-1. *Applicare la regola a metà.* `check-docs-integrity.ts` la usava per scegliere
-   quali file leggere (`git ls-files`), `check-skill-integrity.ts` non la usava
-   affatto. Sistemato il secondo, il primo continuava a verificare i **target dei
-   link** ignorati. Una regola condivisa fra due script va messa in un posto solo
-   — ora `tools/scripts/lib/gitPaths.ts`.
-2. *Lo slash finale.* Un pattern directory-only (`docs/access-porting/`) matcha
-   solo se git può stabilire che il path è una directory. Quando il path **non
-   esiste** — cioè il caso che qui interessa — non può, e serve passarglielo con
-   lo slash. `path.resolve()` lo strippa:
+1. *Applying the rule halfway.* `check-docs-integrity.ts` used it to choose
+   which files to read (`git ls-files`), `check-skill-integrity.ts` didn't
+   use it at all. After fixing the second one, the first kept checking the
+   **link targets** that were ignored. A rule shared by two scripts belongs
+   in one single place — now `tools/scripts/lib/gitPaths.ts`.
+2. *The trailing slash.* A directory-only pattern (`docs/access-porting/`)
+   only matches if git can establish the path is a directory. When the path
+   **doesn't exist** — the exact case at stake here — it can't, and it needs
+   to be passed with the slash. `path.resolve()` strips it:
 
    ```
-   docs/access-porting    → exit 1, non matcha
-   docs/access-porting/   → exit 0, matcha
+   docs/access-porting    → exit 1, doesn't match
+   docs/access-porting/   → exit 0, matches
    ```
 
-3. *Verificare dove non può fallire non è verificare.* Le prime due correzioni
-   sono state dichiarate verdi girando sul disco di sviluppo, che ha i file
-   gitignored. Riprodurre il checkout pulito è una riga:
+3. *Verifying where it can't fail isn't verifying.* The first two fixes
+   were declared green by running on the development disk, which has the
+   gitignored files. Reproducing a clean checkout is one line:
 
    ```bash
-   git worktree add --detach /tmp/clean HEAD   # per costruzione, niente file ignorati
+   git worktree add --detach /tmp/clean HEAD   # by construction, no ignored files
    ```
 
-Corollario: prima di dichiarare verde un controllo nuovo, chiedersi *quali file
-sto leggendo che un clone pulito non avrebbe* — e poi provarlo su un clone pulito,
-invece di rispondere a memoria.
+Corollary: before declaring a new check green, ask *what files am I reading
+that a clean clone wouldn't have* — and then actually try it on a clean
+clone, instead of answering from memory.
 
----
+**The one deliberate exception (2026-10-04):** `check-override-consumers.ts`
+reads the installed packages under `node_modules/.pnpm`, because the ranges pnpm
+overrides exist nowhere else. It is a post-install check and says so: it refuses
+an install whose store copy of the lockfile differs from `pnpm-lock.yaml`, and
+reads only the packages that lockfile resolves, so a missing or stale install
+fails it instead of passing it. A package absent from an otherwise matching store
+goes unseen; the check runs after an install completes, never during one.
 
-### Una regola di lint nuova va sondata su un file-esca, non sul repo
+### A push is not done until its CI run is green (2026-09-27)
 
-Scritta `brand-scope-required.yml`, girata su `apps/api/src`, zero finding,
-dichiarata fatta. Sbagliato tre volte di fila, e ogni volta lo zero sembrava la
-prova che funzionasse.
+**What happened.** During the backlog-by-severity run on develop-2.2 I checked
+CI after the first few pushes, then stopped. Two pushes (`7a6b875a`,
+`54951a1f`) went red in the unit-test step and the owner found them, not me.
+The failure was a latent race in `getMasterKey`: parallel test workers on a
+fresh home created `~/.luke/secret.key` concurrently, one read it empty, and
+"Unable to derive secret" failed whichever spec happened to import
+`downloadToken` at that moment — so the red looked unrelated to the commits.
 
-1. *YAML non valido.* Il pattern conteneva `{ ..., brandId: $Z, ... }` non
-   quotato, e i due punti rompono lo scalare. Semgrep rispondeva
-   `invalid configuration file found` su stderr ed usciva **0**: il comando
-   sembrava passato e la regola non stava girando affatto.
-2. *`pattern-not` che non esclude.* Con `<... assertBrandAccess(...) ...>` semgrep
-   segnalava anche le procedure correttamente guardate. `metavariable-pattern`
-   non cambiava nulla. Ha funzionato `pattern-not-regex`, testuale sulla regione
-   matchata.
-3. *Alternativa letterale al posto della famiglia.* `assertBrandAccess` come
-   stringa esatta continuava a segnalare chi era guardato da
-   `resolveRowBrandAccess`. Serviva `BrandAccess`.
+**Rule.** After every push, wait for the CI and security runs of that SHA and
+report their result before moving to the next unit; a red run stops the queue
+until it is explained. A failure that moves between unrelated spec files is a
+shared-state race, not the last commit's bug: reproduce it under the conditions
+CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
+blaming or retrying.
 
-I punti 2 e 3 sono la variante peggiore: **falsi positivi su una regola
-bloccante**. Una regola che segnala il codice corretto viene disattivata entro
-una settimana, quindi è peggio di non averla.
+### A rule written only in prose gets broken — `pnpm dev` during a push (2026-09-27)
 
-**Regola**: prima di considerarla scritta, una regola semgrep va provata su un
-file-esca che contiene *entrambi* i casi — quello vulnerabile e quello già
-corretto — e deve dare esattamente 1 finding e 0. Zero finding sul repo reale non
-distingue "nessuna violazione" da "la regola non gira".
+**What happened.** CLAUDE.md said not to run the pre-push hook while `pnpm dev`
+is up; I pushed three units with dev running anyway. The hook's `typecheck`
+rebuilt every dependency (`rm -rf dist && tsc`) under the dev watchers. Every
+build completed, so `dist` stayed whole — luck, not design.
 
-```bash
-mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
-cd /tmp/probe && semgrep --config <regola> .    # atteso: 1 finding, sul caso rotto
-```
-
-Corollario che ha ripagato subito: appena la regola ha iniziato a funzionare
-davvero ha trovato cinque procedure in `merchandisingPlan.ts` e `phaseAlert.ts`
-che né l'audit né il piano avevano enumerato.
-
----
-
-### `vi.mock` non sempre intercetta: asserire sull'effetto, non sullo spy
-
-Nel test del logo aziendale, `vi.mock('../src/storage', ...)` non arrivava
-all'import di `deleteObjectByKey` fatto da `routers/company.ts` — né con quello
-specifier né con `'../src/storage/index.js'`. Il router chiamava la funzione
-reale, il `catch` best-effort se la mangiava, e lo spy restava a zero chiamate.
-Diagnosticato solo mettendo `(fn as any)._isMockFunction` dentro un throw
-temporaneo.
-
-**Regola**: quando un mock di modulo non intercetta, prima di combattere la
-risoluzione conviene chiedersi se l'effetto è osservabile altrove.
-`deleteObjectByKey` cancella anche la riga `FileObject`, quindi
-
-```ts
-expect(await prisma.fileObject.findUnique({ where: { id } })).toBeNull();
-```
-
-è più corta della lotta col mock **e** più forte: prova che sia girata la
-funzione vera, non che sia stato chiamato uno stub.
-
-Vale solo quando l'effetto è reale e osservabile. Se il collaboratore è davvero
-esterno (rete, SMTP), il mock resta l'unica via e va fatto funzionare.
-
-### Un `cd dir && comando` cambia la cwd anche per i comandi dopo
-
-Dopo `cd apps/api && npx tsc -b`, la cwd bash restava `apps/api/` per il
-comando successivo (`grep -r apps/api ...`), che quindi cercava
-`apps/api/apps/api` — path inesistente, silenziato da `2>/dev/null`,
-risultato "0 match" letto come "bonifica completa". Ho riportato all'utente
-"apps/api: 0 residui, lavoro completo" quando in realtà restavano ~30 file
-con commenti IT non tradotti — scoperto solo perché l'utente ha aperto a mano
-`server.ts` e ci ha trovato commenti italiani.
-
-**Regola**: mai `cd dir && comando`. Usare `(cd dir && comando)` in subshell,
-o passare il path diretto al tool (`npx tsc -b apps/api`), o tornare alla
-root subito dopo. Ogni check di verifica che segue un comando con `cd` va
-fatto con path assoluti, non relativi alla cwd presunta — specialmente prima
-di dichiarare un lavoro "completo" all'utente.
+**Rule.** `scripts/assert-no-dev.sh` now refuses, from the pre-push hook and
+the root emitting scripts, while a dev watcher runs in the same worktree. Before
+what it does not cover (`pnpm --filter <pkg> build`, a bare `turbo run`),
+run `sh scripts/assert-no-dev.sh` yourself. A mechanical rule that exists only in
+prose will be broken; when one is, enforce it rather than restate it.
 
 ---
 
 ## Release / Docker
 
-### Mai buildare l'immagine Docker in locale per "validare prima del commit"
+### A runtime image copied the builder's full `node_modules` — enforced by `tools/scripts/check-image-runtime.ts` (CI `images` job and `release.yml`, blocking). See `lessons-archive.md`.
 
-Piano di hotfix (resize immagini via `sharp`) prevedeva come step obbligatorio
-un `docker build` locale del Dockerfile completo per verificare il binario
-nativo prima del commit. L'utente ha interrotto: **le build Docker sono
-"roba online GitHub"** — avvengono in CI (`.github/workflows/release.yml` →
-build+push su `ghcr.io` al tag), non sulla macchina di sviluppo. Il tentativo
-locale ha anche esposto perché è la via sbagliata: la build del monorepo
-intero dentro Docker Desktop (risorse limitate rispetto alla macchina host)
-è andata OOM nella fase `tsc` di `@luke/api`, un fallimento del tutto
-scollegato dal binario nativo che si voleva verificare — rumore, non segnale.
+### Never build the Docker image locally to "validate before commit"
 
-**Regola**: non proporre/eseguire `docker build` locale come step di
-validazione pre-commit. La build reale (e l'unico posto dove il binario
-nativo di una dipendenza come `sharp` viene davvero verificato) è la pipeline
-CI innescata dal push del tag `vX.Y.Z`. Per de-rischiare dipendenze native
-prima del commit, verificare invece staticamente (Dockerfile base image,
-`pnpm-workspace.yaml` overrides/allowBuilds, target arch in
-`docker/build-push-action`) e poi fidarsi della CI come gate reale.
+A hotfix plan (image resizing via `sharp`) included as a mandatory step a
+local `docker build` of the full Dockerfile to verify the native binary
+before commit. The user stopped it: **Docker builds are "GitHub online
+stuff"** — they happen in CI (`.github/workflows/release.yml` → build+push
+to `ghcr.io` on tag), not on the development machine. The local attempt also
+exposed why it's the wrong path: building the entire monorepo inside Docker
+Desktop (limited resources compared to the host machine) went OOM in the
+`tsc` phase of `@luke/api`, a failure completely unrelated to the native
+binary that was supposed to be checked — noise, not signal.
+
+**Rule**: don't propose/run a local `docker build` as a pre-commit
+validation step. The real build — and the place where a dependency's native
+binary like `sharp` actually gets verified — is GitHub: CI's `images` job
+builds and checks both images on every push and pull request
+([ADR-028](docs/decisions/028-runtime-images-carry-runtime-dependencies-only.md)),
+and the `vX.Y.Z` tag runs the same check before publishing. To de-risk a
+Dockerfile change before it reaches the train, push it on a branch with a
+draft pull request and read that job.
+
+### Push the release branch before its tag
+
+On 2026-10-06 the `v3.0.0-rc.1` tag was pushed before its notes commit reached
+`origin/develop-2.2`, and `release.yml`'s provenance gate refused it ("not
+reachable from origin/develop-2.2"); it published only on a rerun after the
+branch push. **Rule**: after the notes commit, publish it first — a candidate
+by pushing the train branch and waiting for its CI, a stable version by
+merging its `release/<tag>` pull request into `main` (no direct push there) —
+then push the one tag. `scripts/release-prepare.sh` prints the steps for
+each case.
+
+### Write a release version in full, `X.Y.Z`
+
+Milestones, plans, issue texts and release references name a release as
+`3.1.0`, never `3.1`. A develop cycle produces exactly one stable target
+(`develop-3.1` → `v3.1.0`, through `-rc.N`), and tags and `release:prepare`
+take `X.Y.Z`. The short form names something else: the branch `develop-X.Y`
+names the cycle, and the `X.Y` image tag a moving series (ADR-033). On
+2026-10-07 the GitHub milestones `3.0.0` and `3.1` were created side by side;
+`3.1` has since been renamed `3.1.0`.
+
+### Read what runs in an environment before writing its procedure
+
+A procedure for an environment starts from what runs there — the stack text
+in Portainer, `docker network ls`, `docker volume ls`, the containers'
+non-secret environment — never from the repository's compose file. The
+2.1.6 → 3.0 upgrade procedure assumed production ran `docker-compose.prod.yml`;
+its stack had been edited in Portainer and differed from that file in its
+networks and settings. The rc.2 rehearsal could not catch it, because the RC
+stack is deployed from the repository file. As written, the procedure would
+have left production unreachable after the update, and its rollback would
+have restored a file production never ran (found 2026-10-08, before the
+upgrade).
+
+---
 
 ## Branch management
 
-### Un `develop-X.Y` mergeato in `main` è morto — non riattivarlo mai
+### A graduated `develop-X.Y` is dead — never reactivate it
 
-Durante l'hotfix `deepmerge-ts` (GHSA-ggr8-5vv4-36mx) avevo ipotizzato di
-portare il fix anche su `develop-2.1`, trattandola come branch di
-integrazione attivo. L'utente ha corretto: `develop-2.1` è dormant — il suo
-ultimo commit (`31ed3cb`, 2026-08-09) è il merge-into-main, e `main` da lì
-ha accumulato altri commit mai arrivati su quel branch (`ca71324` ci notify,
-`603662a` deepmerge fix, `6598c41`/`e43f66c`/`f416c52` sharp/vitest,
-`416b918`/`4e55e5f` OOM export fix). Non un target valido per backport.
+During the `deepmerge-ts` hotfix (GHSA-ggr8-5vv4-36mx) I had proposed also
+porting the fix to `develop-2.1`, treating it as an active integration
+branch. The user corrected this: `develop-2.1` is dormant — its last commit
+(`31ed3cb`, 2026-08-09) is the merge-into-main, and `main` has since
+accumulated further commits that never landed on that branch (`ca71324` CI
+notify, `603662a` deepmerge fix, `6598c41`/`e43f66c`/`f416c52` sharp/vitest,
+`416b918`/`4e55e5f` OOM export fix). Not a valid backport target.
 
-Correzione a questa stessa nota (2026-08-25): la prima stesura elencava tra
-questi commit "storage validation" e "migration script" — sbagliato,
-verificato con `git branch -a --contains <hash>`: quei due commit vivono
-solo su branch remoti orfani (`hotfix/deepmerge-ts-dos`,
-`ci/security-failure-notification`), mai su `main` né su `develop-2.1`.
-Prima di citare commit specifici in una lezione, verificarne l'appartenenza
-al branch con `--contains`, non fidarsi della ricostruzione a memoria dal
-grafo.
+Correction to this same note (2026-08-25): the first draft listed "storage
+validation" and "migration script" among these commits — wrong, verified
+with `git branch -a --contains <hash>`: those two commits only live on
+orphaned remote branches (`hotfix/deepmerge-ts-dos`,
+`ci/security-failure-notification`), never on `main` nor on `develop-2.1`.
+Before citing specific commits in a lesson, verify their branch membership
+with `--contains`, don't trust reconstructing it from memory of the graph.
 
-**Regola generale — ciclo di vita `develop-X.Y`**: nasce tagliato da `main`,
-riceve le feature del ciclo, muore nel momento in cui viene mergeato in
-`main` (release). Da lì è single-use: non si riapre, non si backporta sopra,
-non si tratta come "ancora in sviluppo" solo perché il branch esiste ancora
-su `git branch -a`. Il ciclo successivo apre un `develop-(X+1)` nuovo,
-tagliato da `main` aggiornato — mai dallo stesso `develop-X.Y` riesumato.
-Prima di proporre un backport su un branch `develop-*`, verificare con
-`git log --oneline develop-X..main` (e viceversa) se è ancora allineato o
-abbandonato dopo merge: un branch fermo a un vecchio merge-commit è stale
-per default, non il contrario. Il branch morto va poi cancellato (locale +
-remoto) appena il successore è tagliato — vedi CLAUDE.md § Versioning &
-Release per gli step (aggiornare `branches` in `ci.yml`/`security.yml`,
-cancellare il precedente; `dependabot.yml` non è coinvolto, punta sempre a
-`main` di default).
+**General rule — `develop-X.Y` lifecycle**: born cut from `main`, receives
+the cycle's features, dies when its stable tag is cut — not at the merge
+into `main` (ADR-033).
+From then on it's single-use: it's not reopened, not backported onto, not
+treated as "still in development" just because the branch still exists in
+`git branch -a`. The next cycle opens a new `develop-(X+1)`, cut from an
+updated `main` — never from the same `develop-X.Y` resurrected. Before
+proposing a backport onto a `develop-*` branch, check with
+`git log --oneline develop-X..main` (and vice versa) whether it's still
+aligned or has graduated: a branch whose stable tag exists is dead, not the
+other way around. Delete the dead branch locally; deleting it from the remote
+is an owner operation — see CLAUDE.md § Versioning & Release.
+
+---
+
+## Audit Log
+
+### Audit log: a silent allowlist drift (2026-08-27)
+
+Two bugs reported on the audit log page — empty `metadata`, and `Sistema` as
+the author with no email on logins and password changes. Both were real; the
+instructive part is *why neither ever surfaced*.
+
+**What was wrong.** `SAFE_KEYS` in `lib/auditLog.ts` was a hand-maintained
+allowlist of 89 keys, checked at runtime by `sanitizeMetadata`. Call sites had
+kept adding metadata fields (`size`, `bucket`, `method`, `errorMessage`,
+`originalName`, ...) without ever adding them to the list, so those values were
+persisted as the string `[REDACTED]`. On the 1847 rows in dev: 34% contained at
+least one `[REDACTED]` on a harmless field, 19% had no metadata at all.
+Separately, `withAuditLog` kept a **second** allowlist of 16 field names and
+prefixed what it found with `input_`/`result_` — prefixes that were not on the
+first list, so the little it captured was redacted anyway
+(`{"input_role":"[REDACTED]"}`), and mutations without those fields stored `{}`.
+
+**Why nobody noticed.** A redaction path fails closed and silently. Drift never
+throws, never logs, never fails a test — it just quietly turns data into
+`[REDACTED]`. There is no moment where the system says it is losing
+information; it looks exactly like a correctly redacted field. The redaction
+test suite was green throughout, because it asserted *presence*
+(`toHaveProperty('input_username')`) rather than value, and `'[REDACTED]'` is
+present.
+
+**General rule — bind the allowlist to the compiler.** The fix was not adding
+the ~75 missing keys (they would drift again by Christmas): it was
+`SAFE_KEY_LIST = [...] as const`, a `AuditMetadataKey` union derived from it,
+and `AuditParams.metadata: Partial<Record<AuditMetadataKey, unknown>>`. `tsc`
+then enumerated every drifted call site in one run, and any future one fails
+the build at the line that invented the key. Any hand-maintained list that
+gates what gets persisted or displayed deserves the same treatment — see
+CLAUDE.md rule 15. Note the residual gap this does *not* cover, and say so
+rather than overselling it: excess-property checks only apply to fresh object
+literals, so `metadata: someVariable` (one call site in `seasonCalendar.ts`)
+still slips past and needs the key listed by hand.
+
+**Corollary — two filters in series is worse than one.** The middleware's
+private allowlist existed "for safety" on top of `sanitizeMetadata`. Each was
+maintained as if the other were the real one, and the outer discarded what the
+inner would have kept. One filter, one place.
+
+**Second bug — a null FK is not a missing identity.** `logAudit` reads the
+actor from `ctx.session`, which does not exist during login / email
+verification / password reset, so those rows store `actorId: null` and the page
+printed `Sistema`. The identity was in the row all along: `targetId` pointed at
+the `User.id` on 427 of the 436 actor-less rows. Before concluding data is lost
+at write time, check the other columns — this was fixable entirely on the read
+path, retroactively over the whole history, with no migration. Keep the two
+concepts distinct in the UI (actor vs subject) rather than collapsing them: an
+inferred subject must not be displayed as if it were a proven actor.
+
+**Process note.** Three existing tests encoded the buggy behaviour and went red
+on the fix. Updating them was correct, but each replacement assertion had to
+come out *stronger* than the one it replaced (assert the secret's value is
+absent and the field is masked, not that the string `password` never appears).
+A test updated into something weaker to make a diff green is how the drift got
+certified in the first place.
+
+---
+
+## Working Practice
+
+### Commit approval is per commit, and a long debugging chain does not suspend it
+
+**What happened.** Over one session I made 12 commits on `develop-2.2` and asked
+for approval on 3 of them. The first batch was done right — diff shown, approval
+requested, go-ahead received. After that I kept committing: two on the strength
+of an approved *plan* that happened to list its commit messages, and seven with
+no approval of any kind.
+
+**Why it drifted.** The session was a chain of dependent bugs, each surfacing
+the next: a wrong pg_restore flag, then a version skew, then an archive format
+mismatch, then a staging-schema collision. Every fix felt like a continuation of
+an already-sanctioned piece of work rather than a new decision, and a request to
+"fix X" started reading as "fix X and commit it". Neither is what CLAUDE.md
+rule 3 says.
+
+**Rules.**
+
+- Approval is per commit. "Fix X" authorises the fix, not the commit. An
+  approved plan authorises the approach, not the commits it happens to name — a
+  plan is written before the diff exists, so it cannot be approval of a diff.
+- The correct sequence is unchanged no matter how long the session runs: show
+  the diff, ask, wait, then commit.
+- Momentum is the risk factor. The longer the chain of related fixes, the more
+  each one feels pre-approved. It is not; if anything, a long chain is where an
+  explicit checkpoint is worth the most, because it is where the user has had
+  the least chance to look.
+- Batching is fine and often better: finish the work, then present the diffs
+  together and ask once. What is not fine is committing first and reporting
+  after.
+
+### A grep is evidence about text, not about the thing you are claiming
+
+**What happened.** Over one session I made five confident claims from `grep`
+output, and four of them were wrong.
+
+- *"25 call sites don't pass `actionType`."* 25 was the number of **files**
+  `grep -l` returned. Every one of the 35 call sites passed it.
+- *"The `hardDelete` branch is used by nobody."* I grepped the string literal
+  `actionType="hardDelete"`. It was used through a lookup —
+  `CONFIRM_ACTION_CONFIG[type].actionType` — which no literal search can see.
+- *"These two pages have the stale-state bug."* I matched on `useState` seeded
+  from a prop with no `useEffect` beside it. Both dialogs are rendered
+  conditionally, so they remount on every open and the seeding is correct. The
+  pattern was there; the precondition that turns it into a bug was not.
+- *"19 dialogs need migrating."* The census asked "which files contain a
+  `<form>`", so a dialog living in a file whose *other* component had one was
+  invisible. The ESLint rule written at the end found the twentieth.
+- *"`BackupScheduleCard` is a form with no submit button."* The submit button
+  is in the shared `SettingsActions` component, one import away.
+
+**Why it kept happening.** Each grep answered a question about *text*, and each
+claim was about *structure* — what is nested in what, what is reachable from
+what, what runs. Text is a proxy for structure, and the proxy fails in the same
+few ways every time: indirection through a variable or a map, composition
+through a child component, and the difference between a pattern and the
+conditions that make it a defect.
+
+**Rules.**
+
+- Say which unit you counted. "25 files" and "25 call sites" are different
+  claims and only one of them was true.
+- Before "nothing uses X", look for indirection: a lookup table, a variable, a
+  prop, a re-export. If X is a *value* rather than a syntax form, a literal
+  search cannot answer the question.
+- A pattern is not a defect until its precondition holds. `useState` seeded
+  from a prop is only stale if the component stays mounted — check the call
+  site before naming it a bug.
+- When the property is structural — this element inside that one, this call
+  reachable from there — the honest instruments are the type checker, an ESLint
+  rule over the AST, or a runtime probe. Prefer them, and where the codebase
+  can carry one, leave the rule behind instead of the grep.
+- Removing a prop or a field turns the compiler into the census: every call
+  site becomes an error and none can hide. Reach for that before reaching for
+  `grep -c`.
+- When an override is same-type — a `string` replacing a `string`, a message
+  swapped for another message — a green build proves nothing about whether it
+  took effect. Probe it at runtime, or leave it unverified and say so.
+
+**Postscript 2.** A green hook is not a green pipeline. `.husky/pre-push` ran
+tests and a drift check and printed "8 successful, 8 total"; that was read as
+"the branch is verified" and the push went out with a type error CI then found.
+The hook ran no typecheck at all. Worse, adding `typecheck` alone would not
+have caught it: `apps/api/tsconfig.json` includes `src/**` and nothing else, so
+`test/`, `scripts/` and `prisma/` are compiled only by `tsconfig.test.json`
+under a second task. Before trusting any gate, read what it actually runs — the
+count of green tasks says nothing about which tasks they were.
+
+**Postscript.** A review at the end of the same session found two defects this
+file's own earlier entry had already warned about: a `<button>` two levels deep
+in the markup that had no `type` and therefore submitted the form it had just
+been wrapped in, and a required field that Radix unmounts with its tab, so
+validation failed with no mounted message to show. Writing the rule down is not
+the same as applying it to every instance — when a rule is added, sweep the
+whole file for the pattern, not just the lines being edited.
+
+**Postscript 3 (2026-09-24).** Evidence can be right and still lost on the way
+to the verdict. The cleanup's O6 dossier filed `sectionAccess.getForMe` under
+"no caller, no test, delete" although the search run for it an hour earlier had
+listed `sectionAccess.integration.spec.ts` beside it; the reviewer caught it,
+and the deletion would have left that spec calling a procedure that no longer
+existed. The classification had been written from memory of the table, not
+from the table. Build the verdict column from the evidence column mechanically,
+and next to every "no caller" name the search that established it.
+
+### Before changing a map's key, follow every use of the key (2026-10-14)
+
+**What happened.** ADR-036 lists "`groupByTimeZone` puts aliases in separate digest and maintenance
+cohorts" as a gap. I keyed the cohorts by the first spelling met among aliases (`sameTimeZone`) and
+committed it after reading only the loops over the map. `/code-review` found where the key goes
+next: the digest prints it (`Orari in …`) and stores it in `CalendarDigestDelivery.timeZone`, so a
+`Europe/Kyiv` reader could get `Europe/Kiev`; and `deps.settled` is keyed by it, while `findMany`
+has no `orderBy`, so the key could change between ticks and rebuild a settled cohort the same day.
+Grouping by spelling had been correct all along: the cohorts' members are disjoint, so the only
+cost was one extra build per alias spelling. The commit was withdrawn before the push.
+
+**Rule.** Before changing what keys a map, or what a grouping returns as its key, trace every reader
+of that key: labels shown to people, caches and memo maps, persisted columns, log fields. A key
+that becomes order-dependent breaks every cache keyed by it. And measure the "gap" first: if the
+current behaviour is correct but slower, say so before fixing it.
+
+### A new lint rule must be probed on a bait file, not on the repo
+
+Wrote `brand-scope-required.yml`, ran it on `apps/api/src`, zero findings,
+declared done. Wrong three times in a row, and each time the zero looked
+like proof it worked.
+
+1. *Invalid YAML.* The pattern contained an unquoted
+   `{ ..., brandId: $Z, ... }`, and the colon breaks the scalar. Semgrep
+   responded `invalid configuration file found` on stderr and exited **0**:
+   the command looked like it passed and the rule wasn't running at all.
+2. *A `pattern-not` that doesn't exclude.* With
+   `<... assertBrandAccess(...) ...>` semgrep also flagged procedures that
+   were already correctly guarded. `metavariable-pattern` changed nothing.
+   `pattern-not-regex`, textual on the matched region, worked.
+3. *A literal alternative instead of the family.* `assertBrandAccess` as an
+   exact string kept flagging code guarded by `resolveRowBrandAccess`.
+   Needed `BrandAccess`.
+
+Points 2 and 3 are the worst variant: **false positives on a blocking
+rule**. A rule that flags correct code gets disabled within a week, so it's
+worse than not having one.
+
+**Rule**: before considering a semgrep rule finished, probe it on a bait
+file that contains *both* cases — the vulnerable one and the already-fixed
+one — and it must give exactly 1 finding and 0. Zero findings on the real
+repo doesn't distinguish "no violation" from "the rule isn't running".
+
+```bash
+mkdir -p /tmp/probe/apps/api/src/routers && $EDITOR /tmp/probe/.../bad.ts
+cd /tmp/probe && semgrep --config <rule> .    # expected: 1 finding, on the broken case
+```
+
+**Enforced for semgrep since 2026-09-27**: `scripts/semgrep-test.sh`, a
+blocking step in `security.yml`, runs `semgrep --test` (which does fail on
+a broken rule file) and requires a `ruleid:` and an `ok:` fixture for every
+rule id in `.semgrep/tests/`. The lesson stays for ESLint rules and plugin
+bumps, which that script does not cover.
+
+Corollary that paid off immediately: as soon as the rule started actually
+working it found five procedures in `merchandisingPlan.ts` and
+`phaseAlert.ts` that neither the audit nor the plan had enumerated.
+
+### A `cd dir && command` changes the cwd for the commands that follow too
+
+After `cd apps/api && npx tsc -b`, the bash cwd stayed `apps/api/` for the
+next command (`grep -r apps/api ...`), which then searched
+`apps/api/apps/api` — a nonexistent path, silenced by `2>/dev/null`, and the
+"0 matches" result got read as "cleanup complete". Reported back to the user
+"apps/api: 0 leftovers, work complete" when in reality ~30 files remained
+with untranslated Italian comments — discovered only because the user
+manually opened `server.ts` and found Italian comments in it.
+
+**Rule**: never `cd dir && command`. Use `(cd dir && command)` in a
+subshell, or pass the path directly to the tool (`npx tsc -b apps/api`), or
+return to root immediately after. Every verification check that follows a
+`cd`-containing command must use absolute paths, not paths relative to the
+assumed cwd — especially before declaring a piece of work "complete" to the
+user.
+
+**Recurrence (2026-10-04).** The rule above was in this file and was still
+broken four times in one session (`cd apps/web/src && …`, `cd apps/api/src &&
+…`, `cd apps/api && …`, a leading `cd <root>;`). The harness keeps the shell's
+cwd between calls, so each one silently moved every later relative path;
+nothing went wrong only because the commands after it happened to use absolute
+paths. Knowing the rule is not enough: never type `cd` at all — use absolute
+paths, `git -C <root>`, `pnpm -C <root>` or `--filter`, or a `( … )` subshell.
+A PreToolUse hook refusing a top-level `cd` would make it mechanical.
+
+---
+
+## React & UI
+
+### A Radix close-button cannot double as a form's submit button
+
+**What happened.** Migrating `ConfigDeleteDialog` to a real `<form>`, I gave its
+`AlertDialogAction` `type="submit"` and dropped the `onClick` that used to do the
+work. The dialog then closed on click and on Enter without ever deleting
+anything. The user found it by testing; typecheck, lint and the suite were all
+green, because nothing about it is a type error.
+
+**Why.** `AlertDialogAction` renders a Radix `DialogClose`, whose `onClick`
+closes the dialog. React flushes that state update synchronously for discrete
+events, so the component unmounts *within the click*, and the browser then skips
+the submit button's default action — a form detached from the document does not
+submit. The submit handler never ran. Enter behaves identically: it activates
+the same default button.
+
+The shared `ConfirmDialog` gets away with `AlertDialogAction` only because it
+uses `onClick`, which `composeEventHandlers` runs *before* Radix's close.
+
+**Rules.**
+
+- Never put `type="submit"` on `AlertDialogAction`, `DialogClose`, or anything
+  else that closes an overlay as a side effect of being clicked. Use a plain
+  `Button type="submit"` and let the submit handler (or its caller) close the
+  dialog once the work resolves.
+- Inside a `<form>`, give every non-submitting button an explicit
+  `type="button"` — `AlertDialogCancel` included. A button's default type is
+  `submit`, so a Cancel button silently becomes a second submit trigger.
+- A green typecheck says nothing about whether an interaction fires. Any change
+  that moves *what triggers* a mutation — button type, event handler, wrapping
+  element — needs the flow exercised in the running app before it is called
+  done, or the uncertainty stated plainly to the user.
+
+---
+
+## Turbo & Build
+
+### A Turbo `dev` task that emits must depend on its own `build` (2026-09-03)
+
+While simplifying the Cycle 9 build lifecycle, the first prototype relaxed
+`dev.dependsOn` from `["^build", "build"]` to `["^build"]`. The dry graph then
+gave `core#dev`, `nav#dev` and `calendar#dev` no dependency on their own build,
+so at cold start each `tsc --watch` could emit into the same `dist` that the
+build requested by API and Web was still deleting and rewriting. The review
+caught it from the graph; the measurements had not, because two writers
+producing identical files leave no visible damage.
+
+- The single-writer rule at startup is a property of the task graph, not of
+  the scripts. Prove it with `turbo run dev --dry=json` and, for any change to
+  ordering, with timestamps: `--summarize` gives build end times, a
+  millisecond-stamped log gives each watcher's start line.
+- A package-specific entry (`@luke/api#dev`) replaces the global `dev` entry
+  instead of merging with it. One carrying only `with` came out of the dry run
+  with no dependencies and `persistent: false`. Spell out every key and re-run
+  the dry graph after editing an override.
+- A persistent task that emits nothing (`tsx watch`) may start before its
+  package's build; one that emits (`tsc --watch`, `dev:types`) may not. Keep
+  the two apart when reasoning about the graph.
+
+**Enforced since 2026-09-27** for the own-build dependency: P14 in
+`tools/scripts/check-platform-integrity.ts` fails a Turbo task that runs an
+emitting `tsc --watch` without `build` in the `dependsOn` Turbo applies. The
+dry-run and timestamp advice above stays: ordering beyond that one edge is not
+checked.
+
+---
+
+## Skills & Agents
+
+### An inline `$ARGUMENTS` renders into its sentence — bind it alone, and a writing skill fails closed on a missing mode (2026-09-07)
+
+`/luke-docs readme` was observed also running ADR work and rewriting
+`docs/decisions/README.md` (audit Appendix R §R.7). The dispatch instruction was
+one sentence with the placeholder inside it: "No mode in `$ARGUMENTS` → run
+readme → inline → adr in sequence". Claude Code substitutes every occurrence, so
+the invocation deterministically rendered it as "No mode in readme → run readme
+→ inline → adr in sequence" — a valid, unsafe path instructing all three modes —
+and the substitution consumed the placeholder, so the runtime's trailing
+`ARGUMENTS: <value>` fallback never fired to correct it. The incident's
+signature matches that path.
+
+**How far the evidence goes.** The A/B control arm against the unfixed baseline
+comprised **two** invocations — the default scope and a `--since` selector with
+real work in range — and **neither** reproduced the cross-mode write: readme
+mode stayed in its lane there too. So the attribution is plausible and unproven,
+not demonstrated — the rendering is deterministic, the unsafe path was real, and
+whether it is what fired on the day is not something this control can settle.
+The defect needed correcting on its own merits, and the fixed implementation
+*was* positively verified: **33 completed invocations** exercised it and each
+stayed inside its mode's file set — 22 fail-closed executions, 7 write-capable
+ownership probes and 4 dry runs. One further corrected-tree attempt aborted
+before producing output and is not evidence. Do not write this up as a
+reproduced cause.
+
+Second occurrence of the class. `34af653` had fixed the same rendering in
+`luke-audit`, `luke-bugs`, `luke-security` and `luke-full` six days earlier,
+skipping the one skill that writes files, and left no entry here — which is
+plausibly why the writer was missed.
+
+- The placeholder goes on its own line, `**Invocation arguments:** $ARGUMENTS`,
+  and everything else reasons about the bound value. Enforced for every
+  `SKILL.md` by `tools/scripts/check-skill-integrity.ts`, unconditionally: every
+  skill carries exactly one such line in its body, and any occurrence off it, a
+  second one, or none at all is a failure. Keying the requirement on
+  `argument-hint:` was tried and rejected — deleting the hint and the binding
+  together is one edit back to the defect, and it stayed green.
+  `<!-- skill-check-ignore -->` is deliberately not honoured here: the
+  substitution happens marker or no marker.
+- A skill's fallthrough must be its **narrowest** behaviour. `luke-docs`' widest
+  write set was reachable from an empty value and from any typo, because an
+  unknown token had no branch; it now declares its accepted grammar and prints
+  usage for everything else, before reading a file. `luke-fix`, `luke-deps` and
+  `luke-test` followed: every mode-bearing skill now prints its usage and stops
+  on an unrecognised first token, so `/luke-fix apps/api` is an error, not an
+  undefined default.
+- Ownership belongs to the mode, not to the skill. Three modes sharing one
+  "all levels" scope and one report template naming every mode is an invitation:
+  `docs/decisions/README.md` matched readme's stated criteria in every word,
+  while being adr's only output. Each mode now names the paths it writes, and
+  anything else it notices is reported as `owned by <mode>, not touched`.
+
+### A skill with `agent: Explore` cannot invoke subagents — enforced by `tools/scripts/check-skill-integrity.ts` (blocking in CI/pre-push). See `lessons-archive.md`.
+
+---
+
+## Documentation & Comments
+
+### A doc block left above another one documents nothing — enforced by ESLint `@luke/no-detached-jsdoc` (error, every linted TypeScript and JavaScript file). See `lessons-archive.md`.
+
+---
+
+## Browser & Local Test Runs
+
+### A browser test that fails only on its first local run fails every CI run (2026-10-04)
+
+**What happened.** The first `VendorCombobox` browser test (`5203f1b4`) failed on its first local
+run with an invalid hook call inside Popover and passed on the rerun; I took it for the known flake
+and pushed. CI starts every run from a cold `.vite` cache, so for CI the first run is the only one:
+`Browser Component Tests` failed on `d281b9d2` (run 37194351818). `vitest.browser.config.mts`
+already named the cause above five earlier entries — a dependency the optimizer discovers mid-run
+reloads Vite and leaves the mounted components on a discarded React.
+
+**Rule.** A browser-test failure that disappears on rerun is that reload until proven otherwise. A
+test that mounts a library no earlier browser test mounted lists it in `optimizeDeps.include` before
+the push, and the suite runs once with `apps/web/node_modules/.vite` moved aside, which is what CI
+sees.
+
+### A long local suite runs under `caffeinate -i` (2026-10-04)
+
+**What happened.** During block D an integration run froze from 18:45 to 18:49:
+the Mac went into idle sleep (`pmset -g log` shows it), Node stopped mid-suite,
+and the hooks reported timeouts that read like failing tests.
+
+**Rule.** Wrap every long local suite — integration, browser, a push whose
+pre-push hook runs the tests — in `caffeinate -i` (`caffeinate -i pnpm
+test:integration:local`, `caffeinate -i git push`). A burst of timeouts after a
+pause is a sleep until `pmset -g log` says otherwise.

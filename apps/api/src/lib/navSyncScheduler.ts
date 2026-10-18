@@ -16,6 +16,8 @@
  */
 
 
+import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_DEFAULT_INTERVAL_MINUTES, type NavMasterDataEntity } from '@luke/core';
+import type { PrismaClient } from '@luke/db';
 import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
@@ -23,20 +25,28 @@ import { toErrorMessage } from './error';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
+import { createSerialQueue } from './serialQueue';
 
-import type { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 
 const TICK_INTERVAL_MS = 60 * 1000; // 1 minute
 
-const ENTITIES = ['vendor', 'brand', 'season'] as const;
-export type Entity = (typeof ENTITIES)[number];
+const ENTITIES = NAV_MASTER_DATA_ENTITIES;
+export type Entity = NavMasterDataEntity;
 
 // Timestamp (ms) of the last completed run per entity
 const lastRunAt: Partial<Record<Entity, number>> = {};
 
 // Per-entity flag: avoids concurrent syncs
 const isRunning: Partial<Record<Entity, boolean>> = {};
+
+/**
+ * Changes to the NAV connection settings, one at a time. `pauseNavScheduler` keeps a single resolver
+ * and `resumeNavScheduler` has no owner, so two overlapping saves could strand one pause or resume
+ * the scheduler while the other is still saving; `integrations.nav.saveConfig` runs its whole body,
+ * from reading the previous values to the resume, through this queue.
+ */
+export const navConfigChanges = createSerialQueue();
 
 /**
  * Waits for the in-progress sync (if any) to finish and blocks new runs from starting.
@@ -93,7 +103,7 @@ export function registerNavSyncScheduler(
     if (isRunning[entity] || _isPaused) return;
 
     isRunning[entity] = true;
-    fastify.log.info({ entity }, 'NAV sync scheduler: avvio sync entità');
+    fastify.log.info({ entity }, 'NAV sync scheduler: starting entity sync');
 
     try {
       const report = await runNavSync(prisma, getConfig, undefined, entity);
@@ -101,9 +111,9 @@ export function registerNavSyncScheduler(
 
       for (const r of report.results) {
         if (r.skipped) {
-          fastify.log.info({ entity: r.entity }, 'NAV sync scheduler: entità saltata (filtro disabilitato)');
+          fastify.log.info({ entity: r.entity }, 'NAV sync scheduler: entity skipped (filter disabled)');
         } else {
-          fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entità completata');
+          fastify.log.info({ entity: r.entity, upserted: r.upserted, durationMs }, 'NAV sync scheduler: entity completed');
         }
       }
 
@@ -114,7 +124,7 @@ export function registerNavSyncScheduler(
         })
         .catch(e => fastify.log.error({ err: e, entity }, 'Failed to persist NAV sync status'));
     } catch (err) {
-      fastify.log.error({ err, entity }, 'NAV sync scheduler: sync fallito');
+      fastify.log.error({ err, entity }, 'NAV sync scheduler: sync failed');
       await prisma.navSyncFilter
         .update({
           where: { entity },
@@ -143,13 +153,13 @@ export function registerNavSyncScheduler(
     // Pre-check: if NAV isn't configured yet, avoid noisy errors on every boot
     const host = await getConfig(prisma, 'integrations.nav.host', false);
     if (!host) {
-      fastify.log.debug('NAV sync scheduler: host non configurato, tick saltato');
+      fastify.log.debug('NAV sync scheduler: host not configured, tick skipped');
       return;
     }
 
     const syncEnabled = await getConfig(prisma, 'integrations.nav.syncEnabled', false);
     if (syncEnabled === 'false') {
-      fastify.log.debug('NAV sync scheduler: sync globalmente disabilitato, tick saltato');
+      fastify.log.debug('NAV sync scheduler: sync disabled globally, tick skipped');
       return;
     }
 
@@ -161,7 +171,7 @@ export function registerNavSyncScheduler(
       const filter = await prisma.navSyncFilter.findUnique({ where: { entity } });
       if (!filter?.autoSyncEnabled) continue;
 
-      const intervalMs = (filter.intervalMinutes ?? 30) * 60 * 1000;
+      const intervalMs = (filter.intervalMinutes ?? NAV_SYNC_DEFAULT_INTERVAL_MINUTES[entity]) * 60 * 1000;
       const last = lastRunAt[entity] ?? 0;
 
       if (now - last >= intervalMs) {
@@ -169,20 +179,24 @@ export function registerNavSyncScheduler(
         // Locked around syncEntity (not the outer tick): syncEntity is fire-and-forget from here,
         // so the tick itself returns almost instantly — the lock must span the actual sync work,
         // which withSchedulerLock's try/finally does regardless of when its caller stops awaiting it.
-        void withSchedulerLock(prisma, `nav-sync:${entity}`, () => syncEntity(entity))();
+        withSchedulerLock(prisma, `nav-sync:${entity}`, () => syncEntity(entity))()
+          .catch(err => fastify.log.error({ err, entity }, 'NAV sync scheduler: sync could not start'));
       }
     }
   };
 
   const guardedTick = guardMaintenance(prisma, tick);
+  // A tick that fails (the database is down, say) is logged: left unhandled, the rejection would
+  // stop the process.
+  const run = () => guardedTick().catch(err => fastify.log.error({ err }, 'NAV sync scheduler: tick failed'));
 
   fastify.addHook('onReady', async () => {
-    fastify.log.info('NAV sync scheduler: avviato (tick ogni 60s, intervalli per-entità)');
+    fastify.log.info('NAV sync scheduler: started (tick every 60s, per-entity intervals)');
 
     // First run right after ready
-    void guardedTick();
+    void run();
 
-    timer = setInterval(() => void guardedTick(), TICK_INTERVAL_MS);
+    timer = setInterval(run, TICK_INTERVAL_MS);
   });
 
   fastify.addHook('onClose', async () => {
@@ -191,6 +205,6 @@ export function registerNavSyncScheduler(
       timer = null;
     }
     await closePool();
-    fastify.log.info('NAV sync scheduler: fermato, pool mssql chiuso');
+    fastify.log.info('NAV sync scheduler: stopped, mssql pool closed');
   });
 }

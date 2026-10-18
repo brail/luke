@@ -8,14 +8,16 @@
  */
 
 import { randomBytes } from 'crypto';
-import { join } from 'path';
 import { homedir } from 'os';
+import { join } from 'path';
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
+import { createPrismaClient, type PrismaClient } from '@luke/db';
 
-import { encryptValue } from '../src/lib/configManager';
+
+import { encryptValue, getConfigOrDefault } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
+
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
 import { seedCompanyStructure } from './seeds/companyStructure';
 import { seedHolidayCountries } from './seeds/holidays';
@@ -23,14 +25,14 @@ import { seedHolidayCountries } from './seeds/holidays';
 /**
  * Initializes Prisma Client
  */
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
+const prisma = createPrismaClient();
 
 /**
  * Creates/updates the admin user with a local identity
  * Idempotent function: can be run multiple times without duplication
  */
 export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
-  console.log('👤 Seeding utente admin...');
+  console.log('👤 Seeding admin user...');
 
   // Check whether the admin user already exists
   const existingAdmin = await prisma.user.findFirst({
@@ -40,30 +42,31 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
   });
 
   if (existingAdmin) {
-    console.log('⚠️  Utente admin già esistente, verifica stato...');
+    console.log('⚠️  Admin user already exists, checking status...');
     console.log(
       `🔍 Admin user details: ID=${existingAdmin.id}, Email=${existingAdmin.email}, Username=${existingAdmin.username}, Active=${existingAdmin.isActive}`
     );
 
     // Activate the admin user if it's not active
     if (!existingAdmin.isActive) {
-      console.log('🔧 Attivazione utente admin...');
+      console.log('🔧 Activating admin user...');
       await prisma.user.update({
         where: { id: existingAdmin.id },
         data: { isActive: true },
       });
-      console.log('✅ Utente admin attivato');
+      console.log('✅ Admin user activated');
     } else {
-      console.log('✅ Utente admin già attivo');
+      console.log('✅ Admin user already active');
     }
   } else {
     // Hash the admin password using the centralized function
     const adminPassword = 'changeme';
     const passwordHash = await hashPassword(adminPassword);
 
-    console.log('🔧 Creazione utente admin...');
+    console.log('🔧 Creating admin user...');
 
-    // Create admin user with local identity in a transaction
+    // Create admin user with local identity in a transaction, in the business zone (ADR-035 §New users)
+    const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
     const adminUser = await prisma.$transaction(async tx => {
       // Create user
       const user = await tx.user.create({
@@ -71,6 +74,7 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
           email: 'admin@luke.local',
           username: 'admin',
           role: 'admin',
+          timezone,
           isActive: true,
           emailVerifiedAt: new Date(), // Admin pre-verified
         },
@@ -97,43 +101,9 @@ export async function seedAdminUser(prisma: PrismaClient): Promise<void> {
     });
 
     console.log(
-      `✅ Utente admin creato: ${adminUser.email} (ID: ${adminUser.id})`
+      `✅ Admin user created: ${adminUser.email} (ID: ${adminUser.id})`
     );
   }
-}
-
-/**
- * Updates existing users with emailVerifiedAt
- * Marks all existing users (without emailVerifiedAt) as verified
- */
-export async function updateExistingUsersVerification(
-  prisma: PrismaClient
-): Promise<void> {
-  console.log('📧 Aggiornamento verifica email utenti esistenti...');
-
-  const usersToUpdate = await prisma.user.findMany({
-    where: {
-      emailVerifiedAt: null,
-    },
-  });
-
-  if (usersToUpdate.length === 0) {
-    console.log('✅ Nessun utente da aggiornare');
-    return;
-  }
-
-  await prisma.user.updateMany({
-    where: {
-      emailVerifiedAt: null,
-    },
-    data: {
-      emailVerifiedAt: new Date(),
-    },
-  });
-
-  console.log(
-    `✅ ${usersToUpdate.length} utenti aggiornati con emailVerifiedAt`
-  );
 }
 
 /**
@@ -142,7 +112,7 @@ export async function updateExistingUsersVerification(
  * Does NOT include LDAP configurations (managed via UI/API)
  */
 export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
-  console.log('⚙️  Seeding configurazioni base...');
+  console.log('⚙️  Seeding base configuration...');
 
   // Generate NextAuth secret (JWT secret now derived via HKDF)
   const nextAuthSecret = randomBytes(32).toString('hex');
@@ -155,7 +125,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'app.name',
-      value: 'Luke',
+      value: APP_CONFIG_DEFAULTS['app.name'],
       encrypt: false,
     },
     {
@@ -170,12 +140,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'app.defaultTimezone',
-      value: 'Europe/Rome',
+      value: APP_CONFIG_DEFAULTS['app.defaultTimezone'],
       encrypt: false,
     },
     {
       key: 'app.baseUrl',
-      value: 'http://localhost:3000',
+      value: APP_CONFIG_DEFAULTS['app.baseUrl'],
       encrypt: false,
     },
     {
@@ -190,32 +160,32 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'security.password.minLength',
-      value: '12',
+      value: String(DEFAULT_PASSWORD_POLICY.minLength),
       encrypt: false,
     },
     {
       key: 'security.password.requireUppercase',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireUppercase),
       encrypt: false,
     },
     {
       key: 'security.password.requireLowercase',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireLowercase),
       encrypt: false,
     },
     {
       key: 'security.password.requireDigit',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireDigit),
       encrypt: false,
     },
     {
       key: 'security.password.requireSpecialChar',
-      value: 'true',
+      value: String(DEFAULT_PASSWORD_POLICY.requireSpecialChar),
       encrypt: false,
     },
     {
       key: 'security.tokenVersionCacheTTL',
-      value: '60000', // 60 seconds default
+      value: APP_CONFIG_DEFAULTS['security.tokenVersionCacheTTL'], // 60 seconds default
       encrypt: false,
     },
     {
@@ -226,11 +196,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     {
       key: 'security.session.updateAge',
       value: '14400', // 4h in seconds
-      encrypt: false,
-    },
-    {
-      key: 'security.cors.developmentOrigins',
-      value: 'http://localhost:3000,http://localhost:5173',
       encrypt: false,
     },
     // Rate Limiting (single JSON object)
@@ -245,21 +210,10 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       }),
       encrypt: false,
     },
-    // Timeouts for integrations
-    {
-      key: 'integrations.ldap.timeout',
-      value: '10000', // ms
-      encrypt: false,
-    },
-    {
-      key: 'integrations.ldap.connectTimeout',
-      value: '5000', // ms
-      encrypt: false,
-    },
     // Storage configuration
     {
       key: 'storage.type',
-      value: 'local',
+      value: APP_CONFIG_DEFAULTS['storage.type'],
       encrypt: false,
     },
     {
@@ -269,63 +223,64 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     },
     {
       key: 'storage.local.maxFileSizeMB',
-      value: '50',
-      encrypt: false,
-    },
-    {
-      key: 'storage.local.buckets',
-      value: '["uploads","exports","assets","brand-logos","collection-row-pictures","collection-row-pictures-revisions","merchandising-specsheet-images","company-assets"]',
+      value: APP_CONFIG_DEFAULTS['storage.local.maxFileSizeMB'],
       encrypt: false,
     },
     {
       key: 'storage.local.publicBaseUrl',
-      value: 'http://localhost:3001',
+      value: APP_CONFIG_DEFAULTS['storage.local.publicBaseUrl'],
       encrypt: false,
     },
     {
       key: 'storage.local.enableProxy',
-      value: 'true',
+      value: APP_CONFIG_DEFAULTS['storage.local.enableProxy'],
       encrypt: false,
     },
-    // Storage — MinIO defaults (used when storage.type = 'minio')
+    // Storage — S3-compatible defaults (used when storage.type = 's3'); dev stack runs SeaweedFS
     {
-      key: 'storage.minio.endpoint',
-      value: 'minio',
-      encrypt: false,
-    },
-    {
-      key: 'storage.minio.port',
-      value: '9000',
+      key: 'storage.s3.endpoint',
+      value: APP_CONFIG_DEFAULTS['storage.s3.endpoint'],
       encrypt: false,
     },
     {
-      key: 'storage.minio.useSSL',
-      value: 'false',
+      key: 'storage.s3.port',
+      value: APP_CONFIG_DEFAULTS['storage.s3.port'],
       encrypt: false,
     },
     {
-      key: 'storage.minio.accessKey',
-      value: 'minioadmin',
+      key: 'storage.s3.useSSL',
+      value: APP_CONFIG_DEFAULTS['storage.s3.useSSL'],
+      encrypt: false,
+    },
+    {
+      key: 'storage.s3.accessKey',
+      value: 's3admin',
       encrypt: true,
     },
     {
-      key: 'storage.minio.secretKey',
-      value: 'minioadmin',
+      key: 'storage.s3.secretKey',
+      value: 's3adminpwd',
       encrypt: true,
     },
     {
-      key: 'storage.minio.region',
-      value: 'us-east-1',
+      key: 'storage.s3.region',
+      value: APP_CONFIG_DEFAULTS['storage.s3.region'],
       encrypt: false,
     },
     {
-      key: 'storage.minio.presignedPutTtl',
-      value: '3600',
+      key: 'storage.s3.presignedPutTtl',
+      value: APP_CONFIG_DEFAULTS['storage.s3.presignedPutTtl'],
       encrypt: false,
     },
     {
-      key: 'storage.minio.presignedGetTtl',
-      value: '3600',
+      key: 'storage.s3.presignedGetTtl',
+      value: APP_CONFIG_DEFAULTS['storage.s3.presignedGetTtl'],
+      encrypt: false,
+    },
+    // Storage — asset derivative pipeline (thumb/card/export image variants)
+    {
+      key: 'storage.derivatives.enabled',
+      value: APP_CONFIG_DEFAULTS['storage.derivatives.enabled'],
       encrypt: false,
     },
     // NAV (Microsoft Dynamics NAV / SQL Server)
@@ -360,11 +315,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       encrypt: false,
     },
     {
-      key: 'integrations.nav.syncIntervalMinutes',
-      value: '30',
-      encrypt: false,
-    },
-    {
       key: 'integrations.nav.readOnly',
       value: 'true',
       encrypt: false,
@@ -377,22 +327,28 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     // Retention sweep (audit log + notifications) — see retentionScheduler.ts
     {
       key: 'auditLog.retentionDays',
-      value: '365',
+      value: APP_CONFIG_DEFAULTS['auditLog.retentionDays'],
       encrypt: false,
     },
     {
       key: 'auditLog.criticalRetentionDays',
-      value: '3650', // 10 years, for actions in CRITICAL_AUDIT_ACTIONS
+      value: APP_CONFIG_DEFAULTS['auditLog.criticalRetentionDays'], // 10 years, for actions in CRITICAL_AUDIT_ACTIONS
       encrypt: false,
     },
     {
       key: 'notification.retentionDays',
-      value: '90',
+      value: APP_CONFIG_DEFAULTS['notification.retentionDays'],
       encrypt: false,
     },
     {
       key: 'notification.dedupRetentionDays',
-      value: '30',
+      value: APP_CONFIG_DEFAULTS['notification.dedupRetentionDays'],
+      encrypt: false,
+    },
+    // Feedback GitHub issue sync — see feedbackSyncScheduler.ts
+    {
+      key: 'integrations.github.feedbackSyncIntervalMs',
+      value: '86400000', // 24h
       encrypt: false,
     },
   ];
@@ -406,7 +362,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
     });
 
     if (existingConfig) {
-      console.log(`⚠️  Config '${config.key}' già esistente, skip`);
+      console.log(`⚠️  Config '${config.key}' already exists, skipping`);
       configsSkipped++;
       continue;
     }
@@ -423,12 +379,12 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       },
     });
 
-    console.log(`✅ Config '${config.key}' creato`);
+    console.log(`✅ Config '${config.key}' created`);
     configsCreated++;
   }
 
   console.log(
-    `📊 Configurazioni: ${configsCreated} create, ${configsSkipped} esistenti`
+    `📊 Configuration: ${configsCreated} created, ${configsSkipped} existing`
   );
 }
 
@@ -597,14 +553,11 @@ async function seedMilestoneTemplates(
 }
 
 async function main() {
-  console.log('🌱 Avvio seed database...');
+  console.log('🌱 Starting database seed...');
 
   try {
     // Seeding admin user
     await seedAdminUser(prisma);
-
-    // Update existing users with emailVerifiedAt
-    await updateExistingUsersVerification(prisma);
 
     // Seeding configurations
     await seedAppConfigs(prisma);
@@ -625,23 +578,23 @@ async function main() {
     await seedMilestoneTemplates(prisma, functionIds);
 
     // Final log
-    console.log('\n🎉 Seed completato con successo!');
-    console.log('\n🔑 Credenziali admin:');
+    console.log('\n🎉 Seed completed successfully!');
+    console.log('\n🔑 Admin credentials:');
     console.log('   Email: admin@luke.local');
     console.log('   Username: admin');
     console.log('   Password: changeme');
-    console.log('\n🔐 Segreti generati:');
-    console.log('   JWT Secret: Derivato via HKDF dalla master key');
-    console.log('   NextAuth Secret: Generato e cifrato in AppConfig');
-    console.log('\n⚠️  IMPORTANTE: Cambia la password admin al primo login!');
-    console.log('\n🚀 Prossimi passi:');
-    console.log('   1. Avvia il server: pnpm --filter @luke/api dev');
-    console.log('   2. Testa health check: curl http://localhost:3001/healthz');
+    console.log('\n🔐 Generated secrets:');
+    console.log('   JWT Secret: derived via HKDF from the master key');
+    console.log('   NextAuth Secret: generated and encrypted in AppConfig');
+    console.log('\n⚠️  IMPORTANT: change the admin password at first login!');
+    console.log('\n🚀 Next steps:');
+    console.log('   1. Start the server: pnpm --filter @luke/api dev');
+    console.log('   2. Test the health check: curl http://localhost:3001/healthz');
     console.log(
-      '   3. Apri Prisma Studio: pnpm --filter @luke/api prisma:studio'
+      '   3. Open Prisma Studio: pnpm --filter @luke/db prisma:studio'
     );
   } catch (error) {
-    console.error('❌ Errore durante seed:', error);
+    console.error('❌ Error during seed:', error);
     throw error;
   }
 }
@@ -663,11 +616,11 @@ function isEntrypoint(): boolean {
 if (isEntrypoint()) {
   main()
     .catch(e => {
-      console.error('💥 Seed fallito:', e);
+      console.error('💥 Seed failed:', e);
       process.exit(1);
     })
     .finally(async () => {
       await prisma.$disconnect();
-      console.log('🔌 Connessione database chiusa');
+      console.log('🔌 Database connection closed');
     });
 }

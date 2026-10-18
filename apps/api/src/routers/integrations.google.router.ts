@@ -1,30 +1,13 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode } from '@luke/calendar';
+import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefreshTokenError } from '@luke/calendar';
+import { googleWorkspaceConfigSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfig, getConfig } from '../lib/configManager';
+import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
-
-const serviceAccountConfigSchema = z.object({
-  authMode: z.literal('service_account'),
-  serviceEmail: z.string().email('Email service account non valida'),
-  serviceKey: z.string().optional(),
-  impersonateEmail: z.string().email('Email non valida').or(z.literal('')).optional(),
-  domain: z.string().min(1, 'Workspace domain obbligatorio'),
-  calendarSyncEnabled: z.boolean(),
-});
-
-const oauthConfigSchema = z.object({
-  authMode: z.literal('oauth_user'),
-  oauthClientId: z.string().min(1, 'Client ID obbligatorio'),
-  oauthClientSecret: z.string().optional(),
-  domain: z.string().min(1, 'Workspace domain obbligatorio'),
-  calendarSyncEnabled: z.boolean(),
-});
-
-const saveConfigSchema = z.discriminatedUnion('authMode', [serviceAccountConfigSchema, oauthConfigSchema]);
 
 export const googleRouter = router({
   /**
@@ -53,7 +36,7 @@ export const googleRouter = router({
       ] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.authMode', false),
         getConfig(ctx.prisma, 'integrations.google.domain', false),
-        getConfig(ctx.prisma, 'integrations.google.calendarSync.enabled', false),
+        getConfigOrDefault(ctx.prisma, 'integrations.google.calendarSync.enabled'),
         getConfig(ctx.prisma, 'integrations.google.serviceEmail', false),
         getConfig(ctx.prisma, 'integrations.google.serviceKey', false),
         getConfig(ctx.prisma, 'integrations.google.impersonateEmail', false),
@@ -66,7 +49,7 @@ export const googleRouter = router({
       return {
         authMode: (authMode ?? 'service_account') as 'service_account' | 'oauth_user',
         domain: domain ?? '',
-        calendarSyncEnabled: calendarSyncEnabled === 'true',
+        calendarSyncEnabled,
         // service account
         serviceEmail: serviceEmail ?? '',
         hasServiceKey: !!serviceKey,
@@ -83,28 +66,41 @@ export const googleRouter = router({
    * Saves the Google Workspace integration configuration (service account or OAuth mode).
    *
    * @auth {config:update}
-   * @input {saveConfigSchema} — discriminated union on authMode: service_account or oauth_user fields.
+   * @input {googleWorkspaceConfigSchema} — discriminated union on authMode: service_account or oauth_user fields.
    * @output {{ success: true }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(saveConfigSchema)
+    .input(googleWorkspaceConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      await saveConfig(ctx.prisma, 'integrations.google.authMode', input.authMode, false);
-      await saveConfig(ctx.prisma, 'integrations.google.domain', input.domain, false);
-      await saveConfig(ctx.prisma, 'integrations.google.calendarSync.enabled', String(input.calendarSyncEnabled), false);
-
+      // One change: a failure leaves the stored Google settings as they were. A blank secret keeps
+      // the stored one.
+      const common = [
+        { key: 'integrations.google.authMode' as const, value: input.authMode },
+        { key: 'integrations.google.domain' as const, value: input.domain },
+        { key: 'integrations.google.calendarSync.enabled' as const, value: String(input.calendarSyncEnabled) },
+      ];
       if (input.authMode === 'service_account') {
-        await saveConfig(ctx.prisma, 'integrations.google.serviceEmail', input.serviceEmail, false);
-        await saveConfig(ctx.prisma, 'integrations.google.impersonateEmail', input.impersonateEmail ?? '', false);
-        if (input.serviceKey?.trim()) {
-          await saveConfig(ctx.prisma, 'integrations.google.serviceKey', input.serviceKey, true);
-        }
+        await saveConfigs(ctx.prisma, [
+          ...common,
+          { key: 'integrations.google.serviceEmail', value: input.serviceEmail },
+          // An empty field means "no impersonation", which is the absence of the key, not an empty
+          // email stored under it: `getConfig` already returns `null` for an absent key and every
+          // reader of this one collapses both to `undefined`. Writing `''` would have been a second
+          // spelling of the same state that the registry schema (`z.string().email()`) cannot describe.
+          { key: 'integrations.google.impersonateEmail', value: input.impersonateEmail || null },
+          ...(input.serviceKey?.trim()
+            ? [{ key: 'integrations.google.serviceKey' as const, value: input.serviceKey, encrypt: true }]
+            : []),
+        ]);
       } else {
-        await saveConfig(ctx.prisma, 'integrations.google.oauth.clientId', input.oauthClientId, false);
-        if (input.oauthClientSecret?.trim()) {
-          await saveConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', input.oauthClientSecret, true);
-        }
+        await saveConfigs(ctx.prisma, [
+          ...common,
+          { key: 'integrations.google.oauth.clientId', value: input.oauthClientId },
+          ...(input.oauthClientSecret?.trim()
+            ? [{ key: 'integrations.google.oauth.clientSecret' as const, value: input.oauthClientSecret, encrypt: true }]
+            : []),
+        ]);
       }
 
       await logAudit(ctx, {
@@ -133,7 +129,10 @@ export const googleRouter = router({
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', true),
       ]);
       if (!clientId || !clientSecret) {
-        throw new Error('Client ID e Client Secret obbligatori prima di avviare OAuth');
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Client ID e Client Secret obbligatori prima di avviare OAuth',
+        });
       }
       const url = generateOAuthUrl(clientId, clientSecret, input.redirectUri);
       return { url };
@@ -144,7 +143,7 @@ export const googleRouter = router({
    *
    * @auth {config:update}
    * @input {{ code: string, redirectUri: string }}
-   * @output {{ userEmail: string }}
+   * @output {{ userEmail: string | null }}
    */
   exchangeOAuthCode: protectedProcedure
     .use(requirePermission('config:update'))
@@ -155,11 +154,29 @@ export const googleRouter = router({
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret', true),
       ]);
       if (!clientId || !clientSecret) {
-        throw new Error('Client ID e Client Secret non configurati');
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Client ID e Client Secret non configurati' });
       }
-      const { refreshToken, userEmail } = await exchangeOAuthCode(clientId, clientSecret, input.redirectUri, input.code);
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', refreshToken, true);
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', userEmail, false);
+      let exchanged: Awaited<ReturnType<typeof exchangeOAuthCode>>;
+      try {
+        exchanged = await exchangeOAuthCode(clientId, clientSecret, input.redirectUri, input.code);
+      } catch (err) {
+        if (err instanceof MissingRefreshTokenError) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'Google non ha restituito un refresh token: ricollega l\'account concedendo di nuovo il consenso',
+            cause: err,
+          });
+        }
+        throw err;
+      }
+      const { refreshToken, userEmail } = exchanged;
+      // Token and address change together. No address in Google's answer is no stored address,
+      // not an empty one: the registry refuses `''`, and that refusal used to come after the new
+      // token was stored, skipping the audit and leaving the previous account's address on show.
+      await saveConfigs(ctx.prisma, [
+        { key: 'integrations.google.oauth.refreshToken', value: refreshToken, encrypt: true },
+        { key: 'integrations.google.oauth.userEmail', value: userEmail || null },
+      ]);
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_CONNECT',
         targetType: 'Config',
@@ -179,13 +196,21 @@ export const googleRouter = router({
   disconnectOAuth: protectedProcedure
     .use(requirePermission('config:update'))
     .mutation(async ({ ctx }) => {
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.refreshToken', '', false);
-      await saveConfig(ctx.prisma, 'integrations.google.oauth.userEmail', '', false);
+      // Disconnecting removes the keys rather than blanking them — see the impersonation note above.
+      await saveConfigs(ctx.prisma, [
+        { key: 'integrations.google.oauth.refreshToken', value: null },
+        { key: 'integrations.google.oauth.userEmail', value: null },
+      ]);
       await logAudit(ctx, {
         action: 'CONFIG_GOOGLE_OAUTH_DISCONNECT',
         targetType: 'Config',
         result: 'SUCCESS',
-        metadata: {},
+        metadata: {
+          configKeys: [
+            'integrations.google.oauth.refreshToken',
+            'integrations.google.oauth.userEmail',
+          ],
+        },
       });
       return { success: true };
     }),

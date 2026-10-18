@@ -7,21 +7,28 @@
 import ExcelJS from 'exceljs';
 
 
-import { calcMaxSupplierCost, formatDateTime } from '@luke/core';
-
-import { EMBED_OVERSAMPLE_FACTOR, resizeForEmbed } from '../lib/export/image';
-import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, fetchCompanyExportContext } from '../lib/export/pdf';
-import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
-import { readFileBuffer } from '../storage';
-
-import { buildProgressLabelMap } from './collectionLayout.service';
-
-import type { QuotationWithParamSet } from './collectionLayout.service';
+import {
+  calcMaxSupplierCost,
+  classifyMargin,
+  landedCostBreakdown,
+  NUMERIC_DATE_TIME,
+  priceMargin,
+  type MarginStatus,
+} from '@luke/core';
 import type { PrismaClient,
   Brand,
   CollectionLayoutRow,
   Season,
-  Vendor } from '@prisma/client';
+  Vendor } from '@luke/db';
+
+import { bufferToDataUri, EMBED_OVERSAMPLE_FACTOR, extensionForExcelJs, resizeForEmbed } from '../lib/export/image';
+import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
+import { applyStreamingHeaderStyle } from '../lib/export/xlsxStreaming';
+
+import { readAssetBuffer, resolveLogoDataUri } from './asset.service';
+import { buildProgressLabelMap } from './collectionLayout.service';
+
+import type { QuotationWithParamSet } from './collectionLayout.service';
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,7 +62,7 @@ type MarginResult = {
   ws: number | null;
   margin: number | null;
   targetMargin: number | null;
-  status: 'green' | 'yellow' | 'red' | null;
+  status: MarginStatus | null;
 };
 
 function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
@@ -74,27 +81,20 @@ function computeQuotationMargin(q: QuotationWithParamSet): MarginResult {
     return { ...empty, bt, targetMargin };
   }
 
-  const qc         = q.supplierQuotation * (ps.qualityControlPercent / 100);
-  const withQC     = q.supplierQuotation + qc + ps.tools;
-  const withTransp = withQC + ps.transportInsuranceCost;
-  const withDuty   = withTransp * (1 + ps.duty / 100);
-  const lc         = withDuty / ps.exchangeRate + ps.italyAccessoryCosts;
-
   if (!q.retailPrice || q.retailPrice <= 0) {
+    const lc = landedCostBreakdown(q.supplierQuotation, ps).landedCost;
     return { ...empty, bt, lc: Math.round(lc * 100) / 100, targetMargin };
   }
 
-  const ws     = q.retailPrice / ps.retailMultiplier;
-  const margin = ((ws - lc) / ws) * 100;
-  const status: 'green' | 'yellow' | 'red' =
-    margin >= ps.optimalMargin ? 'green'
-    : margin >= ps.optimalMargin - 3 ? 'yellow'
-    : 'red';
+  // One call: the landed cost and wholesale shown are the margin's own inputs.
+  const m      = priceMargin(q.supplierQuotation, q.retailPrice, ps);
+  const margin = m.companyMargin * 100;
+  const status = classifyMargin(margin, ps.optimalMargin);
 
   return {
-    bt:          Math.round(bt! * 100) / 100,
-    lc:          Math.round(lc * 100) / 100,
-    ws:          Math.round(ws * 100) / 100,
+    bt,
+    lc:          Math.round(m.landedCost * 100) / 100,
+    ws:          Math.round(m.wholesalePrice * 100) / 100,
     margin:      Math.round(margin * 100) / 100,
     targetMargin,
     status,
@@ -125,6 +125,7 @@ const ROW_PHOTO_HEIGHT = 90;
  *
  * @param extractedBy - Display name of the requesting user (shown in the header).
  * @param extractedAt - Timestamp to include in the header.
+ * @param timeZone - The requester's zone (`getUserTimeZone`), the one the header time is written in.
  * @returns A Buffer containing the PDF file.
  */
 export async function buildCollectionRowPdf(
@@ -132,25 +133,19 @@ export async function buildCollectionRowPdf(
   prisma: PrismaClient,
   extractedBy: string,
   extractedAt: Date,
+  timeZone: string,
   logger?: Logger,
 ): Promise<Buffer> {
   const { brand, season, row } = ctx;
 
   const [brandLogoDataUri, rowImageDataUri, company, progressLabelMap] = await Promise.all([
-    brand.logoKey
-      ? readFileBuffer(prisma, 'brand-logos', brand.logoKey, logger).then(buf =>
-          buf ? dataUri(buf, brand.logoKey!) : null,
-        )
-      : Promise.resolve(null),
+    resolveLogoDataUri(prisma, brand.logoKey, logger),
     row.pictureKey
-      ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger).then(async buf =>
-          buf
-            ? dataUri(
-                await resizeForEmbed(buf, ROW_PHOTO_WIDTH * EMBED_OVERSAMPLE_FACTOR, ROW_PHOTO_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger),
-                row.pictureKey!,
-              )
-            : null,
-        )
+      ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger).then(async result => {
+          if (!result) return null;
+          const resized = await resizeForEmbed(result.buffer, ROW_PHOTO_WIDTH * EMBED_OVERSAMPLE_FACTOR, ROW_PHOTO_HEIGHT * EMBED_OVERSAMPLE_FACTOR, logger);
+          return resized ? bufferToDataUri(resized, result.contentType) : null;
+        })
       : Promise.resolve(null),
     fetchCompanyExportContext(prisma, logger),
     buildProgressLabelMap(prisma),
@@ -163,7 +158,7 @@ export async function buildCollectionRowPdf(
     1,
     {
       subtitle: `${row.line}${row.article ? ` / ${row.article}` : ''} — ${season.code} ${season.year}`,
-      extractedInfo: `${extractedBy} — ${formatDateTime(extractedAt)}`,
+      extractedInfo: `${extractedBy} — ${formatExportInstant(extractedAt, timeZone, NUMERIC_DATE_TIME)}`,
     },
   );
 
@@ -298,14 +293,14 @@ export async function buildCollectionRowXlsx(
   wb.creator = 'Luke';
   wb.created = new Date();
 
-  const [rawRowImageBuf, progressLabelMap] = await Promise.all([
-    row.pictureKey ? readFileBuffer(prisma, 'collection-row-pictures', row.pictureKey, logger) : null,
+  const [rowImageResult, progressLabelMap] = await Promise.all([
+    row.pictureKey ? readAssetBuffer(prisma, 'collection-row-pictures', row.pictureKey, 'export', logger) : null,
     buildProgressLabelMap(prisma),
   ]);
   // Width is capped generously (not tied to the embed box) since only height is
   // visually constrained here — see the proportional scale-by-height below.
-  const rowImageBuf = rawRowImageBuf
-    ? await resizeForEmbed(rawRowImageBuf, ROW_XLSX_MAX_H_PX * 10, ROW_XLSX_MAX_H_PX * EMBED_OVERSAMPLE_FACTOR, logger)
+  const rowImageBuf = rowImageResult
+    ? await resizeForEmbed(rowImageResult.buffer, ROW_XLSX_MAX_H_PX * 10, ROW_XLSX_MAX_H_PX * EMBED_OVERSAMPLE_FACTOR, logger)
     : null;
 
   // Sheet 1: identification
@@ -343,15 +338,14 @@ export async function buildCollectionRowXlsx(
   }
 
   // Embed product image in column C, max height 50mm (189px at 96dpi), aspect-ratio preserved
-  if (rowImageBuf) {
-    const ext = row.pictureKey!.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
-    const dims = getImageDimensions(rowImageBuf, row.pictureKey!);
+  if (rowImageBuf && rowImageResult) {
+    const ext = extensionForExcelJs(rowImageResult.contentType);
     let imgW = ROW_XLSX_MAX_H_PX;
     let imgH = ROW_XLSX_MAX_H_PX;
-    if (dims && dims.height > 0) {
-      const scale = Math.min(1, ROW_XLSX_MAX_H_PX / dims.height);
-      imgW = Math.round(dims.width * scale);
-      imgH = Math.round(dims.height * scale);
+    if (rowImageResult.height && rowImageResult.height > 0) {
+      const scale = Math.min(1, ROW_XLSX_MAX_H_PX / rowImageResult.height);
+      imgW = Math.round((rowImageResult.width ?? ROW_XLSX_MAX_H_PX) * scale);
+      imgH = Math.round(rowImageResult.height * scale);
     }
      
     const imageId = wb.addImage({ buffer: rowImageBuf as unknown as NonNullable<ExcelJS.Image['buffer']>, extension: ext }); // exceljs bundles its own stale non-generic Buffer type, structurally incompatible with @types/node's current Buffer<ArrayBufferLike>
@@ -415,33 +409,6 @@ export async function buildCollectionRowXlsx(
   return Buffer.from(arrayBuffer);
 }
 
-function getImageDimensions(buf: Buffer, key: string): { width: number; height: number } | null {
-  try {
-    if (key.toLowerCase().endsWith('.png')) {
-      return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
-    }
-    // JPEG: scan for SOF marker
-    let i = 2;
-    while (i < buf.length - 8) {
-      if (buf[i] !== 0xFF) break;
-      const marker = buf[i + 1];
-      const segLen = buf.readUInt16BE(i + 2);
-      if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
-        return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
-      }
-      i += 2 + segLen;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
 function centreHeaderRow(row: ExcelJS.Row): void {
   row.eachCell(cell => { cell.alignment = { ...cell.alignment, horizontal: 'center' }; });
-}
-
-function dataUri(buf: Buffer, key: string): string {
-  const lower = key.toLowerCase();
-  if (lower.endsWith('.png')) return `data:image/png;base64,${buf.toString('base64')}`;
-  if (lower.endsWith('.webp')) return '';
-  return `data:image/jpeg;base64,${buf.toString('base64')}`;
 }

@@ -38,7 +38,7 @@ export function ConfigValueDialog({
   const { copy, copiedValue } = useCopyToClipboard();
   const [isJsonExpanded, setIsJsonExpanded] = useState(false);
 
-  // Verifica se il valore è un JSON
+  // Check whether the value is JSON
   const isJson = value.startsWith('{') && value.includes('"');
   const displayValue = isJson
     ? isJsonExpanded
