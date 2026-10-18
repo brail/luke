@@ -212,6 +212,10 @@ const portafoglioRouter = router({
           message: 'NAV non configurato o sync non disponibile',
         });
       }
+      // The scheduler has logged it and told the admins; the caller only needs to know it failed.
+      if (result.error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Sync portafoglio non riuscito' });
+      }
 
       return result;
     }),
@@ -440,6 +444,10 @@ const kimoRouter = router({
           code: 'PRECONDITION_FAILED',
           message: 'NAV non configurato o sync non disponibile',
         });
+      }
+      // The scheduler has logged it and told the admins; the caller only needs to know it failed.
+      if (result.error) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Sync KIMO non riuscito' });
       }
 
       return result;

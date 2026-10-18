@@ -29,11 +29,15 @@ const TRIGGERS = [
   {
     name: 'portafoglio',
     spy: () => vi.spyOn(portafoglioScheduler, 'triggerPortafoglioSyncNow').mockResolvedValue(null),
+    failingSpy: () => vi.spyOn(portafoglioScheduler, 'triggerPortafoglioSyncNow')
+      .mockResolvedValue({ stats: [], totalDurationMs: 1, seasonCodes: [], error: 'a table failed' }),
     trigger: (c: Caller) => c.sales.statistics.portafoglio.triggerSync(),
   },
   {
     name: 'kimo',
     spy: () => vi.spyOn(kimoScheduler, 'triggerKimoSyncNow').mockResolvedValue(null),
+    failingSpy: () => vi.spyOn(kimoScheduler, 'triggerKimoSyncNow')
+      .mockResolvedValue({ stats: [], totalDurationMs: 1, error: 'a table failed' }),
     trigger: (c: Caller) => c.sales.statistics.kimo.triggerSync(),
   },
 ];
@@ -55,6 +59,15 @@ describe.each(TRIGGERS)('sales.statistics.$name.triggerSync', t => {
       code: 'PRECONDITION_FAILED',
     });
     expect(sync).toHaveBeenCalledTimes(1);
+  });
+
+  // A sync that ran and failed (#147): the page shows an error toast, never "Sync completato".
+  it('answers a sync that returned an error with an error', async () => {
+    t.failingSpy();
+
+    await expect(t.trigger(await createCallerAs('admin'))).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+    });
   });
 });
 
