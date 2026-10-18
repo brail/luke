@@ -25,7 +25,7 @@ env:
   # security.yml's own RELEASE_TRAIN_BRANCH (CLAUDE.md, "When switching develop
   # branch"; enforced by `pnpm check:workflows`).
   STABLE_BRANCH: main
-  RELEASE_TRAIN_BRANCH: develop-2.2
+  RELEASE_TRAIN_BRANCH: develop-3.1
 
 jobs:
   # ── Gate: a tag may only publish what its provenance allows ─────────────────

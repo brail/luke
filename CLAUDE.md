@@ -445,8 +445,7 @@ Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; 
 `main`) → GitHub Release `Luke X.Y.Z` (stable tags only: the tag's CHANGELOG section) → manual
 redeploy of the stack (nothing redeploys it automatically). The repository variables
 `PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME` must be set (`OPERATIONS.md`). Runtime images carry
-runtime dependencies only (ADR-028). `main` does not carry these release gates yet: Appendix Z of
-`docs/LUKE_MONOREPO_AUDIT_2026-08-30.md`. **NEVER delete the `luke_api_data` volume** — the master
+runtime dependencies only (ADR-028). **NEVER delete the `luke_api_data` volume** — the master
 key lives there.
 
 **A `develop-X.Y` branch dies when its stable tag is cut**, not at the merge: never reactivate it or
@@ -455,16 +454,22 @@ backport onto it; the next cycle opens a new branch cut from `main`.
 **When switching develop branch** (e.g. `develop-2.1` → `develop-2.2`): update the `branches` list
 in `.github/workflows/ci.yml` (`push` and `pull_request`) and `env.RELEASE_TRAIN_BRANCH` in both
 `.github/workflows/security.yml` and `.github/workflows/release.yml` — `pnpm check:workflows`
-(inside `pnpm check:drift`) fails on a miss; security.yml's `push` pattern and `dependabot.yml` need
-no edit. Delete the old branch locally. The owner deletes it from the remote right after its stable
+(inside `pnpm check:drift`) fails on a miss; security.yml's `push` pattern, `docs.yml` and
+`dependabot.yml` need no edit. Merge these updates into `main` through a pull request first,
+then create and push the new train branch from the updated `main`: the scheduled
+`osv-weekly-release-train` job reads `RELEASE_TRAIN_BRANCH` from the default branch's
+`security.yml`. Complete both steps before the next scheduled scan; the weekly job fails
+if the configured branch is absent, while `check:workflows` only reports a note.
+Delete the old branch locally. The owner deletes it from the remote right after its stable
 tag is cut — ruleset 22082018 forbids deleting `develop-*` until the owner lifts that rule — so the
 provenance gate stops accepting candidates from it.
 
 **CI workflows**:
 
-- On `develop-2.2` a push confined to the documentation allowlist (`push.paths-ignore` in `ci.yml`)
-  runs no CI; `docs.yml` runs `pnpm check:drift` instead, and the runtime evidence for that commit
-  is the CI run of the last push outside the allowlist. `main` has no such routing
+- On `main` and the active release train, a push confined to the documentation allowlist
+  (`push.paths-ignore` in `ci.yml`) skips the `ci.yml` push run; `docs.yml` runs
+  `pnpm check:drift` instead. Runtime evidence must come from a successful full CI run
+  for the unchanged runtime tree. Pull requests still run full CI
 - Change the allowlist and `tools/scripts/check-workflow-paths.ts` together; never a global pattern
   like `**.md`, never a path filter on `pull_request`. `CHANGELOG.md`, workflows, Markdown inside a
   source tree and test fixtures are not documentation: a fixture lives in its test tree, never under
@@ -472,7 +477,7 @@ provenance gate stops accepting candidates from it.
 - `main` requires exactly `CI gate` and `Security gate`; never require them, or the path-filtered
   `Documentation drift`, on `develop-*` or `release/*`. A new CI job or PR-relevant scan goes in its
   gate's `needs`, and never `continue-on-error:` in `ci.yml` or `security.yml` —
-  `check-workflow-paths.ts` checks both on the train, nothing does on `main`. A gate change lands on
+  `check-workflow-paths.ts` checks both. A gate change lands on
   `main` before `main`'s ruleset may depend on it
 - Both gated workflows pin `pull_request` types to `opened`, `synchronize`, `reopened`, `edited`
 

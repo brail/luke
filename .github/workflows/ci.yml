@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop-2.2]
+    branches: [main, develop-3.1]
     # Documentation ownership surface: a push confined to these paths skips CI
     # and docs.yml runs the drift check instead. Anything not listed — a new
     # Markdown location, CHANGELOG.md, .github/**, a non-Markdown file under
@@ -26,7 +26,7 @@ on:
   # protected target produces no new run and the required checks stay Pending
   # on a head SHA nothing judged.
   pull_request:
-    branches: [main, develop-2.2]
+    branches: [main, develop-3.1]
     types: [opened, synchronize, reopened, edited]
   # Callable from release.yml: a tag fires neither the push nor the pull_request
   # trigger, so without this there would be no CI run to depend on before the
