@@ -144,6 +144,11 @@ download files without a rate ceiling. It is not configurable through the
 fails. Its 429 has its own body — `{ statusCode, error, message, retryAfter }` —
 and no `error.data.code`.
 
+A tRPC batch is one request to this limiter, whatever the number of calls in
+it. The tRPC adapter refuses a batch of more than `TRPC_MAX_BATCH_SIZE` calls
+(`@luke/core`, 20) with a 400, before any procedure runs, and the web's links
+split at the same number, so a busy page sends a second request instead.
+
 ---
 
 ## Idempotency

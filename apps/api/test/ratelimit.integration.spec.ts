@@ -3,16 +3,24 @@
  * Verifies rate-limiting end-to-end with real tRPC calls
  */
 
+import { randomUUID } from 'crypto';
+
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import { describe, it, expect, beforeEach } from 'vitest';
 
-import { rateLimitStore } from '../src/lib/ratelimit';
+import { TRPC_MAX_BATCH_SIZE } from '@luke/core';
+
+import { enforceRateLimit, rateLimitStore } from '../src/lib/ratelimit';
+import { resolveRateLimitPolicy } from '../src/lib/rateLimitPolicy';
 import { TrustedProxyConfigError, createTrustProxy } from '../src/lib/trustProxy';
+import { appRouter } from '../src/routers/index';
 
 import {
   setupTestDb,
   createCallerWithIP,
   createCallerAs,
+  createCallerWithSession,
   createTestUser,
   expectToThrow,
   TEST_USER_PASSWORD,
@@ -250,6 +258,57 @@ describe('Rate-Limit Integration', () => {
       await expectToThrow(adminCaller.config.importJson({ items: [] }), {
         code: 'TOO_MANY_REQUESTS',
       });
+    });
+  });
+
+  describe('export generation rate limiting', () => {
+    type Caller = ReturnType<typeof createCallerWithSession>;
+    const brandSeason = () => ({ brandId: randomUUID(), seasonId: randomUUID() });
+
+    // Every export shares one per-user bucket. With the caller's bucket full, each export must
+    // answer TOO_MANY_REQUESTS before it looks anything up: the random ids below would otherwise
+    // come back as NOT_FOUND or as an empty file.
+    it.each<[string, (caller: Caller) => Promise<unknown>]>([
+      ['sales.statistics.portafoglio.download', c => c.sales.statistics.portafoglio.download(brandSeason())],
+      ['sales.statistics.kimo.download', c => c.sales.statistics.kimo.download(brandSeason())],
+      ['collectionLayoutRevision.export.xlsx', c => c.collectionLayoutRevision.export.xlsx({ revisionId: randomUUID() })],
+      ['collectionLayoutRevision.export.pdf', c => c.collectionLayoutRevision.export.pdf({ revisionId: randomUUID() })],
+    ])('%s is refused once the export bucket is full', async (_label, invoke) => {
+      const prisma = await setupTestDb();
+      const { session } = await createTestUser('admin');
+      const policy = await resolveRateLimitPolicy('exportGeneration', prisma);
+      for (let i = 0; i < policy.max; i++) enforceRateLimit('exportGeneration', session.user.id, policy);
+
+      await expectToThrow(invoke(createCallerWithSession(session)), { code: 'TOO_MANY_REQUESTS' });
+    });
+  });
+
+  describe('tRPC batch size', () => {
+    // The cap `server.ts` passes to the adapter (`maxBatchSize`), on the real router. Without it one
+    // request carries any number of calls, each with its own procedure run and rate-limit hit. The
+    // calls are refused before any procedure runs, so a context-free adapter is enough here.
+    const batchStatus = async (calls: number) => {
+      // `maxParamLength` as in `server.ts`: a batch puts every procedure name in one URL param.
+      const fastify = Fastify({ routerOptions: { maxParamLength: 5000 } });
+      await fastify.register(fastifyTRPCPlugin, {
+        prefix: '/trpc',
+        trpcOptions: { router: appRouter, maxBatchSize: TRPC_MAX_BATCH_SIZE, createContext: () => ({}) },
+      });
+      try {
+        const paths = Array.from({ length: calls }, () => 'missing.procedure').join(',');
+        const response = await fastify.inject({ method: 'GET', url: `/trpc/${paths}?batch=1&input={}` });
+        return { status: response.statusCode, oversized: response.body.includes('Batch call exceeds maximum size') };
+      } finally {
+        await fastify.close();
+      }
+    };
+
+    it('refuses a batch one call over the cap', async () => {
+      expect(await batchStatus(TRPC_MAX_BATCH_SIZE + 1)).toEqual({ status: 400, oversized: true });
+    });
+
+    it('accepts a batch at the cap', async () => {
+      expect((await batchStatus(TRPC_MAX_BATCH_SIZE)).oversized).toBe(false);
     });
   });
 

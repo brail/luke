@@ -18,7 +18,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import Fastify from 'fastify';
 import pino from 'pino';
 
-import { IMAGE_BUCKETS, isDevelopment, isProduction, type StorageBucket } from '@luke/core';
+import { IMAGE_BUCKETS, TRPC_MAX_BATCH_SIZE, isDevelopment, isProduction, type StorageBucket } from '@luke/core';
 import {
   deriveSecret,
   HKDF_INFO_COOKIE,
@@ -192,6 +192,7 @@ async function registerTRPCPlugin() {
     prefix: '/trpc',
     trpcOptions: {
       router: appRouter,
+      maxBatchSize: TRPC_MAX_BATCH_SIZE,
       createContext: async ({ req, res }: any) => // fastify-trpc-plugin adapter types not exported
         createContext({ prisma, req, res }),
       onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported

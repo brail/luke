@@ -144,6 +144,7 @@ export const collectionLayoutRevisionRouter = router({
      */
     xlsx: protectedProcedure
       .use(requirePermission('collection_layout:read'))
+      .use(withRateLimit('exportGeneration'))
       // `collectionLayoutId` is no longer an input: the revision carries it. There used to be two
       // independent ids and nothing verified that the second was really the
       // first one's layout, so you could export a revision by mounting it on
@@ -176,6 +177,7 @@ export const collectionLayoutRevisionRouter = router({
      */
     pdf: protectedProcedure
       .use(requirePermission('collection_layout:read'))
+      .use(withRateLimit('exportGeneration'))
       // As above: the revision carries the layout.
       .input(z.object({ revisionId: z.string().uuid() }))
       .mutation(async ({ input, ctx }) => {

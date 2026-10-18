@@ -30,6 +30,7 @@ import {
   triggerPortafoglioSyncNow,
   isPortafoglioSyncRunning,
 } from '../lib/portafoglioSyncScheduler';
+import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getUserTimeZone, resolveUserTimeZone } from '../lib/userTimeZone';
 import { getUserAllowedBrandIds } from '../services/context.service';
@@ -236,6 +237,7 @@ const portafoglioRouter = router({
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;
@@ -452,6 +454,7 @@ const kimoRouter = router({
    */
   download: protectedProcedure
     .use(requirePermission('sales:read'))
+    .use(withRateLimit('exportGeneration'))
     .input(portafoglioDownloadInput)
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.session.user.id;

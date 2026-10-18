@@ -95,6 +95,7 @@ export {
   buildBackupImportUrl,
   buildAuditLogExportUrl,
   buildTrpcUrl,
+  TRPC_MAX_BATCH_SIZE,
   buildSeasonCalendarExportUrl,
   type UrlOptions,
 } from './net/url.js';
