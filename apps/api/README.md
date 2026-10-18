@@ -60,6 +60,7 @@ been sent to the directory yet:
 | From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
 | From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
 | LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
+| After the directory verified the password: the username belongs to a deactivated account, or to an account without this LDAP identity, which is never linked to it | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
 | After the directory verified the password: the user record could not be written | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 
 The answer is decided by what happens before the username is on the wire, and

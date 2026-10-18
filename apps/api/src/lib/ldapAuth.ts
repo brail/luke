@@ -126,8 +126,9 @@ export async function authenticateViaLdap(
     const userGroups = await lookUpGroups(ldapClient, config, verified.dn);
     const role = determineUserRole(userGroups, config.roleMapping, logger);
 
-    // Create or update the user in the database
+    // Create or update the user in the database; an account it may not sign in is a refusal.
     const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
+    if (!user) return REFUSED;
 
     logger.info({ username, role }, 'LDAP authentication successful');
     return { user };
@@ -325,14 +326,18 @@ function determineUserRole(
 }
 
 /**
- * Create or update the user in the database
+ * The local user for a directory-verified login: the account that carries this LDAP identity, with
+ * its names synced from the directory, or a new pending account when the username is free.
+ *
+ * @returns `null` — a refusal — when the username belongs to a deactivated account or to one without
+ *   this LDAP identity (#144).
  */
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
   role: 'admin' | 'editor' | 'viewer',
   userAttributes: Record<string, string[]>
-): Promise<User> {
+): Promise<User | null> {
   // Extract email from LDAP attributes
   const ldapEmail = userAttributes.mail?.[0] || `${username}@ldap.local`;
 
@@ -359,19 +364,26 @@ async function createOrUpdateUser(
     `LDAP attributes for ${username}`
   );
 
-  // Look up existing user (active, including those pending approval)
-  let user = await prisma.user.findFirst({
-    where: {
-      username,
-      isActive: true,
-    },
-  });
+  // By the unique username, active or not: filtering on `isActive` let a deactivated account fall
+  // through to `create`, whose P2002 then read as "LDAP unavailable".
+  let user = await prisma.user.findUnique({ where: { username } });
 
   if (user) {
-    logger.info(
-      { username },
-      `User already exists, syncing firstName/lastName from LDAP`
-    );
+    if (!user.isActive) {
+      logger.warn({ username }, 'LDAP login refused: the account is deactivated');
+      return null;
+    }
+
+    // Only the account that already carries this directory identity. An entry named like an account
+    // without it — a local one, say — must not become that account, so nothing is linked here.
+    const ldapIdentity = await prisma.identity.findUnique({
+      where: { provider_providerId: { provider: 'LDAP', providerId: username } },
+      select: { userId: true },
+    });
+    if (ldapIdentity?.userId !== user.id) {
+      logger.warn({ username }, 'LDAP login refused: the account with this username has no LDAP identity for it');
+      return null;
+    }
 
     // Update firstName and lastName if they differ
     if (user.firstName !== firstName || user.lastName !== lastName) {
@@ -387,28 +399,6 @@ async function createOrUpdateUser(
         `Updated firstName/lastName for user`
       );
     }
-
-    // Verify they have an LDAP identity — use a transaction to avoid a race condition
-    await prisma.$transaction(async tx => {
-      const ldapIdentity = await tx.identity.findFirst({
-        where: {
-          userId: user!.id,
-          provider: 'LDAP',
-          providerId: username,
-        },
-      });
-
-      if (!ldapIdentity) {
-        await tx.identity.create({
-          data: {
-            userId: user!.id,
-            provider: 'LDAP',
-            providerId: username,
-          },
-        });
-        logger.info({ username }, `Created LDAP identity for user`);
-      }
-    });
   } else {
     // Create new user, in the business zone (ADR-035 §New users)
     const timezone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
