@@ -308,6 +308,14 @@ Recreating the proxy's own container drops it: connect it again, or declare
 both networks as `external` in the proxy's own stack so that its deploy
 restores them.
 
+A manual `docker network connect` can still put the proxy on an `edge` or
+`data` network. After any change to the proxy, list its networks: its own,
+`luke-proxy`, `luke-rc-proxy`, and none ending in `_edge` or `_data`.
+
+```bash
+docker inspect nginx-proxy-manager --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+```
+
 ---
 
 ## Release build variables

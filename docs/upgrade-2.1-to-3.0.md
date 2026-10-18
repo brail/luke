@@ -102,6 +102,18 @@ SQL
   skip step 5, and in step 6 copy with `--from=local` and no `--from-s3-*`
   options. 2.1.6 stores no other value: stop and investigate if you see one.
 
+Working as root through `sudo`, with no SSH access as root, `~/luke-upgrade` is
+in root's home and `scp` as your own user cannot read it. To bring one of its
+files to the workstation (steps 8 and 10), copy it to your own home, fetch it,
+then delete the copy:
+
+```bash
+H=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+install -m 600 -o "$SUDO_USER" -g "$(id -gn "$SUDO_USER")" <file> "$H/"   # on the host
+scp <user>@<host>:<file> .                                                  # on the workstation
+rm "$H/<file>"                                                              # on the host, once fetched
+```
+
 ## 3. Freeze and back up
 
 1. In the app, `Manutenzione → Modalità Manutenzione`: tick
@@ -382,7 +394,8 @@ creating it again under the same name finds them. Stop at any check that fails.
 
    Portainer reads variables from a file on your workstation, not on the host.
    Copy it there for point 7, never through the terminal's screen (`cat`):
-   `scp <host>:luke-upgrade/luke-3.0-editor-stack.env .` on the workstation.
+   `scp <host>:luke-upgrade/luke-3.0-editor-stack.env .` on the workstation, or
+   through your own home when you work through `sudo` (step 2).
 2. The master key is the one of step 3:
 
    ```bash
@@ -448,11 +461,14 @@ creating it again under the same name finds them. Stop at any check that fails.
 
 ### Reopen
 
-The proxy reaches the new web, and nothing else is on `luke-proxy`:
+The proxy reaches the new web, nothing else is on `luke-proxy`, and the proxy
+itself is on no stack's `edge` or `data` network, where it would reach the API,
+the database or the storage:
 
 ```bash
 docker network inspect luke-proxy --format '{{range .Containers}}{{.Name}} {{end}}'   # the proxy and luke-web-1
 docker exec "$NPM" curl -sI http://luke-web-1:3000 | head -1                         # an HTTP status line
+docker inspect "$NPM" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'   # no _edge or _data network
 ```
 
 From your workstation, not the host, with the app's tabs closed: the API must
