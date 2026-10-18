@@ -105,7 +105,8 @@ SQL
 Working as root through `sudo`, with no SSH access as root, `~/luke-upgrade` is
 in root's home and `scp` as your own user cannot read it. To bring one of its
 files to the workstation (steps 8 and 10), copy it to your own home, fetch it,
-then delete the copy:
+then delete the copy. `<file>` is its bare name, for example
+`luke-3.0-editor-stack.env`, run from `~/luke-upgrade`, where this shell already is:
 
 ```bash
 H=$(getent passwd "$SUDO_USER" | cut -d: -f6)
