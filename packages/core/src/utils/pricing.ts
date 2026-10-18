@@ -227,9 +227,12 @@ export function meetsTargetMargin(purchasePrice: number, retailPrice: number, ps
  */
 const MAX_RAW_PRICE = 1e9;
 
-/** Whether a raw price is inside the range the proposals accept (`MAX_RAW_PRICE`). */
+/**
+ * Whether a raw price is inside the range the proposals accept (`MAX_RAW_PRICE`). Bounded above
+ * only: a negative raw BT is a retail price that does not cover the fixed costs, not one out of range.
+ */
 export function isInPricingRange(raw: number): boolean {
-  return Number.isFinite(raw) && Math.abs(raw) < MAX_RAW_PRICE;
+  return Number.isFinite(raw) && raw < MAX_RAW_PRICE;
 }
 
 /** The `k`-th commercial retail threshold, from 0: 9.90, 14.90, 19.90, … — every price ending in 4.90 or 9.90. */

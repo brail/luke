@@ -7,6 +7,7 @@ import {
   formatCompanyMultiplier,
   formatMarginPct,
   generateRetailPriceRange,
+  isInPricingRange,
   landedCostBreakdown,
   meetsTargetMargin,
   priceForward,
@@ -178,6 +179,8 @@ describe('calcMaxSupplierCost', () => {
 
   it('is null out of the supported range, never a throw: views and exports render it', () => {
     expect(calcMaxSupplierCost(1e16, SETS.china52)).toBeNull();
+    // A raw BT far below zero is a retail price that does not cover the fixed costs: in range, null.
+    expect(isInPricingRange(priceInverse(9.9, { ...SETS.china52, tools: 1e12 }).purchasePriceRaw)).toBe(true);
     expect(calcMaxSupplierCost(49.9, { ...SETS.china52, exchangeRate: 1e-300 })).toBeNull();
   });
 

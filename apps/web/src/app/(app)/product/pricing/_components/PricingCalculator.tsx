@@ -339,7 +339,7 @@ function ResultRows({ result }: { result: CalcResult }) {
             value={fmt(result.wholesalePrice, sc)}
           />
           <ResultRow label="× Molt. retail" value={fmt(result.retailPriceRaw, sc)} />
-          <ResultRow label="Prezzo retail (arrotondato)" value={fmt(result.retailPrice, sc)} />
+          <ResultRow label="Prezzo retail (arrotondato per eccesso)" value={fmt(result.retailPrice, sc)} />
         </>
       )}
       {result.mode === 'inverse' && (
