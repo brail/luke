@@ -261,6 +261,17 @@ requirement is the signal to reopen the requirement, not to add a third mechanis
 
 ---
 
+### A security issue on the public repo stays generic until the fix is in production (2026-10-18)
+
+**What happened.** The 3.0.1 issues for the `/luke-full` security findings (#142–#145) were opened
+"worded neutrally", yet each named the weak mechanism — a missing OAuth `state`, an export with no
+per-user limit, an endpoint that does not narrow its brand ids — while production still ran the code.
+The repository is public, and rewriting an issue later does not help: its edit history is public too.
+
+**Rule.** A security issue gets a generic title and body ("Security hardening N of M, details
+private") until the fix is in production; the mapping to the finding stays in the local triage under
+`.planning/`. The fix branch is pushed only when the release and the redeploy can follow the same day.
+
 ## Integration Tests
 
 ### Test file order is neither alphabetical nor stable
@@ -603,6 +614,20 @@ other way around. Delete the dead branch locally; deleting it from the remote
 is an owner operation — see CLAUDE.md § Versioning & Release.
 
 ---
+
+### A pre-push hook run from a git worktree lets the `tools/` fixtures write to the real repository (2026-10-18)
+
+**What happened.** Pushing `hotfix/v3.0.1` from a second worktree failed `pnpm test:tools` with
+`status: 128`. In a worktree git exports `GIT_DIR` to its hooks, and the `tools/` fixtures spawn
+`git init`, `git config` and commits in temporary directories without clearing it: their writes landed
+in the shared `.git/config` (`core.bare=true`, a `fixture` identity, `gpgsign` off), which broke git in
+every worktree. Reproducing it with `GIT_DIR=… node --test` did the same damage a second time.
+
+**Rule.** Until #161 is fixed, never push from a worktree with the hook enabled, and never run a
+`tools/` test with `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` set — not even to reproduce a
+failure. Push from the main checkout; from a worktree, run every hook step by hand with those
+variables unset, compare `shasum .git/config` before and after, and only then push with
+`--no-verify`, with the owner's ok.
 
 ## Audit Log
 
