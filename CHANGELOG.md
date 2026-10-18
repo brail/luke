@@ -4,6 +4,17 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.0-rc.4] - 2026-10-18
+
+### Documentation
+- **deploy**: Copy route under sudo and a check of the proxy's networks
+- **deploy**: Name the file the sudo copy route takes
+
+### Fixed
+- **pricing**: Propose prices that reach the target margin
+- **api**: Keep the SSE stream out of compression
+- **pricing**: Bound the BT range above only and name the rounding direction
+
 ## [3.0.0-rc.3] - 2026-10-17
 
 ### Added
