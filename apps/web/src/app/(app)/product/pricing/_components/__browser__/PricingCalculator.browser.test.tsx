@@ -118,7 +118,7 @@ test.each([
       landedCost: 25.18,
       wholesalePrice: 52.38,
       companyMargin: margin,
-      companyMultiplier: 2.08,
+      companyMultiplier: 1 / 0.48,
       purchaseCurrency: 'USD',
       sellingCurrency: 'EUR',
     },
@@ -146,7 +146,7 @@ test('inverse mode shows each step beside its own label, in its own currency', a
   expect(detail(screen, 'Margine reale sul prezzo acquisto max')).toBe('52.0%');
 });
 
-test('forward mode names the company multiplier it applied', async () => {
+test('forward mode names the exact company multiplier it applied, to four decimals', async () => {
   const screen = await calculate(
     {
       mode: 'forward',
@@ -159,8 +159,8 @@ test('forward mode names the company multiplier it applied', async () => {
       priceWithDuty: 26.58,
       italyAccessoryCosts: 0.3,
       landedCost: 25.14,
-      companyMultiplier: 2.08,
-      wholesalePrice: 52.29,
+      companyMultiplier: 1 / 0.48,
+      wholesalePrice: 52.38,
       retailPriceRaw: 129.68,
       retailPrice: 129.9,
       companyMargin: 0.5201,
@@ -171,7 +171,7 @@ test('forward mode names the company multiplier it applied', async () => {
   );
 
   await expect.element(screen.getByLabelText(/^Prezzo retail/)).toHaveValue(129.9);
-  expect(detail(screen, '× Molt. aziendale (×2.08)')).toBe(money(52.29, 'EUR'));
+  expect(detail(screen, '× Molt. aziendale (×2.0833)')).toBe(money(52.38, 'EUR'));
   expect(detail(screen, 'Landed cost (in EUR)')).toBe(money(25.14, 'EUR'));
   expect(detail(screen, 'Margine reale sul retail arrotondato')).toBe('52.0%');
 });

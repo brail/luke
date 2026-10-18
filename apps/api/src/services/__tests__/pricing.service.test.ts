@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { calculateCompanyMultiplier, classifyMargin, formatMarginPct } from '@luke/core';
+import { classifyMargin, formatMarginPct, retailMargin } from '@luke/core';
 
 import {
   calculateForward,
@@ -45,11 +45,11 @@ describe('calculateForward', () => {
     // This is the parameter set's promise: `optimalMargin` isn't an aspiration,
     // it's what the company multiplier must produce. If one day they
     // diverge, the retail price no longer holds up the promised margin.
-    // Within the multiplier's 2-decimal rounding (52 %: 2.08 → 51.92), under half a point.
-    // The reported margin is another number: the rounded retail price's.
+    // To within the 2-decimal rounding of the amounts: the multiplier itself is exact (#132).
+    // The reported margin is another number: the suggested retail price's.
     expect(((r.wholesalePrice - r.landedCost) / r.wholesalePrice) * 100).toBeCloseTo(
       PARAMS.optimalMargin,
-      0
+      1
     );
   });
 
@@ -74,6 +74,22 @@ describe('calculateForward', () => {
     expect(r.priceWithDuty).toBeGreaterThanOrEqual(r.priceWithTransport);
     expect(r.wholesalePrice).toBeGreaterThan(r.landedCost);
     expect(r.retailPrice).toBeGreaterThan(r.wholesalePrice);
+  });
+
+  it.each([10, 37.41, 100, 137.5, 1000])(
+    'at purchase %s it reports the real margin of the retail price it suggests, at the target',
+    purchase => {
+      // The margin the view shows is the suggested price's own, not one rebuilt from the
+      // amounts rounded for display (#132).
+      const r = calculateForward(purchase, PARAMS);
+      expect(r.companyMargin).toBe(retailMargin(purchase, r.retailPrice, PARAMS));
+      expect(r.companyMargin * 100).toBeGreaterThanOrEqual(PARAMS.optimalMargin);
+      expect(classifyMargin(r.companyMargin * 100, PARAMS.optimalMargin)).toBe('green');
+    }
+  );
+
+  it('refuses a purchase price whose raw retail price is out of range', () => {
+    expect(() => calculateForward(1e15, PARAMS)).toThrow(/fuori dall'intervallo calcolabile/);
   });
 
   it('a higher purchase price produces a higher retail price', () => {
@@ -128,11 +144,13 @@ describe('calculateInverse', () => {
   });
 
   it.each([59.9, 79.9, 129.9, 299.9, 1000])(
-    'at retail %s the margin is at least what the company multiplier leaves',
+    'at retail %s it reports the real margin of the BT it suggests, at the target',
     retail => {
-      // The purchase price is floored: paying it leaves at least the unrounded chain's margin.
-      const floor = 1 - 1 / calculateCompanyMultiplier(PARAMS.optimalMargin);
-      expect(calculateInverse(retail, PARAMS).companyMargin).toBeGreaterThanOrEqual(floor - 1e-12);
+      // The largest tenth whose margin reaches the target: paying it keeps the target (#132).
+      const r = calculateInverse(retail, PARAMS);
+      expect(r.companyMargin).toBe(retailMargin(r.purchasePrice, retail, PARAMS));
+      expect(r.companyMargin * 100).toBeGreaterThanOrEqual(PARAMS.optimalMargin);
+      expect(classifyMargin(r.companyMargin * 100, PARAMS.optimalMargin)).toBe('green');
     }
   );
 });
@@ -179,10 +197,10 @@ describe('calculateMarginOnly', () => {
 });
 
 /**
- * Every field of the three modes, pinned at two margins whose company multipliers round in opposite
- * directions (52 %: 2.0833 → 2.08; 65 %: 2.857 → 2.86). Captured before the engine moved to core:
- * a refactor of the chain must leave every one of them where it is. `companyMargin` alone moved
- * since (#79): it is the unrounded margin of the prices each mode produces.
+ * Every field of the three modes, pinned at two margins (52 %, 65 %). First captured before the
+ * engine moved to core; moved since by #79 (`companyMargin` is the unrounded margin of the prices
+ * each mode produces) and by #132 (the exact company multiplier, and the suggested retail price and
+ * BT chosen to reach the target). A refactor of the chain must leave every one of them where it is.
  */
 describe('pricing modes, field by field', () => {
   const GOLDEN = [
@@ -199,11 +217,11 @@ describe('pricing modes, field by field', () => {
         priceWithDuty: 155.79,
         italyAccessoryCosts: 2,
         landedCost: 146.25,
-        companyMultiplier: 2.08,
-        wholesalePrice: 304.2,
-        retailPriceRaw: 790.92,
-        retailPrice: 789.9,
-        companyMargin: 0.5186099506266616,
+        companyMultiplier: 2.0833333333333335,
+        wholesalePrice: 304.69,
+        retailPriceRaw: 792.19,
+        retailPrice: 794.9,
+        companyMargin: 0.5216379418794818,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -211,15 +229,15 @@ describe('pricing modes, field by field', () => {
         mode: 'inverse',
         retailPrice: 299.9,
         wholesalePrice: 115.35,
-        landedCost: 55.45,
-        priceWithoutAccessories: 53.45,
-        dutyCost: 3.96,
-        priceWithoutDuty: 49.5,
-        priceWithoutTransport: 50.45,
+        landedCost: 55.37,
+        priceWithoutAccessories: 53.37,
+        dutyCost: 3.95,
+        priceWithoutDuty: 49.41,
+        priceWithoutTransport: 50.37,
         qualityControlCost: 0.97,
-        purchasePriceRaw: 48.49,
-        purchasePrice: 48.4,
-        companyMargin: 0.5199839946648883,
+        purchasePriceRaw: 48.39,
+        purchasePrice: 48.3,
+        companyMargin: 0.52086828942981,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -230,7 +248,7 @@ describe('pricing modes, field by field', () => {
         landedCost: 146.25,
         wholesalePrice: 115.35,
         companyMargin: -0.2679226408802933,
-        companyMultiplier: 2.08,
+        companyMultiplier: 2.0833333333333335,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },
@@ -248,9 +266,9 @@ describe('pricing modes, field by field', () => {
         priceWithDuty: 155.79,
         italyAccessoryCosts: 2,
         landedCost: 146.25,
-        companyMultiplier: 2.86,
-        wholesalePrice: 418.27,
-        retailPriceRaw: 1087.51,
+        companyMultiplier: 2.857142857142857,
+        wholesalePrice: 417.86,
+        retailPriceRaw: 1086.43,
         retailPrice: 1089.9,
         companyMargin: 0.6511147811725847,
         purchaseCurrency: 'CNY',
@@ -260,13 +278,13 @@ describe('pricing modes, field by field', () => {
         mode: 'inverse',
         retailPrice: 299.9,
         wholesalePrice: 115.35,
-        landedCost: 40.33,
-        priceWithoutAccessories: 38.33,
+        landedCost: 40.37,
+        priceWithoutAccessories: 38.37,
         dutyCost: 2.84,
-        priceWithoutDuty: 35.49,
-        priceWithoutTransport: 35.33,
+        priceWithoutDuty: 35.53,
+        priceWithoutTransport: 35.37,
         qualityControlCost: 0.67,
-        purchasePriceRaw: 33.66,
+        purchasePriceRaw: 33.69,
         purchasePrice: 33.6,
         companyMargin: 0.6508596198732911,
         purchaseCurrency: 'CNY',
@@ -279,7 +297,7 @@ describe('pricing modes, field by field', () => {
         landedCost: 146.25,
         wholesalePrice: 115.35,
         companyMargin: -0.2679226408802933,
-        companyMultiplier: 2.86,
+        companyMultiplier: 2.857142857142857,
         purchaseCurrency: 'CNY',
         sellingCurrency: 'EUR',
       },

@@ -1,7 +1,6 @@
 /**
- * The retail multiplier is accepted to the cent, like the company multiplier the pricing engine
- * derives from the margin — including cents binary floats cannot hold exactly (0.07, 4.35), which a
- * naive `value * 100` integer check would refuse.
+ * The retail multiplier is accepted to the cent — including cents binary floats cannot hold exactly
+ * (0.07, 4.35), which a naive `value * 100` integer check would refuse.
  */
 import { describe, expect, it } from 'vitest';
 

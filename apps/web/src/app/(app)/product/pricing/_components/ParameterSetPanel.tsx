@@ -11,7 +11,7 @@ import {
 import { useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { calculateCompanyMultiplier } from '@luke/core';
+import { calculateCompanyMultiplier, formatCompanyMultiplier } from '@luke/core';
 import type { PricingCurrency, PricingParameterSetInput } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -69,7 +69,7 @@ function buildRows(set: PricingParameterSet) {
     { label: 'Margine target', value: `${set.optimalMargin}%` },
     {
       label: 'Moltiplicatore aziendale',
-      value: `×${calculateCompanyMultiplier(set.optimalMargin).toFixed(2)}`,
+      value: formatCompanyMultiplier(calculateCompanyMultiplier(set.optimalMargin)),
     },
   ];
 }

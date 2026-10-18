@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { RouterOutputs } from '@luke/api';
 import {
   classifyMargin,
+  formatCompanyMultiplier,
   formatMarginPct,
   roundMarginPct,
   type PricingMode,
@@ -334,7 +335,7 @@ function ResultRows({ result }: { result: CalcResult }) {
           <ResultRow label="+ Dazio" value={fmt(result.priceWithDuty, pc)} />
           <ResultRow label={`Landed cost (in ${sc})`} value={fmt(result.landedCost, sc)} />
           <ResultRow
-            label={`× Molt. aziendale (×${result.companyMultiplier})`}
+            label={`× Molt. aziendale (${formatCompanyMultiplier(result.companyMultiplier)})`}
             value={fmt(result.wholesalePrice, sc)}
           />
           <ResultRow label="× Molt. retail" value={fmt(result.retailPriceRaw, sc)} />

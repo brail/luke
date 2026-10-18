@@ -1,5 +1,5 @@
 
-import { calcMaxSupplierCost, calculateCompanyMultiplier, generateRetailPriceRange, NUMERIC_DATE } from '@luke/core';
+import { calcMaxSupplierCost, calculateCompanyMultiplier, formatCompanyMultiplier, generateRetailPriceRange, NUMERIC_DATE } from '@luke/core';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
 import { buildBrandPageHeader, buildPdfFooter, createPdfBuffer, formatExportInstant, fetchCompanyExportContext } from '../lib/export/pdf';
@@ -81,7 +81,7 @@ export async function buildPricingGridXlsx(
 
     if (key === undefined) {
       const cm = commonValue(sets, 'optimalMargin');
-      const row = ws.addRow([label, cm !== null ? `×${fmt2(calculateCompanyMultiplier(cm))}` : '(varia per variante)']);
+      const row = ws.addRow([label, cm !== null ? formatCompanyMultiplier(calculateCompanyMultiplier(cm)) : '(varia per variante)']);
       row.getCell(1).font = { italic: true, size: 9, name: 'Calibri', color: { argb: 'FF888888' } };
       row.getCell(2).font = { size: 9, name: 'Calibri', color: { argb: 'FF888888' } };
       await row.commit();
@@ -176,7 +176,7 @@ export async function buildPricingGridPdf(
     { label: 'Margine target',             value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? `${v}%` : '(varia)'; } },
     { label: 'Tasso di cambio',            value: s => { const v = commonValue(s, 'exchangeRate');             return v !== null ? String(v) : '(varia)'; } },
     { label: 'Moltiplicatore retail',      value: s => { const v = commonValue(s, 'retailMultiplier');         return v !== null ? `×${fmt2(v)}` : '(varia)'; } },
-    { label: 'Moltiplicatore aziendale',   value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? `×${fmt2(calculateCompanyMultiplier(v))}` : '(varia)'; } },
+    { label: 'Moltiplicatore aziendale',   value: s => { const v = commonValue(s, 'optimalMargin');            return v !== null ? formatCompanyMultiplier(calculateCompanyMultiplier(v)) : '(varia)'; } },
     { label: 'Trasporto + assicurazione',  value: s => { const v = commonValue(s, 'transportInsuranceCost');   return v !== null ? `${fmt2(v)} ${s[0].purchaseCurrency}` : '(varia)'; } },
     { label: 'Costi accessori Italia',     value: s => { const v = commonValue(s, 'italyAccessoryCosts');      return v !== null ? `${fmt2(v)} ${s[0].sellingCurrency}` : '(varia)'; } },
     { label: 'Stampi',                     value: s => { const v = commonValue(s, 'tools');                    return v !== null ? `${fmt2(v)} ${s[0].purchaseCurrency}` : '(varia)'; } },

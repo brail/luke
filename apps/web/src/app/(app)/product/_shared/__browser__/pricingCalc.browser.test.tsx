@@ -34,7 +34,8 @@ const SET: PricingParameterSet = {
   updatedAt: '2026-10-17T00:00:00.000Z',
 };
 
-// Purchase 48.4 at retail 299.9 leaves 51.998 %: the calculator's inverse answer for that retail.
+// Purchase 48.4 at retail 299.9 leaves 51.998 %, just below the target (the calculator's own BT for
+// that retail is 48.3 since #132).
 const ROW = {
   quotations: [{ pricingParameterSetId: SET.id, supplierQuotation: 48.4, retailPrice: 299.9, sku: null }],
   qtyForecast: 10,

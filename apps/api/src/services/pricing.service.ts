@@ -8,11 +8,12 @@ import { TRPCError } from '@trpc/server';
 import {
   calcMaxSupplierCost,
   calculateCompanyMultiplier,
+  isInPricingRange,
   priceForward,
   priceInverse,
   priceMargin,
   retailMargin,
-  roundRetailPrice,
+  suggestRetailPrice,
   type PricingParameterSetInput,
 } from '@luke/core';
 import { Prisma } from '@luke/db';
@@ -93,15 +94,23 @@ export interface MarginResult {
  * QC → tools → transport → duty → currency conversion → landed cost → wholesale → retail
  * (`priceForward`).
  *
- * @returns Breakdown of every intermediate step plus the rounded retail price, and the margin that
+ * @returns Breakdown of every intermediate step plus the suggested retail price (the first
+ *   commercial threshold whose margin reaches the target, `suggestRetailPrice`), and the margin that
  *   price leaves over the purchase price.
+ * @throws {TRPCError} BAD_REQUEST if the raw retail price is out of the range the proposal accepts.
  */
 export function calculateForward(
   purchasePrice: number,
   params: CalcParams
 ): ForwardResult {
   const f = priceForward(purchasePrice, params);
-  const retailPrice = roundRetailPrice(f.retailPriceRaw);
+  if (!isInPricingRange(f.retailPriceRaw)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: "Prezzo di acquisto fuori dall'intervallo calcolabile",
+    });
+  }
+  const retailPrice = suggestRetailPrice(purchasePrice, params);
 
   return {
     mode: 'forward',
@@ -116,7 +125,7 @@ export function calculateForward(
     landedCost: round2(f.landedCost),
     companyMultiplier: f.companyMultiplier,
     wholesalePrice: round2(f.wholesalePrice),
-    retailPriceRaw: round2(f.retailPriceRaw),
+    retailPriceRaw: ceil2(f.retailPriceRaw),
     retailPrice,
     companyMargin: retailMargin(purchasePrice, retailPrice, params),
     purchaseCurrency: params.purchaseCurrency,
@@ -128,10 +137,11 @@ export function calculateForward(
  * Inverse calculation: given a retail price, computes the maximum allowable purchase price
  * while maintaining the target margin (`priceInverse`).
  *
- * @returns Breakdown of every intermediate step plus the floor-rounded purchase price, and the
- *   margin the retail price leaves over it.
- * @throws {TRPCError} BAD_REQUEST if the retail price does not cover the fixed costs: no positive
- *   purchase price reaches it.
+ * @returns Breakdown of every intermediate step plus the maximum purchase price (the largest tenth
+ *   whose margin reaches the target, `calcMaxSupplierCost`), and the margin the retail price leaves
+ *   over it.
+ * @throws {TRPCError} BAD_REQUEST if the retail price does not cover the fixed costs (not even 0.1
+ *   reaches the target), or if the raw purchase price is out of the range the proposal accepts.
  */
 export function calculateInverse(
   retailPrice: number,
@@ -142,7 +152,9 @@ export function calculateInverse(
   if (purchasePrice === null) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: 'Il prezzo retail non copre i costi fissi: nessun prezzo di acquisto lo raggiunge',
+      message: isInPricingRange(i.purchasePriceRaw)
+        ? 'Il prezzo retail non copre i costi fissi: nessun prezzo di acquisto lo raggiunge'
+        : "Prezzo retail fuori dall'intervallo calcolabile",
     });
   }
 
@@ -156,7 +168,7 @@ export function calculateInverse(
     priceWithoutDuty: round2(i.priceWithoutDuty),
     priceWithoutTransport: round2(i.priceWithoutTransport),
     qualityControlCost: round2(i.qualityControlCost),
-    purchasePriceRaw: round2(i.purchasePriceRaw),
+    purchasePriceRaw: floor2(i.purchasePriceRaw),
     purchasePrice,
     companyMargin: retailMargin(purchasePrice, retailPrice, params),
     purchaseCurrency: params.purchaseCurrency,
@@ -195,6 +207,19 @@ export function calculateMarginOnly(
  */
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/**
+ * A raw price shown above its proposal, to the cent in the proposal's direction (retail up, purchase
+ * down): a raw BT of 48.398 reads 48.39 above a BT of 48.3, not 48.40. Display only; the 1e-6 cent
+ * absorbs float noise on an exact cent.
+ */
+function ceil2(value: number): number {
+  return Math.ceil(value * 100 - 1e-6) / 100;
+}
+
+function floor2(value: number): number {
+  return Math.floor(value * 100 + 1e-6) / 100;
 }
 
 // ─────────────────────────────────────────────────────────────────

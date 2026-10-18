@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 
 import {
   calculateCompanyMultiplier,
+  formatCompanyMultiplier,
   PricingParameterSetInputSchema,
   type PricingParameterSetInput,
   PRICING_CURRENCIES,
@@ -430,7 +431,7 @@ function ParameterSetForm({
                     </Badge>
                   </label>
                   <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
-                    {companyMultiplier > 0 ? companyMultiplier.toFixed(2) : '—'}
+                    {companyMultiplier > 0 ? formatCompanyMultiplier(companyMultiplier) : '—'}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     = 1 / (1 − margine%)

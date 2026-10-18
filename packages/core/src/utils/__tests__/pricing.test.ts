@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import {
   calcMaxSupplierCost,
+  calculateCompanyMultiplier,
   classifyMargin,
+  formatCompanyMultiplier,
   formatMarginPct,
   generateRetailPriceRange,
   landedCostBreakdown,
+  meetsTargetMargin,
   priceForward,
   priceInverse,
   priceMargin,
   retailMargin,
-  roundRetailPrice,
   skuWeightedAverage,
+  suggestRetailPrice,
+  type InverseCalcParams,
 } from '../pricing.js';
 
 /** Hand-computable: 10 + 5 % QC + 1 tools = 11.5; + 2 = 13.5; + 10 % duty = 14.85; ÷ 1.1 + 1.5 = 15. */
@@ -24,6 +28,32 @@ const PS = {
   italyAccessoryCosts: 1.5,
   retailMultiplier: 2.5,
 };
+
+/** The `k`-th commercial retail threshold, from 0: 9.9, 14.9, 19.9, … */
+const threshold = (k: number) => (990 + 500 * k) / 100;
+
+const ZERO_COSTS = {
+  qualityControlPercent: 0,
+  tools: 0,
+  transportInsuranceCost: 0,
+  duty: 0,
+  exchangeRate: 1,
+  italyAccessoryCosts: 0,
+  retailMultiplier: 1,
+};
+
+const CHINA_52 = { qualityControlPercent: 2, tools: 1, transportInsuranceCost: 3, duty: 8, exchangeRate: 1.08, italyAccessoryCosts: 2, retailMultiplier: 2.6, optimalMargin: 52 };
+
+/** The parameter sets the proposal rules are proved on: both target bounds, a CNY-like and a VND-like set. */
+const SETS = {
+  zeroCosts0: { ...ZERO_COSTS, optimalMargin: 0 },
+  zeroCosts52: { ...ZERO_COSTS, optimalMargin: 52 },
+  china52: CHINA_52,
+  target65: { qualityControlPercent: 3, tools: 0.5, transportInsuranceCost: 1.2, duty: 12, exchangeRate: 1.1, italyAccessoryCosts: 1.5, retailMultiplier: 2.5, optimalMargin: 65 },
+  target99_9: { ...CHINA_52, retailMultiplier: 2.5, optimalMargin: 99.9 },
+  highFixedCosts: { qualityControlPercent: 5, tools: 8, transportInsuranceCost: 12, duty: 16, exchangeRate: 0.9, italyAccessoryCosts: 9, retailMultiplier: 2.6, optimalMargin: 52 },
+  vnd: { qualityControlPercent: 2, tools: 20000, transportInsuranceCost: 50000, duty: 8, exchangeRate: 27000, italyAccessoryCosts: 2, retailMultiplier: 2.6, optimalMargin: 52 },
+} satisfies Record<string, InverseCalcParams>;
 
 describe('landedCostBreakdown', () => {
   it('walks every step of the chain', () => {
@@ -66,13 +96,13 @@ describe('landedCostBreakdown', () => {
 });
 
 describe('priceForward and priceInverse', () => {
-  it('extends the landed-cost chain with the rounded company multiplier', () => {
+  it('extends the landed-cost chain with the exact company multiplier', () => {
     const ps = { ...PS, optimalMargin: 52 };
     const f = priceForward(10, ps);
     expect(f).toMatchObject(landedCostBreakdown(10, ps));
-    expect(f.companyMultiplier).toBe(2.08);
-    expect(f.wholesalePrice).toBeCloseTo(15 * 2.08, 10);
-    expect(f.retailPriceRaw).toBeCloseTo(15 * 2.08 * 2.5, 10);
+    expect(f.companyMultiplier).toBe(1 / 0.48);
+    expect(f.wholesalePrice).toBeCloseTo(15 / 0.48, 10);
+    expect(f.retailPriceRaw).toBeCloseTo((15 / 0.48) * 2.5, 10);
   });
 
   it('are each other\'s inverse over the whole chain, in order', () => {
@@ -112,24 +142,43 @@ describe('calcMaxSupplierCost', () => {
     }
   });
 
-  it('is the pricing page\'s inverse, floored: the multiplier the prices are made with', () => {
-    // The BT used the exact multiplier 1 / (1 − m) (52 %: 2.0833…) while forward and the inverse
-    // mode use it rounded (2.08): the same retail price gave two maximum costs.
-    const ps = {
-      qualityControlPercent: 2,
-      tools: 1,
-      transportInsuranceCost: 3,
-      duty: 8,
-      exchangeRate: 1.08,
-      italyAccessoryCosts: 2,
-      retailMultiplier: 2.6,
-      optimalMargin: 52,
-    };
-    expect(calcMaxSupplierCost(79.9, ps)).toBe(8.6);
-    for (const retail of generateRetailPriceRange()) {
-      const floored = Math.floor(priceInverse(retail, ps).purchasePriceRaw * 10) / 10;
-      expect(calcMaxSupplierCost(retail, ps)).toBe(floored > 0 ? floored : null);
+  it('takes the largest tenth whose margin reaches the target, on every set', () => {
+    // Margin, colour and maximality checked apart (#132): a check through the colour alone would
+    // pass whatever tolerance the colour had.
+    const bad: string[] = [];
+    for (const [name, ps] of Object.entries(SETS)) {
+      const retails = [...generateRetailPriceRange()];
+      for (let k = 0; k < 400; k++) retails.push(threshold(k));
+      // Retail prices whose raw BT lands exactly on a tenth, and just beside it.
+      for (let k = 1; k < 3000; k++) {
+        const r = priceForward(k / 10, ps).retailPriceRaw;
+        retails.push(r, r + 1e-9, r - 1e-9);
+      }
+      for (const r of retails) {
+        const bt = calcMaxSupplierCost(r, ps);
+        if (bt === null) {
+          if (meetsTargetMargin(0.1, r, ps)) bad.push(`${name} ${r}: null, yet 0.1 reaches the target`);
+          continue;
+        }
+        const k = Math.round(bt * 10);
+        if (bt !== k / 10 || k < 1) bad.push(`${name} ${r}: ${bt} is not a tenth`);
+        if (retailMargin(bt, r, ps) * 100 < ps.optimalMargin) bad.push(`${name} ${r}: ${bt} below target`);
+        if (classifyMargin(retailMargin(bt, r, ps) * 100, ps.optimalMargin) !== 'green') bad.push(`${name} ${r}: ${bt} not green`);
+        // (k + 1) / 10, not bt + 0.1, which has float noise of its own.
+        if (meetsTargetMargin((k + 1) / 10, r, ps)) bad.push(`${name} ${r}: ${bt} is not the largest`);
+      }
     }
+    expect(bad).toEqual([]);
+  });
+
+  it('does not round a BT just under a tenth up to it (#132)', () => {
+    // Raw BT 9.99999999995: the tenth 10 leaves 51.99999999976 %, below the target.
+    expect(calcMaxSupplierCost(20.83333333322917, SETS.zeroCosts52)).toBe(9.9);
+  });
+
+  it('is null out of the supported range, never a throw: views and exports render it', () => {
+    expect(calcMaxSupplierCost(1e16, SETS.china52)).toBeNull();
+    expect(calcMaxSupplierCost(49.9, { ...SETS.china52, exchangeRate: 1e-300 })).toBeNull();
   });
 
   it('is null when the retail price does not cover the fixed costs', () => {
@@ -173,39 +222,70 @@ describe('retailMargin', () => {
   });
 });
 
-describe('roundRetailPrice', () => {
+describe('suggestRetailPrice', () => {
+  // No costs and a 0 % target: the landed cost and the raw retail price are the purchase price,
+  // and a threshold reaches the target exactly when it is at or above it.
   it.each([
-    // Never below 9.9.
     [0.5, 9.9],
-    [9.99, 9.9],
-    // Below x2.50: the previous ten's 9.9.
-    [10, 9.9],
-    [12.4, 9.9],
-    [12.49, 9.9],
-    [12.494, 9.9],
-    [12.4949, 9.9],
-    [20, 19.9],
-    [21.43, 19.9],
-    [52.43, 49.9],
-    [102.45, 99.9],
-    // From x2.50 to below x7.50: x4.9.
-    [12.4951, 14.9],
-    [12.5, 14.9],
-    [45.6, 44.9],
-    [17.49, 14.9],
-    [17.494, 14.9],
-    [17.4949, 14.9],
-    // From x7.50: x9.9.
-    [17.4951, 19.9],
-    [17.5, 19.9],
-    [67.8, 69.9],
-    [19.99, 19.9],
-    [19.999, 19.9],
-    // Float noise on a band edge.
-    [0.1 * 124, 9.9],
-    [0.1 * 175, 19.9],
-  ])('%s → %s', (price, expected) => {
-    expect(roundRetailPrice(price)).toBe(expected);
+    [9.9, 9.9],
+    [9.91, 14.9],
+    [12.4, 14.9],
+    [40.1, 44.9],
+    [44.9, 44.9],
+    [44.95, 49.9],
+    [52.43, 54.9],
+    [102.45, 104.9],
+  ])('rounds %s up to the first threshold, %s', (purchase, expected) => {
+    expect(suggestRetailPrice(purchase, SETS.zeroCosts0)).toBe(expected);
+  });
+
+  it('takes the first threshold whose margin reaches the target, on every set', () => {
+    const bad: string[] = [];
+    for (const [name, ps] of Object.entries(SETS)) {
+      const scale = Math.max(1, ps.exchangeRate);
+      const purchases: number[] = [];
+      for (let a = 0.5 * scale; a < 200 * scale; a += 0.37 * scale) purchases.push(a);
+      // Purchase prices whose raw retail price lands exactly on a threshold, and just beside it.
+      for (let k = 0; k < 120; k++) {
+        const a = priceInverse(threshold(k), ps).purchasePriceRaw;
+        purchases.push(a, a + 1e-9, a - 1e-9, a + 0.005, a - 0.005);
+      }
+      for (const a of purchases.filter(p => p > 0)) {
+        const r = suggestRetailPrice(a, ps);
+        const k = Math.round((r * 100 - 990) / 500);
+        if (r !== threshold(k) || k < 0) bad.push(`${name} ${a}: ${r} is not a threshold`);
+        if (retailMargin(a, r, ps) * 100 < ps.optimalMargin) bad.push(`${name} ${a}: ${r} below target`);
+        if (classifyMargin(retailMargin(a, r, ps) * 100, ps.optimalMargin) !== 'green') bad.push(`${name} ${a}: ${r} not green`);
+        // threshold(k − 1), not r − 5, which has float noise of its own (19.9 − 5 = 14.8999…).
+        if (k > 0 && meetsTargetMargin(a, threshold(k - 1), ps)) bad.push(`${name} ${a}: ${r} is not the first`);
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('does not take a threshold just under the raw retail price (#132)', () => {
+    // Raw 44.900000005: 44.9 leaves 51.99999999465 %, below the target.
+    expect(suggestRetailPrice(21.5520000024, SETS.zeroCosts52)).toBe(49.9);
+  });
+
+  it('throws a RangeError out of the supported range', () => {
+    expect(() => suggestRetailPrice(1e15, SETS.china52)).toThrow(RangeError);
+    expect(() => suggestRetailPrice(10, { ...SETS.china52, exchangeRate: 1e-300 })).toThrow(RangeError);
+  });
+});
+
+describe('calculateCompanyMultiplier and formatCompanyMultiplier', () => {
+  it('is 1 / (1 − m), not rounded: 52 % is 2.0833…, not 2.08', () => {
+    expect(calculateCompanyMultiplier(52)).toBe(1 / 0.48);
+    expect(calculateCompanyMultiplier(0)).toBe(1);
+  });
+
+  it.each([
+    [52, '×2.0833'],
+    [65, '×2.8571'],
+    [50, '×2.0000'],
+  ])('shows %s %% as %s', (margin, shown) => {
+    expect(formatCompanyMultiplier(calculateCompanyMultiplier(margin))).toBe(shown);
   });
 });
 
@@ -226,8 +306,10 @@ describe('classifyMargin', () => {
   it.each([
     [52, 52, 'green'],
     [60, 52, 'green'],
+    [52 - 1e-12, 52, 'yellow'],
     [51.999, 52, 'yellow'],
     [49, 52, 'yellow'],
+    [49 - 1e-12, 52, 'red'],
     [48.999, 52, 'red'],
   ] as const)('%s %% against %s %% is %s', (pct, optimal, status) => {
     expect(classifyMargin(pct, optimal)).toBe(status);

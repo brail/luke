@@ -63,9 +63,9 @@ export interface MarginBreakdown {
  * forward from one, the wholesale backward from the other, and the margin between them.
  *
  * Every view's margin, the calculator's forward and inverse modes included: they apply it to the
- * prices they produce (the rounded retail price, the floored BT), not to the unrounded chain built
- * with the rounded company multiplier. No guards: callers decide what a missing or non-positive
- * price means, and a zero wholesale is theirs to rule out.
+ * prices they produce (the suggested retail price, the BT), not to the unrounded chain. No guards:
+ * callers decide what a missing or non-positive price means, and a zero wholesale is theirs to rule
+ * out.
  */
 export function priceMargin(
   purchasePrice: number,
@@ -105,7 +105,7 @@ export function skuWeightedAverage(items: ReadonlyArray<{ value: number; sku: nu
 
 /** Every value of forward mode, unrounded: the landed-cost chain, then the two multipliers. */
 export interface ForwardBreakdown extends LandedCostBreakdown {
-  /** `calculateCompanyMultiplier(optimalMargin)`, rounded to 2 decimals as every mode uses it. */
+  /** `calculateCompanyMultiplier(optimalMargin)`, exact. */
   companyMultiplier: number;
   wholesalePrice: number;
   retailPriceRaw: number;
@@ -194,22 +194,89 @@ export function formatMarginPct(margin: number): string {
 }
 
 /**
- * Derives the company multiplier from the target margin percentage.
+ * Derives the company multiplier from the target margin percentage: `1 / (1 − m)`, exact, so every
+ * chain builds on the target as the parameter set states it. It used to be rounded to 2 decimals
+ * (52 % → 2.08 → 51.92 %), and the calculator's own proposals missed the target.
  *
- * @example calculateCompanyMultiplier(52) // → 2.08
+ * @example calculateCompanyMultiplier(52) // → 2.0833…
  */
 export function calculateCompanyMultiplier(optimalMargin: number): number {
-  return Math.round((1 / (1 - optimalMargin / 100)) * 100) / 100;
+  return 1 / (1 - optimalMargin / 100);
+}
+
+/** A company multiplier as every view shows it: four decimals. `2.0833…` → `×2.0833`. */
+export function formatCompanyMultiplier(multiplier: number): string {
+  return `×${multiplier.toFixed(4)}`;
 }
 
 /**
- * The maximum acceptable FOB supplier cost (the BT) for a retail target price: inverse mode's
- * purchase price, floored to one decimal — paying more would erode the margin. `null` when the
- * retail price does not cover the fixed costs: no positive purchase price reaches it.
+ * Whether the margin a retail price leaves over a purchase price reaches the target, decided as
+ * every per-quotation view colours it: `classifyMargin` on `retailMargin`, in double, with no
+ * tolerance. Forward and inverse mode choose their prices with it, so what they propose is green
+ * wherever it is shown, edge cases included. A tie in exact arithmetic is decided by the double.
+ */
+export function meetsTargetMargin(purchasePrice: number, retailPrice: number, ps: InverseCalcParams): boolean {
+  return classifyMargin(retailMargin(purchasePrice, retailPrice, ps) * 100, ps.optimalMargin) === 'green';
+}
+
+/**
+ * The largest raw price, retail or BT and in its own currency, the proposals accept. The schemas
+ * set no maximum on prices or on the exchange rate: past this, the integer steps below lose
+ * precision in a double, or the chain overflows to Infinity or NaN. Far above any real price, in
+ * any currency.
+ */
+const MAX_RAW_PRICE = 1e9;
+
+/** Whether a raw price is inside the range the proposals accept (`MAX_RAW_PRICE`). */
+export function isInPricingRange(raw: number): boolean {
+  return Number.isFinite(raw) && Math.abs(raw) < MAX_RAW_PRICE;
+}
+
+/** The `k`-th commercial retail threshold, from 0: 9.90, 14.90, 19.90, … — every price ending in 4.90 or 9.90. */
+function retailThreshold(k: number): number {
+  return (990 + 500 * k) / 100;
+}
+
+/**
+ * The retail price forward mode proposes for a purchase price: the first commercial threshold
+ * (9.90, 14.90, 19.90, …) whose margin reaches the target (`meetsTargetMargin`). In exact
+ * arithmetic that is the first threshold at or above the raw retail price; in double it can sit a
+ * few ulps below it, with its margin still at the target. Never below 9.90.
+ *
+ * @throws {RangeError} When the raw retail price is not finite or not below `MAX_RAW_PRICE`.
+ */
+export function suggestRetailPrice(purchasePrice: number, ps: InverseCalcParams): number {
+  const raw = priceForward(purchasePrice, ps).retailPriceRaw;
+  if (!isInPricingRange(raw)) throw new RangeError(`Raw retail price out of range: ${raw}`);
+  const meets = (k: number) => meetsTargetMargin(purchasePrice, retailThreshold(k), ps);
+  // The candidate the raw price gives, then at most two steps either way: the margin grows with the
+  // retail price, so the first threshold reaching the target is unique, and the double rounding of
+  // `raw` moves the candidate by one step at most.
+  let k = Math.max(0, Math.ceil((raw * 100 - 990) / 500));
+  for (let i = 0; i < 2 && k > 0 && meets(k - 1); i++) k--;
+  for (let i = 0; i < 2 && !meets(k); i++) k++;
+  if (!meets(k) || (k > 0 && meets(k - 1))) {
+    throw new Error(`No first retail threshold reaching the target near ${raw}`);
+  }
+  return retailThreshold(k);
+}
+
+/**
+ * The maximum acceptable FOB supplier cost (the BT) for a retail price: the largest tenth whose
+ * margin reaches the target (`meetsTargetMargin`) — paying more would erode the margin. `null`
+ * when not even 0.1 does (the retail price does not cover the fixed costs), or when the raw BT is
+ * out of range. Views and exports render it, so it never throws.
  */
 export function calcMaxSupplierCost(retailPrice: number, ps: InverseCalcParams): number | null {
-  const bt = Math.floor(priceInverse(retailPrice, ps).purchasePriceRaw * 10) / 10;
-  return bt > 0 ? bt : null;
+  const raw = priceInverse(retailPrice, ps).purchasePriceRaw;
+  if (!isInPricingRange(raw)) return null;
+  const meets = (k: number) => meetsTargetMargin(k / 10, retailPrice, ps);
+  // As in `suggestRetailPrice`: the candidate, then at most two steps either way; the margin falls
+  // as the purchase price grows. Checked in full: inside the range the property tests pin it.
+  let k = Math.max(0, Math.floor(raw * 10));
+  for (let i = 0; i < 2 && meets(k + 1); i++) k++;
+  for (let i = 0; i < 2 && k > 0 && !meets(k); i++) k--;
+  return k > 0 && meets(k) && !meets(k + 1) ? k / 10 : null;
 }
 
 /**
@@ -225,24 +292,4 @@ export function generateRetailPriceRange(min = 39.9, max = 499.9, step = 10): nu
     p += step;
   }
   return prices;
-}
-
-/**
- * Rounds a raw price to a commercial retail threshold ending in `4.9` or `9.9`, by where it falls
- * within its ten once rounded to the cent: below x2.50 to the previous ten's `9.9`, below x7.50 to
- * `x4.9`, from x7.50 to `x9.9`. Never below 9.9.
- *
- * @example
- * roundRetailPrice(21.43) // → 19.9
- * roundRetailPrice(45.60) // → 44.9
- * roundRetailPrice(67.80) // → 69.9
- */
-export function roundRetailPrice(price: number): number {
-  // Integer cents and half-open bands: no price falls between two bands. On floats, 12.4 left a
-  // last digit of 2.4000000000000004, past a `<= 2.4` bound.
-  const cents = Math.round(price * 100);
-  const withinTen = cents % 1000;
-  const ten = cents - withinTen;
-  const threshold = withinTen < 250 ? ten - 10 : withinTen < 750 ? ten + 490 : ten + 990;
-  return Math.max(990, threshold) / 100;
 }
