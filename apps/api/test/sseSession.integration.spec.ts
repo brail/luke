@@ -178,6 +178,23 @@ describe('the SSE stream', () => {
     expect(sseStore.connectedUserIds()).not.toContain(user.id);
   });
 
+  it('opens nothing for a client that left during the check at open', async () => {
+    const { user, session } = await createTestUser('editor');
+    const { ticket } = await createCallerWithSession(session).notifications.getSseTicket();
+    const { reachedRead, release } = holdNextUserRead(user.id);
+    const request = get(`${url}/api/sse?ticket=${ticket}`).on('error', () => undefined);
+    await reachedRead;
+
+    request.destroy();
+    // Long enough for the server to see the socket close while the check is held; were it shorter,
+    // the route's own `close` listener would clean up and the test would pass for the wrong reason.
+    await new Promise(resolve => setTimeout(resolve, 200));
+    release();
+    await new Promise(resolve => setTimeout(resolve, 3 * HEARTBEAT_MS));
+
+    expect(sseStore.connectedUserIds()).not.toContain(user.id);
+  });
+
   it('unsubscribes before ending: a push right after the end writes nothing and raises no stream error', async () => {
     const { user, session, stream } = await liveStream();
     const end = ServerResponse.prototype.end;

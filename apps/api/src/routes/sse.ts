@@ -64,6 +64,9 @@ export async function registerSseRoute(
     if (!(await isSseSessionLive(session, prisma))) {
       return reply.status(401).send({ error: 'Session no longer valid' });
     }
+    // A client that left during the check has already had its `close`, which a listener added
+    // below would never see: the stream would stay subscribed with nobody on the other end.
+    if (reply.raw.destroyed) return;
 
     // SSE headers — X-Accel-Buffering disables nginx/proxy buffering. `no-transform` keeps the
     // stream out of compression: apps/web's server compresses every response it proxies, rewrites
