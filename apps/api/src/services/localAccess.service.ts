@@ -19,7 +19,7 @@ import { hasPermission } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig } from '../lib/configManager';
+import { getRequireEmailVerification } from '../lib/configManager';
 import { createResetToken } from '../lib/emailHelpers';
 import { hashPassword } from '../lib/password';
 
@@ -163,14 +163,10 @@ async function assess(db: Db, user: Target | null, requireEmailVerification: boo
   };
 }
 
-async function emailVerificationRequired(prisma: PrismaClient): Promise<boolean> {
-  return (await getConfig(prisma, 'auth.requireEmailVerification', false)) === 'true';
-}
-
 /** Runs every check of the command on the account named exactly `username`. Writes nothing. */
 export async function inspectLocalAccess(prisma: PrismaClient, username: string): Promise<LocalAccessInspection> {
   const user = await prisma.user.findUnique({ where: { username }, select: TARGET_SELECT });
-  return assess(prisma, user, await emailVerificationRequired(prisma));
+  return assess(prisma, user, await getRequireEmailVerification(prisma));
 }
 
 export interface LocalAccessGrant {
@@ -198,7 +194,7 @@ export async function grantLocalAccess(
 ): Promise<LocalAccessGrant> {
   const [placeholderHash, requireEmailVerification] = await Promise.all([
     placeholderPasswordHash(),
-    emailVerificationRequired(prisma),
+    getRequireEmailVerification(prisma),
   ]);
 
   return prisma.$transaction(async tx => {

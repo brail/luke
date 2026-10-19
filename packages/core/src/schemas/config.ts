@@ -304,6 +304,8 @@ export const APP_CONFIG_DEFAULTS = {
 
   'storage.derivatives.enabled': 'true',
 
+  'auth.requireEmailVerification': 'false',
+
   'auth.ldap.resilience.timeoutMs':               '3000',
   'auth.ldap.resilience.maxRetries':              '2',
   'auth.ldap.resilience.baseDelayMs':             '200',

@@ -11,7 +11,7 @@ import type { PrismaClient, User } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
 import { createResetToken, isSyntheticLdapEmail } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
@@ -85,8 +85,7 @@ export async function authenticateLocal(
  * reset link is used.
  */
 export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<number> {
-  const requireEmailVerification =
-    (await getConfig(prisma, 'auth.requireEmailVerification', false)) === 'true';
+  const requireEmailVerification = await getRequireEmailVerification(prisma);
 
   const localIdentity = { provider: 'LOCAL' as const, localCredential: { isNot: null } };
   const admins = await prisma.user.findMany({
@@ -334,9 +333,7 @@ export async function authenticateUser(
   }
 
   // Verify email (LOCAL only)
-  const requireEmailVerification =
-    (await getConfig(ctx.prisma, 'auth.requireEmailVerification', false)) ===
-    'true';
+  const requireEmailVerification = await getRequireEmailVerification(ctx.prisma);
 
   if (
     requireEmailVerification &&
