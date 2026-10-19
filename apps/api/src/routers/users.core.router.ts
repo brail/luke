@@ -442,6 +442,10 @@ export const usersCoreRouter = router({
       const passwordHash =
         password !== undefined ? await hashPassword(password) : undefined;
 
+      // One answer to "did the address change" for its three effects: unverified, links revoked,
+      // the user notified.
+      const emailChanged = updateData.email !== undefined && updateData.email !== existingUser.email;
+
       // A role change or a deactivation must invalidate already-issued tokens.
       // Without the bump, `verifyTokenVersion` keeps passing and
       // `requirePermission` reads the role from the JWT claim, never from the
@@ -527,16 +531,14 @@ export const usersCoreRouter = router({
               // `me.update` and `me.changeEmail` already do this on the
               // self-service paths; this was the one cross-user path that did
               // not.
-              ...(updateData.email !== undefined && updateData.email !== existingUser.email
-                ? { emailVerifiedAt: null }
-                : {}),
+              ...(emailChanged ? { emailVerifiedAt: null } : {}),
               ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
             },
           });
 
           // The links mailed to the old address die with it, after the address UPDATE (lock
           // order: the user row, then its links — see `issueUserToken`).
-          if (updateData.email !== undefined && updateData.email !== existingUser.email) {
+          if (emailChanged) {
             await revokeUserLinks(tx, id);
           }
 
@@ -579,7 +581,7 @@ export const usersCoreRouter = router({
         }
       }
 
-      if (updateData.email !== undefined && updateData.email !== existingUser.email) {
+      if (emailChanged) {
         try {
           await createNotification(ctx.prisma, {
             userId: input.id,

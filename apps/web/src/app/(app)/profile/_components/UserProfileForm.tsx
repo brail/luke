@@ -85,8 +85,6 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       invalidate: refresh.me,
       onSuccess: data => {
         toast.success(data.message);
-        setNewEmail('');
-        setEmailPassword('');
         // Reload the page to refresh the session
         window.location.reload();
       },

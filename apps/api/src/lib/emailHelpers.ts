@@ -85,8 +85,7 @@ export async function sendVerificationEmail(
   if (!issued) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
   }
-  const { token, userToken } = issued;
-  const expiresAt = userToken.expiresAt;
+  const { token, email, userToken: { expiresAt } } = issued;
 
   // Retrieve baseUrl from config
   const baseUrl =
@@ -94,7 +93,7 @@ export async function sendVerificationEmail(
 
   // Send email (with automatic internal retry)
   try {
-    await sendEmailVerificationEmail(prisma, issued.email, token, baseUrl);
+    await sendEmailVerificationEmail(prisma, email, token, baseUrl);
 
     // Audit log SUCCESS (no PII). Some callers have no request at all (LDAP provisioning), and
     // `logAudit` writes their row without one.
@@ -187,9 +186,9 @@ export interface IssuedUserToken {
  *
  * - `expectedEmail`: when set and the account's address is no longer that one, nothing is created
  *   and the answer is `null` — a reset asked for an address the account no longer has.
- * - `revokePrevious`: delete the user's earlier links of this type first. Each caller keeps what it
- *   did before this helper: on for verification and for the local-access command, off for a reset
- *   request and a forced local access, whose earlier links stay valid.
+ * - `revokePrevious`: delete the user's earlier links of this type first: on for verification and for
+ *   the local-access command, off for a reset request and a forced local access, whose earlier links
+ *   stay valid.
  *
  * @param tx - A transaction client: the lock lasts until it commits.
  * @returns The link, or `null` for no such user or an address other than `expectedEmail`.

@@ -28,7 +28,14 @@ import { createContext } from '../src/lib/trpc';
 import { appRouter } from '../src/routers/index';
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 
-import { TEST_USER_PASSWORD, createSilentLogger, createTestContext, createTestUser, setupTestDb } from './helpers';
+import {
+  TEST_USER_PASSWORD,
+  createCallerWithSession,
+  createSilentLogger,
+  createTestContext,
+  createTestUser,
+  setupTestDb,
+} from './helpers';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -120,13 +127,6 @@ function bearerWithAuthTime(user: User, authTime: number | undefined) {
   );
 }
 
-/** A caller for a hand-built `session`, from its own IP. */
-function createCallerWithSessionFromIp(session: UserSession) {
-  const ctx = createTestContext(session);
-  Object.assign(ctx.req, { ip: `10.33.0.${++ip}` });
-  return appRouter.createCaller(ctx);
-}
-
 function login(username: string, password = TEST_USER_PASSWORD) {
   const ctx = createTestContext(null);
   Object.assign(ctx.req, { ip: `10.32.0.${++ip}` });
@@ -199,9 +199,9 @@ describe('auth.refreshToken against a concurrent sign-out', () => {
       }) as never
     );
 
-    const refresh = createCallerWithSessionFromIp(session).auth.refreshToken();
+    const refresh = createCallerWithSession(session).auth.refreshToken();
     await reachedRead;
-    await createCallerWithSessionFromIp(session).auth.logout();
+    await createCallerWithSession(session).auth.logout();
     release();
 
     await expect(refresh).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
@@ -211,7 +211,7 @@ describe('auth.refreshToken against a concurrent sign-out', () => {
     const { session } = await createTestUser('editor');
     const withoutAuthTime: UserSession = { user: { ...session.user, authTime: undefined } };
 
-    await expect(createCallerWithSessionFromIp(withoutAuthTime).auth.refreshToken()).rejects.toMatchObject({
+    await expect(createCallerWithSession(withoutAuthTime).auth.refreshToken()).rejects.toMatchObject({
       code: 'UNAUTHORIZED',
     });
   });

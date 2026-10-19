@@ -62,7 +62,7 @@ export function createToken(
       email: user.email,
       username: user.username,
       role: user.role,
-      tokenVersion: user.tokenVersion ?? 0, // Default to 0 if undefined
+      tokenVersion: user.tokenVersion ?? 0,
       authTime,
     },
     {

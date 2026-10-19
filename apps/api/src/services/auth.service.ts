@@ -459,34 +459,13 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     },
   });
 
-  // If the user doesn't exist or has no local auth, respond with a fake success
-  if (!user || user.identities.length === 0) {
-    await logAudit(ctx, {
-      action: 'PASSWORD_RESET_REQUESTED',
-      targetType: 'Auth',
-      result: 'FAILURE',
-      metadata: { reason: 'user_not_found' },
-    });
-    return {
-      success: true,
-      message:
-        "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
-    };
-  }
-
+  // Every answer that sends nothing is this same success: a caller must not tell them apart.
   const genericResponse = {
     success: true,
     message:
       "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
   };
-
-  // Issued only while the account still has the address asked for: under the user row lock, a
-  // change of address pending now either finishes first (and nothing is issued) or waits for this
-  // link, then revokes it. Earlier reset links stay valid, as before.
-  const issued = await ctx.prisma.$transaction(tx =>
-    issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
-  );
-  if (!issued) {
+  const notFound = async () => {
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
       targetType: 'Auth',
@@ -494,7 +473,18 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       metadata: { reason: 'user_not_found' },
     });
     return genericResponse;
-  }
+  };
+
+  // If the user doesn't exist or has no local auth, respond with a fake success
+  if (!user || user.identities.length === 0) return notFound();
+
+  // Issued only while the account still has the address asked for: under the user row lock, a
+  // change of address pending now either finishes first (and nothing is issued) or waits for this
+  // link, then revokes it. Earlier reset links stay valid: a new request does not revoke them.
+  const issued = await ctx.prisma.$transaction(tx =>
+    issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
+  );
+  if (!issued) return notFound();
   const { token, userToken } = issued;
 
   const baseUrl =
