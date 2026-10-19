@@ -4,6 +4,30 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.0.2] - 2026-10-19
+
+**Upgrade note:** every user signs in again once after the upgrade.
+
+### Changed
+- **auth**: Tidy the hotfix range
+
+### Documentation
+- **adr**: Supersede ADR-019 with ADR-039
+
+### Fixed
+- **auth**: Store a cache fill only if no invalidation happened during it
+- **auth**: Read the email-verification setting through the registry
+- **auth**: Revoke an account's pending links when its email changes
+- **auth**: Ask for the password before an email change
+- **auth**: End the API session on sign-out
+- **auth**: End an event stream with its session
+- **web**: Let administrators sign in during a maintenance window
+- **auth**: Open no event stream for a client that already left
+- **web**: Tell a wrong password apart from an expired session
+
+### Tests
+- **tools**: Isolate the tools tests from an inherited git repository
+
 ## [3.0.1] - 2026-10-18
 
 ### CI
