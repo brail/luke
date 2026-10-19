@@ -23,7 +23,14 @@ import { appRouter } from '../src/routers/index';
 import { confirmPasswordReset } from '../src/services/auth.service';
 import { grantLocalAccess } from '../src/services/localAccess.service';
 
-import { createCallerAs, createCallerWithSession, createTestContext, createTestUser, setupTestDb } from './helpers';
+import {
+  TEST_USER_PASSWORD,
+  createCallerAs,
+  createCallerWithSession,
+  createTestContext,
+  createTestUser,
+  setupTestDb,
+} from './helpers';
 
 const NEW_PASSWORD = 'Recovered-Passw0rd!';
 
@@ -123,7 +130,7 @@ describe('an email change revokes the pending links', () => {
     const { user, session } = await createTestUser('editor');
     await seedLinks(user.id);
 
-    await createCallerWithSession(session).me.changeEmail({ newEmail: 'moved@example.com' });
+    await createCallerWithSession(session).me.changeEmail({ newEmail: 'moved@example.com', currentPassword: TEST_USER_PASSWORD });
 
     // Only the verification link sent to the new address is left.
     const left = await links(user.id);
@@ -183,7 +190,7 @@ describe('a change that runs while an issuance is still open', () => {
     );
     await inserted.promise;
 
-    const change = createCallerWithSession(session).me.changeEmail({ newEmail: 'moved@example.com' });
+    const change = createCallerWithSession(session).me.changeEmail({ newEmail: 'moved@example.com', currentPassword: TEST_USER_PASSWORD });
     await untilSomeoneWaitsOnALock();
     release.resolve();
     await issuance;

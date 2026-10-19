@@ -45,8 +45,9 @@ interface UserProfileFormProps {
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 
-  // State for the email change
+  // State for the email change: the new address and the account's password, which the server asks for
   const [newEmail, setNewEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
 
   // Form setup with Zod validation
   const {
@@ -85,6 +86,7 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       onSuccess: data => {
         toast.success(data.message);
         setNewEmail('');
+        setEmailPassword('');
         // Reload the page to refresh the session
         window.location.reload();
       },
@@ -125,13 +127,23 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
             placeholder="nuova@email.com"
             disabled={isChangingEmail}
           />
+          <Input
+            id="emailCurrentPassword"
+            type="password"
+            autoComplete="current-password"
+            aria-label="Password attuale"
+            value={emailPassword}
+            onChange={e => setEmailPassword(e.target.value)}
+            placeholder="Password attuale"
+            disabled={isChangingEmail}
+          />
           <Button
             type="button"
             onClick={() => {
-              if (!newEmail) return;
-              changeEmail({ newEmail });
+              if (!newEmail || !emailPassword) return;
+              changeEmail({ newEmail, currentPassword: emailPassword });
             }}
-            disabled={isChangingEmail || !newEmail}
+            disabled={isChangingEmail || !newEmail || !emailPassword}
           >
             {isChangingEmail ? (
               <>

@@ -9,20 +9,23 @@ import { UserProfileForm } from '../UserProfileForm';
  * zone the list does not offer (one the browser-zone dialog saved).
  */
 
-const { updateProfileMock } = vi.hoisted(() => ({ updateProfileMock: vi.fn() }));
+const { updateProfileMock, changeEmailMock } = vi.hoisted(() => ({ updateProfileMock: vi.fn(), changeEmailMock: vi.fn() }));
 
 vi.mock('../../../../../lib/trpc', () => ({
   trpc: {
     me: {
       updateProfile: { useMutation: () => ({ mutateAsync: updateProfileMock }) },
-      changeEmail: { useMutation: () => ({ mutateAsync: vi.fn() }) },
+      changeEmail: { useMutation: () => ({ mutateAsync: changeEmailMock }) },
     },
   },
 }));
 vi.mock('../../../../../lib/refresh', () => ({ useRefresh: () => ({ timeZone: vi.fn(), me: vi.fn() }) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-afterEach(() => updateProfileMock.mockReset());
+afterEach(() => {
+  updateProfileMock.mockReset();
+  changeEmailMock.mockReset();
+});
 
 const USER = {
   id: 'u1',
@@ -63,4 +66,21 @@ test('a stored zone the list does not offer is shown as it is, and saving keeps 
 
   await vi.waitFor(() => expect(updateProfileMock).toHaveBeenCalledTimes(1));
   expect(updateProfileMock).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'Pacific/Chatham' }));
+});
+
+test('changing the email asks for the current password', async () => {
+  // Never settles: the success path reloads the page.
+  changeEmailMock.mockReturnValue(new Promise(() => {}));
+  const screen = await render(<UserProfileForm user={USER} />);
+  const update = screen.getByRole('button', { name: 'Aggiorna' });
+
+  await screen.getByLabelText('Cambia Email').fill('nuova@example.com');
+  await expect.element(update).toBeDisabled();
+
+  await screen.getByLabelText('Password attuale').fill('my-password');
+  await expect.element(update).toBeEnabled();
+  await update.click();
+
+  await vi.waitFor(() => expect(changeEmailMock).toHaveBeenCalledTimes(1));
+  expect(changeEmailMock).toHaveBeenCalledWith({ newEmail: 'nuova@example.com', currentPassword: 'my-password' });
 });

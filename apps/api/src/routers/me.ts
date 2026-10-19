@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import {
   UserProfileSchema,
+  ChangeEmailSchema,
   ChangePasswordSchema,
   UpdateTimezoneSchema,
   greetingAt,
@@ -24,6 +25,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { selfProcedure, router } from '../lib/trpc';
 import { resolveUserTimeZone } from '../lib/userTimeZone';
+import { verifyCredentials } from '../services/auth.service';
 import { getUserPreferenceValue, setUserPreferenceValue } from '../services/context.service';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
 
@@ -198,26 +200,40 @@ export const meRouter = router({
 
   /**
    * Changes the current user's email address and sends a verification email to the new address.
+   * The account's password is proven first, as a login proves it (`verifyCredentials`: the strategy,
+   * LOCAL or LDAP, the per-account bucket shared with login, the failure audit): a session alone
+   * must not move the address a password reset is sent to.
    *
    * @auth {authenticated}
-   * @input {{ newEmail: string }} — the new email address (must be unique).
+   * @input {ChangeEmailSchema} — newEmail (must be unique), currentPassword.
    * @output {{ success: true, message: string }}
-   * @throws {TRPCError} BAD_REQUEST for the address the account already has (which would only
-   *   unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address — the
-   *   unique constraint's answer at the write, with no read before it.
+   * @throws {TRPCError} UNAUTHORIZED for a wrong password; TOO_MANY_REQUESTS when the login's per-IP
+   *   or per-account bucket is full; BAD_REQUEST for the address the account already has (which
+   *   would only unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address —
+   *   the unique constraint's answer at the write, with no read before it.
    */
   changeEmail: selfProcedure
+    // A password is checked here: the login's per-IP bucket (rule 12). The per-account one is
+    // `verifyCredentials`' own `loginByUsername`, shared with login.
+    .use(withRateLimit('login'))
     .use(withRateLimit('userMutations'))
-    .input(
-      z.object({
-        newEmail: z.string().trim().toLowerCase().email('Email non valida').max(255, 'Email troppo lunga'),
-      })
-    )
+    .input(ChangeEmailSchema)
     .mutation(async ({ input, ctx }) => {
-      const { newEmail } = input;
+      const { newEmail, currentPassword } = input;
       const userId = ctx.session.user.id;
       if (isSyntheticLdapEmail(newEmail)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email non valida' });
+      }
+
+      // The username as stored, not the token's claim: an account renamed since sign-in is still
+      // checked as itself. The authenticated user must be this session's.
+      const self = await ctx.prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+      if (!self) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+      }
+      const { user: proven } = await verifyCredentials(ctx, { username: self.username, password: currentPassword });
+      if (proven.id !== userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Credenziali non valide' });
       }
 
       // The current address is excluded in the write itself: re-submitting it would only unverify it.
