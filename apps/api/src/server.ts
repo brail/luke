@@ -584,7 +584,7 @@ const start = async () => {
     await registerCollectionRowPictureRoutes(); // Collection row picture upload routes
     await registerSpecsheetImageRoutes(); // Specsheet image upload routes
     await registerSeasonCalendarExportRoutes(); // iCal, PDF and XLSX export
-    await registerSseRoute(fastify, corsAllowedOrigins); // SSE real-time push
+    await registerSseRoute(fastify, corsAllowedOrigins, { prisma }); // SSE real-time push
     await registerHealthRoute();
 
     // Configure temp file cleanup

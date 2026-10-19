@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { CALENDAR_EVENT_KEYS, CalendarInstantSchema, CATEGORY_LEVEL_EVENT_KEY, notificationCategoryEnum } from '@luke/core';
@@ -207,15 +208,22 @@ export const notificationsRouter = router({
   }),
 
   /**
-   * Issues a short-lived SSE ticket (UUID) that the client uses to open the SSE stream.
+   * Issues a short-lived SSE ticket (UUID) that the client uses to open the SSE stream. The ticket
+   * carries the caller's session, and the stream lives only as long as that session does.
    *
    * @auth {authenticated}
    * @input {none}
    * @output {{ ticket: string }}
+   * @throws {TRPCError} UNAUTHORIZED for a session without `tokenVersion` or `authTime`, which a
+   *   request's session always has (a hand-built one may not).
    */
   getSseTicket: selfProcedure.mutation(async ({ ctx }) => {
+    const { id: userId, tokenVersion, authTime } = ctx.session.user;
+    if (tokenVersion === undefined || authTime === undefined) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+    }
     const ticket = randomUUID();
-    sseStore.createTicket(ticket, ctx.session.user.id);
+    sseStore.createTicket(ticket, { userId, tokenVersion, authTime });
     return { ticket };
   }),
 });

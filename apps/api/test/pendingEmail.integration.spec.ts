@@ -120,6 +120,32 @@ describe('auth.submitPendingEmail', () => {
     await configure('ldap-first');
   });
 
+  /** A pending RESET and VERIFY link for `userId`. */
+  async function pendingLinks(userId: string) {
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+    await prisma.userToken.create({ data: { userId, type: 'VERIFY', tokenHash: `verify-${userId}`, expiresAt } });
+    await prisma.userToken.create({ data: { userId, type: 'RESET', tokenHash: `reset-${userId}`, expiresAt } });
+  }
+
+  it('revokes the links of the old address with the change', async () => {
+    const alice = await provisionAlice();
+    await pendingLinks(alice.id);
+
+    await expect(submit('alice@example.com')).resolves.toEqual({ success: true });
+
+    await expect(prisma.userToken.count({ where: { userId: alice.id } })).resolves.toBe(0);
+  });
+
+  it('keeps the links when the account changed before the write', async () => {
+    const alice = await provisionAlice();
+    await pendingLinks(alice.id);
+    afterAuthentication(() => prisma.user.update({ where: { id: alice.id }, data: { pendingApproval: false } }));
+
+    await expect(submit('alice@example.com')).rejects.toMatchObject(NOT_SETTABLE);
+
+    await expect(prisma.userToken.count({ where: { userId: alice.id } })).resolves.toBe(2);
+  });
+
   it('saves the address of a pending LDAP user who proves the password, and asks to verify it', async () => {
     const alice = await provisionAlice();
     expect(alice.email).toBe('alice@ldap.local');

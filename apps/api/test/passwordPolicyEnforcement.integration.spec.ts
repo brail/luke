@@ -18,7 +18,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { createResetToken } from '../src/lib/emailHelpers';
+import { issueUserToken } from '../src/lib/emailHelpers';
 
 import {
   TEST_USER_PASSWORD,
@@ -120,9 +120,10 @@ describe('users.core.update', () => {
 describe('auth.confirmPasswordReset', () => {
   const resetWith = async (newPassword: string) => {
     const { user } = await createTestUser('viewer');
-    const { token } = await createResetToken(prisma, user.id);
+    const issued = await prisma.$transaction(tx => issueUserToken(tx, user.id, 'RESET', { revokePrevious: false }));
+    if (!issued) throw new Error('the user was just created');
     const anon = await createAnonymousCaller();
-    return anon.auth.confirmPasswordReset({ token, newPassword });
+    return anon.auth.confirmPasswordReset({ token: issued.token, newPassword });
   };
 
   it('rejects a password that does not meet the configured complexity', async () => {

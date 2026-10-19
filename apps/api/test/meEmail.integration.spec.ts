@@ -18,7 +18,7 @@ import type { PrismaClient } from '@luke/db';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { rateLimitStore } from '../src/lib/ratelimit';
 
-import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { TEST_USER_PASSWORD, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
 let prisma: PrismaClient;
 
@@ -52,7 +52,7 @@ describe('me.changeEmail', () => {
   it('changes the address, lower-cased, and asks to verify it', async () => {
     const { user, session } = await createTestUser('viewer');
 
-    await createCallerWithSession(session).me.changeEmail({ newEmail: 'Nuovo@Example.COM' });
+    await createCallerWithSession(session).me.changeEmail({ newEmail: 'Nuovo@Example.COM', currentPassword: TEST_USER_PASSWORD });
 
     expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({
       email: 'nuovo@example.com',
@@ -76,7 +76,7 @@ describe('me.changeEmail', () => {
   ])('refuses %s, and the verification stays as it was', async (_name, address) => {
     const { user, session } = await createTestUser('viewer');
 
-    await expect(createCallerWithSession(session).me.changeEmail({ newEmail: address(user) })).rejects.toMatchObject({
+    await expect(createCallerWithSession(session).me.changeEmail({ newEmail: address(user), currentPassword: TEST_USER_PASSWORD })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     });
     expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({
@@ -89,7 +89,7 @@ describe('me.changeEmail', () => {
     const { user, session } = await createTestUser('viewer');
     const { user: other } = await createTestUser('viewer');
 
-    await expect(createCallerWithSession(session).me.changeEmail({ newEmail: other.email })).rejects.toMatchObject({
+    await expect(createCallerWithSession(session).me.changeEmail({ newEmail: other.email, currentPassword: TEST_USER_PASSWORD })).rejects.toMatchObject({
       code: 'CONFLICT',
     });
     expect(await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).toMatchObject({

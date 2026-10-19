@@ -45,8 +45,9 @@ interface UserProfileFormProps {
 export function UserProfileForm({ user }: UserProfileFormProps) {
   const refresh = useRefresh();
 
-  // State for the email change
+  // State for the email change: the new address and the account's password, which the server asks for
   const [newEmail, setNewEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
 
   // Form setup with Zod validation
   const {
@@ -84,11 +85,16 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
       invalidate: refresh.me,
       onSuccess: data => {
         toast.success(data.message);
-        setNewEmail('');
         // Reload the page to refresh the session
         window.location.reload();
       },
       onErrorMessage: 'Errore cambio email',
+      // The password is proven as a login proves it: UNAUTHORIZED is a wrong password (or an expired
+      // session), each with its own server text; SERVICE_UNAVAILABLE is the directory, its text masked.
+      entityMessages: {
+        UNAUTHORIZED: true,
+        SERVICE_UNAVAILABLE: 'Servizio di autenticazione non disponibile. Riprova più tardi.',
+      },
     });
 
   // Form submit handler
@@ -125,13 +131,24 @@ export function UserProfileForm({ user }: UserProfileFormProps) {
             placeholder="nuova@email.com"
             disabled={isChangingEmail}
           />
+          <Input
+            id="emailCurrentPassword"
+            type="password"
+            autoComplete="current-password"
+            aria-label="Password attuale"
+            value={emailPassword}
+            onChange={e => setEmailPassword(e.target.value)}
+            placeholder="Password attuale"
+            disabled={isChangingEmail}
+          />
           <Button
             type="button"
             onClick={() => {
-              if (!newEmail) return;
-              changeEmail({ newEmail });
+              if (!newEmail || !emailPassword) return;
+              // The hook has toasted a refusal by the time it re-throws it; nothing else handles it.
+              changeEmail({ newEmail, currentPassword: emailPassword }).catch(() => undefined);
             }}
-            disabled={isChangingEmail || !newEmail}
+            disabled={isChangingEmail || !newEmail || !emailPassword}
           >
             {isChangingEmail ? (
               <>

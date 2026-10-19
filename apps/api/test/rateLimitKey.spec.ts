@@ -30,7 +30,7 @@ describe('rateLimitKeyFromRequest', () => {
       username: 'a',
       role: 'viewer',
       tokenVersion: 0,
-    });
+    }, Math.floor(Date.now() / 1000));
 
     expect(rateLimitKeyFromRequest(req(`Bearer ${token}`))).toBe('user-42');
   });

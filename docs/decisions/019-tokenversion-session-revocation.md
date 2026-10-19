@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [039 — Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime](039-session-revocation-tokenversion-and-absolute-lifetime.md)
 
 ## Context
 

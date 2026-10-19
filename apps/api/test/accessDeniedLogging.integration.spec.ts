@@ -128,7 +128,7 @@ describe('a section refusal logs the denial', () => {
 describe('a raw Fastify route logs the denial on its own request logger', () => {
   it('requireSessionWithPermission keeps its 403 and names the permission', async () => {
     const { user } = await createTestUser('viewer');
-    const token = createToken({ id: user.id, email: user.email, username: user.username, role: user.role, tokenVersion: 0 });
+    const token = createToken({ id: user.id, email: user.email, username: user.username, role: user.role, tokenVersion: 0 }, Math.floor(Date.now() / 1000));
     const warn = vi.fn();
     // The fields the function reads, standing for Fastify's request and reply.
     const request = {

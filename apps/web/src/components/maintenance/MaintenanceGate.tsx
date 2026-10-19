@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 import { getMaintenanceUrgencyTier } from '@luke/core';
@@ -20,18 +21,26 @@ import { MaintenanceBanner } from './MaintenanceBanner';
 import { MaintenanceLockScreen } from './MaintenanceLockScreen';
 
 /**
+ * The pages that come before a session, never covered: an administrator signed out during a window
+ * must reach the login form to end it, and the recovery link (`/auth/reset?token=…`) must work.
+ */
+const PRE_SESSION_PATHS = ['/login', '/auth/reset'];
+
+/**
  * Global maintenance-mode UI, mounted once at the root provider tree (before `{children}`,
  * so the banner renders above the entire app including the sidebar layout).
  *
  * - `SCHEDULED`: persistent top banner with a live countdown, plus a blocking "Ho capito"
  *   alert dialog re-shown at each `warningLeadMinutes` threshold the backend confirms crossed.
- * - `ACTIVE`, non-admin (including logged-out visitors — the login page itself is covered):
- *   full-screen lock via `MaintenanceLockScreen`.
+ * - `ACTIVE`, non-admin (including logged-out visitors): full-screen lock via
+ *   `MaintenanceLockScreen` on every page but the pre-session ones (`PRE_SESSION_PATHS`): there the
+ *   API itself refuses a login from whoever cannot bypass maintenance, and a reset link still works.
  * - `ACTIVE`, admin: discrete top banner only, never locked out.
  */
 export function MaintenanceGate() {
   const { state } = useMaintenanceStatus();
   const { can } = usePermission();
+  const pathname = usePathname();
   // Whoever bypasses maintenance keeps working through it — the server's rule (`bypassesMaintenance`).
   const bypasses = can('maintenance:update');
 
@@ -82,7 +91,9 @@ export function MaintenanceGate() {
           msRemaining={msRemaining}
         />
       )}
-      {state.status === 'ACTIVE' && !bypasses && <MaintenanceLockScreen message={state.message} />}
+      {state.status === 'ACTIVE' && !bypasses && !PRE_SESSION_PATHS.includes(pathname) && (
+        <MaintenanceLockScreen message={state.message} />
+      )}
 
       <AlertDialog open={activeThreshold !== null} onOpenChange={() => { /* dismiss only via "Ho capito" below */ }}>
         <AlertDialogContent>
