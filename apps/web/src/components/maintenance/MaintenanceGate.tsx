@@ -33,8 +33,8 @@ const PRE_SESSION_PATHS = ['/login', '/auth/reset'];
  * - `SCHEDULED`: persistent top banner with a live countdown, plus a blocking "Ho capito"
  *   alert dialog re-shown at each `warningLeadMinutes` threshold the backend confirms crossed.
  * - `ACTIVE`, non-admin (including logged-out visitors): full-screen lock via
- *   `MaintenanceLockScreen` on every page but the pre-session ones (`PRE_SESSION_PATHS`), where the
- *   API itself refuses whoever cannot bypass maintenance.
+ *   `MaintenanceLockScreen` on every page but the pre-session ones (`PRE_SESSION_PATHS`): there the
+ *   API itself refuses a login from whoever cannot bypass maintenance, and a reset link still works.
  * - `ACTIVE`, admin: discrete top banner only, never locked out.
  */
 export function MaintenanceGate() {

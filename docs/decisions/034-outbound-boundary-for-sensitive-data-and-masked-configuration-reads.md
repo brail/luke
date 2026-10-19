@@ -61,3 +61,9 @@ These deviations exist when this record is accepted. They are recorded as follow
 - **A secret stored with `isEncrypted: false` is read back in plaintext** by any holder of `config:read`, because masking is driven by that flag and encryption is chosen by the caller rather than declared by the registry ([ADR-018](018-runtime-configuration-and-bootstrap-environment.md)). It is a property of how values are written, not of the outbound boundary.
 - **Some routers read a configuration value without decrypting it** and return it to the client (the Google settings) or use it (the local storage path). A value stored encrypted under one of those keys would come back as stored rather than masked or decrypted. Tracked as a follow-up.
 - Several write paths return an unprojected row: `sectionAccess.set` through an `upsert`, and `company.profile.get` and `company.profile.update` through a `create` and an `upsert` on `CompanyProfile`. No guarded field is involved in any of them.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-19 — Decision, limits of this record, "`createResetToken` returns the whole `UserToken` row, `tokenHash` included".** `createResetToken` was replaced by `issueUserToken` in `apps/api/src/lib/emailHelpers.ts` (`d88bccd8`), which selects `{ id, expiresAt }` only; no in-process value of this path carries `tokenHash` any more. The rule it illustrates is unchanged.

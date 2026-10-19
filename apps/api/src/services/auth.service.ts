@@ -108,9 +108,10 @@ export async function countBreakGlassAdmins(prisma: PrismaClient): Promise<numbe
 /**
  * Verifies a username and password with the configured auth strategy (local-first, ldap-first,
  * local-only, or ldap-only), as a login does, and nothing more: no pending-approval,
- * email-verification or maintenance check, no token. Every public endpoint that takes a user's
- * password (`auth.login`, `auth.submitPendingEmail`, `auth.resendVerification`) goes through it, so
- * they share the per-account `loginByUsername` bucket and none adds guesses.
+ * email-verification or maintenance check, no token. Every endpoint that takes a user's password —
+ * the public `auth.login`, `auth.submitPendingEmail` and `auth.resendVerification`, and the
+ * signed-in `me.changeEmail` — goes through it, so they share the per-account `loginByUsername`
+ * bucket and none adds guesses.
  *
  * A failure writes the `AUTH_LOGIN_FAILED` audit row and throws the answer a login gets. A success
  * has the strategy's own side effects before any eligibility check: an LDAP bind provisions the

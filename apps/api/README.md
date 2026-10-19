@@ -226,9 +226,17 @@ with bodies built in code.
 - **Tokens** — 32 random bytes, mailed as 64 hex characters; only their SHA-256
   hash is stored (`UserToken`). A used token is deleted; an expired one is
   refused but stays in the table.
+- **Address change** — changing an account's address (`me.changeEmail`, which
+  asks for the current password, `auth.submitPendingEmail`, or an
+  administrator's `users.update`) deletes every pending reset and verification
+  link of the account, in the same transaction. A link is issued for the address
+  the account holds when it is written, and a reset requested for an address the
+  account no longer holds sends nothing.
 - **Required verification** — with `auth.requireEmailVerification` set to
   `true`, a local login with an unverified address is refused and the login
-  page offers a new link. LDAP logins are not subject to it.
+  page offers a new link. LDAP logins are not subject to it. The key defaults to
+  `false`; a stored value the registry refuses, an encrypted row included, is
+  read as `true` and logged as a warning.
 
 SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte
 when `true`, STARTTLS otherwise), `smtp.user`, `smtp.pass` (stored encrypted)
@@ -366,7 +374,7 @@ authentication models:
 | `POST /upload/brand-logo/temp`, `/upload/brand-logo/:brandId`, `/upload/company-logo`, `/upload/collection-row-picture/temp`, `/upload/collection-row-picture/:rowId`, `/upload/specsheet-image/:specsheetId`, `/upload/backup-import` | Bearer API token plus the route's permission (`requireSessionWithPermission` in `src/lib/auth.ts`) |
 | `GET /download/season-calendar/{ical,pdf,xlsx}` | Bearer API token (`authenticateRequest`), then the caller's brand and function scope |
 | `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header |
-| `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, consumed when the stream opens |
+| `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, carrying the caller's session; the stream re-checks that session before every heartbeat and ends when it is revoked, or 12 hours after its login ([ADR-039](../../docs/decisions/039-session-revocation-tokenversion-and-absolute-lifetime.md)) |
 
 `GET /uploads/:bucket/*` (`src/plugins/storageUpload.ts`) checks no session: it
 is reached only by the web's authenticated `/api/uploads/[...path]` proxy over
@@ -393,7 +401,7 @@ values in the environment table below, and no configuration file is read. Ration
 | Namespace | Description |
 |-----------|-------------|
 | `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
-| `auth.*` | Login, API token refresh, password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
+| `auth.*` | Login, API token refresh, logout (ends every session of the caller), password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
 | `brand.*` | Brand management (CRUD, soft delete, logo upload) |
 | `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
 | `collectionCatalog.*` | Collection catalog items |
@@ -413,7 +421,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
 | `maintenance.backup.*` | Backup and restore of the application database |
 | `maintenance.mode.*` | Maintenance mode (write lock, user-facing banner) |
-| `me.*` | Current user: profile, self-service email change, password change, time zone, login history, session revocation, daily greeting |
+| `me.*` | Current user: profile, self-service email change (with the current password), password change, time zone, login history, session revocation, daily greeting |
 | `merchandisingPlan.*` | Merchandising plan — specsheets, components, images |
 | `notifications.*` | User notifications and notification preferences |
 | `phase.*` | Unified Phase catalog (row production status + calendar) |

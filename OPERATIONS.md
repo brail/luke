@@ -8,7 +8,7 @@ deliverability, the reverse proxy's network and the release build's repository
 variables. Security headers and
 the health and readiness probes are documented in the
 [API documentation](apps/api/README.md); session revocation is decided in
-[ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
+[ADR-039](docs/decisions/039-session-revocation-tokenversion-and-absolute-lifetime.md).
 
 ## Contents
 
@@ -115,7 +115,10 @@ many addresses is still limited per account. The other public endpoints that
 verify the account's current password pair an IP bucket with the same
 `loginByUsername` bucket, so their attempts count against the account's login
 limit: `auth.submitPendingEmail` (`pendingEmail`) and `auth.resendVerification`
-(`passwordReset`). `integrations.google.exchangeOAuthCode`, which checks the
+(`passwordReset`). `me.changeEmail`, which asks a signed-in user for the current
+password, applies `login` by IP and `userMutations` by user, and counts against
+the same `loginByUsername` bucket: a mistyped password on the profile page uses
+up the account's login attempts. `integrations.google.exchangeOAuthCode`, which checks the
 OAuth `state`, pairs `googleOAuthExchange` by IP with `configMutations` by
 account.
 

@@ -208,7 +208,8 @@ export const meRouter = router({
    * @input {ChangeEmailSchema} — newEmail (must be unique), currentPassword.
    * @output {{ success: true, message: string }}
    * @throws {TRPCError} UNAUTHORIZED for a wrong password; TOO_MANY_REQUESTS when the login's per-IP
-   *   or per-account bucket is full; BAD_REQUEST for the address the account already has (which
+   *   or per-account bucket is full; SERVICE_UNAVAILABLE when LDAP could not complete the check
+   *   (`verifyCredentials`); BAD_REQUEST for the address the account already has (which
    *   would only unverify it) or a synthetic LDAP one; CONFLICT if another account holds the address —
    *   the unique constraint's answer at the write, with no read before it.
    */
