@@ -20,7 +20,7 @@ import type { Prisma, PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { getRequireEmailVerification } from '../lib/configManager';
-import { createResetToken } from '../lib/emailHelpers';
+import { issueUserToken, lockUserEmail } from '../lib/emailHelpers';
 import { hashPassword } from '../lib/password';
 
 /** An account as the checks below need it. */
@@ -198,6 +198,9 @@ export async function grantLocalAccess(
   ]);
 
   return prisma.$transaction(async tx => {
+    // The user row first, before the identity insert below (whose foreign-key check takes a
+    // key-share lock on it) and before the links: the lock order of every link write.
+    await lockUserEmail(tx, confirmed.id);
     const user = await tx.user.findUnique({ where: { id: confirmed.id }, select: TARGET_SELECT });
     if (user && user.username !== confirmed.username) {
       throw new LocalAccessRefused(`the account was renamed to ${user.username} after it was confirmed`);
@@ -211,8 +214,10 @@ export async function grantLocalAccess(
     // `assess` has just established that the account exists.
     const target = user!;
     const identityCreated = await prepareLocalIdentity(tx, target, placeholderHash);
-    const { count: resetTokensRevoked } = await tx.userToken.deleteMany({ where: { userId: target.id, type: 'RESET' } });
-    const { token, userToken } = await createResetToken(tx, target.id);
+    const issued = await issueUserToken(tx, target.id, 'RESET', { revokePrevious: true });
+    // The row is locked above and `assess` found it: it cannot have gone since.
+    if (!issued) throw new LocalAccessRefused('the account no longer exists');
+    const { token, userToken, revoked: resetTokensRevoked } = issued;
 
     await logAudit(
       { prisma: tx },

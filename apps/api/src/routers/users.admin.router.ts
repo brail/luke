@@ -12,7 +12,7 @@ import { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { createResetToken, isSyntheticLdapEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -332,26 +332,27 @@ export const usersAdminRouter = router({
         }
       }
 
-      // Token generation and `getConfig` are independent reads/writes — run concurrently.
-      let userToken;
-      try {
-        const [{ token, userToken: createdToken }, baseUrl] = await Promise.all([
-          createResetToken(ctx.prisma, user.id),
-          getConfigOrDefault(ctx.prisma, 'app.baseUrl'),
-        ]);
-        userToken = createdToken;
+      // Token generation and `getConfig` are independent reads/writes — run concurrently. The link
+      // is issued under the user row lock, so it goes to the address the account has now, which may
+      // differ from `user.email` read above; earlier links stay valid.
+      const [issued, baseUrl] = await Promise.all([
+        ctx.prisma.$transaction(tx => issueUserToken(tx, user.id, 'RESET', { revokePrevious: false })),
+        getConfigOrDefault(ctx.prisma, 'app.baseUrl'),
+      ]);
+      if (!issued) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+      }
 
-        await sendPasswordResetEmail(ctx.prisma, user.email, token, baseUrl);
+      try {
+        await sendPasswordResetEmail(ctx.prisma, issued.email, issued.token, baseUrl);
       } catch (error) {
         // The LOCAL identity/credential (if just created) is deliberately left in place —
         // it's unusable without the link, and the next call finds it ready and just resends
         // the link. Only the orphaned token, which nobody received, is cleaned up, mirroring
         // `requestPasswordReset` in `auth.service.ts`; a link sent earlier is never touched.
-        if (userToken) {
-          await ctx.prisma.userToken.delete({ where: { id: userToken.id } }).catch(e => {
-            ctx.logger.warn({ err: e, tokenId: userToken!.id }, 'Failed to delete orphaned reset token');
-          });
-        }
+        await ctx.prisma.userToken.delete({ where: { id: issued.userToken.id } }).catch(e => {
+          ctx.logger.warn({ err: e, tokenId: issued.userToken.id }, 'Failed to delete orphaned reset token');
+        });
         ctx.logger.error(
           { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },
           'forceLocalAccess: reset email failed — check SMTP config in AppConfig'
@@ -366,7 +367,7 @@ export const usersAdminRouter = router({
 
       return {
         success: true,
-        message: `Link di accesso locale inviato a ${user.email}`,
+        message: `Link di accesso locale inviato a ${issued.email}`,
       };
     }),
 

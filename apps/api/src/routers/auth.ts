@@ -19,7 +19,7 @@ import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
-import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -271,18 +271,23 @@ export const authRouter = router({
       // Conditional write (rule 3), which is also the eligibility check: an account that is not
       // active, pending and LDAP — or stopped being one, or got an address from another submit,
       // since the user above was read — matches nothing. The address's uniqueness is the
-      // database's constraint, not a read before the write.
-      let written: { count: number };
+      // database's constraint, not a read before the write. The links of the old address go in the
+      // same transaction, after the address UPDATE (lock order: the user row, then its links — see
+      // `issueUserToken`); `null` when nothing was written, so nothing was deleted either.
+      let resetTokensRevoked: number | null;
       try {
-        written = await ctx.prisma.user.updateMany({
-          where: {
-            id: user.id,
-            isActive: true,
-            pendingApproval: true,
-            email: user.email,
-            identities: { some: { provider: 'LDAP' } },
-          },
-          data: { email, emailVerifiedAt: null },
+        resetTokensRevoked = await ctx.prisma.$transaction(async tx => {
+          const written = await tx.user.updateMany({
+            where: {
+              id: user.id,
+              isActive: true,
+              pendingApproval: true,
+              email: user.email,
+              identities: { some: { provider: 'LDAP' } },
+            },
+            data: { email, emailVerifiedAt: null },
+          });
+          return written.count === 0 ? null : revokeUserLinks(tx, user.id);
         });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -290,7 +295,7 @@ export const authRouter = router({
         }
         throw err;
       }
-      if (written.count === 0) {
+      if (resetTokensRevoked === null) {
         throw await notSettable('account_changed', "L'account è cambiato nel frattempo: accedi di nuovo.");
       }
 
@@ -299,7 +304,7 @@ export const authRouter = router({
         targetType: 'User',
         targetId: user.id,
         result: 'SUCCESS',
-        metadata: { username },
+        metadata: { username, resetTokensRevoked },
       });
 
       // Send verification email to the address just provided

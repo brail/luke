@@ -7,12 +7,12 @@ import { createHash } from 'crypto';
 import { TRPCError } from '@trpc/server';
 
 import { hasPermission } from '@luke/core';
-import type { PrismaClient, User } from '@luke/db';
+import type { Prisma, PrismaClient, User } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { getConfig, getConfigOrDefault, getRequireEmailVerification } from '../lib/configManager';
-import { createResetToken, isSyntheticLdapEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { authenticateViaLdap, type LdapRefusal } from '../lib/ldapAuth';
 import { sendPasswordResetEmail } from '../lib/mailer';
@@ -470,19 +470,34 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     };
   }
 
-  const { token, userToken } = await createResetToken(ctx.prisma, user.id);
-
-  const baseUrl =
-    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
-
   const genericResponse = {
     success: true,
     message:
       "Se l'email esiste nel sistema, riceverai un link per il reset della password.",
   };
 
+  // Issued only while the account still has the address asked for: under the user row lock, a
+  // change of address pending now either finishes first (and nothing is issued) or waits for this
+  // link, then revokes it. Earlier reset links stay valid, as before.
+  const issued = await ctx.prisma.$transaction(tx =>
+    issueUserToken(tx, user.id, 'RESET', { expectedEmail: normalizedEmail, revokePrevious: false })
+  );
+  if (!issued) {
+    await logAudit(ctx, {
+      action: 'PASSWORD_RESET_REQUESTED',
+      targetType: 'Auth',
+      result: 'FAILURE',
+      metadata: { reason: 'user_not_found' },
+    });
+    return genericResponse;
+  }
+  const { token, userToken } = issued;
+
+  const baseUrl =
+    await getConfigOrDefault(ctx.prisma, 'app.baseUrl');
+
   try {
-    await sendPasswordResetEmail(ctx.prisma, normalizedEmail, token, baseUrl);
+    await sendPasswordResetEmail(ctx.prisma, issued.email, token, baseUrl);
 
     await logAudit(ctx, {
       action: 'PASSWORD_RESET_REQUESTED',
@@ -518,6 +533,34 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     });
 
     return genericResponse;
+  }
+}
+
+/** Thrown inside {@link consumeLink}'s transaction to roll back its writes. */
+class LinkGone extends Error {}
+
+/**
+ * Runs `writes`, then deletes the link `tokenId`, in one transaction (writes first: the user row,
+ * then its links — the lock order of `issueUserToken` and of an email change). A link deleted
+ * since it was looked up — an email change revokes every pending link — rolls the writes back.
+ *
+ * @returns `false` when the link was gone, so the caller answers "not valid", not a 500.
+ */
+async function consumeLink(
+  ctx: Context,
+  tokenId: string,
+  writes: (tx: Prisma.TransactionClient) => Promise<void>
+): Promise<boolean> {
+  try {
+    await ctx.prisma.$transaction(async tx => {
+      await writes(tx);
+      const { count } = await tx.userToken.deleteMany({ where: { id: tokenId } });
+      if (count === 0) throw new LinkGone();
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof LinkGone) return false;
+    throw error;
   }
 }
 
@@ -602,7 +645,7 @@ export async function confirmPasswordReset(
 
   const passwordHash = await hashPassword(newPassword);
 
-  await ctx.prisma.$transaction(async tx => {
+  const consumed = await consumeLink(ctx, userToken.id, async tx => {
     await tx.localCredential.update({
       where: { identityId: userToken.user.identities[0].id },
       data: { passwordHash, updatedAt: new Date() },
@@ -611,10 +654,17 @@ export async function confirmPasswordReset(
       where: { id: userToken.userId },
       data: { tokenVersion: { increment: 1 } },
     });
-    await tx.userToken.delete({
-      where: { id: userToken.id },
-    });
   });
+  if (!consumed) {
+    await logAudit(ctx, {
+      action: 'PASSWORD_CHANGED',
+      targetType: 'Auth',
+      targetId: userToken.userId,
+      result: 'FAILURE',
+      metadata: { reason: 'invalid_or_expired_token' },
+    });
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Token non valido o scaduto.' });
+  }
 
   invalidateTokenVersionCache(userToken.userId);
 
@@ -680,17 +730,24 @@ export async function confirmEmailVerification(
   }
 
   // Update emailVerifiedAt and delete the token in a transaction
-  await ctx.prisma.$transaction(async tx => {
+  const consumed = await consumeLink(ctx, userToken.id, async tx => {
     await tx.user.update({
       where: { id: userToken.userId },
       data: {
         emailVerifiedAt: new Date(),
       },
     });
-    await tx.userToken.delete({
-      where: { id: userToken.id },
-    });
   });
+  if (!consumed) {
+    await logAudit(ctx, {
+      action: 'EMAIL_VERIFIED',
+      targetType: 'Auth',
+      targetId: userToken.userId,
+      result: 'FAILURE',
+      metadata: { reason: 'invalid_or_expired_token' },
+    });
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Token non valido o scaduto.' });
+  }
 
   // Log audit SUCCESS
   await logAudit(ctx, {

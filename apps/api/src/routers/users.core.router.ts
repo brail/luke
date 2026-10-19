@@ -14,6 +14,7 @@ import { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
+import { revokeUserLinks } from '../lib/emailHelpers';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
@@ -532,6 +533,12 @@ export const usersCoreRouter = router({
               ...(revokesSessions ? { tokenVersion: { increment: 1 } } : {}),
             },
           });
+
+          // The links mailed to the old address die with it, after the address UPDATE (lock
+          // order: the user row, then its links — see `issueUserToken`).
+          if (updateData.email !== undefined && updateData.email !== existingUser.email) {
+            await revokeUserLinks(tx, id);
+          }
 
           return { updated, revokesSessions, current };
         });

@@ -15,7 +15,7 @@ import {
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { isSyntheticLdapEmail, sendVerificationEmail } from '../lib/emailHelpers';
+import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
@@ -221,11 +221,17 @@ export const meRouter = router({
       }
 
       // The current address is excluded in the write itself: re-submitting it would only unverify it.
-      let written: { count: number };
+      // The links mailed to the old address go in the same transaction, after the address UPDATE
+      // (lock order: the user row, then its links — see `issueUserToken`); `null` when nothing was
+      // written, so nothing was deleted either.
+      let resetTokensRevoked: number | null;
       try {
-        written = await ctx.prisma.user.updateMany({
-          where: { id: userId, email: { not: newEmail } },
-          data: { email: newEmail, emailVerifiedAt: null },
+        resetTokensRevoked = await ctx.prisma.$transaction(async tx => {
+          const written = await tx.user.updateMany({
+            where: { id: userId, email: { not: newEmail } },
+            data: { email: newEmail, emailVerifiedAt: null },
+          });
+          return written.count === 0 ? null : revokeUserLinks(tx, userId);
         });
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -233,7 +239,7 @@ export const meRouter = router({
         }
         throw err;
       }
-      if (written.count === 0) {
+      if (resetTokensRevoked === null) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'È già il tuo indirizzo email' });
       }
 
@@ -242,7 +248,7 @@ export const meRouter = router({
         targetType: 'User',
         targetId: userId,
         result: 'SUCCESS',
-        metadata: {},
+        metadata: { resetTokensRevoked },
       });
 
       try {
