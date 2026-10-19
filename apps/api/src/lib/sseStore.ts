@@ -4,7 +4,8 @@
  *
  * Auth strategy: the browser EventSource API cannot send custom headers.
  * Solution: a single-use ticket valid for 60 seconds is issued via tRPC before
- * the client opens the SSE connection, then exchanged for the user identity.
+ * the client opens the SSE connection, then exchanged for the session it was issued from, which the
+ * route re-checks for as long as the stream stays open (`routes/sse.ts`).
  */
 
 import type { MaintenanceModeStatus } from '@luke/core';
@@ -70,24 +71,32 @@ function connectedUserIds(): string[] {
 
 // --- Ticket store ---
 
-interface Ticket {
+/** The session a ticket was issued from: what the stream it opens is checked against. */
+export interface SseSession {
   userId: string;
+  tokenVersion: number;
+  /** Unix seconds of the login the session descends from. */
+  authTime: number;
+}
+
+interface Ticket {
+  session: SseSession;
   expiresAt: number;
 }
 
 const tickets = new Map<string, Ticket>();
 const TICKET_TTL_MS = 60_000;
 
-function createTicket(ticketId: string, userId: string): void {
-  tickets.set(ticketId, { userId, expiresAt: Date.now() + TICKET_TTL_MS });
+function createTicket(ticketId: string, session: SseSession): void {
+  tickets.set(ticketId, { session, expiresAt: Date.now() + TICKET_TTL_MS });
 }
 
-function consumeTicket(ticketId: string): string | null {
+function consumeTicket(ticketId: string): SseSession | null {
   const ticket = tickets.get(ticketId);
   if (!ticket) return null;
   tickets.delete(ticketId); // single-use
   if (Date.now() > ticket.expiresAt) return null;
-  return ticket.userId;
+  return ticket.session;
 }
 
 // Cleans up expired tickets every 5 minutes. `unref`: the server is kept alive by its listener, and
@@ -107,7 +116,7 @@ setInterval(() => {
  * - `pushToUser` — write an SSE event to all connections for a single user.
  * - `pushToAll` — broadcast an SSE event to every connected client.
  * - `connectedUserIds` — returns the list of user IDs with active connections.
- * - `createTicket` / `consumeTicket` — single-use 60-second auth tickets.
+ * - `createTicket` / `consumeTicket` — single-use 60-second tickets carrying the issuing session.
  */
 export const sseStore = {
   subscribe,

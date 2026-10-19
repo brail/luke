@@ -100,9 +100,10 @@ export function extractTokenFromRequest(
 
 /**
  * `true` while a session that logged in at `authTime` may be used: a finite time, ahead of the clock
- * by no more than the JWT tolerance, and less than `SESSION_ABSOLUTE_LIFETIME_SECONDS` ago.
+ * by no more than the JWT tolerance, and less than `SESSION_ABSOLUTE_LIFETIME_SECONDS` ago. Checked
+ * where a bearer becomes a session, and on every heartbeat of an SSE stream (`isSseSessionLive`).
  */
-function isWithinSessionLifetime(authTime: number | undefined): authTime is number {
+export function isWithinSessionLifetime(authTime: number | undefined): authTime is number {
   const now = Math.floor(Date.now() / 1000);
   return (
     // A claim is whatever JSON decoded: `null` for a NaN, `Infinity` for an overflowing number.
