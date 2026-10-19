@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { afterEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
@@ -25,6 +26,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(() => {
   updateProfileMock.mockReset();
   changeEmailMock.mockReset();
+  vi.mocked(toast.error).mockClear();
 });
 
 const USER = {
@@ -83,4 +85,29 @@ test('changing the email asks for the current password', async () => {
 
   await vi.waitFor(() => expect(changeEmailMock).toHaveBeenCalledTimes(1));
   expect(changeEmailMock).toHaveBeenCalledWith({ newEmail: 'nuova@example.com', currentPassword: 'my-password' });
+});
+
+/** Fills the email form, submits it, and returns how the refusal was told. */
+async function refusedEmailChange(error: { message: string; data: { code: string } }) {
+  changeEmailMock.mockRejectedValue(error);
+  const screen = await render(<UserProfileForm user={USER} />);
+  await screen.getByLabelText('Cambia Email').fill('nuova@example.com');
+  await screen.getByLabelText('Password attuale').fill('wrong-password');
+  await screen.getByRole('button', { name: 'Aggiorna' }).click();
+  await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+  return vi.mocked(toast.error).mock.calls[0];
+}
+
+test('a wrong current password is told as such, not as an expired session', async () => {
+  const [title, options] = await refusedEmailChange({ message: 'Credenziali non valide', data: { code: 'UNAUTHORIZED' } });
+
+  expect(title).toBe('Errore cambio email');
+  expect(options).toEqual({ description: 'Credenziali non valide' });
+});
+
+test('an unreachable directory is told as an unavailable sign-in service, not as maintenance', async () => {
+  // A 5xx: production replaces its message, so the page cannot show the server's.
+  const [, options] = await refusedEmailChange({ message: 'Internal server error', data: { code: 'SERVICE_UNAVAILABLE' } });
+
+  expect(options).toEqual({ description: 'Servizio di autenticazione non disponibile. Riprova più tardi.' });
 });
