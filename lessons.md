@@ -623,11 +623,12 @@ is an owner operation — see CLAUDE.md § Versioning & Release.
 in the shared `.git/config` (`core.bare=true`, a `fixture` identity, `gpgsign` off), which broke git in
 every worktree. Reproducing it with `GIT_DIR=… node --test` did the same damage a second time.
 
-**Rule.** Until #161 is fixed, never push from a worktree with the hook enabled, and never run a
-`tools/` test with `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` set — not even to reproduce a
-failure. Push from the main checkout; from a worktree, run every hook step by hand with those
-variables unset, compare `shasum .git/config` before and after, and only then push with
-`--no-verify`, with the owner's ok.
+**Rule.** Run the `tools/` tests only through `pnpm test:tools`: it preloads
+`tools/scripts/lib/isolateGitEnv.ts`, which drops the variables git uses to locate a repository
+(#161, fixed 2026-10-19), so the `tools/` fixtures no longer write to the real repository from a
+worktree's pre-push hook. A bare `node --test` on a `tools/` file skips the preload: never run one
+with `GIT_DIR`, `GIT_WORK_TREE` or `GIT_INDEX_FILE` set. A test outside `tools/` that creates a git
+fixture needs the same isolation before it runs from a hook.
 
 ## Audit Log
 

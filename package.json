@@ -30,7 +30,7 @@
     "check:tsconfig": "tsx tools/scripts/check-tsconfig-integrity.ts",
     "check:workflows": "tsx tools/scripts/check-workflow-branches.ts && tsx tools/scripts/check-workflow-paths.ts",
     "check:drift": "tsx tools/scripts/check-skill-integrity.ts && tsx tools/scripts/check-docs-integrity.ts && pnpm check:platform && pnpm check:overrides && pnpm check:tsconfig && pnpm check:workflows",
-    "test:tools": "node --import tsx --test \"tools/scripts/**/*.test.ts\"",
+    "test:tools": "node --import tsx --import ./tools/scripts/lib/isolateGitEnv.ts --test \"tools/scripts/**/*.test.ts\"",
     "release:prepare": "bash scripts/release-prepare.sh",
     "rc:clone": "tsx scripts/rc-prod-clone.ts",
     "changelog": "git-cliff",
