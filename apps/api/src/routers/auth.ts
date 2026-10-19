@@ -1,8 +1,8 @@
 /**
  * tRPC router for authentication
- * Handles login, API token refresh, password reset, email verification and the LDAP
- * pending-approval email flow. Logout is NextAuth `signOut()` on the web side; revoking every
- * session is `me.revokeAllSessions`.
+ * Handles login, API token refresh, logout, password reset, email verification and the LDAP
+ * pending-approval email flow. Logout ends the caller's API sessions; the web then calls Auth.js
+ * `signOut()`.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -23,6 +23,7 @@ import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '..
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
+import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import {
   router,
   protectedProcedure,
@@ -90,16 +91,26 @@ export const authRouter = router({
   /**
    * Re-mints a fresh API access token for the current session.
    * `selfProcedure` — a `protectedProcedure` — already validates the Bearer
-   * (expired → UNAUTHORIZED) and the `tokenVersion` (revoked → UNAUTHORIZED):
-   * the web callback uses it to
+   * (expired, or past its absolute lifetime → UNAUTHORIZED) and the `tokenVersion`
+   * (revoked → UNAUTHORIZED): the web callback uses it to
    * renew the embedded accessToken before it expires, preventing a still-valid
-   * NextAuth session from sending an expired API JWT (`jwt expired`).
+   * NextAuth session from sending an expired API JWT (`jwt expired`). The new token keeps the
+   * bearer's `authTime`, so refreshing never extends the session past 12 h from its login.
    *
    * @auth {authenticated}
    * @input {none}
    * @output {{ token: string, tokenVersion: number }}
+   * @throws {TRPCError} UNAUTHORIZED for a session without `authTime`, an inactive or missing
+   *   user, or a version that is no longer the user's.
    */
   refreshToken: selfProcedure.mutation(async ({ ctx }) => {
+    const { authTime } = ctx.session.user;
+    // A request's session always has one (`createUserSession`); a hand-built one may not, and a
+    // refresh has no login time of its own to put in its place.
+    if (authTime === undefined) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Sessione non più valida' });
+    }
+
     // Role and tokenVersion are re-read from the database, not from the session claim.
     // Re-signing from the claim turned refresh into an authority recycle: a
     // demoted user would endlessly renew a token that still said
@@ -115,21 +126,49 @@ export const authRouter = router({
       },
     });
 
-    if (!fresh || !fresh.isActive) {
+    // The version read here must still be the bearer's: a refresh that passed authentication
+    // before a logout or any other revocation must not mint a token at the new version.
+    if (!fresh || !fresh.isActive || fresh.tokenVersion !== ctx.session.user.tokenVersion) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
         message: 'Sessione non più valida',
       });
     }
 
-    const token = createToken({
-      id: ctx.session.user.id,
-      email: fresh.email,
-      username: fresh.username,
-      role: fresh.role,
-      tokenVersion: fresh.tokenVersion,
-    });
+    const token = createToken(
+      {
+        id: ctx.session.user.id,
+        email: fresh.email,
+        username: fresh.username,
+        role: fresh.role,
+        tokenVersion: fresh.tokenVersion,
+      },
+      authTime
+    );
     return { token, tokenVersion: fresh.tokenVersion };
+  }),
+
+  /**
+   * Ends every API session of the caller, the bearer it is called with included (`tokenVersion`).
+   * The web's sign-out button calls it before Auth.js `signOut()`, and signs out only once it
+   * succeeded or answered UNAUTHORIZED (nothing left to end). Like every own-data endpoint it is
+   * blocked by an active maintenance window for whoever cannot bypass it.
+   *
+   * @auth {authenticated — own account}
+   * @input {none}
+   * @output {{ success: true }}
+   */
+  logout: selfProcedure.mutation(async ({ ctx }) => {
+    const userId = ctx.session.user.id;
+    await ctx.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    invalidateTokenVersionCache(userId);
+
+    await logAudit(ctx, { action: 'AUTH_LOGOUT', targetType: 'Auth', targetId: userId, result: 'SUCCESS' });
+
+    return { success: true };
   }),
 
   /**

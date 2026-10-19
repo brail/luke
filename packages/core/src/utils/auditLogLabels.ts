@@ -49,6 +49,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   // Auth / users
   AUTH_LOGIN: 'Accesso effettuato',
   AUTH_LOGIN_FAILED: 'Tentativo di accesso fallito',
+  AUTH_LOGOUT: 'Uscita effettuata',
   USER_CREATE: 'Utente creato',
   USER_UPDATE: 'Utente modificato',
   USER_DELETE: 'Utente eliminato',

@@ -98,6 +98,9 @@ export default defineConfig({
       // Added for navSyncAndCompanyForms.browser.test.tsx, the first to mount a Tabs: it reloaded
       // mid-run on its first run (`Cannot read properties of null (reading 'useContext')`).
       '@radix-ui/react-tabs',
+      // Added for AppSidebar.signOut.browser.test.tsx, the first to mount an Avatar: it failed on its
+      // first run (`Cannot read properties of null (reading 'useState')`). Same reason.
+      '@radix-ui/react-avatar',
     ],
   },
   // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left

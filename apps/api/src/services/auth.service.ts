@@ -394,14 +394,17 @@ export async function authenticateUser(
     },
   });
 
-  // Create token
-  const token = createToken({
-    id: authenticatedUser.id,
-    email: authenticatedUser.email,
-    username: authenticatedUser.username,
-    role: authenticatedUser.role,
-    tokenVersion: authenticatedUser.tokenVersion,
-  });
+  // Create token: the session's absolute lifetime starts at this login
+  const token = createToken(
+    {
+      id: authenticatedUser.id,
+      email: authenticatedUser.email,
+      username: authenticatedUser.username,
+      role: authenticatedUser.role,
+      tokenVersion: authenticatedUser.tokenVersion,
+    },
+    Math.floor(Date.now() / 1000)
+  );
 
   ctx.logger.info({ username, authMethod }, `Authentication successful`);
 
