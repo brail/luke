@@ -74,7 +74,14 @@ export default function LoginPage() {
         // Auth.js v5 flattens every authorize() error to "CredentialsSignin"; `code` is the one
         // thing that tells them apart.
         if (result.code === 'unavailable') {
-          setError('Servizio di autenticazione non disponibile. Riprova più tardi.');
+          // The API refuses with the same code during maintenance and during a directory outage;
+          // only the status tells them apart, read now (a polled one can be a minute old).
+          const maintenance = await client.maintenance.mode.getStatus.query().catch(() => null);
+          setError(
+            maintenance?.status === 'ACTIVE'
+              ? 'Sistema in manutenzione: accesso non disponibile. Riprova al termine.'
+              : 'Servizio di autenticazione non disponibile. Riprova più tardi.'
+          );
           return;
         }
         if (result.code === 'throttled') {

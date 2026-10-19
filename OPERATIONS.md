@@ -2,9 +2,10 @@
 
 Operational reference for the API's runtime protections whose behavior is
 configurable, or differs from what their names suggest — the password policy,
-rate limiting, idempotency and error responses — and for four operator tasks:
-signing in when LDAP is unreachable, email deliverability, the reverse proxy's
-network and the release build's repository variables. Security headers and
+rate limiting, idempotency and error responses — and for five operator tasks:
+signing in when LDAP is unreachable, ending maintenance without the web, email
+deliverability, the reverse proxy's network and the release build's repository
+variables. Security headers and
 the health and readiness probes are documented in the
 [API documentation](apps/api/README.md); session revocation is decided in
 [ADR-019](docs/decisions/019-tokenversion-session-revocation.md).
@@ -16,6 +17,7 @@ the health and readiness probes are documented in the
 - [Idempotency](#idempotency)
 - [Error responses](#error-responses)
 - [Signing in when LDAP is unreachable](#signing-in-when-ldap-is-unreachable)
+- [Ending maintenance without the web](#ending-maintenance-without-the-web)
 - [Email deliverability](#email-deliverability)
 - [Reverse proxy](#reverse-proxy)
 - [Release build variables](#release-build-variables)
@@ -274,6 +276,48 @@ path. In order:
 Users who exist only in the directory wait for it either way. Prevention is the
 setup requirement in the API documentation: before choosing `ldap-only`, make
 sure at least one administrator can log in locally.
+
+---
+
+## Ending maintenance without the web
+
+A maintenance window never ends by itself. During one, the web leaves the login
+form and the password reset page uncovered, and the lock screen links to the
+form (`Accesso amministratori`): an administrator signs in there and ends the
+window from the banner. When no browser reaches the form — the web container
+down, the proxy misrouted — end it through the API from inside its container:
+
+1. Open a shell in the API container: `docker exec -it luke-api-1 sh` (the name
+   `docker ps` shows for the `api` service).
+2. Sign in as an administrator and end the window. The password is read without
+   echo and reaches `node` through its environment, never its arguments, so it
+   stays out of the shell history and of `ps`:
+
+   ```sh
+   read -rp 'Username: ' LUKE_USERNAME
+   read -rsp 'Password: ' LUKE_PASSWORD; echo
+   export LUKE_USERNAME LUKE_PASSWORD
+   node --input-type=module -e '
+   const call = async (path, input, token) => {
+     const response = await fetch(`http://127.0.0.1:3001/trpc/${path}`, {
+       method: "POST",
+       headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+       body: JSON.stringify(input),
+     });
+     const body = await response.json();
+     if (!response.ok) throw new Error(`${path}: ${response.status} ${body.error?.data?.code}`);
+     return body.result.data;
+   };
+   const { token } = await call("auth.login", { username: process.env.LUKE_USERNAME, password: process.env.LUKE_PASSWORD });
+   console.log(await call("maintenance.mode.end", {}, token));
+   '
+   unset LUKE_USERNAME LUKE_PASSWORD
+   ```
+
+   The output ends the window with `status: 'INACTIVE'`. The login is an ordinary
+   one — rate limited and audited as `AUTH_LOGIN` — and ending the window writes
+   its own audit row. The account needs `maintenance:mode_manage`, which only
+   `admin` holds. The image has no `curl`; `node` is the client.
 
 ---
 
