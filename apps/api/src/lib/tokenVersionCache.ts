@@ -16,6 +16,12 @@ export const tokenVersionCache = new Map<
   { version: number; isActive: boolean; timestamp: number }
 >();
 
+// Bumped by every invalidation. A fill whose read began under an older value is not stored: an
+// invalidation that lands while the row is being read must not be undone by the write that follows.
+// One counter for every user: a fill that loses a race against someone else's invalidation only
+// skips one cache write.
+let generation = 0;
+
 // Cache for dynamic TTL from AppConfig
 let cachedTTLValue: number | null = null;
 let cachedTTLTimestamp = 0;
@@ -62,14 +68,16 @@ export async function verifyTokenVersion(
     return false;
   }
 
+  const cacheTTL = await getCacheTTL(prisma);
+  // Read after the await, so an invalidation during it is seen.
   const cached = tokenVersionCache.get(userId);
   const now = Date.now();
-  const cacheTTL = await getCacheTTL(prisma);
 
   if (cached && now - cached.timestamp < cacheTTL) {
     return cached.isActive && cached.version === tokenVersion;
   }
 
+  const readGeneration = generation;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { tokenVersion: true, isActive: true },
@@ -77,21 +85,27 @@ export async function verifyTokenVersion(
 
   if (!user) return false;
 
-  tokenVersionCache.set(userId, {
-    version: user.tokenVersion,
-    isActive: user.isActive,
-    timestamp: now,
-  });
+  // This call still answers from its own read: it started before the invalidation, like a request
+  // that arrived a moment earlier. Only the cache is protected; the next request reads again.
+  if (readGeneration === generation) {
+    tokenVersionCache.set(userId, {
+      version: user.tokenVersion,
+      isActive: user.isActive,
+      timestamp: now,
+    });
+  }
 
   return user.isActive && user.tokenVersion === tokenVersion;
 }
 
 /** Removes the cached tokenVersion for a specific user — call after revoking that user's sessions. */
 export function invalidateTokenVersionCache(userId: string): void {
+  generation++;
   tokenVersionCache.delete(userId);
 }
 
 /** Clears every cached entry — call after a bulk revocation (e.g. force-logout on maintenance-mode activation) so it takes effect immediately rather than waiting out the TTL. */
 export function clearTokenVersionCache(): void {
+  generation++;
   tokenVersionCache.clear();
 }

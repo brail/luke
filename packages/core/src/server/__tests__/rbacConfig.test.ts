@@ -107,3 +107,49 @@ describe('mergeSectionAccessDefaults', () => {
     expect(Object.keys(merged.admin)).toHaveLength(Object.keys(SECTION_ACCESS_DEFAULTS.admin).length);
   });
 });
+
+describe('getRbacConfig — an invalidation during a fill is not undone', () => {
+  /** A client that answers from `rows` as they are when asked, and holds the first fill's answers until `release`. */
+  function heldClient(initial: Record<string, string>) {
+    let rows = initial;
+    let release!: () => void;
+    const held = new Promise<void>(r => {
+      release = r;
+    });
+    let holding = true;
+    const client = {
+      appConfig: {
+        findUnique: async ({ where }: { where: { key: string } }) => {
+          const answer = where.key in rows ? { key: where.key, value: rows[where.key], isEncrypted: false } : null;
+          if (holding) await held;
+          return answer;
+        },
+      },
+    } as unknown as IPrismaConfigClient;
+    return {
+      client,
+      setRows: (next: Record<string, string>) => {
+        rows = next;
+      },
+      release: () => {
+        holding = false;
+        release();
+      },
+    };
+  }
+
+  it.each([
+    ['a normal fill', {}],
+    ['a bypassCache fill', { bypassCache: true }],
+  ])('rereads after an invalidation that lands during %s', async (_label, options) => {
+    const { client, setRows, release } = heldClient({ 'app.sections.disabled': '[]' });
+
+    const inFlight = getRbacConfig(client, options);
+    invalidateRbacCache(); // the kill switch was just written
+    setRows({ 'app.sections.disabled': '["product.pricing"]' });
+    release();
+    await inFlight;
+
+    await expect(getRbacConfig(client)).resolves.toMatchObject({ disabledSections: ['product.pricing'] });
+  });
+});
