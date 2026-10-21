@@ -3,7 +3,6 @@
  * Verifies that all security headers are present and correct
  */
 
-import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
 import { buildTestServer } from './helpers';
@@ -21,35 +20,34 @@ describe('Security Headers', () => {
     await server.close();
   });
 
+  /** A GET through `server.inject()`; every route here answers 200. */
+  async function get(url: string) {
+    const response = await server.inject({ method: 'GET', url });
+    expect(response.statusCode).toBe(200);
+    return response;
+  }
+
   describe('Base security headers (all environments)', () => {
     it('should include X-Content-Type-Options: nosniff', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       expect(response.headers['x-content-type-options']).toBe('nosniff');
     });
 
     it('should include Referrer-Policy: no-referrer', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       expect(response.headers['referrer-policy']).toBe('no-referrer');
     });
 
     it('should include X-DNS-Prefetch-Control: off', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       expect(response.headers['x-dns-prefetch-control']).toBe('off');
     });
 
     it('should include X-Frame-Options: DENY', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       expect(response.headers['x-frame-options']).toBe('DENY');
     });
@@ -57,9 +55,7 @@ describe('Security Headers', () => {
 
   describe('Test-environment headers', () => {
     it('should include Content-Security-Policy in test', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       const csp = response.headers['content-security-policy'];
       expect(csp).toContain("default-src 'none'");
@@ -68,9 +64,7 @@ describe('Security Headers', () => {
     });
 
     it('should NOT include Strict-Transport-Security in test', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       expect(response.headers['strict-transport-security']).toBeUndefined();
     });
@@ -78,7 +72,7 @@ describe('Security Headers', () => {
 
   describe('Root route check', () => {
     it('should apply the same headers on the root route', async () => {
-      const response = await request(server.server).get('/').expect(200);
+      const response = await get('/');
 
       // Verify base headers
       expect(response.headers['x-content-type-options']).toBe('nosniff');
@@ -97,9 +91,7 @@ describe('Security Headers', () => {
 
   describe('Snapshot test for the complete configuration', () => {
     it('should have an unchanging headers configuration', async () => {
-      const response = await request(server.server)
-        .get('/api/health')
-        .expect(200);
+      const response = await get('/api/health');
 
       // Snapshot of security headers to verify they don't change
       const securityHeaders = {

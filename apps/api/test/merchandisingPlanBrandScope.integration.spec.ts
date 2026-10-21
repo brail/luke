@@ -15,7 +15,6 @@ import { join } from 'path';
 
 import multipart from '@fastify/multipart';
 import fastify, { type FastifyInstance } from 'fastify';
-import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
@@ -24,7 +23,8 @@ import specsheetImageRoutes from '../src/routes/specsheetImage.routes';
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerWithSession, createTestUser, expectUnauthorized, setupTestDb } from './helpers';
-import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
+import { multipartRequest, pngPart } from './helpers/multipart';
+import { seedLocalStorageConfig } from './helpers/storageTestHelper';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -326,17 +326,22 @@ describe('POST /upload/specsheet-image/:specsheetId', () => {
     await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
+  const uploadSpecsheetImage = async (specsheetId: string) =>
+    app.inject({
+      method: 'POST',
+      url: `/upload/specsheet-image/${specsheetId}`,
+      ...(await multipartRequest([pngPart('image.png')])),
+    });
+
   it('refuses the other brand’s specsheet before storing anything', async () => {
     const [images, files] = await Promise.all([
       prisma.merchandisingImage.count({ where: { specsheetId: outRes.specsheetId } }),
       prisma.fileObject.count(),
     ]);
 
-    const response = await request(app.server)
-      .post(`/upload/specsheet-image/${outRes.specsheetId}`)
-      .attach('file', createValidPngBuffer(), 'image.png');
+    const response = await uploadSpecsheetImage(outRes.specsheetId);
 
-    expect(response.status).toBe(403);
+    expect(response.statusCode).toBe(403);
     expect(await prisma.merchandisingImage.count({ where: { specsheetId: outRes.specsheetId } }))
       .toBe(images);
     expect(await prisma.fileObject.count()).toBe(files);
@@ -345,11 +350,9 @@ describe('POST /upload/specsheet-image/:specsheetId', () => {
   it('accepts an upload on the in-scope specsheet', async () => {
     const images = await prisma.merchandisingImage.count({ where: { specsheetId: inRes.specsheetId } });
 
-    const response = await request(app.server)
-      .post(`/upload/specsheet-image/${inRes.specsheetId}`)
-      .attach('file', createValidPngBuffer(), 'image.png');
+    const response = await uploadSpecsheetImage(inRes.specsheetId);
 
-    expect(response.status).toBe(200);
+    expect(response.statusCode).toBe(200);
     expect(await prisma.merchandisingImage.count({ where: { specsheetId: inRes.specsheetId } }))
       .toBe(images + 1);
   });

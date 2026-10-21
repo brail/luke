@@ -8,7 +8,6 @@
 
 import multipart from '@fastify/multipart';
 import fastify, { type FastifyInstance } from 'fastify';
-import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
@@ -17,7 +16,7 @@ import { createToken } from '../src/lib/auth';
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 
 import { createTestUser, setupTestDb } from './helpers';
-import { createValidPngBuffer } from './helpers/storageTestHelper';
+import { multipartRequest, pngPart } from './helpers/multipart';
 
 let prisma: PrismaClient;
 let app: FastifyInstance;
@@ -48,22 +47,24 @@ const ROUTES = [
 
 describe.each(ROUTES)('the %s upload route', (_permission, path) => {
   it.each(['editor', 'viewer'] as const)('refuses %s with 403 and stores nothing', async role => {
-    const response = await request(app.server)
-      .post(path())
-      .set('authorization', await bearer(role))
-      .attach('file', createValidPngBuffer(), 'logo.png');
+    const response = await app.inject({
+      method: 'POST',
+      url: path(),
+      ...(await multipartRequest([pngPart('logo.png')], { authorization: await bearer(role) })),
+    });
 
-    expect(response.status).toBe(403);
+    expect(response.statusCode).toBe(403);
     expect(await prisma.fileObject.count()).toBe(0);
     expect((await prisma.brand.findUniqueOrThrow({ where: { id: brandId } })).logoKey).toBeNull();
   });
 
   it('lets admin through the permission check', async () => {
-    const response = await request(app.server)
-      .post(path())
-      .set('authorization', await bearer('admin'))
-      .field('note', 'no file');
+    const response = await app.inject({
+      method: 'POST',
+      url: path(),
+      ...(await multipartRequest([{ name: 'note', value: 'no file' }], { authorization: await bearer('admin') })),
+    });
 
-    expect(response.status).toBe(400);
+    expect(response.statusCode).toBe(400);
   });
 });

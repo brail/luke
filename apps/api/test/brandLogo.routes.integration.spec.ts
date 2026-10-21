@@ -1,6 +1,6 @@
 /**
  * Integration tests for Brand Logo Upload Endpoints
- * Verifies Fastify multipart endpoint with supertest
+ * Verifies the Fastify multipart endpoints through `app.inject()`
  *
  * **Known load-sensitive failures.** A successful upload leaves work in flight: `ingestImageAsset`
  * calls `enqueueDerivatives` without awaiting it, and that defers through `setImmediate` before
@@ -24,14 +24,14 @@ import { join } from 'path';
 
 import multipart from '@fastify/multipart';
 import { FastifyInstance } from 'fastify';
-import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 import { resetStorageProvider } from '../src/storage';
 
-import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
+import { multipartRequest, pngPart, type MultipartPart } from './helpers/multipart';
+import { seedLocalStorageConfig } from './helpers/storageTestHelper';
 import { createContextForRole } from './helpers/testContext';
 
 // Storage is NOT mocked here (see `seedLocalStorageConfig`, in `./helpers/storageTestHelper`): `appRouter` is
@@ -130,7 +130,7 @@ describe('Brand Logo Upload Integration', () => {
       prisma: testContext.prisma,
     });
 
-    // `app.server` (the http.Server that supertest drives) only exists after ready().
+    // A registration error surfaces here, in the hook, rather than in the first request.
     await app.ready();
   });
 
@@ -144,85 +144,81 @@ describe('Brand Logo Upload Integration', () => {
     await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
+  /** An upload through `app.inject()`, as an authenticated caller unless `authorized` is false. */
+  const upload = async (url: string, parts: MultipartPart[], authorized = true) =>
+    app.inject({
+      method: 'POST',
+      url,
+      ...(await multipartRequest(parts, authorized ? { authorization: `Bearer ${authToken}` } : {})),
+    });
+  const text = (filename: string): MultipartPart => ({
+    name: 'file',
+    file: Buffer.from('This is not an image'),
+    filename,
+    type: 'text/plain',
+  });
+  const tempId: MultipartPart = { name: 'tempId', value: 'temp-123' };
+
   describe('POST /upload/brand-logo/:brandId', () => {
     it('should upload brand logo successfully', async () => {
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('test-logo.png')]);
 
-      const response = await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'test-logo.png')
-        .expect(200);
-
-      expect(response.body).toHaveProperty('publicUrl');
-      expect(response.body).toHaveProperty('bucket');
-      expect(response.body).toHaveProperty('key');
-      expect(response.body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
-      expect(response.body.bucket).toBe('brand-logos');
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body).toHaveProperty('publicUrl');
+      expect(body).toHaveProperty('bucket');
+      expect(body).toHaveProperty('key');
+      expect(body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
+      expect(body.bucket).toBe('brand-logos');
     });
 
     it('should reject request without authentication', async () => {
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('test-logo.png')], false);
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .attach('file', pngBuffer, 'test-logo.png')
-        .expect(401);
+      expect(response.statusCode).toBe(401);
     });
 
     it('should reject request without file', async () => {
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(400);
+      const response = await app.inject({
+        method: 'POST',
+        url: `/upload/brand-logo/${testBrand.id}`,
+        headers: { authorization: `Bearer ${authToken}` },
+      });
+
+      expect(response.statusCode).toBe(400);
     });
 
     it('should reject invalid file type', async () => {
-      const textBuffer = Buffer.from('This is not an image');
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [text('test.txt')]);
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', textBuffer, 'test.txt')
-        .expect(400);
+      expect(response.statusCode).toBe(400);
     });
 
     it('should reject file too large', async () => {
       const largeBuffer = Buffer.alloc(3 * 1024 * 1024); // 3MB
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', largeBuffer, 'large.png')
-        .expect(400);
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('large.png', largeBuffer)]);
+
+      expect(response.statusCode).toBe(400);
     });
 
     it('should reject non-existent brand', async () => {
-      const pngBuffer = createValidPngBuffer();
       const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${nonExistentId}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'test.png')
-        .expect(404);
+      const response = await upload(`/upload/brand-logo/${nonExistentId}`, [pngPart('test.png')]);
+
+      expect(response.statusCode).toBe(404);
     });
 
     it('with several files attached it uses the first and ignores the rest', async () => {
-      const pngBuffer = createValidPngBuffer();
-
       // `req.file()` reads the first file part and stops: subsequent ones are
       // never consumed, so busboy's `files: 1` limit never kicks in.
       // This is the intended semantics for a single-logo endpoint -- the test expected
       // a rejection that the code never implemented.
-      const response = await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'test1.png')
-        .attach('file', pngBuffer, 'test2.png')
-        .expect(200);
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('test1.png'), pngPart('test2.png')]);
 
-      expect(response.body).toHaveProperty('publicUrl');
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('publicUrl');
     });
 
     it('rejects a file whose content does not match the declared type', async () => {
@@ -234,74 +230,52 @@ describe('Brand Logo Upload Integration', () => {
       // a PNG, declared as PNG, must be rejected with 400.
       const notAnImage = Buffer.from('this is not a PNG');
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', notAnImage, 'corrupted.png')
-        .expect(400);
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('corrupted.png', notAnImage)]);
+
+      expect(response.statusCode).toBe(400);
     });
   });
 
   describe('POST /upload/brand-logo/temp', () => {
     it('should upload temp logo successfully', async () => {
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload('/upload/brand-logo/temp', [tempId, pngPart('temp-logo.png')]);
 
-      const response = await request(app.server)
-        .post('/upload/brand-logo/temp')
-        .set('Authorization', `Bearer ${authToken}`)
-        .field('tempId', 'temp-123')
-        .attach('file', pngBuffer, 'temp-logo.png')
-        .expect(200);
+      expect(response.statusCode).toBe(200);
 
       // The contract has changed: no `tempLogoId` provided by the client, no
       // `temp-brand-logos` bucket. The file ends up in `brand-logos` as a *pending*
       // fileObject, and gets confirmed when the brand is saved via `fileObjectId`.
-      expect(response.body).toHaveProperty('publicUrl');
-      expect(response.body).toHaveProperty('fileObjectId');
-      expect(response.body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
+      const body = response.json();
+      expect(body).toHaveProperty('publicUrl');
+      expect(body).toHaveProperty('fileObjectId');
+      expect(body.publicUrl).toMatch(/^\/api\/uploads\/brand-logos\//);
     });
 
     it('should reject request without authentication', async () => {
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload('/upload/brand-logo/temp', [tempId, pngPart('temp-logo.png')], false);
 
-      await request(app.server)
-        .post('/upload/brand-logo/temp')
-        .field('tempId', 'temp-123')
-        .attach('file', pngBuffer, 'temp-logo.png')
-        .expect(401);
+      expect(response.statusCode).toBe(401);
     });
 
     it('accepts the upload without tempId: the field is no longer part of the contract', async () => {
-      const pngBuffer = createValidPngBuffer();
-
       // The file id is assigned by the server (`fileObjectId`), not the client: a
       // `tempId` sent by the caller is neither required nor used.
-      const response = await request(app.server)
-        .post('/upload/brand-logo/temp')
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'temp-logo.png')
-        .expect(200);
+      const response = await upload('/upload/brand-logo/temp', [pngPart('temp-logo.png')]);
 
-      expect(response.body).toHaveProperty('fileObjectId');
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('fileObjectId');
     });
 
     it('should reject request without file', async () => {
-      await request(app.server)
-        .post('/upload/brand-logo/temp')
-        .set('Authorization', `Bearer ${authToken}`)
-        .field('tempId', 'temp-123')
-        .expect(400);
+      const response = await upload('/upload/brand-logo/temp', [tempId]);
+
+      expect(response.statusCode).toBe(400);
     });
 
     it('should reject invalid file type for temp upload', async () => {
-      const textBuffer = Buffer.from('This is not an image');
+      const response = await upload('/upload/brand-logo/temp', [tempId, text('test.txt')]);
 
-      await request(app.server)
-        .post('/upload/brand-logo/temp')
-        .set('Authorization', `Bearer ${authToken}`)
-        .field('tempId', 'temp-123')
-        .attach('file', textBuffer, 'test.txt')
-        .expect(400);
+      expect(response.statusCode).toBe(400);
     });
   });
 
@@ -315,8 +289,8 @@ describe('Brand Logo Upload Integration', () => {
    * limit (the limiter is an `onRequest` hook, so a 429 does not parse the multipart
    * and does not touch Postgres) but the 30 successful uploads, ~6 round-trips each.
    *
-   * Here `app.inject()` is used -- no socket, same Fastify lifecycle,
-   * so the limiter still triggers -- with requests **without a body**: the limiter
+   * These requests go through `app.inject()` -- no socket, same Fastify lifecycle,
+   * so the limiter still triggers -- and carry **no body**: the limiter
    * counts on arrival, then `req.file()` throws and the handler responds 400. Zero
    * queries. The URL must remain the real one: the limiter is hooked via `onRoute`,
    * so a nonexistent URL would not consume quota.
@@ -391,50 +365,44 @@ describe('Brand Logo Upload Integration', () => {
       await writeFile(join(basePath, 'brand-logos'), 'not a directory');
       resetStorageProvider();
 
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('test.png')]);
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'test.png')
-        .expect(500);
+      expect(response.statusCode).toBe(500);
     });
 
     it('should handle malformed multipart data', async () => {
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .set('Content-Type', 'multipart/form-data')
-        .send('malformed data')
-        .expect(400);
+      const response = await app.inject({
+        method: 'POST',
+        url: `/upload/brand-logo/${testBrand.id}`,
+        headers: { authorization: `Bearer ${authToken}`, 'content-type': 'multipart/form-data' },
+        payload: 'malformed data',
+      });
+
+      expect(response.statusCode).toBe(400);
     });
   });
 
   describe('File validation edge cases', () => {
     it('should handle empty filename', async () => {
-      const pngBuffer = createValidPngBuffer();
+      // An encoder drops an empty filename, so the part goes out without one. Typed
+      // `application/octet-stream`, as a client sends an unnamed blob, busboy still reads it as a
+      // file: the request reaches the type check, not the "no file" branch.
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [
+        { ...pngPart(''), type: 'application/octet-stream' },
+      ]);
 
-      await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, '')
-        .expect(400);
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toBe('BAD_REQUEST');
     });
 
     it('should handle filename with special characters', async () => {
-      const pngBuffer = createValidPngBuffer();
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('test@#$%^&*().png')]);
 
-      const response = await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, 'test@#$%^&*().png')
-        .expect(200);
-
-      expect(response.body).toHaveProperty('publicUrl');
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('publicUrl');
     });
 
     it('should truncate a very long filename instead of rejecting it', async () => {
-      const pngBuffer = createValidPngBuffer();
       const longFilename = 'a'.repeat(300) + '.png';
 
       // `sanitizeFileName` truncates to 255 characters while preserving the extension -- this is the
@@ -443,13 +411,10 @@ describe('Brand Logo Upload Integration', () => {
       // The `key` returned here comes from the mocked storage, so it is not the
       // right observation point for the truncation: what this test
       // verifies is that a very long name does not make the request fail.
-      const response = await request(app.server)
-        .post(`/upload/brand-logo/${testBrand.id}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .attach('file', pngBuffer, longFilename)
-        .expect(200);
+      const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart(longFilename)]);
 
-      expect(response.body).toHaveProperty('publicUrl');
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toHaveProperty('publicUrl');
     });
   });
 });

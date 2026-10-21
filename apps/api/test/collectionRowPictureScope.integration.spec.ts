@@ -13,7 +13,6 @@ import { join } from 'path';
 
 import multipart from '@fastify/multipart';
 import fastify, { type FastifyInstance } from 'fastify';
-import request from 'supertest';
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 import { COLLECTION_STATUS } from '@luke/core';
@@ -23,7 +22,8 @@ import collectionRowPictureRoutes from '../src/routes/collectionRowPicture.route
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
-import { createValidPngBuffer, seedLocalStorageConfig } from './helpers/storageTestHelper';
+import { multipartRequest, pngPart } from './helpers/multipart';
+import { seedLocalStorageConfig } from './helpers/storageTestHelper';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -88,23 +88,27 @@ afterAll(async () => {
   await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
+async function uploadRowPicture(rowId: string) {
+  return app.inject({
+    method: 'POST',
+    url: `/upload/collection-row-picture/${rowId}`,
+    ...(await multipartRequest([pngPart('row.png')])),
+  });
+}
+
 describe('POST /upload/collection-row-picture/:rowId', () => {
   it('refuses a row of another brand before storing anything', async () => {
     const files = await prisma.fileObject.count();
 
-    const response = await request(app.server)
-      .post(`/upload/collection-row-picture/${outRowId}`)
-      .attach('file', createValidPngBuffer(), 'row.png');
+    const response = await uploadRowPicture(outRowId);
 
-    expect(response.status).toBe(403);
+    expect(response.statusCode).toBe(403);
     expect(await prisma.fileObject.count()).toBe(files);
   });
 
   it('accepts a row of the user’s brand', async () => {
-    const response = await request(app.server)
-      .post(`/upload/collection-row-picture/${inRowId}`)
-      .attach('file', createValidPngBuffer(), 'row.png');
+    const response = await uploadRowPicture(inRowId);
 
-    expect(response.status).toBe(200);
+    expect(response.statusCode).toBe(200);
   });
 });
