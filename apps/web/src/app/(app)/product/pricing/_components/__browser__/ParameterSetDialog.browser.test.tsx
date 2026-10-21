@@ -45,16 +45,16 @@ function dialog(props: Partial<Props> = {}) {
 
 test('an edit survives a re-render that passes an equal set', async () => {
   const screen = await render(dialog());
-  await screen.getByLabelText('Nome variante').fill('Pelle rivista');
+  await screen.getByLabelText('Nome variante *').fill('Pelle rivista');
 
   await screen.rerender(dialog());
 
-  await expect.element(screen.getByLabelText('Nome variante')).toHaveValue('Pelle rivista');
+  await expect.element(screen.getByLabelText('Nome variante *')).toHaveValue('Pelle rivista');
 });
 
 test('every opening starts from the data it is given', async () => {
   const screen = await render(dialog());
-  const name = screen.getByLabelText('Nome variante');
+  const name = screen.getByLabelText('Nome variante *');
   await name.fill('Pelle rivista');
   await expect.element(screen.getByRole('switch')).toBeChecked();
 
