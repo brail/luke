@@ -646,6 +646,25 @@ export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
 }
 
 /**
+ * Whether login and local-access recovery require a verified email (`auth.requireEmailVerification`).
+ *
+ * A stored value the registry refuses — an encrypted row included, since this reads without
+ * decrypting — reads as `true`, with a warning. The gate then refuses exactly what `true` refuses (an
+ * unverified LOCAL login) and never a verified user or an LDAP login, so a bad row can neither switch
+ * the gate off nor lock out an administrator who meets it.
+ */
+export async function getRequireEmailVerification(prisma: PrismaClient): Promise<boolean> {
+  try {
+    return await getStoredConfigOrDefault(prisma, 'auth.requireEmailVerification');
+  } catch (error) {
+    if (!(error instanceof InvalidStoredConfigError)) throw error;
+    // The key only: the stored value may be ciphertext.
+    logger.warn({ key: error.key }, 'Stored value refused by the registry: email verification is required');
+    return true;
+  }
+}
+
+/**
  * Reads the `EditLock` session TTL from AppConfig — currently only consumed by the planning
  * wizard, but the getter (like the underlying lock mechanism) isn't wizard-specific.
  * Enforces the same 5 min – 60 min bounds as `AppConfigRegistry`; invalid values fall back

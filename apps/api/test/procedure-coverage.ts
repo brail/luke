@@ -62,7 +62,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   // ── Partially invoked: the suite touches them, but glancingly ─────────────
   auth: {
     reason:
-      'login, refreshToken, confirmPasswordReset and requestPasswordReset covered (rate limit, idempotency, role demotion, password policy on the reset token, the SEC-A takeover chain), submitPendingEmail (password proof, conditional write), requestEmailVerification (own account only), requestEmailVerificationAdmin for an unknown user; confirmEmailVerification remains',
+      'login, refreshToken, logout, confirmPasswordReset and requestPasswordReset covered (rate limit, idempotency, role demotion, the session lifetime and sign-out, password policy on the reset token, the SEC-A takeover chain), submitPendingEmail (password proof, conditional write), requestEmailVerification (own account only), requestEmailVerificationAdmin for an unknown user; confirmEmailVerification remains',
     uncovered: 1,
   },
   company: {
@@ -125,8 +125,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 4,
   },
   notifications: {
-    reason: '`list` and its cursor from the notifications spec, the CALENDAR preference procedures (`preferences.update`, `listCalendarEventOverrides`, `updateCalendarEventOverride`) from the preferences spec; the rest is untested, including the SSE ticket',
-    uncovered: 6,
+    reason: '`list` and its cursor from the notifications spec, the CALENDAR preference procedures (`preferences.update`, `listCalendarEventOverrides`, `updateCalendarEventOverride`) from the preferences spec, `getSseTicket` from the SSE session spec; the rest is untested',
+    uncovered: 5,
   },
   dashboard: {
     reason:

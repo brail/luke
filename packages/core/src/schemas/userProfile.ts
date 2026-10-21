@@ -37,6 +37,20 @@ export const UserProfileSchema = z.object({
 export const UpdateTimezoneSchema = UserProfileSchema.pick({ timezone: true });
 
 /**
+ * Input schema for changing the authenticated user's own email address. The current password is
+ * required: a session alone must not be able to move the address a password reset is sent to.
+ */
+export const ChangeEmailSchema = z.object({
+  /** The new address (must be unique). */
+  newEmail: z.string().trim().toLowerCase().email('Email non valida').max(255, 'Email troppo lunga'),
+  /** The account's password, proven as a login proves it (LOCAL or LDAP). */
+  currentPassword: z
+    .string()
+    .min(1, 'Password attuale obbligatoria')
+    .max(128, 'Password troppo lunga'),
+});
+
+/**
  * Input schema for changing the authenticated user's password.
  * Enforces the full password policy (length, case, digit, special char) and requires confirmation match.
  */
@@ -70,3 +84,4 @@ export const ChangePasswordSchema = z
 export type UserProfileInput = z.infer<typeof UserProfileSchema>;
 export type UpdateTimezoneInput = z.infer<typeof UpdateTimezoneSchema>;
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+export type ChangeEmailInput = z.infer<typeof ChangeEmailSchema>;

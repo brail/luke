@@ -38,7 +38,7 @@ afterAll(async () => {
 
 async function bearer(role: 'admin' | 'editor' | 'viewer') {
   const { user } = await createTestUser(role);
-  return `Bearer ${createToken({ ...user, tokenVersion: user.tokenVersion ?? 0 })}`;
+  return `Bearer ${createToken({ ...user, tokenVersion: user.tokenVersion ?? 0 }, Math.floor(Date.now() / 1000))}`;
 }
 
 const ROUTES = [

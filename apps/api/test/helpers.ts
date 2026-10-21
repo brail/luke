@@ -111,6 +111,7 @@ export async function createTestUser(
       username: user.username,
       role: user.role,
       tokenVersion: 0,
+      authTime: Math.floor(Date.now() / 1000),
     },
   };
 

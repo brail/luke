@@ -35,7 +35,7 @@ let brandId: string;
 async function adminIn(timeZone: string): Promise<string> {
   const { user } = await createTestUser('admin');
   await prisma.user.update({ where: { id: user.id }, data: { timezone: timeZone } });
-  return `Bearer ${createToken({ id: user.id, email: user.email, username: user.username, role: user.role, tokenVersion: 0 })}`;
+  return `Bearer ${createToken({ id: user.id, email: user.email, username: user.username, role: user.role, tokenVersion: 0 }, Math.floor(Date.now() / 1000))}`;
 }
 
 beforeAll(async () => {

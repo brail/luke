@@ -5,6 +5,12 @@
 
 import { z } from 'zod';
 
+/**
+ * Absolute lifetime of an API session, in seconds from the login it descends from (`authTime`):
+ * no bearer is accepted past it, however often it was refreshed.
+ */
+export const SESSION_ABSOLUTE_LIFETIME_SECONDS = 12 * 60 * 60;
+
 /** Input schema for requesting a password reset email. Email is normalized to lowercase. */
 export const RequestPasswordResetSchema = z.object({
   email: z

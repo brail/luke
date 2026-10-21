@@ -21,7 +21,7 @@
 | [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Superseded by [026](026-resource-action-permissions-enforced.md) |
 | [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Superseded by [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) |
 | [018](018-runtime-configuration-and-bootstrap-environment.md) | Database-Backed Runtime Configuration and Bootstrap-Only Environment | Accepted |
-| [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Accepted |
+| [019](019-tokenversion-session-revocation.md) | Server-Side Session Revocation with tokenVersion | Superseded by [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) |
 | [020](020-master-key-scope-and-rotation-limits.md) | Master Key Scope and Rotation Limits | Accepted |
 | [021](021-section-access-static-base-and-overrides.md) | Section Access Resolution: Static Base and Runtime Overrides | Superseded by [025](025-section-access-resolution-derived-parents.md) |
 | [022](022-core-package-export-boundary.md) | Core Package Client/Server Export Boundary | Superseded by [037](037-core-package-export-boundary-two-subpaths.md) |
@@ -41,6 +41,7 @@
 | [036](036-date-and-time-model-moving-both-ends-of-a-timed-event.md) | Date and Time Model: Moving Both Ends of a Timed Event by Calendar Days | Accepted |
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
 | [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Accepted |
+| [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Accepted |
 
-_Last updated: 2026-10-16_
+_Last updated: 2026-10-19_
 <!-- luke-docs:end:adr-index -->

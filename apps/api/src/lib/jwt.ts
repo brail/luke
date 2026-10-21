@@ -21,6 +21,8 @@ export interface JWTPayload {
   username: string;
   role: string;
   tokenVersion?: number;
+  /** Unix seconds of the login the token descends from; absent from a token signed before it existed. */
+  authTime?: number;
   iat: number;
   exp: number;
   nbf: number;
@@ -36,12 +38,15 @@ export interface JWTSignOptions {
   notBefore?: string | number;
 }
 
+/** Clock skew tolerated on `exp` and `nbf`, and on `authTime` by `createUserSession`. */
+export const JWT_CLOCK_TOLERANCE_SECONDS = 5; // sufficient for NTP skew, reduces replay window
+
 /**
  * Standardised JWT configuration
  */
 const JWT_CONFIG = {
   algorithm: 'HS256' as const,
-  clockTolerance: 5, // ±5 seconds — sufficient for NTP skew, reduces replay window
+  clockTolerance: JWT_CLOCK_TOLERANCE_SECONDS,
   issuer: 'urn:luke',
   audience: 'luke.api',
   defaultExpiresIn: '7d',
@@ -61,7 +66,7 @@ function getJWTSecret(): string {
 export function signJWT(
   payload: Pick<
     JWTPayload,
-    'userId' | 'email' | 'username' | 'role' | 'tokenVersion'
+    'userId' | 'email' | 'username' | 'role' | 'tokenVersion' | 'authTime'
   >,
   options: JWTSignOptions = {}
 ): string {
@@ -71,13 +76,15 @@ export function signJWT(
     username: payload.username,
     role: payload.role,
     tokenVersion: payload.tokenVersion,
+    authTime: payload.authTime,
     iss: JWT_CONFIG.issuer,
     aud: JWT_CONFIG.audience,
   };
 
   const signOptions: jwt.SignOptions = {
     algorithm: JWT_CONFIG.algorithm,
-    expiresIn: options.expiresIn || JWT_CONFIG.defaultExpiresIn,
+    // `??`, not `||`: an `expiresIn` of 0 (a session at its 12 h limit) must not become 7 days.
+    expiresIn: options.expiresIn ?? JWT_CONFIG.defaultExpiresIn,
     notBefore: options.notBefore || 0,
   } as jwt.SignOptions;
 

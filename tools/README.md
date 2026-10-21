@@ -56,7 +56,7 @@ implementations as `*.test.ts` files.
 Two suites cover contracts implemented outside this directory:
 `check-app-version-contract.test.ts` pins the `apps/web` build-version wiring,
 and `check-release-stable-line.test.ts` covers `scripts/release-prepare.sh`.
-`pnpm test:tools` preloads `lib/isolateGitEnv.ts`, which removes the variables git uses to locate a
+`pnpm test:tools` preloads `scripts/lib/isolateGitEnv.ts`, which removes the variables git uses to locate a
 repository (`git rev-parse --local-env-vars`): hooks export them, and the fixtures must act on their
 own temporary repositories.
 

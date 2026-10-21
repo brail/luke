@@ -20,11 +20,12 @@ import type { ReactNode } from 'react';
  */
 
 // Hoisted and stable: a fresh object per render would re-run every effect that depends on it.
-const { signIn, router, submitPendingEmail, resendVerification } = vi.hoisted(() => ({
+const { signIn, router, submitPendingEmail, resendVerification, maintenanceStatus } = vi.hoisted(() => ({
   signIn: vi.fn(),
   router: { push: vi.fn() },
   submitPendingEmail: vi.fn(),
   resendVerification: vi.fn(),
+  maintenanceStatus: vi.fn(),
 }));
 
 vi.mock('next-auth/react', () => ({ signIn }));
@@ -45,6 +46,7 @@ vi.mock('../../../../lib/trpc', () => ({
           submitPendingEmail: { mutate: submitPendingEmail },
           resendVerification: { mutate: resendVerification },
         },
+        maintenance: { mode: { getStatus: { query: maintenanceStatus } } },
       },
     }),
   },
@@ -74,6 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   submitPendingEmail.mockResolvedValue({ success: true });
   resendVerification.mockResolvedValue({ success: true });
+  maintenanceStatus.mockResolvedValue({ status: 'INACTIVE' });
 });
 
 describe('a sign-in that did not go through', () => {
@@ -84,6 +87,26 @@ describe('a sign-in that did not go through', () => {
       .element(screen.getByText('Servizio di autenticazione non disponibile. Riprova più tardi.'))
       .toBeVisible();
     expect(router.push).not.toHaveBeenCalled();
+  });
+
+  test('during an active maintenance window, an unavailable login says maintenance', async () => {
+    // Read when the login is refused: a status polled up to a minute earlier could be stale.
+    maintenanceStatus.mockResolvedValue({ status: 'ACTIVE' });
+    const screen = await signInRefusedWith('unavailable');
+
+    await expect
+      .element(screen.getByText('Sistema in manutenzione: accesso non disponibile. Riprova al termine.'))
+      .toBeVisible();
+    expect(maintenanceStatus).toHaveBeenCalledTimes(1);
+  });
+
+  test('an unavailable login whose maintenance status cannot be read says the service is unavailable', async () => {
+    maintenanceStatus.mockRejectedValue(new Error('Failed to fetch'));
+    const screen = await signInRefusedWith('unavailable');
+
+    await expect
+      .element(screen.getByText('Servizio di autenticazione non disponibile. Riprova più tardi.'))
+      .toBeVisible();
   });
 
   test('a throttled login is said to be throttled', async () => {

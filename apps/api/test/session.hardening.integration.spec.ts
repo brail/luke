@@ -157,7 +157,7 @@ describe('Session Hardening — revocation across the whole surface', () => {
       username: user.username,
       role: user.role,
       tokenVersion: 0,
-    });
+    }, Math.floor(Date.now() / 1000));
 
     const req = { headers: { authorization: `Bearer ${token}` } } as any;
     const reply = { clearCookie: () => {} } as any;
@@ -187,7 +187,7 @@ describe('Session Hardening — revocation across the whole surface', () => {
       username: user.username,
       role: user.role,
       tokenVersion: 0,
-    });
+    }, Math.floor(Date.now() / 1000));
 
     const req = { headers: { authorization: `Bearer ${token}` } } as any;
     const reply = { clearCookie: () => {} } as any;

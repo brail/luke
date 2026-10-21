@@ -7,7 +7,7 @@ import { randomBytes, createHash } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
 
-import { PrismaClient } from '@luke/db';
+import { Prisma, PrismaClient, type TokenType } from '@luke/db';
 
 import { logAudit } from './auditLog';
 import { getConfigOrDefault } from './configManager';
@@ -79,20 +79,13 @@ export async function sendVerificationEmail(
     return { success: true, message: 'Email già verificata.' };
   }
 
-  // Generate token (32 bytes = 64 hex chars)
-  const token = randomBytes(32).toString('hex');
-  const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-
-  // Invalidate any previous VERIFY tokens for this user before creating a new one
-  await prisma.userToken.deleteMany({
-    where: { userId: user.id, type: 'VERIFY' },
-  });
-
-  // Save token to DB
-  await prisma.userToken.create({
-    data: { userId: user.id, type: 'VERIFY', tokenHash, expiresAt },
-  });
+  // The address the link goes to is the one read under the user row lock, not the one above: a
+  // change of address pending now waits for this, or this for it. Previous VERIFY links go.
+  const issued = await prisma.$transaction(tx => issueUserToken(tx, user.id, 'VERIFY', { revokePrevious: true }));
+  if (!issued) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente non trovato' });
+  }
+  const { token, email, userToken: { expiresAt } } = issued;
 
   // Retrieve baseUrl from config
   const baseUrl =
@@ -100,7 +93,7 @@ export async function sendVerificationEmail(
 
   // Send email (with automatic internal retry)
   try {
-    await sendEmailVerificationEmail(prisma, user.email, token, baseUrl);
+    await sendEmailVerificationEmail(prisma, email, token, baseUrl);
 
     // Audit log SUCCESS (no PII). Some callers have no request at all (LDAP provisioning), and
     // `logAudit` writes their row without one.
@@ -149,34 +142,90 @@ export async function sendVerificationEmail(
   }
 }
 
-/** Result of {@link createResetToken}. */
-export interface CreateResetTokenResult {
-  /** Plaintext token — embed it in the reset link. Never persisted directly (`userToken` holds the hash). */
+/** The pieces of a transaction a link needs: the user row lock and the `userToken` table. */
+type LinkTx = Pick<Prisma.TransactionClient, '$queryRaw' | 'userToken'>;
+
+const LINK_LIFETIME_MS: Record<TokenType, number> = {
+  VERIFY: 24 * 60 * 60 * 1000,
+  RESET: 30 * 60 * 1000,
+};
+
+/**
+ * Locks the user row for the rest of the transaction and returns the account's address, or `null`
+ * for no such user.
+ *
+ * Lock order everywhere a user's links are written: the user row first, then the links. An email
+ * change takes the same row with its `UPDATE` before deleting the links (`revokeUserLinks`), so a
+ * change and an issuance never wait on each other in opposite orders. A caller that also inserts a
+ * row referencing the user (whose foreign-key check takes a key-share lock on it) calls this first,
+ * at the top of its transaction.
+ */
+export async function lockUserEmail(tx: LinkTx, userId: string): Promise<string | null> {
+  // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL": a row lock inside an
+  // interactive transaction). It is the lock the email change's UPDATE also takes.
+  const [row] = await tx.$queryRaw<{ email: string }[]>(Prisma.sql`
+    SELECT email FROM users WHERE id = ${userId} FOR UPDATE
+  `);
+  return row?.email ?? null;
+}
+
+/** A link {@link issueUserToken} created. */
+export interface IssuedUserToken {
+  /** Plaintext token — embed it in the link. Never persisted directly (`userToken` holds the hash). */
   token: string;
   userToken: { id: string; expiresAt: Date };
+  /** The address read under the lock: the one the link goes to. */
+  email: string;
+  /** How many earlier links of the same type `revokePrevious` deleted. */
+  revoked: number;
 }
 
 /**
- * Generates a password-reset token and persists it as a `UserToken` (type `RESET`, 30-minute
- * expiry). Does not send anything or check for an existing `LocalCredential` — callers own that
- * (self-service `requestPasswordReset` treats a missing one as user-not-found; admin-triggered
- * `forceLocalAccess` and the `db:grant-local-access` command may have just created one, the command
- * in the same transaction as this token).
+ * Creates a RESET (30 minutes) or VERIFY (24 hours) link for `userId`, under the user row lock.
+ * Sends nothing: the caller mails `email`, the address read under the lock, after the commit.
  *
- * @param prisma - Prisma client or transaction client; only `userToken` is used.
- * @param userId - Target user.
+ * - `expectedEmail`: when set and the account's address is no longer that one, nothing is created
+ *   and the answer is `null` — a reset asked for an address the account no longer has.
+ * - `revokePrevious`: delete the user's earlier links of this type first: on for verification and for
+ *   the local-access command, off for a reset request and a forced local access, whose earlier links
+ *   stay valid.
+ *
+ * @param tx - A transaction client: the lock lasts until it commits.
+ * @returns The link, or `null` for no such user or an address other than `expectedEmail`.
  */
-export async function createResetToken(
-  prisma: Pick<PrismaClient, 'userToken'>,
-  userId: string
-): Promise<CreateResetTokenResult> {
+export async function issueUserToken(
+  tx: LinkTx,
+  userId: string,
+  type: TokenType,
+  options: { expectedEmail?: string; revokePrevious: boolean }
+): Promise<IssuedUserToken | null> {
+  const email = await lockUserEmail(tx, userId);
+  if (email === null || (options.expectedEmail !== undefined && email !== options.expectedEmail)) return null;
+
+  const revoked = options.revokePrevious
+    ? (await tx.userToken.deleteMany({ where: { userId, type } })).count
+    : 0;
+
   const token = randomBytes(32).toString('hex');
   const tokenHash = createHash('sha256').update(token).digest('hex');
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-  const userToken = await prisma.userToken.create({
-    data: { userId, type: 'RESET', tokenHash, expiresAt },
+  const expiresAt = new Date(Date.now() + LINK_LIFETIME_MS[type]);
+  const userToken = await tx.userToken.create({
+    data: { userId, type, tokenHash, expiresAt },
+    select: { id: true, expiresAt: true },
   });
 
-  return { token, userToken };
+  return { token, userToken, email, revoked };
+}
+
+/**
+ * Deletes every pending RESET and VERIFY link of `userId`. Call it in the transaction that changes
+ * the account's address, **after** the address `UPDATE` (lock order: the user row, then its links),
+ * so a link issued meanwhile has committed and is seen here.
+ *
+ * @returns How many RESET links were deleted (`resetTokensRevoked` in the audit).
+ */
+export async function revokeUserLinks(tx: Pick<Prisma.TransactionClient, 'userToken'>, userId: string): Promise<number> {
+  const { count } = await tx.userToken.deleteMany({ where: { userId, type: 'RESET' } });
+  await tx.userToken.deleteMany({ where: { userId, type: 'VERIFY' } });
+  return count;
 }

@@ -162,12 +162,16 @@ interface RbacConfig {
 /** In-memory TTL cache for RBAC configuration. Invalidated by `invalidateRbacCache()`. */
 const cache = new Map<string, { data: RbacConfig; ts: number }>();
 const TTL = 60_000; // 60 seconds
+// Bumped by every invalidation: a fill whose read began before one is not stored, so the write that
+// follows an invalidation landing mid-read cannot undo it.
+let generation = 0;
 
 /**
  * Clears the in-memory RBAC cache, forcing the next call to `getRbacConfig` to re-read from the database.
  * Must be called after any write to RBAC-related AppConfig keys.
  */
 export function invalidateRbacCache(): void {
+  generation++;
   cache.clear();
 }
 
@@ -191,6 +195,7 @@ export async function getRbacConfig(
     return cached.data;
   }
 
+  const readGeneration = generation;
   // Read both keys in parallel
   const [sectionDefaultsRow, disabledRow] = await Promise.all([
     prisma.appConfig.findUnique({ where: { key: 'rbac.sectionAccessDefaults' } }),
@@ -221,7 +226,7 @@ export async function getRbacConfig(
     disabledSections,
   };
 
-  cache.set('rbac', { data: rbacConfig, ts: Date.now() });
+  if (readGeneration === generation) cache.set('rbac', { data: rbacConfig, ts: Date.now() });
 
   return rbacConfig;
 }
