@@ -33,12 +33,6 @@ overrides:
   postcss@<8.5.23: '>=8.5.23'
   # Range capped to the 3.x line — nanoid 4+ is ESM-only and postcss requires CJS.
   nanoid: '>=3.3.17 <4' # GHSA-2v37-7h3g-55p8, transitive via postcss
-  # GHSA-45rx-2jwx-cxfr: JaegerPropagator throws on a malformed header (DoS),
-  # fixed in 2.9.0. @opentelemetry/sdk-node 0.219 pins 2.8.0; 0.220+ pins a
-  # fixed version, so the otel family bump retires this override. Capped at the
-  # minor so it adds no further @opentelemetry/core copy to the tree. Reachable
-  # only if OTEL_PROPAGATORS enables jaeger.
-  '@opentelemetry/propagator-jaeger': '>=2.9.0 <2.10.0'
   # GHSA-mh99-v99m-4gvg covers <= 5.0.7 in a single range: there is no patch on
   # the 1.x and 2.x lines, and the only healthy version was 5.0.8. It has dual
   # exports (ESM + CJS), so CJS consumers such as minimatch@3 keep working.
