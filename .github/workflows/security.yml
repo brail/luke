@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install semgrep (OSS, LGPL-2.1)
-        run: pip install semgrep
+        run: pip install semgrep==1.181.0
 
       # Every custom rule against its fixtures, and every rule id must have a
       # firing and a non-firing case: `semgrep --test` alone skips a rule with

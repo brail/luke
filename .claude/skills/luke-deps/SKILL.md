@@ -230,7 +230,7 @@ excludes and why** — otherwise the next install silently undoes it.
 an exact version: an exact pin keeps forcing the vulnerable version after the
 patch ships (GHSA-mh99-v99m-4gvg stayed live behind a `brace-expansion` pin).
 Cap the range only when an uncapped one would drag consumers onto a new major
-(`js-yaml: '>=4.3.2 <5'`), and only after `pnpm why -r <pkg>` shows no consumer
+(`brace-expansion: '>=5.0.12 <6'`), and only after `pnpm why -r <pkg>` shows no consumer
 already declares it: a `<4` cap ran `fast-json-stringify@7` on fast-uri 3.x for
 a month. Every override comments its GHSA or CVE id and its reason.
 `check:drift` enforces the mechanical half — P15 in `check-platform-integrity`

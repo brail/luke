@@ -28,11 +28,6 @@ overrides:
   # (and 12.0.1, 13.0.1 on lines no consumer uses). exceljs declares uuid ^8.3.0, a line with no
   # fixed release, so it is lifted past it on purpose.
   uuid@<11.1.1: '>=11.1.1'
-  # GHSA-r28c-9q8g-f849 (path traversal in source-map auto-loading, fixed in 8.5.18) and
-  # GHSA-fxqj-rqcc-2cmp (its incomplete fix, fixed in 8.5.23).
-  postcss@<8.5.23: '>=8.5.23'
-  # Range capped to the 3.x line — nanoid 4+ is ESM-only and postcss requires CJS.
-  nanoid: '>=3.3.17 <4' # GHSA-2v37-7h3g-55p8, transitive via postcss
   # GHSA-mh99-v99m-4gvg covers <= 5.0.7 in a single range: there is no patch on
   # the 1.x and 2.x lines, and the only healthy version was 5.0.8. It has dual
   # exports (ESM + CJS), so CJS consumers such as minimatch@3 keep working.
@@ -40,33 +35,7 @@ overrides:
   # GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7 and GHSA-q2hr-2g5m-vwhr (<= 5.0.11).
   # Capped below 6 so a future major cannot be forced on every consumer.
   brace-expansion: '>=5.0.12 <6'
-  find-my-way: '>=9.7.0' # GHSA-c96f-x56v-gq3h — DoS via HTTP/2
   # Transitive via @prisma/config. GHSA-ggr8-5vv4-36mx — deepmerge()/
   # deepmergeInto() stack exhaustion on a crafted self-referential object
   # graph (DoS). Not a direct dependency anywhere in the workspace.
   deepmerge-ts: '>=8.0.2'
-  # A range, not an exact pin: a pin holds the version even after the patch
-  # ships, and `pnpm update` cannot override it. The upper bound exists because
-  # an uncapped override drags every transitive consumer onto a new major; before
-  # adding one, check with `pnpm why -r <pkg>` that no consumer already declares
-  # that major, or the cap forces it off its own range.
-  # GHSA-5p4m-2wfm-xmqj on <=4.3.0.
-  # Floor raised to 4.3.2 for GHSA-2883-xcg3-v3hh (prototype pollution via a
-  # crafted document) on <=4.3.1 — the version this floor previously allowed.
-  # Same cap, same intent: it still excludes <=4.3.0 and still refuses to drag
-  # transitive consumers onto a new major. Reached only by commitlint tooling
-  # (@commitlint/cli -> @commitlint/load -> cosmiconfig), never by application
-  # runtime code.
-  js-yaml: '>=4.3.2 <5'
-  # GHSA-j3f2-48v5-ccww (CVE-2026-59877): DoS via an infinite loop in .proto option parsing, fixed in
-  # 7.6.5 (8.6.6 on the 8 line). Its only consumer, @grpc/proto-loader, declares ^7.5.5.
-  protobufjs: '>=7.6.5 <8'
-  # Transitive only: no workspace manifest depends on browserslist. Its three
-  # requirers all declare ranges that already admit the patched line
-  # (@babel/helper-compilation-targets ^4.24.0, autoprefixer ^4.28.4,
-  # update-browserslist-db peer >= 4.21.0), so this is a floor rather than an
-  # unlock -- `pnpm update` reaches it too, but only by re-resolving the whole
-  # tree, which drags unrelated packages (next's postcss) along with it.
-  # GHSA-73wf-gq98-2v4g and GHSA-c83g-rgw3-j3cx, both fixed in 4.28.7.
-  # Capped below 5.x for the same reason as js-yaml/mysql2 above.
-  browserslist: '>=4.28.7 <5'
