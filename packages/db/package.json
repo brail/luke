@@ -24,12 +24,12 @@
     "db:migrate:new": "bash scripts/new-migration.sh"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0",
-    "prisma": "7.10.0"
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "prisma": "7.10.1"
   },
   "devDependencies": {
-    "@types/node": "^24.7.2",
+    "@types/node": "^24.19.2",
     "typescript": "^6.0.3"
   }
 }

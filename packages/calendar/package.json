@@ -24,12 +24,12 @@
   "dependencies": {
     "@luke/core": "workspace:*",
     "googleapis": "^176.0.0",
-    "ical-generator": "^11.1.1"
+    "ical-generator": "^11.1.2"
   },
   "devDependencies": {
-    "@types/node": "^24.7.2",
+    "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
     "vite": "^8.3.4",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }

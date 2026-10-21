@@ -67,18 +67,6 @@ overrides:
   # GHSA-j3f2-48v5-ccww (CVE-2026-59877): DoS via an infinite loop in .proto option parsing, fixed in
   # 7.6.5 (8.6.6 on the 8 line). Its only consumer, @grpc/proto-loader, declares ^7.5.5.
   protobufjs: '>=7.6.5 <8'
-  # Transitive via prisma (the CLI package bundles mysql2 as a regular
-  # dependency, even though this workspace's only schema.prisma declares
-  # provider = "postgresql", and @prisma/client's own runtime code never
-  # references it — nothing in this repo can reach the vulnerable path).
-  # Covers GHSA-3f6p-5ww8-9rcr (fixed 3.22.0) and GHSA-rgwj-5xj2-c3m3 (fixed
-  # 3.23.1, decompression handling) in one range. Range, not a pin, for the same
-  # reason as js-yaml above: prisma pins mysql2 to an exact version, so
-  # `pnpm update` cannot move past it without this override, and a later patch
-  # should be picked up without editing this file again. Deliberately not naming
-  # the prisma version the pin came from — it was 7.8.0 on the stable line and is
-  # 7.10.0 here, and the override outlives both.
-  mysql2: '>=3.23.1 <4'
   # Transitive only: no workspace manifest depends on browserslist. Its three
   # requirers all declare ranges that already admit the patched line
   # (@babel/helper-compilation-targets ^4.24.0, autoprefixer ^4.28.4,
