@@ -578,6 +578,24 @@ have left production unreachable after the update, and its rollback would
 have restored a file production never ran (found 2026-10-08, before the
 upgrade).
 
+### A stable tag's web image runs only on the production stack (2026-10-21)
+
+**What happened.** The 3.0.2 plan rehearsed the stable tag on the RC stack first
+(`refs/tags/v3.0.2`, `LUKE_VERSION=3.0.2`). The API came up healthy; every browser
+call failed with `getaddrinfo EAI_AGAIN api`. `release.yml` builds the web image
+per channel: `next.config.js` evaluates its rewrites at build time, and a stable
+tag bakes in `INTERNAL_API_URL=http://api:3001` (production's service name; the
+RC's is `api-rc`) and a `NEXT_PUBLIC_API_URL` with production's hostname, which
+the browser uses for the event stream and uploads. The sign-in still worked: the
+server-side code reads `INTERNAL_API_URL` at run time, from the stack. The 3.0.1
+hotfix never met it, because it went straight to production.
+
+**Rule.** A stable tag's web image belongs to the production stack. Never route
+it onto the RC with a network alias: its browser code would talk to production's
+hostname. A stable hotfix rehearses on RC what the API image proves, from inside
+the API container (the API image takes only `APP_VERSION`), and checks the web
+in production; its plan's release steps say so.
+
 ---
 
 ## Branch management

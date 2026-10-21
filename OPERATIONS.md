@@ -292,13 +292,23 @@ down, the proxy misrouted — end it through the API from inside its container:
 
 1. Open a shell in the API container: `docker exec -it luke-api-1 sh` (the name
    `docker ps` shows for the `api` service).
-2. Sign in as an administrator and end the window. The password is read without
-   echo and reaches `node` through its environment, never its arguments, so it
-   stays out of the shell history and of `ps`:
+2. Read an administrator's credentials, **one line at a time**: a `read` takes
+   the next line it receives as its answer, so pasted together the first one
+   answers itself with the second. The password is read without echo and
+   reaches `node` through its environment, never its arguments, so it stays out
+   of the shell history and of `ps`:
 
    ```sh
    read -rp 'Username: ' LUKE_USERNAME
+   ```
+
+   ```sh
    read -rsp 'Password: ' LUKE_PASSWORD; echo
+   ```
+
+3. Sign in and end the window; this block can be pasted whole:
+
+   ```sh
    export LUKE_USERNAME LUKE_PASSWORD
    node --input-type=module -e '
    const call = async (path, input, token) => {
