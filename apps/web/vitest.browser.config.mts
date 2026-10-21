@@ -125,11 +125,6 @@ export default defineConfig({
       provider: playwright(),
       instances: [{ browser: 'chromium' }],
       headless: true,
-      // Failure screenshots are debug artifacts, not fixtures. Default they
-      // land in a `__screenshots__` directory beside the spec, inside `src/`;
-      // send them to the ignored attachments directory so a red run never
-      // leaves untracked binaries in the source tree.
-      screenshotDirectory: '.vitest-attachments/screenshots',
     },
   },
 });

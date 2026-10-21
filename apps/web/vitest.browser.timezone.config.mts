@@ -73,8 +73,6 @@ export default defineConfig({
         { browser: 'chromium', name: 'tz-asia-shanghai', provider: playwright({ contextOptions: { timezoneId: 'Asia/Shanghai' } }) },
         { browser: 'chromium', name: 'tz-asia-kolkata', provider: playwright({ contextOptions: { timezoneId: 'Asia/Kolkata' } }) },
       ],
-      // Same reasoning as the main browser config: keep failure screenshots out of `src/`.
-      screenshotDirectory: '.vitest-attachments/screenshots',
     },
   },
 });

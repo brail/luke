@@ -49,7 +49,7 @@ packages/db/src/generated
 coverage
 apps/web/playwright-report
 apps/web/test-results
-apps/web/.vitest-attachments
+apps/web/.vitest
 apps/web/tests/.auth
 
 # Logs
