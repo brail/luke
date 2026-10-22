@@ -5,6 +5,7 @@
 import { z } from 'zod';
 
 import { PortSchema } from './number.js';
+import { httpUrl } from './url.js';
 
 /**
  * SMTP sender: `email@domain.com` or `Name <email@domain.com>`. A format check, not strict address
@@ -27,7 +28,7 @@ export const mailSmtpConfigSchema = z.object({
   user: z.string().min(1, 'Username richiesto'),
   pass: z.string().optional().or(z.literal('')),
   from: smtpFromSchema,
-  baseUrl: z.url('URL valido richiesto'),
+  baseUrl: httpUrl('URL valido richiesto'),
 });
 
 /** Input schema for triggering a test email. Defaults to the configured sender (`smtp.from`) if omitted. */

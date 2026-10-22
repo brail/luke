@@ -38,6 +38,7 @@ export * from './schemas/reason.js';
 export * from './schemas/dates.js';
 export * from './schemas/password.js';
 export * from './schemas/google.js';
+export * from './schemas/url.js';
 
 // Re-export RBAC
 export * from './rbac.js';

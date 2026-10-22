@@ -15,6 +15,7 @@ import { mailSmtpConfigSchema, smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 import { navConfigSchema } from './nav.js';
 import { sectionAccessDefaultsSchema } from './rbac.js';
+import { httpUrl } from './url.js';
 
 /**
  * A boolean setting, as AppConfig stores it: a string.
@@ -77,7 +78,7 @@ export const AppConfigRegistry = {
    * is not an IANA name (`resolveUserTimeZone`).
    */
   'app.defaultTimezone': TimeZoneSchema,
-  'app.baseUrl':         z.url(),
+  'app.baseUrl':         httpUrl(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 

@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefreshTokenError } from '@luke/calendar';
-import { googleWorkspaceConfigSchema } from '@luke/core';
+import { googleWorkspaceConfigSchema, httpUrl } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
@@ -157,7 +157,7 @@ export const googleRouter = router({
    */
   getOAuthUrl: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ redirectUri: z.url() }))
+    .input(z.object({ redirectUri: httpUrl() }))
     .mutation(async ({ input, ctx }) => {
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId', false),
@@ -188,7 +188,7 @@ export const googleRouter = router({
     // Rule 12: it checks a `state`, so an IP bucket and an account bucket, both before the check.
     .use(withRateLimit('googleOAuthExchange'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: z.url() }))
+    .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: httpUrl() }))
     .mutation(async ({ input, ctx }) => {
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId', false),

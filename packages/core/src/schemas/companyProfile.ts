@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { httpUrl } from './url.js';
+
 /** Physical address of the company, embedded in `CompanyProfile`. */
 export const CompanyAddressSchema = z.object({
   street: z.string().optional(),
@@ -43,7 +45,7 @@ export const CompanyProfileInputSchema = z.object({
   taxCode: z.string().optional(),
   phone: z.string().optional(),
   email: z.email().optional(),
-  website: z.url().optional(),
+  website: httpUrl().optional(),
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
   /**
