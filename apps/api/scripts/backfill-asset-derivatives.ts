@@ -18,6 +18,8 @@
  *   pnpm --filter @luke/api db:backfill-asset-derivatives [--dry-run]
  */
 
+import { parseArgs } from 'util';
+
 import { BUCKET_TO_ASSET_KIND, IMAGE_BUCKETS, type StorageBucket } from '@luke/core';
 
 import { processMaster } from '../src/lib/assets/derivativeWorker.js';
@@ -32,7 +34,9 @@ function formatBytes(bytes: number): string {
 }
 
 async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+  const { 'dry-run': dryRun } = parseArgs({
+    options: { 'dry-run': { type: 'boolean', default: false } },
+  }).values;
   const prisma = createScriptPrismaClient();
 
   try {

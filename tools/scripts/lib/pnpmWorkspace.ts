@@ -13,9 +13,17 @@
  * workspace discovery refuses one.
  */
 
-/** A top-level `key: value` scalar, or `null` when the key is absent. */
+/**
+ * A top-level `key: value` plain scalar without its inline comment; `''` when nothing follows the
+ * key, `null` when it is absent. The key may be quoted, as YAML allows. Anything else — a quoted
+ * string, a lone comment, an anchor, a flow collection — comes back as written, so it never equals
+ * the plain spelling a check expects: YAML types a plain `true` but not `'true'`, and pnpm applies
+ * its settings untyped.
+ */
 export function scalar(yaml: string, key: string): string | null {
-  return yaml.match(new RegExp(`^${key}:[ \\t]*(\\S.*?)\\s*$`, 'm'))?.[1] ?? null;
+  const rest = yaml.match(new RegExp(`^(["']?)${key}\\1:[ \\t]*(.*?)\\s*$`, 'm'))?.[2];
+  if (rest === undefined) return null;
+  return /^['"]/.test(rest) ? rest : (valueAndComment(rest)?.value ?? rest);
 }
 
 /** A column-0 mapping key: the only line a strict block may end on. */

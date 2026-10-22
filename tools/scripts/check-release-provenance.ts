@@ -64,6 +64,7 @@
  */
 
 import { execFileSync } from 'child_process';
+import { parseArgs } from 'util';
 
 import { appendGithubOutput } from './lib/githubOutput';
 
@@ -349,18 +350,27 @@ export function checkReleaseProvenance(
   };
 }
 
-function flag(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i === -1) return undefined;
-
-  const value = process.argv[i + 1];
-  if (value === undefined || value.startsWith('--')) {
-    throw new ProvenanceError(`--${name} requires a value.`);
-  }
-  return value;
+/**
+ * A flag's value, or `undefined` when it is absent. The command line is parsed
+ * strictly: an unknown flag, a positional or a flag left without its value
+ * throws before anything runs.
+ */
+function flag(
+  name: 'tag' | 'repo' | 'stable-ref' | 'train-ref' | 'expected-sha' | 'github-output'
+): string | undefined {
+  return parseArgs({
+    options: {
+      tag: { type: 'string' },
+      repo: { type: 'string' },
+      'stable-ref': { type: 'string' },
+      'train-ref': { type: 'string' },
+      'expected-sha': { type: 'string' },
+      'github-output': { type: 'string' },
+    },
+  }).values[name];
 }
 
-function required(name: string): string {
+function required(name: 'tag' | 'stable-ref' | 'expected-sha'): string {
   const value = flag(name);
   if (value === undefined || value === '') {
     throw new ProvenanceError(`--${name} is required.`);

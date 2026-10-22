@@ -81,6 +81,7 @@
 import { execFileSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { parseArgs } from 'util';
 
 import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
 import {
@@ -668,11 +669,16 @@ export function validateTarget(repo: string, tag: string): TargetValidation {
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
-function flag(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i === -1) return undefined;
-  const value = process.argv[i + 1];
-  if (value === undefined || value.startsWith('--') || value.trim() === '') {
+/**
+ * A flag's value, or `undefined` when it is absent. The command line is parsed
+ * strictly: an unknown flag, a positional or a flag left without its value
+ * throws before anything runs, and so does an empty value.
+ */
+function flag(name: 'validate' | 'repo'): string | undefined {
+  const value = parseArgs({
+    options: { validate: { type: 'string' }, repo: { type: 'string' } },
+  }).values[name];
+  if (value?.trim() === '') {
     throw new ReleaseTrainError(`--${name} requires a value.`);
   }
   return value;

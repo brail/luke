@@ -22,6 +22,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { parseArgs } from 'util';
 
 import { repairAutoRevisionPhotos } from '../src/services/autoRevisionPhotoRepair.service.js';
 
@@ -29,7 +30,9 @@ import { createScriptPrismaClient } from './lib/prisma.js';
 import { describeTarget } from './lib/target.js';
 
 async function main() {
-  const apply = process.argv.includes('--apply');
+  const { apply } = parseArgs({
+    options: { apply: { type: 'boolean', default: false } },
+  }).values;
   const prisma = createScriptPrismaClient();
   try {
     console.log(`Target database: ${describeTarget(process.env.DATABASE_URL)}`);

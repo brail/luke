@@ -91,6 +91,7 @@
 import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { parseArgs } from 'util';
 
 import { ReleaseTag, parseReleaseTag } from './check-release-provenance';
 import { appendGithubOutput } from './lib/githubOutput';
@@ -452,23 +453,36 @@ export function checkGraduation(
 }
 
 /**
+ * The command line, parsed strictly: an unknown flag, a positional, or a flag
+ * left without its value (`--rev` last, `--rev --repo x`) throws before any
+ * check runs. A typo is a rejection, never a flag quietly not passed.
+ */
+function cli() {
+  return parseArgs({
+    options: {
+      tag: { type: 'string' },
+      rev: { type: 'string' },
+      worktree: { type: 'boolean' },
+      repo: { type: 'string' },
+      'github-output': { type: 'string' },
+    },
+  }).values;
+}
+
+/**
  * A flag's value, or `undefined` when the flag is absent. "Present but empty"
- * is not a third state: `--rev ""` and `--rev --repo x` are both a flag whose
- * value was not supplied, and both reject here rather than reaching a checker
+ * is not a third state: `--rev ""` rejects here rather than reaching a checker
  * that would have to re-ask the question in its own words.
  */
-function flag(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  if (i === -1) return undefined;
-
-  const value = process.argv[i + 1];
-  if (value === undefined || value.startsWith('--') || value.trim() === '') {
+function flag(name: 'tag' | 'rev' | 'repo' | 'github-output'): string | undefined {
+  const value = cli()[name];
+  if (value?.trim() === '') {
     throw new ReleaseTreeError(`--${name} requires a value.`);
   }
   return value;
 }
 
-function required(name: string): string {
+function required(name: 'tag'): string {
   const value = flag(name);
   if (value === undefined) {
     throw new ReleaseTreeError(`--${name} is required.`);
@@ -485,7 +499,7 @@ function required(name: string): string {
 function main(): void {
   const tag = required('tag');
   const rev = flag('rev');
-  const worktree = process.argv.includes('--worktree');
+  const worktree = cli().worktree === true;
 
   if (rev !== undefined && worktree) {
     throw new ReleaseTreeError(

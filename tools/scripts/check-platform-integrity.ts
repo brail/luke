@@ -549,14 +549,15 @@ function checkReleaseAgePolicy(root: string, problems: Problem[]): void {
   }
 
   // P4b — verification cannot be bypassed.
-  if (scalar(yaml, 'trustLockfile') === 'true') {
+  if (scalar(yaml, 'trustLockfile') !== null) {
     problems.push({
       file: 'pnpm-workspace.yaml',
       line: 1,
       message:
-        '`trustLockfile` is enabled: it skips the supply-chain verification ' +
-        'that re-applies the quarantine to every lockfile entry, which turns ' +
-        'the whole policy off in one line.',
+        '`trustLockfile` is declared: enabled, it skips the supply-chain ' +
+        'verification that re-applies the quarantine to every lockfile entry, ' +
+        'which turns the whole policy off in one line. pnpm reads any truthy ' +
+        "value as enabled (`'false'` included) and defaults to off: remove the line.",
     });
   }
 

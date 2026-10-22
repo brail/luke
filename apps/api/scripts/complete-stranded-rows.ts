@@ -18,10 +18,14 @@
  *   pnpm --filter @luke/api db:complete-stranded-rows [--dry-run]
  */
 
+import { parseArgs } from 'util';
+
 import { createScriptPrismaClient } from './lib/prisma.js';
 
 async function main() {
-  const dryRun = process.argv.includes('--dry-run');
+  const { 'dry-run': dryRun } = parseArgs({
+    options: { 'dry-run': { type: 'boolean', default: false } },
+  }).values;
   const prisma = createScriptPrismaClient();
 
   try {

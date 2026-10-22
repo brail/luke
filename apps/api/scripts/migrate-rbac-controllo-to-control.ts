@@ -21,6 +21,8 @@
  *   pnpm --filter @luke/api db:migrate-rbac-section-key --apply    # write
  */
 
+import { parseArgs } from 'util';
+
 import { createScriptPrismaClient } from './lib/prisma.js';
 
 const CONFIG_KEY = 'rbac.sectionAccessDefaults';
@@ -28,7 +30,9 @@ const OLD_KEY = 'product.controllo';
 const NEW_KEY = 'product.control';
 
 async function main() {
-  const apply = process.argv.includes('--apply');
+  const { apply } = parseArgs({
+    options: { apply: { type: 'boolean', default: false } },
+  }).values;
   const prisma = createScriptPrismaClient();
 
   try {

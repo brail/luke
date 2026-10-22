@@ -16,6 +16,8 @@
  *   pnpm --filter @luke/api db:fix-allday-dates [--dry-run] [--no-sync]
  */
 
+import { parseArgs } from 'util';
+
 import { getConfiguredGoogleClient, reconcileCalendar } from '../src/services/googleCalendarSync.service.js';
 
 import { createScriptPrismaClient } from './lib/prisma.js';
@@ -27,8 +29,9 @@ function utcMidnightOfLocalDay(d: Date): Date {
 }
 
 async function main() {
-  const dryRun = process.argv.includes('--dry-run');
-  const noSync = process.argv.includes('--no-sync');
+  const { 'dry-run': dryRun, 'no-sync': noSync } = parseArgs({
+    options: { 'dry-run': { type: 'boolean', default: false }, 'no-sync': { type: 'boolean', default: false } },
+  }).values;
 
   if (process.env.TZ !== 'Europe/Rome') {
     console.error('❌ The script requires TZ=Europe/Rome (see the npm script "db:fix-allday-dates").');

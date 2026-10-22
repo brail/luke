@@ -205,13 +205,26 @@ test('P4a fails when the quarantine is weakened', () => {
   );
 });
 
-test('P4b fails when trustLockfile disables verification', () => {
-  expectFailure(
-    withPolicy(
-      'minimumReleaseAge: 4320\nminimumReleaseAgeStrict: true\ntrustLockfile: true\n'
-    ),
-    /trustLockfile` is enabled/
-  );
+test('P4b fails when trustLockfile is declared, however it is spelled', () => {
+  // pnpm applies the value untyped and reads it as truthy: the string 'false'
+  // turns verification off as surely as true does.
+  for (const line of [
+    'trustLockfile: true',
+    'trustLockfile: true # x',
+    "trustLockfile: 'true'",
+    'trustLockfile: True',
+    "trustLockfile: 'false'",
+    'trustLockfile: false',
+    'trustLockfile:',
+    '"trustLockfile": true',
+  ]) {
+    expectFailure(
+      withPolicy(
+        `minimumReleaseAge: 4320\nminimumReleaseAgeStrict: true\n${line}\n`
+      ),
+      /`trustLockfile` is declared/
+    );
+  }
 });
 
 test('P4d fails when strict enforcement is turned off', () => {
@@ -219,6 +232,24 @@ test('P4d fails when strict enforcement is turned off', () => {
     withPolicy('minimumReleaseAge: 4320\nminimumReleaseAgeStrict: false\n'),
     /`minimumReleaseAgeStrict` must be `true`/
   );
+});
+
+test('P4a and P4d read a value past its inline comment', () => {
+  expectClean(
+    withPolicy(
+      'minimumReleaseAge: 4320 # 72h\nminimumReleaseAgeStrict: true # strict\n'
+    )
+  );
+});
+
+test('P4d fails on a quoted true, which pnpm reads as a string', () => {
+  // pnpm applies the value untyped and turns strict mode on only for `=== true`.
+  for (const value of ["'true'", '"true"']) {
+    expectFailure(
+      withPolicy(`minimumReleaseAge: 4320\nminimumReleaseAgeStrict: ${value}\n`),
+      /`minimumReleaseAgeStrict` must be `true`/
+    );
+  }
 });
 
 test('P4d fails when strict enforcement is merely omitted', () => {

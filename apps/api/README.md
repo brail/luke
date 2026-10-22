@@ -562,7 +562,7 @@ migration has already failed, correct the rows, mark it rolled back with `prisma
 
 The `db:*` scripts in `scripts/` run in development through pnpm, with their
 arguments right after the script name — pnpm passes a literal `--` through, and
-`db:grant-local-access` rejects it; all but `db:nav-reset` read `apps/api/.env`, and that
+every script that takes flags rejects it, as it does any unknown flag; all but `db:nav-reset` read `apps/api/.env`, and that
 one takes the environment of the shell. The image compiles them to
 `dist-scripts/`, so in the API container — the database publishes no port — the
 same script runs as `node dist-scripts/scripts/<file>.js`. Never run `db:bootstrap`

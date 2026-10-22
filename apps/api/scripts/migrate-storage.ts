@@ -52,14 +52,16 @@
  *   currently points at) work with the same code path as `local→s3`.
  *
  * Usage:
- *   pnpm --filter @luke/api db:migrate-storage -- --from=local --to=s3                    # dry-run
- *   pnpm --filter @luke/api db:migrate-storage -- --from=local --to=s3 --apply
- *   pnpm --filter @luke/api db:migrate-storage -- --from=local --to=s3 --apply --fix-mime
- *   pnpm --filter @luke/api db:migrate-storage -- --from=s3 --to=s3 --apply --fix-mime \
+ *   pnpm --filter @luke/api db:migrate-storage --from=local --to=s3                    # dry-run
+ *   pnpm --filter @luke/api db:migrate-storage --from=local --to=s3 --apply
+ *   pnpm --filter @luke/api db:migrate-storage --from=local --to=s3 --apply --fix-mime
+ *   pnpm --filter @luke/api db:migrate-storage --from=s3 --to=s3 --apply --fix-mime \
  *     --from-s3-endpoint=old-minio-host --from-s3-port=9000 \
  *     --from-s3-access-key=minioadmin --from-s3-secret-key=minioadmin
- *   pnpm --filter @luke/api db:migrate-storage -- --from=local --to=s3 --apply --include-backups
- *   pnpm --filter @luke/api db:migrate-storage -- --from=local --to=s3 --apply --bucket=brand-logos
+ *   pnpm --filter @luke/api db:migrate-storage --from=local --to=s3 --apply --include-backups
+ *   pnpm --filter @luke/api db:migrate-storage --from=local --to=s3 --apply --bucket=brand-logos
+ *
+ * No `--` before the flags: pnpm passes it on, and every flag after it is refused.
  *
  * Must run somewhere with access to both providers' network endpoints and the DB/master key —
  * in production that's inside the running `api` container, using the compiled output (see
@@ -68,6 +70,7 @@
  */
 
 import { Transform } from 'stream';
+import { parseArgs } from 'util';
 
 import pLimit from 'p-limit';
 
@@ -92,13 +95,32 @@ const COPY_CONCURRENCY = 5;
 
 // ─── CLI args ───────────────────────────────────────────────────────────────
 
-function argValue(name: string): string | undefined {
-  const prefix = `--${name}=`;
-  return process.argv.find(a => a.startsWith(prefix))?.slice(prefix.length);
-}
+/** Parsed strictly: an unknown flag stops the script before it reads anything. */
+const { values: args } = parseArgs({
+  options: {
+    from: { type: 'string' },
+    to: { type: 'string' },
+    apply: { type: 'boolean', default: false },
+    'fix-mime': { type: 'boolean', default: false },
+    'include-backups': { type: 'boolean', default: false },
+    bucket: { type: 'string' },
+    'from-s3-endpoint': { type: 'string' },
+    'from-s3-port': { type: 'string' },
+    'from-s3-use-ssl': { type: 'string' },
+    'from-s3-access-key': { type: 'string' },
+    'from-s3-secret-key': { type: 'string' },
+    'from-s3-region': { type: 'string' },
+    'to-s3-endpoint': { type: 'string' },
+    'to-s3-port': { type: 'string' },
+    'to-s3-use-ssl': { type: 'string' },
+    'to-s3-access-key': { type: 'string' },
+    'to-s3-secret-key': { type: 'string' },
+    'to-s3-region': { type: 'string' },
+  },
+});
 
-function parseSide(name: string, fallback: StorageType): StorageType {
-  const raw = argValue(name);
+function parseSide(name: 'from' | 'to', fallback: StorageType): StorageType {
+  const raw = args[name];
   if (!raw) return fallback;
   const result = storageTypeSchema.safeParse(raw);
   if (!result.success) {
@@ -107,10 +129,10 @@ function parseSide(name: string, fallback: StorageType): StorageType {
   return result.data;
 }
 
-const apply = process.argv.includes('--apply');
-const fixMime = process.argv.includes('--fix-mime');
-const includeBackups = process.argv.includes('--include-backups');
-const bucketArg = argValue('bucket');
+const apply = args.apply;
+const fixMime = args['fix-mime'];
+const includeBackups = args['include-backups'];
+const bucketArg = args.bucket;
 
 const fromSide = parseSide('from', 'local');
 const toSide = parseSide('to', 's3');
@@ -129,14 +151,15 @@ type S3OverrideFields = Partial<Pick<S3StorageConfig, 'endpoint' | 'port' | 'use
 
 /** Ad-hoc S3 provider overrides from CLI args, for migrating between two S3 instances neither of which is (necessarily) the one AppConfig currently points at. */
 function s3Overrides(prefix: 'from' | 'to'): S3OverrideFields {
-  const useSslRaw = argValue(`${prefix}-s3-use-ssl`);
+  const useSslRaw = args[`${prefix}-s3-use-ssl`];
+  const portRaw = args[`${prefix}-s3-port`];
   return {
-    endpoint: argValue(`${prefix}-s3-endpoint`),
-    port: argValue(`${prefix}-s3-port`) ? parseInt(argValue(`${prefix}-s3-port`)!, 10) : undefined,
+    endpoint: args[`${prefix}-s3-endpoint`],
+    port: portRaw ? parseInt(portRaw, 10) : undefined,
     useSSL: useSslRaw === undefined ? undefined : useSslRaw === 'true',
-    accessKey: argValue(`${prefix}-s3-access-key`),
-    secretKey: argValue(`${prefix}-s3-secret-key`),
-    region: argValue(`${prefix}-s3-region`),
+    accessKey: args[`${prefix}-s3-access-key`],
+    secretKey: args[`${prefix}-s3-secret-key`],
+    region: args[`${prefix}-s3-region`],
   };
 }
 
