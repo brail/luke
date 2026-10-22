@@ -287,7 +287,7 @@ export const pricingRouter = router({
     .mutation(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
 
-      // Carica i parametri del set selezionato
+      // Load the selected parameter set
       const paramSet = await ctx.prisma.pricingParameterSet.findUnique({
         where: { id: input.parameterSetId },
       });
@@ -321,31 +321,19 @@ export const pricingRouter = router({
         sellingCurrency: paramSet.sellingCurrency,
       };
 
-      if (input.mode === 'forward' && input.purchasePrice !== undefined) {
-        return calculateForward(input.purchasePrice, params);
+      switch (input.mode) {
+        case 'forward':
+          return calculateForward(input.purchasePrice, params);
+        case 'inverse':
+          return calculateInverse(input.retailPrice, params);
+        case 'margin':
+          return calculateMarginOnly(input.purchasePrice, input.retailPrice, params);
+        default: {
+          // The schema refuses any other mode; this fails `tsc` if a mode is added without its case.
+          const unreachable: never = input;
+          return unreachable;
+        }
       }
-
-      if (input.mode === 'inverse' && input.retailPrice !== undefined) {
-        return calculateInverse(input.retailPrice, params);
-      }
-
-      if (
-        input.mode === 'margin' &&
-        input.purchasePrice !== undefined &&
-        input.retailPrice !== undefined
-      ) {
-        return calculateMarginOnly(
-          input.purchasePrice,
-          input.retailPrice,
-          params
-        );
-      }
-
-      const { TRPCError } = await import('@trpc/server');
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Input non valido per la modalità selezionata',
-      });
     }),
 });
 

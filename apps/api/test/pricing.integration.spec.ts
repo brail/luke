@@ -550,17 +550,18 @@ describe('pricing — input validation', () => {
       data: validInput('Standard'),
     });
 
-    // `mode: 'inverse'` without `retailPrice` is rejected by the schema's refine,
-    // not by the procedure body.
+    // `mode: 'inverse'` without `retailPrice` is refused by the input schema
+    // before the procedure body runs (the field path: core's pricing test).
     await expect(
       callerAs('admin').calculate({
         mode: 'inverse',
+        // @ts-expect-error — the case under test: inverse carries no purchasePrice
         purchasePrice: 100,
         parameterSetId: set.id,
         brandId,
         seasonId,
       })
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 });
 

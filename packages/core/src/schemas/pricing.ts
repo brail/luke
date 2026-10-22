@@ -76,32 +76,35 @@ export type PricingParameterSetUpdate = z.infer<
 export const PricingModeSchema = z.enum(['forward', 'inverse', 'margin']);
 export type PricingMode = z.infer<typeof PricingModeSchema>;
 
+const PricingCalculateScope = {
+  parameterSetId: z.uuid('ID set parametri non valido'),
+  brandId: z.uuid('Brand ID non valido'),
+  seasonId: z.uuid('Season ID non valido'),
+};
+const PurchasePriceSchema = z.number({ error: 'Inserisci il prezzo acquisto' }).positive();
+const RetailPriceSchema = z.number({ error: 'Inserisci il prezzo retail' }).positive();
+
 /**
- * Schema for calculation request
+ * Schema for calculation request: each mode carries the prices it needs, so a missing one is
+ * reported on its own field.
  */
-export const PricingCalculateInputSchema = z
-  .object({
-    mode: PricingModeSchema,
-    purchasePrice: z.number().positive().optional(),
-    retailPrice: z.number().positive().optional(),
-    parameterSetId: z.uuid('ID set parametri non valido'),
-    brandId: z.uuid('Brand ID non valido'),
-    seasonId: z.uuid('Season ID non valido'),
-  })
-  .refine(
-    data => {
-      if (data.mode === 'forward') return data.purchasePrice !== undefined;
-      if (data.mode === 'inverse') return data.retailPrice !== undefined;
-      if (data.mode === 'margin')
-        return (
-          data.purchasePrice !== undefined && data.retailPrice !== undefined
-        );
-      return false;
-    },
-    {
-      message:
-        'forward richiede purchasePrice, inverse richiede retailPrice, margin richiede entrambi',
-    }
-  );
+export const PricingCalculateInputSchema = z.discriminatedUnion('mode', [
+  z.object({
+    ...PricingCalculateScope,
+    mode: PricingModeSchema.extract(['forward']),
+    purchasePrice: PurchasePriceSchema,
+  }),
+  z.object({
+    ...PricingCalculateScope,
+    mode: PricingModeSchema.extract(['inverse']),
+    retailPrice: RetailPriceSchema,
+  }),
+  z.object({
+    ...PricingCalculateScope,
+    mode: PricingModeSchema.extract(['margin']),
+    purchasePrice: PurchasePriceSchema,
+    retailPrice: RetailPriceSchema,
+  }),
+]);
 
 export type PricingCalculateInput = z.infer<typeof PricingCalculateInputSchema>;

@@ -118,16 +118,23 @@ export function PricingCalculator({ parameterSet }: PricingCalculatorProps) {
       return;
     }
 
-    const input = {
-      mode,
+    // Each mode sends the prices it needs; `resolveMode` has checked they are numbers.
+    const scope = {
       parameterSetId: parameterSet.id,
       brandId: parameterSet.brandId,
       seasonId: parameterSet.seasonId,
-      purchasePrice: purchasePrice ? Number(purchasePrice) : undefined,
-      retailPrice: retailPrice ? Number(retailPrice) : undefined,
     };
-
-    calcMutation.mutate(input);
+    switch (mode) {
+      case 'forward':
+        calcMutation.mutate({ ...scope, mode, purchasePrice: Number(purchasePrice) });
+        break;
+      case 'inverse':
+        calcMutation.mutate({ ...scope, mode, retailPrice: Number(retailPrice) });
+        break;
+      case 'margin':
+        calcMutation.mutate({ ...scope, mode, purchasePrice: Number(purchasePrice), retailPrice: Number(retailPrice) });
+        break;
+    }
   };
 
   const buttonLabel = () => {

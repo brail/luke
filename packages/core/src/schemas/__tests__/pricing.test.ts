@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { PricingParameterSetInputSchema } from '../pricing.js';
+import { PricingCalculateInputSchema, PricingParameterSetInputSchema } from '../pricing.js';
 
 const VALID = {
   name: 'Pelle',
@@ -35,5 +35,39 @@ describe('PricingParameterSetInputSchema — retailMultiplier', () => {
     expect(retailMultiplierIssues(value).map(issue => issue.message)).toEqual([
       'Il moltiplicatore retail ammette al massimo due decimali',
     ]);
+  });
+});
+
+describe('PricingCalculateInputSchema — each mode requires its own prices', () => {
+  const IDS = {
+    parameterSetId: '3f1c2a4e-9b7d-4c1e-8a2b-1234567890ab',
+    brandId: '4f1c2a4e-9b7d-4c1e-8a2b-1234567890ab',
+    seasonId: '5f1c2a4e-9b7d-4c1e-8a2b-1234567890ab',
+  };
+  const failingPaths = (input: object) =>
+    (PricingCalculateInputSchema.safeParse({ ...IDS, ...input }).error?.issues ?? []).map(issue =>
+      issue.path.join('.')
+    );
+
+  it.each([
+    [{ mode: 'forward', retailPrice: 129.9 }, ['purchasePrice']],
+    [{ mode: 'inverse', purchasePrice: 50 }, ['retailPrice']],
+    [{ mode: 'margin', purchasePrice: 50 }, ['retailPrice']],
+    [{ mode: 'margin' }, ['purchasePrice', 'retailPrice']],
+  ])('%o fails on %o', (input, paths) => {
+    expect(failingPaths(input)).toEqual(paths);
+  });
+
+  it('names the missing price in Italian, as the refine it replaces did', () => {
+    const issue = PricingCalculateInputSchema.safeParse({ ...IDS, mode: 'inverse' }).error?.issues[0];
+    expect(issue?.message).toBe('Inserisci il prezzo retail');
+  });
+
+  it.each([
+    { mode: 'forward', purchasePrice: 50 },
+    { mode: 'inverse', retailPrice: 129.9 },
+    { mode: 'margin', purchasePrice: 50, retailPrice: 129.9 },
+  ])('%o passes', input => {
+    expect(failingPaths(input)).toEqual([]);
   });
 });
