@@ -42,8 +42,8 @@ export const CompanyProfileInputSchema = z.object({
   vatNumber: z.string().optional(),
   taxCode: z.string().optional(),
   phone: z.string().optional(),
-  email: z.string().email().optional(),
-  website: z.string().url().optional(),
+  email: z.email().optional(),
+  website: z.url().optional(),
   address: CompanyAddressSchema.optional(),
   exportSettings: CompanyExportSettingsSchema.optional(),
   /**
@@ -66,6 +66,6 @@ export const CompanyProfileInputSchema = z.object({
    * Same pattern as `brand.ts`: the server verifies it is pending, yours and in the
    * correct bucket, then writes its key.
    */
-  fileObjectId: z.string().uuid().optional(),
+  fileObjectId: z.uuid().optional(),
 });
 export type CompanyProfileInput = z.infer<typeof CompanyProfileInputSchema>;

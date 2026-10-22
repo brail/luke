@@ -45,7 +45,7 @@ const exportRouter = router({
   xlsx: protectedProcedure
     .use(requirePermission('pricing:read'))
     .use(withRateLimit('exportGeneration'))
-    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .input(z.object({ brandId: z.uuid(), seasonId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season] = await Promise.all([
@@ -82,7 +82,7 @@ const exportRouter = router({
   pdf: protectedProcedure
     .use(requirePermission('pricing:read'))
     .use(withRateLimit('exportGeneration'))
-    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .input(z.object({ brandId: z.uuid(), seasonId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       await assertBrandAccess(ctx, input.brandId);
       const [sets, brand, season, exportUser] = await Promise.all([
@@ -129,8 +129,8 @@ const parameterSetsRouter = router({
     .use(requirePermission('pricing:read'))
     .input(
       z.object({
-        brandId: z.string().uuid('Brand ID non valido'),
-        seasonId: z.string().uuid('Season ID non valido'),
+        brandId: z.uuid('Brand ID non valido'),
+        seasonId: z.uuid('Season ID non valido'),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -150,8 +150,8 @@ const parameterSetsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
         data: PricingParameterSetInputSchema,
       })
     )
@@ -179,8 +179,8 @@ const parameterSetsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
         data: PricingParameterSetUpdateSchema,
       })
     )
@@ -209,9 +209,9 @@ const parameterSetsRouter = router({
     .use(requirePermission('pricing:update'))
     .input(
       z.object({
-        id: z.string().uuid(),
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        id: z.uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -237,9 +237,9 @@ const parameterSetsRouter = router({
     .use(requirePermission('pricing:update'))
     .input(
       z.object({
-        id: z.string().uuid(),
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        id: z.uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -260,8 +260,8 @@ const parameterSetsRouter = router({
     .use(requirePermission('pricing:read'))
     .input(
       z.object({
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
       })
     )
     .query(async ({ input, ctx }) => {

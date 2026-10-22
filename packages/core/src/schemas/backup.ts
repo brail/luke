@@ -33,18 +33,18 @@ export const BackupCreateInputSchema = z.object({
 
 /** Input schema for listing backups with cursor pagination. */
 export const BackupListInputSchema = z.object({
-  cursor: z.string().uuid().optional(),
+  cursor: z.uuid().optional(),
   limit: z.number().min(1).max(100).default(50),
 });
 
 /** Schema for identifying a single backup by UUID. */
 export const BackupIdSchema = z.object({
-  id: z.string().uuid('ID backup non valido'),
+  id: z.uuid('ID backup non valido'),
 });
 
 /** Input schema for a restore. See {@link typedConfirmation} for what `confirmPhrase` does and does not guarantee. */
 export const BackupRestoreInputSchema = z.object({
-  id: z.string().uuid('ID backup non valido'),
+  id: z.uuid('ID backup non valido'),
   preserveAuditLog: z.boolean(),
   restoreFiles: z.boolean(),
   confirmPhrase: typedConfirmation(BACKUP_RESTORE_CONFIRM_PHRASE),
@@ -83,7 +83,7 @@ export const RunMigrationBridgeInputSchema = BackupIdSchema.extend({
 
 /** Input schema for preparing a passphrase-protected, instance-portable backup export. */
 export const BackupExportInputSchema = z.object({
-  id: z.string().uuid('ID backup non valido'),
+  id: z.uuid('ID backup non valido'),
   passphrase: BackupExportPassphraseSchema,
 });
 
@@ -108,7 +108,7 @@ export const PassphraseWrappedDekSchema = z.object({
  */
 export const BackupExportHeaderSchema = z.object({
   version: z.literal(1),
-  backupId: z.string().uuid(),
+  backupId: z.uuid(),
   scope: BackupScopeSchema,
   algorithm: z.literal('aes-256-gcm'),
   kdf: z.literal('argon2id'),
@@ -124,7 +124,7 @@ export const BackupExportHeaderSchema = z.object({
 
 /** Full backup record as returned by the API. */
 export const BackupRecordSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   filename: z.string(),
   scope: BackupScopeSchema,
   trigger: z.enum(['MANUAL', 'SCHEDULED', 'PRE_RESTORE_SAFETY', 'IMPORTED', 'PRE_MIGRATION_SAFETY', 'MIGRATED']),

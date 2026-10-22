@@ -145,8 +145,8 @@ export type LdapResilienceConfig = z.infer<typeof LdapResilienceSchema>;
 export const AppContextDefaultsSchema = z.object({
   context: z
     .object({
-      brandId: z.string().uuid().optional(),
-      seasonId: z.string().uuid().optional(),
+      brandId: z.uuid().optional(),
+      seasonId: z.uuid().optional(),
     })
     .optional()
     .default({}),

@@ -16,9 +16,7 @@ export const RequestPasswordResetSchema = z.object({
   email: z
     .string()
     .min(1, 'Email richiesta')
-    .email('Email non valida')
-    .toLowerCase()
-    .trim(),
+    .pipe(z.email('Email non valida').toLowerCase().trim()),
 });
 
 /**
@@ -56,12 +54,12 @@ export const ConfirmEmailVerificationSchema = z.object({
 export const SubmitPendingEmailSchema = z.object({
   username: z.string().min(1, 'Username richiesto'),
   password: z.string().min(1, 'Password richiesta'),
-  email: z.string().trim().toLowerCase().email('Email non valida'),
+  email: z.string().trim().toLowerCase().pipe(z.email('Email non valida')),
 });
 
 /** Input schema for an admin to trigger email verification for a user by userId. */
 export const RequestEmailVerificationAdminSchema = z.object({
-  userId: z.string().uuid('ID utente non valido'),
+  userId: z.uuid('ID utente non valido'),
 });
 
 // Export types

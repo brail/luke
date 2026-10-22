@@ -71,7 +71,7 @@ export const usersAdminRouter = router({
    */
   approvePending: protectedProcedure
     .use(requirePermission('users:update'))
-    .input(z.object({ id: z.string().uuid(), teamId: z.string().uuid() }))
+    .input(z.object({ id: z.uuid(), teamId: z.uuid() }))
     .use(withAuditLog('USER_APPROVED', 'User'))
     .mutation(async ({ input, ctx }) => {
       const user = await ctx.prisma.$transaction(async tx => {
@@ -220,7 +220,7 @@ export const usersAdminRouter = router({
     .use(requirePermission('users:update'))
     .input(
       z.object({
-        userId: z.string().uuid(),
+        userId: z.uuid(),
         verified: z.boolean(),
       })
     )

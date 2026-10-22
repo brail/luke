@@ -121,8 +121,8 @@ export const seasonCalendarRouter = router({
   getOrCreate: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
-      brandId: z.string().uuid(),
-      seasonId: z.string().uuid(),
+      brandId: z.uuid(),
+      seasonId: z.uuid(),
     }))
     .query(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
@@ -140,7 +140,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
     .input(z.object({
-      calendarId: z.string().uuid(),
+      calendarId: z.uuid(),
       status: z.enum(SEASON_CALENDAR_STATUS),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -164,7 +164,7 @@ export const seasonCalendarRouter = router({
   freezePlanningGroup: protectedProcedure
     .use(requirePermission('season_calendar:freeze'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
@@ -185,7 +185,7 @@ export const seasonCalendarRouter = router({
   unfreezePlanningGroup: protectedProcedure
     .use(requirePermission('season_calendar:unfreeze'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       const result = await unfreezePlanningGroup(input.planningGroupId, ctx.prisma);
@@ -206,7 +206,7 @@ export const seasonCalendarRouter = router({
   amendPlanningGroupFreeze: protectedProcedure
     .use(requirePermission('season_calendar:freeze'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
@@ -227,7 +227,7 @@ export const seasonCalendarRouter = router({
    */
   missingPhasesForGroup: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       return resolveMissingPhasesForGroup(input.planningGroupId, ctx.prisma);
@@ -245,7 +245,7 @@ export const seasonCalendarRouter = router({
    */
   holidayOverlapsForGroup: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ planningGroupId: z.string().uuid() }))
+    .input(z.object({ planningGroupId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       return resolveHolidayOverlapsForGroup(input.planningGroupId, ctx.prisma);
@@ -268,9 +268,9 @@ export const seasonCalendarRouter = router({
   listMilestones: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
-      seasonId: z.string().uuid(),
-      brandIds: z.array(z.string().uuid()).min(1),
-      functionId: z.string().uuid().optional(),
+      seasonId: z.uuid(),
+      brandIds: z.array(z.uuid()).min(1),
+      functionId: z.uuid().optional(),
     }))
     .query(async ({ input, ctx }) => {
       const allowedBrandIds = await filterAllowedBrandIds(ctx, input.brandIds);
@@ -365,7 +365,7 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
     .input(z.object({
-      id: z.string().uuid(),
+      id: z.uuid(),
       data: partialWithoutDefaults(CalendarEventBaseSchema).omit({ planningGroupId: true }),
       expected: EventDatesExpectedSchema,
     }))
@@ -502,7 +502,7 @@ export const seasonCalendarRouter = router({
   deleteMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
       assertEventsDeletable([event]);
@@ -547,7 +547,7 @@ export const seasonCalendarRouter = router({
   deleteMilestones: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ ids: z.array(z.string().uuid()).min(1).max(100) }))
+    .input(z.object({ ids: z.array(z.uuid()).min(1).max(100) }))
     .mutation(async ({ input, ctx }) => {
       const events = await ctx.prisma.calendarEvent.findMany({
         where: { id: { in: [...new Set(input.ids)] } },
@@ -651,7 +651,7 @@ export const seasonCalendarRouter = router({
   uncancelMilestone: protectedProcedure
     .use(requirePermission('season_calendar:uncancel'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.id, { phase: { select: { label: true } } });
       if (!event.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
@@ -732,7 +732,7 @@ export const seasonCalendarRouter = router({
   deleteNote: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ eventId: z.string().uuid() }))
+    .input(z.object({ eventId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       await resolveEventBrandAccess(ctx, input.eventId);
 
@@ -812,7 +812,7 @@ export const seasonCalendarRouter = router({
    */
   updateTemplate: protectedProcedure
     .use(requirePermission('milestone_template:update'))
-    .input(z.object({ id: z.string().uuid() }).and(partialWithoutDefaults(MilestoneTemplateInputSchema)))
+    .input(z.object({ id: z.uuid() }).and(partialWithoutDefaults(MilestoneTemplateInputSchema)))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const result = await updateTemplate(id, data, ctx.prisma);
@@ -829,7 +829,7 @@ export const seasonCalendarRouter = router({
    */
   deleteTemplate: protectedProcedure
     .use(requirePermission('milestone_template:delete'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       await deleteTemplate(input.id, ctx.prisma);
       await logAudit(ctx, { action: 'MILESTONE_TEMPLATE_DELETE', targetType: 'MilestoneTemplate', targetId: input.id, result: 'SUCCESS' });
@@ -845,7 +845,7 @@ export const seasonCalendarRouter = router({
    */
   createTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:create'))
-    .input(z.object({ templateId: z.string().uuid() }).and(MilestoneTemplateItemBaseSchema))
+    .input(z.object({ templateId: z.uuid() }).and(MilestoneTemplateItemBaseSchema))
     .mutation(async ({ input, ctx }) => {
       const { templateId, ...data } = input;
       const result = await createTemplateItem(templateId, data, ctx.prisma);
@@ -865,7 +865,7 @@ export const seasonCalendarRouter = router({
     // `.partial()` alone would re-inject `.default()` values (durationDays/allDay/publishExternally)
     // for keys the caller omits — silently resetting them on every partial update. See `updateMilestone`
     // above, same underlying Zod v4 behavior.
-    .input(z.object({ id: z.string().uuid() }).and(partialWithoutDefaults(MilestoneTemplateItemBaseSchema)))
+    .input(z.object({ id: z.uuid() }).and(partialWithoutDefaults(MilestoneTemplateItemBaseSchema)))
     .mutation(async ({ input, ctx }) => {
       const { id, ...data } = input;
       const result = await updateTemplateItem(id, data, ctx.prisma);
@@ -882,7 +882,7 @@ export const seasonCalendarRouter = router({
    */
   deleteTemplateItem: protectedProcedure
     .use(requirePermission('milestone_template:delete'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       await deleteTemplateItem(input.id, ctx.prisma);
       await logAudit(ctx, { action: 'MILESTONE_TEMPLATE_ITEM_DELETE', targetType: 'MilestoneTemplateItem', targetId: input.id, result: 'SUCCESS' });
@@ -932,7 +932,7 @@ export const seasonCalendarRouter = router({
    */
   getSyncStatus: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ calendarId: z.string().uuid() }))
+    .input(z.object({ calendarId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveCalendarBrandAccess(ctx, input.calendarId);
       return getSyncStatus(input.calendarId, ctx.prisma);
@@ -948,7 +948,7 @@ export const seasonCalendarRouter = router({
    */
   listGoogleCalendarBindings: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ calendarId: z.string().uuid() }))
+    .input(z.object({ calendarId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveCalendarBrandAccess(ctx, input.calendarId);
       return listGoogleCalendarBindings(input.calendarId, ctx.prisma, ctx.session.user.id, ctx.session.user.role as Role);
@@ -964,7 +964,7 @@ export const seasonCalendarRouter = router({
   triggerSync: protectedProcedure
     .use(requirePermission('season_calendar:sync'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ calendarId: z.string().uuid() }))
+    .input(z.object({ calendarId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       await resolveCalendarBrandAccess(ctx, input.calendarId);
       const syncResult = await reconcileCalendar(input.calendarId, ctx.prisma, ctx.logger);
@@ -987,7 +987,7 @@ export const seasonCalendarRouter = router({
    */
   listGrantCandidates: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ eventId: z.string().uuid() }))
+    .input(z.object({ eventId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.eventId, { userVisibilities: { select: { userId: true } } });
 
@@ -1093,7 +1093,7 @@ export const seasonCalendarRouter = router({
   revokeUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ eventId: z.string().uuid(), userIds: z.array(z.string().uuid()).min(1) }))
+    .input(z.object({ eventId: z.uuid(), userIds: z.array(z.uuid()).min(1) }))
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.eventId);
 

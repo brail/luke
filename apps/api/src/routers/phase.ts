@@ -147,7 +147,7 @@ export const phaseRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         data: partialWithoutDefaults(PhaseInputBaseSchema.omit({ value: true })),
       })
     )
@@ -196,7 +196,7 @@ export const phaseRouter = router({
   remove: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const item = await ctx.prisma.phase.findUnique({ where: { id: input.id } });
       if (!item) {
@@ -262,7 +262,7 @@ export const phaseRouter = router({
   restore: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const item = await ctx.prisma.phase.findUnique({ where: { id: input.id } });
       if (!item) {
@@ -295,7 +295,7 @@ export const phaseRouter = router({
   reorder: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ orderedIds: z.array(z.string().uuid()) }))
+    .input(z.object({ orderedIds: z.array(z.uuid()) }))
     .mutation(async ({ input, ctx }) => {
       await ctx.prisma.$transaction(
         input.orderedIds.map((id, index) =>

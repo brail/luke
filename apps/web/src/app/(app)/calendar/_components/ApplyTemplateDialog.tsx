@@ -58,8 +58,8 @@ interface Props {
 const ApplyTemplateFormSchema = ApplyTemplateInputSchema
   .pick({ planningGroupId: true, templateId: true })
   .extend({
-    planningGroupId: z.string().uuid('Seleziona un gruppo di pianificazione'),
-    templateId: z.string().uuid('Seleziona un template'),
+    planningGroupId: z.uuid('Seleziona un gruppo di pianificazione'),
+    templateId: z.uuid('Seleziona un template'),
     anchorDate: CalendarDateSchema,
   });
 

@@ -121,7 +121,7 @@ export const googleRouter = router({
           // An empty field means "no impersonation", which is the absence of the key, not an empty
           // email stored under it: `getConfig` already returns `null` for an absent key and every
           // reader of this one collapses both to `undefined`. Writing `''` would have been a second
-          // spelling of the same state that the registry schema (`z.string().email()`) cannot describe.
+          // spelling of the same state that the registry schema (`z.email()`) cannot describe.
           { key: 'integrations.google.impersonateEmail', value: input.impersonateEmail || null },
           ...(input.serviceKey?.trim()
             ? [{ key: 'integrations.google.serviceKey' as const, value: input.serviceKey, encrypt: true }]
@@ -157,7 +157,7 @@ export const googleRouter = router({
    */
   getOAuthUrl: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ redirectUri: z.string().url() }))
+    .input(z.object({ redirectUri: z.url() }))
     .mutation(async ({ input, ctx }) => {
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId', false),
@@ -188,7 +188,7 @@ export const googleRouter = router({
     // Rule 12: it checks a `state`, so an IP bucket and an account bucket, both before the check.
     .use(withRateLimit('googleOAuthExchange'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: z.string().url() }))
+    .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: z.url() }))
     .mutation(async ({ input, ctx }) => {
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId', false),

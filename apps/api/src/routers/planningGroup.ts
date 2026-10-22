@@ -41,7 +41,7 @@ export const planningGroupRouter = router({
    */
   list: protectedProcedure
     .use(requirePermission('season_calendar:read'))
-    .input(z.object({ brandId: z.string().uuid(), seasonId: z.string().uuid() }))
+    .input(z.object({ brandId: z.uuid(), seasonId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
       const calendar = await getOrCreateCalendar(input.brandId, input.seasonId, ctx.prisma);
@@ -58,7 +58,7 @@ export const planningGroupRouter = router({
   create: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ calendarId: z.string().uuid() }).and(PlanningGroupInputSchema))
+    .input(z.object({ calendarId: z.uuid() }).and(PlanningGroupInputSchema))
     .mutation(async ({ input, ctx }) => {
       await resolveCalendarBrandAccess(ctx, input.calendarId);
 
@@ -77,7 +77,7 @@ export const planningGroupRouter = router({
   rename: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }).and(PlanningGroupInputSchema))
+    .input(z.object({ id: z.uuid() }).and(PlanningGroupInputSchema))
     .mutation(async ({ input, ctx }) => {
       await resolvePlanningGroupBrandAccess(ctx, input.id);
 
@@ -97,7 +97,7 @@ export const planningGroupRouter = router({
   delete: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.id);
 

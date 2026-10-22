@@ -30,7 +30,7 @@ export const VendorInputSchema = z.object({
   nickname: z.string().trim().max(64).transform(nickname => nickname || null).optional().nullable(),
   referente: z.string().max(128).trim().optional().nullable(),
   email: z
-    .union([z.string().email('Email non valida'), z.null(), z.undefined()])
+    .union([z.email('Email non valida'), z.null(), z.undefined()])
     .optional(),
   phone: z.string().max(32).trim().optional().nullable(),
   chat: z.string().max(128).trim().optional().nullable(),
@@ -41,20 +41,20 @@ export const VendorInputSchema = z.object({
   moqPerModel: moq('modello').nullable().optional(),
   moqPerColor: moq('colore'),
   navVendorId: z.string().optional().nullable(),
-  enabledParameterSetIds: z.array(z.string().uuid()).optional(),
+  enabledParameterSetIds: z.array(z.uuid()).optional(),
 });
 
 /** Schema for identifying a single vendor by UUID. */
 export const VendorIdSchema = z.object({
-  id: z.string().uuid('ID vendor non valido'),
+  id: z.uuid('ID vendor non valido'),
 });
 
 /** Input schema for permanently deleting a vendor — an id alone is not enough. */
-export const VendorHardDeleteInputSchema = VendorIdSchema.merge(HardDeleteConfirmSchema);
+export const VendorHardDeleteInputSchema = VendorIdSchema.extend(HardDeleteConfirmSchema.shape);
 
 /** Input schema for partially updating an existing vendor. */
 export const VendorUpdateInputSchema = z.object({
-  id: z.string().uuid('ID vendor non valido'),
+  id: z.uuid('ID vendor non valido'),
   data: partialWithoutDefaults(VendorInputSchema),
 });
 
@@ -62,13 +62,13 @@ export const VendorUpdateInputSchema = z.object({
 export const VendorListInputSchema = z.object({
   search: z.string().optional(),
   isActive: z.boolean().optional(),
-  cursor: z.string().uuid().optional(),
+  cursor: z.uuid().optional(),
   limit: z.number().min(1).max(100).default(100),
 });
 
 /** Full vendor record as returned by the API. */
 export const VendorSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string(),
   countryCode: z.string().nullable(),
   nickname: z.string().nullable(),

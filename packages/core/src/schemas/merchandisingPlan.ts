@@ -35,7 +35,7 @@ export type MerchandisingPlanStatus =
 
 /** Input schema for a single row in a merchandising plan (style + pricing + sourcing details). */
 export const MerchandisingPlanRowInputSchema = z.object({
-  planId: z.string().uuid(),
+  planId: z.uuid(),
   order: z.number().int().optional(),
   // Required
   articleCode: z.string().min(1),
@@ -55,7 +55,7 @@ export const MerchandisingPlanRowInputSchema = z.object({
   cancellationStatus: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
   // Optional — pricing
-  pricingParameterSetId: z.string().uuid().optional().nullable(),
+  pricingParameterSetId: z.uuid().optional().nullable(),
   targetFobPrice: z.number().positive().optional().nullable(),
   firstOfferPrice: z.number().positive().optional().nullable(),
   finalOfferPrice: z.number().positive().optional().nullable(),

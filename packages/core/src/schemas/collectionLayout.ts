@@ -104,11 +104,11 @@ export const CollectionLayoutSettingsSchema = z.object({
 export const CollectionLayoutRowInputSchema = z.object({
   groupId: z.string().min(1),
   // FK to PlanningGroup. Omitted on create → backend resolves the season's default planning group.
-  planningGroupId: z.string().uuid().optional(),
+  planningGroupId: z.uuid().optional(),
   order: z.number().int().optional(),
   // Required
   gender: z.enum(COLLECTION_GENDER, { error: 'Gender non valido' }),
-  vendorId: z.string().uuid().nullable().optional(),
+  vendorId: z.uuid().nullable().optional(),
   line: z.string().min(1, 'Linea obbligatoria'),
   article: z.string().max(100).optional().nullable(),
   status: z.string().min(1, 'Status obbligatorio'),
@@ -118,11 +118,11 @@ export const CollectionLayoutRowInputSchema = z.object({
   // Optional — identification/progress
   strategy: z.string().optional().nullable(),
   styleStatus: z.string().optional().nullable(),
-  phaseId: z.string().uuid().optional().nullable(),
+  phaseId: z.uuid().optional().nullable(),
   pricePositioning: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
   pictureKey: z.string().optional().nullable(),
-  pendingPictureFileObjectId: z.string().uuid().optional().nullable(),
+  pendingPictureFileObjectId: z.uuid().optional().nullable(),
   // Optional — notes
   styleNotes: z.string().optional().nullable(),
   materialNotes: z.string().optional().nullable(),
@@ -141,8 +141,8 @@ export type CollectionLayoutRowInput = z.infer<
 
 /** Input schema for bulk-assigning a set of collection layout rows to a planning group. */
 export const CollectionLayoutBulkAssignPlanningGroupInputSchema = z.object({
-  rowIds: z.array(z.string().uuid()).min(1).max(100),
-  planningGroupId: z.string().uuid(),
+  rowIds: z.array(z.uuid()).min(1).max(100),
+  planningGroupId: z.uuid(),
 });
 export type CollectionLayoutBulkAssignPlanningGroupInput = z.infer<
   typeof CollectionLayoutBulkAssignPlanningGroupInputSchema
@@ -166,7 +166,7 @@ export type CollectionRowSetCompletedInput = z.infer<
 
 /** Input schema for creating or updating a quotation attached to a collection row. */
 export const CollectionRowQuotationInputSchema = z.object({
-  rowId: z.string().uuid(),
+  rowId: z.uuid(),
   order: z.number().int().optional(),
   pricingParameterSetId: z.string().optional().nullable(),
   retailPrice: z.number().positive().optional().nullable(),
@@ -191,7 +191,7 @@ export type CollectionRowQuotationUpdate = z.infer<
  *  inserts/deletes). */
 export const CollectionRowQuotationDraftSchema = CollectionRowQuotationInputSchema
   .omit({ rowId: true, order: true })
-  .extend({ id: z.string().uuid().optional() });
+  .extend({ id: z.uuid().optional() });
 export type CollectionRowQuotationDraft = z.infer<
   typeof CollectionRowQuotationDraftSchema
 >;
@@ -220,7 +220,7 @@ export type CollectionCatalogItemInput = z.infer<
  * directly.
  */
 export const CreateRevisionRequestSchema = z.object({
-  collectionLayoutId: z.string().uuid(),
+  collectionLayoutId: z.uuid(),
   revisionTypeValue: z.string().min(1),
   notes: z.string().max(1000).optional().nullable(),
 });
@@ -235,17 +235,17 @@ export type CreateRevisionInput = CreateRevisionRequest &
   ({ cause: 'MANUAL'; milestoneId?: null } | { cause: 'MILESTONE'; milestoneId: string });
 
 export const GetRevisionsListInputSchema = z.object({
-  collectionLayoutId: z.string().uuid(),
+  collectionLayoutId: z.uuid(),
 });
 export type GetRevisionsListInput = z.infer<typeof GetRevisionsListInputSchema>;
 
 export const GetRevisionDetailInputSchema = z.object({
-  revisionId: z.string().uuid(),
+  revisionId: z.uuid(),
 });
 export type GetRevisionDetailInput = z.infer<typeof GetRevisionDetailInputSchema>;
 
 export const GetLayoutAsOfRevisionInputSchema = z.object({
-  collectionLayoutId: z.string().uuid(),
-  revisionId: z.string().uuid(),
+  collectionLayoutId: z.uuid(),
+  revisionId: z.uuid(),
 });
 export type GetLayoutAsOfRevisionInput = z.infer<typeof GetLayoutAsOfRevisionInputSchema>;

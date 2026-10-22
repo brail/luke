@@ -27,12 +27,12 @@ export const mailSmtpConfigSchema = z.object({
   user: z.string().min(1, 'Username richiesto'),
   pass: z.string().optional().or(z.literal('')),
   from: smtpFromSchema,
-  baseUrl: z.string().url('URL valido richiesto'),
+  baseUrl: z.url('URL valido richiesto'),
 });
 
 /** Input schema for triggering a test email. Defaults to the configured sender (`smtp.from`) if omitted. */
 export const mailTestSchema = z.object({
-  testEmail: z.string().email().optional(),
+  testEmail: z.email().optional(),
 });
 
 // Types inferred from the schemas

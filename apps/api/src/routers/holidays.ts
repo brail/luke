@@ -199,7 +199,7 @@ export const holidaysRouter = router({
    */
   deleteHoliday: protectedProcedure
     .use(requirePermission('config:update'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       // `delete` returns the removed record: the audit entry keeps describing it after the id
       // stops resolving to anything.
@@ -226,8 +226,8 @@ export const holidaysRouter = router({
   listVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
-      vendorId: z.string().uuid(),
-      seasonId: z.string().uuid(),
+      vendorId: z.uuid(),
+      seasonId: z.uuid(),
     }))
     .query(async ({ input, ctx }) => {
       return ctx.prisma.vendorClosurePeriod.findMany({
@@ -251,8 +251,8 @@ export const holidaysRouter = router({
   listVendorClosuresBatch: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({
-      vendorIds: z.array(z.string().uuid()).min(1).max(100),
-      seasonId: z.string().uuid(),
+      vendorIds: z.array(z.uuid()).min(1).max(100),
+      seasonId: z.uuid(),
     }))
     .query(async ({ input, ctx }) => {
       return ctx.prisma.vendorClosurePeriod.findMany({
@@ -274,8 +274,8 @@ export const holidaysRouter = router({
   prefillVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:configure'))
     .input(z.object({
-      vendorId: z.string().uuid(),
-      seasonId: z.string().uuid(),
+      vendorId: z.uuid(),
+      seasonId: z.uuid(),
       countryCodes: z.array(z.string().length(2)).min(1),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -363,7 +363,7 @@ export const holidaysRouter = router({
    */
   deleteVendorClosure: protectedProcedure
     .use(requirePermission('season_calendar:configure'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const deleted = await ctx.prisma.vendorClosurePeriod.delete({ where: { id: input.id } }).catch(rethrowClosureNotFound);
       await logAudit(ctx, { action: 'VENDOR_CLOSURE_DELETE', targetType: 'VendorClosurePeriod', targetId: input.id, result: 'SUCCESS', metadata: { vendorId: deleted.vendorId, seasonId: deleted.seasonId, name: deleted.name } });
@@ -382,7 +382,7 @@ export const holidaysRouter = router({
   confirmVendorClosures: protectedProcedure
     .use(requirePermission('season_calendar:configure'))
     .input(z.object({
-      ids: z.array(z.string().uuid()).min(1),
+      ids: z.array(z.uuid()).min(1),
     }))
     .mutation(async ({ input, ctx }) => {
       const now = new Date();

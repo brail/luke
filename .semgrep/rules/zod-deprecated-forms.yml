@@ -1,0 +1,30 @@
+rules:
+  - id: luke-zod-deprecated-string-format
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Zod 4 deprecates the string format methods. Use the top-level form —
+      `z.uuid()`, `z.email()`, `z.url()`, `z.iso.datetime()` — with the same
+      arguments. When other methods come before the format (`trim`, `min`),
+      pipe into it instead, `z.string().trim().pipe(z.email())`: the top-level
+      form checks the value before anything chained after it, which reorders
+      the checks.
+    patterns:
+      - pattern-either:
+          - pattern: $X.uuid(...)
+          - pattern: $X.email(...)
+          - pattern: $X.url(...)
+          - pattern: $X.datetime(...)
+      - metavariable-regex:
+          metavariable: $X
+          regex: ^z\s*\.\s*(coerce\s*\.\s*)?string\(
+  - id: luke-zod-deprecated-merge
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Zod 4 deprecates `.merge()`. Use `A.extend(B.shape)` — but `.merge()`
+      kept B's catchall (`.strict()`) and object-level checks (`.refine`,
+      `.superRefine`), and `.extend(B.shape)` drops them: re-apply them on the
+      result.
+    # One argument: a Zod merge. Deep-merge helpers take two or more.
+    pattern: $A.merge($B)

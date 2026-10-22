@@ -23,9 +23,8 @@ export const CalendarDateSchema = z.string().transform((value, ctx) => {
 
 /** An ISO 8601 instant (UTC, four-digit year) within the range `isInstantInRange` gives for `allDay`. */
 function instantSchema(allDay: boolean) {
-  return z
-    .string()
-    // `abort`: a malformed value gets one issue, not also the range one (Zod 4 runs the refine anyway).
+  // `abort`: a malformed value gets one issue, not also the range one (Zod 4 runs the refine anyway).
+  return z.iso
     .datetime({ abort: true })
     .refine(value => isInstantInRange(new Date(value), { allDay }), "Data fuori dall'intervallo supportato");
 }

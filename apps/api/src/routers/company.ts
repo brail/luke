@@ -251,7 +251,7 @@ const companyFunctionRouter = router({
   reorder: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ orderedIds: z.array(z.string().uuid()) }))
+    .input(z.object({ orderedIds: z.array(z.uuid()) }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.$transaction(async tx => {
         await Promise.all(
@@ -283,7 +283,7 @@ const companyFunctionRouter = router({
   delete: protectedProcedure
     .use(requirePermission('company_function:delete'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.prisma.companyFunction.findUnique({
         where: { id: input.id },
@@ -331,7 +331,7 @@ const companyFunctionRouter = router({
   restore: protectedProcedure
     .use(requirePermission('company_function:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.prisma.companyFunction.findUnique({
         where: { id: input.id },
@@ -394,7 +394,7 @@ const companyTeamRouter = router({
    */
   listByFunction: protectedProcedure
     .use(requirePermission('company_team:read'))
-    .input(z.object({ functionId: z.string().uuid(), includeInactive: z.boolean().optional() }))
+    .input(z.object({ functionId: z.uuid(), includeInactive: z.boolean().optional() }))
     .query(async ({ ctx, input }) => {
       return ctx.prisma.companyTeam.findMany({
         where: {
@@ -418,7 +418,7 @@ const companyTeamRouter = router({
    */
   getById: protectedProcedure
     .use(requirePermission('company_team:read'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .query(async ({ ctx, input }) => {
       const team = await ctx.prisma.companyTeam.findUnique({
         where: { id: input.id },
@@ -522,7 +522,7 @@ const companyTeamRouter = router({
   delete: protectedProcedure
     .use(requirePermission('company_team:delete'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       await ctx.prisma.companyTeam.delete({ where: { id: input.id } }).catch((e: unknown) => {
         if ((e as { code?: string })?.code === 'P2025') throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });

@@ -37,7 +37,7 @@ export const BrandInputSchema = z.object({
   logoKey: z.null().optional(),
 
   /** Pending FileObject ID for logo during brand creation (optional) */
-  fileObjectId: z.string().uuid('ID file non valido').optional(),
+  fileObjectId: z.uuid('ID file non valido').optional(),
 
   /** Associated NAV code (optional) */
   navBrandId: z.string().max(20).optional().nullable(),
@@ -49,16 +49,16 @@ export const BrandInputSchema = z.object({
 /** Schema for identifying a single brand by UUID. */
 export const BrandIdSchema = z.object({
   /** UUID of the brand */
-  id: z.string().uuid('ID brand non valido'),
+  id: z.uuid('ID brand non valido'),
 });
 
 /** Input schema for permanently deleting a brand — an id alone is not enough. */
-export const BrandHardDeleteInputSchema = BrandIdSchema.merge(HardDeleteConfirmSchema);
+export const BrandHardDeleteInputSchema = BrandIdSchema.extend(HardDeleteConfirmSchema.shape);
 
 /** Full brand record as returned by the API (includes all fields). */
 export const BrandSchema = z.object({
   /** UUID of the brand */
-  id: z.string().uuid(),
+  id: z.uuid(),
 
   /** Unique brand code */
   code: z.string(),
@@ -91,7 +91,7 @@ export const BrandListInputSchema = z.object({
   search: z.string().optional(),
 
   /** Cursor for pagination (brand UUID) */
-  cursor: z.string().uuid().optional(),
+  cursor: z.uuid().optional(),
 
   /** Result limit per page (1-100, default 50) */
   limit: z.number().min(1).max(100).default(50),
@@ -100,7 +100,7 @@ export const BrandListInputSchema = z.object({
 /** Input schema for partially updating a brand. Relaxes the code regex to allow NAV codes with spaces. */
 export const BrandUpdateInputSchema = z.object({
   /** UUID of the brand to update */
-  id: z.string().uuid('ID brand non valido'),
+  id: z.uuid('ID brand non valido'),
 
   /** Partial data for update — code without regex: NAV codes can contain spaces */
   data: partialWithoutDefaults(

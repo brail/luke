@@ -42,7 +42,11 @@ export const UpdateTimezoneSchema = UserProfileSchema.pick({ timezone: true });
  */
 export const ChangeEmailSchema = z.object({
   /** The new address (must be unique). */
-  newEmail: z.string().trim().toLowerCase().email('Email non valida').max(255, 'Email troppo lunga'),
+  newEmail: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .pipe(z.email('Email non valida').max(255, 'Email troppo lunga')),
   /** The account's password, proven as a login proves it (LOCAL or LDAP). */
   currentPassword: z
     .string()

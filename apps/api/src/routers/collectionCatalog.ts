@@ -118,7 +118,7 @@ export const collectionCatalogRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         data: partialWithoutDefaults(CollectionCatalogItemInputSchema.omit({ type: true })),
       })
     )
@@ -161,7 +161,7 @@ export const collectionCatalogRouter = router({
   remove: protectedProcedure
     .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const item = await ctx.prisma.collectionCatalogItem.findUnique({
         where: { id: input.id },
@@ -196,7 +196,7 @@ export const collectionCatalogRouter = router({
   restore: protectedProcedure
     .use(requirePermission('collection_layout:configure'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const item = await ctx.prisma.collectionCatalogItem.findUnique({
         where: { id: input.id },
@@ -234,7 +234,7 @@ export const collectionCatalogRouter = router({
     .input(
       z.object({
         type: CatalogTypeSchema,
-        orderedIds: z.array(z.string().uuid()),
+        orderedIds: z.array(z.uuid()),
       })
     )
     .mutation(async ({ input, ctx }) => {

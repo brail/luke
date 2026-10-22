@@ -19,7 +19,7 @@ import type { Context } from '../lib/trpc';
 // Bound to the Prisma enum: an entry the enum does not have fails to compile.
 const LOCK_ENTITY_TYPES = ['SEASON_CALENDAR', 'COLLECTION_LAYOUT'] as const satisfies readonly LockEntityType[];
 const LockEntityTypeSchema = z.enum(LOCK_ENTITY_TYPES);
-const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.string().uuid() });
+const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.uuid() });
 const AcquireManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 const ReleaseManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
 

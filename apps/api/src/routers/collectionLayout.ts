@@ -109,7 +109,7 @@ const quotationsRouter = router({
   update: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ quotationId: z.string().uuid(), data: CollectionRowQuotationUpdateSchema }))
+    .input(z.object({ quotationId: z.uuid(), data: CollectionRowQuotationUpdateSchema }))
     .mutation(async ({ input, ctx }) => {
       const quotation = await resolveQuotationBrandAccess(ctx, input.quotationId);
       const result = await updateQuotation(input.quotationId, input.data, ctx.prisma);
@@ -127,7 +127,7 @@ const quotationsRouter = router({
   delete: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ quotationId: z.string().uuid() }))
+    .input(z.object({ quotationId: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const quotation = await resolveQuotationBrandAccess(ctx, input.quotationId);
       await deleteQuotation(input.quotationId, ctx.prisma);
@@ -145,7 +145,7 @@ const quotationsRouter = router({
   reorder: protectedProcedure
     .use(requirePermission('collection_layout:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ rowId: z.string().uuid(), orderedIds: z.array(z.string().uuid()) }))
+    .input(z.object({ rowId: z.uuid(), orderedIds: z.array(z.uuid()) }))
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
       await reorderQuotations(input.rowId, input.orderedIds, ctx.prisma);
@@ -650,7 +650,7 @@ const exportRouter = router({
   rowXlsx: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.prisma.collectionLayoutRow.findUnique({
         where: { id: input.rowId },
@@ -689,7 +689,7 @@ const exportRouter = router({
   rowPdf: protectedProcedure
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
       const row = await ctx.prisma.collectionLayoutRow.findUnique({
         where: { id: input.rowId },
@@ -740,8 +740,8 @@ const exportRouter = router({
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
     .input(z.object({
-      collectionLayoutId: z.string().uuid(),
-      rowIds: z.array(z.string().uuid()).optional(),
+      collectionLayoutId: z.uuid(),
+      rowIds: z.array(z.uuid()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
@@ -777,8 +777,8 @@ const exportRouter = router({
     .use(requirePermission('collection_layout:read'))
     .use(withRateLimit('exportGeneration'))
     .input(z.object({
-      collectionLayoutId: z.string().uuid(),
-      rowIds: z.array(z.string().uuid()).optional(),
+      collectionLayoutId: z.uuid(),
+      rowIds: z.array(z.uuid()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const layout = await ctx.prisma.collectionLayout.findUnique({
@@ -825,8 +825,8 @@ export const collectionLayoutRouter = router({
     .use(requirePermission('collection_layout:read'))
     .input(
       z.object({
-        brandId: z.string().uuid('Brand ID non valido'),
-        seasonId: z.string().uuid('Season ID non valido'),
+        brandId: z.uuid('Brand ID non valido'),
+        seasonId: z.uuid('Season ID non valido'),
       })
     )
     .query(async ({ input, ctx }) => {
@@ -847,8 +847,8 @@ export const collectionLayoutRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        brandId: z.string().uuid(),
-        seasonId: z.string().uuid(),
+        brandId: z.uuid(),
+        seasonId: z.uuid(),
         availableGenders: CollectionLayoutSettingsSchema.shape.availableGenders,
       })
     )
@@ -871,11 +871,11 @@ export const collectionLayoutRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        fromBrandId: z.string().uuid(),
-        fromSeasonId: z.string().uuid(),
-        toBrandId: z.string().uuid(),
-        toSeasonId: z.string().uuid(),
-        rows: z.array(z.object({ id: z.string().uuid(), copyQuotations: z.boolean() })).optional(),
+        fromBrandId: z.uuid(),
+        fromSeasonId: z.uuid(),
+        toBrandId: z.uuid(),
+        toSeasonId: z.uuid(),
+        rows: z.array(z.object({ id: z.uuid(), copyQuotations: z.boolean() })).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

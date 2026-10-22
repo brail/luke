@@ -151,7 +151,7 @@ export const collectionLayoutRevisionRouter = router({
       // another layout. The brand scope closes the cross-brand case, not the
       // cross-layout one within the same brand — here that inconsistency simply stops
       // being expressible.
-      .input(z.object({ revisionId: z.string().uuid() }))
+      .input(z.object({ revisionId: z.uuid() }))
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 
@@ -179,7 +179,7 @@ export const collectionLayoutRevisionRouter = router({
       .use(requirePermission('collection_layout:read'))
       .use(withRateLimit('exportGeneration'))
       // As above: the revision carries the layout.
-      .input(z.object({ revisionId: z.string().uuid() }))
+      .input(z.object({ revisionId: z.uuid() }))
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 

@@ -10,10 +10,10 @@ import { z } from 'zod';
 /** Server-to-server auth: a service account key, optionally impersonating a Workspace user. */
 const googleServiceAccountConfigSchema = z.object({
   authMode: z.literal('service_account'),
-  serviceEmail: z.string().email('Email service account non valida'),
+  serviceEmail: z.email('Email service account non valida'),
   /** Write-only: absent means "keep the stored key", never "clear it". */
   serviceKey: z.string().optional(),
-  impersonateEmail: z.string().email('Email non valida').or(z.literal('')).optional(),
+  impersonateEmail: z.email('Email non valida').or(z.literal('')).optional(),
   domain: z.string().min(1, 'Workspace domain obbligatorio'),
   calendarSyncEnabled: z.boolean(),
 });

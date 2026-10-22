@@ -47,7 +47,7 @@ export const phaseHistoryRouter = router({
    */
   listForRow: protectedProcedure
     .use(requirePermission('collection_layout:read'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
 
@@ -74,7 +74,7 @@ export const phaseHistoryRouter = router({
    */
   layoutStats: protectedProcedure
     .use(requirePermission('collection_layout:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 
@@ -126,7 +126,7 @@ export const phaseHistoryRouter = router({
    */
   completionLeadTime: protectedProcedure
     .use(requirePermission('collection_layout:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
 

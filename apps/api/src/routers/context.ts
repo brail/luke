@@ -38,8 +38,8 @@ export const contextRouter = router({
     .use(requirePermission('seasons:read'))
     .input(
       z.object({
-        brandId: z.string().uuid('Brand ID deve essere un UUID valido'),
-        seasonId: z.string().uuid('Season ID deve essere un UUID valido'),
+        brandId: z.uuid('Brand ID deve essere un UUID valido'),
+        seasonId: z.uuid('Season ID deve essere un UUID valido'),
       })
     )
     .mutation(async ({ input, ctx }) => {

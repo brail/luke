@@ -8,9 +8,9 @@ import { MandatoryReasonSchema } from './reason.js';
 /** The fields of a vendor closure, unrefined so the dialog can pick from them (Zod 4 refuses `.pick`
  * on a refined object). */
 export const VendorClosureUpsertBaseSchema = z.object({
-  id:          z.string().uuid().optional(),
-  vendorId:    z.string().uuid(),
-  seasonId:    z.string().uuid(),
+  id:          z.uuid().optional(),
+  vendorId:    z.uuid(),
+  seasonId:    z.uuid(),
   countryCode: z.string().length(2).nullable(),
   name:        z.string().min(1, 'Il nome è obbligatorio').max(200, 'Massimo 200 caratteri'),
   startDate:   CalendarDateSchema,
@@ -61,8 +61,8 @@ export type CalendarDaysRelevance = (typeof CALENDAR_DAYS_RELEVANCE)[number];
 
 /** Base fields shared by calendar event create and update inputs. */
 export const CalendarEventBaseSchema = z.object({
-  planningGroupId:              z.string().uuid(),
-  phaseId:                      z.string().uuid().optional().nullable(),
+  planningGroupId:              z.uuid(),
+  phaseId:                      z.uuid().optional().nullable(),
   calendarDaysRelevance:        z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                        z.string().min(1).max(200),
   startAt:                      CalendarInstantSchema,
@@ -70,16 +70,16 @@ export const CalendarEventBaseSchema = z.object({
   endAt:                        CalendarInstantSchema.optional(),
   allDay:                       z.boolean().default(false),
   publishExternally:            z.boolean().default(true),
-  templateItemId:               z.string().uuid().optional(),
-  visibilityFunctionIds:        z.array(z.string().uuid()).min(1, 'Seleziona almeno una funzione'),
+  templateItemId:               z.uuid().optional(),
+  visibilityFunctionIds:        z.array(z.uuid()).min(1, 'Seleziona almeno una funzione'),
 });
 
 export type CalendarEventInput = z.infer<typeof CalendarEventBaseSchema>;
 
 /** What a calendar notification link opens: an event, or a calendar (`calendarLink`). */
 export const CalendarLinkTargetSchema = z.union([
-  z.object({ eventId: z.string().uuid() }),
-  z.object({ calendarId: z.string().uuid() }),
+  z.object({ eventId: z.uuid() }),
+  z.object({ calendarId: z.uuid() }),
 ]);
 
 export type CalendarLinkTarget = z.infer<typeof CalendarLinkTargetSchema>;
@@ -151,7 +151,7 @@ export type EventDatesExpected = z.infer<typeof EventDatesExpectedSchema>;
  * not a field: a reschedule must not rewrite what scheduling variance is measured against.
  */
 export const MilestoneRescheduleInputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   startAt: CalendarInstantSchema,
   endAt: CalendarInstantSchema.optional().nullable(),
   allDay: z.boolean().optional(),
@@ -162,7 +162,7 @@ export type MilestoneRescheduleInput = z.infer<typeof MilestoneRescheduleInputSc
 
 /** Retiring a milestone instead of deleting it: the event stays in history, with its reason. */
 export const MilestoneCancelInputSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   reason: MandatoryReasonSchema,
 });
 export type MilestoneCancelInput = z.infer<typeof MilestoneCancelInputSchema>;
@@ -179,8 +179,8 @@ export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
  * server-side from `planningGroupId` — never accepted directly, to avoid a mismatched pair. The
  * anchor is the calendar day the items' offsets count from. */
 export const ApplyTemplateInputSchema = z.object({
-  planningGroupId: z.string().uuid(),
-  templateId:      z.string().uuid(),
+  planningGroupId: z.uuid(),
+  templateId:      z.uuid(),
   anchorDate:      CalendarDateSchema.optional(),
   force:           z.boolean().default(false),
 });
@@ -190,7 +190,7 @@ export type ApplyTemplateInput = z.infer<typeof ApplyTemplateInputSchema>;
 
 /** Input schema for creating or updating a user's personal note on a calendar event. */
 export const CalendarEventPersonalNoteInputSchema = z.object({
-  eventId: z.string().uuid(),
+  eventId: z.uuid(),
   body: z.string().max(4000),
 });
 export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersonalNoteInputSchema>;
@@ -199,7 +199,7 @@ export type CalendarEventPersonalNoteInput = z.infer<typeof CalendarEventPersona
 
 /** Base fields for a single item within a milestone template. */
 export const MilestoneTemplateItemBaseSchema = z.object({
-  phaseId:              z.string().uuid().optional().nullable(),
+  phaseId:              z.uuid().optional().nullable(),
   calendarDaysRelevance: z.enum(CALENDAR_DAYS_RELEVANCE).optional().nullable(),
   title:                z.string().min(1).max(200),
   description:          z.string().max(2000).optional(),
@@ -207,7 +207,7 @@ export const MilestoneTemplateItemBaseSchema = z.object({
   durationDays:         z.number().int().min(1).default(1),
   allDay:               z.boolean().default(true),
   publishExternally:    z.boolean().default(true),
-  visibilityFunctionIds: z.array(z.string().uuid()).min(1, 'Seleziona almeno una funzione'),
+  visibilityFunctionIds: z.array(z.uuid()).min(1, 'Seleziona almeno una funzione'),
 });
 
 /** `offsetDays` is relative to the template's anchor date. */
@@ -230,11 +230,11 @@ export type MilestoneTemplateInput = z.infer<typeof MilestoneTemplateInputSchema
  * anchorDate to auto-derive it from (anchorDate is now per planning group).
  */
 export const CloneSeasonCalendarInputSchema = z.object({
-  sourceBrandId: z.string().uuid(),
-  sourceSeasonId: z.string().uuid(),
-  targetBrandId: z.string().uuid(),
-  targetSeasonId: z.string().uuid(),
-  sourcePlanningGroupIds: z.array(z.string().uuid()).min(1),
+  sourceBrandId: z.uuid(),
+  sourceSeasonId: z.uuid(),
+  targetBrandId: z.uuid(),
+  targetSeasonId: z.uuid(),
+  sourcePlanningGroupIds: z.array(z.uuid()).min(1),
   dateShiftDays: z.number().int(),
   /** When false (default), only active (non-cancelled) events are cloned. */
   includeCancelled: z.boolean().default(false),

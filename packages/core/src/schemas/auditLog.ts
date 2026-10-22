@@ -17,7 +17,7 @@ export const AuditLogLastChangeTargetTypeSchema = z.enum([
 
 export const AuditLogGetLastChangeInputSchema = z.object({
   targetType: AuditLogLastChangeTargetTypeSchema,
-  targetId: z.string().uuid(),
+  targetId: z.uuid(),
 });
 
 export const AuditLogResultSchema = z.enum(['SUCCESS', 'FAILURE']);
@@ -27,7 +27,7 @@ export const AuditLogResultSchema = z.enum(['SUCCESS', 'FAILURE']);
  * The dates are calendar days as picked, both included: the server reads them in the caller's time zone.
  */
 export const AuditLogFiltersSchema = z.object({
-  actorId: z.string().uuid().optional(),
+  actorId: z.uuid().optional(),
   action: z.string().max(100).optional(),
   targetType: z.string().max(100).optional(),
   result: AuditLogResultSchema.optional(),

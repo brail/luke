@@ -41,8 +41,8 @@ import { buildPortafoglioXlsx } from '../services/sales.statistics';
 // ─── Input schema ─────────────────────────────────────────────────────────────
 
 const portafoglioBaseInput = z.object({
-  brandId: z.string().uuid('Brand ID non valido'),
-  seasonId: z.string().uuid('Season ID non valido'),
+  brandId: z.uuid('Brand ID non valido'),
+  seasonId: z.uuid('Season ID non valido'),
 });
 
 const portafoglioDownloadInput = portafoglioBaseInput.extend({

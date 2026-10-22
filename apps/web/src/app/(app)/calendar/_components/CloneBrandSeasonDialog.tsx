@@ -48,10 +48,10 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 const CloneFormSchema = CloneSeasonCalendarInputSchema
   .pick({ sourcePlanningGroupIds: true })
   .extend({
-    sourceBrandId: z.string().uuid('Seleziona il brand sorgente'),
-    sourceSeasonId: z.string().uuid('Seleziona la stagione sorgente'),
+    sourceBrandId: z.uuid('Seleziona il brand sorgente'),
+    sourceSeasonId: z.uuid('Seleziona la stagione sorgente'),
     sourcePlanningGroupIds: z
-      .array(z.string().uuid())
+      .array(z.uuid())
       .min(1, 'Seleziona almeno un gruppo di pianificazione'),
     dateShiftDays: z.string().regex(/^-?\d+$/, 'Inserisci un numero intero di giorni'),
   });

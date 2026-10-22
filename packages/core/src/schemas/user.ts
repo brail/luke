@@ -6,10 +6,10 @@ import { passwordPrefilterSchema } from './password.js';
 /** Full user record as returned by the API (excludes password hash). */
 export const UserSchema = z.object({
   /** Unique user ID (UUID v4) */
-  id: z.string().uuid(),
+  id: z.uuid(),
 
   /** User email (validated as an email format) */
-  email: z.string().email(),
+  email: z.email(),
 
   /** User username */
   username: z.string(),
@@ -41,7 +41,7 @@ export const UserSchema = z.object({
  * know what an installation chose.
  */
 export const CreateUserInputSchema = z.object({
-  email: z.string().email('Email non valida'),
+  email: z.email('Email non valida'),
   username: z.string().min(3, 'Username deve essere di almeno 3 caratteri'),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
@@ -51,8 +51,8 @@ export const CreateUserInputSchema = z.object({
 
 /** Input schema for partially updating a user. All fields are optional except `id`. */
 export const UpdateUserInputSchema = z.object({
-  id: z.string().uuid('ID utente non valido'),
-  email: z.string().email('Email non valida').optional(),
+  id: z.uuid('ID utente non valido'),
+  email: z.email('Email non valida').optional(),
   username: z
     .string()
     .min(3, 'Username deve essere di almeno 3 caratteri')
@@ -133,11 +133,11 @@ export function privilegedUserUpdateFields(): PrivilegedUserUpdateField[] {
 
 /** Schema for identifying a single user by UUID — shared across the users sub-routers. */
 export const UserIdSchema = z.object({
-  id: z.string().uuid('ID utente non valido'),
+  id: z.uuid('ID utente non valido'),
 });
 
 /** Input schema for permanently deleting a user — an id alone is not enough. */
-export const UserHardDeleteInputSchema = UserIdSchema.merge(HardDeleteConfirmSchema);
+export const UserHardDeleteInputSchema = UserIdSchema.extend(HardDeleteConfirmSchema.shape);
 
 export type User = z.infer<typeof UserSchema>;
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;

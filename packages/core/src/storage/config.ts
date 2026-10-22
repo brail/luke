@@ -50,7 +50,7 @@ export const s3StorageConfigSchema = z.object({
   secretKey: z.string().min(1),
   region: z.string().default('us-east-1'),
   /** Public base URL for public-read buckets (e.g. https://s3.example.com) */
-  publicBaseUrl: z.string().url().optional(),
+  publicBaseUrl: z.url().optional(),
   /** TTL in seconds for presigned PUT URLs */
   presignedPutTtl: z.number().int().min(60).max(86400).default(3600),
   /** TTL in seconds for presigned GET URLs */
@@ -91,7 +91,7 @@ export const s3StorageSaveConfigSchema = z.object({
   // `hasSecretKey`), so it can only send a new one. `saveConfig` refuses blank when none is stored.
   secretKey: z.string().trim().optional(),
   region: z.string().min(1, 'Region richiesta'),
-  publicBaseUrl: z.string().url('URL non valido').or(z.literal('')).optional(),
+  publicBaseUrl: z.url('URL non valido').or(z.literal('')).optional(),
   presignedPutTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
   presignedGetTtl: intInRange(60, 86400, 'Inserisci una durata tra 60 e 86400 secondi'),
 });

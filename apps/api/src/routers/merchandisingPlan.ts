@@ -82,8 +82,8 @@ const PLAN_SUMMARY_SELECT = {
 } as const;
 
 const planPairInput = z.object({
-  brandId: z.string().uuid(),
-  seasonId: z.string().uuid(),
+  brandId: z.uuid(),
+  seasonId: z.uuid(),
 });
 
 export const merchandisingPlanRouter = router({
@@ -150,7 +150,7 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        planId: z.string().uuid(),
+        planId: z.uuid(),
         status: z.enum(MERCHANDISING_PLAN_STATUS),
       })
     )
@@ -180,7 +180,7 @@ export const merchandisingPlanRouter = router({
    */
   listRows: protectedProcedure
     .use(requirePermission('merchandising_plan:read'))
-    .input(z.object({ planId: z.string().uuid() }))
+    .input(z.object({ planId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveMerchPlanBrandAccess(ctx, input.planId);
 
@@ -290,7 +290,7 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        id: z.string().uuid(),
+        id: z.uuid(),
         data: partialWithoutDefaults(MerchandisingPlanRowInputSchema.omit({ planId: true })),
       })
     )
@@ -322,7 +322,7 @@ export const merchandisingPlanRouter = router({
   deleteRow: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       await resolveMerchPlanRowBrandAccess(ctx, input.id);
 
@@ -351,8 +351,8 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        planId: z.string().uuid(),
-        rows: z.array(z.object({ id: z.string().uuid(), order: z.number().int() })),
+        planId: z.uuid(),
+        rows: z.array(z.object({ id: z.uuid(), order: z.number().int() })),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -378,7 +378,7 @@ export const merchandisingPlanRouter = router({
    */
   getSpecsheet: protectedProcedure
     .use(requirePermission('merchandising_plan:read'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveMerchPlanRowBrandAccess(ctx, input.rowId);
 
@@ -411,7 +411,7 @@ export const merchandisingPlanRouter = router({
     .use(requirePermission('merchandising_plan:update'))
     .use(withRateLimit('configMutations'))
     .input(
-      z.object({ rowId: z.string().uuid() }).merge(MerchandisingSpecsheetInputSchema)
+      z.object({ rowId: z.uuid() }).extend(MerchandisingSpecsheetInputSchema.shape)
     )
     .mutation(async ({ input, ctx }) => {
       const { rowId, ...data } = input;
@@ -444,7 +444,7 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        specsheetId: z.string().uuid(),
+        specsheetId: z.uuid(),
         components: z.array(MerchandisingComponentInputSchema),
       })
     )
@@ -489,7 +489,7 @@ export const merchandisingPlanRouter = router({
   deleteImage: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const { specsheetId } = await deleteSpecsheetImage(ctx, input.id);
 
@@ -514,7 +514,7 @@ export const merchandisingPlanRouter = router({
   setDefaultImage: protectedProcedure
     .use(requirePermission('merchandising_plan:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.uuid() }))
     .mutation(async ({ input, ctx }) => {
       const { specsheetId } = await setDefaultSpecsheetImage(ctx, input.id);
 
@@ -542,8 +542,8 @@ export const merchandisingPlanRouter = router({
     .use(withRateLimit('configMutations'))
     .input(
       z.object({
-        rowId: z.string().uuid(),
-        userId: z.string().uuid().nullable(),
+        rowId: z.uuid(),
+        userId: z.uuid().nullable(),
       })
     )
     .mutation(async ({ input, ctx }) => {

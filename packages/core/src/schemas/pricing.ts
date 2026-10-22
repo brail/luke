@@ -63,7 +63,7 @@ export type PricingParameterSetInput = z.infer<
  */
 export const PricingParameterSetUpdateSchema =
   PricingParameterSetInputSchema.extend({
-    id: z.string().uuid('ID non valido'),
+    id: z.uuid('ID non valido'),
   });
 
 export type PricingParameterSetUpdate = z.infer<
@@ -84,9 +84,9 @@ export const PricingCalculateInputSchema = z
     mode: PricingModeSchema,
     purchasePrice: z.number().positive().optional(),
     retailPrice: z.number().positive().optional(),
-    parameterSetId: z.string().uuid('ID set parametri non valido'),
-    brandId: z.string().uuid('Brand ID non valido'),
-    seasonId: z.string().uuid('Season ID non valido'),
+    parameterSetId: z.uuid('ID set parametri non valido'),
+    brandId: z.uuid('Brand ID non valido'),
+    seasonId: z.uuid('Season ID non valido'),
   })
   .refine(
     data => {

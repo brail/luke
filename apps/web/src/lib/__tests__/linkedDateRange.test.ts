@@ -192,7 +192,7 @@ describe('date/time pairs that do not describe an instant', () => {
 
   it('resolveSide returns null for a year that Date renders in extended form', () => {
     // <input type="date"> goes up to 275760: toISOString emits '+275760-…', which the endpoint's
-    // z.string().datetime() rejects. Better to stop it in the field than in a toast.
+    // z.iso.datetime() rejects. Better to stop it in the field than in a toast.
     expect(resolveSide('275760-09-12', '10:00', false, 'Europe/Rome')).toBeNull();
     expect(resolveSide('0002-03-10', '10:00', false, 'Europe/Rome')).toBeNull();
   });

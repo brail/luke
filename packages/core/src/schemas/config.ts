@@ -77,7 +77,7 @@ export const AppConfigRegistry = {
    * is not an IANA name (`resolveUserTimeZone`).
    */
   'app.defaultTimezone': TimeZoneSchema,
-  'app.baseUrl':         z.string().url(),
+  'app.baseUrl':         z.url(),
   'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 
@@ -122,7 +122,7 @@ export const AppConfigRegistry = {
   'storage.type':                z.enum(['local', 's3']),
   'storage.local.basePath':      z.string().min(1),
   'storage.local.maxFileSizeMB': integerConfigSchema(localStorageSaveConfigSchema.shape.maxFileSizeMB),
-  'storage.local.publicBaseUrl': z.string().url(),
+  'storage.local.publicBaseUrl': z.url(),
   'storage.local.enableProxy':   booleanConfigSchema,
 
   // ── Storage — S3-compatible (MinIO, SeaweedFS, Ceph RGW, ...) ─────────────
@@ -132,7 +132,7 @@ export const AppConfigRegistry = {
   'storage.s3.accessKey':       z.string().min(1),
   'storage.s3.secretKey':       z.string().min(1),
   'storage.s3.region':          z.string(),
-  'storage.s3.publicBaseUrl':   z.string().url(),
+  'storage.s3.publicBaseUrl':   z.url(),
   'storage.s3.presignedPutTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedPutTtl),
   'storage.s3.presignedGetTtl': integerConfigSchema(s3StorageSaveConfigSchema.shape.presignedGetTtl),
 
@@ -157,7 +157,7 @@ export const AppConfigRegistry = {
 
   // ── LDAP ─────────────────────────────────────────────────────────────────
   'auth.ldap.enabled':        booleanConfigSchema,
-  'auth.ldap.url':            z.string().url(),
+  'auth.ldap.url':            z.url(),
   'auth.ldap.bindDN':         z.string(),
   'auth.ldap.bindPassword':   z.string(),
   'auth.ldap.searchBase':     z.string(),
@@ -191,14 +191,14 @@ export const AppConfigRegistry = {
   'integrations.google.domain':                z.string().min(1),
   'integrations.google.calendarSync.enabled':  booleanConfigSchema,
   // Service account mode
-  'integrations.google.serviceEmail':          z.string().email(),
+  'integrations.google.serviceEmail':          z.email(),
   'integrations.google.serviceKey':            z.string().min(1),
-  'integrations.google.impersonateEmail':      z.string().email(),
+  'integrations.google.impersonateEmail':      z.email(),
   // OAuth user mode
   'integrations.google.oauth.clientId':        z.string().min(1),
   'integrations.google.oauth.clientSecret':    z.string().min(1),
   'integrations.google.oauth.refreshToken':    z.string().min(1),
-  'integrations.google.oauth.userEmail':       z.string().email(),
+  'integrations.google.oauth.userEmail':       z.email(),
 
   // ── Feedback ──────────────────────────────────────────────────────────────
   'integrations.github.feedbackToken':          z.string().min(1),   // GitHub PAT (encrypted)

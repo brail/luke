@@ -40,29 +40,29 @@ export const SeasonInputSchema = z.object({
 
 /** Schema for identifying a single season by UUID. */
 export const SeasonIdSchema = z.object({
-  id: z.string().uuid('ID season non valido'),
+  id: z.uuid('ID season non valido'),
 });
 
 /** Input schema for permanently deleting a season — an id alone is not enough. */
-export const SeasonHardDeleteInputSchema = SeasonIdSchema.merge(HardDeleteConfirmSchema);
+export const SeasonHardDeleteInputSchema = SeasonIdSchema.extend(HardDeleteConfirmSchema.shape);
 
 /** Input schema for listing seasons with optional search, active filter, and cursor pagination. */
 export const SeasonListInputSchema = z.object({
   isActive: z.boolean().optional(),
   search: z.string().optional(),
-  cursor: z.string().uuid().optional(),
+  cursor: z.uuid().optional(),
   limit: z.number().min(1).max(100).default(50),
 });
 
 /** Input schema for partially updating a season. */
 export const SeasonUpdateInputSchema = z.object({
-  id: z.string().uuid('ID season non valido'),
+  id: z.uuid('ID season non valido'),
   data: partialWithoutDefaults(SeasonInputSchema),
 });
 
 /** Full output schema for Season (server response) */
 export const SeasonSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   code: z.string(),
   year: z.number().nullable(),
   name: z.string(),

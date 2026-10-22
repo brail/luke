@@ -206,7 +206,7 @@ describe('AppConfig write authority', () => {
 
       // Clearing the field means "derive the URL from the endpoint", which every reader spells as
       // a falsy check. Writing `''` would have been a second way to say what `null` already says,
-      // and one `z.string().url()` cannot describe.
+      // and one `z.url()` cannot describe.
       await caller.storage.saveConfig({ ...s3Config, publicBaseUrl: '' });
       expect(
         await testPrisma.appConfig.findUnique({ where: { key: 'storage.s3.publicBaseUrl' } }),

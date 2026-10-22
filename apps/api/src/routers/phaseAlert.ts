@@ -41,7 +41,7 @@ export const phaseAlertRouter = router({
    */
   criticalityForRow: protectedProcedure
     .use(requirePermission('collection_alert:read'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
       return computeCriticality(input.rowId, new Date(), ctx.prisma);
@@ -62,7 +62,7 @@ export const phaseAlertRouter = router({
    */
   completionPreview: protectedProcedure
     .use(requirePermission('collection_layout:update'))
-    .input(z.object({ rowId: z.string().uuid() }))
+    .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
       return { missingPhases: await resolveMissingPhasesForRow(input.rowId, ctx.prisma) };
@@ -79,7 +79,7 @@ export const phaseAlertRouter = router({
    */
   criticalityForLayout: protectedProcedure
     .use(requirePermission('collection_alert:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return computeCriticalityForLayout(input.collectionLayoutId, new Date(), ctx.prisma);
@@ -139,7 +139,7 @@ export const phaseAlertRouter = router({
    */
   saturationHeatmap: protectedProcedure
     .use(requirePermission('collection_alert:read'))
-    .input(z.object({ seasonId: z.string().uuid(), brandIds: z.array(z.string().uuid()).min(1).max(100) }))
+    .input(z.object({ seasonId: z.uuid(), brandIds: z.array(z.uuid()).min(1).max(100) }))
     .query(async ({ input, ctx }) => {
       const brandIds = await filterAllowedBrandIds(ctx, input.brandIds);
       if (brandIds.length === 0) return [];
@@ -157,7 +157,7 @@ export const phaseAlertRouter = router({
    */
   bottleneckByEvent: protectedProcedure
     .use(requirePermission('collection_alert:read'))
-    .input(z.object({ collectionLayoutId: z.string().uuid() }))
+    .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma);

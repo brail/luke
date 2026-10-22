@@ -338,7 +338,7 @@ export const storageRouter = router({
           // Left blank, the CDN base URL is absent, not an empty URL: `storage/index.ts` and the
           // two read paths in this router all treat a falsy value as "derive the URL from the
           // endpoint". Storing `''` would be a second spelling of that, and one the registry's
-          // `z.string().url()` cannot describe.
+          // `z.url()` cannot describe.
           { key: 'storage.s3.publicBaseUrl', value: input.publicBaseUrl || null },
           { key: 'storage.s3.presignedPutTtl', value: input.presignedPutTtl.toString() },
           { key: 'storage.s3.presignedGetTtl', value: input.presignedGetTtl.toString() },
