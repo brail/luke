@@ -160,7 +160,10 @@ model PlanningGroup {
   id         String    @id @default(uuid())
   /// FK to SeasonCalendar. Cascade delete — a calendar's groups are meaningless once it's gone.
   calendarId String
-  name       String
+  /// NULL for the default group: its displayed name is a UI string (`planningGroupName` in
+  /// `@luke/core`), never a stored key, so a user group may take any name. A CHECK tying NULL to
+  /// `isDefault` follows in a later migration (#128).
+  name       String?
   /// True only for the single auto-created group per calendar. Enforced by a partial unique index
   /// (see migration) plus an application-level check on creation — cannot be renamed or deleted.
   isDefault  Boolean   @default(false)

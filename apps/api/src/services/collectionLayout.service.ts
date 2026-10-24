@@ -257,7 +257,7 @@ export async function copyFromSeason(
             where: rowMap ? { id: { in: [...rowMap.keys()] } } : undefined,
             orderBy: { order: 'asc' },
             include: {
-              planningGroup: { select: { name: true } },
+              planningGroup: { select: { name: true, isDefault: true } },
               quotations: {
                 orderBy: { order: 'asc' },
                 include: { pricingParameterSet: { select: { name: true, purchaseCurrency: true, sellingCurrency: true } } },
@@ -322,7 +322,7 @@ export async function copyFromSeason(
 
       const planningGroups = await tx.planningGroup.findMany({
         where: { calendar: { brandId: toBrandId, seasonId: toSeasonId } },
-        select: { id: true, name: true },
+        select: { id: true, name: true, isDefault: true },
       });
       const parameterSets = await tx.pricingParameterSet.findMany({
         where: { brandId: toBrandId, seasonId: toSeasonId },
@@ -330,8 +330,10 @@ export async function copyFromSeason(
       });
       const planningGroupByName = new Map(planningGroups.map(pg => [pg.name, pg.id]));
       const setByName = new Map(parameterSets.map(ps => [ps.name, ps]));
-      // The default group, and the target calendar with it, only once a row has no group of its name.
-      let defaultPlanningGroupId: string | undefined;
+      // A row in the default group (matched by `isDefault`, never by name: #128), or in a group of a
+      // name the target lacks, goes to the target's default group — created, with the target
+      // calendar, only when such a row needs it.
+      let defaultPlanningGroupId = planningGroups.find(pg => pg.isDefault)?.id;
       const rowData = [];
       for (const { id, groupId, source: row } of rows) {
         const {
@@ -343,7 +345,7 @@ export async function copyFromSeason(
           id,
           collectionLayoutId: layout.id,
           groupId,
-          planningGroupId: planningGroupByName.get(planningGroup.name)
+          planningGroupId: (planningGroup.isDefault ? undefined : planningGroupByName.get(planningGroup.name))
             ?? (defaultPlanningGroupId ??= await resolveDefaultPlanningGroupId(toBrandId, toSeasonId, tx)),
           phaseId: null,
           pictureKey: null,

@@ -10,7 +10,7 @@ import {
   type MilestoneForSync,
   type SyncContext,
 } from '@luke/calendar';
-import type { Role } from '@luke/core';
+import { planningGroupName, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
@@ -79,8 +79,8 @@ type MilestoneRow = {
   allDay: boolean;
   cancelledAt: Date | null;
   publishExternally: boolean;
-  visibilities: { companyFunctionId: string }[];
-  planningGroupName: string;
+  visibilities: { functionId: string }[];
+  planningGroup: { name: string | null };
 };
 
 function mapMilestone(m: MilestoneRow): MilestoneForSync {
@@ -93,8 +93,8 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
     allDay: m.allDay,
     cancelled: !!m.cancelledAt,
     publishExternally: m.publishExternally,
-    visibilityFunctionIds: m.visibilities.map(v => v.companyFunctionId),
-    planningGroupName: m.planningGroupName,
+    visibilityFunctionIds: m.visibilities.map(v => v.functionId),
+    planningGroupName: planningGroupName(m.planningGroup),
   };
 }
 
@@ -208,10 +208,7 @@ export async function syncOneMilestone(
   });
 
   const ctx = await buildSyncContext(m.calendarId, prisma);
-  await syncMilestone(
-    mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })), planningGroupName: m.planningGroup.name }),
-    ctx
-  );
+  await syncMilestone(mapMilestone(m), ctx);
   logger.info({ milestoneId }, 'Google Calendar sync completed');
 }
 
@@ -265,10 +262,7 @@ export async function reconcileCalendar(
 
   for (const m of milestones) {
     try {
-      await syncMilestone(
-        mapMilestone({ ...m, visibilities: m.visibilities.map(v => ({ companyFunctionId: v.functionId })), planningGroupName: m.planningGroup.name }),
-        ctx
-      );
+      await syncMilestone(mapMilestone(m), ctx);
       synced++;
     } catch (err) {
       errors++;

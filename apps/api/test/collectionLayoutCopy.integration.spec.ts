@@ -11,7 +11,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { COLLECTION_STATUS } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { resolveDefaultPlanningGroupId } from '../src/services/seasonCalendar.service';
+import { getOrCreateCalendar, resolveDefaultPlanningGroupId } from '../src/services/seasonCalendar.service';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 
@@ -206,6 +206,30 @@ describe('collectionLayout.copyFromSeason — into the target season', () => {
     ]);
   });
 
+  it('maps the default group to the default group, never by name (#128)', async () => {
+    const source = await fixture();
+    const target = await newSeason();
+    const sourceDefault = await resolveDefaultPlanningGroupId(source.brandId, source.seasonId, prisma);
+    const sourceNamed = await prisma.planningGroup.create({ data: { calendarId: source.calendarId, name: 'Predefinito' } });
+    const targetCalendar = await prisma.seasonCalendar.create({ data: { brandId: source.brandId, seasonId: target } });
+    const targetNamed = await prisma.planningGroup.create({ data: { calendarId: targetCalendar.id, name: 'Predefinito' } });
+    await prisma.collectionLayoutRow.createMany({
+      data: [rowData(source, sourceDefault, 'Clutch'), rowData(source, sourceNamed.id, 'Tote')],
+    });
+
+    const copy = await copyAll(source, target);
+
+    const rows = await prisma.collectionLayoutRow.findMany({
+      where: { collectionLayoutId: copy.id },
+      select: { line: true, planningGroup: { select: { id: true, isDefault: true } } },
+      orderBy: { line: 'asc' },
+    });
+    expect(rows).toEqual([
+      { line: 'Clutch', planningGroup: { id: expect.any(String), isDefault: true } },
+      { line: 'Tote', planningGroup: { id: targetNamed.id, isDefault: false } },
+    ]);
+  });
+
   it('starts rows neither completed nor revised; hidden columns come along, budgets do not', async () => {
     const source = await fixture();
     await prisma.collectionLayoutRow.create({
@@ -265,10 +289,19 @@ describe('resolveDefaultPlanningGroupId', () => {
     expect(await prisma.planningGroup.count({ where: { calendar: { brandId, seasonId }, isDefault: true } })).toBe(1);
   });
 
-  it('says so when a group of the user\'s already has the default group\'s name', async () => {
+  // #128: the default group stores no name, so a user group may take the name it is displayed with.
+  it('creates the default group beside a group of the user\'s named like it', async () => {
     const { brandId, seasonId, calendarId } = await createCalendarFixture(prisma, { prefix: 'DN' });
-    await prisma.planningGroup.create({ data: { calendarId, name: 'Predefinito' } });
+    const named = await prisma.planningGroup.create({ data: { calendarId, name: 'Predefinito' } });
 
-    await expect(resolveDefaultPlanningGroupId(brandId, seasonId, prisma)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await getOrCreateCalendar(brandId, seasonId, prisma);
+    const defaultId = await resolveDefaultPlanningGroupId(brandId, seasonId, prisma);
+
+    expect(await prisma.planningGroup.findUniqueOrThrow({ where: { id: defaultId } })).toMatchObject({ name: null, isDefault: true });
+    expect(await prisma.planningGroup.findUniqueOrThrow({ where: { id: named.id } })).toMatchObject({ name: 'Predefinito', isDefault: false });
+    // Every picker reads the displayed name; `isDefault` tells the two apart.
+    const listed = await asAdmin.planningGroup.list({ brandId, seasonId });
+    expect(listed.filter(g => g.name === 'Predefinito').map(g => ({ id: g.id, isDefault: g.isDefault })))
+      .toEqual([{ id: defaultId, isDefault: true }, { id: named.id, isDefault: false }]);
   });
 });

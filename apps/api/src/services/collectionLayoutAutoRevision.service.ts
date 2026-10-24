@@ -23,7 +23,7 @@
  * retry, and the group's next phase change snapshots the layout as it is then.
  */
 
-import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt } from '@luke/core';
+import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt, planningGroupName } from '@luke/core';
 import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
@@ -218,7 +218,7 @@ export async function createRevisionsForReachedEvents(
   const candidates: TriggerEvent[] = events.flatMap(e => {
     const collectionLayoutId = layoutByScope.get(`${e.calendar.brandId}:${e.calendar.seasonId}`);
     if (!collectionLayoutId) return [];
-    return [{ id: e.id, title: e.title, planningGroupName: e.planningGroup.name, collectionLayoutId }];
+    return [{ id: e.id, title: e.title, planningGroupName: planningGroupName(e.planningGroup), collectionLayoutId }];
   });
 
   const pending = await withoutExistingRevision(prisma, candidates, AUTO_REVISION_TYPE_DATE);
@@ -283,11 +283,12 @@ export async function createRevisionsForCompletedPhase(
       prisma.planningGroup.findUnique({ where: { id: planningGroupId }, select: { name: true } }),
     ]);
     const lowest = Math.min(...rows.map(r => group.rankOf(r.phaseId)));
+    const groupName = planningGroup ? planningGroupName(planningGroup) : '';
 
     // Phase-less events rank `Infinity`: never cleared.
     const candidates: TriggerEvent[] = group.events
       .filter(e => e.rank <= lowest)
-      .map(e => ({ id: e.id, title: e.title, planningGroupName: planningGroup?.name ?? '', collectionLayoutId }));
+      .map(e => ({ id: e.id, title: e.title, planningGroupName: groupName, collectionLayoutId }));
 
     const pending = await withoutExistingRevision(prisma, candidates, AUTO_REVISION_TYPE_PHASE);
     if (pending.length === 0) return 0;

@@ -153,8 +153,9 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     uncovered: 3,
   },
   planningGroup: {
-    reason: 'no tests written, even though it is the scope of events and layout rows',
-    uncovered: 4,
+    reason:
+      'list is invoked by collectionLayoutCopy.integration.spec.ts (the default group\'s displayed name); create, rename and delete remain uncovered, even though a group is the scope of events and layout rows',
+    uncovered: 3,
   },
   auditLog: {
     reason:

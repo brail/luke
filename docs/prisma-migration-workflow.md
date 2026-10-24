@@ -70,11 +70,13 @@ migration with SQL added by hand:
   it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
   which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171), which is.
   Ordinary backfills stay `db:*` scripts in `@luke/api`.
-- **A data step appended to a generated migration**, when new columns must start from values the
-  stored data already implies — `20261024170000_phase_description_duration_colour` gives every
-  phase the badge colour it showed before (#158). The same rules hold for the appended step: a
-  header, the rule frozen in the file, safe to run twice. `db push` gives the development database
-  the columns but not the data: run only the appended statement there.
+- **A data step appended to a generated migration**, when the stored data must follow a column
+  change — `20261024170000_phase_description_duration_colour` gives every phase the badge colour it
+  showed before (#158); `20261024194219_default_planning_group_by_flag` makes a calendar's group
+  named `Predefinito` its default group where it has none, then clears the default group's stored
+  name (#128). The same rules hold for the appended step: a header, the rule frozen in the file,
+  safe to run twice. `db push` gives the development database the columns but not the data: run
+  only the appended statement there.
 
 Check a hand-written migration from `packages/db/` on a throwaway database, as the CI
 `migrations` job does — never against the development database that `apps/api/.env` names:

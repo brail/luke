@@ -175,6 +175,15 @@ export const PlanningGroupInputSchema = z.object({
 });
 export type PlanningGroupInput = z.infer<typeof PlanningGroupInputSchema>;
 
+/**
+ * A planning group's displayed name: the default group stores none (#128). Also the Google sync
+ * title prefix and content hash input (`initials`), so changing the fallback re-pushes every
+ * default-group event.
+ */
+export function planningGroupName(group: { name: string | null }): string {
+  return group.name ?? 'Predefinito';
+}
+
 /** Input schema for applying a milestone template to a planning group. `calendarId` is derived
  * server-side from `planningGroupId` — never accepted directly, to avoid a mismatched pair. The
  * anchor is the calendar day the items' offsets count from. */

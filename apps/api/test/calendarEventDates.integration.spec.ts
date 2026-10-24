@@ -17,7 +17,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { EventDatesExpected } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { assertEventDates, rescheduleMilestone, updateMilestone } from '../src/services/seasonCalendar.service';
+import { assertEventDates, rescheduleMilestone, resolveDefaultPlanningGroupId, updateMilestone } from '../src/services/seasonCalendar.service';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, expectedOf, setupTestDb } from './helpers';
 
@@ -298,6 +298,23 @@ describe('cloneFromBrandSeason refuses an all-day source off midnight', () => {
     await prisma.calendarEvent.update({ where: { id: cancelled.id }, data: { cancelledAt: new Date(), cancelReason: 'prova' } });
     await expect(clone(group.id, true)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     await expect(clone(group.id)).resolves.toBeDefined();
+  });
+});
+
+describe('cloneFromBrandSeason maps the default group by isDefault, never by name (#128)', () => {
+  it('copies the default group into the target\'s default group, not into a user group named like it', async () => {
+    const sourceDefault = await resolveDefaultPlanningGroupId(source.brandId, source.seasonId, prisma);
+    const event = await createEvent({ groupId: sourceDefault, startAt: MIDNIGHT, allDay: true });
+    const targetCalendar = await prisma.seasonCalendar.findUniqueOrThrow({ where: { brandId_seasonId: target } });
+    await prisma.planningGroup.create({ data: { calendarId: targetCalendar.id, name: 'Predefinito' } });
+
+    await clone(sourceDefault);
+
+    const copied = await prisma.calendarEvent.findMany({
+      where: { title: event.title, calendarId: targetCalendar.id },
+      select: { planningGroup: { select: { name: true, isDefault: true } } },
+    });
+    expect(copied).toEqual([{ planningGroup: { name: null, isDefault: true } }]);
   });
 });
 

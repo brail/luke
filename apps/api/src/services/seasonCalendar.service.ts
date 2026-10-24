@@ -7,6 +7,7 @@ import {
   eventDeleteBlock,
   isEventDateLocked as isEventDateLockedCore,
   isInstantInRange,
+  planningGroupName,
   shiftEventByDays,
   startOfDayIn,
   utcMidnightOf,
@@ -54,17 +55,14 @@ async function ensureDefaultPlanningGroup(
   if (existing) return existing.id;
   // ON CONFLICT DO NOTHING: two first calls may both get here, and the loser's error would leave a
   // caller's transaction aborted — a caught P2002 could not be read past. Either way one row stands.
+  // The default group stores no name (#128), so only the one-default index can conflict.
   await prisma.planningGroup.createMany({
-    data: [{ calendarId, name: 'Predefinito', isDefault: true }],
+    data: [{ calendarId, name: null, isDefault: true }],
     skipDuplicates: true,
   });
   const created = await prisma.planningGroup.findFirst({ where, select: { id: true } });
-  // Nothing inserted and no default: the name is taken by a group the user made.
   if (!created) {
-    throw new TRPCError({
-      code: 'CONFLICT',
-      message: 'Un gruppo di pianificazione chiamato "Predefinito" impedisce di creare quello predefinito: rinominalo',
-    });
+    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Gruppo di pianificazione predefinito non creato' });
   }
   return created.id;
 }
@@ -482,7 +480,7 @@ export async function listMilestonesDb(
   return events.map(({ planningGroup, ...e }) => ({
     ...e,
     brandId: calendarBrandMap.get(e.calendarId) ?? null,
-    planningGroupName: planningGroup.name,
+    planningGroupName: planningGroupName(planningGroup),
     // Surfaced for the client's mirror of the delete rule (`eventDeleteBlock`).
     planningGroupFrozenAt: planningGroup.frozenAt,
     // The date lock, evaluated here in the business zone so the client never needs the zone. It is
@@ -801,6 +799,8 @@ export async function listPlanningGroups(calendarId: string, prisma: PrismaClien
 
   return groups.map(g => ({
     ...g,
+    // The default group stores no name (#128): every picker and list receives the displayed one.
+    name: planningGroupName(g),
     freezeState: deriveFreezeState(g.frozenAt, unbaselinedByGroup.get(g.id) ?? 0),
   }));
 }
@@ -1037,18 +1037,21 @@ export async function cloneFromBrandSeason(
     const createdEventIds: string[] = [];
 
     for (const sourceGroup of groups) {
-      const targetGroup = await tx.planningGroup.upsert({
-        where: { calendarId_name: { calendarId: targetCalendar.id, name: sourceGroup.name } },
-        create: { calendarId: targetCalendar.id, name: sourceGroup.name, isDefault: sourceGroup.isDefault },
-        update: {},
-      });
+      // The default group maps to the target's default group; the others by name (#117, #128).
+      const targetGroupId = sourceGroup.isDefault || sourceGroup.name === null
+        ? await ensureDefaultPlanningGroup(targetCalendar.id, tx)
+        : (await tx.planningGroup.upsert({
+          where: { calendarId_name: { calendarId: targetCalendar.id, name: sourceGroup.name } },
+          create: { calendarId: targetCalendar.id, name: sourceGroup.name },
+          update: {},
+        })).id;
 
       if (sourceGroup.events.length === 0) continue;
 
       const created = await tx.calendarEvent.createManyAndReturn({
         data: sourceGroup.events.map(e => ({
           calendarId: targetCalendar.id,
-          planningGroupId: targetGroup.id,
+          planningGroupId: targetGroupId,
           title: e.title,
           description: e.description,
           startAt: e.startAt,
@@ -1069,7 +1072,7 @@ export async function cloneFromBrandSeason(
       // A source event with no visibility rows clones into another one with none.
       warnIfOrphaned(
         created.filter((_, i) => sourceGroup.events[i]!.visibilities.length === 0).map(e => e.id),
-        { sourceGroupId: sourceGroup.id, targetGroupId: targetGroup.id },
+        { sourceGroupId: sourceGroup.id, targetGroupId },
         'cloneFromBrandSeason: events cloned without visibility rows (source with no functions assigned)'
       );
 

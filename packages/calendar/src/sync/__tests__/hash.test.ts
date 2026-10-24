@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
+import { planningGroupName } from '@luke/core';
+
 import { computeContentHash } from '../hash.js';
 
 import { makeMilestone } from './fixtures.js';
@@ -94,5 +96,12 @@ describe('computeContentHash', () => {
       makeMilestone({ planningGroupName: 'Lavorazione Ufficiale' })
     );
     expect(a).toBe(b);
+  });
+
+  it('the default group, stored without a name (#128), hashes as it did when named \'Predefinito\'', () => {
+    // A different hash would re-push every default-group event to Google on release.
+    expect(computeContentHash(makeMilestone({ planningGroupName: planningGroupName({ name: null }) }))).toBe(
+      computeContentHash(makeMilestone({ planningGroupName: 'Predefinito' }))
+    );
   });
 });
