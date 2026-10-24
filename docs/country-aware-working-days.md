@@ -319,6 +319,8 @@ the countdown, with these rules:
 
 - It checks only events that are not cancelled, are tagged with a phase and have
   a relevance set.
+- It lists only the events the caller can see (`eventVisibilityWhere`, ADR-014);
+  an admin sees every one.
 - It checks the date of the event's `startAt` (an all-day value's own date, a
   timed one read in the business zone), not its deadline.
 - An event on a weekend is reported once, as `weekend`.

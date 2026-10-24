@@ -209,7 +209,8 @@ export const seasonCalendarRouter = router({
    * Flags, per event, whether a phase-tagged event in the group lands on a non-working day
    * (weekend, company holiday, or a vendor's holiday) — but only for events whose
    * `calendarDaysRelevance` actually makes that relevant to their deadline countdown. Purely
-   * informational: never blocks `freezePlanningGroup`, the caller decides whether to warn.
+   * informational: never blocks `freezePlanningGroup`, the caller decides whether to warn. Lists
+   * only the events the caller can see (`eventVisibilityWhere`, ADR-014).
    *
    * @auth season_calendar:read
    * @input { planningGroupId }
@@ -220,7 +221,11 @@ export const seasonCalendarRouter = router({
     .input(z.object({ planningGroupId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
-      return resolveHolidayOverlapsForGroup(input.planningGroupId, ctx.prisma);
+      return resolveHolidayOverlapsForGroup(
+        input.planningGroupId,
+        ctx.prisma,
+        eventVisibilityWhere(ctx.session.user.id, await getAllowedFunctionIds(ctx)),
+      );
     }),
 
   // ─── Calendar event queries ─────────────────────────────────────────────────
