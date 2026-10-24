@@ -35,7 +35,7 @@ export default function CalendarConfigurationPage() {
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [templateDialog, setTemplateDialog] = useState<{ open: boolean; template?: Template | null }>({ open: false });
-  const [itemDialog, setItemDialog] = useState<{ open: boolean; templateId: string; item?: TemplateItem | null; siblingItems?: { id: string; title: string; offsetDays: number }[] }>({ open: false, templateId: '' });
+  const [itemDialog, setItemDialog] = useState<{ open: boolean; templateId: string; item?: TemplateItem | null; siblingItems?: TemplateItem[] }>({ open: false, templateId: '' });
   const [deletingTemplate, setDeletingTemplate] = useState<Template | null>(null);
   const [deletingItem, setDeletingItem] = useState<TemplateItem | null>(null);
 
@@ -176,7 +176,7 @@ export default function CalendarConfigurationPage() {
                                         variant="ghost"
                                         size="icon"
                                         className="h-6 w-6"
-                                        onClick={() => setItemDialog({ open: true, templateId: t.id, item, siblingItems: t.items.filter(i => i.id !== item.id).map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays })) })}
+                                        onClick={() => setItemDialog({ open: true, templateId: t.id, item, siblingItems: t.items.filter(i => i.id !== item.id) })}
                                       >
                                         <Pencil size={12} />
                                       </Button>
@@ -210,7 +210,7 @@ export default function CalendarConfigurationPage() {
                               variant="ghost"
                               size="sm"
                               className="text-xs"
-                              onClick={() => setItemDialog({ open: true, templateId: t.id, item: null, siblingItems: t.items.map(i => ({ id: i.id, title: i.title, offsetDays: i.offsetDays })) })}
+                              onClick={() => setItemDialog({ open: true, templateId: t.id, item: null, siblingItems: t.items })}
                             >
                               <Plus size={12} className="mr-1" />
                               Aggiungi item

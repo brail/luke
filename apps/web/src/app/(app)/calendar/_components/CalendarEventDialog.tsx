@@ -21,6 +21,7 @@ import { CalendarDaysRelevanceSelect, NO_RELEVANCE_VALUE } from '../../../../com
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { LastModifiedBy } from '../../../../components/LastModifiedBy';
 import { PermissionButton } from '../../../../components/PermissionButton';
+import { PhaseBadge } from '../../../../components/PhaseBadge';
 import { NO_PHASE_VALUE, PhaseSelect } from '../../../../components/PhaseSelect';
 import { PlanningGroupSelect } from '../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../components/ui/badge';
@@ -512,7 +513,7 @@ export function CalendarEventDialog({
       weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
     });
     const timeStr = !event.allDay ? fmt.time(event.startAt) : null;
-    const phaseLabel = phases.find(p => p.id === event.phaseId)?.label;
+    const phase = phases.find(p => p.id === event.phaseId);
     const relevanceLabel = event.calendarDaysRelevance
       ? { COMPANY: 'gg lavorativi (azienda)', VENDOR: 'gg lavorativi (fornitore)', BOTH: 'gg lavorativi (entrambi)' }[event.calendarDaysRelevance]
       : null;
@@ -526,7 +527,7 @@ export function CalendarEventDialog({
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="flex flex-wrap gap-1.5">
-              {phaseLabel && <Badge variant="outline">{phaseLabel}</Badge>}
+              {phase && <PhaseBadge label={phase.label} color={phase.color} />}
               {relevanceLabel && <Badge variant="outline" className="text-muted-foreground">{relevanceLabel}</Badge>}
               {event.cancelledAt && <Badge variant="destructive">Annullato</Badge>}
               {event.planningGroupName && (

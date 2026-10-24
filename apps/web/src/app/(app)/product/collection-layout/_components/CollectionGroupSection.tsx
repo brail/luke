@@ -24,6 +24,7 @@ import {
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
 import { PermissionButton } from '../../../../../components/PermissionButton';
+import { PhaseBadge } from '../../../../../components/PhaseBadge';
 import { Badge } from '../../../../../components/ui/badge';
 import { Button } from '../../../../../components/ui/button';
 import { Checkbox } from '../../../../../components/ui/checkbox';
@@ -323,22 +324,6 @@ function SortableRow({ id, disabled, children, onClick }: SortableRowProps) {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Classes cycling gray → yellow → blue → green as a Phase advances through the catalog order. */
-const PHASE_BADGE_CLASS_TIERS = [
-  'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-  'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-  'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-];
-
-/** Picks a badge color tier for a Phase based on its relative position in the ordered catalog. */
-function phaseBadgeClassName(order: number, total: number): string {
-  if (total <= 1) return PHASE_BADGE_CLASS_TIERS[0];
-  const pct = order / (total - 1);
-  const idx = Math.min(PHASE_BADGE_CLASS_TIERS.length - 1, Math.floor(pct * PHASE_BADGE_CLASS_TIERS.length));
-  return PHASE_BADGE_CLASS_TIERS[idx];
-}
-
 const STATUS_LABELS: Record<string, string> = { CARRY_OVER: 'C/O', NEW: 'New' };
 
 const NOTE_FIELDS: { key: keyof CollectionRowData; label: string }[] = [
@@ -422,7 +407,7 @@ export function CollectionGroupSection({
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
 
-  const { phases, phaseById, phaseOptions } = usePhaseCatalog();
+  const { phaseById, phaseOptions } = usePhaseCatalog();
 
   // Single batched fetch for the whole group's layout, instead of one query per row.
   const { data: criticalityList } = trpc.phaseAlert.criticalityForLayout.useQuery(
@@ -786,12 +771,6 @@ export function CollectionGroupSection({
                     )}
                     {filteredRows.map((row, idx) => {
                       const rowPhase = row.phaseId ? phaseById.get(row.phaseId) : null;
-                      const progressBadge = rowPhase
-                        ? {
-                            label: formatPhaseLabel(rowPhase.code, rowPhase.label),
-                            className: phaseBadgeClassName(rowPhase.order, phases.length),
-                          }
-                        : null;
 
                       return (
                         <SortableRow
@@ -880,14 +859,7 @@ export function CollectionGroupSection({
                       {show('progress') && (
                         <TableCell>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {progressBadge && (
-                              <span className={cn(
-                                'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                                progressBadge.className
-                              )}>
-                                {progressBadge.label}
-                              </span>
-                            )}
+                            {rowPhase && <PhaseBadge label={formatPhaseLabel(rowPhase.code, rowPhase.label)} color={rowPhase.color} />}
                             {(() => {
                               const criticality = criticalityByRowId.get(row.id);
                               if (!criticality) return null;

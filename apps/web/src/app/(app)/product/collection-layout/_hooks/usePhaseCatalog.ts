@@ -19,7 +19,7 @@ export type Phase = RouterOutputs['phase']['list'][number];
  *   labels. A row that went through a phase later deactivated still references it, and without it
  *   would show a dash in place of data that exists.
  * - `phases` and `phaseOptions` stay filtered to active ones: they are what can be *chosen*
- *   (picker, column filter) and the basis the badge colour scales on.
+ *   (picker, column filter).
  */
 export function usePhaseCatalog() {
   const { data: allPhases = [] } = trpc.phase.list.useQuery(

@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { Textarea } from '../../../../../components/ui/textarea';
+import { suggestedTemplateOffset } from '../../../../../lib/templateOffset';
 import { trpc } from '../../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
@@ -36,6 +37,7 @@ type TemplateItem = RouterOutputs['seasonCalendar']['listTemplates'][number]['it
 interface SiblingItem {
   id: string;
   title: string;
+  phaseId: string | null;
   offsetDays: number;
 }
 
@@ -81,8 +83,22 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
 
+  /**
+   * Whether the offset was set by hand — typed, or applied from the relative calculator — since the
+   * dialog opened. Not `dirtyFields`: a typed 0 equals the default and would read as untouched.
+   */
+  const [offsetSetByHand, setOffsetSetByHand] = useState(false);
+
+  /** A new item of a phase that declares a duration gets its offset proposed, until one is set by hand (#158). */
+  const proposeOffset = (phaseId: string) => {
+    if (isEdit || offsetSetByHand) return;
+    const offset = suggestedTemplateOffset(siblingItems, phases.find(p => p.id === phaseId)?.durationDays);
+    if (offset !== null) setValue('offsetDays', offset);
+  };
+
   useEffect(() => {
     if (open) {
+      setOffsetSetByHand(false);
       setRelItemId('');
       setRelDelta('0');
       reset({
@@ -156,7 +172,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               name="phaseId"
               control={control}
               render={({ field }) => (
-                <PhaseSelect value={field.value} onValueChange={field.onChange} phases={phases} />
+                <PhaseSelect value={field.value} onValueChange={value => { field.onChange(value); proposeOffset(value); }} phases={phases} />
               )}
             />
             <p className="text-xs text-muted-foreground">
@@ -184,9 +200,9 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
               <Input
                 id="offsetDays"
                 type="number"
-                {...register('offsetDays', { required: true, valueAsNumber: true })}
+                {...register('offsetDays', { required: true, valueAsNumber: true, onChange: () => setOffsetSetByHand(true) })}
               />
-              <p className="text-xs text-muted-foreground">Giorni dall&apos;anchor date (negativo = prima)</p>
+              <p className="text-xs text-muted-foreground">Giorni dall&apos;anchor date (negativo = prima). Una fase con durata lo propone.</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="durationDays">Durata giorni</Label>
@@ -234,7 +250,7 @@ export function TemplateItemDialog({ open, onClose, onSaved, templateId, item, a
                         variant="outline"
                         size="sm"
                         className="h-8 text-xs shrink-0"
-                        onClick={() => setValue('offsetDays', computed)}
+                        onClick={() => { setOffsetSetByHand(true); setValue('offsetDays', computed); }}
                       >
                         Usa
                       </Button>

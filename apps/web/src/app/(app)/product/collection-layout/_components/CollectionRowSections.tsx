@@ -16,6 +16,7 @@ import {
 } from '@luke/core';
 
 import { PermissionButton } from '../../../../../components/PermissionButton';
+import { PhaseBadge } from '../../../../../components/PhaseBadge';
 import { PhaseSelect } from '../../../../../components/PhaseSelect';
 import { formatPlanningGroupLabel, PlanningGroupSelect } from '../../../../../components/PlanningGroupSelect';
 import { Badge } from '../../../../../components/ui/badge';
@@ -538,9 +539,9 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, is
                 {rowId && <CriticalitySituation rowId={rowId} phaseById={phaseById} />}
               </div>
               <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
-                <span className="truncate text-xs">
-                  <span className="text-muted-foreground">Fase corrente:</span>{' '}
-                  {current ? formatPhaseLabel(current.code, current.label) : '—'}
+                <span className="flex min-w-0 items-center gap-1 text-xs">
+                  <span className="shrink-0 text-muted-foreground">Fase corrente:</span>
+                  {current ? <PhaseBadge label={formatPhaseLabel(current.code, current.label)} color={current.color} /> : '—'}
                 </span>
                 <LockableChangeButton
                   label="Cambia fase"
