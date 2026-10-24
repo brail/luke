@@ -398,19 +398,28 @@ model GoogleEventMapping {
 /// CollectionCatalogItem(type=progress) and CalendarCatalogItem(type=eventType) domains so a
 /// row's production state and a calendar event's milestone can be compared on the same axis.
 model Phase {
-  id        String   @id @default(uuid())
+  id           String   @id @default(uuid())
   /// Immutable machine key. Used as the stored FK target.
-  value     String   @unique
+  value        String   @unique
   /// Human-readable display label (editable without changing the value).
-  label     String
+  label        String
   /// User-visible short code (e.g. "01"), for compatibility with existing UI codes.
-  code      String?
+  code         String?
   /// Display order. Single source of truth for phase ordering (no hardcoded frontend constants).
-  order     Int      @default(0)
+  order        Int      @default(0)
+  /// What the phase covers, shown in the phase catalog.
+  description  String?
+  /// How long the phase takes, in calendar days (bounds in `PhaseInputBaseSchema`). Read only to
+  /// suggest a milestone template item's offset — not the span of an event, which is
+  /// `MilestoneTemplateItem.durationDays`.
+  durationDays Int?
+  /// Badge colour: a key of `PHASE_COLORS` (`@luke/core`). Null, or a value outside the list, shows
+  /// the neutral badge.
+  color        String?
   /// Soft-delete flag. Inactive phases are hidden from pickers.
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   /// Rows currently in this phase.
   collectionLayoutRows   CollectionLayoutRow[]

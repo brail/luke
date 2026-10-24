@@ -81,6 +81,9 @@ export default defineConfig({
       'cmdk',
       // Added for UserActionsMenu.browser.test.tsx, the first to mount a DropdownMenu: same reason.
       '@radix-ui/react-dropdown-menu',
+      // Added for PhaseCatalogPage.browser.test.tsx, the first to mount a RadioGroup: same reason,
+      // seen on the first local run after each rebuild of @luke/core.
+      '@radix-ui/react-radio-group',
       // Added for BrandDialogWithPermissions.browser.test.tsx, the first to import a Progress (through
       // the dialog; it renders only during an upload): same reason.
       '@radix-ui/react-progress',

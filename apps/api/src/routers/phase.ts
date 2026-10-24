@@ -92,7 +92,7 @@ export const phaseRouter = router({
    * Creates a new phase.
    *
    * @auth {phase_catalog:update}
-   * @input {PhaseInputSchema} — value (unique), label, optional order. `code` is derived from order, not client-settable.
+   * @input {PhaseInputSchema} — value (unique), label, optional order, description, durationDays and color. `code` is derived from order, not client-settable.
    * @output {Phase} — the newly created phase.
    */
   create: protectedProcedure
@@ -119,6 +119,9 @@ export const phaseRouter = router({
         data: {
           value: input.value,
           label: input.label,
+          description: input.description,
+          durationDays: input.durationDays,
+          color: input.color,
           code: codeForOrder(order),
           order,
         },
@@ -136,7 +139,7 @@ export const phaseRouter = router({
     }),
 
   /**
-   * Updates mutable fields of a phase (label, order). `code` is re-derived from order automatically.
+   * Updates mutable fields of a phase (label, order, description, durationDays, color). `code` is re-derived from order automatically.
    *
    * @auth {phase_catalog:update}
    * @input {{ id: string, data: Partial<PhaseInputBaseSchema without value> }}
@@ -164,12 +167,16 @@ export const phaseRouter = router({
         data: { ...input.data, code: codeForOrder(order) },
       });
 
+      // The edit dialog sends every field: only those whose value differs were changed. Cast:
+      // `Object.keys` types its keys as plain strings, and these are the input's own.
+      const changedFields = (Object.keys(input.data) as (keyof typeof input.data)[]).filter(key => input.data[key] !== item[key]);
+
       await logAudit(ctx, {
         action: 'PHASE_CATALOG_UPDATE',
         targetType: 'Phase',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { label: result.label, value: result.value, code: result.code, changedFields: Object.keys(input.data) },
+        metadata: { label: result.label, value: result.value, code: result.code, changedFields },
       });
 
       return result;

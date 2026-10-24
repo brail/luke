@@ -117,6 +117,46 @@ describe('Phase Router', () => {
     });
   });
 
+  describe('description, duration and colour (#158)', () => {
+    it('stores the three fields on create, lists them, and an update changes or clears them', async () => {
+      const created = await caller(adminContext).create({
+        value: 'PROTO',
+        label: 'Prototipo',
+        description: 'Primo campione',
+        durationDays: 20,
+        color: 'teal',
+      });
+      expect(created).toMatchObject({ description: 'Primo campione', durationDays: 20, color: 'teal' });
+      expect((await caller(adminContext).list()).find(p => p.id === created.id))
+        .toMatchObject({ description: 'Primo campione', durationDays: 20, color: 'teal' });
+
+      const updated = await caller(adminContext).update({ id: created.id, data: { durationDays: 25, color: null } });
+      expect(updated).toMatchObject({ description: 'Primo campione', durationDays: 25, color: null });
+    });
+
+    it('audits only the fields an edit changed, though the dialog sends them all', async () => {
+      const created = await caller(adminContext).create({ value: 'SMS', label: 'SMS', description: 'Lancio', durationDays: 10, color: 'blue' });
+
+      await caller(adminContext).update({
+        id: created.id,
+        data: { label: 'SMS lanciati', description: 'Lancio', durationDays: 10, color: 'blue' },
+      });
+
+      const audit = await adminContext.prisma.auditLog.findFirst({
+        where: { action: 'PHASE_CATALOG_UPDATE', targetId: created.id },
+        select: { metadata: true },
+      });
+      expect(audit?.metadata).toMatchObject({ changedFields: ['label'] });
+    });
+
+    it('refuses a colour outside the palette', async () => {
+      await expect(
+        // Cast: the input type admits palette keys only, and this is the value the server must refuse.
+        caller(adminContext).create({ value: 'HEX', label: 'Hex', color: '#ff0000' as never })
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+  });
+
   describe('reorder — code always follows the new position', () => {
     it('after a reorder every phase has code = position+1, however it was created', async () => {
       const a = await caller(adminContext).create({ value: 'A', label: 'A' });

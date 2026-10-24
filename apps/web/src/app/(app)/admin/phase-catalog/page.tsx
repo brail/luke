@@ -7,12 +7,13 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { PhaseInputSchema } from '@luke/core';
+import { PHASE_COLORS, PHASE_DESCRIPTION_MAX, PHASE_DURATION_DAYS_MAX, PhaseInputSchema, isPhaseColor, type PhaseColor } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
 import { PermissionButton } from '../../../../components/PermissionButton';
 import { PermissionTooltip } from '../../../../components/PermissionTooltip';
+import { PHASE_COLOR_STYLES, PhaseBadge } from '../../../../components/PhaseBadge';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -33,6 +34,8 @@ import {
 } from '../../../../components/ui/form';
 import { Input } from '../../../../components/ui/input';
 import { Label } from '../../../../components/ui/label';
+import { RadioGroup, RadioGroupItem } from '../../../../components/ui/radio-group';
+import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
@@ -44,6 +47,9 @@ type PhaseItem = {
   label: string;
   code: string | null;
   order: number;
+  description: string | null;
+  durationDays: number | null;
+  color: string | null;
   isActive: boolean;
 };
 
@@ -143,7 +149,8 @@ export default function PhaseCatalogPage() {
                   <th className="w-16 px-3 py-2" />
                   <th className="px-3 py-2 text-left font-medium">Valore (chiave)</th>
                   <th className="px-3 py-2 text-left font-medium">Codice</th>
-                  <th className="px-3 py-2 text-left font-medium">Label</th>
+                  <th className="px-3 py-2 text-left font-medium">Fase</th>
+                  <th className="px-3 py-2 text-left font-medium">Durata</th>
                   <th className="px-3 py-2 text-left font-medium">Stato</th>
                   <th className="w-24 px-3 py-2" />
                 </tr>
@@ -187,7 +194,13 @@ export default function PhaseCatalogPage() {
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{item.value}</td>
                     <td className="px-3 py-2 font-mono text-xs">{item.code ?? '—'}</td>
-                    <td className="px-3 py-2">{item.label}</td>
+                    <td className="px-3 py-2">
+                      <PhaseBadge label={item.label} color={item.color} />
+                      {item.description && (
+                        <p className="mt-1 max-w-md truncate text-xs text-muted-foreground" title={item.description}>{item.description}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">{item.durationDays ? `${item.durationDays} gg` : '—'}</td>
                     <td className="px-3 py-2">
                       <Badge variant={item.isActive ? 'default' : 'secondary'}>
                         {item.isActive ? 'Attivo' : 'Inattivo'}
@@ -284,16 +297,37 @@ export default function PhaseCatalogPage() {
 
 // ─── Item Dialog ──────────────────────────────────────────────────────────────
 
-type DialogSubmitData = { value: string; label: string };
+type DialogSubmitData = {
+  value: string;
+  label: string;
+  description: string | null;
+  durationDays: number | null;
+  color: PhaseColor | null;
+};
+
+/** Radix radio items need a non-empty value: this one stands for "no colour". */
+const NO_COLOR = 'none';
+
+/** The colour picker's choices: no colour, then the palette. */
+const COLOR_CHOICES = [
+  { key: NO_COLOR, name: 'Nessuno', color: null },
+  ...PHASE_COLORS.map(color => ({ key: color, name: PHASE_COLOR_STYLES[color].name, color })),
+];
 
 /**
- * The two fields the dialog collects, out of the phase input. The messages are spelled out here:
- * the core schema carries no copy, and Zod's default for `min(1)` talks about string length
- * rather than about the field being required.
+ * The fields the dialog collects, out of the phase input, as the form holds them: text, and the
+ * colour sentinel. The messages are spelled out here: the core schema carries no copy, and Zod's
+ * default for `min(1)` talks about string length rather than about the field being required.
  */
 const PhaseFormSchema = PhaseInputSchema.pick({ value: true, label: true }).extend({
   value: z.string().min(1, 'Il valore è obbligatorio').max(100, 'Massimo 100 caratteri'),
   label: z.string().min(1, 'La label è obbligatoria').max(200, 'Massimo 200 caratteri'),
+  description: z.string().max(PHASE_DESCRIPTION_MAX, `Massimo ${PHASE_DESCRIPTION_MAX} caratteri`),
+  durationDays: z.string().refine(
+    v => v.trim() === '' || (/^\d+$/.test(v.trim()) && Number(v) >= 1 && Number(v) <= PHASE_DURATION_DAYS_MAX),
+    `Un numero intero di giorni tra 1 e ${PHASE_DURATION_DAYS_MAX}`,
+  ),
+  color: z.enum([NO_COLOR, ...PHASE_COLORS]),
 });
 
 type PhaseFormData = z.infer<typeof PhaseFormSchema>;
@@ -317,13 +351,25 @@ function PhaseItemDialog({
   // opening and need no reset effect.
   const form = useForm<PhaseFormData>({
     resolver: zodResolver(PhaseFormSchema),
-    defaultValues: { value: initial?.value ?? '', label: initial?.label ?? '' },
+    defaultValues: {
+      value: initial?.value ?? '',
+      label: initial?.label ?? '',
+      description: initial?.description ?? '',
+      durationDays: initial?.durationDays ? String(initial.durationDays) : '',
+      color: isPhaseColor(initial?.color) ? initial.color : NO_COLOR,
+    },
   });
 
   const label = form.watch('label');
 
   const handleSubmit = (data: PhaseFormData) => {
-    onSubmit({ value: data.value.trim(), label: data.label.trim() });
+    onSubmit({
+      value: data.value.trim(),
+      label: data.label.trim(),
+      description: data.description.trim() || null,
+      durationDays: data.durationDays.trim() ? Number(data.durationDays) : null,
+      color: data.color === NO_COLOR ? null : data.color,
+    });
   };
 
   return (
@@ -368,6 +414,58 @@ function PhaseItemDialog({
                     <FormLabel>Label visualizzata</FormLabel>
                     <FormControl>
                       <Input placeholder="es. Design" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Descrizione</FormLabel>
+                    <FormControl>
+                      <Textarea rows={2} className="resize-none" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="durationDays"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Durata della fase (giorni)</FormLabel>
+                    <FormControl>
+                      <Input inputMode="numeric" placeholder="es. 30" disabled={isLoading} {...field} />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      Facoltativa. Nei template propone l&apos;offset della voce di questa fase.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="color"
+                render={({ field }) => (
+                  <FormItem className="space-y-1.5">
+                    <FormLabel>Colore</FormLabel>
+                    <FormControl>
+                      <RadioGroup value={field.value} onValueChange={field.onChange} disabled={isLoading} className="grid-cols-3">
+                        {COLOR_CHOICES.map(choice => (
+                          <Label key={choice.key} className="flex cursor-pointer items-center gap-2 font-normal">
+                            <RadioGroupItem value={choice.key} />
+                            <PhaseBadge label={choice.name} color={choice.color} />
+                          </Label>
+                        ))}
+                      </RadioGroup>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -54,7 +54,8 @@ reset it, deleting the data.
 ### Hand-written migrations
 
 Two kinds of migration have no schema difference for `db:migrate:new` to generate, so they are
-written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
+written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`; a third is a generated
+migration with SQL added by hand:
 
 - **A `CHECK` constraint Prisma does not model.** It has no representation in the `.prisma` files:
   `migrate diff` does not report it and `db push` never creates it. Document it with a `///`
@@ -69,6 +70,11 @@ written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
   it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
   which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171), which is.
   Ordinary backfills stay `db:*` scripts in `@luke/api`.
+- **A data step appended to a generated migration**, when new columns must start from values the
+  stored data already implies — `20261024170000_phase_description_duration_colour` gives every
+  phase the badge colour it showed before (#158). The same rules hold for the appended step: a
+  header, the rule frozen in the file, safe to run twice. `db push` gives the development database
+  the columns but not the data: run only the appended statement there.
 
 Check a hand-written migration from `packages/db/` on a throwaway database, as the CI
 `migrations` job does — never against the development database that `apps/api/.env` names:
