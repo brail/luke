@@ -466,6 +466,8 @@ export function CollectionRowDrawer({
           if (note) setPhaseChangeNote(note);
         }}
         currentPhaseId={currentPhaseId ?? null}
+        currentPlanningGroupId={form.watch('planningGroupId')}
+        saved={{ rowId: row.id, phaseId: row.phaseId, planningGroupId: row.planningGroupId }}
       />
     )}
     </>
