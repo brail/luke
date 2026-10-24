@@ -39,3 +39,14 @@ overrides:
   # deepmergeInto() stack exhaustion on a crafted self-referential object
   # graph (DoS). Not a direct dependency anywhere in the workspace.
   deepmerge-ts: '>=8.0.2'
+  # GHSA-333x-w4r6-6crp, GHSA-w74x-v6f9-j3xg, GHSA-wjr9-j795-jxcr, GHSA-xhq7-xmqj-769h: URI scheme
+  # spoofing and host confusion, fixed in 3.1.9 and 4.2.3. `pnpm update` moves the 4.x line but
+  # keeps ajv@8's 3.x copy at 3.1.8, although its `^3.0.1` admits the fix (a fresh install picks
+  # 3.1.9). Capped below 4 so ajv@8 is not lifted onto the 4.x line.
+  fast-uri@<3.1.9: '>=3.1.9 <4'
+  # GHSA-xcx6-jx8p-x3h5: MSAL Node's authorization-code flow may disclose parameters to an
+  # attacker-controlled endpoint, fixed in 7.1.0. Transitive via @luke/nav -> mssql -> tedious ->
+  # @azure/identity, whose latest release (4.14.0, and the 4.15 beta) still declares ^6: lifted
+  # onto 7 on purpose. Every MSAL export identity uses is still in 7.1.0, and Luke authenticates
+  # to SQL Server with a password, so MSAL never runs. Remove once @azure/identity declares ^7.
+  '@azure/msal-node': '>=7.1.0 <8'
