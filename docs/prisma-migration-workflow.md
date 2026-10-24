@@ -66,8 +66,9 @@ written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`:
   only a versioned migration is replayed by the backup migration bridge, which a `db:*` script is
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
   so a replay on an older backup does not depend on later code, and state in its header whether
-  it is safe to run twice. One exists: `20261001220553_section_access_leaf_overrides` (ADR-027),
-  which is not. Ordinary backfills stay `db:*` scripts in `@luke/api`.
+  it is safe to run twice. They are `20261001220553_section_access_leaf_overrides` (ADR-027),
+  which is not, and `20261024160000_remove_calendar_deadline_overdue_preference` (#171), which is.
+  Ordinary backfills stay `db:*` scripts in `@luke/api`.
 
 Check a hand-written migration from `packages/db/` on a throwaway database, as the CI
 `migrations` job does — never against the development database that `apps/api/.env` names:

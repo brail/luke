@@ -25,13 +25,13 @@ describe('notifications.preferences.listCalendarEventOverrides', () => {
     const enabled = async () =>
       Object.fromEntries((await caller.notifications.preferences.listCalendarEventOverrides()).map(o => [o.eventKey, o.enabled]));
 
-    await caller.notifications.preferences.updateCalendarEventOverride({ eventKey: 'CALENDAR_DEADLINE_OVERDUE', enabled: false });
-    expect(await enabled()).toMatchObject({ CALENDAR_DEADLINE_OVERDUE: false, CALENDAR_DIGEST: true, CALENDAR_CREATE: true });
+    await caller.notifications.preferences.updateCalendarEventOverride({ eventKey: 'CALENDAR_PHASE_OVERDUE', enabled: false });
+    expect(await enabled()).toMatchObject({ CALENDAR_PHASE_OVERDUE: false, CALENDAR_DIGEST: true, CALENDAR_CREATE: true });
 
     // A kind switched back on does not outlive the master switch.
     await caller.notifications.preferences.updateCalendarEventOverride({ eventKey: 'CALENDAR_DIGEST', enabled: true });
     await caller.notifications.preferences.update({ category: 'CALENDAR', enabled: false });
-    expect(await enabled()).toMatchObject({ CALENDAR_DEADLINE_OVERDUE: false, CALENDAR_DIGEST: false, CALENDAR_CREATE: false });
+    expect(await enabled()).toMatchObject({ CALENDAR_PHASE_OVERDUE: false, CALENDAR_DIGEST: false, CALENDAR_CREATE: false });
   });
 });
 

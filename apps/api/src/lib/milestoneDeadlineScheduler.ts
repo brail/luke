@@ -28,7 +28,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 const NOTICE_DEDUP_MS = 7 * DAY_MS;
 
-/** An overdue deadline is notified on days 0–2 after the day it is reached, and again on days 3–5. */
+/** Rows late on a phase are notified on days 0–2 after the deadline's day is reached, and again on days 3–5. */
 const OVERDUE_SECOND_STAGE = 3;
 const OVERDUE_DAYS = 2 * OVERDUE_SECOND_STAGE;
 
@@ -41,6 +41,8 @@ const PHASE_ROWS_LISTED = 10;
 export type DeadlineState =
   | { type: 'upcoming'; daysLeft: number; occurrence: string }
   | { type: 'overdue'; occurrence: string };
+type UpcomingState = Extract<DeadlineState, { type: 'upcoming' }>;
+type OverdueState = Extract<DeadlineState, { type: 'overdue' }>;
 
 /** A notice about one event, sent once per recipient and occurrence (`sendNotice`). */
 interface Notice {
@@ -53,15 +55,15 @@ interface Notice {
   occurrence: string;
 }
 
-/** An event of a calendar not archived, with something to notify (`deadlineState`). */
-interface DueEvent {
+/** An event of a calendar not archived, with something to notify in `state` (`deadlineState`). */
+interface DueEvent<S extends DeadlineState> {
   id: string;
   title: string;
   phaseId: string | null;
   calendar: { brandId: string; seasonId: string };
   /** Its calendar's "brand · season", for the message. */
   context: string;
-  state: DeadlineState;
+  state: S;
 }
 
 /**
@@ -90,15 +92,18 @@ export function deadlineState(
   return daysLeft < UPCOMING_LABELS.length ? { type: 'upcoming', daysLeft, occurrence: `upcoming:${due}:${daysLeft}` } : null;
 }
 
-/** The notice about event `e`'s own deadline in `state`. Pure. */
-export function milestoneNotice(e: { id: string; title: string; context: string }, state: DeadlineState): Notice {
-  const upcoming = state.type === 'upcoming';
+/**
+ * The notice that event `e`'s deadline is coming, in `state`. Pure. Nothing is sent about an event
+ * once its deadline has passed: an event has no completion state, so only the rows late on its
+ * phase are worth a notice (`phaseOverdueNotice`, #171).
+ */
+export function upcomingNotice(e: { id: string; title: string; context: string }, state: UpcomingState): Notice {
   return {
-    eventKey: upcoming ? 'CALENDAR_DEADLINE_UPCOMING' : 'CALENDAR_DEADLINE_OVERDUE',
-    title: upcoming ? 'Milestone in scadenza' : 'Milestone scaduta',
-    message: `"${e.title}" ${upcoming ? `scade ${UPCOMING_LABELS[state.daysLeft]}` : 'è scaduta senza essere completata'} · ${e.context}`,
+    eventKey: 'CALENDAR_DEADLINE_UPCOMING',
+    title: 'Milestone in scadenza',
+    message: `"${e.title}" scade ${UPCOMING_LABELS[state.daysLeft]} · ${e.context}`,
     link: calendarLink({ eventId: e.id }),
-    data: { milestoneId: e.id, type: `deadline_${state.type}` },
+    data: { milestoneId: e.id, type: 'deadline_upcoming' },
     occurrence: state.occurrence,
   };
 }
@@ -108,7 +113,7 @@ export function milestoneNotice(e: { id: string; title: string; context: string 
  * `state`: one per event, naming the first `PHASE_ROWS_LISTED` rows after the event and its
  * calendar, which a reader clamped to two lines still sees. Pure.
  */
-export function phaseOverdueNotice(e: { id: string; title: string; context: string }, lines: string[], state: DeadlineState): Notice {
+export function phaseOverdueNotice(e: { id: string; title: string; context: string }, lines: string[], state: OverdueState): Notice {
   const more = lines.length > PHASE_ROWS_LISTED ? ` e altre ${lines.length - PHASE_ROWS_LISTED}` : '';
   return {
     eventKey: 'CALENDAR_PHASE_OVERDUE',
@@ -139,7 +144,7 @@ async function sendNotice(prisma: PrismaClient, eventId: string, userIds: string
 /**
  * One phase-overdue notice per overdue event of `overdue`, naming the rows still at its phase —
  * `computeCriticalityForLayout`, the engine behind the Controllo dashboards, no new calculation —
- * on the occurrences of the event's own overdue notice; nothing for an event no row is late on.
+ * on the event's overdue occurrences (`deadlineState`); nothing for an event no row is late on.
  * Concluded rows are left out: they carry a frozen outcome instead of a countdown, and nagging
  * about a deadline on work someone already closed is noise.
  */
@@ -147,7 +152,7 @@ async function checkRowPhaseOverdue(
   prisma: PrismaClient,
   now: Date,
   alert: AlertContext,
-  overdue: DueEvent[],
+  overdue: DueEvent<OverdueState>[],
   audience: Map<string, string[]>,
 ): Promise<void> {
   if (overdue.length === 0) return;
@@ -217,16 +222,20 @@ export async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstan
     },
   });
 
-  const due = events.flatMap((e): DueEvent[] => {
+  const upcoming: DueEvent<UpcomingState>[] = [];
+  const overdue: DueEvent<OverdueState>[] = [];
+  for (const e of events) {
     const state = deadlineState(e, now, timeZone);
-    return state ? [{ ...e, context: brandSeasonLabel(e.calendar), state }] : [];
-  });
+    const due = { ...e, context: brandSeasonLabel(e.calendar) };
+    if (state?.type === 'upcoming') upcoming.push({ ...due, state });
+    // Past its deadline, only an event with a phase has something to say: the rows late on it.
+    else if (state && e.phaseId) overdue.push({ ...due, state });
+  }
   const notify = async () => {
-    const audience = await resolveEventAudience(due.map(e => e.id), prisma);
+    const audience = await resolveEventAudience([...upcoming, ...overdue].map(e => e.id), prisma);
     await Promise.all([
-      ...due.map(e => sendNotice(prisma, e.id, audience.get(e.id) ?? [], milestoneNotice(e, e.state))),
-      // Only an event with a phase can be the phase a row is at.
-      checkRowPhaseOverdue(prisma, now, alert, due.filter(e => e.state.type === 'overdue' && e.phaseId), audience),
+      ...upcoming.map(e => sendNotice(prisma, e.id, audience.get(e.id) ?? [], upcomingNotice(e, e.state))),
+      checkRowPhaseOverdue(prisma, now, alert, overdue, audience),
     ]);
   };
 

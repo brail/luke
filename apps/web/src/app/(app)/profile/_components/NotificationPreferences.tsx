@@ -29,7 +29,6 @@ const CALENDAR_EVENT_LABELS: Record<CalendarEventKey, string> = {
   CALENDAR_APPLY_TEMPLATE: 'Template applicato',
   CALENDAR_CLONE: 'Calendario clonato',
   CALENDAR_DEADLINE_UPCOMING: 'Evento in scadenza',
-  CALENDAR_DEADLINE_OVERDUE: 'Evento scaduto',
   CALENDAR_PHASE_OVERDUE: 'Righe in ritardo su una fase',
   CALENDAR_DIGEST: 'Recap email giornaliero',
 };

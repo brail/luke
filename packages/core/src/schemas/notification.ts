@@ -32,8 +32,8 @@ export const CALENDAR_CHANGE_KEYS = [
 ] as const;
 export type CalendarChangeKey = typeof CALENDAR_CHANGE_KEYS[number];
 
-/** Deadline notices: an event coming due, an event overdue, collection rows late on a phase. */
-export const CALENDAR_DEADLINE_KEYS = ['CALENDAR_DEADLINE_UPCOMING', 'CALENDAR_DEADLINE_OVERDUE', 'CALENDAR_PHASE_OVERDUE'] as const;
+/** Deadline notices: an event coming due, collection rows late on a phase. */
+export const CALENDAR_DEADLINE_KEYS = ['CALENDAR_DEADLINE_UPCOMING', 'CALENDAR_PHASE_OVERDUE'] as const;
 
 /** The daily calendar email digest. */
 export const CALENDAR_DIGEST_KEY = 'CALENDAR_DIGEST';

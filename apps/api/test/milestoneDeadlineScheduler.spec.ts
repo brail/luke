@@ -4,12 +4,12 @@
  *   an all-day deadline is due all its day and reached once the day has ended; "oggi/domani/tra 2
  *   giorni" count calendar days to the deadline's day; an overdue one is notified on days 0–2 after
  *   the day it is reached and once more on days 3–5, each stage one occurrence.
- * - `milestoneNotice` / `phaseOverdueNotice`: the kind each notice is muted by, and its text.
+ * - `upcomingNotice` / `phaseOverdueNotice`: the kind each notice is muted by, and its text.
  */
 
 import { describe, it, expect } from 'vitest';
 
-import { deadlineState, milestoneNotice, phaseOverdueNotice, type DeadlineState } from '../src/lib/milestoneDeadlineScheduler';
+import { deadlineState, phaseOverdueNotice, upcomingNotice } from '../src/lib/milestoneDeadlineScheduler';
 
 const ROME = 'Europe/Rome';
 // 2026-10-02 10:00 in Rome.
@@ -21,7 +21,7 @@ const allDay = (day: string, endDay?: string) => ({
   allDay: true,
 });
 const EVENT = { id: 'e1', title: 'Consegna', context: 'Brand · Stagione' };
-const OVERDUE: DeadlineState = { type: 'overdue', occurrence: 'overdue:2026-10-02:0' };
+const OVERDUE = { type: 'overdue' as const, occurrence: 'overdue:2026-10-02:0' };
 
 describe('deadlineState', () => {
   it.each([
@@ -68,27 +68,18 @@ describe('deadlineState', () => {
   });
 });
 
-describe('milestoneNotice', () => {
+describe('upcomingNotice', () => {
   it.each([
     [0, 'oggi'],
     [1, 'domani'],
     [2, 'tra 2 giorni'],
   ])('an upcoming deadline %i days away is muted as upcoming and says "%s"', (daysLeft, label) => {
-    expect(milestoneNotice(EVENT, { type: 'upcoming', daysLeft, occurrence: 'u' })).toMatchObject({
+    expect(upcomingNotice(EVENT, { type: 'upcoming', daysLeft, occurrence: 'u' })).toMatchObject({
       eventKey: 'CALENDAR_DEADLINE_UPCOMING',
       title: 'Milestone in scadenza',
       message: `"Consegna" scade ${label} · Brand · Stagione`,
-      occurrence: 'u',
-    });
-  });
-
-  it('an overdue deadline is muted as overdue, and links to its event', () => {
-    expect(milestoneNotice(EVENT, OVERDUE)).toMatchObject({
-      eventKey: 'CALENDAR_DEADLINE_OVERDUE',
-      title: 'Milestone scaduta',
-      message: '"Consegna" è scaduta senza essere completata · Brand · Stagione',
       link: '/calendar?event=e1',
-      occurrence: 'overdue:2026-10-02:0',
+      occurrence: 'u',
     });
   });
 });
@@ -101,7 +92,7 @@ describe('phaseOverdueNotice', () => {
       message: '"Linea A" non ha completato "Consegna" entro la scadenza · Brand · Stagione',
       link: '/product/collection-layout',
       data: { eventId: 'e1', type: 'phase_overdue' },
-      // Apart from the event's own overdue notice, on the same occurrences.
+      // The state's occurrence under its own prefix: the ledger keys written before #171 still match.
       occurrence: 'phase_overdue:2026-10-02:0',
     });
   });

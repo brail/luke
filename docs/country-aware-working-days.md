@@ -235,10 +235,11 @@ The calendar milestone notifications in `milestoneDeadlineScheduler.ts`
 (`deadlineState`) do not use the working-day count. They are measured on the
 deadline (`endAt ?? startAt`) in the business zone, for events of a calendar
 that is not `ARCHIVED`: `in scadenza` while it is not reached and its day is at most two
-calendar days away (`oggi`, `domani`, `tra 2 giorni`); `scaduta` once on days
-0–2 after the day it is reached and once more on days 3–5, then nothing. The
-row-phase-overdue notification follows the same two stages, one notice per
-event listing its late rows.
+calendar days away (`oggi`, `domani`, `tra 2 giorni`), and nothing about the
+event once it is reached, since an event has no completion state (#171). From
+then on only the row-phase-overdue notification is sent, once on days 0–2 after
+the day the deadline is reached and once more on days 3–5, then nothing, one
+notice per event listing its late rows.
 
 ## Holiday sources
 
@@ -357,7 +358,8 @@ The code differs from the design as first written in these points:
 - **Notifications.** Planned to stay in wall-clock windows on `startAt`, and did
   until 2026-09-28; they are now measured on the deadline in the business zone
   (see [Downstream effects](#downstream-effects)). The row-phase-overdue
-  notification reuses the criticality engine and fires on `reached`.
+  notification reuses the criticality engine and fires on `reached`. Since #171
+  no notice is sent about an event once its deadline has passed.
 - **Business time zone.** Until 2026-09-28 every date was read in the API
   process's zone, and an all-day deadline was reached at the start of its day
   (00:00 UTC). Counts now run on calendar dates in `app.defaultTimezone`, and an
