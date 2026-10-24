@@ -901,6 +901,21 @@ paths. Knowing the rule is not enough: never type `cd` at all — use absolute
 paths, `git -C <root>`, `pnpm -C <root>` or `--filter`, or a `( … )` subshell.
 A PreToolUse hook refusing a top-level `cd` would make it mechanical.
 
+### A stale Codex rate-limit snapshot is no budget evidence (2026-10-24)
+
+**What happened.** Before the 3.1.0 block P plan review I read the newest
+`rate_limits` snapshot under `~/.codex/sessions`: five days old, week at 38 %,
+no local Codex session since. I called the budget sufficient and launched the
+round; Codex stopped at once on its usage limit. The snapshot only records what
+this machine's sessions saw, never use made elsewhere, so "no session since"
+proved nothing.
+
+**Rule.** A snapshot counts only if it is younger than the 5-hour window
+(`primary.window_minutes`). Older, or with `rate_limits` empty: the budget is
+unknown — say so in the plan and, per CLAUDE.md "Collaboration with Codex",
+use an independent read-only Claude agent, or ask the owner whether to wait,
+when the owner asked for Codex by name.
+
 ---
 
 ## React & UI
