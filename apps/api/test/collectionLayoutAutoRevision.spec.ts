@@ -7,7 +7,9 @@
  * Mocked: `collectionLayoutRevision.service` — the actual snapshot (transaction, photo
  * copy, numbering) is its own behavior, already covered elsewhere; here we only test
  * *when* and *with which arguments* it's invoked. Prisma is an in-memory fake: the
- * queries are the input of the test, not what's being verified.
+ * queries are the input of the test, not what's being verified. The phase-completed trigger
+ * reads its calendar through `getCalendarEventsForLayout`, faked; it ranks the events with the
+ * alert engine's real functions.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -21,6 +23,7 @@ import {
   createRevisionsForReachedEvents,
 } from '../src/services/collectionLayoutAutoRevision.service';
 import { createRevision } from '../src/services/collectionLayoutRevision.service';
+import { getCalendarEventsForLayout } from '../src/services/phaseAlert.service';
 import { copyToImmutableBucket } from '../src/storage';
 
 vi.mock('../src/services/collectionLayoutRevision.service', () => ({
@@ -28,6 +31,14 @@ vi.mock('../src/services/collectionLayoutRevision.service', () => ({
 }));
 vi.mock('../src/storage', () => ({
   copyToImmutableBucket: vi.fn(async () => 'immutable-key'),
+}));
+vi.mock('../src/services/phaseAlert.service', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/services/phaseAlert.service')>()),
+  getCalendarEventsForLayout: vi.fn(async () => []),
+}));
+vi.mock('../src/lib/configManager', async importOriginal => ({
+  ...(await importOriginal<typeof import('../src/lib/configManager')>()),
+  getConfigOrDefault: vi.fn(async () => 'Europe/Rome'),
 }));
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
@@ -47,6 +58,7 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
     collectionLayout: { findMany: vi.fn(async () => opts.layouts ?? []) },
     collectionLayoutRevision: { findMany: vi.fn(async () => opts.existingRevisions ?? []) },
     collectionLayoutRow: { findMany: vi.fn(async () => opts.rows ?? []) },
+    planningGroup: { findUnique: vi.fn(async () => ({ name: 'Uomo FW26' })) },
     user: { findFirst: vi.fn(async () => (opts.admin === undefined ? { id: 'admin-1' } : opts.admin)) },
     auditLog: { create: vi.fn(async () => ({})) },
   } as any;
@@ -258,12 +270,34 @@ describe('createRevisionsForReachedEvents', () => {
   });
 });
 
+/** A live event of planning group `pg-1` (or `group`), all-day on `day`, on `phaseId` or none. */
+function groupEvent(id: string, title: string, phaseId: string | null, day: string, group = 'pg-1') {
+  return {
+    id, title, planningGroupId: group, phaseId, startAt: new Date(day), endAt: null, allDay: true,
+    phase: phaseId ? { value: phaseId.toUpperCase(), label: phaseId, isActive: true } : null,
+  };
+}
+
+/** The calendar the trigger reads: three phases of `pg-1` in deadline order, a meeting, another group. */
+function calendar(...extra: ReturnType<typeof groupEvent>[]) {
+  // Fakes carry only the fields the ranking and the trigger read; the engine's event type has more.
+  vi.mocked(getCalendarEventsForLayout).mockResolvedValue([
+    groupEvent('ev-1', 'Consegna prototipi', 'p1', '2026-07-01'),
+    groupEvent('ev-2', 'Campionario', 'p2', '2026-07-10'),
+    groupEvent('ev-3', 'Produzione', 'p3', '2026-07-20'),
+    groupEvent('ev-meeting', 'Riunione', null, '2026-06-01'),
+    groupEvent('ev-other', 'Altro gruppo', 'p1', '2026-06-15', 'pg-2'),
+    ...extra,
+  ] as never);
+}
+
+const snapshotted = () => vi.mocked(createRevision).mock.calls.map(([input]) => input.milestoneId);
+
 describe('createRevisionsForCompletedPhase', () => {
+  beforeEach(() => calendar());
+
   it('creates a MILESTONE_FASE revision when every row in the group has passed the phase', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 3 } }, { phase: { order: 4 } }],
-      events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
-    });
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p1' }, { phaseId: 'p2' }] });
 
     const created = await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger);
 
@@ -279,29 +313,30 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(input.notes).toContain('Uomo FW26');
   });
 
-  it('selects only events whose phase is at most the minimum one the group has reached', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 5 } }, { phase: { order: 2 } }, { phase: { order: 4 } }],
-      events: [],
-    });
+  it('snapshots every phase up to the lowest one the group has reached, in its calendar order', async () => {
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p3' }, { phaseId: 'p2' }, { phaseId: 'p3' }] });
 
     await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger);
 
-    expect(prisma.calendarEvent.findMany.mock.calls[0][0].where).toMatchObject({
-      planningGroupId: 'pg-1',
-      cancelledAt: null,
-      phase: { order: { lte: 2 } },
-    });
+    // Never the meeting (no phase) nor another group's event.
+    expect(snapshotted()).toEqual(['ev-1', 'ev-2']);
+  });
+
+  it('counts a row at a phase its group does not plan as just before the next one it does', async () => {
+    // `p1b` is planned by another group between p1 and p2: a row there has cleared p1, not p2.
+    calendar(groupEvent('ev-p1b', 'Altro', 'p1b', '2026-07-05', 'pg-2'));
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p1b' }, { phaseId: 'p3' }] });
+
+    await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger);
+
+    expect(snapshotted()).toEqual(['ev-1']);
   });
 
   it('creates nothing if even one row in the group has no phase', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 3 } }, { phase: null }],
-      events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
-    });
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p3' }, { phaseId: null }] });
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
-    expect(prisma.calendarEvent.findMany).not.toHaveBeenCalled();
+    expect(getCalendarEventsForLayout).not.toHaveBeenCalled();
     expect(createRevision).not.toHaveBeenCalled();
   });
 
@@ -313,21 +348,14 @@ describe('createRevisionsForCompletedPhase', () => {
   });
 
   it('does not recreate the revision if that event already has one of the same type', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 3 } }],
-      events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
-      existingRevisions: [{ milestoneId: 'ev-1' }],
-    });
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p1' }], existingRevisions: [{ milestoneId: 'ev-1' }] });
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
     expect(createRevision).not.toHaveBeenCalled();
   });
 
   it('never propagates an error — saving the row must not fail because of a revision', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 3 } }],
-      events: [{ id: 'ev-1', title: 'Consegna prototipi', planningGroup: { name: 'Uomo FW26' } }],
-    });
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p1' }] });
     vi.mocked(createRevision).mockRejectedValue(new Error('boom'));
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
@@ -335,13 +363,7 @@ describe('createRevisionsForCompletedPhase', () => {
   });
 
   it('a failure ends the call: every pending event would snapshot the same layout', async () => {
-    const prisma = buildFakePrisma({
-      rows: [{ phase: { order: 3 } }],
-      events: [
-        { id: 'ev-1', title: 'Primo', planningGroup: { name: 'Uomo FW26' } },
-        { id: 'ev-2', title: 'Secondo', planningGroup: { name: 'Uomo FW26' } },
-      ],
-    });
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'p2' }] });
     vi.mocked(createRevision).mockRejectedValueOnce(new Error('boom'));
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);

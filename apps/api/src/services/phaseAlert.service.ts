@@ -40,9 +40,23 @@ type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {
     // `label` is only needed by `getMissingPhasesForCompletion`, which must name the skipped
     // phases to the user: one extra column on a query already made, instead of a second read.
-    phase: { select: { order: true; value: true; label: true; isActive: true } };
+    phase: { select: { value: true; label: true; isActive: true } };
   };
 }>;
+
+/**
+ * A calendar event with its place in its planning group's phase order (`rankGroupEvents`): the
+ * index of its deadline among the group's phase events. A phase-less event has no place: `Infinity`,
+ * so it sorts last and never compares as reached or cleared.
+ */
+export type RankedEvent = CalendarEventWithContext & { rank: number };
+
+/** One planning group's events in phase order, and the rank a row's phase takes among them. */
+export interface RankedGroup {
+  events: RankedEvent[];
+  /** `-Infinity` for a row with no phase: before the first phase. */
+  rankOf(phaseId: string | null): number;
+}
 
 /** Built-in bands used when `collectionControl.alertThresholds` has not been configured yet. */
 const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
@@ -91,42 +105,94 @@ export async function getCalendarEventsForLayout(
     // and variance paths so the exclusion is centralized (not duplicated per caller).
     where: { calendarId: calendar.id, cancelledAt: null },
     include: {
-      phase: { select: { order: true, value: true, label: true, isActive: true } },
+      phase: { select: { value: true, label: true, isActive: true } },
     },
-    // Fetched pre-sorted by startAt: Array.prototype.sort is stable, so events sharing the
-    // same Phase.order below keep this chronological order as a secondary sort key.
+    // Phase-less events keep this order at the end of their group (`rankGroupEvents`).
     orderBy: { startAt: 'asc' },
   });
 }
 
 /**
- * Scopes a layout's events down to those applicable to one row, ordered by Phase.order.
- * Pure — no I/O — so it can run per row over an already-fetched events array.
- *
- * Resolution rule: an event applies to a row iff they share the same planningGroupId — planning
- * groups fully decouple event scope from row scope, no per-event anchor list needed.
+ * The phase order #159 derives from the calendar: phase events by the instant their deadline is
+ * reached in the business zone — an all-day deadline at the end of its day, so after a timed one
+ * that day —, then by start, then by the phase's immutable value and its id. A total order: ties
+ * never depend on fetch order or on a label someone edits.
  */
-export function filterApplicableEvents(events: CalendarEventWithContext[], planningGroupId: string): CalendarEventWithContext[] {
-  const applicable = events.filter(event => event.planningGroupId === planningGroupId);
-  return applicable.sort((a, b) => (a.phase?.order ?? Infinity) - (b.phase?.order ?? Infinity));
+function sortByDeadline<E extends CalendarEventWithContext>(events: E[], timeZone: string): E[] {
+  const reached = new Map(events.map(e => [e.id, deadlineReachedAt(e, timeZone).getTime()]));
+  return [...events].sort((a, b) =>
+    (reached.get(a.id) ?? 0) - (reached.get(b.id) ?? 0)
+    || a.startAt.getTime() - b.startAt.getTime()
+    || (a.phase?.value ?? '').localeCompare(b.phase?.value ?? '')
+    || (a.phaseId ?? '').localeCompare(b.phaseId ?? ''));
 }
 
 /**
- * Returns the calendar events that apply to a given collection row. Single-row convenience
- * wrapper — for a whole layout, call `getCalendarEventsForLayout` once and reuse it with
- * `filterApplicableEvents` per row instead of calling this in a loop.
+ * The season's phase order (owner decision 2026-10-24, #159): each phase by its earliest live
+ * event in any planning group of the calendar, in deadline order. A phase no group plans has no
+ * place in it. Pure — no I/O.
  *
- * @returns Empty array if the row's layout has no season calendar yet.
+ * @returns Phase id → its position in the season.
  */
-export async function getApplicableEventsForRow(rowId: string, prisma: PrismaClient): Promise<CalendarEventWithContext[]> {
+export function seasonPhaseRanks(events: CalendarEventWithContext[], timeZone: string): Map<string, number> {
+  const ranks = new Map<string, number>();
+  for (const event of sortByDeadline(events.filter(e => e.phaseId), timeZone)) {
+    if (event.phaseId && !ranks.has(event.phaseId)) ranks.set(event.phaseId, ranks.size);
+  }
+  return ranks;
+}
+
+/**
+ * Scopes a calendar's events down to one planning group, in its phase order (`sortByDeadline`),
+ * and places a row's phase in it. Pure — no I/O.
+ *
+ * An event applies to a row iff they share the same planningGroupId — planning groups fully
+ * decouple event scope from row scope, no per-event anchor list needed. A group holds at most one
+ * live event per phase (`calendar_events_group_phase_active_uq`), so a phase's rank is its event's.
+ *
+ * A row at a phase its group does not plan sits just before the group's first phase that comes
+ * after it in the season order (`seasonRanks`), so it is measured against that one — between two
+ * ranks, never on one: it is at none of the group's phases. A phase the season does not place
+ * comes after all of the group's: the row has nothing left to meet.
+ */
+export function rankGroupEvents(
+  events: CalendarEventWithContext[],
+  planningGroupId: string,
+  timeZone: string,
+  seasonRanks: Map<string, number>,
+): RankedGroup {
+  const mine = events.filter(event => event.planningGroupId === planningGroupId);
+  const phased = sortByDeadline(mine.filter(e => e.phaseId), timeZone).map((event, rank) => ({ ...event, rank }));
+  const rankByPhase = new Map(phased.map(event => [event.phaseId, event.rank]));
+  const seasonRank = (phaseId: string | null) => (phaseId ? seasonRanks.get(phaseId) : undefined) ?? Infinity;
+
+  return {
+    events: [...phased, ...mine.filter(e => !e.phaseId).map(event => ({ ...event, rank: Infinity }))],
+    rankOf(phaseId) {
+      if (!phaseId) return -Infinity;
+      const own = rankByPhase.get(phaseId);
+      if (own !== undefined) return own;
+      const next = phased.findIndex(event => seasonRank(event.phaseId) > seasonRank(phaseId));
+      return (next === -1 ? phased.length : next) - 0.5;
+    },
+  };
+}
+
+/**
+ * The planning group of a row, ranked (`rankGroupEvents`) over its season calendar. Single-row
+ * convenience — for a whole layout, call `getCalendarEventsForLayout` once and rank per group.
+ *
+ * @returns `null` if the row does not exist; a group with no events if its layout has no season calendar yet.
+ */
+export async function getApplicableEventsForRow(rowId: string, prisma: PrismaClient, timeZone: string): Promise<RankedGroup | null> {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
     select: { collectionLayoutId: true, planningGroupId: true },
   });
-  if (!row) return [];
+  if (!row) return null;
 
   const events = await getCalendarEventsForLayout(row.collectionLayoutId, prisma);
-  return filterApplicableEvents(events, row.planningGroupId);
+  return rankGroupEvents(events, row.planningGroupId, timeZone, seasonPhaseRanks(events, timeZone));
 }
 
 /**
@@ -361,7 +427,7 @@ export async function resolveHolidayOverlapsForGroup(planningGroupId: string, pr
 
 /** Outcome of resolving a row's active phase — distinguishes "nothing to alert on" from why. */
 export type ActivePhaseResult =
-  | { status: 'active'; event: CalendarEventWithContext }
+  | { status: 'active'; event: RankedEvent }
   /** Row already reached (or passed) every applicable phase — done, no alert needed. */
   | { status: 'completed' }
   /** The row's layout has no season calendar (or no applicable events) yet. */
@@ -372,13 +438,14 @@ export type ActivePhaseResult =
  * already-fetched, row-scoped events array. Pure — no I/O.
  *
  * A calendar event tagged with phase X means "X must be completed (the row must move past it) by
- * this date". So the active event is the first one whose phase order is >= the row's current
- * phase order (`>=`, not `>`): while the row sits *at* phase X, X's own deadline still applies —
- * it hasn't been completed yet, only reached. Once the row advances past X, that event stops
- * being relevant and the next one takes over.
+ * this date". So the active event is the first one whose rank is >= the row's (`>=`, not `>`):
+ * while the row sits *at* phase X, X's own deadline still applies — it hasn't been completed yet,
+ * only reached. Once the row advances past X, that event stops being relevant and the next one
+ * takes over. Ranks come from `rankGroupEvents`, which also places a row whose phase its group does
+ * not plan.
  *
- * A row with no phase yet (`currentOrder === null`) is treated as before the first phase — the
- * first applicable event becomes active, matching "row not yet arrived at the first phase".
+ * A row with no phase yet (rank `-Infinity`) is treated as before the first phase — the first
+ * applicable event becomes active, matching "row not yet arrived at the first phase".
  *
  * Events tied to a deactivated phase are skipped: `isActive: false` is a soft delete, and a retired
  * phase is out of the process — it must stop producing deadlines, not just disappear from pickers.
@@ -388,17 +455,16 @@ export type ActivePhaseResult =
  * banner, heatmap, bottleneck and overdue notifications. Safe because `phase.remove` refuses to
  * retire a phase while open rows or live milestones still reference it.
  */
-export function getActivePhaseFromEvents(rowEvents: CalendarEventWithContext[], currentOrder: number | null): ActivePhaseResult {
+export function getActivePhaseFromEvents(rowEvents: RankedEvent[], currentRank: number): ActivePhaseResult {
   if (rowEvents.length === 0) return { status: 'no-calendar' };
-  const order = currentOrder ?? -Infinity;
-  const event = rowEvents.find(e => e.phase?.isActive && e.phase.order >= order);
+  const event = rowEvents.find(e => e.phase?.isActive && e.rank >= currentRank);
   return event ? { status: 'active', event } : { status: 'completed' };
 }
 
 /**
  * Resolves the phase after the active one — the next milestone the row will be measured against
- * once it clears the active phase's deadline. Pure — no I/O — operates on the same row-scoped,
- * phase.order-sorted array `getActivePhaseFromEvents` consumes.
+ * once it clears the active phase's deadline. Pure — no I/O — operates on the same ranked group
+ * `getActivePhaseFromEvents` consumes.
  *
  * Skips events tied to a deactivated Phase (`phase.isActive === false`) — deactivating a phase
  * hides it from `phase.list` (the catalog the frontend resolves labels from), but doesn't retroactively
@@ -409,13 +475,12 @@ export function getActivePhaseFromEvents(rowEvents: CalendarEventWithContext[], 
  * `null` when there's no active phase to look past, the active phase is the last one applicable to
  * this row, or every later event is tied to a deactivated phase.
  */
-export function getNextPhaseFromEvents(rowEvents: CalendarEventWithContext[], active: ActivePhaseResult): CalendarEventWithContext | null {
-  if (active.status !== 'active') return null;
-  const activeOrder = active.event.phase?.order;
-  if (activeOrder === undefined) return null;
+export function getNextPhaseFromEvents(rowEvents: RankedEvent[], active: ActivePhaseResult): RankedEvent | null {
+  if (active.status !== 'active' || !active.event.phase) return null;
+  const activeRank = active.event.rank;
   const activeIndex = rowEvents.findIndex(e => e.id === active.event.id);
   if (activeIndex === -1) return null;
-  const next = rowEvents.slice(activeIndex + 1).find(e => e.phase && e.phase.order > activeOrder && e.phase.isActive);
+  const next = rowEvents.slice(activeIndex + 1).find(e => e.phase && e.rank > activeRank && e.phase.isActive);
   return next ?? null;
 }
 
@@ -423,21 +488,21 @@ export function getNextPhaseFromEvents(rowEvents: CalendarEventWithContext[], ac
  * The event a concluded row is measured against: the last applicable event tied to an *active*
  * phase. Deactivated phases are out of the process — `getNextPhaseFromEvents` already skips them —
  * so scoring a conclusion against a milestone of a retired phase would measure the row against work
- * that is no longer planned. Pure — no I/O — and relies on `filterApplicableEvents` having sorted
- * by `phase.order` (phase-less events land last, and are excluded here anyway).
+ * that is no longer planned. Pure — no I/O — and relies on `rankGroupEvents` having sorted the
+ * group in phase order (phase-less events land last, and are excluded here anyway).
  *
  * `null` when the row's planning group has no event tied to an active phase: nothing to compare a
  * completion date against, so the outcome carries no delta.
  */
-export function getCompletionDeadlineEvent(rowEvents: CalendarEventWithContext[]): CalendarEventWithContext | null {
+export function getCompletionDeadlineEvent(rowEvents: RankedEvent[]): RankedEvent | null {
   const withActivePhase = rowEvents.filter(e => e.phase?.isActive);
   return withActivePhase.length > 0 ? withActivePhase[withActivePhase.length - 1] : null;
 }
 
 /**
  * The phases the row hasn't gone through yet before it can be marked as completed: those of the
- * events applicable to its planning group, on an active phase, with `order` greater than the
- * current phase's. Same set that `getCompletionDeadlineEvent` walks to pick the outcome's
+ * events applicable to its planning group, on an active phase, ranked after the row's phase. Same
+ * set that `getCompletionDeadlineEvent` walks to pick the outcome's
  * deadline, so the rule stays a single one. Pure — no I/O.
  *
  * Completing a row that skips some of them isn't forbidden — it would be bypassable in two
@@ -446,19 +511,18 @@ export function getCompletionDeadlineEvent(rowEvents: CalendarEventWithContext[]
  *
  * Empty when the row is already at the last milestone, or when the group has no phase events:
  * with nothing to compare against, there's nothing to flag. Row with no phase
- * (`currentOrder === null`) → all of them are missing.
+ * (rank `-Infinity`) → all of them are missing.
  *
  * @returns Distinct phases, in traversal order (multiple events on the same phase count once).
  */
 export function getMissingPhasesForCompletion(
-  rowEvents: CalendarEventWithContext[],
-  currentOrder: number | null
+  rowEvents: RankedEvent[],
+  currentRank: number
 ): { value: string; label: string }[] {
-  const order = currentOrder ?? -Infinity;
   const byValue = new Map<string, { value: string; label: string }>();
 
   for (const event of rowEvents) {
-    if (!event.phase?.isActive || event.phase.order <= order) continue;
+    if (!event.phase?.isActive || event.rank <= currentRank) continue;
     if (!byValue.has(event.phase.value)) {
       byValue.set(event.phase.value, { value: event.phase.value, label: event.phase.label });
     }
@@ -475,14 +539,14 @@ export function getMissingPhasesForCompletion(
  * @returns Empty if the row doesn't exist — the caller is already handling the NOT_FOUND elsewhere.
  */
 export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaClient) {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-    select: { phase: { select: { order: true } } },
-  });
+  const [row, timeZone] = await Promise.all([
+    prisma.collectionLayoutRow.findUnique({ where: { id: rowId }, select: { phaseId: true } }),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
   if (!row) return [];
 
-  const events = await getApplicableEventsForRow(rowId, prisma);
-  return getMissingPhasesForCompletion(events, row.phase?.order ?? null);
+  const group = await getApplicableEventsForRow(rowId, prisma, timeZone);
+  return group ? getMissingPhasesForCompletion(group.events, group.rankOf(row.phaseId)) : [];
 }
 
 /**
@@ -624,13 +688,15 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
   const [row, alert] = await Promise.all([
     prisma.collectionLayoutRow.findUnique({
       where: { id: rowId },
-      select: { completedAt: true, phase: { select: { order: true } }, vendor: { select: { countryCode: true } } },
+      select: { completedAt: true, phaseId: true, vendor: { select: { countryCode: true } } },
     }),
     resolveAlertContext(prisma),
   ]);
   if (!row) return null;
 
-  const events = await getApplicableEventsForRow(rowId, prisma);
+  const group = await getApplicableEventsForRow(rowId, prisma, alert.timeZone);
+  if (!group) return null;
+  const { events } = group;
   const vendorCountryCode = row.vendor?.countryCode ?? null;
 
   // Only fetch company country + holidays when the events involved actually opted in — the common
@@ -648,7 +714,7 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
     return completionOutcome(rowId, row.completedAt, completionEvent, alert, vendorCountryCode, workingDaysCtx);
   }
 
-  const active = getActivePhaseFromEvents(events, row.phase?.order ?? null);
+  const active = getActivePhaseFromEvents(events, group.rankOf(row.phaseId));
   const nextEvent = getNextPhaseFromEvents(events, active);
   const workingDaysCtx = await workingDaysContextFor(active.status === 'active' ? active.event : null, nextEvent);
 
@@ -680,8 +746,7 @@ export async function computeCriticalityForLayout(
       // layout, and computing their outcome only to throw it away is the biggest work this path can avoid.
       where: { collectionLayoutId, ...(options?.activeOnly ? { completedAt: null } : {}) },
       select: {
-        id: true, planningGroupId: true, productCategory: true, completedAt: true,
-        phase: { select: { order: true } },
+        id: true, planningGroupId: true, productCategory: true, completedAt: true, phaseId: true,
         vendor: { select: { countryCode: true } },
       },
     }),
@@ -692,12 +757,13 @@ export async function computeCriticalityForLayout(
   // Applicable events depend only on the planning group, not on the row: filtering and
   // re-sorting them for each of the hundreds of rows in a layout is work multiplied for nothing —
   // and the heatmap multiplies it again for every brand of the season.
-  const eventsByPlanningGroup = new Map<string, CalendarEventWithContext[]>();
-  const applicableEvents = (planningGroupId: string) => {
-    let cached = eventsByPlanningGroup.get(planningGroupId);
+  const seasonRanks = seasonPhaseRanks(events, resolvedAlert.timeZone);
+  const groups = new Map<string, RankedGroup>();
+  const rankedGroup = (planningGroupId: string) => {
+    let cached = groups.get(planningGroupId);
     if (!cached) {
-      cached = filterApplicableEvents(events, planningGroupId);
-      eventsByPlanningGroup.set(planningGroupId, cached);
+      cached = rankGroupEvents(events, planningGroupId, resolvedAlert.timeZone, seasonRanks);
+      groups.set(planningGroupId, cached);
     }
     return cached;
   };
@@ -705,11 +771,12 @@ export async function computeCriticalityForLayout(
   // A completed row is no longer measured against the active phase, so it isn't even resolved:
   // on a layout with many closed rows that's half the per-row work saved.
   const resolved = rows.map(row => {
-    const rowEvents = applicableEvents(row.planningGroupId);
+    const group = rankedGroup(row.planningGroupId);
+    const rowEvents = group.events;
     if (row.completedAt) {
       return { row, completedAt: row.completedAt, completionEvent: getCompletionDeadlineEvent(rowEvents) } as const;
     }
-    const active = getActivePhaseFromEvents(rowEvents, row.phase?.order ?? null);
+    const active = getActivePhaseFromEvents(rowEvents, group.rankOf(row.phaseId));
     return { row, completedAt: null, active, nextEvent: getNextPhaseFromEvents(rowEvents, active) } as const;
   });
 
