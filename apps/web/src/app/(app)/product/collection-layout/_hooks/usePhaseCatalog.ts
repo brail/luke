@@ -3,7 +3,6 @@
 import { useMemo } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
-import { formatPhaseLabel } from '@luke/core';
 
 import { trpc } from '../../../../../lib/trpc';
 
@@ -32,7 +31,7 @@ export function usePhaseCatalog() {
   const phases = useMemo(() => allPhases.filter(p => p.isActive), [allPhases]);
 
   const phaseOptions = useMemo(
-    () => phases.map(p => ({ value: p.id, label: formatPhaseLabel(p.code, p.label) })),
+    () => phases.map(p => ({ value: p.id, label: p.label })),
     [phases]
   );
 

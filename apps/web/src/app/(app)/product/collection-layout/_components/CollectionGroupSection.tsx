@@ -19,7 +19,6 @@ import {
   COLLECTION_STATUS,
   COLLECTION_STRATEGY,
   formatMarginPct,
-  formatPhaseLabel,
 } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../../components/ConfirmDialog';
@@ -62,6 +61,7 @@ import {
   resolveVendorName,
 } from '../../_shared/pricingCalc';
 import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
+import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
 import { CriticalityBandBadge, formatCompletionTooltip, formatCriticalityTooltip } from './CriticalityBadge';
 
@@ -407,7 +407,8 @@ export function CollectionGroupSection({
   const [deleteRow, setDeleteRow] = useState<CollectionRowData | null>(null);
   const [deleteGroupConfirm, setDeleteGroupConfirm] = useState(false);
 
-  const { phaseById, phaseOptions } = usePhaseCatalog();
+  const { phaseById } = usePhaseCatalog();
+  const { rank: seasonRank, phaseOptions } = useSeasonPhaseOrder(group.collectionLayoutId);
 
   // Single batched fetch for the whole group's layout, instead of one query per row.
   const { data: criticalityList } = trpc.phaseAlert.criticalityForLayout.useQuery(
@@ -557,8 +558,9 @@ export function CollectionGroupSection({
           vb = computeRowMargin(b, parameterSets)?.margin ?? -Infinity;
         } else if (sortCol === 'progress') {
           // Column key stays 'progress' for saved user column-visibility prefs; underlying field is phaseId.
-          va = a.phaseId ? (phaseById.get(a.phaseId)?.order ?? -1) : -1;
-          vb = b.phaseId ? (phaseById.get(b.phaseId)?.order ?? -1) : -1;
+          // In season order (#159); a row with no phase first, as before.
+          va = a.phaseId ? seasonRank(a.phaseId) : -1;
+          vb = b.phaseId ? seasonRank(b.phaseId) : -1;
         } else {
           va = (a as Record<string, unknown>)[sortCol] as number | string ?? '';
           vb = (b as Record<string, unknown>)[sortCol] as number | string ?? '';
@@ -571,7 +573,7 @@ export function CollectionGroupSection({
     }
 
     return rows;
-  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, phaseById, isDndMode]);
+  }, [group.rows, localRowOrder, searchQuery, columnFilters, columnFilterOperators, sortCol, sortDir, parameterSets, seasonRank, isDndMode]);
 
   useEffect(() => {
     onFilteredRowIdsChange?.(filteredRows.map(r => r.id));
@@ -859,7 +861,7 @@ export function CollectionGroupSection({
                       {show('progress') && (
                         <TableCell>
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {rowPhase && <PhaseBadge label={formatPhaseLabel(rowPhase.code, rowPhase.label)} color={rowPhase.color} />}
+                            {rowPhase && <PhaseBadge label={rowPhase.label} color={rowPhase.color} />}
                             {(() => {
                               const criticality = criticalityByRowId.get(row.id);
                               if (!criticality) return null;

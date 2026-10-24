@@ -8,8 +8,8 @@
  * copy, numbering) is its own behavior, already covered elsewhere; here we only test
  * *when* and *with which arguments* it's invoked. Prisma is an in-memory fake: the
  * queries are the input of the test, not what's being verified. The phase-completed trigger
- * reads its calendar through `getCalendarEventsForLayout`, faked; it ranks the events with the
- * alert engine's real functions.
+ * reads its ranked group through `getRankedGroup`, faked over a fixed calendar but ranked by the
+ * alert engine's real `groupRanker`.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -23,7 +23,7 @@ import {
   createRevisionsForReachedEvents,
 } from '../src/services/collectionLayoutAutoRevision.service';
 import { createRevision } from '../src/services/collectionLayoutRevision.service';
-import { getCalendarEventsForLayout } from '../src/services/phaseAlert.service';
+import { getRankedGroup } from '../src/services/phaseAlert.service';
 import { copyToImmutableBucket } from '../src/storage';
 
 vi.mock('../src/services/collectionLayoutRevision.service', () => ({
@@ -32,14 +32,16 @@ vi.mock('../src/services/collectionLayoutRevision.service', () => ({
 vi.mock('../src/storage', () => ({
   copyToImmutableBucket: vi.fn(async () => 'immutable-key'),
 }));
-vi.mock('../src/services/phaseAlert.service', async importOriginal => ({
-  ...(await importOriginal<typeof import('../src/services/phaseAlert.service')>()),
-  getCalendarEventsForLayout: vi.fn(async () => []),
-}));
-vi.mock('../src/lib/configManager', async importOriginal => ({
-  ...(await importOriginal<typeof import('../src/lib/configManager')>()),
-  getConfigOrDefault: vi.fn(async () => 'Europe/Rome'),
-}));
+const fakeCalendar = vi.hoisted(() => ({ events: [] as unknown[] }));
+vi.mock('../src/services/phaseAlert.service', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/services/phaseAlert.service')>();
+  return {
+    ...actual,
+    // Fakes carry only the fields the ranking and the trigger read; the engine's event type has more.
+    getRankedGroup: vi.fn(async (_layoutId: string, planningGroupId: string) =>
+      actual.groupRanker(fakeCalendar.events as never, 'Europe/Rome')(planningGroupId)),
+  };
+});
 
 const NOW = new Date('2026-08-01T12:00:00.000Z');
 const ROME = 'Europe/Rome';
@@ -280,15 +282,14 @@ function groupEvent(id: string, title: string, phaseId: string | null, day: stri
 
 /** The calendar the trigger reads: three phases of `pg-1` in deadline order, a meeting, another group. */
 function calendar(...extra: ReturnType<typeof groupEvent>[]) {
-  // Fakes carry only the fields the ranking and the trigger read; the engine's event type has more.
-  vi.mocked(getCalendarEventsForLayout).mockResolvedValue([
+  fakeCalendar.events = [
     groupEvent('ev-1', 'Consegna prototipi', 'p1', '2026-07-01'),
     groupEvent('ev-2', 'Campionario', 'p2', '2026-07-10'),
     groupEvent('ev-3', 'Produzione', 'p3', '2026-07-20'),
     groupEvent('ev-meeting', 'Riunione', null, '2026-06-01'),
     groupEvent('ev-other', 'Altro gruppo', 'p1', '2026-06-15', 'pg-2'),
     ...extra,
-  ] as never);
+  ];
 }
 
 const snapshotted = () => vi.mocked(createRevision).mock.calls.map(([input]) => input.milestoneId);
@@ -332,11 +333,18 @@ describe('createRevisionsForCompletedPhase', () => {
     expect(snapshotted()).toEqual(['ev-1']);
   });
 
+  it('clears nothing for a row at a phase no group plans: its progress cannot be read', async () => {
+    const prisma = buildFakePrisma({ rows: [{ phaseId: 'unplanned' }, { phaseId: 'p3' }] });
+
+    expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
+    expect(createRevision).not.toHaveBeenCalled();
+  });
+
   it('creates nothing if even one row in the group has no phase', async () => {
     const prisma = buildFakePrisma({ rows: [{ phaseId: 'p3' }, { phaseId: null }] });
 
     expect(await createRevisionsForCompletedPhase(prisma, 'layout-1', 'pg-1', fakeLogger)).toBe(0);
-    expect(getCalendarEventsForLayout).not.toHaveBeenCalled();
+    expect(getRankedGroup).not.toHaveBeenCalled();
     expect(createRevision).not.toHaveBeenCalled();
   });
 

@@ -105,9 +105,9 @@ beforeAll(async () => {
   groupId = group.id;
 
   const [phase, retiredPhase, finalPhase] = await Promise.all([
-    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Active phase', order: 200, isActive: true } }),
-    prisma.phase.create({ data: { value: `CPHR_${uid}`, label: 'Fase ritirata', order: 201, isActive: false } }),
-    prisma.phase.create({ data: { value: `CPHF_${uid}`, label: 'Fase finale', order: 202, isActive: true } }),
+    prisma.phase.create({ data: { value: `CPH_${uid}`, label: 'Active phase', isActive: true } }),
+    prisma.phase.create({ data: { value: `CPHR_${uid}`, label: 'Fase ritirata', isActive: false } }),
+    prisma.phase.create({ data: { value: `CPHF_${uid}`, label: 'Fase finale', isActive: true } }),
   ]);
   phaseId = phase.id;
   finalPhaseValue = finalPhase.value;

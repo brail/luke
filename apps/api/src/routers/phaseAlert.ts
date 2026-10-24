@@ -21,6 +21,7 @@ import {
   computeCriticality,
   computeCriticalityForLayout,
   computeSaturationHeatmap,
+  computeSeasonPhaseOrder,
   resolveAlertThresholds,
   resolveMissingPhasesForRow,
 } from '../services/phaseAlert.service';
@@ -161,5 +162,21 @@ export const phaseAlertRouter = router({
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
       return computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma);
+    }),
+
+  /**
+   * The phases a layout's season calendar plans, in season order (#159): each phase by its earliest
+   * deadline in any planning group. Phase ids only — no event is named.
+   *
+   * @auth {collection_alert:read}
+   * @input {{ collectionLayoutId: string }}
+   * @output {string[]} — phase ids; phases no group plans are left out.
+   */
+  seasonPhaseOrder: protectedProcedure
+    .use(requirePermission('collection_alert:read'))
+    .input(z.object({ collectionLayoutId: z.uuid() }))
+    .query(async ({ input, ctx }) => {
+      await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
+      return computeSeasonPhaseOrder(input.collectionLayoutId, ctx.prisma);
     }),
 });

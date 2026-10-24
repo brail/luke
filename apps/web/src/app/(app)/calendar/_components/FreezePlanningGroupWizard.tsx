@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -48,13 +48,10 @@ function overlapReasonLabel(entry: { reason: 'weekend' | 'company' | 'vendor'; v
  * drift. Events added to the group after freeze simply never get a baseline (freeze is never
  * retroactively re-applied) — use "estendi freeze" (amendPlanningGroupFreeze) afterwards.
  *
- * Two independent checks before allowing the freeze:
- * - **Hard block**: any active Phase with no completion event in the group yet
- *   (`missingPhasesForGroup`) — freezing with uncovered phases would leave no way to ever baseline
- *   them.
- * - **Soft warning**: events whose deadline countdown depends on a calendar
- *   (`calendarDaysRelevance` COMPANY/VENDOR/BOTH) landing on a non-working day
- *   (`holidayOverlapsForGroup`) — informational only, the user can freeze anyway.
+ * A group plans only the phases it needs (#159), so nothing blocks the freeze. One soft warning:
+ * events whose deadline countdown depends on a calendar (`calendarDaysRelevance`
+ * COMPANY/VENDOR/BOTH) landing on a non-working day (`holidayOverlapsForGroup`) — informational
+ * only, the user can freeze anyway.
  *
  * @param milestones - The planning group's events, used for the summary list.
  * @param onFrozen - Called after the group is successfully frozen.
@@ -63,9 +60,6 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
   const [confirmOpen, setConfirmOpen] = useState(false);
   const utils = trpc.useUtils();
 
-  const { data: missingPhases } = trpc.seasonCalendar.missingPhasesForGroup.useQuery(
-    { planningGroupId }, { enabled: open }
-  );
   const { data: holidayOverlaps } = trpc.seasonCalendar.holidayOverlapsForGroup.useQuery(
     { planningGroupId }, { enabled: open }
   );
@@ -79,8 +73,6 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
     }
     return map;
   }, [holidayOverlaps]);
-
-  const hasMissingPhases = (missingPhases?.length ?? 0) > 0;
 
   const freezeMutation = trpc.seasonCalendar.freezePlanningGroup.useMutation({
     onSuccess: () => {
@@ -112,18 +104,6 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
               gruppo di pianificazione come baseline &quot;in teoria&quot;. Le date degli eventi restano modificabili dopo
               il congelamento — solo lo snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
             </p>
-
-            {hasMissingPhases && (
-              <div className="rounded-md bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive flex gap-2">
-                <ShieldAlert size={16} className="shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium">Fasi senza evento di completamento</p>
-                  <p className="text-xs mt-0.5">
-                    Aggiungi un evento per: {missingPhases!.map(p => p.label).join(', ')}.
-                  </p>
-                </div>
-              </div>
-            )}
 
             {overlapsByEvent.size > 0 && (
               <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex gap-2">
@@ -166,7 +146,7 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
             </Button>
             <Button
               onClick={() => setConfirmOpen(true)}
-              disabled={freezeMutation.isPending || milestones.length === 0 || hasMissingPhases}
+              disabled={freezeMutation.isPending || milestones.length === 0}
             >
               {freezeMutation.isPending ? 'Congelamento…' : 'Congela pianificazione'}
             </Button>

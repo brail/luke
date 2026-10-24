@@ -891,8 +891,8 @@ export async function reorderRows(
 }
 
 /**
- * Builds a map of Phase id → display label from the Phase catalog.
- * Labels are formatted as "CODE — label" when a code is present.
+ * Builds a map of Phase id → display label from the Phase catalog, retired phases included: an
+ * export still names the phase a concluded row stopped on.
  *
  * @returns Map keyed by Phase id.
  */
@@ -900,8 +900,8 @@ export async function buildProgressLabelMap(
   prisma: PrismaClient,
 ): Promise<Map<string, string>> {
   const items = await prisma.phase.findMany({
-    select: { id: true, code: true, label: true },
+    select: { id: true, label: true },
   });
-  return new Map(items.map(p => [p.id, p.code ? `${p.code} — ${p.label}` : p.label]));
+  return new Map(items.map(p => [p.id, p.label]));
 }
 

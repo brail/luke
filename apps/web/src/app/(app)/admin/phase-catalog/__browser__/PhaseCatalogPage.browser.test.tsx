@@ -23,7 +23,6 @@ vi.mock('../../../../../lib/trpc', () => ({
       update: { useMutation: mutation },
       remove: { useMutation: mutation },
       restore: { useMutation: mutation },
-      reorder: { useMutation: mutation },
     },
   },
 }));

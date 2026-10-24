@@ -1,13 +1,7 @@
 /**
- * Tests for the unified Phase catalog.
- *
- * The focus is the invariant introduced together with this suite: `code` (e.g. "01")
- * is no longer a free field passed by the client, but is always derived from `order`
- * (`codeForOrder` in `src/routers/phase.ts`) on `create`, `update` and `reorder`.
- * Before, `code` and `order` could diverge -- an admin could rename the
- * code without moving the row, leaving a visually misleading value
- * about the actual position. Here it is verified that the divergence is no longer
- * possible, not just that the CRUD operations work.
+ * Tests for the unified Phase catalog: CRUD, the catalog fields of #158, the alphabetical listing
+ * (#159: the catalog holds no order — a planning group orders its phases by their deadlines), and the
+ * guard on retiring a phase still in use.
  *
  * `phase_catalog:update` is admin-only by design (comment in
  * `packages/core/src/auth/permissions.ts`: "modification reserved to admin,
@@ -36,32 +30,12 @@ describe('Phase Router', () => {
 
   const caller = (ctx: Context) => appRouter.createCaller(ctx).phase;
 
-  describe('create — code derived from order', () => {
-    it('assigns code "01" to the first item and "02" to the next, without an explicit order', async () => {
-      const first = await caller(adminContext).create({
-        value: 'DESIGN',
-        label: 'Design',
-      });
-      expect(first.order).toBe(0);
-      expect(first.code).toBe('01');
+  describe('create', () => {
+    it('gives a phase no position: the catalog lists by label', async () => {
+      await caller(adminContext).create({ value: 'SOURCING', label: 'Sourcing' });
+      await caller(adminContext).create({ value: 'DESIGN', label: 'Design' });
 
-      const second = await caller(adminContext).create({
-        value: 'SOURCING',
-        label: 'Sourcing',
-      });
-      expect(second.order).toBe(1);
-      expect(second.code).toBe('02');
-    });
-
-    it('derives code from an explicit order passed to create', async () => {
-      const result = await caller(adminContext).create({
-        value: 'LAUNCH',
-        label: 'Lancio',
-        order: 5,
-      });
-
-      expect(result.order).toBe(5);
-      expect(result.code).toBe('06');
+      expect((await caller(adminContext).listAll()).map(p => p.label)).toEqual(['Design', 'Sourcing']);
     });
 
     it('rejects a duplicate value with CONFLICT', async () => {
@@ -73,38 +47,13 @@ describe('Phase Router', () => {
     });
   });
 
-  describe('update — code recomputed from order', () => {
-    it('an update without order leaves order and code unchanged', async () => {
-      const created = await caller(adminContext).create({
-        value: 'PROTO',
-        label: 'Prototipo',
-      });
-      expect(created.code).toBe('01');
+  describe('update', () => {
+    it('renames a phase, keeping its value', async () => {
+      const created = await caller(adminContext).create({ value: 'PROTO', label: 'Prototipo' });
 
-      const updated = await caller(adminContext).update({
-        id: created.id,
-        data: { label: 'Prototipo v2' },
-      });
+      const updated = await caller(adminContext).update({ id: created.id, data: { label: 'Prototipo v2' } });
 
-      expect(updated.label).toBe('Prototipo v2');
-      expect(updated.order).toBe(created.order);
-      expect(updated.code).toBe('01');
-    });
-
-    it('an update that changes order recomputes code accordingly', async () => {
-      const created = await caller(adminContext).create({
-        value: 'MOVE',
-        label: 'Da spostare',
-      });
-      expect(created.code).toBe('01');
-
-      const updated = await caller(adminContext).update({
-        id: created.id,
-        data: { order: 9 },
-      });
-
-      expect(updated.order).toBe(9);
-      expect(updated.code).toBe('10');
+      expect(updated).toMatchObject({ value: 'PROTO', label: 'Prototipo v2' });
     });
 
     it('NOT_FOUND for a nonexistent id', async () => {
@@ -154,26 +103,6 @@ describe('Phase Router', () => {
         // Cast: the input type admits palette keys only, and this is the value the server must refuse.
         caller(adminContext).create({ value: 'HEX', label: 'Hex', color: '#ff0000' as never })
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
-    });
-  });
-
-  describe('reorder — code always follows the new position', () => {
-    it('after a reorder every phase has code = position+1, however it was created', async () => {
-      const a = await caller(adminContext).create({ value: 'A', label: 'A' });
-      const b = await caller(adminContext).create({ value: 'B', label: 'B' });
-      const c = await caller(adminContext).create({ value: 'C', label: 'C' });
-      expect([a.code, b.code, c.code]).toEqual(['01', '02', '03']);
-
-      await caller(adminContext).reorder({ orderedIds: [c.id, a.id, b.id] });
-
-      const all = await adminContext.prisma.phase.findMany({
-        where: { id: { in: [a.id, b.id, c.id] } },
-      });
-      const byId = new Map(all.map(p => [p.id, p]));
-
-      expect(byId.get(c.id)).toMatchObject({ order: 0, code: '01' });
-      expect(byId.get(a.id)).toMatchObject({ order: 1, code: '02' });
-      expect(byId.get(b.id)).toMatchObject({ order: 2, code: '03' });
     });
   });
 
@@ -393,7 +322,7 @@ describe('Phase Router', () => {
       );
     });
 
-    it('editor and viewer denied on update and reorder; unauthenticated → UNAUTHORIZED', async () => {
+    it('editor and viewer denied on update; unauthenticated → UNAUTHORIZED', async () => {
       const created = await phaseAs('admin').create({
         value: 'RBAC_TARGET',
         label: 'Target',
@@ -401,7 +330,6 @@ describe('Phase Router', () => {
 
       const mutations: ((r: Role | null) => Promise<unknown>)[] = [
         r => phaseAs(r).update({ id: created.id, data: { label: 'y' } }),
-        r => phaseAs(r).reorder({ orderedIds: [created.id] }),
       ];
 
       // Every call is rejected by the permissions middleware before touching

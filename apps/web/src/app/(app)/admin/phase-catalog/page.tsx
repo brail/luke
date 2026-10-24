@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowDown, ArrowUp, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -45,8 +45,6 @@ type PhaseItem = {
   id: string;
   value: string;
   label: string;
-  code: string | null;
-  order: number;
   description: string | null;
   durationDays: number | null;
   color: string | null;
@@ -97,29 +95,14 @@ export default function PhaseCatalogPage() {
     onError: e => toast.error(getTrpcErrorMessage(e)),
   });
 
-  const reorderMutation = trpc.phase.reorder.useMutation({
-    onSuccess: () => invalidate(),
-    onError: e => toast.error(getTrpcErrorMessage(e)),
-  });
-
   const isMutating =
     createMutation.isPending || updateMutation.isPending || removeMutation.isPending;
-
-  const sortedItems = [...(items as PhaseItem[])].sort((a, b) => a.order - b.order);
-
-  const moveItem = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (target < 0 || target >= sortedItems.length) return;
-    const reordered = [...sortedItems];
-    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
-    reorderMutation.mutate({ orderedIds: reordered.map(i => i.id) });
-  };
 
   return (
     <>
       <PageHeader
         title="Catalogo Fasi"
-        description="Ordinamento unificato delle fasi di produzione/calendario, condiviso tra Collection Layout e Calendario"
+        description="Fasi di produzione e di calendario, condivise tra Collection Layout e Calendario. L'ordine viene dalle scadenze di ogni gruppo di pianificazione."
       />
 
       <div className="p-6">
@@ -138,7 +121,7 @@ export default function PhaseCatalogPage() {
         <div className="rounded-lg border bg-card">
           {isLoading ? (
             <div className="p-8 text-center text-sm text-muted-foreground">Caricamento…</div>
-          ) : sortedItems.length === 0 ? (
+          ) : items.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               Nessuna fase configurata. Aggiungi la prima.
             </div>
@@ -146,9 +129,7 @@ export default function PhaseCatalogPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="w-16 px-3 py-2" />
                   <th className="px-3 py-2 text-left font-medium">Valore (chiave)</th>
-                  <th className="px-3 py-2 text-left font-medium">Codice</th>
                   <th className="px-3 py-2 text-left font-medium">Fase</th>
                   <th className="px-3 py-2 text-left font-medium">Durata</th>
                   <th className="px-3 py-2 text-left font-medium">Stato</th>
@@ -156,44 +137,9 @@ export default function PhaseCatalogPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedItems.map((item, index) => (
+                {items.map(item => (
                   <tr key={item.id} className={cn('border-b last:border-0', !item.isActive && 'opacity-50')}>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-0.5">
-                        {/* One tooltip for the pair: same permission, same message. Per-button
-                            wrappers would put four identical tab stops on every row of the table.
-                            `cursor-not-allowed` belongs on the span, which is where the pointer
-                            actually lands — the buttons under it are `pointer-events-none`. */}
-                        <PermissionTooltip
-                          hasPermission={canWrite}
-                          tooltip="Non hai i permessi per modificare il catalogo fasi"
-                          className="items-center gap-0.5 cursor-not-allowed"
-                        >
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            disabled={!canWrite || index === 0 || reorderMutation.isPending}
-                            onClick={() => moveItem(index, -1)}
-                          >
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-6 w-6"
-                            disabled={
-                              !canWrite || index === sortedItems.length - 1 || reorderMutation.isPending
-                            }
-                            onClick={() => moveItem(index, 1)}
-                          >
-                            <ArrowDown className="h-3.5 w-3.5" />
-                          </Button>
-                        </PermissionTooltip>
-                      </div>
-                    </td>
                     <td className="px-3 py-2 font-mono text-xs">{item.value}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{item.code ?? '—'}</td>
                     <td className="px-3 py-2">
                       <PhaseBadge label={item.label} color={item.color} />
                       {item.description && (
@@ -208,7 +154,7 @@ export default function PhaseCatalogPage() {
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-1">
-                        {/* One tooltip for the whole actions cell — see the reorder arrows above. */}
+                        {/* One tooltip for the whole actions cell: same permission, same message, one tab stop. */}
                         <PermissionTooltip
                           hasPermission={canWrite}
                           tooltip="Non hai i permessi per modificare il catalogo fasi"
@@ -259,15 +205,6 @@ export default function PhaseCatalogPage() {
       {itemDialog && (
         <PhaseItemDialog
           state={itemDialog}
-          previewCode={
-            // In edit the server already has `code` aligned with `order`: no
-            // calculation fallback is needed. In create the element doesn't exist
-            // yet, so the final position (at end of list) must be
-            // anticipated client-side.
-            itemDialog.mode === 'create'
-              ? String(sortedItems.length + 1).padStart(2, '0')
-              : itemDialog.item.code
-          }
           onClose={() => setItemDialog(null)}
           onSubmit={(data) => {
             if (itemDialog.mode === 'create') {
@@ -334,13 +271,11 @@ type PhaseFormData = z.infer<typeof PhaseFormSchema>;
 
 function PhaseItemDialog({
   state,
-  previewCode,
   onClose,
   onSubmit,
   isLoading,
 }: {
   state: ItemDialogState;
-  previewCode: string | null;
   onClose: () => void;
   onSubmit: (data: DialogSubmitData) => void;
   isLoading: boolean;
@@ -359,8 +294,6 @@ function PhaseItemDialog({
       color: isPhaseColor(initial?.color) ? initial.color : NO_COLOR,
     },
   });
-
-  const label = form.watch('label');
 
   const handleSubmit = (data: PhaseFormData) => {
     onSubmit({
@@ -471,13 +404,6 @@ function PhaseItemDialog({
                   </FormItem>
                 )}
               />
-
-              <div className="space-y-1.5">
-                <Label>Codice</Label>
-                <p className="text-sm text-muted-foreground">
-                  Derivato automaticamente dalla posizione: &quot;{previewCode} — {label || 'Label'}&quot;
-                </p>
-              </div>
             </div>
 
             <DialogFooter>

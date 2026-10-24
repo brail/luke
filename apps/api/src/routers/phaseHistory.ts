@@ -53,7 +53,7 @@ export const phaseHistoryRouter = router({
 
       return ctx.prisma.collectionRowPhaseHistory.findMany({
         where: { rowId: input.rowId },
-        include: { phase: { select: { id: true, value: true, label: true, code: true, order: true } } },
+        include: { phase: { select: { id: true, value: true, label: true } } },
         orderBy: { reachedAt: 'asc' },
       });
     }),

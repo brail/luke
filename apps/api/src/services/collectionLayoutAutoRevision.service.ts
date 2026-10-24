@@ -27,11 +27,10 @@ import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt } from '@luke/core';
 import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
-import { getConfigOrDefault } from '../lib/configManager.js';
 import { copyToImmutableBucket } from '../storage/index.js';
 
 import { createRevision } from './collectionLayoutRevision.service.js';
-import { getCalendarEventsForLayout, rankGroupEvents, seasonPhaseRanks } from './phaseAlert.service.js';
+import { getRankedGroup } from './phaseAlert.service.js';
 
 
 /**
@@ -257,7 +256,7 @@ export async function createRevisionsForReachedEvents(
 /**
  * Snapshots the layout for every phase-linked event of `planningGroupId` whose phase the group has
  * fully cleared — i.e. every row in the group sits at a phase ranked at or after it in the group's
- * phase order (`rankGroupEvents`, the alert engine's). A single row without a phase means nothing
+ * phase order (`groupRanker`, the alert engine's). A single row without a phase means nothing
  * is complete yet.
  *
  * Called after a row phase transition. Never throws: a revision failure must not fail the row save.
@@ -279,12 +278,10 @@ export async function createRevisionsForCompletedPhase(
     });
     if (rows.length === 0 || rows.some(r => !r.phaseId)) return 0;
 
-    const [events, timeZone, planningGroup] = await Promise.all([
-      getCalendarEventsForLayout(collectionLayoutId, prisma),
-      getConfigOrDefault(prisma, 'app.defaultTimezone'),
+    const [group, planningGroup] = await Promise.all([
+      getRankedGroup(collectionLayoutId, planningGroupId, prisma),
       prisma.planningGroup.findUnique({ where: { id: planningGroupId }, select: { name: true } }),
     ]);
-    const group = rankGroupEvents(events, planningGroupId, timeZone, seasonPhaseRanks(events, timeZone));
     const lowest = Math.min(...rows.map(r => group.rankOf(r.phaseId)));
 
     // Phase-less events rank `Infinity`: never cleared.

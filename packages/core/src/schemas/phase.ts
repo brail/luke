@@ -22,14 +22,13 @@ export const PHASE_DURATION_DAYS_MAX = 365;
 export const PHASE_DESCRIPTION_MAX = 500;
 
 /**
- * Unified, ordered production/calendar phase catalog. Replaces the parallel
- * CollectionCatalogItem(type=progress) and CalendarCatalogItem(type=eventType) domains
- * so a row's production state and a calendar event's milestone are comparable on the same axis.
+ * Unified production/calendar phase catalog: a row's production state and a calendar event's
+ * milestone name the same phases. It holds no order — a planning group orders its phases by their
+ * events' deadlines (#159).
  */
 export const PhaseInputBaseSchema = z.object({
   value: z.string().min(1).max(100),
   label: z.string().min(1).max(200),
-  order: z.number().int().min(0).optional(),
   /** Free text; absent is null, never an empty string. */
   description: z.string().trim().min(1).max(PHASE_DESCRIPTION_MAX).nullable().optional(),
   /** How long the phase takes, in calendar days: added to the furthest phase item's offset to
@@ -40,8 +39,3 @@ export const PhaseInputBaseSchema = z.object({
 
 export const PhaseInputSchema = PhaseInputBaseSchema;
 export type PhaseInput = z.infer<typeof PhaseInputSchema>;
-
-/** Formats a Phase (or catalog item) for display: "CODE — Label" when a code is present, else just the label. */
-export function formatPhaseLabel(code: string | null | undefined, label: string): string {
-  return code ? `${code} — ${label}` : label;
-}

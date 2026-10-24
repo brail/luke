@@ -102,7 +102,7 @@ beforeAll(async () => {
   });
 
   const phase = await prisma.phase.create({
-    data: { value: `MPH_${fixture.uid}`, label: 'Fase milestone', order: 210, isActive: true },
+    data: { value: `MPH_${fixture.uid}`, label: 'Fase milestone', isActive: true },
   });
   phaseId = phase.id;
 });

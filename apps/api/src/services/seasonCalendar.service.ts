@@ -4,8 +4,6 @@ import pino from 'pino';
 import {
   addCalendarDays,
   calendarDateOf,
-  deadlineDay,
-  deadlineReachedAt,
   eventDeleteBlock,
   isEventDateLocked as isEventDateLockedCore,
   isInstantInRange,
@@ -127,31 +125,6 @@ export async function updateCalendarStatus(
 }
 
 /**
- * Active `Phase` rows with no non-cancelled, phase-tagged `CalendarEvent` in the given planning
- * group — i.e. phases with no completion event yet. Empty means the group is ready to freeze (or,
- * for an already-frozen group, that nothing new needs an `amendPlanningGroupFreeze`). Used by the
- * `missingPhasesForGroup` query so the freeze wizard can preview this before the user attempts to
- * freeze — `freezePlanningGroup` re-derives the same check itself, inline in its own transaction,
- * to fetch the covering events only once (it needs them again right after for the baseline snapshot).
- *
- * Accepts either the top-level client or a transaction client.
- */
-export async function resolveMissingPhasesForGroup(
-  planningGroupId: string,
-  prisma: PrismaClient | Prisma.TransactionClient
-) {
-  const [activePhases, coveredEvents] = await Promise.all([
-    prisma.phase.findMany({ where: { isActive: true }, select: { id: true, value: true, label: true }, orderBy: { order: 'asc' } }),
-    prisma.calendarEvent.findMany({
-      where: { planningGroupId, cancelledAt: null, phaseId: { not: null } },
-      select: { phaseId: true },
-    }),
-  ]);
-  const coveredPhaseIds = new Set(coveredEvents.map(e => e.phaseId));
-  return activePhases.filter(p => !coveredPhaseIds.has(p.id));
-}
-
-/**
  * Freezes a PlanningGroup's baseline: snapshots the current startAt/endAt of every event belonging
  * to it into baselineStartAt/baselineEndAt (written once, never updated afterwards), then sets
  * frozenAt. startAt/endAt remain freely editable after freeze — only the baseline snapshot is
@@ -161,8 +134,9 @@ export async function resolveMissingPhasesForGroup(
  * @throws {TRPCError} NOT_FOUND if the planning group does not exist.
  * @throws {TRPCError} CONFLICT if the group was already frozen (re-freeze is not supported — the
  *   baseline must reflect the plan "as it was" at first freeze, never a later re-snapshot).
- * @throws {TRPCError} PRECONDITION_FAILED if any active Phase has no completion event in the group
- *   yet — freezing with uncovered phases would leave no way to ever measure them against a baseline.
+ *
+ * A group plans only the phases it needs (#159): freezing does not ask for an event per phase of
+ * the catalog.
  */
 export async function freezePlanningGroup(planningGroupId: string, prisma: PrismaClient) {
   return prisma.$transaction(async tx => {
@@ -175,25 +149,10 @@ export async function freezePlanningGroup(planningGroupId: string, prisma: Prism
       throw new TRPCError({ code: 'CONFLICT', message: 'Gruppo di pianificazione già congelato' });
     }
 
-    // Fetched once with the extra fields resolveMissingPhasesForGroup would otherwise query for
-    // separately — one round trip instead of two inside a transaction that's holding row locks.
-    const [activePhases, events] = await Promise.all([
-      tx.phase.findMany({ where: { isActive: true }, select: { id: true, label: true }, orderBy: { order: 'asc' } }),
-      tx.calendarEvent.findMany({
-        where: { planningGroupId },
-        select: { id: true, startAt: true, endAt: true, phaseId: true, cancelledAt: true },
-      }),
-    ]);
-
-    const coveredPhaseIds = new Set(events.filter(e => !e.cancelledAt && e.phaseId).map(e => e.phaseId));
-    const missingPhases = activePhases.filter(p => !coveredPhaseIds.has(p.id));
-    if (missingPhases.length > 0) {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: `Fasi senza evento di completamento: ${missingPhases.map(p => p.label).join(', ')}`,
-      });
-    }
-
+    const events = await tx.calendarEvent.findMany({
+      where: { planningGroupId },
+      select: { id: true, startAt: true, endAt: true },
+    });
     await snapshotEventBaselines(tx, events);
 
     return tx.planningGroup.update({
@@ -464,46 +423,6 @@ export async function rescheduleMilestone(
   const next = { startAt: new Date(startAt), endAt: endAt ? new Date(endAt) : null, allDay: allDay ?? read.allDay };
   assertEventDates(next);
   return prisma.calendarEvent.update({ where: readDates(eventId, read), data: next }).catch(onStaleDates);
-}
-
-/**
- * Non-blocking sanity check: flags when a phase event's date is out of order relative to its sibling
- * phase events in the same planning group — an earlier phase scheduled after a later one, or vice
- * versa. Returns a human message or null. This is a soft warning surfaced on save (toast); it does
- * NOT block, and reintroduces no phase dependency graph (the what-if solver stays removed) — it only
- * compares `Phase.order` against the instants the deadlines are reached, so an all-day and a timed
- * deadline on the same day compare as the business zone reads them.
- */
-export async function detectPhaseOrderWarning(eventId: string, prisma: PrismaClient): Promise<string | null> {
-  const event = await prisma.calendarEvent.findUnique({
-    where: { id: eventId },
-    select: { planningGroupId: true, cancelledAt: true, startAt: true, endAt: true, allDay: true, phase: { select: { order: true, label: true } } },
-  });
-  if (!event || event.cancelledAt || !event.phase) return null;
-
-  const [siblings, timeZone] = await Promise.all([
-    prisma.calendarEvent.findMany({
-      where: { planningGroupId: event.planningGroupId, cancelledAt: null, phaseId: { not: null }, id: { not: eventId } },
-      select: { startAt: true, endAt: true, allDay: true, phase: { select: { order: true, label: true } } },
-    }),
-    getConfigOrDefault(prisma, 'app.defaultTimezone'),
-  ]);
-  // By the day each deadline falls on in the business zone, then by time when both have one: an
-  // all-day deadline covers its whole day, so it is not "after" a timed one on that same day.
-  const compare = (a: EventDates, b: EventDates) =>
-    deadlineDay(a, timeZone).localeCompare(deadlineDay(b, timeZone))
-    || (a.allDay || b.allDay ? 0 : deadlineReachedAt(a, timeZone).getTime() - deadlineReachedAt(b, timeZone).getTime());
-
-  for (const s of siblings) {
-    if (!s.phase) continue;
-    if (s.phase.order < event.phase.order && compare(s, event) > 0) {
-      return `Ordine fasi incoerente: la fase precedente «${s.phase.label}» è pianificata dopo «${event.phase.label}».`;
-    }
-    if (s.phase.order > event.phase.order && compare(s, event) < 0) {
-      return `Ordine fasi incoerente: la fase successiva «${s.phase.label}» è pianificata prima di «${event.phase.label}».`;
-    }
-  }
-  return null;
 }
 
 // ─── Milestone list ───────────────────────────────────────────────────────────

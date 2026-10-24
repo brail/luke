@@ -82,8 +82,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   seasonCalendar: {
     reason:
-      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), with revokeUserVisibility, upsertNote, deleteNote and getSyncStatus only on their brand-scope refusal, getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone/deleteMilestones by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
-    uncovered: 14,
+      'listMilestones, grantUserVisibility and listGrantCandidates by the visibility spec (brand scope + grant hardening + share picker), with revokeUserVisibility, upsertNote, deleteNote and getSyncStatus only on their brand-scope refusal, getOrCreate by the brand-scope one, createMilestone by the digest, rescheduleMilestone/cancelMilestone/updateMilestone/deleteMilestone/deleteMilestones by the lifecycle spec, createTemplate/updateTemplate by the core-schema spec, cloneFromBrandSeason by the event-dates spec, applyTemplate by the apply-template spec, freezePlanningGroup by the freeze spec; it is the largest domain in the app, and its coverage has to be built milestone by milestone, not in one go',
+    uncovered: 12,
   },
   integrations: {
     reason:
@@ -140,7 +140,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phase: {
     reason:
-      'list, listAll, create, update, reorder and remove covered by phase.integration.spec.ts (deriving code from order, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
+      'list, listAll, create, update and remove covered by phase.integration.spec.ts (the alphabetical catalog, the catalog fields, admin-only RBAC, the guard on phases still in use); restore remains, unchanged from the soft-delete pattern already used elsewhere',
     uncovered: 1,
   },
   collectionCatalog: {
@@ -149,7 +149,7 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phaseAlert: {
     reason:
-      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec; criticalityForLayout and the thresholds get/update pair remain uncovered',
+      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec, seasonPhaseOrder by its own spec (order and brand scope); criticalityForLayout and the thresholds get/update pair remain uncovered',
     uncovered: 3,
   },
   planningGroup: {

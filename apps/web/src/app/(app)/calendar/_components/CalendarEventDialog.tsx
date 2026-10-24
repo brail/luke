@@ -366,14 +366,13 @@ export function CalendarEventDialog({
   };
 
   const createMutation = trpc.seasonCalendar.createMilestone.useMutation({
-    onSuccess: data => { if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning); toast.success('Evento creato'); onSaved(); onClose(); },
+    onSuccess: () => { toast.success('Evento creato'); onSaved(); onClose(); },
     onError: err => toast.error(getTrpcErrorMessage(err)),
   });
 
   const utils = trpc.useUtils();
   const updateMutation = trpc.seasonCalendar.updateMilestone.useMutation({
-    onSuccess: (data, variables) => {
-      if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning);
+    onSuccess: (_data, variables) => {
       toast.success('Evento aggiornato');
       // The share picker leaves out who sees the event through its functions, which may have
       // changed: stale for the next opening, not refetched by the dialog that is closing.
@@ -418,8 +417,7 @@ export function CalendarEventDialog({
   });
 
   const rescheduleMutation = trpc.seasonCalendar.rescheduleMilestone.useMutation({
-    onSuccess: data => {
-      if (data.phaseOrderWarning) toast.warning(data.phaseOrderWarning);
+    onSuccess: () => {
       toast.success('Evento spostato');
       setRescheduleOpen(false);
       rescheduleForm.reset();

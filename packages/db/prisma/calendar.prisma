@@ -394,19 +394,21 @@ model GoogleEventMapping {
 
 // ─── Phase Catalog ──────────────────────────────────────────────────────────
 
-/// Unified, ordered production/calendar phase catalog. Replaces the parallel, non-comparable
-/// CollectionCatalogItem(type=progress) and CalendarCatalogItem(type=eventType) domains so a
-/// row's production state and a calendar event's milestone can be compared on the same axis.
+/// Unified production/calendar phase catalog: a row's production state and a calendar event's
+/// milestone name the same phases. It holds no order — a planning group orders its phases by their
+/// events' deadlines (#159).
 model Phase {
   id           String   @id @default(uuid())
   /// Immutable machine key. Used as the stored FK target.
   value        String   @unique
   /// Human-readable display label (editable without changing the value).
   label        String
-  /// User-visible short code (e.g. "01"), for compatibility with existing UI codes.
-  code         String?
-  /// Display order. Single source of truth for phase ordering (no hardcoded frontend constants).
-  order        Int      @default(0)
+  /// No longer read (#159): the phase order comes from the calendar (`rankGroupEvents`). Kept out
+  /// of the client until a later release drops the column, so the release that stops reading it
+  /// survives a rollback from that one.
+  code         String?  @ignore
+  /// No longer read (#159), as `code`: dropped by a later release.
+  order        Int      @default(0) @ignore
   /// What the phase covers, shown in the phase catalog.
   description  String?
   /// How long the phase takes, in calendar days (bounds in `PhaseInputBaseSchema`). Read only to

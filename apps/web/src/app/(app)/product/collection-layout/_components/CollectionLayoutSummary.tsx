@@ -10,7 +10,7 @@ import {
 } from '../../../../../components/ui/card';
 import { Progress } from '../../../../../components/ui/progress';
 import { groupRowsByVendor } from '../../_shared/pricingCalc';
-import { usePhaseCatalog } from '../_hooks/usePhaseCatalog';
+import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
@@ -26,13 +26,13 @@ interface CollectionLayoutSummaryProps {
  * Returns null when the layout has no rows.
  */
 export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps) {
-  const { phases } = usePhaseCatalog();
+  const { phases } = useSeasonPhaseOrder(layout.id);
   const allRows = layout.groups.flatMap(g => g.rows);
   if (allRows.length === 0) return null;
 
   const totalSku = allRows.reduce((sum, r) => sum + (r.skuForecast ?? 0), 0);
 
-  // ── By phase ──────────────────────────────────────────────────
+  // ── By phase, in season order (#159) ──────────────────────────
   const progressStats = [
     ...phases.map(phase => {
       const rows = allRows.filter(r => r.phaseId === phase.id);

@@ -8,7 +8,6 @@ import {
   calcMaxSupplierCost,
   classifyMargin,
   formatMarginPct,
-  formatPhaseLabel,
   priceMargin,
   type CollectionGender,
   type CollectionLayoutRowInput,
@@ -541,7 +540,7 @@ function PhaseSelectField({ control, canUpdate, mode, onRequestChange, rowId, is
               <div className="flex h-7 items-center justify-between gap-2 rounded-md border pl-3 pr-1">
                 <span className="flex min-w-0 items-center gap-1 text-xs">
                   <span className="shrink-0 text-muted-foreground">Fase corrente:</span>
-                  {current ? <PhaseBadge label={formatPhaseLabel(current.code, current.label)} color={current.color} /> : '—'}
+                  {current ? <PhaseBadge label={current.label} color={current.color} /> : '—'}
                 </span>
                 <LockableChangeButton
                   label="Cambia fase"

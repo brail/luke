@@ -55,7 +55,7 @@ beforeAll(async () => {
 
   // Timed deadlines an hour ago: reached today (yesterday just after midnight), stage 0 either way.
   const passedAt = new Date(NOW.getTime() - 60 * 60 * 1000);
-  const phase = await prisma.phase.create({ data: { value: `MDP_${uid}`, label: 'Sviluppo', order: 300, isActive: true } });
+  const phase = await prisma.phase.create({ data: { value: `MDP_${uid}`, label: 'Sviluppo', isActive: true } });
   const [event] = await Promise.all([
     prisma.calendarEvent.create({
       data: { calendarId: live.calendarId, planningGroupId: live.planningGroupId, title: `Sviluppo ${uid}`, startAt: passedAt, allDay: false, phaseId: phase.id },

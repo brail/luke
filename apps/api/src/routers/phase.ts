@@ -1,8 +1,7 @@
 /**
- * tRPC router for the unified Phase catalog.
- * Replaces the two parallel domains CollectionCatalogItem(type=progress) and
- * CalendarCatalogItem(type=eventType) with a single comparable ordering,
- * used both by the collection rows' production status and by the calendar.
+ * tRPC router for the unified Phase catalog, used both by the collection rows' production status
+ * and by the calendar. The catalog holds no order: a planning group's phases are ordered by their
+ * events' deadlines (#159, `groupRanker`), so the catalog lists alphabetically.
  */
 
 import { TRPCError } from '@trpc/server';
@@ -15,11 +14,6 @@ import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-
-/** Derives the display code from position: order 0 → "01", order 1 → "02", ... */
-function codeForOrder(order: number): string {
-  return String(order + 1).padStart(2, '0');
-}
 
 /** Open rows on a phase, already aggregated per layout: `{ brand/season code → count }`. */
 type OpenRowsByScope = { scope: string; count: number }[];
@@ -61,7 +55,7 @@ export const phaseRouter = router({
    *
    * @auth {phase_catalog:read}
    * @input {{ includeInactive?: boolean }} — optional, default: active only.
-   * @output {Phase[]} — sorted by order.
+   * @output {Phase[]} — by label, then id.
    */
   list: protectedProcedure
     .use(requirePermission('phase_catalog:read'))
@@ -69,7 +63,7 @@ export const phaseRouter = router({
     .query(async ({ input, ctx }) => {
       return ctx.prisma.phase.findMany({
         where: input?.includeInactive ? {} : { isActive: true },
-        orderBy: { order: 'asc' },
+        orderBy: [{ label: 'asc' }, { id: 'asc' }],
       });
     }),
 
@@ -78,13 +72,13 @@ export const phaseRouter = router({
    *
    * @auth {phase_catalog:update}
    * @input {none}
-   * @output {Phase[]} — all phases sorted by order.
+   * @output {Phase[]} — all phases, by label, then id.
    */
   listAll: protectedProcedure
     .use(requirePermission('phase_catalog:update'))
     .query(async ({ ctx }) => {
       return ctx.prisma.phase.findMany({
-        orderBy: { order: 'asc' },
+        orderBy: [{ label: 'asc' }, { id: 'asc' }],
       });
     }),
 
@@ -92,7 +86,7 @@ export const phaseRouter = router({
    * Creates a new phase.
    *
    * @auth {phase_catalog:update}
-   * @input {PhaseInputSchema} — value (unique), label, optional order, description, durationDays and color. `code` is derived from order, not client-settable.
+   * @input {PhaseInputSchema} — value (unique), label, optional description, durationDays and color.
    * @output {Phase} — the newly created phase.
    */
   create: protectedProcedure
@@ -110,11 +104,6 @@ export const phaseRouter = router({
         });
       }
 
-      const maxOrder = await ctx.prisma.phase.aggregate({
-        _max: { order: true },
-      });
-      const order = input.order ?? (maxOrder._max.order ?? -1) + 1;
-
       const result = await ctx.prisma.phase.create({
         data: {
           value: input.value,
@@ -122,8 +111,6 @@ export const phaseRouter = router({
           description: input.description,
           durationDays: input.durationDays,
           color: input.color,
-          code: codeForOrder(order),
-          order,
         },
       });
 
@@ -139,7 +126,7 @@ export const phaseRouter = router({
     }),
 
   /**
-   * Updates mutable fields of a phase (label, order, description, durationDays, color). `code` is re-derived from order automatically.
+   * Updates mutable fields of a phase (label, description, durationDays, color).
    *
    * @auth {phase_catalog:update}
    * @input {{ id: string, data: Partial<PhaseInputBaseSchema without value> }}
@@ -160,11 +147,9 @@ export const phaseRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Fase non trovata' });
       }
 
-      const order = input.data.order ?? item.order;
-
       const result = await ctx.prisma.phase.update({
         where: { id: input.id },
-        data: { ...input.data, code: codeForOrder(order) },
+        data: input.data,
       });
 
       // The edit dialog sends every field: only those whose value differs were changed. Cast:
@@ -176,7 +161,7 @@ export const phaseRouter = router({
         targetType: 'Phase',
         targetId: input.id,
         result: 'SUCCESS',
-        metadata: { label: result.label, value: result.value, code: result.code, changedFields },
+        metadata: { label: result.label, value: result.value, changedFields },
       });
 
       return result;
@@ -287,38 +272,6 @@ export const phaseRouter = router({
         targetId: input.id,
         result: 'SUCCESS',
         metadata: { value: item.value },
-      });
-
-      return { success: true };
-    }),
-
-  /**
-   * Reorders phases by assigning new position indices.
-   *
-   * @auth {phase_catalog:update}
-   * @input {{ orderedIds: string[] }} — full ordered array of UUIDs.
-   * @output {{ success: true }}
-   */
-  reorder: protectedProcedure
-    .use(requirePermission('phase_catalog:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({ orderedIds: z.array(z.uuid()) }))
-    .mutation(async ({ input, ctx }) => {
-      await ctx.prisma.$transaction(
-        input.orderedIds.map((id, index) =>
-          ctx.prisma.phase.update({
-            where: { id },
-            data: { order: index, code: codeForOrder(index) },
-          })
-        )
-      );
-
-      await logAudit(ctx, {
-        action: 'PHASE_CATALOG_REORDER',
-        targetType: 'Phase',
-        targetId: 'phase_catalog',
-        result: 'SUCCESS',
-        metadata: { count: input.orderedIds.length },
       });
 
       return { success: true };

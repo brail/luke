@@ -23,7 +23,7 @@ import {
   completionOutcome,
   byEventStartDay,
   criticalityFromActivePhase,
-  rankGroupEvents,
+  groupRanker,
   seasonPhaseRanks,
   type ActivePhaseResult,
 } from '../src/services/phaseAlert.service';
@@ -376,8 +376,8 @@ function calendarEvent(id: string, group: string, phase: string | null, deadline
 const ROME = 'Europe/Rome';
 const titles = (events: { title: string }[]) => events.map(e => e.title);
 
-describe('rankGroupEvents', () => {
-  const rank = (events: ReturnType<typeof calendarEvent>[], group: string) => rankGroupEvents(events, group, ROME, seasonPhaseRanks(events, ROME));
+describe('groupRanker', () => {
+  const rank = (events: ReturnType<typeof calendarEvent>[], group: string) => groupRanker(events, ROME)(group);
 
   it('keeps its own group, its phase events by deadline and its phase-less events last', () => {
     const events = [
@@ -453,12 +453,12 @@ describe('rankGroupEvents', () => {
     expect(getMissingPhasesForCompletion(group.events, group.rankOf('sviluppo')).map(p => p.label)).toEqual(['campioni']);
   });
 
-  it('puts a phase no group plans after all of the group\'s: the row has nothing left to meet', () => {
-    // A stated change from the catalog order, which could place such a phase mid-process (#159).
+  it('treats a phase no group plans as no phase: measured against the first deadline, never done', () => {
+    // Owner decision 2026-10-24: noisy rather than silent — such a row is usually still early.
     const group = rank([calendarEvent('p1', 'a', 'disegno', '2031-01-15'), calendarEvent('p2', 'a', 'prototipo', '2031-02-01')], 'a');
 
-    expect(group.rankOf('unplanned')).toBe(1.5);
-    expect(getActivePhaseFromEvents(group.events, group.rankOf('unplanned'))).toEqual({ status: 'completed' });
+    expect(group.rankOf('unplanned')).toBe(-Infinity);
+    expect(getActivePhaseFromEvents(group.events, group.rankOf('unplanned'))).toMatchObject({ event: { title: 'Event p1' } });
   });
 });
 

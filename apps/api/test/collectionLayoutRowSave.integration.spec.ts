@@ -70,8 +70,8 @@ beforeAll(async () => {
   groupId = group.id;
 
   const [phase1, phase2] = await Promise.all([
-    prisma.phase.create({ data: { value: `PH1_${uid}`, label: 'Fase 1', order: 100, isActive: true } }),
-    prisma.phase.create({ data: { value: `PH2_${uid}`, label: 'Fase 2', order: 101, isActive: true } }),
+    prisma.phase.create({ data: { value: `PH1_${uid}`, label: 'Fase 1', isActive: true } }),
+    prisma.phase.create({ data: { value: `PH2_${uid}`, label: 'Fase 2', isActive: true } }),
   ]);
   phase1Id = phase1.id;
   phase2Id = phase2.id;

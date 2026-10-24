@@ -20,7 +20,7 @@ Authenticated group `(app)/`:
 - `/admin/vendors` — internal vendor registry
 - `/admin/calendar-configuration` — seasonal milestone calendar templates and template items
 - `/admin/collection-layout-configuration` — collection catalog: configurable options for the collection layout
-- `/admin/phase-catalog` — unified phase catalog, the production/calendar phase ordering shared by collection layout and calendar
+- `/admin/phase-catalog` — unified phase catalog shared by collection layout and calendar (description, duration, colour); the phase order comes from each planning group's deadlines
 - `/calendar` — seasonal calendar with month, Gantt, week, day and list views, planning-group freeze and Google Calendar sync
 - `/product/collection-layout` — collection plan (groups and rows, quotations, drag-and-drop ordering)
 - `/product/collection-layout/revisions` — revision history, ISO 9001:2015 quality record

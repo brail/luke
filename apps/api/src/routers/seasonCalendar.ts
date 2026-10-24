@@ -72,7 +72,6 @@ import {
   getOrCreateCalendar,
   updateCalendarStatus,
   freezePlanningGroup,
-  resolveMissingPhasesForGroup,
   unfreezePlanningGroup,
   amendPlanningGroupFreeze,
   listMilestonesDb,
@@ -83,7 +82,6 @@ import {
   rescheduleMilestone,
   datesFromExpected,
   isEventDateLocked,
-  detectPhaseOrderWarning,
   upsertNote,
   deleteNote,
   listTemplates,
@@ -98,15 +96,6 @@ import {
   getSyncStatus,
 } from '../services/seasonCalendar.service.js';
 
-
-/**
- * Appends the non-blocking phase-order sanity check to a create/update/reschedule result, running it
- * alongside the mutation's audit log write (independent reads/writes, no ordering dependency between them).
- */
-async function withPhaseOrderWarning<T extends { id: string }>(result: T, prisma: PrismaClient, auditLog: Promise<void>) {
-  const [, phaseOrderWarning] = await Promise.all([auditLog, detectPhaseOrderWarning(result.id, prisma)]);
-  return { ...result, phaseOrderWarning };
-}
 
 export const seasonCalendarRouter = router({
   // ─── Calendar management ────────────────────────────────────────────────────
@@ -214,23 +203,6 @@ export const seasonCalendarRouter = router({
       await logAudit(ctx, { action: 'PLANNING_GROUP_FREEZE_AMENDED', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { amendedCount: result.amendedCount } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       return result;
-    }),
-
-  /**
-   * Active phases with no completion event in the group yet — empty means the group is ready to
-   * freeze. Same check `freezePlanningGroup` enforces server-side; exposed here so the wizard can
-   * show it (and disable the button) before the user attempts to freeze.
-   *
-   * @auth season_calendar:read
-   * @input { planningGroupId }
-   * @output { id, value, label }[]
-   */
-  missingPhasesForGroup: protectedProcedure
-    .use(requirePermission('season_calendar:read'))
-    .input(z.object({ planningGroupId: z.uuid() }))
-    .query(async ({ input, ctx }) => {
-      await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
-      return resolveMissingPhasesForGroup(input.planningGroupId, ctx.prisma);
     }),
 
   /**
@@ -350,7 +322,8 @@ export const seasonCalendarRouter = router({
         eventKey: 'CALENDAR_CREATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on create'));
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
-      return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, title: result.title } }));
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, title: result.title } });
+      return result;
     }),
 
   /**
@@ -426,7 +399,7 @@ export const seasonCalendarRouter = router({
         eventKey: 'CALENDAR_UPDATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on update'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on update'));
-      return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
+      await logAudit(ctx, {
         action: 'CALENDAR_EVENT_UPDATE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS',
         // Conditional values, not conditional keys — a spread hides the key names from
         // `AuditMetadata`. `undefined` is dropped by the sanitizer, so the row is unchanged.
@@ -442,7 +415,8 @@ export const seasonCalendarRouter = router({
           oldAllDay: event.allDay !== result.allDay ? event.allDay : undefined,
           changedFields: changedFields.length > 0 ? changedFields : undefined,
         },
-      }));
+      });
+      return result;
     }),
 
   /**
@@ -478,7 +452,7 @@ export const seasonCalendarRouter = router({
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on reschedule'));
       syncOneMilestone(input.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on reschedule'));
       const allDayChanged = event.allDay !== result.allDay;
-      return withPhaseOrderWarning(result, ctx.prisma, logAudit(ctx, {
+      await logAudit(ctx, {
         action: 'CALENDAR_EVENT_RESCHEDULE', targetType: 'CalendarEvent', targetId: input.id, result: 'SUCCESS',
         metadata: {
           title: result.title, calendarId: event.calendarId, reason: input.reason,
@@ -487,7 +461,8 @@ export const seasonCalendarRouter = router({
           oldAllDay: allDayChanged ? event.allDay : undefined,
           newAllDay: allDayChanged ? result.allDay : undefined,
         },
-      }));
+      });
+      return result;
     }),
 
   /**

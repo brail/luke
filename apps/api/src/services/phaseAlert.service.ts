@@ -45,7 +45,7 @@ type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
 }>;
 
 /**
- * A calendar event with its place in its planning group's phase order (`rankGroupEvents`): the
+ * A calendar event with its place in its planning group's phase order (`groupRanker`): the
  * index of its deadline among the group's phase events. A phase-less event has no place: `Infinity`,
  * so it sorts last and never compares as reached or cleared.
  */
@@ -78,7 +78,7 @@ const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
 
 /**
  * Returns every calendar event for the season calendar backing a collection layout (unfiltered by
- * planning group — use `filterApplicableEvents` to scope down to a specific row's group). Fetched
+ * planning group — `groupRanker` scopes it to one group and ranks it). Fetched
  * once per layout so batch callers avoid re-resolving the same calendar/events per row.
  *
  * @returns Empty array if the layout has no season calendar yet.
@@ -107,7 +107,7 @@ export async function getCalendarEventsForLayout(
     include: {
       phase: { select: { value: true, label: true, isActive: true } },
     },
-    // Phase-less events keep this order at the end of their group (`rankGroupEvents`).
+    // Phase-less events keep this order at the end of their group (`groupRanker`).
     orderBy: { startAt: 'asc' },
   });
 }
@@ -143,56 +143,88 @@ export function seasonPhaseRanks(events: CalendarEventWithContext[], timeZone: s
 }
 
 /**
- * Scopes a calendar's events down to one planning group, in its phase order (`sortByDeadline`),
- * and places a row's phase in it. Pure — no I/O.
+ * Ranks a calendar's planning groups (#159): each group's events in its phase order
+ * (`sortByDeadline`), and a row's phase placed in it. The season order (`seasonPhaseRanks`) is
+ * computed once and each group ranked once, so one ranker serves every row of a layout. Pure — no
+ * I/O.
  *
  * An event applies to a row iff they share the same planningGroupId — planning groups fully
  * decouple event scope from row scope, no per-event anchor list needed. A group holds at most one
  * live event per phase (`calendar_events_group_phase_active_uq`), so a phase's rank is its event's.
  *
  * A row at a phase its group does not plan sits just before the group's first phase that comes
- * after it in the season order (`seasonRanks`), so it is measured against that one — between two
- * ranks, never on one: it is at none of the group's phases. A phase the season does not place
- * comes after all of the group's: the row has nothing left to meet.
+ * after it in the season order, so it is measured against that one — between two ranks, never on
+ * one: it is at none of the group's phases. A phase no group of the season plans has no place to
+ * read: the row counts as one with no phase, before the first (owner decision 2026-10-24) —
+ * measured against the group's first deadline rather than silently done, and never clearing a
+ * phase for the phase-completed snapshot.
  */
-export function rankGroupEvents(
-  events: CalendarEventWithContext[],
-  planningGroupId: string,
-  timeZone: string,
-  seasonRanks: Map<string, number>,
-): RankedGroup {
-  const mine = events.filter(event => event.planningGroupId === planningGroupId);
-  const phased = sortByDeadline(mine.filter(e => e.phaseId), timeZone).map((event, rank) => ({ ...event, rank }));
-  const rankByPhase = new Map(phased.map(event => [event.phaseId, event.rank]));
-  const seasonRank = (phaseId: string | null) => (phaseId ? seasonRanks.get(phaseId) : undefined) ?? Infinity;
+export function groupRanker(events: CalendarEventWithContext[], timeZone: string): (planningGroupId: string) => RankedGroup {
+  const seasonRanks = seasonPhaseRanks(events, timeZone);
+  const groups = new Map<string, RankedGroup>();
 
-  return {
-    events: [...phased, ...mine.filter(e => !e.phaseId).map(event => ({ ...event, rank: Infinity }))],
-    rankOf(phaseId) {
-      if (!phaseId) return -Infinity;
-      const own = rankByPhase.get(phaseId);
-      if (own !== undefined) return own;
-      const next = phased.findIndex(event => seasonRank(event.phaseId) > seasonRank(phaseId));
-      return (next === -1 ? phased.length : next) - 0.5;
-    },
+  const rankGroup = (planningGroupId: string): RankedGroup => {
+    const mine = events.filter(event => event.planningGroupId === planningGroupId);
+    const phased = sortByDeadline(mine.filter(e => e.phaseId), timeZone)
+      .map((event, rank) => ({ ...event, rank, seasonRank: seasonRanks.get(event.phaseId ?? '') ?? Infinity }));
+    const rankByPhase = new Map(phased.map(event => [event.phaseId, event.rank]));
+
+    return {
+      events: [...phased, ...mine.filter(e => !e.phaseId).map(event => ({ ...event, rank: Infinity }))],
+      rankOf(phaseId) {
+        const seasonRank = phaseId ? seasonRanks.get(phaseId) : undefined;
+        if (seasonRank === undefined) return -Infinity;
+        const own = rankByPhase.get(phaseId);
+        if (own !== undefined) return own;
+        const next = phased.findIndex(event => event.seasonRank > seasonRank);
+        return (next === -1 ? phased.length : next) - 0.5;
+      },
+    };
+  };
+
+  return planningGroupId => {
+    let group = groups.get(planningGroupId);
+    if (!group) {
+      group = rankGroup(planningGroupId);
+      groups.set(planningGroupId, group);
+    }
+    return group;
   };
 }
 
 /**
- * The planning group of a row, ranked (`rankGroupEvents`) over its season calendar. Single-row
- * convenience — for a whole layout, call `getCalendarEventsForLayout` once and rank per group.
+ * One planning group of a layout's season calendar, ranked (`groupRanker`). Single-group
+ * convenience — for a whole layout, fetch the events once and keep one ranker.
  *
- * @returns `null` if the row does not exist; a group with no events if its layout has no season calendar yet.
+ * @param timeZone - The business zone, when the caller already holds it.
+ * @returns A group with no events if the layout has no season calendar yet.
  */
-export async function getApplicableEventsForRow(rowId: string, prisma: PrismaClient, timeZone: string): Promise<RankedGroup | null> {
-  const row = await prisma.collectionLayoutRow.findUnique({
-    where: { id: rowId },
-    select: { collectionLayoutId: true, planningGroupId: true },
-  });
-  if (!row) return null;
+export async function getRankedGroup(
+  collectionLayoutId: string,
+  planningGroupId: string,
+  prisma: PrismaClient,
+  timeZone?: string,
+): Promise<RankedGroup> {
+  const [events, zone] = await Promise.all([
+    getCalendarEventsForLayout(collectionLayoutId, prisma),
+    timeZone ?? getConfigOrDefault(prisma, 'app.defaultTimezone'),
+  ]);
+  return groupRanker(events, zone)(planningGroupId);
+}
 
-  const events = await getCalendarEventsForLayout(row.collectionLayoutId, prisma);
-  return rankGroupEvents(events, row.planningGroupId, timeZone, seasonPhaseRanks(events, timeZone));
+/**
+ * A layout's phases in season order, for the views that span its planning groups — the phase
+ * column sort, the per-phase summary, the phase filter: the phases its calendar plans, by their
+ * earliest deadline (`seasonPhaseRanks`), then the other active phases by label and id.
+ */
+export async function computeSeasonPhaseOrder(collectionLayoutId: string, prisma: PrismaClient): Promise<string[]> {
+  const [events, timeZone, active] = await Promise.all([
+    getCalendarEventsForLayout(collectionLayoutId, prisma),
+    getConfigOrDefault(prisma, 'app.defaultTimezone'),
+    prisma.phase.findMany({ where: { isActive: true }, select: { id: true }, orderBy: [{ label: 'asc' }, { id: 'asc' }] }),
+  ]);
+  const planned = [...seasonPhaseRanks(events, timeZone).keys()];
+  return [...planned, ...active.map(p => p.id).filter(id => !planned.includes(id))];
 }
 
 /**
@@ -441,7 +473,7 @@ export type ActivePhaseResult =
  * this date". So the active event is the first one whose rank is >= the row's (`>=`, not `>`):
  * while the row sits *at* phase X, X's own deadline still applies — it hasn't been completed yet,
  * only reached. Once the row advances past X, that event stops being relevant and the next one
- * takes over. Ranks come from `rankGroupEvents`, which also places a row whose phase its group does
+ * takes over. Ranks come from `groupRanker`, which also places a row whose phase its group does
  * not plan.
  *
  * A row with no phase yet (rank `-Infinity`) is treated as before the first phase — the first
@@ -488,7 +520,7 @@ export function getNextPhaseFromEvents(rowEvents: RankedEvent[], active: ActiveP
  * The event a concluded row is measured against: the last applicable event tied to an *active*
  * phase. Deactivated phases are out of the process — `getNextPhaseFromEvents` already skips them —
  * so scoring a conclusion against a milestone of a retired phase would measure the row against work
- * that is no longer planned. Pure — no I/O — and relies on `rankGroupEvents` having sorted the
+ * that is no longer planned. Pure — no I/O — and relies on `groupRanker` having sorted the
  * group in phase order (phase-less events land last, and are excluded here anyway).
  *
  * `null` when the row's planning group has no event tied to an active phase: nothing to compare a
@@ -539,14 +571,14 @@ export function getMissingPhasesForCompletion(
  * @returns Empty if the row doesn't exist — the caller is already handling the NOT_FOUND elsewhere.
  */
 export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaClient) {
-  const [row, timeZone] = await Promise.all([
-    prisma.collectionLayoutRow.findUnique({ where: { id: rowId }, select: { phaseId: true } }),
-    getConfigOrDefault(prisma, 'app.defaultTimezone'),
-  ]);
+  const row = await prisma.collectionLayoutRow.findUnique({
+    where: { id: rowId },
+    select: { collectionLayoutId: true, planningGroupId: true, phaseId: true },
+  });
   if (!row) return [];
 
-  const group = await getApplicableEventsForRow(rowId, prisma, timeZone);
-  return group ? getMissingPhasesForCompletion(group.events, group.rankOf(row.phaseId)) : [];
+  const group = await getRankedGroup(row.collectionLayoutId, row.planningGroupId, prisma);
+  return getMissingPhasesForCompletion(group.events, group.rankOf(row.phaseId));
 }
 
 /**
@@ -688,14 +720,16 @@ export async function computeCriticality(rowId: string, now: Date, prisma: Prism
   const [row, alert] = await Promise.all([
     prisma.collectionLayoutRow.findUnique({
       where: { id: rowId },
-      select: { completedAt: true, phaseId: true, vendor: { select: { countryCode: true } } },
+      select: {
+        collectionLayoutId: true, planningGroupId: true, completedAt: true, phaseId: true,
+        vendor: { select: { countryCode: true } },
+      },
     }),
     resolveAlertContext(prisma),
   ]);
   if (!row) return null;
 
-  const group = await getApplicableEventsForRow(rowId, prisma, alert.timeZone);
-  if (!group) return null;
+  const group = await getRankedGroup(row.collectionLayoutId, row.planningGroupId, prisma, alert.timeZone);
   const { events } = group;
   const vendorCountryCode = row.vendor?.countryCode ?? null;
 
@@ -754,19 +788,9 @@ export async function computeCriticalityForLayout(
     alert ? Promise.resolve(alert) : resolveAlertContext(prisma),
   ]);
 
-  // Applicable events depend only on the planning group, not on the row: filtering and
-  // re-sorting them for each of the hundreds of rows in a layout is work multiplied for nothing —
-  // and the heatmap multiplies it again for every brand of the season.
-  const seasonRanks = seasonPhaseRanks(events, resolvedAlert.timeZone);
-  const groups = new Map<string, RankedGroup>();
-  const rankedGroup = (planningGroupId: string) => {
-    let cached = groups.get(planningGroupId);
-    if (!cached) {
-      cached = rankGroupEvents(events, planningGroupId, resolvedAlert.timeZone, seasonRanks);
-      groups.set(planningGroupId, cached);
-    }
-    return cached;
-  };
+  // Applicable events depend only on the planning group, not on the row: the ranker ranks each
+  // group once for the hundreds of rows in a layout — which the heatmap multiplies by every brand.
+  const rankedGroup = groupRanker(events, resolvedAlert.timeZone);
 
   // A completed row is no longer measured against the active phase, so it isn't even resolved:
   // on a layout with many closed rows that's half the per-row work saved.
