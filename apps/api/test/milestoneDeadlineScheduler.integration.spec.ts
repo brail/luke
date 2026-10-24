@@ -1,9 +1,8 @@
 /**
  * `checkDeadlines` against the database — what the pure rules (`milestoneDeadlineScheduler.spec.ts`)
  * cannot show: a past event sends nothing of its own, only the rows late on its phase, as one notice
- * per event (#171); a calendar notifies until it is archived; a user who muted a kind stays out of
- * the dedup ledger, so unmuting it brings the occurrence still running; each overdue stage is sent
- * once, then nothing.
+ * per event (#171); a user who muted a kind stays out of the dedup ledger, so unmuting it brings
+ * the occurrence still running; each overdue stage is sent once, then nothing.
  */
 
 import { randomUUID } from 'crypto';
@@ -39,16 +38,13 @@ async function noticesAbout(id: string, title: string) {
 
 beforeAll(async () => {
   prisma = await setupTestDb();
-  // `live` stays DRAFT, the status every calendar has in practice.
-  let archived: CalendarFixture;
-  [live, archived] = await Promise.all([createCalendarFixture(prisma, { prefix: 'MDL' }), createCalendarFixture(prisma, { prefix: 'MDX' })]);
-  await prisma.seasonCalendar.update({ where: { id: archived.calendarId }, data: { status: 'ARCHIVED' } });
+  live = await createCalendarFixture(prisma, { prefix: 'MDL' });
   const completedGroup = await prisma.planningGroup.create({ data: { calendarId: live.calendarId, name: `MDL Completed ${uid}` } });
 
   const [user, muted] = await Promise.all([createTestUser('editor'), createTestUser('editor')]);
   userId = user.user.id;
   mutedId = muted.user.id;
-  await grantBrandAccess(prisma, { brandIds: [live.brandId, archived.brandId], userIds: [userId, mutedId], label: 'Deadline' });
+  await grantBrandAccess(prisma, { brandIds: [live.brandId], userIds: [userId, mutedId], label: 'Deadline' });
   await prisma.notificationPreference.create({
     data: { userId: mutedId, category: 'CALENDAR', eventKey: 'CALENDAR_PHASE_OVERDUE', enabled: false },
   });
@@ -71,10 +67,6 @@ beforeAll(async () => {
     // Coming due tomorrow: the one notice an event still sends of its own.
     prisma.calendarEvent.create({
       data: { calendarId: live.calendarId, planningGroupId: live.planningGroupId, title: `Consegna ${uid}`, startAt: new Date(NOW.getTime() + DAY_MS), allDay: false },
-    }),
-    // Coming due tomorrow on an archived calendar: notified anywhere else.
-    prisma.calendarEvent.create({
-      data: { calendarId: archived.calendarId, planningGroupId: archived.planningGroupId, title: `Archiviato ${uid}`, startAt: new Date(NOW.getTime() + DAY_MS), allDay: false },
     }),
   ]);
   eventId = event.id;
@@ -112,7 +104,7 @@ describe('checkDeadlines', () => {
     ]);
   });
 
-  it('still announces a deadline coming due, from a calendar until it is archived', async () => {
+  it('still announces a deadline coming due', async () => {
     // "domani", or "tra 2 giorni" when NOW + 24 h crosses the short day of a DST change: either is upcoming.
     expect((await noticesOf(userId)).filter(n => n.title === 'Milestone in scadenza')).toEqual([
       { title: 'Milestone in scadenza', message: expect.stringMatching(new RegExp(`^"Consegna ${uid}" scade `)) },

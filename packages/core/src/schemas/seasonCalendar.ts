@@ -45,10 +45,6 @@ export const NagerHolidaysSchema = z.array(z.object({
 
 // ─── Const arrays ─────────────────────────────────────────────────────────────
 
-/** Lifecycle statuses for a season calendar. `ARCHIVED` calendars are read-only. */
-export const SEASON_CALENDAR_STATUS = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
-export type SeasonCalendarStatus = (typeof SEASON_CALENDAR_STATUS)[number];
-
 /**
  * Which holiday calendar(s) count toward an event's working-days deadline countdown. Unset means
  * the countdown stays in plain calendar days (default, opt-in only). See

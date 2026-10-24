@@ -55,7 +55,7 @@ interface Notice {
   occurrence: string;
 }
 
-/** An event of a calendar not archived, with something to notify in `state` (`deadlineState`). */
+/** An event with something to notify in `state` (`deadlineState`). */
 interface DueEvent<S extends DeadlineState> {
   id: string;
   title: string;
@@ -194,9 +194,7 @@ async function checkRowPhaseOverdue(
 }
 
 /**
- * One tick: the deadline notices of calendars not archived — an archived calendar is over; a draft
- * one is live in practice, nothing in the app moves a calendar to ACTIVE — and the layout
- * auto-revisions. Exported for its integration test.
+ * One tick: the deadline notices and the layout auto-revisions. Exported for its integration test.
  */
 export async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstance['log'], now = new Date()): Promise<void> {
   const alert = await resolveAlertContext(prisma);
@@ -210,7 +208,6 @@ export async function checkDeadlines(prisma: PrismaClient, logger: FastifyInstan
   const events = await prisma.calendarEvent.findMany({
     where: {
       cancelledAt: null,
-      calendar: { status: { not: 'ARCHIVED' } },
       OR: [
         { endAt: { gte: storedFrom, lte: storedTo } },
         { endAt: null, startAt: { gte: storedFrom, lte: storedTo } },

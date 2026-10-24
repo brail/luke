@@ -15,7 +15,6 @@ import {
   type CalendarEventInput,
   type CloneSeasonCalendarInput,
   type EventDatesExpected,
-  type SeasonCalendarStatus,
 } from '@luke/core';
 import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db';
 
@@ -109,17 +108,6 @@ export async function getOrCreateCalendar(
 
     return calendar;
   });
-}
-
-/**
- * Updates the status of a SeasonCalendar (DRAFT | ACTIVE | ARCHIVED).
- */
-export async function updateCalendarStatus(
-  calendarId: string,
-  status: SeasonCalendarStatus,
-  prisma: PrismaClient
-) {
-  return prisma.seasonCalendar.update({ where: { id: calendarId }, data: { status } });
 }
 
 /**

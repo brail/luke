@@ -1,8 +1,8 @@
 /**
  * tRPC router for season calendar management.
  *
- * Covers the full lifecycle of a seasonal planning calendar:
- *  - Calendar CRUD: getOrCreate, updateStatus
+ * Covers a seasonal planning calendar:
+ *  - Calendar: getOrCreate
  *  - Milestones: listMilestones, createMilestone, updateMilestone, deleteMilestone(s),
  *                cancelMilestone, uncancelMilestone (admin-only)
  *  - Personal notes: upsertNote, deleteNote
@@ -34,13 +34,11 @@ import {
   MilestoneRescheduleInputSchema,
   MilestoneTemplateInputSchema,
   MilestoneTemplateItemBaseSchema,
-  SEASON_CALENDAR_STATUS,
   partialWithoutDefaults,
   CalendarLinkTargetSchema,
   calendarLink,
   type Role,
 } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
@@ -70,7 +68,6 @@ import {
 import { resolveHolidayOverlapsForGroup } from '../services/phaseAlert.service.js';
 import {
   getOrCreateCalendar,
-  updateCalendarStatus,
   freezePlanningGroup,
   unfreezePlanningGroup,
   amendPlanningGroupFreeze,
@@ -116,30 +113,6 @@ export const seasonCalendarRouter = router({
     .query(async ({ input, ctx }) => {
       await assertBrandAccess(ctx, input.brandId);
       return getOrCreateCalendar(input.brandId, input.seasonId, ctx.prisma);
-    }),
-
-  /**
-   * Updates the status of a season calendar (e.g. DRAFT → ACTIVE → ARCHIVED).
-   *
-   * @auth season_calendar:update
-   * @input { calendarId, status }
-   * @output Updated SeasonCalendar
-   */
-  updateStatus: protectedProcedure
-    .use(requirePermission('season_calendar:update'))
-    .use(withRateLimit('configMutations'))
-    .input(z.object({
-      calendarId: z.uuid(),
-      status: z.enum(SEASON_CALENDAR_STATUS),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      await resolveCalendarBrandAccess(ctx, input.calendarId);
-      const result = await ctx.prisma.$transaction(async tx => {
-        const txClient = tx as unknown as PrismaClient;
-        return updateCalendarStatus(input.calendarId, input.status, txClient);
-      });
-      await logAudit(ctx, { action: 'SEASON_CALENDAR_STATUS_UPDATE', targetType: 'SeasonCalendar', targetId: input.calendarId, result: 'SUCCESS', metadata: { status: input.status } });
-      return result;
     }),
 
   /**

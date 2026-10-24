@@ -41,7 +41,8 @@ model MilestoneTemplateItemVisibility {
 
 // ─── Season Calendar ──────────────────────────────────────────────────────────
 
-/// Season calendar lifecycle status: DRAFT (setup in progress) | ACTIVE (live, visible to all) | ARCHIVED (read-only).
+/// Former season calendar lifecycle status. Unused since #127 (nothing ever moved a calendar out of
+/// DRAFT); kept, with its column, only until a later migration drops both.
 enum SeasonCalendarStatus {
   DRAFT
   ACTIVE
@@ -73,8 +74,9 @@ model SeasonCalendar {
   brandId   String
   /// FK to Season. Restrict delete.
   seasonId  String
-  /// Lifecycle status: DRAFT → ACTIVE → ARCHIVED.
-  status    SeasonCalendarStatus @default(DRAFT)
+  /// Unused since #127: ignored by the client, so no code reads or writes it; new rows take the
+  /// column default. Dropped with its enum in a later migration.
+  status    SeasonCalendarStatus @default(DRAFT) @ignore
   createdAt DateTime             @default(now())
   updatedAt DateTime             @updatedAt
 

@@ -233,13 +233,12 @@ which does not depend on the count.
 
 The calendar milestone notifications in `milestoneDeadlineScheduler.ts`
 (`deadlineState`) do not use the working-day count. They are measured on the
-deadline (`endAt ?? startAt`) in the business zone, for events of a calendar
-that is not `ARCHIVED`: `in scadenza` while it is not reached and its day is at most two
-calendar days away (`oggi`, `domani`, `tra 2 giorni`), and nothing about the
-event once it is reached, since an event has no completion state (#171). From
-then on only the row-phase-overdue notification is sent, once on days 0–2 after
-the day the deadline is reached and once more on days 3–5, then nothing, one
-notice per event listing its late rows.
+deadline (`endAt ?? startAt`) in the business zone: `in scadenza` while it is
+not reached and its day is at most two calendar days away (`oggi`, `domani`,
+`tra 2 giorni`), and nothing about the event once it is reached, since an event
+has no completion state (#171). From then on only the row-phase-overdue
+notification is sent, once on days 0–2 after the day the deadline is reached and
+once more on days 3–5, then nothing, one notice per event listing its late rows.
 
 ## Holiday sources
 
