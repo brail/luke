@@ -1,5 +1,6 @@
 /**
- * tRPC procedure coverage gate, hooked into vitest's lifecycle.
+ * tRPC procedure coverage gate, hooked into vitest's lifecycle (composed with the worker
+ * databases in `globalSetup.integration.ts`).
  *
  * Lives **inside** `pnpm test:integration` and not as a separate CI step: a
  * step can be forgotten when adding one; a `globalSetup` can't.

@@ -357,14 +357,21 @@ to today.
 
 ### 7.3 Shared, non-partitionable resources
 
-There's only one test database: fixed port `5434`, fixed name, and isolation
-between tests is a `TRUNCATE` of every table. Two integration runs in
-parallel wipe each other's fixtures, and the failure looks like a product
-bug. `fileParallelism: false` serializes inside one vitest process, not
-across processes.
+There's only one test database server: fixed port `5434`. An integration run
+migrates the `luke_test` template and clones one database per vitest worker
+from it (`luke_test_w1…`), so its files run in parallel without wiping each
+other; isolation between tests is a `TRUNCATE` of every table of the worker's
+database. A second run would replace those databases mid-run: the run takes an
+advisory lock on the server and a concurrent one stops at once with "Another
+integration run is using this test database server".
 
-- Before launching integration tests: if `pgrep -f vitest` finds someone
-  else's run, wait or skip the step — and say so in the output.
+- That refusal means someone else's run is in progress: wait or skip the step,
+  and report it as SKIPPED, not FAIL. A watch-mode or IDE session holds the
+  lock until it quits. A run from a worktree on a branch older
+  than the lock (before 3.1.0) takes no lock and is not refused: check
+  `pgrep -f vitest` before launching from one.
+- A client connected to `luke_test` (a database GUI, a `psql`) makes the clones
+  fail ("source database is being accessed by other users"): close it.
 - Never `pnpm test:db:down`: it deletes the volume out from under another
   session's run.
 - A root script that refuses because `pnpm dev` runs in the worktree

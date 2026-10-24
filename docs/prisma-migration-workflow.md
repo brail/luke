@@ -88,10 +88,9 @@ The development database is aligned with `db push`, which neither creates a cons
 data rewrite: apply the same SQL to it directly, **once** (`docker exec -i luke-db-1 psql -U luke -d
 luke -v ON_ERROR_STOP=1 < prisma/migrations/<timestamp>_<name>/migration.sql`) — `psql` records
 nothing, so a data rewrite that is not safe to run twice must not be applied again by hand. The
-integration test database gets it on its own when it is created (`ensureTestSchema` runs `migrate
-deploy` only while it has no `_prisma_migrations` table), so the persistent local one, on port 5434,
-needs it by hand — from `packages/db/`, with its `DATABASE_URL` spelled out:
-`DATABASE_URL=postgresql://luke:luke_test@localhost:5434/luke_test pnpm exec prisma migrate deploy`.
+integration test database gets it on its own: every integration run applies `migrate deploy` to the
+database `TEST_DATABASE_URL` names before cloning the worker databases from it
+(`apps/api/test/globalSetup.integration.ts`).
 
 ## Production
 

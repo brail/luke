@@ -66,7 +66,7 @@ export function getTestDatabaseUrl(): string | null {
 }
 
 /** Test URL, or an exception with instructions if missing. */
-function requireTestDatabaseUrl(): string {
+export function requireTestDatabaseUrl(): string {
   const url = getTestDatabaseUrl();
   if (!url) {
     throw new Error(
@@ -74,6 +74,19 @@ function requireTestDatabaseUrl(): string {
     );
   }
   return url;
+}
+
+/**
+ * The database of Vitest worker `poolId`: the template's name plus `_w<poolId>`.
+ *
+ * Integration files run in parallel, one database per worker, cloned from the migrated template
+ * that `TEST_DATABASE_URL` names (`globalSetup.integration.ts`); `setup.workerDatabase.ts` points
+ * each worker at its own.
+ */
+export function workerDatabaseUrl(templateUrl: string, poolId: string): string {
+  const url = new URL(templateUrl);
+  url.pathname = `${url.pathname}_w${poolId}`;
+  return url.toString();
 }
 
 /**
@@ -111,19 +124,22 @@ export async function ensureTestSchema(
     ) AS present
   `;
 
-  if (!present) {
-    // The URL comes from prisma.config.ts, which reads DATABASE_URL from the env.
-    // `PRISMA_PACKAGE_ROOT` is where that config and the migrations live — the
-    // only cwd the CLI resolves them from, and one this file cannot drift from
-    // by moving directory.
-    execSync('pnpm exec prisma migrate deploy', {
-      cwd: PRISMA_PACKAGE_ROOT,
-      stdio: 'pipe',
-      env: { ...process.env, DATABASE_URL: requireTestDatabaseUrl() },
-    });
-  }
+  if (!present) migrateTestDatabase(requireTestDatabaseUrl());
 
   schemaEnsured = true;
+}
+
+/** Applies the migrations to the database `url` names (`prisma migrate deploy`, idempotent). */
+export function migrateTestDatabase(url: string): void {
+  // The URL comes from prisma.config.ts, which reads DATABASE_URL from the env.
+  // `PRISMA_PACKAGE_ROOT` is where that config and the migrations live — the
+  // only cwd the CLI resolves them from, and one this file cannot drift from
+  // by moving directory.
+  execSync('pnpm exec prisma migrate deploy', {
+    cwd: PRISMA_PACKAGE_ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, DATABASE_URL: url },
+  });
 }
 
 /**

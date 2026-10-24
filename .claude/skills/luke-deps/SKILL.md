@@ -200,8 +200,9 @@ Three rules follow from that:
   bump and failed identically on Node 22 — pre-existing, wrongly attributable,
   and correctly left out of scope.
 
-**Before any level 3 run**: protocol §7.3 — if `pgrep -f vitest` finds another
-session's run, wait or skip and say so. Never `pnpm test:db:down`.
+**Before any level 3 run**: protocol §7.3 — a run refused because another
+integration run holds the test server is SKIPPED with that reason: wait or skip,
+and say so. Never `pnpm test:db:down`.
 
 **`pnpm-lock.yaml` and `node_modules` are shared the same way the test database
 is.** Two sessions installing at once fight over one lockfile. Check

@@ -132,18 +132,23 @@ describe('lastAdminGuard — real enforcement', () => {
       // overlap, unlike a plain `Promise.allSettled` over two
       // real calls.
       const order: string[] = [];
+      let aAcquired!: () => void;
+      const acquired = new Promise<void>(resolve => {
+        aAcquired = resolve;
+      });
 
       const txA = prisma.$transaction(async tx => {
         await acquireLastAdminLock(tx);
         order.push('A-acquired');
+        aAcquired();
         await tx.$executeRaw`SELECT pg_sleep(0.3)`;
         order.push('A-releasing');
       });
 
-      // Ensures A has already acquired the lock before B tries — otherwise
-      // the arrival order of the two transactions on the same key isn't guaranteed
-      // and the test would become flaky.
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // B starts only once A holds the lock — otherwise the arrival order of the two
+      // transactions on the same key isn't guaranteed. A fixed sleep guessed it, and lost on a
+      // busy machine. Raced with txA, so a failing A rejects here instead of hanging the test.
+      await Promise.race([acquired, txA]);
 
       const txB = prisma.$transaction(async tx => {
         await acquireLastAdminLock(tx);

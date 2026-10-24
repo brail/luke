@@ -189,7 +189,7 @@ describe('Phase Router', () => {
     async function seedRowOnPhase(phaseId: string, completedAt: Date | null) {
       const prisma = adminContext.prisma;
       // The codes used to come from `Date.now() % 100000`. Not a live collision — the outer
-      // `beforeEach` truncates every table and integration files run serially — but a generator
+      // `beforeEach` truncates every table and every worker has its own database — but a generator
       // whose uniqueness rests on the caller not being fast is one to retire on sight.
       const fixture = await createCalendarFixture(prisma, { prefix: 'GRD', year: 2040 });
       const layout = await prisma.collectionLayout.create({
