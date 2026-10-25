@@ -395,7 +395,8 @@ image: set the stack's `PUBLIC_HOSTNAME` (`RC_PUBLIC_HOSTNAME`), `PUBLIC_SCHEME`
 and `COOKIE_SECURE`, the application base URL in the mail settings
 (`app.baseUrl`, the origin of the links in emails), and, with Google connected,
 register the new redirect URI (`docs/google-calendar-setup.md`). The repository
-variables `PUBLIC_HOSTNAME` and `RC_PUBLIC_HOSTNAME` are no longer read.
+variables `PUBLIC_HOSTNAME` and `RC_PUBLIC_HOSTNAME` are no longer read; keep them until 3.1.0 is
+on `main`, whose 3.0 workflow still reads them for a hotfix.
 
 Web images before 3.1.0-rc.1 bake `http://<hostname>`: after the switch to
 HTTPS, rolling the web back to one of them brings mixed content back.

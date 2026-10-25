@@ -26,6 +26,7 @@ preserved evidence.
 | [Prisma migration workflow](prisma-migration-workflow.md) | Generate, review, and apply versioned migrations for the multi-file Prisma schema. |
 | [Production-to-RC data clone](rc-prod-clone.md) | Clone production data into RC without exposing the production master key. |
 | [Upgrading from 2.1.6 to 3.0](upgrade-2.1-to-3.0.md) | Production upgrade: MinIO-to-SeaweedFS file copy, data repairs, the reverse proxy's network, the move to a Git stack, and rollback. |
+| [Upgrading from 3.0 to 3.1](upgrade-3.0-to-3.1.md) | RC and production upgrade, growing with the 3.1 train: the picture-key check, the encryption of stored credentials, and rollback. |
 
 ## Reference
 
