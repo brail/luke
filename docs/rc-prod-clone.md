@@ -109,15 +109,18 @@ history.
 
 - Every encrypted `AppConfig` value — LDAP connection settings and bind password,
   SMTP password, NAV password, Google service key and OAuth secrets, S3 access and
-  secret keys — remains encrypted at column level with **prod's** master key —
+  secret keys, GitHub feedback token — remains encrypted at column level with
+  **prod's** master key —
   encryption independent of the backup's DEK;
   see `apps/api/src/lib/configManager.ts`. After the restore, reading them on RC
   throws at runtime at the point of use, not at boot. Reset them by hand with
   RC-appropriate values for each integration RC needs; until then LDAP login,
-  mail delivery, S3 storage, NAV sync and Google sync fail on RC.
-- Only encrypted values are protected that way. The generic configuration API
-  stores a value unencrypted unless asked, and such a value works on RC as it
-  does on prod. `refresh-rc-db.sh` deletes the SMTP, GitHub, S3, NAV host, LDAP
+  mail delivery, S3 storage, NAV sync, Google sync and GitHub feedback fail on RC.
+- Only encrypted values are protected that way. A credential in
+  `SECRET_CONFIG_KEYS` is always stored encrypted, but the generic configuration
+  API stores any other key unencrypted unless asked, and a credential an earlier
+  release stored in plaintext stays so until `db:encrypt-secret-config` encrypts
+  it; such a value works on RC as it does on prod. `refresh-rc-db.sh` deletes the SMTP, GitHub, S3, NAV host, LDAP
   switch and plaintext credential rows before the RC API starts; this flow
   restores into a running RC API and neutralizes nothing, so its schedulers
   start on prod's configuration at once.

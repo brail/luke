@@ -6,10 +6,10 @@
 import { TRPCError } from '@trpc/server';
 import { Client } from 'ldapts';
 
-import { ldapConfigSchema, ldapSearchTestSchema, validateConfigValue, type AppConfigKey } from '@luke/core';
+import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getLdapConfig, encryptValue } from '../lib/configManager';
+import { getLdapConfig, saveConfigs, type ConfigWrite } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { SecureLogger } from '../lib/errorHandler';
 import { fillLdapFilter } from '../lib/ldapAuth';
@@ -34,7 +34,7 @@ export const ldapRouter = router({
         const logger = new SecureLogger(ctx.logger);
 
         // Save each field in AppConfig
-        const configMappings: { key: AppConfigKey; value: string | undefined; encrypt: boolean }[] = [
+        const configMappings: { key: ConfigWrite['key']; value: string | undefined; encrypt: boolean }[] = [
           {
             key: 'auth.ldap.enabled',
             value: input.enabled.toString(),
@@ -79,17 +79,6 @@ export const ldapRouter = router({
         ];
         const writes = [...configMappings, ...credentials.filter(({ value }) => value)];
 
-        // Every value answers to the registry, as through `saveConfig`: checked on the plaintext,
-        // all of them before the transaction writes any. An empty optional field is "not
-        // configured", which is an absent key, never `''` (the reader already defaults absent ones).
-        for (const { key, value } of writes) {
-          if (!value) continue;
-          const check = validateConfigValue(key, value);
-          if (!check.success) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `Valore non valido per '${key}': ${check.message}` });
-          }
-        }
-
         // `ldap-only` leaves the local administrators as the only way in when LDAP authenticates
         // nobody. Refused when none could use it — checked now, not guaranteed later.
         if (input.strategy === 'ldap-only' && (await countBreakGlassAdmins(ctx.prisma)) === 0) {
@@ -102,21 +91,16 @@ export const ldapRouter = router({
           });
         }
 
-        await ctx.prisma.$transaction(async (tx) => {
-          for (const mapping of writes) {
-            if (mapping.value === undefined) continue;
-            if (mapping.value === '') {
-              await tx.appConfig.deleteMany({ where: { key: mapping.key } });
-              continue;
-            }
-            const finalValue = mapping.encrypt ? encryptValue(mapping.value) : mapping.value;
-            await tx.appConfig.upsert({
-              where: { key: mapping.key },
-              update: { value: finalValue, isEncrypted: mapping.encrypt, updatedAt: new Date() },
-              create: { key: mapping.key, value: finalValue, isEncrypted: mapping.encrypt },
-            });
-          }
-        });
+        // One change through `saveConfigs`, like every settings form: each value answers to the
+        // registry on the plaintext before any is written, and the credentials are encrypted as
+        // secrets. An empty optional field is "not configured", which is an absent key, never `''`
+        // (the reader already defaults absent ones).
+        await saveConfigs(
+          ctx.prisma,
+          writes.flatMap(({ key, value, encrypt }) =>
+            value === undefined ? [] : [value === '' ? { key, value: null } : { key, value, encrypt }]
+          )
+        );
 
         logger.info('LDAP configuration saved', {
           enabled: input.enabled,

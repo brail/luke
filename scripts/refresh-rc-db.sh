@@ -101,9 +101,9 @@ echo "==> Neutralizing outbound integrations in RC's AppConfig"
 #   ...calendarSync.enabled  defaults to 'false'
 #   app.baseUrl            builds email links only; the API refuses to delete it,
 #                          harmless here (defaults to localhost)
-#   plaintext credentials  the generic config API stores with encryption off by
-#                          default (also drops a plaintext auth.nextAuthSecret, read
-#                          only by the seed)
+#   plaintext credentials  rows an earlier release stored in plaintext, before
+#                          SECRET_CONFIG_KEYS (also drops a plaintext
+#                          auth.nextAuthSecret, read only by the seed)
 # storage.type and storage.minio.* (2.1.6's form encrypts the keys) stay as prod has
 # them: rehearsing the 2.1.6 -> 3.0 upgrade on RC starts from prod's storage state.
 if ! NEUTRALIZED=$(docker exec -i "${RC_PG}" psql -U luke -d luke -v ON_ERROR_STOP=1 -q -At -f - <<'SQL'

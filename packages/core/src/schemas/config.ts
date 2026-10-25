@@ -358,6 +358,37 @@ export const CRITICAL_CONFIG_KEYS: AppConfigKey[] = [
   'auth.strategy',
 ] satisfies AppConfigKey[];
 
+/**
+ * Keys whose value is a credential: stored encrypted whatever the writer asks (`prepareConfigWrite`
+ * in `configManager.ts`, the seed, `db:encrypt-secret-config`). Encryption is not secrecy the other
+ * way round: the LDAP settings also encrypt their URL and filters, which are not listed here.
+ */
+export const SECRET_CONFIG_KEYS = [
+  'auth.nextAuthSecret',
+  'auth.ldap.bindDN',
+  'auth.ldap.bindPassword',
+  'smtp.pass',
+  'storage.s3.accessKey',
+  'storage.s3.secretKey',
+  // Legacy provider blobs: the SMB password, the Drive client secret and refresh token.
+  'storage.smb',
+  'storage.drive',
+  'integrations.nav.password',
+  'integrations.google.serviceKey',
+  'integrations.google.oauth.clientSecret',
+  'integrations.google.oauth.refreshToken',
+  'integrations.github.feedbackToken',
+] as const satisfies readonly AppConfigKey[];
+
+export type SecretConfigKey = (typeof SECRET_CONFIG_KEYS)[number];
+
+const SECRET_CONFIG_KEY_SET = new Set<string>(SECRET_CONFIG_KEYS);
+
+/** Whether `key` holds a credential, which is always stored encrypted. */
+export function isSecretConfigKey(key: string): key is SecretConfigKey {
+  return SECRET_CONFIG_KEY_SET.has(key);
+}
+
 /** First segment of a dotted key: `app` for `app.baseUrl`. Generic so it distributes over a union. */
 type KeyPrefix<Key> = Key extends `${infer Prefix}.${string}` ? Prefix : never;
 

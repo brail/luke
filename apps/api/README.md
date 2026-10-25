@@ -572,6 +572,7 @@ guard (`db:nav-reset` refuses to run in production).
 | pnpm script | File | Purpose |
 |---|---|---|
 | `db:check-config-rows` | `check-config-rows.ts` | Read-only report: AppConfig rows the registry no longer declares, stored values their schema refuses, and whether `app.baseUrl` is stored |
+| `db:encrypt-secret-config` | `encrypt-secret-config.ts` | Encrypts in place the `SECRET_CONFIG_KEYS` rows an earlier release stored in plaintext, one audit row per key; refuses without the API's master key; `--dry-run` lists them |
 | `db:grant-local-access` | `grant-local-access.ts` | Single-use reset link for an administrator — see [Recovering administrator access](#recovering-administrator-access) |
 | `db:repair-auto-revision-photos` | `repair-auto-revision-photos.ts` | One-shot repair of automatic-revision photos; dry run first, then `--apply` |
 | `db:fix-allday-dates` | `fix-allday-event-dates.ts` | Moves all-day events to UTC midnight — see [All-day event dates](#all-day-event-dates) |

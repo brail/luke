@@ -34,6 +34,7 @@
     "db:migrate-storage": "tsx --env-file=.env scripts/migrate-storage.ts",
     "db:backfill-asset-derivatives": "tsx --env-file=.env scripts/backfill-asset-derivatives.ts",
     "db:check-config-rows": "tsx --env-file=.env scripts/check-config-rows.ts",
+    "db:encrypt-secret-config": "tsx --env-file=.env scripts/encrypt-secret-config.ts",
     "db:repair-auto-revision-photos": "tsx --env-file=.env scripts/repair-auto-revision-photos.ts",
     "db:grant-local-access": "tsx --env-file=.env scripts/grant-local-access.ts"
   },

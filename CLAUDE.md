@@ -231,6 +231,10 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
   `getSmtpConfig`)
 - `getConfig` decrypts encrypted rows by default; for numbers and booleans use the typed readers,
   never `parseInt`/`=== 'true'` on its result
+- `SECRET_CONFIG_KEYS` in `packages/core/src/schemas/config.ts`, bound to `AppConfigKey` with its
+  derived `SecretConfigKey`, defines mandatory encryption. Every writer, including seeds and
+  dedicated writers, must enforce it regardless of caller flags. Audit metadata and responses use
+  the effective encryption decision. Validate plaintext before encryption.
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add a key only if its absence must block boot
 
 ## Auth & Crypto — DO NOT TOUCH without an explicit request

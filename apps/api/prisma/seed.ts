@@ -11,11 +11,11 @@ import { randomBytes } from 'crypto';
 import { homedir } from 'os';
 import { join } from 'path';
 
-import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, DEFAULT_PASSWORD_POLICY, type AppConfigKey } from '@luke/core';
 import { createPrismaClient, type PrismaClient } from '@luke/db';
 
 
-import { encryptValue, getConfigOrDefault } from '../src/lib/configManager';
+import { getConfigOrDefault, prepareConfigWrite } from '../src/lib/configManager';
 import { hashPassword } from '../src/lib/password';
 
 import { seedCollectionCatalog } from './seeds/collectionCatalog';
@@ -117,7 +117,7 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
   // Generate NextAuth secret (JWT secret now derived via HKDF)
   const nextAuthSecret = randomBytes(32).toString('hex');
 
-  const initialConfigs = [
+  const initialConfigs: { key: AppConfigKey; value: string; encrypt: boolean }[] = [
     {
       key: 'auth.nextAuthSecret',
       value: nextAuthSecret,
@@ -367,16 +367,11 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       continue;
     }
 
-    const finalValue = config.encrypt
-      ? encryptValue(config.value)
-      : config.value;
+    // Validated against the registry and encrypted as every writer does (a secret always is).
+    const row = prepareConfigWrite(config);
 
     await prisma.appConfig.create({
-      data: {
-        key: config.key,
-        value: finalValue,
-        isEncrypted: config.encrypt,
-      },
+      data: { key: row.key, value: row.value, isEncrypted: row.encrypt },
     });
 
     console.log(`✅ Config '${config.key}' created`);

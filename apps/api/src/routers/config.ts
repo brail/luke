@@ -25,6 +25,7 @@ import {
   listConfigsPaged,
   deleteConfig,
   decryptValue,
+  storesEncrypted,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
@@ -228,7 +229,10 @@ async function upsertConfig(
     }
   }
 
+  // A secret is stored encrypted whatever the client asked: the audit row and the response
+  // follow what is stored, so neither carries the value of a secret sent as plaintext.
   await saveConfig(ctx.prisma, key, value, encrypt);
+  const encrypted = storesEncrypted(key, encrypt);
 
   // Audit log
   await logAudit(ctx, {
@@ -238,16 +242,16 @@ async function upsertConfig(
     result: 'SUCCESS',
     metadata: {
       key,
-      isEncrypted: encrypt,
-      valueRedacted: encrypt ? CONFIG_SECRET_PLACEHOLDER : redact(value),
+      isEncrypted: encrypted,
+      valueRedacted: encrypted ? CONFIG_SECRET_PLACEHOLDER : redact(value),
       source: options.source,
     },
   });
 
   return {
     key,
-    value: encrypt ? CONFIG_SECRET_PLACEHOLDER : value,
-    isEncrypted: encrypt,
+    value: encrypted ? CONFIG_SECRET_PLACEHOLDER : value,
+    isEncrypted: encrypted,
     message: `Configurazione '${key}' ${
       options.strictUpdate ? 'aggiornata' : 'salvata'
     } con successo`,

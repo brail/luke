@@ -22,6 +22,7 @@ import {
   type BackupScheduleSettings,
   type BackupScopeField,
   CRITICAL_CONFIG_KEYS,
+  isSecretConfigKey,
   LdapResilienceSchema,
   type LdapResilienceConfig,
   type LdapStrategy,
@@ -196,7 +197,8 @@ async function saveSectionsDisabledGuarded(
  * @param prisma - Prisma client.
  * @param key - Configuration key declared in `AppConfigRegistry`.
  * @param value - Value to store, as the string form the registry schema parses.
- * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage.
+ * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage. A key in
+ *   `SECRET_CONFIG_KEYS` is encrypted whatever this says.
  * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema.
  *
  * @example
@@ -216,7 +218,7 @@ export async function saveConfig(
 ): Promise<void> {
   if (key === 'app.sections.disabled') {
     const row = prepareConfigWrite({ key, value, encrypt });
-    await saveSectionsDisabledGuarded(prisma, value, row.value, encrypt);
+    await saveSectionsDisabledGuarded(prisma, value, row.value, row.encrypt);
     invalidateRbacCache();
     return;
   }
@@ -234,8 +236,17 @@ export type ConfigWrite =
   | { key: BatchConfigKey; value: string; encrypt?: boolean }
   | { key: BatchConfigKey; value: null };
 
-/** Validates a value against its registry schema and encrypts it when asked: the stored form. */
-function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
+/**
+ * Whether a write stores its value encrypted: when the caller asks, and for a key in
+ * `SECRET_CONFIG_KEYS` whatever the caller asks. Every writer, its audit row and its response
+ * follow this decision.
+ */
+export function storesEncrypted(key: AppConfigKey, encrypt?: boolean): boolean {
+  return encrypt === true || isSecretConfigKey(key);
+}
+
+/** Validates a value against its registry schema, then encrypts it if `storesEncrypted`: the stored form. */
+export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
   const validation = validateConfigValue(write.key, write.value);
   if (!validation.success) {
     throw new TRPCError({
@@ -243,18 +254,19 @@ function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: stri
       message: `Valore non valido per '${write.key}': ${validation.message}`,
     });
   }
-  const encrypt = write.encrypt ?? false;
+  const encrypt = storesEncrypted(write.key, write.encrypt);
   return { key: write.key, value: encrypt ? encryptValue(write.value) : write.value, encrypt };
 }
 
 /**
  * Saves several keys as one change — a settings form, which must not be left half-written.
  *
- * Every value is validated against its registry schema, and encrypted when asked, before anything
- * is written; then all the writes run in one transaction, in order: an upsert for a value, a
- * `deleteMany` for `null` (removing an absent key is not an error). Either every key changes or
- * none does. What it guarantees is one atomic write, not a consistent snapshot for a reader that
- * issues several reads across the commit. The RBAC cache is invalidated only after the commit.
+ * Every value is validated against its registry schema, and encrypted when asked or when its key is
+ * in `SECRET_CONFIG_KEYS`, before anything is written; then all the writes run in one transaction,
+ * in order: an upsert for a value, a `deleteMany` for `null` (removing an absent key is not an
+ * error). Either every key changes or none does. What it guarantees is one atomic write, not a
+ * consistent snapshot for a reader that issues several reads across the commit. The RBAC cache is
+ * invalidated only after the commit.
  *
  * @throws {TRPCError} `BAD_REQUEST` when a value fails its registry schema; nothing is written.
  */
