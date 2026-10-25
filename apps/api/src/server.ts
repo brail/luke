@@ -445,7 +445,7 @@ function setupTempFileCleanup() {
       // Cleanup of orphan files in .tmp directories (failed/interrupted uploads)
       // Removes files older than 2 hours that weren't promoted to their final path
       try {
-        const basePath = resolveLocalBasePath(await getConfig(prisma, 'storage.local.basePath', false));
+        const basePath = resolveLocalBasePath(await getConfig(prisma, 'storage.local.basePath'));
         const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
         const buckets = await readdir(basePath).catch(() => []);
 

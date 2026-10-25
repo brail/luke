@@ -57,7 +57,7 @@ describe('me.get with a legacy invalid zone', () => {
 
     // A business zone other than the registry default, so a hard-coded Europe/Rome cannot pass.
     // The worker's next file reuses this database, so the row is restored below.
-    const previous = await getConfig(prisma, 'app.defaultTimezone', false);
+    const previous = await getConfig(prisma, 'app.defaultTimezone');
     await saveConfig(prisma, 'app.defaultTimezone', 'Asia/Tokyo');
     try {
       const profile = await caller.me.get();

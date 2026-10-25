@@ -70,16 +70,16 @@ describe('integrations.google.exchangeOAuthCode', () => {
   it('stores the token and the address, and audits the connection', async () => {
     await expect(exchange('new@example.com')).resolves.toEqual({ userEmail: 'new@example.com' });
 
-    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken', true)).toBe('new-token');
-    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail', false)).toBe('new@example.com');
+    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken')).toBe('new-token');
+    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail')).toBe('new@example.com');
     expect(await prisma.auditLog.count({ where: { action: 'CONFIG_GOOGLE_OAUTH_CONNECT' } })).toBe(1);
   });
 
   it('with no address in Google’s answer, removes the stored one instead of failing half-way', async () => {
     await expect(exchange(null)).resolves.toEqual({ userEmail: null });
 
-    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken', true)).toBe('new-token');
-    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail', false)).toBeNull();
+    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken')).toBe('new-token');
+    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail')).toBeNull();
     expect(await prisma.auditLog.count({ where: { action: 'CONFIG_GOOGLE_OAUTH_CONNECT' } })).toBe(1);
   });
 
@@ -88,7 +88,7 @@ describe('integrations.google.exchangeOAuthCode', () => {
     const caller = await createCallerAs('admin');
 
     await expect(exchangeWith(caller, await startFlow(caller))).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
-    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken', true)).toBeNull();
+    expect(await getConfig(prisma, 'integrations.google.oauth.refreshToken')).toBeNull();
     expect(await prisma.auditLog.count({ where: { action: 'CONFIG_GOOGLE_OAUTH_CONNECT' } })).toBe(0);
   });
 });

@@ -110,7 +110,7 @@ describe('AppConfig write authority', () => {
         value: 'ldaps://dc.example.com',
         encrypt: true,
       });
-      expect(await getConfig(testPrisma, 'auth.ldap.url', true)).toBe('ldaps://dc.example.com');
+      expect(await getConfig(testPrisma, 'auth.ldap.url')).toBe('ldaps://dc.example.com');
     });
   });
 
@@ -158,7 +158,7 @@ describe('AppConfig write authority', () => {
         ],
       });
 
-      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword')).toBe('real-secret');
       expect(await testPrisma.appConfig.findUnique({ where: { key: 'auth.ldap.bindDN' } })).toBeNull();
       expect(result.successCount).toBe(1);
       expect(result.errors.map(e => e.key).sort()).toEqual([
@@ -179,7 +179,7 @@ describe('AppConfig write authority', () => {
         }),
         { code: 'BAD_REQUEST' },
       );
-      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword', true)).toBe('real-secret');
+      expect(await getConfig(testPrisma, 'auth.ldap.bindPassword')).toBe('real-secret');
     });
   });
 

@@ -115,7 +115,9 @@ describe('AppConfig defaults', () => {
     });
 
     it('refuses to resolve a provider instead of falling back to local', async () => {
-      await expect(getStorageProvider(testPrisma)).rejects.toThrow(/storage\.type.*minio.*local, s3/);
+      // Names the key and what it accepts, never the stored value.
+      await expect(getStorageProvider(testPrisma)).rejects.toThrow(/storage\.type.*local, s3/);
+      await expect(getStorageProvider(testPrisma)).rejects.not.toThrow(/minio/);
     });
 
     it('resolves once the row is valid again, without a restart', async () => {
@@ -144,7 +146,7 @@ describe('AppConfig defaults', () => {
       ] });
       const caller = await createCallerAs('admin');
       expect(await caller.maintenance.backup.getScheduleConfig()).toMatchObject({
-        dailyTime: '03:00', scope: null, storedScope: 'EVERYTHING',
+        dailyTime: '03:00', scope: null,
       });
     });
   });

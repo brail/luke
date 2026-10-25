@@ -173,10 +173,11 @@ export type BackupScheduleConfig = z.infer<typeof BackupScheduleConfigSchema>;
 
 /**
  * The stored schedule as `maintenance.backup.getScheduleConfig` reports it. `scope` is `null` when
- * the stored value is not a scope — a hand edit or an older version: the routers refuse one — with
- * that value in `storedScope`, so the page shows it and asks for a choice instead of a default.
+ * the stored value is not a scope — a hand edit or an older version: the routers refuse one — so the
+ * page asks for a choice instead of a default. The value itself is not reported: diagnostics name a
+ * key, never what it holds.
  */
 export type BackupScheduleSettings = Omit<BackupScheduleConfig, 'scope'> & BackupScopeField;
 
-/** The scope of `BackupScheduleSettings`: a valid one, or `null` with the stored value. */
-export type BackupScopeField = { scope: BackupScope; storedScope?: undefined } | { scope: null; storedScope: string };
+/** The scope of `BackupScheduleSettings`: a valid one, or `null` when the stored one is not. */
+export type BackupScopeField = { scope: BackupScope | null };

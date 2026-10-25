@@ -49,7 +49,7 @@ describe('integrations.auth.saveLdapConfig', () => {
 
     await caller.integrations.auth.saveLdapConfig(input);
 
-    expect(await getConfig(prisma, 'auth.ldap.url', true)).toBe('ldap://dc.example.com:389');
+    expect(await getConfig(prisma, 'auth.ldap.url')).toBe('ldap://dc.example.com:389');
     expect(await prisma.appConfig.findUnique({ where: { key: 'auth.ldap.groupSearchBase' } })).toBeNull();
     expect(await prisma.appConfig.findUnique({ where: { key: 'auth.ldap.roleMapping' } })).toBeNull();
   });
@@ -62,7 +62,7 @@ describe('integrations.auth.saveLdapConfig', () => {
       caller.integrations.auth.saveLdapConfig({ ...input, url: 'ldap://dc example.com', searchBase: 'dc=new' }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 
-    expect(await getConfig(prisma, 'auth.ldap.url', true)).toBe('ldap://old.example.com');
+    expect(await getConfig(prisma, 'auth.ldap.url')).toBe('ldap://old.example.com');
     expect(await prisma.appConfig.findUnique({ where: { key: 'auth.ldap.searchBase' } })).toBeNull();
   });
 
@@ -73,8 +73,8 @@ describe('integrations.auth.saveLdapConfig', () => {
 
       await caller.integrations.auth.saveLdapConfig({ ...input, bindDN: '', bindPassword: '' });
 
-      expect(await getConfig(prisma, 'auth.ldap.bindDN', true)).toBe('cn=svc,dc=example,dc=com');
-      expect(await getConfig(prisma, 'auth.ldap.bindPassword', true)).toBe('S3rvice-pw');
+      expect(await getConfig(prisma, 'auth.ldap.bindDN')).toBe('cn=svc,dc=example,dc=com');
+      expect(await getConfig(prisma, 'auth.ldap.bindPassword')).toBe('S3rvice-pw');
     });
 
     it('replaces a credential when the form sends a new one', async () => {
@@ -83,8 +83,8 @@ describe('integrations.auth.saveLdapConfig', () => {
 
       await caller.integrations.auth.saveLdapConfig({ ...input, bindDN: 'cn=other,dc=example,dc=com' });
 
-      expect(await getConfig(prisma, 'auth.ldap.bindDN', true)).toBe('cn=other,dc=example,dc=com');
-      expect(await getConfig(prisma, 'auth.ldap.bindPassword', true)).toBe('S3rvice-pw');
+      expect(await getConfig(prisma, 'auth.ldap.bindDN')).toBe('cn=other,dc=example,dc=com');
+      expect(await getConfig(prisma, 'auth.ldap.bindPassword')).toBe('S3rvice-pw');
     });
 
     it('stores the password as typed, spaces included', async () => {
@@ -92,7 +92,7 @@ describe('integrations.auth.saveLdapConfig', () => {
 
       await caller.integrations.auth.saveLdapConfig({ ...input, bindPassword: '  padded pw ' });
 
-      expect(await getConfig(prisma, 'auth.ldap.bindPassword', true)).toBe('  padded pw ');
+      expect(await getConfig(prisma, 'auth.ldap.bindPassword')).toBe('  padded pw ');
     });
   });
 

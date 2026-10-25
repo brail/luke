@@ -42,12 +42,12 @@ export interface SmtpConfig {
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
-    getConfig(prisma, 'smtp.host', false),
-    getConfig(prisma, 'smtp.port', false),
+    getConfig(prisma, 'smtp.host'),
+    getConfig(prisma, 'smtp.port'),
     getConfigOrDefault(prisma, 'smtp.secure'),
-    getConfig(prisma, 'smtp.user', false),
-    getConfig(prisma, 'smtp.pass', true), // Decrypt the password
-    getConfig(prisma, 'smtp.from', false),
+    getConfig(prisma, 'smtp.user'),
+    getConfig(prisma, 'smtp.pass'),
+    getConfig(prisma, 'smtp.from'),
   ]);
 
   if (!host || !port || !user || !pass || !from) {

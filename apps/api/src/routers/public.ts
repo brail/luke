@@ -19,7 +19,7 @@ export const publicRouter = router({
    */
   appInfo: publicProcedure.query(async ({ ctx }) => {
     try {
-      const appName = await getConfig(ctx.prisma, 'app.name', false).catch(() => null);
+      const appName = await getConfig(ctx.prisma, 'app.name').catch(() => null);
 
       return {
         name: appName || 'Luke',

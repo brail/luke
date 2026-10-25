@@ -57,7 +57,7 @@ describe('storage S3 secret key', () => {
 
     await caller.storage.saveConfig({ ...S3, region: 'us', ...secret });
 
-    expect(await getConfig(testPrisma, 'storage.s3.secretKey', true)).toBe('sk-stored');
+    expect(await getConfig(testPrisma, 'storage.s3.secretKey')).toBe('sk-stored');
     expect((await caller.storage.getConfig()).s3.region).toBe('us');
   });
 
@@ -97,7 +97,7 @@ describe('storage S3 secret key', () => {
 
     await caller.storage.saveConfig({ ...S3, secretKey: 'sk-new' });
 
-    expect(await getConfig(testPrisma, 'storage.s3.secretKey', true)).toBe('sk-new');
+    expect(await getConfig(testPrisma, 'storage.s3.secretKey')).toBe('sk-new');
   });
 
   it('refuses a blank secret when none is stored, and writes nothing', async () => {
@@ -106,7 +106,7 @@ describe('storage S3 secret key', () => {
     await expect(caller.storage.saveConfig({ ...S3, secretKey: '' })).rejects.toMatchObject({
       code: 'BAD_REQUEST',
     });
-    expect(await getConfig(testPrisma, 'storage.type', false)).toBeNull();
-    expect(await getConfig(testPrisma, 'storage.s3.accessKey', false)).toBeNull();
+    expect(await getConfig(testPrisma, 'storage.type')).toBeNull();
+    expect(await getConfig(testPrisma, 'storage.s3.accessKey')).toBeNull();
   });
 });

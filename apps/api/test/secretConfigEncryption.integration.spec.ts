@@ -39,7 +39,7 @@ async function expectStoredEncrypted(key: string, plaintext: string) {
   const stored = await row(key);
   expect(stored?.isEncrypted).toBe(true);
   expect(stored?.value).not.toContain(plaintext);
-  expect(await getConfig(prisma, key, true)).toBe(plaintext);
+  expect(await getConfig(prisma, key)).toBe(plaintext);
 }
 
 /** Every audit row written for `key`, as text: what a reader of the log would see. */

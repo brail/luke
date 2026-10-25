@@ -146,7 +146,7 @@ describe('NAV closes the old pool only once the new configuration is committed',
     await saveConfig(prisma, 'integrations.nav.host', 'old-host');
     let hostAtClose: string | null = null;
     const closePool = vi.spyOn(nav, 'closePool').mockImplementation(async () => {
-      hostAtClose = await getConfig(prisma, 'integrations.nav.host', false);
+      hostAtClose = await getConfig(prisma, 'integrations.nav.host');
     });
 
     const caller = await createCallerAs('admin');
@@ -343,7 +343,7 @@ describe('saveConfigs', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     // Validated before anything is written, not refused late inside a transaction rolled back.
     expect(transaction).not.toHaveBeenCalled();
-    expect(await getConfig(prisma, 'smtp.host', false)).toBe('old-host');
+    expect(await getConfig(prisma, 'smtp.host')).toBe('old-host');
   });
 
   it('removes keys, an absent one included, in the same change', async () => {
@@ -353,8 +353,8 @@ describe('saveConfigs', () => {
       { key: 'integrations.google.impersonateEmail', value: null },
       { key: 'smtp.host', value: 'h' },
     ]);
-    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail', false)).toBeNull();
-    expect(await getConfig(prisma, 'smtp.host', false)).toBe('h');
+    expect(await getConfig(prisma, 'integrations.google.oauth.userEmail')).toBeNull();
+    expect(await getConfig(prisma, 'smtp.host')).toBe('h');
   });
 
   it('stores an encrypted value the reader decrypts', async () => {
@@ -362,7 +362,7 @@ describe('saveConfigs', () => {
     const row = await prisma.appConfig.findUnique({ where: { key: 'smtp.pass' } });
     expect(row?.isEncrypted).toBe(true);
     expect(row?.value).not.toBe('secret');
-    expect(await getConfig(prisma, 'smtp.pass', true)).toBe('secret');
+    expect(await getConfig(prisma, 'smtp.pass')).toBe('secret');
   });
 
   it('invalidates the RBAC cache after committing an rbac key', async () => {

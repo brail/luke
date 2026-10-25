@@ -34,8 +34,8 @@ interface SyncLogger {
  */
 export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{ domain: string } | null> {
   const [authMode, domain, enabled] = await Promise.all([
-    getConfig(prisma, 'integrations.google.authMode', false),
-    getConfig(prisma, 'integrations.google.domain', false),
+    getConfig(prisma, 'integrations.google.authMode'),
+    getConfig(prisma, 'integrations.google.domain'),
     getConfigOrDefault(prisma, 'integrations.google.calendarSync.enabled'),
   ]);
 
@@ -43,17 +43,17 @@ export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{
 
   if (authMode === 'oauth_user') {
     const [clientId, clientSecret, refreshToken] = await Promise.all([
-      getConfig(prisma, 'integrations.google.oauth.clientId', false),
-      getConfig(prisma, 'integrations.google.oauth.clientSecret', true),
-      getConfig(prisma, 'integrations.google.oauth.refreshToken', true),
+      getConfig(prisma, 'integrations.google.oauth.clientId'),
+      getConfig(prisma, 'integrations.google.oauth.clientSecret'),
+      getConfig(prisma, 'integrations.google.oauth.refreshToken'),
     ]);
     if (!clientId || !clientSecret || !refreshToken) return null;
     createGoogleCalendarClient({ mode: 'oauth_user', clientId, clientSecret, refreshToken, workspaceDomain: domain });
   } else {
     const [serviceEmail, serviceKey, impersonateEmail] = await Promise.all([
-      getConfig(prisma, 'integrations.google.serviceEmail', false),
-      getConfig(prisma, 'integrations.google.serviceKey', true),
-      getConfig(prisma, 'integrations.google.impersonateEmail', false),
+      getConfig(prisma, 'integrations.google.serviceEmail'),
+      getConfig(prisma, 'integrations.google.serviceKey'),
+      getConfig(prisma, 'integrations.google.impersonateEmail'),
     ]);
     if (!serviceEmail || !serviceKey) return null;
     createGoogleCalendarClient({

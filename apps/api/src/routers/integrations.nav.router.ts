@@ -450,11 +450,11 @@ export const navRouter = router({
 
         // Reads the current values to detect connection changes
         const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
-          getConfig(ctx.prisma, 'integrations.nav.host', false),
-          getConfig(ctx.prisma, 'integrations.nav.port', false),
-          getConfig(ctx.prisma, 'integrations.nav.database', false),
-          getConfig(ctx.prisma, 'integrations.nav.user', false),
-          getConfig(ctx.prisma, 'integrations.nav.company', false),
+          getConfig(ctx.prisma, 'integrations.nav.host'),
+          getConfig(ctx.prisma, 'integrations.nav.port'),
+          getConfig(ctx.prisma, 'integrations.nav.database'),
+          getConfig(ctx.prisma, 'integrations.nav.user'),
+          getConfig(ctx.prisma, 'integrations.nav.company'),
         ]);
 
         const connectionChanged =

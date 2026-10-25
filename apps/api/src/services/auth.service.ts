@@ -136,7 +136,7 @@ export async function verifyCredentials(
   const usernameRateLimitKey = username.trim().toLowerCase();
   const [usernameRateLimitPolicy, authStrategyConfig] = await Promise.all([
     resolveRateLimitPolicy('loginByUsername', ctx.prisma),
-    getConfig(ctx.prisma, 'auth.strategy', false),
+    getConfig(ctx.prisma, 'auth.strategy'),
   ]);
 
   try {

@@ -85,15 +85,14 @@ async function runScheduledBackup(
 async function skipScheduledBackup(
   prisma: PrismaClient,
   log: FastifyInstance['log'],
-  storedScope: string,
   notifyOnFailure: boolean,
 ): Promise<void> {
-  log.error({ storedScope }, 'Backup scheduler: stored scope is invalid, scheduled backup skipped');
+  log.error({ key: 'backup.schedule.scope' }, 'Backup scheduler: stored scope is invalid, scheduled backup skipped');
   if (!notifyOnFailure) return;
   await notifyDeduped(prisma, 'backup-schedule:invalid-scope', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
     category: 'SYSTEM',
     title: 'Backup pianificato non eseguito',
-    message: `Il contenuto salvato ('${storedScope}') non è valido: sceglilo in Backup automatici e salva.`,
+    message: 'Il contenuto salvato non è valido: sceglilo in Backup automatici e salva.',
     data: { type: 'backup_schedule_failure' },
   })).catch(e => log.error({ err: e }, 'Failed to notify admins of a skipped scheduled backup'));
 }
@@ -187,7 +186,7 @@ export async function runTick(prisma: PrismaClient, log: FastifyInstance['log'])
       select: { id: true },
     });
     if (!slotRun) {
-      if (config.scope === null) await skipScheduledBackup(prisma, log, config.storedScope, config.notifyOnFailure);
+      if (config.scope === null) await skipScheduledBackup(prisma, log, config.notifyOnFailure);
       else await runScheduledBackup(prisma, log, config.scope, config.notifyOnFailure);
     }
   }

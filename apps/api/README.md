@@ -235,7 +235,7 @@ with bodies built in code.
 - **Required verification** — with `auth.requireEmailVerification` set to
   `true`, a local login with an unverified address is refused and the login
   page offers a new link. LDAP logins are not subject to it. The key defaults to
-  `false`; a stored value the registry refuses, an encrypted row included, is
+  `false`; a stored value the registry refuses, or one that does not decrypt, is
   read as `true` and logged as a warning.
 
 SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte

@@ -107,7 +107,7 @@ export function registerKimoSyncScheduler(
   const tick = async () => {
     if (_isRunning) return;
 
-    const host = await getConfig(prisma, 'integrations.nav.host', false);
+    const host = await getConfig(prisma, 'integrations.nav.host');
     if (!host) return;
 
     const config = await prisma.navSyncFilter.findUnique({

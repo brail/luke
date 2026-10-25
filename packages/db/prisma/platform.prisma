@@ -14,7 +14,7 @@ model AppConfig {
   key         String   @unique
   /// Stored value always as string, parsed by its key's AppConfigRegistry schema.
   value       String
-  /// When true, value is AES-GCM encrypted at rest. Decrypted via getConfig({ decrypt: true }).
+  /// When true, value is AES-GCM encrypted at rest. Every getConfig read decrypts it.
   isEncrypted Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

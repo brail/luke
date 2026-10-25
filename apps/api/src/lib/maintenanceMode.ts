@@ -16,7 +16,7 @@ import { TRPCError } from '@trpc/server';
 import { hasPermission, MaintenanceModeStateSchema, Roles, type MaintenanceModeState, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { getConfig, saveConfig } from './configManager';
+import { UnreadableStoredConfigError, getConfig, saveConfig } from './configManager';
 import { sseStore } from './sseStore';
 import { clearTokenVersionCache } from './tokenVersionCache';
 
@@ -45,7 +45,11 @@ export async function getMaintenanceState(prisma: PrismaClient): Promise<Mainten
   const now = Date.now();
   if (cached && now - cached.timestamp < CACHE_TTL_MS) return cached.state;
 
-  const raw = await getConfig(prisma, CONFIG_KEY, false);
+  // A row that does not decrypt is corrupt state too; a database error still propagates.
+  const raw = await getConfig(prisma, CONFIG_KEY).catch((error: unknown) => {
+    if (error instanceof UnreadableStoredConfigError) return null;
+    throw error;
+  });
   let state = DEFAULT_STATE;
   if (raw) {
     try {

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { getRequireEmailVerification } from '../src/lib/configManager';
+import { encryptValue, getRequireEmailVerification } from '../src/lib/configManager';
 
 function prismaWith(row: { value: string; isEncrypted: boolean } | null): PrismaClient {
   const findUnique = vi.fn(async ({ where: { key } }: { where: { key: string } }) => (row ? { key, ...row } : null));
@@ -29,9 +29,15 @@ describe('getRequireEmailVerification', () => {
 
   it.each([
     ['a value the registry refuses', { value: 'yes', isEncrypted: false }],
-    ['an encrypted row', { value: 'v1:3q2+7w==:c2VjcmV0', isEncrypted: true }],
+    ['a row that does not decrypt', { value: 'v1:3q2+7w==:c2VjcmV0', isEncrypted: true }],
   ])('reads %s as required', async (_label, row) => {
     await expect(getRequireEmailVerification(prismaWith(row))).resolves.toBe(true);
+  });
+
+  it('reads an encrypted row by its plaintext', async () => {
+    await expect(
+      getRequireEmailVerification(prismaWith({ value: encryptValue('false'), isEncrypted: true })),
+    ).resolves.toBe(false);
   });
 
   it('throws a database failure', async () => {

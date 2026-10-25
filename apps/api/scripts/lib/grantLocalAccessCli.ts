@@ -66,7 +66,7 @@ const BLOCKER_TEXT: Record<ReadinessBlocker, string> = {
 
 /** The application origin the link will point to, when `app.baseUrl` is stored and is one. */
 async function applicationOrigin(prisma: PrismaClient): Promise<string | null> {
-  const baseUrl = await getConfig(prisma, 'app.baseUrl', false);
+  const baseUrl = await getConfig(prisma, 'app.baseUrl');
   if (!baseUrl) return null;
   try {
     const url = new URL(baseUrl);

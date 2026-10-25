@@ -151,13 +151,13 @@ export function registerNavSyncScheduler(
     if (_isPaused) return;
 
     // Pre-check: if NAV isn't configured yet, avoid noisy errors on every boot
-    const host = await getConfig(prisma, 'integrations.nav.host', false);
+    const host = await getConfig(prisma, 'integrations.nav.host');
     if (!host) {
       fastify.log.debug('NAV sync scheduler: host not configured, tick skipped');
       return;
     }
 
-    const syncEnabled = await getConfig(prisma, 'integrations.nav.syncEnabled', false);
+    const syncEnabled = await getConfig(prisma, 'integrations.nav.syncEnabled');
     if (syncEnabled === 'false') {
       fastify.log.debug('NAV sync scheduler: sync disabled globally, tick skipped');
       return;

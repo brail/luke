@@ -61,7 +61,7 @@ async function syncSubmission(
 }
 
 async function checkFeedback(prisma: PrismaClient, logger: FastifyInstance['log']): Promise<void> {
-  const token = await getConfig(prisma, 'integrations.github.feedbackToken', true);
+  const token = await getConfig(prisma, 'integrations.github.feedbackToken');
   if (!token) return;
 
   const openSubmissions = await prisma.feedbackSubmission.findMany({ where: { status: 'open' } });

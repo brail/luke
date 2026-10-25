@@ -84,7 +84,7 @@ describe('runTick with an invalid stored scope', () => {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as FastifyInstance['log'];
   const settings = (scope: string | null, notifyOnFailure = true) => ({
     enabled: true, dailyTime: '03:00', retentionDays: 30, retentionMinCount: 3, notifyOnFailure,
-    scope, storedScope: scope === null ? 'EVERYTHING' : undefined,
+    scope,
   });
 
   beforeEach(() => {

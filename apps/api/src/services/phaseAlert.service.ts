@@ -232,7 +232,7 @@ export async function computeSeasonPhaseOrder(collectionLayoutId: string, prisma
  * `DEFAULT_ALERT_THRESHOLDS` if the key is unset, malformed, or fails validation (never throws).
  */
 export async function resolveAlertThresholds(prisma: PrismaClient): Promise<CollectionAlertThresholds> {
-  const raw = await getConfig(prisma, 'collectionControl.alertThresholds', false);
+  const raw = await getConfig(prisma, 'collectionControl.alertThresholds');
   if (!raw) return DEFAULT_ALERT_THRESHOLDS;
   try {
     const parsed = CollectionAlertThresholdsSchema.safeParse(JSON.parse(raw));

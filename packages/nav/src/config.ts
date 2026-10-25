@@ -21,11 +21,7 @@ export interface NavDbConfig {
  * Signature compatible with `getConfig()` from `apps/api/src/lib/configManager.ts`.
  * Injected from the outside so this package does not depend on `apps/api`.
  */
-export type GetConfigFn = (
-  prisma: PrismaClient,
-  key: string,
-  decrypt: boolean,
-) => Promise<string | null>;
+export type GetConfigFn = (prisma: PrismaClient, key: string) => Promise<string | null>;
 
 /**
  * Sanitizes the NAV company name for safe use in SQL Server table identifiers.
@@ -44,8 +40,8 @@ export function sanitizeCompany(company: string): string {
 }
 
 /**
- * Reads all NAV connection parameters from AppConfig via the injected `getConfig` function.
- * The password is decrypted (`decrypt: true`); all other keys are read as plain text.
+ * Reads all NAV connection parameters from AppConfig via the injected `getConfig` function, which
+ * decrypts whatever is stored encrypted.
  *
  * @throws {Error} When any required key (`host`, `port`, `database`, `user`, `password`, `company`) is missing.
  */
@@ -55,13 +51,13 @@ export async function getNavDbConfig(
 ): Promise<NavDbConfig> {
   const [host, port, database, user, password, company, readOnly] =
     await Promise.all([
-      getConfig(prisma, 'integrations.nav.host', false),
-      getConfig(prisma, 'integrations.nav.port', false),
-      getConfig(prisma, 'integrations.nav.database', false),
-      getConfig(prisma, 'integrations.nav.user', false),
-      getConfig(prisma, 'integrations.nav.password', true),
-      getConfig(prisma, 'integrations.nav.company', false),
-      getConfig(prisma, 'integrations.nav.readOnly', false),
+      getConfig(prisma, 'integrations.nav.host'),
+      getConfig(prisma, 'integrations.nav.port'),
+      getConfig(prisma, 'integrations.nav.database'),
+      getConfig(prisma, 'integrations.nav.user'),
+      getConfig(prisma, 'integrations.nav.password'),
+      getConfig(prisma, 'integrations.nav.company'),
+      getConfig(prisma, 'integrations.nav.readOnly'),
     ]);
 
   if (!host || !port || !database || !user || !password || !company) {

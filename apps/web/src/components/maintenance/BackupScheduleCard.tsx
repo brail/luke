@@ -101,7 +101,7 @@ function BackupScheduleForm({ stored }: { stored: BackupScheduleSettings }) {
           <Alert variant="destructive">
             <AlertTitle>Contenuto salvato non valido</AlertTitle>
             <AlertDescription>
-              Il valore salvato «{stored.storedScope}» non è un contenuto di backup: i backup pianificati non partono
+              Il valore salvato non è un contenuto di backup: i backup pianificati non partono
               {canUpdate ? ' finché non ne scegli uno e salvi.' : ' finché chi gestisce i backup non ne sceglie uno.'}
             </AlertDescription>
           </Alert>

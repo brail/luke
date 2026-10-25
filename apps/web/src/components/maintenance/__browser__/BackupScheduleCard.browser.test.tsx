@@ -80,11 +80,10 @@ test('the stored values fill the form, and follow them when they change', async 
 
 test('an invalid stored scope is shown and must be chosen before saving', async () => {
   // It used to read as `DB`, and saving made the silent fallback permanent.
-  query.current = { ...query.current, data: { ...stored, scope: null, storedScope: 'EVERYTHING' } };
+  query.current = { ...query.current, data: { ...stored, scope: null } };
   const screen = await render(<BackupScheduleCard />);
 
   await expect.element(screen.getByText('Contenuto salvato non valido')).toBeVisible();
-  await expect.element(screen.getByText(/«EVERYTHING»/)).toBeVisible();
   await screen.getByRole('button', { name: 'Salva Configurazione' }).click();
   await expect.element(screen.getByText('Scegli il contenuto del backup')).toBeVisible();
   expect(query.mutate).not.toHaveBeenCalled();

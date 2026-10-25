@@ -71,13 +71,13 @@ describe('integrations.mail.saveConfig', () => {
 
     await caller.integrations.mail.saveConfig(payload);
 
-    expect(await getConfig(testPrisma, 'smtp.host', false)).toBe('new-smtp.example.com');
-    expect(await getConfig(testPrisma, 'smtp.port', false)).toBe('587');
-    expect(await getConfig(testPrisma, 'smtp.secure', false)).toBe('false');
-    expect(await getConfig(testPrisma, 'smtp.user', false)).toBe('new-user');
-    expect(await getConfig(testPrisma, 'smtp.pass', true)).toBe('new-pass');
-    expect(await getConfig(testPrisma, 'smtp.from', false)).toBe('Luke <noreply@example.com>');
-    expect(await getConfig(testPrisma, 'app.baseUrl', false)).toBe('https://luke.example.com');
+    expect(await getConfig(testPrisma, 'smtp.host')).toBe('new-smtp.example.com');
+    expect(await getConfig(testPrisma, 'smtp.port')).toBe('587');
+    expect(await getConfig(testPrisma, 'smtp.secure')).toBe('false');
+    expect(await getConfig(testPrisma, 'smtp.user')).toBe('new-user');
+    expect(await getConfig(testPrisma, 'smtp.pass')).toBe('new-pass');
+    expect(await getConfig(testPrisma, 'smtp.from')).toBe('Luke <noreply@example.com>');
+    expect(await getConfig(testPrisma, 'app.baseUrl')).toBe('https://luke.example.com');
   });
 
   it('refuses a malformed sender before writing anything', async () => {
@@ -124,9 +124,9 @@ describe('integrations.mail.saveConfig', () => {
     const { pass: _pass, ...withoutPass } = payload;
 
     await caller.integrations.mail.saveConfig(withoutPass);
-    expect(await getConfig(testPrisma, 'smtp.pass', true)).toBe('old-pass');
+    expect(await getConfig(testPrisma, 'smtp.pass')).toBe('old-pass');
 
     await caller.integrations.mail.saveConfig({ ...payload, pass: '' });
-    expect(await getConfig(testPrisma, 'smtp.pass', true)).toBe('old-pass');
+    expect(await getConfig(testPrisma, 'smtp.pass')).toBe('old-pass');
   });
 });

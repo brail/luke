@@ -13,7 +13,7 @@ export async function getStorageUrlConfig(
   prisma: PrismaClient
 ): Promise<UrlConfig> {
   const [publicBaseUrl, enableProxy] = await Promise.all([
-    getConfig(prisma, 'storage.local.publicBaseUrl', false),
+    getConfig(prisma, 'storage.local.publicBaseUrl'),
     getConfigOrDefault(prisma, 'storage.local.enableProxy'),
   ]);
 

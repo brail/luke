@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, getConfigOrDefault, saveConfigs } from '../lib/configManager';
+import { getConfig, getConfigOrDefault, hasConfig, saveConfigs } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
@@ -185,7 +185,7 @@ export const storageRouter = router({
   testS3Connection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
-      const storageType = await getConfig(ctx.prisma, 'storage.type', false);
+      const storageType = await getConfig(ctx.prisma, 'storage.type');
       if (storageType !== 's3') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -228,7 +228,7 @@ export const storageRouter = router({
       // (see S3Provider constructor) — which is normally a Docker-internal hostname
       // the browser can't resolve. Surface that as a known fact, not a guess the
       // frontend has to make by pattern-matching the hostname string.
-      const publicBaseUrl = await getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false);
+      const publicBaseUrl = await getConfig(ctx.prisma, 'storage.s3.publicBaseUrl');
 
       return {
         success: true,
@@ -256,20 +256,20 @@ export const storageRouter = router({
       const [
         type,
         basePath, maxFileSizeMB, enableProxy,
-        endpoint, port, useSSL, s3AccessKey, s3SecretKey,
+        endpoint, port, useSSL, s3AccessKey, hasSecretKey,
         region, s3PublicBaseUrl, presignedPutTtl, presignedGetTtl,
       ] = await Promise.all([
         getConfigOrDefault(ctx.prisma, 'storage.type'),
-        getConfig(ctx.prisma, 'storage.local.basePath', false),
+        getConfig(ctx.prisma, 'storage.local.basePath'),
         getConfigOrDefault(ctx.prisma, 'storage.local.maxFileSizeMB'),
         getConfigOrDefault(ctx.prisma, 'storage.local.enableProxy'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.endpoint'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.port'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.useSSL'),
-        getConfig(ctx.prisma, 'storage.s3.accessKey', true),
-        getConfig(ctx.prisma, 'storage.s3.secretKey', false),
+        getConfig(ctx.prisma, 'storage.s3.accessKey'),
+        hasConfig(ctx.prisma, 'storage.s3.secretKey'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.region'),
-        getConfig(ctx.prisma, 'storage.s3.publicBaseUrl', false),
+        getConfig(ctx.prisma, 'storage.s3.publicBaseUrl'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.presignedPutTtl'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.presignedGetTtl'),
       ]);
@@ -288,7 +288,7 @@ export const storageRouter = router({
           // Blank, not the provider's dev fallback: this feeds a settings form, and offering a
           // credential the database does not hold invites an admin to save it as if it were real.
           accessKey: s3AccessKey || '',
-          hasSecretKey: !!s3SecretKey,
+          hasSecretKey,
           region,
           publicBaseUrl: s3PublicBaseUrl || '',
           presignedPutTtl,
@@ -323,7 +323,7 @@ export const storageRouter = router({
         // before it (CLAUDE.md rule 3). With none stored, saving would switch to an S3 provider that
         // cannot connect.
         const secretKey =
-          input.secretKey || (await getConfig(ctx.prisma, 'storage.s3.secretKey', true));
+          input.secretKey || (await getConfig(ctx.prisma, 'storage.s3.secretKey'));
         if (!secretKey) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
         }

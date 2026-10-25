@@ -98,7 +98,7 @@ async function fetchRateLimitConfigValue(
     return cachedConfigValue.value;
   }
 
-  const value = await getConfig(prisma, 'rateLimit', false);
+  const value = await getConfig(prisma, 'rateLimit');
   cachedConfigValue = { value, expiresAt: now + RATE_LIMIT_CONFIG_CACHE_TTL_MS };
   return value;
 }

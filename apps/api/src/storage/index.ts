@@ -26,7 +26,12 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { InvalidStoredConfigError, getConfig, getConfigOrDefault, getStoredConfigOrDefault } from '../lib/configManager';
+import {
+  UnreadableStoredConfigError,
+  getConfig,
+  getConfigOrDefault,
+  getStoredConfigOrDefault,
+} from '../lib/configManager';
 import { streamToBuffer } from '../lib/imageUpload';
 
 
@@ -60,7 +65,7 @@ export async function loadLocalProvider(prisma: PrismaClient): Promise<LocalFsPr
   // `publicBaseUrl`/`enableProxy` are deliberately not read here: the provider does not use them,
   // URL building reads them from AppConfig itself in `lib/storageUrl.ts`.
   const [rawBasePathConfig, maxFileSizeMB] = await Promise.all([
-    getConfig(prisma, 'storage.local.basePath', false),
+    getConfig(prisma, 'storage.local.basePath'),
     getConfigOrDefault(prisma, 'storage.local.maxFileSizeMB'),
   ]);
 
@@ -84,10 +89,10 @@ export async function loadS3Provider(prisma: PrismaClient): Promise<S3Provider> 
       getConfigOrDefault(prisma, 'storage.s3.endpoint'),
       getConfigOrDefault(prisma, 'storage.s3.port'),
       getConfigOrDefault(prisma, 'storage.s3.useSSL'),
-      getConfig(prisma, 'storage.s3.accessKey', true),
-      getConfig(prisma, 'storage.s3.secretKey', true),
+      getConfig(prisma, 'storage.s3.accessKey'),
+      getConfig(prisma, 'storage.s3.secretKey'),
       getConfigOrDefault(prisma, 'storage.s3.region'),
-      getConfig(prisma, 'storage.s3.publicBaseUrl', false),
+      getConfig(prisma, 'storage.s3.publicBaseUrl'),
       getConfigOrDefault(prisma, 'storage.s3.presignedPutTtl'),
       getConfigOrDefault(prisma, 'storage.s3.presignedGetTtl'),
     ]);
@@ -134,9 +139,9 @@ async function readStorageType(prisma: PrismaClient): Promise<StorageType> {
   try {
     return await getStoredConfigOrDefault(prisma, 'storage.type');
   } catch (error) {
-    if (!(error instanceof InvalidStoredConfigError)) throw error;
+    if (!(error instanceof UnreadableStoredConfigError)) throw error;
     throw new Error(
-      `Invalid AppConfig 'storage.type': '${error.raw}' is not one of ${AppConfigRegistry['storage.type'].options.join(', ')}. ` +
+      `Invalid AppConfig 'storage.type': the stored value does not decrypt or is not one of ${AppConfigRegistry['storage.type'].options.join(', ')}. ` +
         'Set the storage type in Impostazioni → Storage.',
       { cause: error },
     );

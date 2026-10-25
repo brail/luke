@@ -113,7 +113,7 @@ export function registerPortafoglioSyncScheduler(
     if (_isRunning) return;
 
     // Verifies NAV is configured before attempting connection
-    const host = await getConfig(prisma, 'integrations.nav.host', false);
+    const host = await getConfig(prisma, 'integrations.nav.host');
     if (!host) return;
 
     // Reads scheduling configuration from DB on every tick

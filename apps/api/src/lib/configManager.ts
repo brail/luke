@@ -300,29 +300,17 @@ export async function saveConfigs(
 }
 
 /**
- * Reads a single configuration value from the database.
+ * Reads a single configuration value from the database, decrypting a row stored encrypted: no
+ * reader ever sees ciphertext. A value that does not decrypt throws — never read as absent.
  *
- * **Security note**: Use this function only for individual keys.
- * For paginated listings use `listConfigsPaged` instead.
+ * **Security note**: an internal read. What leaves the process goes through a masked read
+ * (`getConfigsMasked`, `listConfigsPaged`), or `hasConfig` when only existence matters.
  *
  * @param prisma - Prisma client.
  * @param key - Configuration key to look up.
- * @param decrypt - When `true`, encrypted values are decrypted automatically.
- * @returns Decrypted (or raw) string value, or `null` if the key does not exist.
- *
- * @example
- * // Read decrypted value
- * const value = await getConfig(prisma, "auth.ldap.bindPassword", true);
- *
- * @example
- * // Read raw value (encrypted blob is returned as-is)
- * const value = await getConfig(prisma, "auth.ldap.bindPassword", false);
+ * @returns The plaintext value, or `null` if the key does not exist.
  */
-export async function getConfig(
-  prisma: PrismaClient,
-  key: string,
-  decrypt: boolean = true
-): Promise<string | null> {
+export async function getConfig(prisma: PrismaClient, key: string): Promise<string | null> {
   const config = await prisma.appConfig.findUnique({
     where: { key },
   });
@@ -331,7 +319,7 @@ export async function getConfig(
     return null;
   }
 
-  if (config.isEncrypted && decrypt) {
+  if (config.isEncrypted) {
     try {
       return decryptValue(config.value);
     } catch (error) {
@@ -342,11 +330,35 @@ export async function getConfig(
         },
         'Config decryption error'
       );
-      throw new Error(`Impossibile decifrare configurazione: ${key}`, { cause: error });
+      throw new ConfigDecryptionError(key, { cause: error });
     }
   }
 
   return config.value;
+}
+
+/**
+ * A stored value that cannot be used as stored: it does not decrypt, or the registry refuses it. It
+ * names the key, never the value: diagnostics are logged and notified, and a value may be secret.
+ * A reader with a documented fallback catches this, never the two cases one by one.
+ */
+export class UnreadableStoredConfigError extends Error {
+  constructor(readonly key: string, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = new.target.name;
+  }
+}
+
+/** A stored encrypted value that does not decrypt: a corrupted row, or one written under another key. */
+export class ConfigDecryptionError extends UnreadableStoredConfigError {
+  constructor(key: string, options?: ErrorOptions) {
+    super(key, `Impossibile decifrare configurazione: ${key}`, options);
+  }
+}
+
+/** Whether `key` is stored, for a check that needs no value — a credential's, above all. */
+export async function hasConfig(prisma: PrismaClient, key: AppConfigKey): Promise<boolean> {
+  return (await prisma.appConfig.count({ where: { key } })) > 0;
 }
 
 /**
@@ -389,7 +401,7 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
   prisma: PrismaClient,
   key: K,
 ): Promise<AppConfigValue<K>> {
-  const raw = await getConfig(prisma, key, false);
+  const raw = await getConfig(prisma, key);
   return parseConfigOrDefault(
     raw,
     key,
@@ -401,10 +413,9 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
 }
 
 /** A stored AppConfig value the registry refuses, for a reader that must not fall back. */
-export class InvalidStoredConfigError extends Error {
-  constructor(readonly key: AppConfigKey, readonly raw: string, options?: ErrorOptions) {
-    super(`Invalid AppConfig '${key}': '${raw}'`, options);
-    this.name = 'InvalidStoredConfigError';
+export class InvalidStoredConfigError extends UnreadableStoredConfigError {
+  constructor(key: AppConfigKey, options?: ErrorOptions) {
+    super(key, `Invalid AppConfig '${key}'`, options);
   }
 }
 
@@ -412,19 +423,19 @@ export class InvalidStoredConfigError extends Error {
  * Reads a key that has a declared default like `getConfigOrDefault`, but refuses a stored value the
  * registry rejects instead of falling back, for keys whose default would silently do the wrong thing:
  * a `local` storage type misplaces every file, a `DB` backup scope drops them from every backup.
- * No row → the default; an invalid row → `InvalidStoredConfigError`; a database error propagates.
- * Read without decrypting, as `getConfigOrDefault` reads: an encrypted row is reported invalid.
+ * No row → the default; an invalid row → `InvalidStoredConfigError`; a database or decryption error
+ * propagates.
  */
 export async function getStoredConfigOrDefault<K extends AppConfigKeyWithDefault>(
   prisma: PrismaClient,
   key: K,
 ): Promise<AppConfigValue<K>> {
-  const raw = await getConfig(prisma, key, false);
+  const raw = await getConfig(prisma, key);
   if (raw === null) return parseConfigValue(key, APP_CONFIG_DEFAULTS[key]);
   try {
     return parseConfigValue(key, raw);
   } catch (error) {
-    throw new InvalidStoredConfigError(key, raw, { cause: error });
+    throw new InvalidStoredConfigError(key, { cause: error });
   }
 }
 
@@ -660,18 +671,17 @@ export function getTokenVersionCacheTTL(prisma: PrismaClient): Promise<number> {
 /**
  * Whether login and local-access recovery require a verified email (`auth.requireEmailVerification`).
  *
- * A stored value the registry refuses — an encrypted row included, since this reads without
- * decrypting — reads as `true`, with a warning. The gate then refuses exactly what `true` refuses (an
- * unverified LOCAL login) and never a verified user or an LDAP login, so a bad row can neither switch
- * the gate off nor lock out an administrator who meets it.
+ * A stored value the registry refuses, or one that does not decrypt, reads as `true`, with a
+ * warning. The gate then refuses exactly what `true` refuses (an unverified LOCAL login) and never a
+ * verified user or an LDAP login, so a bad row can neither switch the gate off nor lock out an
+ * administrator who meets it.
  */
 export async function getRequireEmailVerification(prisma: PrismaClient): Promise<boolean> {
   try {
     return await getStoredConfigOrDefault(prisma, 'auth.requireEmailVerification');
   } catch (error) {
-    if (!(error instanceof InvalidStoredConfigError)) throw error;
-    // The key only: the stored value may be ciphertext.
-    logger.warn({ key: error.key }, 'Stored value refused by the registry: email verification is required');
+    if (!(error instanceof UnreadableStoredConfigError)) throw error;
+    logger.warn({ key: error.key }, 'Stored value unreadable: email verification is required');
     return true;
   }
 }
@@ -758,14 +768,15 @@ function parseConfigOrDefault<K extends AppConfigKey>(
 }
 
 /**
- * The stored backup scope, or `null` with the stored value when the registry refuses it: a scheduled
- * backup must not quietly fall back to `DB` and stop including the files.
+ * The stored backup scope, or `null` when the registry refuses it or it does not decrypt: a
+ * scheduled backup must not quietly fall back to `DB` and stop including the files, and the
+ * scheduler still reaps and prunes.
  */
 async function readBackupScope(prisma: PrismaClient): Promise<BackupScopeField> {
   try {
     return { scope: await getStoredConfigOrDefault(prisma, 'backup.schedule.scope') };
   } catch (error) {
-    if (error instanceof InvalidStoredConfigError) return { scope: null, storedScope: error.raw };
+    if (error instanceof UnreadableStoredConfigError) return { scope: null };
     throw error;
   }
 }
