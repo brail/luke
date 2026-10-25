@@ -5,8 +5,9 @@ type InteractOutsideHandler = React.ComponentPropsWithoutRef<typeof DialogPrimit
 
 /**
  * Guards a modal Dialog/Sheet against closing itself when interaction happens inside a nested
- * Radix overlay (a Select/Popover dropdown, or a stacked Dialog/Sheet/AlertDialog like a
- * ConfirmDialog). Two Radix races produce a false "outside click":
+ * Radix overlay (a Select/Popover dropdown, a Tooltip — portalled too, see `TooltipContent` — or a
+ * stacked Dialog/Sheet/AlertDialog like a ConfirmDialog). Two Radix races produce a false "outside
+ * click":
  *
  * 1. Pointer-events race: a nested overlay is always modal and becomes the topmost dismissable
  *    layer, zeroing this Content's own pointer-events while open. Closing it lets the closing

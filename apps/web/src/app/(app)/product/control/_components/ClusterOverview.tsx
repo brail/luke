@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 
 import { COLLECTION_GENDER, type CollectionGender } from '@luke/core';
 
-import { Tooltip, TooltipContent, TooltipPortal, TooltipTrigger } from '../../../../../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../../../../../components/ui/tooltip';
 import { formatMoqCoverageRatio, type MoqCluster } from '../../../../../lib/moqCoverage';
 import { trpc } from '../../../../../lib/trpc';
 
@@ -224,17 +224,14 @@ function ClusterPoint({ cluster: c, x, y, disc, ring, title, strategy, positioni
           </text>
         </g>
       </TooltipTrigger>
-      {/* Portalled: rendered in place, the content would be an SVG node and never painted. */}
-      <TooltipPortal>
-        <TooltipContent className="space-y-0.5 text-xs tabular-nums">
-          <p className="font-medium">{title}</p>
-          <p>{strategy} · {positioning}</p>
-          <p>A (forecast) {formatInteger(c.forecastPairs)} paia</p>
-          <p>B (minimi) {formatInteger(c.minimumPairs)} paia</p>
-          <p>A/B {formatMoqCoverageRatio(c)} · {formatInteger(c.sku)} SKU</p>
-          <p className={c.belowMoq ? 'font-semibold text-status-critical' : undefined}>{status}</p>
-        </TooltipContent>
-      </TooltipPortal>
+      <TooltipContent className="space-y-0.5 text-xs tabular-nums">
+        <p className="font-medium">{title}</p>
+        <p>{strategy} · {positioning}</p>
+        <p>A (forecast) {formatInteger(c.forecastPairs)} paia</p>
+        <p>B (minimi) {formatInteger(c.minimumPairs)} paia</p>
+        <p>A/B {formatMoqCoverageRatio(c)} · {formatInteger(c.sku)} SKU</p>
+        <p className={c.belowMoq ? 'font-semibold text-status-critical' : undefined}>{status}</p>
+      </TooltipContent>
     </Tooltip>
   );
 }
