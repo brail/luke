@@ -32,6 +32,7 @@
 #   S3_ROOT_USER_RC       — S3 storage admin username (RC)
 #   S3_ROOT_PASSWORD_RC   — S3 storage admin password (RC, 32+ chars)
 # Optional:
+#   PUBLIC_SCHEME         — "https" when served over HTTPS (NEXTAUTH_URL); default "http"
 #   COOKIE_SECURE         — "true" for HTTPS; default "false"
 #   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
 #
@@ -111,7 +112,7 @@ services:
     environment:
       NODE_ENV: production
       INTERNAL_API_URL: http://api-rc:3001
-      NEXTAUTH_URL: http://${RC_PUBLIC_HOSTNAME:?RC_PUBLIC_HOSTNAME not set}
+      NEXTAUTH_URL: ${PUBLIC_SCHEME:-http}://${RC_PUBLIC_HOSTNAME:?RC_PUBLIC_HOSTNAME not set}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET_RC:?NEXTAUTH_SECRET_RC not set}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     networks:

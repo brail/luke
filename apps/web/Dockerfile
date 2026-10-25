@@ -52,9 +52,8 @@ RUN pnpm --filter @luke/api build
 # The per-channel arguments, declared only now: an argument invalidates every
 # layer after it, so the install and the package builds above stay shared
 # between CI's default build and the release's channel builds.
-# NEXT_PUBLIC_API_URL is baked into the client JS bundle at build time.
-ARG NEXT_PUBLIC_API_URL=http://luke.febos.local
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# No public API URL is baked: the browser calls the API on the page's own
+# origin, through the rewrites below, so the image serves http and https alike.
 
 # INTERNAL_API_URL is used by next.config.js rewrites() which runs at build time.
 # The value must be the Docker service name — overridable via --build-arg.

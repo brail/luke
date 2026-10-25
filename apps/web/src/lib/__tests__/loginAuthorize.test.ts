@@ -37,7 +37,7 @@ const trpcError = (code: string, message: string, data: object = {}) => ({
 });
 
 beforeEach(() => {
-  vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://api.test:3001');
+  vi.stubEnv('INTERNAL_API_URL', 'http://api.test:3001');
 });
 
 afterEach(() => {

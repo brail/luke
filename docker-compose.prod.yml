@@ -26,6 +26,7 @@
 #   S3_ROOT_USER           — S3 storage admin username
 #   S3_ROOT_PASSWORD       — S3 storage admin password (strong, 32+ chars)
 # Optional:
+#   PUBLIC_SCHEME          — "https" when served over HTTPS (NEXTAUTH_URL); default "http"
 #   COOKIE_SECURE          — "true" if behind HTTPS; default "false"
 #   LUKE_EDGE_SUBNET       — subnet of the `edge` network; default 10.254.10.0/24
 #
@@ -109,7 +110,7 @@ services:
       # Internal Docker URL used by Next.js SSR and middleware
       INTERNAL_API_URL: http://api:3001
       # NextAuth
-      NEXTAUTH_URL: http://${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME not set}
+      NEXTAUTH_URL: ${PUBLIC_SCHEME:-http}://${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME not set}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET not set}
       # Set to "true" when serving over HTTPS, "false" for plain HTTP
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

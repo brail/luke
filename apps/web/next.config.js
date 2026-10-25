@@ -21,15 +21,17 @@ const nextConfig = {
   },
 
   /**
-   * Production proxy rewrites (Option B — single hostname via NPM → Next.js → API).
+   * API proxy rewrites (Option B — single hostname via NPM → Next.js → API).
    *
    * In production, all traffic arrives on the public hostname (e.g. luke.febos.local).
    * The browser can only reach Next.js, so tRPC calls and file uploads must be
    * forwarded to the API container via these rewrites.
    *
-   * INTERNAL_API_URL is a server-only env var (set in docker-compose) pointing to the
-   * API container on the internal Docker network (e.g. http://api:3001).
-   * In development it is not set, so the rewrites are skipped entirely.
+   * INTERNAL_API_URL points to the API container on the internal Docker network
+   * (e.g. http://api:3001). The rewrites are generated at build time, so the image
+   * takes it as a build argument (apps/web/Dockerfile); unset, it is the local
+   * development API. The browser calls the API on the page's own origin
+   * (`getApiBaseUrl()` in @luke/core), so these rewrites are what reaches it.
    *
    * Routes NOT proxied here (already handled by Next.js route handlers):
    *   /api/auth/...               → NextAuth
@@ -52,8 +54,7 @@ const nextConfig = {
    * `apps/api/test/rawRouteProxy.spec.ts` fails the build on a route registered outside them.
    */
   async rewrites() {
-    const apiUrl = process.env.INTERNAL_API_URL;
-    if (!apiUrl) return [];
+    const apiUrl = process.env.INTERNAL_API_URL || 'http://localhost:3001';
 
     return [
       // tRPC batch/streaming

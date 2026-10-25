@@ -596,6 +596,10 @@ hostname. A stable hotfix rehearses on RC what the API image proves, from inside
 the API container (the API image takes only `APP_VERSION`), and checks the web
 in production; its plan's release steps say so.
 
+*Update 2026-10-25:* from 3.1.0-rc.1 the web image bakes no public hostname (the
+browser calls the API on its own origin); the rule stands, because the rewrites
+still bake the channel's `INTERNAL_API_URL` (`api` or `api-rc`).
+
 ---
 
 ## Branch management

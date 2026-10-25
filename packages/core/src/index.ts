@@ -77,13 +77,13 @@ export * from './storage/assets.js';
 
 // Re-export runtime environment utilities
 export {
+  getApiBaseUrl,
   isDevelopment,
   isProduction,
 } from './runtime/env.js';
 
 // Re-export network URL utilities
 export {
-  getApiBaseUrl,
   buildApiUrl,
   buildBrandLogoUploadUrl,
   buildCompanyLogoUploadUrl,
@@ -98,7 +98,6 @@ export {
   buildTrpcUrl,
   TRPC_MAX_BATCH_SIZE,
   buildSeasonCalendarExportUrl,
-  type UrlOptions,
 } from './net/url.js';
 
 // Note: server utilities are exported via @luke/core/server

@@ -375,9 +375,9 @@ type — a blank line between groups, alphabetical within each. Enforced by `imp
 `LUKE_TRUSTED_PROXY_CIDR` stops apps/api at boot, and so does a missing one in production
 (`apps/api/src/lib/trustProxy.ts`).
 
-**Allowed in Web `.env`** (framework exceptions): `INTERNAL_API_URL`, `NEXT_PUBLIC_API_URL`,
-`NEXT_PUBLIC_FRONTEND_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `COOKIE_SECURE`,
-`NEXT_PUBLIC_APP_VERSION`, `NEXT_PUBLIC_LUKE_DEBUG_UI`.
+**Allowed in Web `.env`** (framework exceptions): `INTERNAL_API_URL`, `NEXT_PUBLIC_FRONTEND_URL`,
+`NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `COOKIE_SECURE`, `NEXT_PUBLIC_APP_VERSION`,
+`NEXT_PUBLIC_LUKE_DEBUG_UI`.
 
 `APP_VERSION` and `NEXT_PUBLIC_APP_VERSION` are build-time metadata injected as a Docker `ARG`/`ENV`
 from the git tag in CI — never read from AppConfig.
@@ -443,10 +443,9 @@ Never commit an `## [Unreleased]` heading. `.husky/pre-push` is early feedback; 
 **Release flow**: push or PR → CI (`CI gate`; images built, never published); tag → provenance gate
 → tagged-tree check → CI → images → `ghcr.io` (`rc-latest` from the train, `latest` + `X.Y` from
 `main`) → GitHub Release `Luke X.Y.Z` (stable tags only: the tag's CHANGELOG section) → manual
-redeploy of the stack (nothing redeploys it automatically). The repository variables
-`PUBLIC_HOSTNAME`/`RC_PUBLIC_HOSTNAME` must be set (`OPERATIONS.md`). Runtime images carry
-runtime dependencies only (ADR-028). **NEVER delete the `luke_api_data` volume** — the master
-key lives there.
+redeploy of the stack (nothing redeploys it automatically). Runtime images carry runtime
+dependencies only (ADR-028). **NEVER delete the `luke_api_data` volume** — the master key lives
+there.
 
 **A `develop-X.Y` branch dies when its stable tag is cut**, not at the merge: never reactivate it or
 backport onto it; the next cycle opens a new branch cut from `main`.

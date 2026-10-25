@@ -8,66 +8,24 @@
  * @author Luke Team
  */
 
-import { getApiBaseUrl as getCoreApiBaseUrl } from '../runtime/env.js';
+import { getApiBaseUrl } from '../runtime/env.js';
 import { getProxyUrl } from '../storage/contracts.js';
 
 import type { AuditLogExportFormat } from '../schemas/auditLog.js';
 
 /**
- * Options for URL construction
- */
-export interface UrlOptions {
-  /** Whether to prefer server-side resolution */
-  ssr?: boolean;
-  /** Custom base URL override */
-  baseUrl?: string;
-}
-
-/**
- * Gets the API base URL with context awareness
- *
- * @param options - Configuration options
- * @returns API base URL
- *
- * @example
- * // Client-side (browser)
- * getApiBaseUrl() // → 'http://localhost:3001'
- *
- * @example
- * // Server-side with custom base
- * getApiBaseUrl({ baseUrl: 'https://api.example.com' })
- * // → 'https://api.example.com'
- */
-export function getApiBaseUrl(options: UrlOptions = {}): string {
-  if (options.baseUrl) {
-    return options.baseUrl;
-  }
-
-  // Use environment-based resolution
-  return getCoreApiBaseUrl();
-}
-
-/**
  * Builds a complete API URL from a path
  *
  * @param path - API endpoint path (e.g., '/trpc/auth.login')
- * @param options - Configuration options
  * @returns Complete API URL
  *
  * @example
  * // Basic usage
  * buildApiUrl('/trpc/auth.login')
- * // → 'http://localhost:3001/trpc/auth.login'
- *
- * @example
- * // With custom base URL
- * buildApiUrl('/upload/brand-logo/brand-123', {
- *   baseUrl: 'https://api.example.com'
- * })
- * // → 'https://api.example.com/upload/brand-logo/brand-123'
+ * // → '/trpc/auth.login'
  */
-export function buildApiUrl(path: string, options: UrlOptions = {}): string {
-  const baseUrl = getApiBaseUrl(options);
+export function buildApiUrl(path: string): string {
+  const baseUrl = getApiBaseUrl();
 
   // Ensure path starts with /
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -82,32 +40,27 @@ export function buildApiUrl(path: string, options: UrlOptions = {}): string {
  * Builds URL for brand logo upload
  *
  * @param brandId - Brand identifier
- * @param options - Configuration options
  * @returns Upload URL for brand logo
  *
  * @example
  * buildBrandLogoUploadUrl('brand-123')
- * // → 'http://localhost:3001/upload/brand-logo/brand-123'
+ * // → '/upload/brand-logo/brand-123'
  */
-export function buildBrandLogoUploadUrl(
-  brandId: string,
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl(`/upload/brand-logo/${brandId}`, options);
+export function buildBrandLogoUploadUrl(brandId: string): string {
+  return buildApiUrl(`/upload/brand-logo/${brandId}`);
 }
 
 /**
  * Builds URL for temporary brand logo upload
  *
- * @param options - Configuration options
  * @returns Upload URL for temporary brand logo
  *
  * @example
  * buildTempBrandLogoUploadUrl()
- * // → 'http://localhost:3001/upload/brand-logo/temp'
+ * // → '/upload/brand-logo/temp'
  */
-export function buildTempBrandLogoUploadUrl(options: UrlOptions = {}): string {
-  return buildApiUrl('/upload/brand-logo/temp', options);
+export function buildTempBrandLogoUploadUrl(): string {
+  return buildApiUrl('/upload/brand-logo/temp');
 }
 
 /**
@@ -115,28 +68,23 @@ export function buildTempBrandLogoUploadUrl(options: UrlOptions = {}): string {
  *
  * @param rowId - UUID of the collection row
  */
-export function buildCollectionRowPictureUploadUrl(
-  rowId: string,
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl(`/upload/collection-row-picture/${rowId}`, options);
+export function buildCollectionRowPictureUploadUrl(rowId: string): string {
+  return buildApiUrl(`/upload/collection-row-picture/${rowId}`);
 }
 
 /**
  * Builds the upload URL for a temporary (pre-commit) collection row picture.
  * The file is later committed to a permanent key when the row is saved.
  */
-export function buildTempCollectionRowPictureUploadUrl(
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl('/upload/collection-row-picture/temp', options);
+export function buildTempCollectionRowPictureUploadUrl(): string {
+  return buildApiUrl('/upload/collection-row-picture/temp');
 }
 
 /**
  * Builds the upload URL for the company logo. No ID is needed because the company profile is a singleton.
  */
-export function buildCompanyLogoUploadUrl(options: UrlOptions = {}): string {
-  return buildApiUrl('/upload/company-logo', options);
+export function buildCompanyLogoUploadUrl(): string {
+  return buildApiUrl('/upload/company-logo');
 }
 
 /**
@@ -153,11 +101,8 @@ export function buildCompanyLogoUrl(logoKey: string): string {
  *
  * @param specsheetId - UUID of the specsheet
  */
-export function buildSpecsheetImageUploadUrl(
-  specsheetId: string,
-  options: UrlOptions = {}
-): string {
-  return buildApiUrl(`/upload/specsheet-image/${specsheetId}`, options);
+export function buildSpecsheetImageUploadUrl(specsheetId: string): string {
+  return buildApiUrl(`/upload/specsheet-image/${specsheetId}`);
 }
 
 // Raw (non-tRPC) endpoints the *browser* calls directly must live under `/download/` (streamed
@@ -175,17 +120,16 @@ export function buildSpecsheetImageUploadUrl(
  */
 export function buildBackupExportDownloadUrl(
   id: string,
-  token: string,
-  options: UrlOptions = {}
+  token: string
 ): string {
-  return buildApiUrl(`/download/backup/${id}/export?token=${encodeURIComponent(token)}`, options);
+  return buildApiUrl(`/download/backup/${id}/export?token=${encodeURIComponent(token)}`);
 }
 
 /**
  * Builds the upload URL for importing a passphrase-protected backup export package.
  */
-export function buildBackupImportUrl(options: UrlOptions = {}): string {
-  return buildApiUrl('/upload/backup-import', options);
+export function buildBackupImportUrl(): string {
+  return buildApiUrl('/upload/backup-import');
 }
 
 /**
@@ -194,31 +138,27 @@ export function buildBackupImportUrl(options: UrlOptions = {}): string {
  * @param format - `csv` or `xlsx`
  * @param token - Signed export token minted by `auditLog.getExportLink`, encoding the applied filters
  */
-export function buildAuditLogExportUrl(format: AuditLogExportFormat, token: string, options: UrlOptions = {}): string {
-  return buildApiUrl(`/download/audit-log?format=${format}&token=${encodeURIComponent(token)}`, options);
+export function buildAuditLogExportUrl(format: AuditLogExportFormat, token: string): string {
+  return buildApiUrl(`/download/audit-log?format=${format}&token=${encodeURIComponent(token)}`);
 }
 
 /**
  * Builds URL for tRPC endpoint
  *
  * @param procedure - tRPC procedure path (e.g., 'auth.login')
- * @param options - Configuration options
  * @returns Complete tRPC URL
  *
  * @example
  * buildTrpcUrl('auth.login')
- * // → 'http://localhost:3001/trpc/auth.login'
+ * // → '/trpc/auth.login'
  */
-export function buildTrpcUrl(
-  procedure: string,
-  options: UrlOptions = {}
-): string {
+export function buildTrpcUrl(procedure: string): string {
   // Remove leading slash if present
   const cleanProcedure = procedure.startsWith('/')
     ? procedure.slice(1)
     : procedure;
 
-  return buildApiUrl(`/trpc/${cleanProcedure}`, options);
+  return buildApiUrl(`/trpc/${cleanProcedure}`);
 }
 
 /**
@@ -247,8 +187,7 @@ export function buildSeasonCalendarExportUrl(
     view?: 'list' | 'week' | 'month' | 'gantt' | 'day';
     /** The `YYYY-MM-DD` calendar date the viewer is looking at — a date, never an instant. */
     viewDate?: string;
-  },
-  options: UrlOptions = {}
+  }
 ): string {
   const query = new URLSearchParams({
     seasonId: params.seasonId,
@@ -258,5 +197,5 @@ export function buildSeasonCalendarExportUrl(
     if (params.view) query.set('view', params.view);
     if (params.viewDate) query.set('viewDate', params.viewDate);
   }
-  return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`, options);
+  return buildApiUrl(`/download/season-calendar/${format}?${query.toString()}`);
 }

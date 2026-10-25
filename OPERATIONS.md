@@ -385,13 +385,20 @@ docker inspect nginx-proxy-manager --format '{{range $k, $v := .NetworkSettings.
 
 ## Release build variables
 
-`release.yml` builds the web image with
-`NEXT_PUBLIC_API_URL=http://<hostname>`, baked into the client bundle, which
-builds its API URLs from it. The hostname comes from a GitHub repository
-variable: `PUBLIC_HOSTNAME` for a stable tag, `RC_PUBLIC_HOSTNAME` for an rc tag.
-Set both under the repository's Actions variables before tagging. An unset or
-empty variable does not fail the build — it bakes `http://` — and a new hostname
-needs a new image. The scheme is fixed to `http://` in the workflow.
+`release.yml` builds the web image with two arguments: `INTERNAL_API_URL`, the
+API service of the channel (`http://api:3001`, or `http://api-rc:3001` for an rc
+tag), which the `next.config.js` rewrites are generated from, and `APP_VERSION`.
+No public hostname or scheme is baked: the browser calls the API on the page's
+own origin, and the rewrites forward `/trpc`, `/upload`, `/download` and
+`/api/sse` to the API. A new hostname, or the switch to HTTPS, needs no new
+image: set the stack's `PUBLIC_HOSTNAME` (`RC_PUBLIC_HOSTNAME`), `PUBLIC_SCHEME`
+and `COOKIE_SECURE`, the application base URL in the mail settings
+(`app.baseUrl`, the origin of the links in emails), and, with Google connected,
+register the new redirect URI (`docs/google-calendar-setup.md`). The repository
+variables `PUBLIC_HOSTNAME` and `RC_PUBLIC_HOSTNAME` are no longer read.
+
+Web images before 3.1.0-rc.1 bake `http://<hostname>`: after the switch to
+HTTPS, rolling the web back to one of them brings mixed content back.
 
 ---
 

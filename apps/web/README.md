@@ -61,7 +61,7 @@ Route handlers `api/`:
 - `/api/google/oauth/callback` — Google OAuth 2.0 callback
 - `/api/uploads/[...path]` — authenticated proxy that streams stored files from the API, with per-segment path validation
 
-Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to `apps/api` by the rewrites in `next.config.js`, which are active only when `INTERNAL_API_URL` is set.
+Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to `apps/api` by the rewrites in `next.config.js`: the browser calls the API on the page's own origin.
 <!-- luke-docs:end:routes -->
 
 ## Internal Dependencies
@@ -76,8 +76,7 @@ Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to
 <!-- luke-docs:start:env -->
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`). Enables the `next.config.js` rewrites and is the base that SSR section guards and route handlers call directly; unset in local development, where the rewrites are skipped | In containers |
-| `NEXT_PUBLIC_API_URL` | Public API URL, inlined into the client bundle at build time; falls back to `http://localhost:3001` | For production builds |
+| `INTERNAL_API_URL` | API base URL on the internal network (e.g. `http://api:3001`): the target of the `next.config.js` rewrites, generated at build time, and the base that SSR section guards and route handlers call directly. Unset, it is the local development API, `http://localhost:3001` | In containers, at build and run time |
 | `NEXT_PUBLIC_FRONTEND_URL` | Initial value of the application base URL field (`app.baseUrl`) on the mail settings page, shown only until the configuration loads: the form is then reset to the stored value, or emptied when none is stored. Nothing else reads it | No |
 | `NEXTAUTH_URL` | Canonical frontend URL used by NextAuth for callbacks | In containers |
 | `NEXTAUTH_SECRET` | NextAuth signing secret. `src/auth.ts` refuses to start in production without it; in development it is derived from the master key `~/.luke/secret.key` | In production |

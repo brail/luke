@@ -25,10 +25,9 @@ export interface IPrismaConfigClient {
 /**
  * Gets the API base URL synchronously (client-side compatible)
  *
- * Priority:
- * 1. NEXT_PUBLIC_API_URL environment variable
- * 2. Development fallback (localhost:3001)
- * 3. Build-time fallback (localhost:3001)
+ * Server: `INTERNAL_API_URL`, or the local development API.
+ * Browser: `''` — the page's own origin, where the `next.config.js` rewrites proxy `/trpc`,
+ * `/upload`, `/download` and `/api/sse`, so the API follows the page's scheme.
  *
  * @returns API base URL
  */
@@ -36,16 +35,10 @@ export function getApiBaseUrl(): string {
   // Server-side (SSR, middleware, Next.js API routes): use internal Docker URL directly
   // to avoid looping through the public hostname
   if (typeof window === 'undefined') {
-    const internalUrl = process.env.INTERNAL_API_URL;
-    if (internalUrl) return internalUrl;
+    return process.env.INTERNAL_API_URL || 'http://localhost:3001';
   }
 
-  // Client-side (browser): use the public-facing URL
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (envUrl) return envUrl;
-
-  // Dev / build fallback
-  return 'http://localhost:3001';
+  return '';
 }
 
 /**

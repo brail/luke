@@ -609,21 +609,18 @@ export default [
   {
     // The one file that actually bridges Node and browser — not "a package
     // that happens to run in both", a single file deliberately written to:
-    // `typeof window === 'undefined'` (×2) and `process.env.*` reads
-    // (`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_FRONTEND_URL`, `NODE_ENV`,
-    // `INTERNAL_API_URL`), plus one `new URL(...)`. Granted only the
+    // `typeof window === 'undefined'` and `process.env.*` reads
+    // (`INTERNAL_API_URL`, `NODE_ENV`). Granted only the
     // identifiers it actually uses, not `globals.browser`/`globals.node`
     // wholesale — a file this small, with an already-fully-enumerated need,
     // is exactly the case where identifier-level precision is honest rather
     // than paranoid, unlike the much larger, unpredictable `apps/web` bucket
-    // above. `URL` is not really a Node-vs-browser question at all — see the
-    // next block.
+    // above.
     files: ['packages/core/src/runtime/env.ts'],
     languageOptions: {
       globals: {
         window: 'readonly',
         process: 'readonly',
-        URL: 'readonly',
       },
     },
   },
