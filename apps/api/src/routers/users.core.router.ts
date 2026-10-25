@@ -15,7 +15,7 @@ import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
 import { revokeUserLinks } from '../lib/emailHelpers';
-import { toErrorCode, toErrorMessage } from '../lib/error';
+import { isUniqueViolation, toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { createNotification } from '../lib/notifications';
@@ -244,7 +244,7 @@ export const usersCoreRouter = router({
         // transaction commits. The DB constraint still holds — here we
         // translate the P2002 into the same CONFLICT as the non-race path,
         // instead of letting it surface as a generic 500.
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (isUniqueViolation(err, 'users_email_key', 'users_username_key', 'identities_provider_providerId_key')) {
           throw new TRPCError({
             code: 'CONFLICT',
             message: 'Email o username già esistente',
@@ -549,7 +549,7 @@ export const usersCoreRouter = router({
         // same email/username can commit between the findFirst and this
         // update. The DB constraint still holds — we translate the P2002
         // into the same CONFLICT as the non-race path.
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (isUniqueViolation(err, 'users_email_key', 'users_username_key')) {
           throw new TRPCError({
             code: 'CONFLICT',
             message: 'Email o username già esistente',

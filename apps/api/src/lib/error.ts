@@ -42,15 +42,32 @@ export function toErrorCode(err: unknown): string {
 }
 
 /**
- * `true` when `err` is Prisma's foreign-key violation (P2003) on the named constraint — and only on
- * that one, so a failure on another relation keeps its own answer.
+ * Whether `err` is the Prisma refusal `code` on one of `constraints`. With the PostgreSQL driver
+ * adapter the constraint is reported under `meta.driverAdapterError.cause.constraint.index`, not the
+ * legacy `meta.target` (`constraintViolation.integration.spec.ts` reads it from a real refusal).
  */
-export function isForeignKeyViolation(err: unknown, constraint: string): boolean {
-  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2003') return false;
-  // With the PostgreSQL driver adapter the constraint is reported under
-  // `meta.driverAdapterError.cause.constraint.index`; `meta` is typed as an open record.
+function violates(err: unknown, code: string, constraints: readonly string[]): boolean {
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== code) return false;
+  // `meta` is typed as an open record.
   const adapterError = err.meta?.driverAdapterError as { cause?: { constraint?: { index?: string } } } | undefined;
-  return adapterError?.cause?.constraint?.index === constraint;
+  const constraint = adapterError?.cause?.constraint?.index;
+  return constraint !== undefined && constraints.includes(constraint);
+}
+
+/**
+ * `true` when `err` is Prisma's foreign-key violation (P2003) on one of the named constraints — and
+ * only on those, so a failure on another relation keeps its own answer.
+ */
+export function isForeignKeyViolation(err: unknown, ...constraints: [string, ...string[]]): boolean {
+  return violates(err, 'P2003', constraints);
+}
+
+/**
+ * `true` when `err` is Prisma's unique violation (P2002) on one of the named constraints — and only
+ * on those, so a duplicate on another key keeps its own answer instead of reading as these.
+ */
+export function isUniqueViolation(err: unknown, ...constraints: [string, ...string[]]): boolean {
+  return violates(err, 'P2002', constraints);
 }
 
 /**

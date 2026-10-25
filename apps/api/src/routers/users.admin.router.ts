@@ -7,12 +7,12 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { UserIdSchema } from '@luke/core';
-import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
 import { isSyntheticLdapEmail, issueUserToken } from '../lib/emailHelpers';
+import { isUniqueViolation } from '../lib/error';
 import { sendAccountApprovedEmail, sendPasswordResetEmail } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -316,9 +316,10 @@ export const usersAdminRouter = router({
             await ctx.prisma.$transaction(tx => prepareLocalIdentity(tx, user, placeholderHash));
           } catch (err) {
             // `user.identities` was read outside any transaction: a concurrent call for the same
-            // user can race this one, and the `(provider, providerId)` unique key decides it. The
-            // identity that won is acceptable only if it is this user's, with a credential.
-            if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+            // user can race this one, and a unique key decides it — the identity's
+            // `(provider, providerId)` or its credential's `identityId`. The identity that won is
+            // acceptable only if it is this user's, with a credential.
+            if (!isUniqueViolation(err, 'identities_provider_providerId_key', 'local_credentials_identityId_key')) throw err;
             await assertOwnLocalIdentity(ctx.prisma, user);
           }
         } catch (err) {

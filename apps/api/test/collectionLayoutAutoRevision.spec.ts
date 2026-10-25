@@ -14,7 +14,6 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { Prisma } from '@luke/db';
 
 import {
   AUTO_REVISION_TYPE_DATE,
@@ -25,6 +24,8 @@ import {
 import { createRevision } from '../src/services/collectionLayoutRevision.service';
 import { getRankedGroup } from '../src/services/phaseAlert.service';
 import { copyToImmutableBucket } from '../src/storage';
+
+import { prismaKnownError } from './helpers/prismaError';
 
 vi.mock('../src/services/collectionLayoutRevision.service', () => ({
   createRevision: vi.fn(),
@@ -88,11 +89,7 @@ const LAYOUT = { id: 'layout-1', brandId: 'brand-1', seasonId: 'season-1' };
 
 /** Violation of the unique index `(milestoneId, revisionTypeValue)` — a concurrent trigger got there first. */
 function duplicateRevisionError() {
-  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-    code: 'P2002',
-    clientVersion: '7.0.0',
-    meta: { target: ['milestoneId', 'revisionTypeValue'] },
-  });
+  return prismaKnownError('P2002', 'collection_layout_revisions_milestoneId_revisionTypeValue_key');
 }
 
 beforeEach(() => {

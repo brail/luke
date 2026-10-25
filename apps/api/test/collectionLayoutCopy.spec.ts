@@ -5,9 +5,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { Prisma } from '@luke/db';
 
 import { copiedQuotation, copyFailure } from '../src/services/collectionLayout.service';
+
+import { prismaKnownError } from './helpers/prismaError';
 
 const NOW = new Date('2026-10-16T00:00:00.000Z');
 const quotation = (pricingParameterSet: { name: string; purchaseCurrency: string; sellingCurrency: string } | null) => ({
@@ -49,11 +50,7 @@ describe('copiedQuotation', () => {
 });
 
 describe('copyFailure', () => {
-  const error = (code: string, index?: string) => new Prisma.PrismaClientKnownRequestError('failed', {
-    code,
-    clientVersion: '7.0.0',
-    meta: index ? { driverAdapterError: { cause: { constraint: { index } } } } : undefined,
-  });
+  const error = prismaKnownError;
 
   it.each(['collection_layout_rows_planningGroupId_fkey', 'collection_row_quotations_pricingParameterSetId_fkey'])(
     'answers CONFLICT when a target reference went away (%s)',

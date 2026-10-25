@@ -18,6 +18,7 @@ import {
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { isUniqueViolation } from '../lib/error';
 import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -170,16 +171,22 @@ export const brandRouter = router({
         return brand;
       }, { timeout: 15000 })
         // The check-then-act above is inside a transaction, but PostgreSQL runs in
-        // READ COMMITTED: two concurrent creates with the same code don't see each
-        // other and both reach the insert. The unique constraint prevents the
+        // READ COMMITTED: two concurrent creates with the same code or NAV link don't
+        // see each other and both reach the insert. The unique constraint prevents the
         // duplicate — but without this translation the loser would get a raw
         // Prisma error (500) instead of the CONFLICT it gets via the explicit
         // check when it loses the race. Same pattern as the P2025 in company.ts.
         .catch((e: unknown) => {
-          if ((e as { code?: string })?.code === 'P2002') {
+          if (isUniqueViolation(e, 'brands_code_key')) {
             throw new TRPCError({
               code: 'CONFLICT',
               message: 'Codice brand già esistente',
+            });
+          }
+          if (isUniqueViolation(e, 'brands_navBrandId_key')) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Codice NAV già collegato a un altro brand',
             });
           }
           throw e;

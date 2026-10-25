@@ -25,7 +25,7 @@ import type {
   PricingParameterSet,
 } from '@luke/db';
 
-import { isForeignKeyViolation } from '../lib/error.js';
+import { isForeignKeyViolation, isUniqueViolation } from '../lib/error.js';
 
 import { assertUnlocked } from './editLock.service.js';
 import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
@@ -311,7 +311,7 @@ export async function copyFromSeason(
           select: { id: true },
         })
         .catch((err: unknown) => {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+          if (isUniqueViolation(err, 'collection_layouts_brandId_seasonId_key')) {
             throw new TRPCError({ code: 'CONFLICT', message: 'Esiste già un collection layout per questo brand/stagione' });
           }
           if (isForeignKeyViolation(err, 'collection_layouts_brandId_fkey') || isForeignKeyViolation(err, 'collection_layouts_seasonId_fkey')) {

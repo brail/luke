@@ -13,9 +13,10 @@
  *
  * Dedup is a `(milestoneId, revisionTypeValue)` existence query backed by the unique index of the
  * same shape: the query keeps the common case cheap (no wasted snapshot work), the index closes the
- * window where two concurrent triggers both pass it. Losing that race surfaces as P2002 and is
- * treated as "already done", not as an error. Manual revisions are untouched — their `milestoneId`
- * is null, and Postgres treats NULLs as distinct in a unique index.
+ * window where two concurrent triggers both pass it. Losing that race surfaces as that index's P2002
+ * and is treated as "already done", not as an error; any other duplicate — a concurrent revision
+ * taking the same number — is an error. Manual revisions are untouched — their `milestoneId` is null,
+ * and Postgres treats NULLs as distinct in a unique index.
  *
  * A row photo gone from storage does not fail a revision (see `createRevision`); any other failure
  * does, and is logged. The date trigger tries again every tick while the event is within the
@@ -24,9 +25,9 @@
  */
 
 import { DEADLINE_REACH_MARGIN_MS, deadlineReachedAt, planningGroupName } from '@luke/core';
-import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
+import { isUniqueViolation } from '../lib/error.js';
 import { copyToImmutableBucket } from '../storage/index.js';
 
 import { createRevision } from './collectionLayoutRevision.service.js';
@@ -91,11 +92,6 @@ async function withoutExistingRevision(
   return events.filter(e => !done.has(e.id));
 }
 
-/** True when the error is the `(milestoneId, revisionTypeValue)` unique violation. */
-function isDuplicateRevision(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
-}
-
 /**
  * Creates the revision and its audit trail. `logAudit` needs a tRPC context (request log, trace id,
  * ip) that no automatic trigger has, so the audit row is written directly — same shape, null actor
@@ -130,7 +126,7 @@ async function createAutoRevision(
       prisma,
     );
   } catch (err) {
-    if (isDuplicateRevision(err)) return false;
+    if (isUniqueViolation(err, 'collection_layout_revisions_milestoneId_revisionTypeValue_key')) return false;
     throw err;
   }
   const { revision, missingPhotoRowIds } = created;

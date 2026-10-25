@@ -33,11 +33,11 @@ import {
   type AssetVariant,
   type StorageBucket,
 } from '@luke/core';
-import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
 import { putDerivativeObject, readFileBuffer } from '../../storage';
 import { getConfigOrDefault } from '../configManager';
+import { isUniqueViolation } from '../error';
 import { withSchedulerLock } from '../schedulerLock';
 
 import { deriveVariant, probeHasAlpha } from './pipeline';
@@ -58,10 +58,6 @@ const derivativeLimit = pLimit(DERIVATIVE_CONCURRENCY);
 /** Exported for `asset.service.ts`'s `ingestImageAsset`, whose synchronous sync-variant generation must honor the same kill switch — see the call site there for why. */
 export async function derivativesEnabled(prisma: PrismaClient): Promise<boolean> {
   return getConfigOrDefault(prisma, 'storage.derivatives.enabled');
-}
-
-function isUniqueConstraintViolation(err: unknown): boolean {
-  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
 /**
@@ -159,7 +155,9 @@ export async function processMaster(prisma: PrismaClient, masterId: string, logg
         masterConfirmedAt: currentConfirmedAt,
       });
     } catch (err) {
-      if (isUniqueConstraintViolation(err)) return; // already written by a racing producer — not a failure
+      // Already written by a racing producer — not a failure. Its deterministic key and its
+      // (parent, variant, version) are both unique, and either index can refuse the second insert.
+      if (isUniqueViolation(err, 'file_objects_parentId_variant_pipelineVersion_key', 'file_objects_bucket_key_key')) return;
       throw err;
     }
   }));

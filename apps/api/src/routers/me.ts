@@ -13,10 +13,10 @@ import {
   UpdateTimezoneSchema,
   greetingAt,
 } from '@luke/core';
-import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
+import { isUniqueViolation } from '../lib/error';
 import { GREETING_INTROS, selectGreetingContent } from '../lib/greetingPhrases';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { hashPassword, verifyPassword } from '../lib/password';
@@ -251,7 +251,7 @@ export const meRouter = router({
           return written.count === 0 ? null : revokeUserLinks(tx, userId);
         });
       } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (isUniqueViolation(err, 'users_email_key')) {
           throw new TRPCError({ code: 'CONFLICT', message: 'Email già in uso' });
         }
         throw err;

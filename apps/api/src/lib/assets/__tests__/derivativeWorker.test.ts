@@ -17,9 +17,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { APP_CONFIG_DEFAULTS } from '@luke/core';
-import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
+import { prismaKnownError } from '../../../../test/helpers/prismaError';
 import { putDerivativeObject, readFileBuffer } from '../../../storage';
 import { getConfigOrDefault } from '../../configManager';
 import { enqueueDerivatives, processMaster, registerDerivativeScheduler } from '../derivativeWorker';
@@ -231,7 +231,7 @@ describe('processMaster', () => {
       buffer: Buffer.from('variant-bytes'), contentType: 'image/jpeg', width: 400, height: 300,
     });
     vi.mocked(putDerivativeObject).mockRejectedValue(
-      new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: 'test' }),
+      prismaKnownError('P2002', 'file_objects_parentId_variant_pipelineVersion_key'),
     );
 
     await processMaster(prisma, 'master-1');
