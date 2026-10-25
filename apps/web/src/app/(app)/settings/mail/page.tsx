@@ -73,6 +73,8 @@ export default function MailPage() {
     keys: ['app.baseUrl'],
   });
 
+  const baseUrlEncrypted = !!baseUrlConfig?.[0]?.isEncrypted;
+
   useEffect(() => {
     if (existingConfigs) {
       const configs = existingConfigs.items;
@@ -90,14 +92,15 @@ export default function MailPage() {
         user: smtpUser?.valuePreview || '',
         pass: '',
         from: smtpFrom?.valuePreview || '',
-        // A base URL not stored, or not read, keeps the deployment's own address.
-        baseUrl: baseUrlConfig?.[0]?.value || process.env.NEXT_PUBLIC_FRONTEND_URL || '',
+        // A base URL not stored, or not read, keeps the deployment's own address; one stored
+        // encrypted cannot be shown, and the empty field keeps it on save.
+        baseUrl: baseUrlEncrypted ? '' : baseUrlConfig?.[0]?.value || process.env.NEXT_PUBLIC_FRONTEND_URL || '',
       });
 
       // Whether the password is already configured
       setHasPassword(!!smtpPass);
     }
-  }, [existingConfigs, baseUrlConfig, form]);
+  }, [existingConfigs, baseUrlConfig, baseUrlEncrypted, form]);
 
   const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
@@ -138,6 +141,11 @@ export default function MailPage() {
   });
 
   const onSubmit = (data: MailSmtpConfigInput) => {
+    // Empty keeps only a base URL the page cannot show, one stored encrypted; the server refuses it too.
+    if (!data.baseUrl && !baseUrlEncrypted) {
+      form.setError('baseUrl', { message: 'URL valido richiesto' });
+      return;
+    }
     // If the password is empty and already configured, leave it out of the payload
     const { pass, ...payloadWithoutPassword } = data;
     const payload = !pass || pass.trim() === '' ? payloadWithoutPassword : data;
@@ -351,6 +359,8 @@ export default function MailPage() {
                   <FormDescription>
                     URL base per i link nelle email (reset password, verifica
                     email).
+                    {baseUrlEncrypted &&
+                      ' Il valore salvato è cifrato e qui non si vede: lascia il campo vuoto per mantenerlo, un nuovo valore viene salvato in chiaro.'}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

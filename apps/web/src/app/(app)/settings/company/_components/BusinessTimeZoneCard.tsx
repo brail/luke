@@ -29,8 +29,10 @@ export function BusinessTimeZoneCard() {
   const utils = trpc.useUtils();
 
   const { data, isPending, error, refetch } = trpc.config.getMultiple.useQuery({ keys: [KEY] }, { enabled: canRead });
-  // An absent row means the registry default, which is also what the server reads.
-  const stored = data?.[0]?.value ?? APP_CONFIG_DEFAULTS[KEY];
+  // An absent row means the registry default, which is also what the server reads. A zone stored
+  // encrypted cannot be shown: nothing is selected until one is chosen, never the default.
+  const encrypted = !!data?.[0]?.isEncrypted;
+  const stored = encrypted ? '' : (data?.[0]?.value ?? APP_CONFIG_DEFAULTS[KEY]);
   // Only the unsaved choice is local state; otherwise the select shows what the server holds.
   const [draft, setDraft] = useState<string | null>(null);
   const timeZone = draft ?? stored;
@@ -57,6 +59,9 @@ export function BusinessTimeZoneCard() {
         <div className="max-w-sm space-y-1.5">
           <Label htmlFor="business-time-zone">Fuso orario</Label>
           <TimeZoneSelect id="business-time-zone" value={timeZone} onValueChange={setDraft} stored={stored} disabled={!canUpdate} />
+          {encrypted && draft === null && (
+            <p className="text-sm text-muted-foreground">Il fuso salvato è cifrato e qui non si vede: scegline uno per sostituirlo, in chiaro.</p>
+          )}
           <p className="text-sm text-muted-foreground">
             Cambiarlo ricalcola subito conteggi, fasce e blocchi, anche di eventi passati. Revisioni,
             notifiche e riepiloghi già inviati restano come sono.

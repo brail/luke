@@ -289,6 +289,15 @@ test('business time zone: a failed read shows the error, not the default as if i
   expect(screen.getByRole('combobox', { name: 'Fuso orario' }).elements()).toHaveLength(0);
 });
 
+test('business time zone: a zone stored encrypted is not shown as the default, and must be chosen to save', async () => {
+  h.state.zone = read([{ key: 'app.defaultTimezone', value: null, found: true, isEncrypted: true }]);
+  const screen = await render(<BusinessTimeZoneCard />);
+
+  await expect.element(screen.getByText(/Il fuso salvato è cifrato/)).toBeVisible();
+  await expect.element(screen.getByRole('combobox', { name: 'Fuso orario' })).not.toHaveTextContent('Europe/Rome');
+  await expect.element(screen.getByRole('button', { name: /Salva/ })).toBeDisabled();
+});
+
 test('business time zone: the stored zone is selected', async () => {
   const screen = await render(<BusinessTimeZoneCard />);
 

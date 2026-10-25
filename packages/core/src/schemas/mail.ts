@@ -28,7 +28,8 @@ export const mailSmtpConfigSchema = z.object({
   user: z.string().min(1, 'Username richiesto'),
   pass: z.string().optional().or(z.literal('')),
   from: smtpFromSchema,
-  baseUrl: httpUrl('URL valido richiesto'),
+  // Empty keeps the stored base URL, which the page cannot show back when it is stored encrypted.
+  baseUrl: httpUrl('URL valido richiesto').or(z.literal('')),
 });
 
 /** Input schema for triggering a test email. Defaults to the configured sender (`smtp.from`) if omitted. */

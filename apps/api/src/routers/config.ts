@@ -15,6 +15,7 @@ import {
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
+  storesEncrypted,
   type AppConfigKey,
 } from '@luke/core';
 
@@ -25,7 +26,6 @@ import {
   listConfigsPaged,
   deleteConfig,
   decryptValue,
-  storesEncrypted,
 } from '../lib/configManager';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
@@ -448,11 +448,11 @@ export const configRouter = router({
   /**
    * Fetches multiple AppConfig values in a single request, one result per requested key, in order.
    * `found` says whether the key is stored; an encrypted value comes back as `null`, as in `list`
-   * (`viewValue` is the audited way to read one).
+   * (`viewValue` is the audited way to read one), and `isEncrypted` says the `null` is masked.
    *
    * @auth {config:read}
    * @input {{ keys: string[] }} — list of config keys.
-   * @output {Array<{ key, value, found }>}
+   * @output {Array<{ key, value, found, isEncrypted }>}
    */
   getMultiple: protectedProcedure
     .use(requirePermission('config:read'))

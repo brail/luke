@@ -119,3 +119,24 @@ test('a key the server stores is an update, one it does not is new', async () =>
   await expect.element(screen.getByText('Aggiorna', { exact: true })).toBeVisible();
   await expect.element(screen.getByText('Nuova', { exact: true })).toBeVisible();
 });
+
+test('a secret is labelled as always encrypted and its value hidden, whatever the file says', async () => {
+  const screen = await selectFile([{ key: 'integrations.github.feedbackToken', value: 'ghp-sentinel', encrypt: false }]);
+
+  await expect.element(screen.getByText('Cifrato (obbligatorio)')).toBeVisible();
+  expect(screen.getByText('ghp-sentinel').elements()).toHaveLength(0);
+});
+
+test('an update that would store an encrypted setting in plaintext is flagged, a secret is not', async () => {
+  h.fetchExisting.mockResolvedValue([
+    { key: 'app.baseUrl', value: null, found: true, isEncrypted: true },
+    { key: 'integrations.github.feedbackToken', value: null, found: true, isEncrypted: true },
+  ]);
+  const screen = await selectFile([
+    { key: 'app.baseUrl', value: 'https://luke.example.test', encrypt: false },
+    { key: 'integrations.github.feedbackToken', value: 'ghp-new', encrypt: false },
+  ]);
+
+  await expect.element(screen.getByText('Oggi è cifrato: verrà salvato in chiaro')).toBeVisible();
+  expect(screen.getByText('Oggi è cifrato: verrà salvato in chiaro').elements()).toHaveLength(1);
+});

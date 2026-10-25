@@ -389,6 +389,15 @@ export function isSecretConfigKey(key: string): key is SecretConfigKey {
   return SECRET_CONFIG_KEY_SET.has(key);
 }
 
+/**
+ * Whether a write stores its value encrypted: when the caller asks, and for a key in
+ * `SECRET_CONFIG_KEYS` whatever the caller asks. Every writer, its audit row, its response and the
+ * import preview follow this decision.
+ */
+export function storesEncrypted(key: string, encrypt?: boolean | null): boolean {
+  return encrypt === true || isSecretConfigKey(key);
+}
+
 /** First segment of a dotted key: `app` for `app.baseUrl`. Generic so it distributes over a union. */
 type KeyPrefix<Key> = Key extends `${infer Prefix}.${string}` ? Prefix : never;
 

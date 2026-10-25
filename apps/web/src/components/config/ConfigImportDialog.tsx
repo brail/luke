@@ -7,6 +7,8 @@ import {
   CONFIG_SECRET_PLACEHOLDER,
   ConfigImportFileSchema,
   ConfigImportItemSchema,
+  isSecretConfigKey,
+  storesEncrypted,
   type ConfigImportItem,
 } from '@luke/core';
 
@@ -39,11 +41,16 @@ import {
   TableRow,
 } from '../ui/table';
 
-/** A row of the file as the preview shows it; `error` holds the reason for `invalid` and `skipped`. */
+/**
+ * A row of the file as the preview shows it; `error` holds the reason for `invalid` and `skipped`,
+ * `warning` what an `update` changes beyond the value.
+ */
 type ImportPreview = ConfigImportItem & {
   status: 'new' | 'update' | 'invalid' | 'skipped';
   error?: string;
+  warning?: string;
 };
+
 
 /**
  * Classifies one row of the file. A row that passes every check is `new`; whether it already exists
@@ -147,12 +154,14 @@ export function ConfigImportDialog({
     // Each registry key once: getMultiple takes no more keys than the registry declares.
     const newKeys = [...new Set(rows.filter(r => r.status === 'new').map(r => r.key))];
     const existingKeys = new Set<string>();
+    const encryptedKeys = new Set<string>();
     if (newKeys.length > 0) {
       try {
         // Straight from the server: a cached answer could call a key saved since then new.
         const results = await utils.client.config.getMultiple.query({ keys: newKeys });
         results.forEach(r => {
           if (r.found) existingKeys.add(r.key);
+          if (r.isEncrypted) encryptedKeys.add(r.key);
         });
       } catch (err) {
         debugWarn('Failed to check existing configs:', err);
@@ -163,9 +172,12 @@ export function ConfigImportDialog({
     }
 
     setPreview(
-      rows.map(r =>
-        r.status === 'new' && existingKeys.has(r.key) ? { ...r, status: 'update' } : r
-      )
+      rows.map(r => {
+        if (r.status !== 'new' || !existingKeys.has(r.key)) return r;
+        // A secret stays encrypted; anything else the file marks as plaintext loses its encryption.
+        const downgrade = encryptedKeys.has(r.key) && !storesEncrypted(r.key, r.encrypt);
+        return { ...r, status: 'update', warning: downgrade ? 'Oggi è cifrato: verrà salvato in chiaro' : undefined };
+      })
     );
     setStep('preview');
   };
@@ -326,7 +338,7 @@ export function ConfigImportDialog({
                     <TableHead>Chiave</TableHead>
                     <TableHead>Valore</TableHead>
                     <TableHead>Tipo</TableHead>
-                    <TableHead>Errore</TableHead>
+                    <TableHead>Note</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -344,11 +356,11 @@ export function ConfigImportDialog({
                         </code>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">
-                        {item.encrypt ? '••••••' : item.value}
+                        {storesEncrypted(item.key, item.encrypt) ? '••••••' : item.value}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {item.encrypt ? 'Cifrato' : 'Normale'}
+                          {isSecretConfigKey(item.key) ? 'Cifrato (obbligatorio)' : item.encrypt ? 'Cifrato' : 'Normale'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -362,6 +374,7 @@ export function ConfigImportDialog({
                             {item.error}
                           </span>
                         )}
+                        {item.warning && <span className="text-sm text-yellow-600">{item.warning}</span>}
                       </TableCell>
                     </TableRow>
                   ))}

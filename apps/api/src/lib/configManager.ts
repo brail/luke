@@ -22,11 +22,11 @@ import {
   type BackupScheduleSettings,
   type BackupScopeField,
   CRITICAL_CONFIG_KEYS,
-  isSecretConfigKey,
   LdapResilienceSchema,
   type LdapResilienceConfig,
   type LdapStrategy,
   Roles,
+  storesEncrypted,
 } from '@luke/core';
 import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
 import type { Prisma, PrismaClient } from '@luke/db';
@@ -235,15 +235,6 @@ type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
 export type ConfigWrite =
   | { key: BatchConfigKey; value: string; encrypt?: boolean }
   | { key: BatchConfigKey; value: null };
-
-/**
- * Whether a write stores its value encrypted: when the caller asks, and for a key in
- * `SECRET_CONFIG_KEYS` whatever the caller asks. Every writer, its audit row and its response
- * follow this decision.
- */
-export function storesEncrypted(key: AppConfigKey, encrypt?: boolean): boolean {
-  return encrypt === true || isSecretConfigKey(key);
-}
 
 /** Validates a value against its registry schema, then encrypts it if `storesEncrypted`: the stored form. */
 export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; value: string; encrypt?: boolean }) {
@@ -481,13 +472,14 @@ function maskedValue(row: { value: string; isEncrypted: boolean }): string | nul
 
 /**
  * The stored values of `keys`, one entry per requested key in their order, masked like
- * `listConfigsPaged`; `found` says whether the key is stored. One read answers existence and
- * encryption together, so no write can land between the two.
+ * `listConfigsPaged`; `found` says whether the key is stored and `isEncrypted` whether its `null`
+ * value is masked, so a page reads it instead of inferring it from `found` and `value`. One read
+ * answers existence and encryption together, so no write can land between the two.
  */
 export async function getConfigsMasked(
   prisma: PrismaClient,
   keys: string[]
-): Promise<{ key: string; value: string | null; found: boolean }[]> {
+): Promise<{ key: string; value: string | null; found: boolean; isEncrypted: boolean }[]> {
   const rows = await prisma.appConfig.findMany({
     where: { key: { in: keys } },
     select: { key: true, value: true, isEncrypted: true },
@@ -495,7 +487,7 @@ export async function getConfigsMasked(
   const stored = new Map(rows.map(row => [row.key, row]));
   return keys.map(key => {
     const row = stored.get(key);
-    return { key, value: row ? maskedValue(row) : null, found: row !== undefined };
+    return { key, value: row ? maskedValue(row) : null, found: row !== undefined, isEncrypted: row?.isEncrypted ?? false };
   });
 }
 

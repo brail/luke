@@ -9,7 +9,7 @@ import * as nodemailer from 'nodemailer';
 import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { saveConfigs } from '../lib/configManager';
+import { getConfigsMasked, saveConfigs } from '../lib/configManager';
 import { toTRPCError, IntegrationErrorHandler, SecureLogger } from '../lib/errorHandler';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
@@ -20,22 +20,28 @@ export const mailRouter = router({
    * Saves the SMTP configuration to AppConfig; password is stored encrypted.
    *
    * @auth {config:update}
-   * @input {mailSmtpConfigSchema} — host, port, secure, user, optional pass, from, baseUrl.
+   * @input {mailSmtpConfigSchema} — host, port, secure, user, optional pass, from, optional baseUrl.
    * @output {{ success: true, message: string }}
    */
   saveConfig: protectedProcedure
     .use(requirePermission('config:update'))
     .input(mailSmtpConfigSchema)
     .mutation(async ({ input, ctx }) => {
-      // One change: a failure leaves the stored SMTP settings as they were. A blank password keeps
-      // the stored one.
+      // An empty base URL keeps the stored one only when the page could not show it: stored
+      // encrypted. Otherwise it is a missing value, and every email link would point at the default.
+      if (!input.baseUrl && !(await getConfigsMasked(ctx.prisma, ['app.baseUrl']))[0]?.isEncrypted) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'URL valido richiesto' });
+      }
+
+      // One change: a failure leaves the stored SMTP settings as they were. A blank password or
+      // base URL keeps the stored one: the page cannot read either back.
       await saveConfigs(ctx.prisma, [
         { key: 'smtp.host', value: input.host },
         { key: 'smtp.port', value: input.port.toString() },
         { key: 'smtp.secure', value: input.secure.toString() },
         { key: 'smtp.user', value: input.user },
         { key: 'smtp.from', value: input.from },
-        { key: 'app.baseUrl', value: input.baseUrl },
+        ...(input.baseUrl ? [{ key: 'app.baseUrl' as const, value: input.baseUrl }] : []),
         ...(input.pass ? [{ key: 'smtp.pass' as const, value: input.pass, encrypt: true }] : []),
       ]);
 

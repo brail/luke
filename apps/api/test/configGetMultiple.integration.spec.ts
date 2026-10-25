@@ -22,10 +22,10 @@ describe('config.getMultiple', () => {
     const missing = 'app.notStoredAnywhere';
 
     expect(await caller.config.getMultiple({ keys: [missing, 'auth.ldap.bindPassword', 'app.name', 'app.name'] })).toEqual([
-      { key: missing, value: null, found: false },
-      { key: 'auth.ldap.bindPassword', value: null, found: true },
-      { key: 'app.name', value: 'Luke', found: true },
-      { key: 'app.name', value: 'Luke', found: true },
+      { key: missing, value: null, found: false, isEncrypted: false },
+      { key: 'auth.ldap.bindPassword', value: null, found: true, isEncrypted: true },
+      { key: 'app.name', value: 'Luke', found: true, isEncrypted: false },
+      { key: 'app.name', value: 'Luke', found: true, isEncrypted: false },
     ]);
   });
 });

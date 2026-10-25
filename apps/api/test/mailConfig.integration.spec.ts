@@ -80,6 +80,32 @@ describe('integrations.mail.saveConfig', () => {
     expect(await getConfig(testPrisma, 'app.baseUrl')).toBe('https://luke.example.com');
   });
 
+  it('keeps the stored base URL when the form leaves it empty, as it is when stored encrypted', async () => {
+    // Masked reads hide an encrypted value, so the page cannot show it back; an empty field keeps it.
+    await saveConfig(testPrisma, 'app.baseUrl', 'https://kept.example.com', true);
+    const caller = await createCallerAs('admin');
+
+    await caller.integrations.mail.saveConfig({ ...payload, baseUrl: '' });
+
+    expect(await getConfig(testPrisma, 'app.baseUrl')).toBe('https://kept.example.com');
+    expect(await getConfig(testPrisma, 'smtp.host')).toBe(payload.host);
+  });
+
+  it.each([
+    ['stored in plaintext', true],
+    ['not stored', false],
+  ])('refuses an empty base URL when one is %s, writing nothing', async (_label, stored) => {
+    if (!stored) await testPrisma.appConfig.deleteMany({ where: { key: 'app.baseUrl' } });
+    const before = await testPrisma.appConfig.findMany({ orderBy: { key: 'asc' } });
+    const caller = await createCallerAs('admin');
+
+    await expect(caller.integrations.mail.saveConfig({ ...payload, baseUrl: '' })).rejects.toMatchObject({
+      code: 'BAD_REQUEST',
+    });
+
+    expect(await testPrisma.appConfig.findMany({ orderBy: { key: 'asc' } })).toEqual(before);
+  });
+
   it('refuses a malformed sender before writing anything', async () => {
     const caller = await createCallerAs('admin');
     const before = await storedRows();
