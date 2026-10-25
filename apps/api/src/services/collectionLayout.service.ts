@@ -478,6 +478,10 @@ export async function deleteGroup(
 // Collection Layout Rows
 // ─────────────────────────────────────────────────────────────────
 
+/** The row fields the service writes: the client's input, plus the picture key only the server sets. */
+type RowWrite = Omit<CollectionLayoutRowInput, 'removePicture' | 'pendingPictureFileObjectId' | 'quotations' | 'phaseChangeNote'>
+  & { pictureKey?: string | null };
+
 /**
  * Creates a new row in the specified group. Validates that the gender is allowed by the
  * layout's availableGenders filter.
@@ -486,7 +490,7 @@ export async function deleteGroup(
  * @throws {TRPCError} BAD_REQUEST if the gender is not in the layout's allowed set.
  */
 export async function createRow(
-  input: CollectionLayoutRowInput,
+  input: RowWrite,
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string
 ): Promise<RowWithVendor> {
@@ -583,7 +587,7 @@ function completedRowConflict(count: number): TRPCError {
  */
 export async function updateRow(
   rowId: string,
-  input: Partial<CollectionLayoutRowInput>,
+  input: Partial<RowWrite>,
   existingRow: Pick<CollectionLayoutRow, 'collectionLayoutId' | 'groupId' | 'phaseId' | 'planningGroupId' | 'completedAt'>,
   prisma: PrismaClient | Prisma.TransactionClient,
   userId: string

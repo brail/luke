@@ -713,6 +713,20 @@ certified in the first place.
 
 ## Working Practice
 
+### Reply in the owner's language, also after a background-task notification (2026-10-25)
+
+**What happened.** In a long Italian session, my status messages switched to English after a run
+of automated notifications (background commands finishing, subagent reports, all in English), and
+stayed English across several turns until the owner asked why.
+
+**Why it drifted.** The last text in context was English tool and agent output, and short status
+replies ("CI green, waiting…") were written in the language of that output instead of the
+conversation's.
+
+**Rule.** The reply language follows the owner's last message, never the language of the tool
+output, notification or subagent report just read. Technical artefacts keep their own rule
+(code, comments, commits and docs in English); only the conversation follows the owner.
+
 ### Commit approval is per commit, and a long debugging chain does not suspend it
 
 **What happened.** Over one session I made 12 commits on `develop-2.2` and asked

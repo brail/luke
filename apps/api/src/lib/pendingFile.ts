@@ -14,12 +14,11 @@
  * ## Without a policy, on purpose
  *
  * It unifies the **predicate**, not the **reaction**: it returns the key or
- * `null`, and what to do with that is up to the caller. That's deliberate,
- * because callers diverge — the company profile rejects with BAD_REQUEST (a
- * save that silently loses the logo is data loss with a success toast), while
- * the brand has historically ignored the dead id. Forcing them into the same
- * reaction here would mean either duplicating the predicate again, or changing
- * a caller's behavior on the sly.
+ * `null`, and what to do with that is up to the caller. Today every caller
+ * refuses an unusable id — the brand, the company profile and the collection
+ * rows with BAD_REQUEST (a save that silently loses the file is data loss with
+ * a success toast), the specsheet upload, which has just stored the file, with
+ * an internal error — but the wording of that refusal stays the caller's.
  *
  * Lives in `lib/` and not in `services/` because it's a transaction primitive
  * with no domain knowledge.
@@ -44,6 +43,10 @@ type PrismaLike = PrismaClient | Prisma.TransactionClient;
  * Must be called **inside** the same transaction that writes the key onto the
  * entity: confirming and linking must succeed or fail together.
  *
+ * One conditional write, not a read then a write, so a file is claimed — and its key linked — at
+ * most once, also when two saves confirm it at the same time: the second waits on the first's row
+ * lock and, once it commits, finds no pending row to claim.
+ *
  * @returns The storage key to write onto the entity, or `null` if the file
  *   doesn't exist, isn't pending, isn't yours, or is in the wrong bucket. The
  *   caller decides whether that's an error or a no-op.
@@ -52,24 +55,13 @@ export async function confirmPendingFile(
   tx: PrismaLike,
   params: { fileObjectId: string; bucket: StorageBucket; userId: string }
 ): Promise<string | null> {
-  const pendingFile = await tx.fileObject.findUnique({
-    where: { id: params.fileObjectId },
-    select: { key: true, confirmedAt: true, createdBy: true, bucket: true },
-  });
-
-  if (
-    pendingFile?.confirmedAt !== null ||
-    pendingFile.createdBy !== params.userId ||
-    pendingFile.bucket !== params.bucket
-  ) {
-    return null;
-  }
-
   const confirmedAt = new Date();
-  await tx.fileObject.update({
-    where: { id: params.fileObjectId },
+  const [claimed] = await tx.fileObject.updateManyAndReturn({
+    where: { id: params.fileObjectId, confirmedAt: null, createdBy: params.userId, bucket: params.bucket },
     data: { confirmedAt },
+    select: { key: true },
   });
+  if (!claimed) return null;
 
   // Derivatives mirror the master's pending state and are confirmed alongside it —
   // they're excluded from the reaper's own query (`parentId: null`), so this isn't
@@ -80,5 +72,5 @@ export async function confirmPendingFile(
     data: { confirmedAt },
   });
 
-  return pendingFile.key;
+  return claimed.key;
 }

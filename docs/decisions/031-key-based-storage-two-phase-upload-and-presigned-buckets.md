@@ -75,3 +75,11 @@ These deviations exist when this record is accepted. They are recorded as follow
 - The web proxy marks its responses `Cache-Control: public, max-age=31536000, immutable`, which allows a shared cache to store a response that required a session.
 - No test covers URL resolution, the cleanup job, or the collection-row confirmation path. Brand, company-logo, specsheet and presigned-upload confirmation are covered.
 - The schema comment on `FileObject.bucket` says a bucket must be in `localStorageConfigSchema`, which declares no buckets, and the comment on `CompanyProfile.logoKey` names an `assets` bucket where the logo lives in `company-assets`.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-10-25 — Observed gaps, "Collection-row saves accept a key directly".** No longer true since the commit that adds this entry: `CollectionLayoutRowInputSchema` no longer declares `pictureKey`. A row's key comes only from a confirmed pending upload, `removePicture` clears it, a replace or a removal deletes only the row's own stored key, and the web form no longer sends a key.
+- **2026-10-25 — Consequences, "collection-row saves drop the picture instead", and Observed gaps, "Collection-row saves also ignore a pending id that no longer resolves".** Since the commit that adds this entry, collection-row saves reject such an id with `BAD_REQUEST` and change nothing, like the brand and company saves. The pending-file helper's header describes the callers as they are.
+- **2026-10-25 — Observed gaps, "No test covers … the collection-row confirmation path".** Since the commit that adds this entry, `apps/api/test/collectionRowPictureKey.integration.spec.ts` covers it.

@@ -23,7 +23,7 @@ import {
   CollectionRowSetCompletedInputSchema,
   partialWithoutDefaults,
 } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
+import { Prisma, type PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
@@ -243,13 +243,25 @@ function quotationSyncAuditPromises(ctx: Context, rowId: string, sync: Quotation
   ];
 }
 
+/**
+ * A row picture comes only from the caller's own pending upload: the key is never the
+ * client's. A file that cannot be claimed — another user's, another bucket's, already linked or
+ * gone — refuses the save, which then changes nothing, instead of saving the row without it.
+ */
+async function confirmRowPicture(tx: Prisma.TransactionClient, fileObjectId: string, userId: string): Promise<string> {
+  const key = await confirmPendingFile(tx, { fileObjectId, bucket: 'collection-row-pictures', userId });
+  if (!key) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Il file caricato non è più disponibile, ricaricalo' });
+  return key;
+}
+
 const rowsRouter = router({
   /**
    * Creates a new row within a collection group, optionally confirming a pending picture upload
    * and syncing the row's quotations in the same transaction.
    *
    * @auth collection_layout:update
-   * @input CollectionLayoutRowInputSchema — row fields plus optional pendingPictureFileObjectId, quotations[], phaseChangeNote
+   * @input CollectionLayoutRowInputSchema — row fields plus optional pendingPictureFileObjectId (the picture, from the
+   *   caller's own upload), quotations[], phaseChangeNote
    * @output The created CollectionLayoutRow record.
    */
   create: protectedProcedure
@@ -257,7 +269,7 @@ const rowsRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CollectionLayoutRowInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const { pendingPictureFileObjectId, quotations, phaseChangeNote: _phaseChangeNote, ...rowInput } = input;
+      const { pendingPictureFileObjectId, removePicture: _removePicture, quotations, phaseChangeNote: _phaseChangeNote, ...rowInput } = input;
 
       // Before opening the transaction: the membership lookup shouldn't
       // consume the 15s budget, and a rejection shouldn't cost a rollback.
@@ -265,20 +277,10 @@ const rowsRouter = router({
       const layoutScope = { brandId: group.collectionLayout.brandId, seasonId: group.collectionLayout.seasonId };
 
       const { result, quotationsSync } = await ctx.prisma.$transaction(async tx => {
-        let confirmedPictureKey: string | undefined;
-        if (pendingPictureFileObjectId) {
-          confirmedPictureKey =
-            (await confirmPendingFile(tx, {
-              fileObjectId: pendingPictureFileObjectId,
-              bucket: 'collection-row-pictures',
-              userId: ctx.session!.user.id,
-            })) ?? undefined;
-        }
-        const row = await createRow(
-          { ...rowInput, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
-          tx,
-          ctx.session!.user.id
-        );
+        const pictureKey = pendingPictureFileObjectId
+          ? await confirmRowPicture(tx, pendingPictureFileObjectId, ctx.session!.user.id)
+          : undefined;
+        const row = await createRow({ ...rowInput, pictureKey }, tx, ctx.session!.user.id);
         const sync = await syncRowQuotations(row.id, quotations ?? [], layoutScope, tx);
         return { result: row, quotationsSync: sync };
       }, { timeout: 15000 });
@@ -297,7 +299,8 @@ const rowsRouter = router({
    * Updates an existing row, including its picture, phase/planning group assignment, and quotations.
    *
    * @auth collection_layout:update
-   * @input { rowId: string, data: partial CollectionLayoutRowInputSchema fields }
+   * @input { rowId: string, data: partial CollectionLayoutRowInputSchema fields — pendingPictureFileObjectId replaces the
+   *   picture, removePicture: true clears it, never both }
    * @output The updated CollectionLayoutRow record.
    */
   update: protectedProcedure
@@ -310,52 +313,52 @@ const rowsRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
-      const { pendingPictureFileObjectId, quotations, phaseChangeNote, ...rowData } = input.data;
-      let oldPictureKey: string | null = null;
+      const { pendingPictureFileObjectId, removePicture, quotations, phaseChangeNote, ...rowData } = input.data;
+      if (removePicture && pendingPictureFileObjectId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Rimuovi la foto o caricane una nuova, non entrambe' });
+      }
 
       // Outside the transaction, as in `create`.
       const rowAccess = await resolveRowBrandAccess(ctx, input.rowId);
       const layoutScope = { brandId: rowAccess.collectionLayout.brandId, seasonId: rowAccess.collectionLayout.seasonId };
 
-      const { result, before, quotationsSync } = await ctx.prisma.$transaction(async tx => {
-        // Independent (the confirmation doesn't read `beforeRow`, the use of `beforeRow.pictureKey` below
-        // happens only after both are resolved) — run in parallel instead of sequentially.
-        const [beforeRow, confirmedKey] = await Promise.all([
-          // Unconditional (not only when there's a pending photo): always needed for the
-          // phase/group diff used in the consolidated audit log below, and as `existingRow` for `updateRow`
-          // (a single row fetch instead of one per function that needs it).
-          tx.collectionLayoutRow.findUniqueOrThrow({
-            where: { id: input.rowId },
-            select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true, completedAt: true },
-          }),
-          pendingPictureFileObjectId
-            ? confirmPendingFile(tx, {
-                fileObjectId: pendingPictureFileObjectId,
-                bucket: 'collection-row-pictures',
-                userId: ctx.session!.user.id,
-              })
-            : Promise.resolve(undefined),
-        ]);
+      const { result, before, quotationsSync, oldPictureKey } = await ctx.prisma.$transaction(async tx => {
+        // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL": a row lock inside an
+        // interactive transaction), taken only when the picture changes. The stored picture key read
+        // below is then the one deleted after the commit: a concurrent picture change of this row
+        // waits here instead of replacing it in between and leaving a confirmed picture no row references.
+        if (pendingPictureFileObjectId || removePicture) {
+          await tx.$queryRaw(Prisma.sql`SELECT 1 FROM collection_layout_rows WHERE id = ${input.rowId} FOR UPDATE`);
+        }
+        // Unconditional (not only when there's a pending photo): always needed for the
+        // phase/group diff used in the consolidated audit log below, and as `existingRow` for `updateRow`
+        // (a single row fetch instead of one per function that needs it).
+        const beforeRow = await tx.collectionLayoutRow.findUniqueOrThrow({
+          where: { id: input.rowId },
+          select: { pictureKey: true, phaseId: true, planningGroupId: true, collectionLayoutId: true, groupId: true, completedAt: true },
+        });
+        const confirmedKey = pendingPictureFileObjectId
+          ? await confirmRowPicture(tx, pendingPictureFileObjectId, ctx.session!.user.id)
+          : undefined;
 
-        let confirmedPictureKey: string | undefined;
-        if (confirmedKey) {
-          confirmedPictureKey = confirmedKey;
-          oldPictureKey = beforeRow.pictureKey ?? null;
+        // A new picture or a removal replaces the row's own stored key, the only one deleted after
+        // the commit — unless another row still holds it, in which case it is that row's, not this one's.
+        const pictureKey = confirmedKey ?? (removePicture ? null : undefined);
+        let replacedKey: string | null = null;
+        if (pictureKey !== undefined && beforeRow.pictureKey) {
+          const heldElsewhere = await tx.collectionLayoutRow.count({
+            where: { pictureKey: beforeRow.pictureKey, id: { not: input.rowId } },
+          });
+          replacedKey = heldElsewhere === 0 ? beforeRow.pictureKey : null;
         }
 
-        const row = await updateRow(
-          input.rowId,
-          { ...rowData, ...(confirmedPictureKey ? { pictureKey: confirmedPictureKey } : {}) },
-          beforeRow,
-          tx,
-          ctx.session!.user.id
-        );
+        const row = await updateRow(input.rowId, { ...rowData, pictureKey }, beforeRow, tx, ctx.session!.user.id);
 
         const sync = quotations !== undefined
           ? await syncRowQuotations(input.rowId, quotations, layoutScope, tx)
           : { created: [], updated: [], deletedIds: [] };
 
-        return { result: row, before: beforeRow, quotationsSync: sync };
+        return { result: row, before: beforeRow, quotationsSync: sync, oldPictureKey: replacedKey };
       }, { timeout: 15000 });
 
       if (oldPictureKey) {

@@ -121,8 +121,10 @@ export const CollectionLayoutRowInputSchema = z.object({
   phaseId: z.uuid().optional().nullable(),
   pricePositioning: z.string().optional().nullable(),
   designer: z.string().optional().nullable(),
-  pictureKey: z.string().optional().nullable(),
+  // The picture key is the server's: it comes only from a confirmed upload, never from the client.
+  // `pendingPictureFileObjectId` sets a new picture, `removePicture` clears it.
   pendingPictureFileObjectId: z.uuid().optional().nullable(),
+  removePicture: z.literal(true).optional(),
   // Optional — notes
   styleNotes: z.string().optional().nullable(),
   materialNotes: z.string().optional().nullable(),

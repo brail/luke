@@ -195,14 +195,14 @@ it is then.
 `collection-row-pictures` bucket, while the revision page and the revision
 exports resolve every `pictureKey` in the immutable
 `collection-row-pictures-revisions` bucket. The automatic revisions created by
-v2.0.0–v2.1.x therefore show no photo, and replacing a row's photo deletes the
+v2.0.0–v2.1.x therefore show no photo, and replacing or removing a row's photo deletes the
 live object they point to. `db:repair-auto-revision-photos`
 (`apps/api/scripts/repair-auto-revision-photos.ts`, dry run unless `--apply`) copies each photo
 still in live storage into the immutable bucket, repoints the revision rows in the same
 transaction as one `COLLECTION_LAYOUT_REVISION_PHOTO_REPAIR` audit row per revision and key, and lists
 the keys it cannot recover from current storage. It is the one traced exception to snapshot
-immutability, and it has to run right after the deploy: every photo replaced before it runs is
-lost for that revision.
+immutability, and it has to run right after the deploy: every photo replaced or removed before it
+runs is lost for that revision.
 
 ---
 
@@ -212,7 +212,7 @@ lost for that revision.
 |------|-----------|
 | Live row deleted after the revision | `sourceRowId` is a soft FK — the backward lookup still works |
 | `wasDeleted=true` | Means the row was already deleted at revision time — filtered out of time travel. No write path sets it today: `createRevision` always writes `false`, so a row deleted between two revisions still appears, from its last snapshot, when the later revision is viewed |
-| Row photo gone from live storage when the revision is taken | The row is snapshotted without a photo, named in the revision's audit row (`missingPhotoRowIds`) and in a warning. Includes a photo replaced while the snapshot runs: the old object is deleted once the row update commits |
+| Row photo gone from live storage when the revision is taken | The row is snapshotted without a photo, named in the revision's audit row (`missingPhotoRowIds`) and in a warning. Includes a photo replaced or removed while the snapshot runs: the old object is deleted once the row update commits |
 | No row photo of the layout readable | The revision fails: a storage that serves none is more likely looking in the wrong place (an empty volume, a new bucket) than to have lost them all, so it is retried rather than recorded without photos |
 | Row deleted while the revision is taken | Snapshotted as the layout was loaded; only its `lastRevisedAt` write is skipped |
 | Orphan photos in the immutable bucket | Kept with their `FileObject` row and reused by a retried revision (see the Immutable Bucket section) |

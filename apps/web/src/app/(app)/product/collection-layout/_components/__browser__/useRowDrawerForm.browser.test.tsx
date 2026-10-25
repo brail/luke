@@ -186,8 +186,34 @@ describe('useRowDrawerForm (production hook) — same row ID, refreshed row obje
     // Background refresh still reports the OLD picture — must not resurrect it.
     await h.rerender({ row: makeRow({ pictureKey: 'old-key', qtyForecast: 42 }) });
 
-    expect(h.result.form.getValues('pictureKey')).toBeNull();
+    expect(h.result.form.getValues('removePicture')).toBe(true);
     expect(h.result.previewPictureUrl).toBeNull();
+  });
+
+  test('the form carries no picture key: only the server sets it', async () => {
+    const h = await mount({ open: true, mode: 'edit', row: makeRow({ pictureKey: 'old-key' }) });
+
+    expect(h.result.form.getValues()).not.toHaveProperty('pictureKey');
+  });
+
+  test('a failed upload after a removal leaves the removal standing', async () => {
+    const h = await mount({ open: true, mode: 'edit', row: makeRow({ pictureKey: 'old-key' }) });
+
+    h.result.applyPictureRemoval();
+    // CollectionRowDrawer's upload-failure path.
+    h.result.applyPictureUpload(null);
+
+    expect(h.result.form.getValues('removePicture')).toBe(true);
+  });
+
+  test('a new upload after a removal supersedes the removal', async () => {
+    const h = await mount({ open: true, mode: 'edit', row: makeRow({ pictureKey: 'old-key' }) });
+
+    h.result.applyPictureRemoval();
+    h.result.applyPictureUpload('new-file-object-id');
+
+    expect(h.result.form.getValues('removePicture')).toBeUndefined();
+    expect(h.result.form.getValues('pendingPictureFileObjectId')).toBe('new-file-object-id');
   });
 
   test('quotation draft state is not reset by a same-row refresh', async () => {

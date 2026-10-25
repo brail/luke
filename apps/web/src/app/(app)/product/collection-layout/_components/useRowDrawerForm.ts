@@ -35,7 +35,6 @@ export function buildDefaultValues(
     styleStatus: null,
     phaseId: null,
     designer: null,
-    pictureKey: null,
     pendingPictureFileObjectId: null,
     styleNotes: null,
     materialNotes: null,
@@ -93,7 +92,6 @@ export function buildRowFormValues(
       pricePositioning: row.pricePositioning ?? null,
       phaseId: row.phaseId ?? null,
       designer: row.designer ?? null,
-      pictureKey: row.pictureKey ?? null,
       pendingPictureFileObjectId: null,
       styleNotes: row.styleNotes ?? null,
       materialNotes: row.materialNotes ?? null,
@@ -247,12 +245,15 @@ export function useRowDrawerForm({
     }
   }, [open, mode, row, resolvedGroupId, resolvedGender, defaultPlanningGroupId, form]);
 
+  // The server owns the picture key: the form only says "this new upload" or "remove it".
   const applyPictureUpload = useCallback((fileObjectId: string | null) => {
     form.setValue('pendingPictureFileObjectId', fileObjectId, { shouldDirty: true });
+    // Only a successful upload supersedes a removal: a failed one (null) leaves it standing.
+    if (fileObjectId) form.setValue('removePicture', undefined, { shouldDirty: true });
   }, [form]);
 
   const applyPictureRemoval = useCallback(() => {
-    form.setValue('pictureKey', null, { shouldDirty: true });
+    form.setValue('removePicture', true, { shouldDirty: true });
     form.setValue('pendingPictureFileObjectId', null, { shouldDirty: true });
   }, [form]);
 
