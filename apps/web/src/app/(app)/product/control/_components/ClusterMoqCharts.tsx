@@ -65,7 +65,7 @@ function ClusterTooltip({ active, payload }: TooltipProps<number, string>) {
   );
 }
 
-/** One legend for the three views, so the status never rests on colour alone. */
+/** One legend for the four views, so the status never rests on colour alone. */
 export function MoqStatusLegend() {
   return (
     <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">

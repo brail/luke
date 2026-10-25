@@ -104,6 +104,9 @@ export default defineConfig({
       // Added for AppSidebar.signOut.browser.test.tsx, the first to mount an Avatar: it failed on its
       // first run (`Cannot read properties of null (reading 'useState')`). Same reason.
       '@radix-ui/react-avatar',
+      // Added for ClusterOverview.browser.test.tsx, the first to mount Control's cluster tab, whose
+      // other views draw with recharts: listed up front for the same cold-cache reason.
+      'recharts',
     ],
   },
   // Next inlines `process.env.NEXT_PUBLIC_*` at build time; the test browser has no `process`. Left

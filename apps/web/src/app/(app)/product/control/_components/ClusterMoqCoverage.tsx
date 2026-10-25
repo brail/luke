@@ -18,6 +18,7 @@ import {
   MoqStatusLegend,
   plottable,
 } from './ClusterMoqCharts';
+import { ClusterOverview } from './ClusterOverview';
 import { EmptyContextCard } from './EmptyContextCard';
 import { QueryStateMessage } from './QueryStateMessage';
 
@@ -26,7 +27,8 @@ const INCOMPLETE_ROWS_HINT =
 
 /**
  * Product clusters of the active brand+season whose forecast falls short of their vendors' colour
- * minimums (#125): three graphical views above one table, all fed by `buildMoqClusters`.
+ * minimums (#125): four graphical views above one table, all fed by `buildMoqClusters`; the
+ * overview (#168) opens first.
  */
 export function ClusterMoqCoverage() {
   const { layout, isError, enabled, contextLoading } = useControlLayout();
@@ -83,12 +85,16 @@ export function ClusterMoqCoverage() {
           <MoqStatusLegend />
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="bubbles">
+          <Tabs defaultValue="overview">
             <TabsList>
+              <TabsTrigger value="overview">Panoramica</TabsTrigger>
               <TabsTrigger value="bubbles">Bolle</TabsTrigger>
               <TabsTrigger value="bars">Barre</TabsTrigger>
               <TabsTrigger value="heatmap">Matrice</TabsTrigger>
             </TabsList>
+            <TabsContent value="overview">
+              <ClusterOverview clusters={clusters} />
+            </TabsContent>
             <TabsContent value="bubbles" className="space-y-2">
               <p className="text-xs text-muted-foreground">
                 Orizzontale: SKU (affollamento) · verticale: A/B, scala logaritmica · area: A
