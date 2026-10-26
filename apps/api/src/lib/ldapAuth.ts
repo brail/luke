@@ -102,7 +102,6 @@ export async function authenticateViaLdap(
 
     // Check that the configuration is complete
     if (!config.url || !config.searchBase || !config.searchFilter) {
-      logger.error('LDAP configuration incomplete');
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Configurazione LDAP incompleta',
@@ -139,10 +138,6 @@ export async function authenticateViaLdap(
       throw error;
     }
 
-    logger.error(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
-      'LDAP authentication error'
-    );
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Errore durante autenticazione LDAP',
@@ -154,10 +149,7 @@ export async function authenticateViaLdap(
       try {
         await ldapClient.unbind();
       } catch (error) {
-        logger.warn(
-          { error: error instanceof Error ? error.message : 'Unknown error' },
-          'Error closing LDAP connection'
-        );
+        logger.warn({ err: error }, 'Error closing LDAP connection');
       }
     }
   }
@@ -204,7 +196,7 @@ async function verifyCandidate(
       return REFUSED;
     }
     logger.warn(
-      { username, code: toErrorCode(error), error: toErrorMessage(error) },
+      { username, code: toErrorCode(error), err: error },
       'LDAP could not verify the login'
     );
     return { user: null, reason: 'ldap_unavailable', errorCode: toErrorCode(error) };
@@ -286,10 +278,7 @@ async function lookUpGroups(
     const entries = await client.search(config.groupSearchBase, options);
     return entries.map(entry => entry.dn);
   } catch (error) {
-    logger.warn(
-      { error: toErrorMessage(error) },
-      'Group lookup failed, proceeding without group membership'
-    );
+    logger.warn({ err: error }, 'Group lookup failed, proceeding without group membership');
     return [];
   }
 }

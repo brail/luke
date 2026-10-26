@@ -167,9 +167,7 @@ export async function checkBootstrapDependencies(
 
     // Test master key availability
     if (!validateMasterKey()) {
-      const error = new Error('Master key unavailable or invalid');
-      logger.error(error.message);
-      throw error;
+      throw new Error('Master key unavailable or invalid');
     }
 
     // Test secret derivation
@@ -177,21 +175,11 @@ export async function checkBootstrapDependencies(
       deriveSecret('api.jwt');
       logger.info('JWT secrets derived successfully');
     } catch (error: unknown) {
-      const secretError = new Error(
-        `Failed to derive JWT secrets: ${toErrorMessage(error)}`
-      );
-      logger.error(secretError.message);
-      throw secretError;
+      throw new Error('Failed to derive JWT secrets', { cause: error });
     }
   } catch (error: unknown) {
-    // Re-throw with a detailed message for debugging
-    const bootstrapError = new Error(
-      `Bootstrap dependency check failed: ${toErrorMessage(error)}`
-    );
-    logger.error(
-      { error: bootstrapError },
-      'Bootstrap dependency check error'
-    );
-    throw bootstrapError;
+    // The caller (`start` in server.ts) logs it once, whole. Each wrapper's message carries only its
+    // own text: pino's serializer appends the cause chain (`… failed: Failed to derive JWT secrets: …`).
+    throw new Error('Bootstrap dependency check failed', { cause: error });
   }
 }

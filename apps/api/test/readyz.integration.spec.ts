@@ -99,11 +99,15 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
-      ).rejects.toThrow('Master key unavailable or invalid');
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Master key unavailable or invalid'
+      ).rejects.toThrow(
+        expect.objectContaining({
+          message: 'Bootstrap dependency check failed',
+          cause: expect.objectContaining({ message: 'Master key unavailable or invalid' }),
+        })
       );
+
+      // The caller (`start` in server.ts) logs the thrown error once, whole.
+      expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
     it('should fail when deriveSecret throws', async () => {
@@ -120,12 +124,16 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       await expect(
         checkBootstrapDependencies(prisma, mockLogger)
       ).rejects.toThrow(
-        'Failed to derive JWT secrets: Secret derivation failed'
+        expect.objectContaining({
+          message: 'Bootstrap dependency check failed',
+          cause: expect.objectContaining({
+            message: 'Failed to derive JWT secrets',
+            cause: expect.objectContaining({ message: 'Secret derivation failed' }),
+          }),
+        })
       );
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Failed to derive JWT secrets: Secret derivation failed'
-      );
+      expect(mockLogger.error).not.toHaveBeenCalled();
     });
 
     it('should fail when the DB connection fails', async () => {
@@ -139,13 +147,14 @@ describe('Bootstrap Fail-Fast Behavior', () => {
       await expect(
         checkBootstrapDependencies(mockPrisma, mockLogger)
       ).rejects.toThrow(
-        'Bootstrap dependency check failed: Database connection failed'
+        expect.objectContaining({
+          message: 'Bootstrap dependency check failed',
+          // The caller's log line reaches the original error and its stack through the cause.
+          cause: expect.objectContaining({ message: 'Database connection failed' }),
+        })
       );
 
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        { error: expect.any(Error) },
-        'Bootstrap dependency check error'
-      );
+      expect(mockLogger.error).not.toHaveBeenCalled();
     });
   });
 });

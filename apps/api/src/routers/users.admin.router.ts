@@ -354,10 +354,6 @@ export const usersAdminRouter = router({
         await ctx.prisma.userToken.delete({ where: { id: issued.userToken.id } }).catch(e => {
           ctx.logger.warn({ err: e, tokenId: issued.userToken.id }, 'Failed to delete orphaned reset token');
         });
-        ctx.logger.error(
-          { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },
-          'forceLocalAccess: reset email failed — check SMTP config in AppConfig'
-        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message:

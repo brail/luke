@@ -19,7 +19,7 @@ import {
 import { logAudit } from '../lib/auditLog';
 import { createToken } from '../lib/auth';
 import { isSyntheticLdapEmail, revokeUserLinks, sendVerificationEmail } from '../lib/emailHelpers';
-import { isUniqueViolation } from '../lib/error';
+import { isUniqueViolation, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -54,7 +54,7 @@ async function sendVerificationLink(
     if (error instanceof TRPCError) throw error;
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
-      message: error instanceof Error ? error.message : 'Errore invio email',
+      message: toErrorMessage(error),
       cause: error,
     });
   }

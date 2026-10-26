@@ -29,17 +29,13 @@ export async function uploadCompanyLogo(
     pending: true,
   });
 
-  try {
-    await logAudit(ctx, {
-      action: 'COMPANY_LOGO_UPLOADED',
-      targetType: 'CompanyProfile',
-      targetId: 'singleton',
-      result: 'SUCCESS',
-      metadata: { filename: result.originalName, size: params.file.size, contentType: params.file.mimetype },
-    });
-  } catch (auditError) {
-    ctx.logger?.warn({ auditError }, 'Audit log failed for company logo upload');
-  }
+  await logAudit(ctx, {
+    action: 'COMPANY_LOGO_UPLOADED',
+    targetType: 'CompanyProfile',
+    targetId: 'singleton',
+    result: 'SUCCESS',
+    metadata: { filename: result.originalName, size: params.file.size, contentType: params.file.mimetype },
+  });
 
   // `fileObjectId` is the field that matters: `key` is kept only because `publicUrl`
   // exposes it anyway, but nothing downstream should rely on it.

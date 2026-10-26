@@ -29,7 +29,7 @@ export const publicRouter = router({
       };
     } catch (error) {
       ctx.logger.warn(
-        { error: error instanceof Error ? error.message : 'Unknown error' },
+        { err: error },
         'Fallback to default app info'
       );
       return {

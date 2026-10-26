@@ -9,6 +9,8 @@ import argon2 from 'argon2';
 
 import { checkPassword, type PasswordPolicy } from '@luke/core';
 
+import { toErrorMessage } from './error';
+
 /**
  * Argon2 configuration for password hashing
  * Uses argon2id for optimal security
@@ -36,7 +38,7 @@ export async function hashPassword(password: string): Promise<string> {
     return await argon2.hash(password, ARGON2_OPTIONS);
   } catch (error) {
     throw new Error(
-      `Password hashing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      `Password hashing failed: ${toErrorMessage(error)}`,
       { cause: error }
     );
   }

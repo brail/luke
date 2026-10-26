@@ -105,17 +105,13 @@ export async function uploadSpecsheetImage(
     throw err;
   });
 
-  try {
-    await logAudit(ctx, {
-      action: 'SPECSHEET_IMAGE_UPLOADED',
-      targetType: 'MerchandisingSpecsheet',
-      targetId: params.specsheetId,
-      result: 'SUCCESS',
-      metadata: { filename: result.originalName, size: params.file.size, imageId: image.id },
-    });
-  } catch (auditError) {
-    ctx.logger?.warn({ auditError }, 'Audit log failed for specsheet image upload');
-  }
+  await logAudit(ctx, {
+    action: 'SPECSHEET_IMAGE_UPLOADED',
+    targetType: 'MerchandisingSpecsheet',
+    targetId: params.specsheetId,
+    result: 'SUCCESS',
+    metadata: { filename: result.originalName, size: params.file.size, imageId: image.id },
+  });
 
   return { id: image.id, publicUrl: result.publicUrl };
 }

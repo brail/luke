@@ -34,6 +34,7 @@ import { Prisma } from '@luke/db';
 import type { PrismaClient } from '@luke/db';
 
 import { getStorageProvider } from '../../storage';
+import { toErrorMessage } from '../error';
 
 import { createArchiveExtractor, forEachArchiveEntry } from './archiveFormat';
 import { AUDIT_STAGE_PREFIX, auditStageIdent, newAuditStageSchema } from './auditStage';
@@ -453,8 +454,8 @@ export async function assertDumpReadable(dumpPath: string, logger: BackupLogger)
     // Listing an archive opens no connection, so there is no password to pass.
     await runCommand('pg_restore', ['--list', dumpPath], { env: { LC_ALL: 'C' } });
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    logger.error({ dumpPath, err: detail }, 'Restore: dump unreadable');
+    const detail = toErrorMessage(err);
+    logger.error({ dumpPath, err }, 'Restore: dump unreadable');
 
     const clientMajor = await pgBinaryMajorVersion('pg_restore').catch(() => null);
     const reader = `questo pg_restore${clientMajor ? ` (major ${clientMajor})` : ''}`;

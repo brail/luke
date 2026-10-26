@@ -1,5 +1,7 @@
 import proxyAddr from '@fastify/proxy-addr';
 
+import { toErrorMessage } from './error';
+
 import type { FastifyServerOptions } from 'fastify';
 
 /**
@@ -89,8 +91,7 @@ export function createTrustProxy(
     isTrustedAddress = proxyAddr.compile(ranges);
   } catch (err) {
     throw new TrustedProxyConfigError(
-      `LUKE_TRUSTED_PROXY_CIDR is not a valid address or range: ${ranges.join(', ')}. ` +
-        `${err instanceof Error ? err.message : String(err)}`
+      `LUKE_TRUSTED_PROXY_CIDR is not a valid address or range: ${ranges.join(', ')}. ${toErrorMessage(err)}`
     );
   }
 

@@ -65,7 +65,7 @@ export function setupGracefulShutdown({ fastify, prisma, stopStores, shutdownTel
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
 
   const onFatal = async (reason: unknown, type: string) => {
-    fastify.log.fatal({ reason }, `${type}: shutting down`);
+    fastify.log.fatal({ err: reason }, `${type}: shutting down`);
     await closeAll();
     process.exit(1);
   };

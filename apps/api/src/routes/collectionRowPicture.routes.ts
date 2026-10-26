@@ -18,7 +18,7 @@ import { isDevelopment } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
-import { getTraceId, toErrorMessage } from '../lib/error';
+import { getTraceId } from '../lib/error';
 import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
 
 import type { FastifyInstance } from 'fastify';
@@ -72,7 +72,7 @@ export default async function collectionRowPictureRoutes(
 
       return reply.code(200).send(result);
     } catch (error: unknown) {
-      req.log.error({ error: toErrorMessage(error) }, 'Temp collection row picture upload error');
+      req.log.error({ err: error }, 'Temp collection row picture upload error');
 
       if (error instanceof TRPCError && error.code === 'BAD_REQUEST') {
         return reply.code(400).send({ error: error.code, message: error.message });
@@ -122,7 +122,7 @@ export default async function collectionRowPictureRoutes(
       return reply.code(200).send(result);
     } catch (error: unknown) {
       req.log.error(
-        { error: toErrorMessage(error), rowId: req.params.rowId },
+        { err: error, rowId: req.params.rowId },
         'Collection row picture upload error'
       );
 

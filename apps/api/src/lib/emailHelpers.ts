@@ -11,6 +11,7 @@ import { Prisma, PrismaClient, type TokenType } from '@luke/db';
 
 import { logAudit } from './auditLog';
 import { getConfigOrDefault } from './configManager';
+import { toErrorMessage } from './error';
 import { sendEmailVerificationEmail } from './mailer';
 
 import type { Context } from './context';
@@ -133,7 +134,7 @@ export async function sendVerificationEmail(
         result: 'FAILURE',
         metadata: {
           reason,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: toErrorMessage(error),
         },
       }
     );

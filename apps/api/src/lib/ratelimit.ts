@@ -384,7 +384,6 @@ export function withRateLimit(routeName: keyof typeof RATE_LIMIT_CONFIG) {
         throw error;
       }
 
-      logger.error({ err: error }, `Rate limit error for ${routeName}`);
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',
         message: 'Rate limit check failed',

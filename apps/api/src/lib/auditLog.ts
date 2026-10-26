@@ -570,14 +570,7 @@ export async function logAudit(
       },
     });
   } catch (error) {
-    emit(() =>
-      log.error({
-        traceId: ctx.traceId,
-        error: error instanceof Error ? error.message : 'Unknown',
-        action: params.action,
-        message: 'Failed to log audit event',
-      })
-    );
+    emit(() => log.error({ traceId: ctx.traceId, err: error, action: params.action }, 'Failed to log audit event'));
     if (options.required || CRITICAL_AUDIT_ACTIONS.has(params.action)) {
       throw error;
     }

@@ -13,6 +13,7 @@ import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant, parseConfigValue } fro
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
+import { toErrorMessage } from './error';
 import { rootLogger } from './logger';
 
 import type Mail from 'nodemailer/lib/mailer';
@@ -118,17 +119,10 @@ export async function sendEmail(
     } catch (error) {
       const isLastAttempt = attempt === retries - 1;
       if (isLastAttempt) {
-        logger.warn(
-          {
-            to,
-            subject,
-            attempts: retries,
-            error: error instanceof Error ? error.message : 'Unknown',
-          },
-          'Email failed after all retries'
-        );
+        // The caller logs the thrown error whole, this one as its cause: the message is enough here.
+        logger.warn({ to, subject, attempts: retries, error: toErrorMessage(error) }, 'Email failed after all retries');
         throw new Error(
-          `Impossibile inviare email: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Impossibile inviare email: ${toErrorMessage(error)}`,
           { cause: error }
         );
       }

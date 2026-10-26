@@ -30,6 +30,7 @@ import type {
 } from '@luke/core';
 import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError, isPathSafe } from '@luke/core';
 
+import { toErrorMessage } from '../../lib/error';
 import { generateStorageKey } from '../keys';
 
 /** Local filesystem storage provider. Implements IStorageProvider over a configurable base directory. */
@@ -64,7 +65,7 @@ export class LocalFsProvider implements IStorageProvider {
       this.realBasePath = await realpath(this.basePath);
     } catch (error) {
       throw new Error(
-        `Impossibile inizializzare basePath: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `Impossibile inizializzare basePath: ${toErrorMessage(error)}`,
         { cause: error }
       );
     }
@@ -227,7 +228,7 @@ export class LocalFsProvider implements IStorageProvider {
       }
 
       throw new Error(
-        `File upload failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `File upload failed: ${toErrorMessage(error)}`,
         { cause: error }
       );
     }
@@ -272,7 +273,7 @@ export class LocalFsProvider implements IStorageProvider {
         throw new StorageObjectNotFoundError(params.bucket, params.key, { cause: error });
       }
       throw new Error(
-        `File read failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+        `File read failed: ${toErrorMessage(error)}`,
         { cause: error }
       );
     }
@@ -291,7 +292,7 @@ export class LocalFsProvider implements IStorageProvider {
       // If the file doesn't exist, we consider the operation successful (idempotent)
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         throw new Error(
-          `File deletion failed: ${error instanceof Error ? error.message : 'Unknown'}`,
+          `File deletion failed: ${toErrorMessage(error)}`,
           { cause: error }
         );
       }

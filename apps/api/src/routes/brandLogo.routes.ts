@@ -125,7 +125,7 @@ export default async function brandLogoRoutes(
       return reply.code(200).send(result);
     } catch (error: unknown) {
       req.log.error(
-        { error: toErrorMessage(error), brandId: req.params.brandId },
+        { err: error, brandId: req.params.brandId },
         'Brand logo upload error'
       );
 
@@ -207,7 +207,7 @@ export default async function brandLogoRoutes(
       // at runtime it can remain undefined despite the declared type.
       const tempId = (req.body as { tempId?: string } | undefined)?.tempId;
       req.log.error(
-        { error: toErrorMessage(error), tempId },
+        { err: error, tempId },
         'Temp brand logo upload error'
       );
 

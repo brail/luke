@@ -56,6 +56,7 @@ import { hasBrandAccess, resolveBrandAccess, resolveEventAudience } from '../ser
 
 import { isRedactedValue } from './auditLog';
 import { getConfigOrDefault } from './configManager';
+import { toErrorMessage } from './error';
 import { escapeHtml, getSmtpConfig, sendBulkEmail, sendEmail } from './mailer';
 import { guardMaintenance } from './maintenanceMode';
 import { brandSeasonLabel, recipientsOf } from './notifications';
@@ -616,7 +617,7 @@ function abandonable(at: Date): Prisma.CalendarDigestDeliveryWhereInput {
 }
 
 function errorText(err: unknown): string {
-  return (err instanceof Error ? err.message : String(err)).slice(0, 500);
+  return toErrorMessage(err).slice(0, 500);
 }
 
 /**

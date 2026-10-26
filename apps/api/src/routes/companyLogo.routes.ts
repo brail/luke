@@ -18,7 +18,7 @@ import fp from 'fastify-plugin';
 import type { PrismaClient } from '@luke/db';
 
 import { requireSessionWithPermission } from '../lib/auth.js';
-import { getTraceId, toErrorMessage } from '../lib/error.js';
+import { getTraceId } from '../lib/error.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
 
 import type { FastifyInstance } from 'fastify';
@@ -61,7 +61,7 @@ export default fp(
 
         return reply.code(200).send(result);
       } catch (error: unknown) {
-        req.log.error({ error: toErrorMessage(error) }, 'Company logo upload error');
+        req.log.error({ err: error }, 'Company logo upload error');
 
         if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
           return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({

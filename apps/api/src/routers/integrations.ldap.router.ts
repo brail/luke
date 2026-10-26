@@ -11,7 +11,6 @@ import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 import { logAudit } from '../lib/auditLog';
 import { getLdapConfig, saveConfigs, type ConfigWrite } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
-import { SecureLogger } from '../lib/errorHandler';
 import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -31,8 +30,6 @@ export const ldapRouter = router({
     .input(ldapConfigSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(ctx.logger);
-
         // Save each field in AppConfig
         const configMappings: { key: ConfigWrite['key']; value: string | undefined; encrypt: boolean }[] = [
           {
@@ -102,12 +99,10 @@ export const ldapRouter = router({
           )
         );
 
-        logger.info('LDAP configuration saved', {
-          enabled: input.enabled,
-          url: input.url,
-          strategy: input.strategy,
-          hasBindPassword: !!input.bindPassword,
-        });
+        ctx.logger.info(
+          { enabled: input.enabled, url: input.url, strategy: input.strategy, hasBindPassword: !!input.bindPassword },
+          'LDAP configuration saved'
+        );
 
         // Aggregated audit log for LDAP
         await logAudit(ctx, {
@@ -154,10 +149,6 @@ export const ldapRouter = router({
           throw error;
         }
 
-        ctx.logger.error(
-          { error: toErrorMessage(error) },
-          'Error saving LDAP config'
-        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante salvataggio configurazione LDAP',
@@ -196,28 +187,6 @@ export const ldapRouter = router({
           strategy: config.strategy,
         };
       } catch (error: unknown) {
-        const message = toErrorMessage(error);
-        ctx.logger.error(
-          { error: message },
-          'Error getting LDAP config'
-        );
-
-        // If it's a missing-configuration error, return the default configuration
-        if (message.includes('Configurazioni LDAP mancanti')) {
-          return {
-            enabled: false,
-            url: '',
-            hasBindDN: false,
-            hasBindPassword: false,
-            searchBase: '',
-            searchFilter: '',
-            groupSearchBase: '',
-            groupSearchFilter: '',
-            roleMapping: '{}',
-            strategy: 'local-first' as const,
-          };
-        }
-
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante recupero configurazione LDAP',
@@ -270,10 +239,6 @@ export const ldapRouter = router({
           await client.bind(config.bindDN, config.bindPassword);
           ctx.logger.info('LDAP connection test successful');
         } catch (err: unknown) {
-          ctx.logger.error(
-            { error: toErrorMessage(err) },
-            'LDAP connection test failed'
-          );
           throw new TRPCError({
             code: 'INTERNAL_SERVER_ERROR',
             message: 'Connessione LDAP fallita. Controllare i log per i dettagli.',
@@ -290,10 +255,6 @@ export const ldapRouter = router({
           throw error;
         }
 
-        ctx.logger.error(
-          { error: toErrorMessage(error) },
-          'LDAP connection test error'
-        );
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test connessione LDAP',
@@ -306,10 +267,7 @@ export const ldapRouter = router({
             await client.unbind();
           } catch (error) {
             ctx.logger.warn(
-              {
-                error:
-                  error instanceof Error ? error.message : 'Unknown error',
-              },
+              { err: error },
               'Error closing LDAP test connection'
             );
           }
@@ -423,7 +381,6 @@ export const ldapRouter = router({
           throw error;
         }
 
-        ctx.logger.error({ error: toErrorMessage(error) }, 'LDAP search test error');
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: 'Errore durante test ricerca LDAP',
@@ -435,10 +392,7 @@ export const ldapRouter = router({
             await client.unbind();
           } catch (error) {
             ctx.logger.error(
-              {
-                error:
-                  error instanceof Error ? error.message : 'Unknown error',
-              },
+              { err: error },
               'Error closing LDAP connection'
             );
           }

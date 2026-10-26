@@ -108,10 +108,14 @@ export function verifyJWT(token: string): JWTPayload | null {
 
     return decoded;
   } catch (error) {
-    // Log metadata only, never the full token
+    // A refused token (`JsonWebTokenError`, the parent of the expired and not-before errors) is an
+    // expected answer, logged by its message; anything else, such as a secret that cannot be
+    // derived, whole. Metadata only, never the full token.
+    const refused = error instanceof jwt.JsonWebTokenError;
     logger.error(
       {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: refused ? error.message : undefined,
+        err: refused ? undefined : error,
         tokenLength: token.length,
         tokenPrefix: token.substring(0, 10) + '...', // Reduced from 20 to 10 chars for security
       },

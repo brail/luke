@@ -27,9 +27,17 @@ describe('toErrorMessage', () => {
     expect(toErrorMessage(new TypeError(''))).toBe('TypeError');
   });
 
-  it('keeps a message that is there, and stringifies what is not an Error', () => {
+  it('keeps a message that is there, and a thrown primitive', () => {
     expect(toErrorMessage(new Error('disk full'))).toBe('disk full');
     expect(toErrorMessage('plain')).toBe('plain');
+    expect(toErrorMessage(404)).toBe('404');
+  });
+
+  it("reads a plain object's message, and never answers `[object Object]`", () => {
+    expect(toErrorMessage({ message: 'from a plain object' })).toBe('from a plain object');
+    expect(toErrorMessage({})).toBe('Unknown error');
+    expect(toErrorMessage({ message: 42 })).toBe('Unknown error');
+    expect(toErrorMessage(undefined)).toBe('Unknown error');
   });
 });
 

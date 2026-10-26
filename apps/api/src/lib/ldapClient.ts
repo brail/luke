@@ -15,6 +15,8 @@ import pino from 'pino';
 
 import { calcBackoffDelay, type LdapResilienceConfig } from '@luke/core';
 
+import { toErrorMessage } from './error';
+
 import type { LdapConfig } from './configManager';
 import type { SearchOptions, Entry } from 'ldapts';
 
@@ -261,7 +263,7 @@ export class ResilientLdapClient {
         await this._client.unbind();
       } catch (error) {
         this.logger.warn(
-          { error: error instanceof Error ? error.message : 'Unknown error' },
+          { err: error },
           'Error during LDAP unbind'
         );
       } finally {
@@ -308,13 +310,9 @@ export class ResilientLdapClient {
 
         if (attempt < this.resilienceConfig.maxRetries) {
           const delay = this.backoffDelay(attempt);
+          // The last failure is thrown as the cause of `LdapUnavailableError`, logged whole there.
           this.logger.warn(
-            {
-              attempt: attempt + 1,
-              maxRetries: this.resilienceConfig.maxRetries,
-              delay,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            },
+            { attempt: attempt + 1, maxRetries: this.resilienceConfig.maxRetries, delay, error: toErrorMessage(error) },
             'LDAP operation failed, retrying'
           );
           await new Promise(resolve => setTimeout(resolve, delay));

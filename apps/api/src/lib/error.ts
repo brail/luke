@@ -14,6 +14,7 @@ import { isRateLimitExceededCause } from './rateLimitError';
 import type { Context } from './context';
 import type { TRPCDefaultErrorShape, TRPCErrorFormatter } from '@trpc/server';
 import type {
+  FastifyBaseLogger,
   FastifyInstance,
   FastifyError,
   FastifyRequest,
@@ -25,12 +26,15 @@ const isProd = isProduction();
 /**
  * Extracts a readable message from any caught value. An empty `message` falls back to what else the
  * error carries: Node's dual-stack connect failure is an `AggregateError` whose own message is
- * empty, with the real reasons in `errors` (#49).
+ * empty, with the real reasons in `errors` (#49). A thrown primitive is its own text and a plain
+ * object gives its string `message`, never `[object Object]`; nothing at all is `Unknown error`.
  */
 export function toErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  if (err.message) return err.message;
+  if (err === undefined || err === null) return 'Unknown error';
+  if (typeof err !== 'object') return String(err) || 'Unknown error';
+  if ('message' in err && typeof err.message === 'string' && err.message) return err.message;
   if (err instanceof AggregateError && err.errors.length > 0) return err.errors.map(toErrorMessage).join('; ');
+  if (!(err instanceof Error)) return 'Unknown error';
   return 'code' in err && typeof err.code === 'string' ? `${err.name}: ${err.code}` : err.name;
 }
 
@@ -105,7 +109,7 @@ function mapHttpStatus(err: unknown): number {
 }
 
 function safeMessage(err: unknown): string {
-  if (!isProd) return err instanceof Error ? err.message : 'Errore interno';
+  if (!isProd) return toErrorMessage(err);
   // In production, do not expose back-end messages
   if (err instanceof TRPCError) {
     // Keep the user-facing message of known errors
@@ -158,6 +162,29 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
 }
 
 /**
+ * Logs a failed tRPC call once. An `INTERNAL_SERVER_ERROR` is a fault to diagnose: the error goes
+ * whole, so the root logger's serializer keeps its stack and its cause chain — many carry a `cause`
+ * precisely so the real failure reaches this line. Any other code is an answer — a 4xx the caller
+ * earned, or an expected 5xx such as maintenance's `SERVICE_UNAVAILABLE` on every call: its code
+ * and message under the same `err` key, without a stack.
+ */
+export function logTrpcError(
+  log: FastifyBaseLogger,
+  { path, error, traceId }: { path?: string; error: TRPCError; traceId?: string }
+): void {
+  if (error.code === 'INTERNAL_SERVER_ERROR') {
+    // tRPC wraps an exception no procedure caught in an error with its message and stack: the
+    // wrapper would print both twice, so the exception itself goes.
+    log.error({ path, err: error.cause?.message === error.message ? error.cause : error, traceId }, 'tRPC error');
+    return;
+  }
+  // A cause is worth a field only when it says more than the message: tRPC copies a Zod cause's
+  // text into the message, and wraps a rate limit's `{ retryAfterSeconds }` in a cause with none.
+  const cause = error.cause?.message && error.cause.message !== error.message ? error.cause.message : undefined;
+  log.error({ path, err: { code: error.code, message: error.message }, cause, traceId }, 'tRPC error');
+}
+
+/**
  * One issue of a failed input parse. `path` is the full dotted path (`data.retailMultiplier`), not
  * its first segment: most mutations nest their fields, so `z.flattenError`'s first-segment
  * grouping filed every issue under `data`. `''` for an issue on the input itself.
@@ -181,7 +208,7 @@ export interface LukeErrorShape extends TRPCDefaultErrorShape {
 /**
  * A 4xx is the caller's to fix, and its message is written for them, so it passes in every
  * environment. A 5xx can carry internals (driver errors, hosts, paths), so production replaces
- * it; the original still reaches the `tRPC error` log line in `server.ts`.
+ * it; the original still reaches the `tRPC error` log line (`logTrpcError`).
  * A failed input parse carries `ZodError`'s JSON dump of every issue as its message; the first
  * issue's own message replaces it, which is what a form bound to the same schema would show.
  */

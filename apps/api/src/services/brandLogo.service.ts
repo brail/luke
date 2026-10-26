@@ -33,17 +33,13 @@ export async function uploadTempBrandLogo(
     pending: true,
   });
 
-  try {
-    await logAudit(ctx, {
-      action: 'BRAND_PENDING_LOGO_UPLOADED',
-      targetType: 'FileObject',
-      targetId: result.fileObjectId,
-      result: 'SUCCESS',
-      metadata: { filename: result.originalName, size: params.file.size, contentType: params.file.mimetype },
-    });
-  } catch (auditError) {
-    ctx.logger?.warn({ auditError }, 'Audit log failed for pending brand logo upload');
-  }
+  await logAudit(ctx, {
+    action: 'BRAND_PENDING_LOGO_UPLOADED',
+    targetType: 'FileObject',
+    targetId: result.fileObjectId,
+    result: 'SUCCESS',
+    metadata: { filename: result.originalName, size: params.file.size, contentType: params.file.mimetype },
+  });
 
   return { publicUrl: result.publicUrl, fileObjectId: result.fileObjectId };
 }
@@ -94,23 +90,19 @@ export async function uploadBrandLogo(
     });
   }
 
-  try {
-    await logAudit(ctx, {
-      action: 'BRAND_LOGO_UPLOADED',
-      targetType: 'Brand',
-      targetId: params.brandId,
-      result: 'SUCCESS',
-      metadata: {
-        filename: result.originalName,
-        originalFilename: params.file.filename,
-        size: params.file.size,
-        contentType: params.file.mimetype,
-        oldLogoKey: brand.logoKey,
-      },
-    });
-  } catch (auditError) {
-    ctx.logger?.warn({ auditError }, 'Audit log failed for brand logo upload');
-  }
+  await logAudit(ctx, {
+    action: 'BRAND_LOGO_UPLOADED',
+    targetType: 'Brand',
+    targetId: params.brandId,
+    result: 'SUCCESS',
+    metadata: {
+      filename: result.originalName,
+      originalFilename: params.file.filename,
+      size: params.file.size,
+      contentType: params.file.mimetype,
+      oldLogoKey: brand.logoKey,
+    },
+  });
 
   return { publicUrl: result.publicUrl, bucket: result.bucket, key: result.key };
 }
@@ -148,7 +140,7 @@ export async function deleteFileWithRetry(
             data: { cleanupStatus: 'SUCCESS', lastCleanupAt: now },
           });
         } catch (updateError) {
-          ctx.logger?.warn({ updateError, fileId }, 'Failed to update cleanup status after successful delete');
+          ctx.logger?.warn({ err: updateError, fileId }, 'Failed to update cleanup status after successful delete');
         }
       }
 
@@ -163,11 +155,11 @@ export async function deleteFileWithRetry(
               data: { cleanupStatus: 'FAILED', cleanupAttempts: attempt + 1, lastCleanupAt: now },
             });
           } catch (updateError) {
-            ctx.logger?.warn({ updateError, fileId }, 'Failed to update cleanup status after all retries failed');
+            ctx.logger?.warn({ err: updateError, fileId }, 'Failed to update cleanup status after all retries failed');
           }
         }
 
-        ctx.logger?.warn({ error, bucket, key, attempts: attempt + 1 }, 'File delete failed after all retries');
+        ctx.logger?.warn({ err: error, bucket, key, attempts: attempt + 1 }, 'File delete failed after all retries');
         return false;
       }
 
@@ -216,7 +208,7 @@ export async function retryFailedCleanups(ctx: Context): Promise<number> {
 
     return successCount;
   } catch (error) {
-    ctx.logger?.error({ error }, 'Fatal error in retryFailedCleanups background job');
+    ctx.logger?.error({ err: error }, 'Fatal error in retryFailedCleanups background job');
     return 0;
   }
 }

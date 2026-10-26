@@ -14,7 +14,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
-import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from '@trpc/server/adapters/fastify';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
 
 import { IMAGE_BUCKETS, TRPC_MAX_BATCH_SIZE, isDevelopment, isProduction, type StorageBucket } from '@luke/core';
@@ -33,7 +33,7 @@ import { registerCalendarDigestScheduler } from './lib/calendarDigestScheduler';
 import { registerCalendarNotificationBuffer } from './lib/calendarNotificationBuffer';
 import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
-import { setGlobalErrorHandler } from './lib/error';
+import { logTrpcError, setGlobalErrorHandler } from './lib/error';
 import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
 import { setupGracefulShutdown } from './lib/gracefulShutdown';
 import { buildHelmetConfig } from './lib/helmet';
@@ -51,7 +51,7 @@ import { createTrustProxy } from './lib/trustProxy';
 import { pinoTraceMiddleware } from './observability/pinoTrace';
 import { checkBootstrapDependencies, runReadinessChecks } from './observability/readiness';
 import { storagePlugin } from './plugins/storageUpload';
-import { appRouter } from './routers';
+import { appRouter, type AppRouter } from './routers';
 import { registerAuditLogExportDownloadRoute } from './routes/auditLogExportDownload';
 import { registerBackupExportDownloadRoute } from './routes/backupExportDownload';
 import { registerBackupImportRoute } from './routes/backupImport';
@@ -185,28 +185,12 @@ async function registerTRPCPlugin() {
     trpcOptions: {
       router: appRouter,
       maxBatchSize: TRPC_MAX_BATCH_SIZE,
-      createContext: async ({ req, res }: any) => // fastify-trpc-plugin adapter types not exported
-        createContext({ prisma, req, res }),
-      onError: ({ path, error, ctx }: any) => { // fastify-trpc-plugin OnErrorFn type not exported
-        const traceId = ctx?.traceId;
-        const cause = error.cause; // `error` is already `any` (see comment above) — redundant cast
-        fastify.log.error(
-          {
-            path,
-            err: { message: error.message, code: error.code },
-            // `cause` is deliberately set on many `INTERNAL_SERVER_ERROR`s
-            // (see apps/api/src/lib/ratelimit.ts and others) precisely because
-            // otherwise it disappears here: without this field, the real cause
-            // never reaches the logs.
-            ...(cause !== undefined
-              ? { cause: cause instanceof Error ? cause.message : String(cause) }
-              : {}),
-            traceId,
-          },
-          'tRPC error'
-        );
-      },
-    },
+      createContext: async ({ req, res }) => createContext({ prisma, req, res }),
+      // The request's own logger (its `reqId` joins the request lines); the root one when the
+      // context failed to build.
+      onError: ({ path, error, ctx }) =>
+        logTrpcError(ctx?.logger ?? fastify.log, { path, error, traceId: ctx?.traceId }),
+    } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
     useWSS: false,
   });
 }

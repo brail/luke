@@ -27,6 +27,7 @@ import {
   deleteConfig,
   decryptValue,
 } from '../lib/configManager';
+import { toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -325,13 +326,6 @@ export const configRouter = router({
           try {
             value = decryptValue(config.value);
           } catch (error) {
-            ctx.logger.error(
-              {
-                key: input.key,
-                error: error instanceof Error ? error.message : 'Unknown error',
-              },
-              'Config decryption failed'
-            );
             throw new TRPCError({
               code: 'INTERNAL_SERVER_ERROR',
               message: `Impossibile decifrare configurazione: ${input.key}`,
@@ -505,8 +499,7 @@ export const configRouter = router({
             return {
               key: config.key,
               success: false,
-              error:
-                error instanceof Error ? error.message : 'Errore sconosciuto',
+              error: toErrorMessage(error),
             };
           }
         })
@@ -606,8 +599,7 @@ export const configRouter = router({
           results.errorCount++;
           results.errors.push({
             key: item.key,
-            error:
-              error instanceof Error ? error.message : 'Errore sconosciuto',
+            error: toErrorMessage(error),
           });
         }
       }

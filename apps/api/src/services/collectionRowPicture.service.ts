@@ -38,21 +38,17 @@ export async function uploadCollectionRowPicture(
     pending: true,
   });
 
-  try {
-    await logAudit(ctx, {
-      action: 'COLLECTION_ROW_PICTURE_UPLOADED',
-      targetType: 'CollectionLayoutRow',
-      targetId: params.rowId,
-      result: 'SUCCESS',
-      metadata: {
-        filename: result.originalName,
-        size: params.file.size,
-        contentType: params.file.mimetype,
-      },
-    });
-  } catch (auditError) {
-    ctx.logger?.warn({ auditError }, 'Audit log failed for row picture upload');
-  }
+  await logAudit(ctx, {
+    action: 'COLLECTION_ROW_PICTURE_UPLOADED',
+    targetType: 'CollectionLayoutRow',
+    targetId: params.rowId,
+    result: 'SUCCESS',
+    metadata: {
+      filename: result.originalName,
+      size: params.file.size,
+      contentType: params.file.mimetype,
+    },
+  });
 
   return {
     publicUrl: result.publicUrl,

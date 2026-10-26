@@ -1,0 +1,17 @@
+rules:
+  - id: luke-single-root-logger
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      A second pino instance has neither the root logger's level nor its
+      redaction of credentials. Log through ctx.logger / req.log, or a child of
+      the root: rootLogger.child({ module }) from apps/api/src/lib/logger.ts.
+    pattern: pino(...)
+    paths:
+      include:
+        - /apps/api/src/**/*.ts
+      exclude:
+        - /apps/api/src/lib/logger.ts
+        # Preloaded before the application (--require / --import), with a level of
+        # its own so the telemetry start and shutdown lines show in production too.
+        - /apps/api/src/instrument.ts

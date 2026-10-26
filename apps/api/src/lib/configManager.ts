@@ -35,6 +35,7 @@ import {
   loadAdminRecoveryOverrides,
 } from '../services/sectionAccess.service';
 
+import { toErrorMessage } from './error';
 import { acquireLastAdminLock } from './lastAdminGuard';
 import { rootLogger } from './logger';
 
@@ -313,13 +314,8 @@ export async function getConfig(prisma: PrismaClient, key: string): Promise<stri
     try {
       return decryptValue(config.value);
     } catch (error) {
-      logger.error(
-        {
-          key,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        },
-        'Config decryption error'
-      );
+      // The caller logs the thrown error whole, this one as its cause: the message is enough here.
+      logger.error({ key, error: toErrorMessage(error) }, 'Config decryption error');
       throw new ConfigDecryptionError(key, { cause: error });
     }
   }
@@ -445,7 +441,7 @@ export async function validateCriticalConfig(prisma: PrismaClient): Promise<void
       try {
         await getTypedConfig(prisma, key);
       } catch (err) {
-        errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
+        errors.push(`${key}: ${toErrorMessage(err)}`);
       }
     }),
   );
@@ -751,7 +747,7 @@ function parseConfigOrDefault<K extends AppConfigKey>(
     return parseConfigValue(key, raw);
   } catch (error) {
     logger.warn(
-      { key, error: error instanceof Error ? error.message : 'Unknown error' },
+      { key, err: error },
       'Invalid AppConfig value, using fallback'
     );
     return fallback;
@@ -901,7 +897,7 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
     roleMapping = RoleMappingSchema.parse(parsed);
   } catch (error) {
     logger.warn(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { err: error },
       'roleMapping parse/validation error, using an empty mapping'
     );
     roleMapping = {};

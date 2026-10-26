@@ -18,6 +18,7 @@ import type { StorageBucket } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
+import { toErrorMessage } from '../lib/error.js';
 import { copyToImmutableBucket, getStorageProvider, readObjectBuffer } from '../storage/index.js';
 
 const LIVE: StorageBucket = 'collection-row-pictures';
@@ -159,7 +160,7 @@ export async function repairAutoRevisionPhotos(
       });
       keys.push({ key, outcome: 'repaired', newKey, revisionIds });
     } catch (err) {
-      keys.push({ key, outcome: 'error', reason: err instanceof Error ? err.message : String(err), revisionIds });
+      keys.push({ key, outcome: 'error', reason: toErrorMessage(err), revisionIds });
     }
   }
 

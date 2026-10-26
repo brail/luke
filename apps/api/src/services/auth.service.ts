@@ -181,7 +181,7 @@ export async function verifyCredentials(
       ldap.failure = { couldNotComplete: false, reason: login.reason, errorCode: login.errorCode };
     } catch (e) {
       ctx.logger.warn(
-        { username, code: e instanceof TRPCError ? e.code : undefined, error: toErrorMessage(e) },
+        { username, code: e instanceof TRPCError ? e.code : undefined, err: e },
         'LDAP authentication could not complete'
       );
       ldap.failure = { couldNotComplete: true, reason: 'ldap_unavailable', errorCode: toErrorCode(e) };
@@ -511,7 +511,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
     });
 
     ctx.logger.error(
-      { error: error instanceof Error ? error.message : 'Unknown error', userId: user.id },
+      { err: error, userId: user.id },
       'Password reset email failed — check SMTP config in AppConfig'
     );
 
@@ -522,7 +522,7 @@ export async function requestPasswordReset(ctx: Context, email: string) {
       result: 'FAILURE',
       metadata: {
         reason: 'email_send_failed',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: toErrorMessage(error),
       },
     });
 

@@ -17,7 +17,7 @@ import { isDevelopment } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
-import { getTraceId, toErrorMessage } from '../lib/error';
+import { getTraceId } from '../lib/error';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
 
 import type { FastifyInstance } from 'fastify';
@@ -85,7 +85,7 @@ export default async function specsheetImageRoutes(
 
         return reply.code(200).send(result);
       } catch (error: unknown) {
-        req.log.error({ error: toErrorMessage(error), specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
+        req.log.error({ err: error, specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
 
         if (
           error instanceof TRPCError &&

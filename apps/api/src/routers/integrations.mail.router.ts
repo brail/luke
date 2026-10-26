@@ -10,7 +10,7 @@ import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfigsMasked, saveConfigs } from '../lib/configManager';
-import { toTRPCError, IntegrationErrorHandler, SecureLogger } from '../lib/errorHandler';
+import { toTRPCError, IntegrationErrorHandler } from '../lib/errorHandler';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -89,8 +89,6 @@ export const mailRouter = router({
     .input(mailTestSchema)
     .mutation(async ({ input, ctx }) => {
       try {
-        const logger = new SecureLogger(ctx.logger);
-
         // `getSmtpConfig` already reads these six keys, checks them and coerces port and secure;
         // this procedure kept its own copy, down to a second `parseInt` and a second
         // `=== 'true'`. Its "incomplete configuration" error was thrown inside this same `try`,
@@ -121,10 +119,7 @@ export const mailRouter = router({
 
         await transporter.sendMail(testEmail);
 
-        logger.info('Test email sent successfully', {
-          to: recipient,
-          subject: testEmail.subject,
-        });
+        ctx.logger.info({ to: recipient, subject: testEmail.subject }, 'Test email sent successfully');
 
         return {
           success: true,
