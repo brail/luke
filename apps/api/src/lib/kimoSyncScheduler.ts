@@ -37,11 +37,11 @@ let _prisma: PrismaClient | null = null;
 // ─── Internal runner ──────────────────────────────────────────────────────────
 
 /** Tells the admins a sync failed, at most once per `SYSTEM_FAILURE_DEDUP_MS`. */
-async function notifyFailure(prisma: PrismaClient, log: Logger, message: string): Promise<void> {
+async function notifyFailure(prisma: PrismaClient, log: Logger, error: unknown): Promise<void> {
   await notifyDeduped(prisma, 'kimo-sync:failure', SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
     category: 'SYSTEM',
     title: 'KIMO sync fallito',
-    message,
+    message: toErrorMessage(error),
     data: { type: 'kimo_sync_failure' },
   })).catch(e => log.error({ err: e }, 'Failed to notify admins of sync failure'));
 }
@@ -67,7 +67,7 @@ async function _runSync(): Promise<KimoSyncResult | null> {
     return result;
   } catch (err) {
     log.error({ err }, 'Kimo sync scheduler: sync failed');
-    await notifyFailure(prisma, log, toErrorMessage(err));
+    await notifyFailure(prisma, log, err);
     return null;
   } finally {
     _isRunning = false;

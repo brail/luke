@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { prismaKnownError as prismaError } from '../../../test/helpers/prismaError';
+import { prismaKnownError as prismaError, prismaValidationError } from '../../../test/helpers/prismaError';
 import { isUniqueViolation, toErrorMessage } from '../error';
 
 /**
@@ -38,6 +38,13 @@ describe('toErrorMessage', () => {
     expect(toErrorMessage({})).toBe('Unknown error');
     expect(toErrorMessage({ message: 42 })).toBe('Unknown error');
     expect(toErrorMessage(undefined)).toBe('Unknown error');
+  });
+
+  it("keeps a Prisma validation error's call and reason, without the values its arguments carry", () => {
+    const message = toErrorMessage(prismaValidationError('query-value-sentinel'));
+
+    expect(message).toContain('invocation: Unknown argument `notAField`');
+    expect(message).not.toContain('query-value-sentinel');
   });
 });
 

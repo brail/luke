@@ -214,7 +214,8 @@ message reaches the client:
 - A 5xx, including any error a procedure did not expect, reads
   `Internal server error` in production. The original message and its cause
   still reach the `tRPC error` log line, whole with the stack for an unexpected
-  one (`INTERNAL_SERVER_ERROR`).
+  one (`INTERNAL_SERVER_ERROR`), less the arguments a Prisma error renders
+  ([API documentation](apps/api/README.md#hardening--shutdown-semantics)).
 
 Clients and operators branch on `error.data.code` and `error.data.httpStatus`,
 never on the message text:

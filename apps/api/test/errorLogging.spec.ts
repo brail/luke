@@ -5,39 +5,18 @@
  * inside the error itself.
  */
 
-import { Writable } from 'node:stream';
-
 import { TRPCError } from '@trpc/server';
 import Fastify, { type FastifyBaseLogger } from 'fastify';
-import pino from 'pino';
 import { describe, it, expect } from 'vitest';
 
 import { logTrpcError, setGlobalErrorHandler } from '../src/lib/error';
-import { loggerOptions } from '../src/lib/logger';
 
-/** The fields a test reads from a JSON log line. */
-interface LogLine {
-  msg?: string;
-  err?: { message?: string; stack?: string };
-  cause?: string;
-}
-
-/** A pino logger with the API's options, writing its lines where the test can read them. */
-function capture() {
-  const lines: LogLine[] = [];
-  const stream = new Writable({
-    write(chunk: Buffer, _encoding, done) {
-      lines.push(JSON.parse(chunk.toString()));
-      done();
-    },
-  });
-  // No transport: pino refuses one next to a destination stream, and development sets pino-pretty.
-  return { logger: pino({ ...loggerOptions, transport: undefined, level: 'info' }, stream), lines };
-}
+import { captureLogger } from './helpers/logger';
+import { prismaValidationError } from './helpers/prismaError';
 
 describe('the root logger options', () => {
   it('keep the message, stack and cause of an error', () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
 
     logger.error({ err: new Error('boom', { cause: new Error('the root cause') }) }, 'failed');
 
@@ -47,7 +26,7 @@ describe('the root logger options', () => {
   });
 
   it('drop credentials at the top level, two levels down and two levels inside the error', () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
     const err = Object.assign(new Error('bind failed'), { bindDN: 'cn=svc-sentinel', password: 'pw-sentinel' });
 
     Object.assign(err, { config: { auth: { pass: 'deep-err-sentinel' } } });
@@ -67,7 +46,7 @@ describe('the root logger options', () => {
 
 describe('the global error handler', () => {
   it('logs the failure with its message and stack', async () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
     // As `server.ts` passes it: typed as Fastify's base logger, so the instance stays a plain `FastifyInstance`.
     const fastifyLogger: FastifyBaseLogger = logger;
     const app = Fastify({ loggerInstance: fastifyLogger });
@@ -87,7 +66,7 @@ describe('the global error handler', () => {
 
 describe('the tRPC error line', () => {
   it('carries an internal error whole, with its stack and the cause set for it', () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
     const error = new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'failed', cause: new Error('root-cause-sentinel') });
 
     logTrpcError(logger, { path: 'brand.create', error, traceId: 'trace-1' });
@@ -97,7 +76,7 @@ describe('the tRPC error line', () => {
   });
 
   it("logs the exception itself, once, when tRPC wrapped it in its own message", () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
     // What tRPC builds around an exception no procedure caught: the cause's message, no other.
     const error = new TRPCError({ code: 'INTERNAL_SERVER_ERROR', cause: new Error('uncaught-sentinel') });
 
@@ -107,7 +86,7 @@ describe('the tRPC error line', () => {
   });
 
   it('keeps a 4xx, or an expected 5xx, to its code and message under the same key, with no stack', () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
 
     logTrpcError(logger, { path: 'seasonCalendar.updateMilestone', error: new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' }) });
     logTrpcError(logger, { path: 'brand.list', error: new TRPCError({ code: 'SERVICE_UNAVAILABLE', message: 'Manutenzione in corso' }) });
@@ -120,11 +99,48 @@ describe('the tRPC error line', () => {
   });
 
   it('names a cause only when it says more than the message', () => {
-    const { logger, lines } = capture();
+    const { logger, lines } = captureLogger();
 
     logTrpcError(logger, { path: 'brand.create', error: new TRPCError({ code: 'CONFLICT', message: 'Codice già usato', cause: new Error('Unique constraint failed') }) });
     logTrpcError(logger, { path: 'brand.list', error: new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Troppe richieste', cause: { retryAfterSeconds: 60 } }) });
 
     expect(lines.map(line => line.cause)).toEqual(['Unique constraint failed', undefined]);
+  });
+});
+
+/** A log line keeps a Prisma error's call and reason, not its query values (`src/lib/queryArguments.ts`). */
+describe('a Prisma validation error in a log line', () => {
+  const SENTINEL = 'query-value-sentinel';
+
+  it('keeps the call and the reason, not the values, in the message and stack of the chain', () => {
+    const { logger, lines } = captureLogger();
+    const cause = prismaValidationError(SENTINEL);
+
+    logger.error({ err: new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'failed', cause }) }, 'failed');
+
+    expect(JSON.stringify(lines[0])).not.toContain(SENTINEL);
+    expect(lines[0]?.err?.message).toContain('Invalid `prisma.user.findFirst()` invocation: Unknown argument `notAField`');
+  });
+
+  it('drops them whatever key carries them, in a child too, and from the message pino copies', () => {
+    const { logger, lines } = captureLogger();
+    const err = prismaValidationError(SENTINEL);
+
+    logger.child({ module: 'nav' }).warn({ error: err.message }, 'sync failed');
+    // No message of its own: pino copies `err.message` into `msg`, past the `err` serializer.
+    logger.error({ err });
+
+    expect(lines).toHaveLength(2);
+    expect(JSON.stringify(lines)).not.toContain(SENTINEL);
+  });
+
+  it('drops them from the cause of a 4xx line too', () => {
+    const { logger, lines } = captureLogger();
+    const cause = prismaValidationError(SENTINEL);
+
+    logTrpcError(logger, { path: 'brand.create', error: new TRPCError({ code: 'CONFLICT', message: 'Riprova', cause }) });
+
+    expect(JSON.stringify(lines[0])).not.toContain(SENTINEL);
+    expect(lines[0]?.cause).toContain('Unknown argument `notAField`');
   });
 });

@@ -53,7 +53,7 @@ The surface is exactly what `@prisma/client` used to answer for. It is re-export
 ```typescript
 import { createPrismaClient, type PrismaClient, type User } from '@luke/db';
 
-const prisma: PrismaClient = createPrismaClient({ log: ['warn', 'error'] });
+const prisma: PrismaClient = createPrismaClient();
 
 export async function listActiveAdmins(): Promise<User[]> {
   return prisma.user.findMany({

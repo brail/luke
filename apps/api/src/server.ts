@@ -87,9 +87,14 @@ const fastify = Fastify({
 // Register the global error handler: one log line per failure and a safe response
 setGlobalErrorHandler(fastify);
 
-/** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
+/**
+ * Prisma client instance using the pg adapter. Shared across all route handlers and services.
+ * Outside development Prisma logs nothing itself: it would print each failed request whole, query
+ * values included, straight to stdout past the root logger; the error reaches its caller, which logs
+ * it (#104).
+ */
 const prisma = createPrismaClient({
-  log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : ['error'],
+  log: isDevelopment() ? ['query', 'info', 'warn', 'error'] : undefined,
 });
 
 /**

@@ -390,7 +390,7 @@ values in the environment table below, and no configuration file is read. Ration
 
 ### Hardening & Shutdown semantics
 
-- Logging: every API logger but the tracing bootstrap one (`src/instrument.ts`) is a child of one root (`src/lib/logger.ts`), Fastify's included — one level (`LOG_LEVEL`), pino-pretty in development, pino's standard `err` serializer (message, stack and the cause chain) and `redact` on credential keys (`password`, `secret`, `token`, `bindDN`, …) up to two levels down and two levels inside a logged error. A value inside a message or a stack is text, which no key can match.
+- Logging: every API logger but the tracing bootstrap one (`src/instrument.ts`) is a child of one root (`src/lib/logger.ts`), Fastify's included — one level (`LOG_LEVEL`), pino-pretty in development, pino's standard `err` serializer (message, stack and the cause chain) and `redact` on credential keys (`password`, `secret`, `token`, `bindDN`, …) up to two levels down and two levels inside a logged error. A value inside a message or a stack is text, which no key can match — except the arguments a Prisma error renders, values included: every line of the root logger (a `streamWrite` hook) and `toErrorMessage` drop them, keeping the call and the reason (`src/lib/queryArguments.ts`). Outside development Prisma prints no error of its own, so none reaches stdout past the root logger: each one reaches its caller, which logs it. In development Prisma's own log (`query`, `info`, `warn`, `error`) still prints each failed request whole.
 - Global error handling: Fastify's `setErrorHandler` logs each failure once, whole, with the `traceId` from the `x-luke-trace-id` header. In production the messages are generic, and no stack reaches a response.
 - tRPC error responses: which message reaches the client, per status and environment, is in [OPERATIONS.md — Error responses](../../OPERATIONS.md#error-responses). The tRPC `onError` in `src/server.ts` logs each failed call once (`logTrpcError` in `src/lib/error.ts`): an `INTERNAL_SERVER_ERROR` whole — message, stack and the cause chain, or the exception itself when tRPC wrapped it — and any other code, a 4xx or an expected 5xx such as maintenance's `SERVICE_UNAVAILABLE`, as its code and message (plus the cause's message when it adds one), without a stack.
 - Error text: what is stored or shown (audit rows, sync status, admin results) comes from `toErrorMessage` (`src/lib/error.ts`), never `instanceof Error ? .message : …` by hand (`.semgrep/rules/error-message-by-hand.yml`). A log line of an unexpected failure passes the error whole as `err`, once, where the error ends: a site that rethrows it as a cause, or retries, logs its message, and so does an expected refusal (an expired token, a directory refusing a login). No module builds its own pino instance (`.semgrep/rules/single-root-logger.yml`).
@@ -493,6 +493,11 @@ the instrumentation bootstrap before the server: `start` with `--require` on
 
 Open `http://localhost:16686` to inspect traces for service `@luke/api`.
 The collector uses transient in-memory storage: stopping it loses the traces.
+
+Span exception events carry an error's message and stack whole, past the root
+logger's cleaning — the query values a Prisma error renders included. Keep OTLP
+export to a local, disposable collector until those events get the same cleaning
+(#104): the production and RC stacks set no `OTEL_*` variable.
 This command is documentation-verified, not an end-to-end tracing smoke test.
 
 ## Database

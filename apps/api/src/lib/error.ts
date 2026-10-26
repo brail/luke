@@ -9,6 +9,7 @@ import { ZodError } from 'zod';
 import { isProduction } from '@luke/core';
 import { Prisma } from '@luke/db';
 
+import { withoutQueryArguments } from './queryArguments';
 import { isRateLimitExceededCause } from './rateLimitError';
 
 import type { Context } from './context';
@@ -27,13 +28,18 @@ const isProd = isProduction();
  * Extracts a readable message from any caught value. An empty `message` falls back to what else the
  * error carries: Node's dual-stack connect failure is an `AggregateError` whose own message is
  * empty, with the real reasons in `errors` (#49). A thrown primitive is its own text and a plain
- * object gives its string `message`, never `[object Object]`; nothing at all is `Unknown error`.
+ * object gives its string `message`, never `[object Object]`; nothing at all is `Unknown error`. A
+ * Prisma error keeps its call and reason, without the query values (`withoutQueryArguments`).
  */
 export function toErrorMessage(err: unknown): string {
+  return withoutQueryArguments(readMessage(err));
+}
+
+function readMessage(err: unknown): string {
   if (err === undefined || err === null) return 'Unknown error';
   if (typeof err !== 'object') return String(err) || 'Unknown error';
   if ('message' in err && typeof err.message === 'string' && err.message) return err.message;
-  if (err instanceof AggregateError && err.errors.length > 0) return err.errors.map(toErrorMessage).join('; ');
+  if (err instanceof AggregateError && err.errors.length > 0) return err.errors.map(readMessage).join('; ');
   if (!(err instanceof Error)) return 'Unknown error';
   return 'code' in err && typeof err.code === 'string' ? `${err.name}: ${err.code}` : err.name;
 }

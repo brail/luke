@@ -8,6 +8,8 @@ import pino, { type LoggerOptions } from 'pino';
 
 import { isDevelopment, isProduction } from '@luke/core';
 
+import { logLineWithoutQueryArguments } from './queryArguments';
+
 /**
  * Keys whose value never reaches a log line, up to two levels down (`smtp.auth.pass`) and two levels
  * inside a logged error (`err.config.auth.pass`): pino matches exact paths, with no recursive
@@ -35,6 +37,9 @@ export const loggerOptions: LoggerOptions = {
   // nosemgrep: luke-no-direct-env -- LOG_LEVEL is observability bootstrap (CLAUDE.md Env Policy)
   level: process.env.LOG_LEVEL || (isProduction() ? 'warn' : 'info'),
   redact: REDACTED_KEYS.flatMap(key => [key, `*.${key}`, `*.*.${key}`, `err.*.*.${key}`]),
+  // The last step before a line is written: the query values a Prisma error renders go, whatever key
+  // or message carries them (`lib/queryArguments.ts`).
+  hooks: { streamWrite: logLineWithoutQueryArguments },
   transport: isDevelopment()
     ? {
         target: 'pino-pretty',
