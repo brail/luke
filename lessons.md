@@ -934,6 +934,21 @@ unknown — say so in the plan and, per CLAUDE.md "Collaboration with Codex",
 use an independent read-only Claude agent, or ask the owner whether to wait,
 when the owner asked for Codex by name.
 
+### A cited issue is not a planned one (2026-10-26)
+
+**What happened.** The 3.1.0 dev plan passed an "every open issue number is in
+the file" check while one issue sat only in a note under another unit, a new
+item of another issue was missing from the unit that owns it, a triaged finding
+was missing from the placement table, and the progress log had stopped seven
+pushed units earlier. A grep for issue numbers proves the text mentions them,
+not that the work is scheduled.
+
+**Rule.** At the start of a session, and whenever the backlog session announces
+an issue, check that every open issue of the milestone and every triaged
+finding has a unit with its block and its release candidate. Place a new one at
+the end of the current cycle — after the push, before the next phase — and
+update the plan's progress log in the same step.
+
 ---
 
 ## React & UI
