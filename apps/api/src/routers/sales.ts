@@ -25,6 +25,7 @@ import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
 } from '../lib/kimoSyncScheduler';
+import { navLogger } from '../lib/logger';
 import { requirePermission } from '../lib/permissions';
 import {
   triggerPortafoglioSyncNow,
@@ -303,7 +304,7 @@ const portafoglioRouter = router({
           trademarkCode: brand.code,
           salespersonCode: input.salespersonCode,
           customerCode: input.customerCode,
-        });
+        }, navLogger);
       }
 
       const queryDurationMs = Date.now() - queryStart;

@@ -8,10 +8,9 @@
 
 import { createHash } from 'crypto';
 
-import pino from 'pino';
+import { rootLogger } from './logger';
 
-// Internal idempotency logger
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'idempotency' });
 
 /**
  * Internal cache entry for a single idempotency key.

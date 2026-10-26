@@ -79,27 +79,6 @@ export function getTraceId(req: FastifyRequest): string | undefined {
   return (Array.isArray(header) ? header[0] : header) || req.id;
 }
 
-function redactError(err: unknown): unknown {
-  if (!err || typeof err !== 'object') return err;
-  // The check above guarantees a non-null object: safe to treat it as a
-  // record for redacting sensitive keys.
-  const clone: Record<string, unknown> = { ...(err as Record<string, unknown>) };
-  const redactKeys = [
-    'stack',
-    'password',
-    'secret',
-    'token',
-    'bindDN',
-    'credentials',
-    'cause',
-    'details',
-  ];
-  for (const k of redactKeys) {
-    if (k in clone) clone[k] = '[REDACTED]';
-  }
-  return clone;
-}
-
 function mapHttpStatus(err: unknown): number {
   if (err instanceof TRPCError) {
     switch (err.code) {
@@ -159,16 +138,16 @@ function toResponseBody(err: unknown, traceId?: string) {
 }
 
 /**
- * Registers the global Fastify error handler and `onError` hook.
- * Maps tRPC and HTTP errors to appropriate status codes, redacts sensitive fields
- * from error objects before logging, and suppresses stack traces in production.
+ * Registers the global Fastify error handler. Maps tRPC and HTTP errors to status codes, logs the
+ * failure once through the root logger (`lib/logger.ts`) — its `err` serializer keeps message, stack
+ * and cause, its `redact` drops credentials — and keeps the stack out of production responses.
  */
 export function setGlobalErrorHandler(app: FastifyInstance): void {
   app.setErrorHandler(
     (err: FastifyError, req: FastifyRequest, reply: FastifyReply) => {
       const traceId = getTraceId(req);
       const status = mapHttpStatus(err);
-      req.log.error({ err: redactError(err), traceId }, 'request failed');
+      req.log.error({ err, traceId, method: req.method, url: req.url, ip: req.ip }, 'request failed');
       if (reply.sent) return;
       reply
         .code(status)
@@ -176,21 +155,6 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
         .send(toResponseBody(err, traceId));
     }
   );
-
-  app.addHook('onError', (req, _reply, err, done) => {
-    const traceId = getTraceId(req);
-    req.log.error(
-      {
-        err: redactError(err),
-        traceId,
-        method: req.method,
-        url: req.url,
-        ip: req.ip,
-      },
-      'onError hook'
-    );
-    done();
-  });
 }
 
 /**

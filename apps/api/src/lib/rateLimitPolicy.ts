@@ -3,15 +3,13 @@
  * Resolves a route's policy: AppConfig → built-in default.
  */
 
-import pino from 'pino';
-
 import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig } from './configManager';
+import { rootLogger } from './logger';
 
-
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'rate-limit-policy' });
 
 /**
  * Conservative built-in defaults for backwards compatibility.

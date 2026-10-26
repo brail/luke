@@ -22,6 +22,7 @@ import { closePool, runNavSync } from '@luke/nav';
 
 import { getConfig } from './configManager';
 import { toErrorMessage } from './error';
+import { navLogger } from './logger';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
@@ -106,7 +107,7 @@ export function registerNavSyncScheduler(
     fastify.log.info({ entity }, 'NAV sync scheduler: starting entity sync');
 
     try {
-      const report = await runNavSync(prisma, getConfig, undefined, entity);
+      const report = await runNavSync(prisma, getConfig, navLogger, entity);
       const durationMs = report.completedAt.getTime() - report.startedAt.getTime();
 
       for (const r of report.results) {

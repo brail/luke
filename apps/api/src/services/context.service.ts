@@ -4,13 +4,12 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import pino from 'pino';
 
 import { AppContextDefaultsSchema, hasPermission, type AppContextDefaults, type Role } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
+import { rootLogger } from '../lib/logger';
 import { makeUrlResolver } from '../lib/storageUrl';
-
 
 /**
  * The brand scope guards live in `brandScope.service.ts` (they need the
@@ -23,7 +22,7 @@ export {
   filterAllowedBrandIds,
 } from './brandScope.service';
 
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'context' });
 
 /** Shape of `UserPreference.data` (Json column) — see the doc comment on the model in `identity.prisma`. */
 interface UserPreferenceData {
@@ -97,7 +96,6 @@ export async function getUserAllowedBrandIds(
 
   return [...unionBrandScopes(memberships)];
 }
-
 
 /**
  * Returns the set of CompanyFunction IDs the user may access via team membership.

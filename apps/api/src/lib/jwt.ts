@@ -5,12 +5,12 @@
  */
 
 import jwt from 'jsonwebtoken';
-import pino from 'pino';
 
 import { getApiJwtSecret } from '@luke/core/server';
 
-// Internal logger for JWT
-const logger = pino({ level: 'info' });
+import { rootLogger } from './logger';
+
+const logger = rootLogger.child({ module: 'jwt' });
 
 /**
  * Standardised JWT payload shape used across the API.

@@ -1,5 +1,4 @@
 import { TRPCError } from '@trpc/server';
-import pino from 'pino';
 
 import {
   addCalendarDays,
@@ -19,12 +18,12 @@ import {
 import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db';
 
 import { getConfigOrDefault } from '../lib/configManager';
+import { rootLogger } from '../lib/logger';
 
 import { eventVisibilityWhere } from './calendarAudience.service';
 
-
 const MS_PER_DAY = 86_400_000;
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'season-calendar' });
 
 /**
  * Warns when events are created with zero visibility rows — they still work (they fall back to
@@ -246,7 +245,6 @@ type LockableEvent = {
 export function isEventDateLocked(event: LockableEvent, timeZone: string, now: Date = new Date()): boolean {
   return isEventDateLockedCore({ ...event, frozenAt: event.planningGroup.frozenAt }, timeZone, now);
 }
-
 
 // ─── Delete ──────────────────────────────────────────────────────────────────
 

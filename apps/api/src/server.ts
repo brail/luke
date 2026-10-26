@@ -15,8 +15,7 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-import Fastify from 'fastify';
-import pino from 'pino';
+import Fastify, { type FastifyBaseLogger } from 'fastify';
 
 import { IMAGE_BUCKETS, TRPC_MAX_BATCH_SIZE, isDevelopment, isProduction, type StorageBucket } from '@luke/core';
 import {
@@ -40,6 +39,7 @@ import { setupGracefulShutdown } from './lib/gracefulShutdown';
 import { buildHelmetConfig } from './lib/helmet';
 import { idempotencyStore } from './lib/idempotency';
 import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
+import { rootLogger } from './lib/logger';
 import { registerMaintenanceModeScheduler } from './lib/maintenanceModeScheduler';
 import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
@@ -63,24 +63,16 @@ import specsheetImageRoutes from './routes/specsheetImage.routes';
 import { registerSseRoute } from './routes/sse';
 import { getStorageProvider, resolveLocalBasePath } from './storage';
 
-/** Pino logger configuration: `warn` in production, `info` + pino-pretty in development. */
-const loggerConfig = {
-  level: isProduction() ? 'warn' : 'info',
-  transport: isDevelopment()
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'HH:MM:ss Z',
-          ignore: 'pid,hostname',
-        },
-      }
-    : undefined,
-};
+/**
+ * The root logger (`lib/logger.ts`), typed as Fastify's base logger: passing pino's own type makes
+ * Fastify generic over it, and every `register*(fastify: FastifyInstance)` stops accepting the
+ * instance.
+ */
+const fastifyLogger: FastifyBaseLogger = rootLogger;
 
 /** Fastify instance shared across all route registrations in this module. */
 const fastify = Fastify({
-  logger: loggerConfig,
+  loggerInstance: fastifyLogger,
   requestTimeout: 360_000, // 6 min — aligned with Next.js proxyTimeout and the NAV pool (300 s + margin)
   connectionTimeout: 0,    // disabled — requestTimeout handles the total limit
   routerOptions: { maxParamLength: 5000 }, // tRPC batch requests contain multiple procedure names in the URL param
@@ -92,7 +84,7 @@ const fastify = Fastify({
   ),
 });
 
-// Register global handler/onError for logging and a safe response
+// Register the global error handler: one log line per failure and a safe response
 setGlobalErrorHandler(fastify);
 
 /** Prisma client instance using the pg adapter. Shared across all route handlers and services. */
@@ -537,7 +529,7 @@ function assertEnvPolicy(): void {
 
   const msg = `[env-policy] Application variables found in process.env — they must live in AppConfig: ${violations.join(', ')}`;
 
-  const bootLogger = pino({ level: 'warn' });
+  const bootLogger = rootLogger.child({ module: 'env-policy' });
   if (isProduction()) {
     bootLogger.error(msg);
     process.exit(1);

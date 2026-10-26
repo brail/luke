@@ -7,16 +7,15 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import pino from 'pino';
 
+import { rootLogger } from './logger';
 import { buildRateLimitExceededError } from './rateLimitError';
 import { resolveRateLimitPolicy } from './rateLimitPolicy';
 import { t } from './t';
 
 import type { FastifyRequest } from 'fastify';
 
-// Internal rate-limit logger
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'rate-limit' });
 
 /**
  * Static fallback rate-limit configuration used when AppConfig / env overrides are absent.

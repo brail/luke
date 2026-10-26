@@ -6,10 +6,10 @@
  * `/download/audit-log` export route, so neither has to import from the other.
  */
 
-import pino from 'pino';
-
 import { addCalendarDays, fullName, startOfDayIn, type AuditLogFilters, type AuditLogResult } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
+
+import { rootLogger } from './logger';
 
 import type { FastifyBaseLogger } from 'fastify';
 
@@ -516,7 +516,7 @@ export interface AuditContext {
 }
 
 /** For a context that brings no logger of its own. */
-const fallbackLogger: AuditLogger = pino({ level: 'info' });
+const fallbackLogger: AuditLogger = rootLogger.child({ module: 'audit' });
 
 /**
  * A log line about an audit row is secondary to the row. A logger that throws must neither turn a

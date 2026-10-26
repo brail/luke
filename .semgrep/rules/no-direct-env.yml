@@ -32,7 +32,6 @@ rules:
         - '/apps/api/src/server.ts'
         - '/apps/api/src/instrument.ts'
         - '/apps/api/src/lib/cors.ts'
-        - '/apps/api/src/lib/ldapAuth.ts'
         - '/apps/api/src/lib/storageUrl.ts'
         - '/apps/web/src/auth.ts'
         # Test runner code: it reads env by definition (baseURL, smoke

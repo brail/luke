@@ -35,6 +35,7 @@
 #   PUBLIC_SCHEME         — "https" when served over HTTPS (NEXTAUTH_URL); default "http"
 #   COOKIE_SECURE         — "true" for HTTPS; default "false"
 #   LUKE_RC_EDGE_SUBNET   — subnet of the `edge` network; default 10.254.20.0/24
+#   LOG_LEVEL             — API log level; default "warn" ("info" adds logins and sent emails)
 #
 # Prerequisite, once per host: the external network `luke-rc-proxy`, shared only
 # by the web service and the reverse proxy (OPERATIONS.md, "Reverse proxy"). The
@@ -88,6 +89,8 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://luke:${POSTGRES_PASSWORD_RC:?POSTGRES_PASSWORD_RC not set}@postgres-rc:5432/luke
       LUKE_CORS_ALLOWED_ORIGINS: ''
+      # Empty: the code's default (`warn` in production, apps/api/src/lib/logger.ts).
+      LOG_LEVEL: ${LOG_LEVEL:-}
     volumes:
       - api_rc_data:/root/.luke
     networks:

@@ -3,9 +3,9 @@
  * Always live fetch, never cached: no server-side result persistence.
  */
 
-import pino from 'pino';
+import { rootLogger } from './logger';
 
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'quotable' });
 
 const QUOTABLE_URL = 'https://api.quotable.io/random';
 const FETCH_TIMEOUT_MS = 2000;

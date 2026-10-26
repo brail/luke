@@ -5,7 +5,6 @@
 
 import { TRPCError } from '@trpc/server';
 import { Filter, SASL_MECHANISMS } from 'ldapts';
-import pino from 'pino';
 
 import { Roles, type Role } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
@@ -19,6 +18,7 @@ import {
 import { isSyntheticLdapEmail, sendVerificationEmail } from './emailHelpers';
 import { toErrorCode, toErrorMessage } from './error';
 import { ResilientLdapClient, isDirectoryAnswer } from './ldapClient';
+import { rootLogger } from './logger';
 
 import type { Entry } from 'ldapts';
 
@@ -32,7 +32,7 @@ function getAttr(entry: Entry, key: string): string[] {
   return typeof v === 'string' ? [v] : [];
 }
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const logger = rootLogger.child({ module: 'ldap' });
 
 /**
  * Fills every `${placeholder}` of an LDAP filter template from the configuration with `value`,
@@ -126,7 +126,7 @@ export async function authenticateViaLdap(
     if (verified.user === null) return verified;
 
     const userGroups = await lookUpGroups(ldapClient, config, verified.dn);
-    const role = determineUserRole(userGroups, config.roleMapping, logger);
+    const role = determineUserRole(userGroups, config.roleMapping);
 
     // Create or update the user in the database; an account it may not sign in is a refusal.
     const user = await createOrUpdateUser(prisma, username, role, verified.attributes);
@@ -304,26 +304,21 @@ function isRole(value: string): value is Role {
  */
 function determineUserRole(
   userGroups: string[],
-  roleMapping: Record<string, string>,
-  log?: pino.Logger
+  roleMapping: Record<string, string>
 ): Role {
   // Look for the most specific mapping
   for (const groupDN of userGroups) {
     if (roleMapping[groupDN]) {
       const role = roleMapping[groupDN];
       if (isRole(role)) {
-        if (log) {
-          log.info({ groupDN, role }, `Role mapping found`);
-        }
+        logger.info({ groupDN, role }, `Role mapping found`);
         return role;
       }
     }
   }
 
   // Default to viewer if no mapping is found (applied only when creating new users)
-  if (log) {
-    log.info({ userGroups }, 'No role mapping found for LDAP groups, defaulting to viewer (existing users keep their DB role)');
-  }
+  logger.info({ userGroups }, 'No role mapping found for LDAP groups, defaulting to viewer (existing users keep their DB role)');
   return 'viewer';
 }
 

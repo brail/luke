@@ -7,7 +7,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
-import pino from 'pino';
 import { z } from 'zod';
 
 import {
@@ -37,9 +36,9 @@ import {
 } from '../services/sectionAccess.service';
 
 import { acquireLastAdminLock } from './lastAdminGuard';
+import { rootLogger } from './logger';
 
-
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'config' });
 
 const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
 

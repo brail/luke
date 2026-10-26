@@ -8,8 +8,6 @@
  * calendar/events/thresholds/time zone once and reuse them across rows instead of refetching per row.
  */
 
-import pino from 'pino';
-
 import {
   calendarDateIn,
   calendarDateOf,
@@ -30,11 +28,11 @@ import {
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from '../lib/configManager';
+import { rootLogger } from '../lib/logger';
 
 import { resolveCompanyCountryCode } from './companyProfile.service';
 
-
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'phase-alert' });
 
 type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {

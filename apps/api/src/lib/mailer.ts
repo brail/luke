@@ -8,16 +8,16 @@ import { join } from 'path';
 
 import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
-import pino from 'pino';
 
 import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant, parseConfigValue } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from './configManager';
+import { rootLogger } from './logger';
 
 import type Mail from 'nodemailer/lib/mailer';
 
-const logger = pino({ level: 'info' });
+const logger = rootLogger.child({ module: 'mailer' });
 
 /**
  * Assembled SMTP configuration read from AppConfig keys.

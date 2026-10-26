@@ -4,7 +4,8 @@ rules:
     severity: ERROR
     message: >-
       Use the logger, not console.* (a non-negotiable Luke pattern). API:
-      ctx.logger (Fastify) or a local pino instance. Web:
+      ctx.logger (Fastify) or a child of the root logger,
+      rootLogger.child({ module }) from apps/api/src/lib/logger.ts. Web:
       debugLog/debugWarn/debugError from lib/debug.ts.
     pattern: console.$METHOD(...)
     paths:

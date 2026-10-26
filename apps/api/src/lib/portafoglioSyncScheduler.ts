@@ -20,6 +20,7 @@ import { getNavDbConfig, getPool, syncPortafoglioNow, type PortafoglioSyncResult
 
 import { getConfig } from './configManager';
 import { toErrorMessage } from './error';
+import { navLogger } from './logger';
 import { guardMaintenance } from './maintenanceMode';
 import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
@@ -37,7 +38,6 @@ const TICK_INTERVAL_MS = 60 * 1000; // checks every minute
 let _isRunning = false;
 let _lastRunAt: Date | null = null;
 let _prisma: PrismaClient | null = null;
-let _logger: Logger | null = null;
 
 // ─── Internal runner ──────────────────────────────────────────────────────────
 
@@ -52,11 +52,11 @@ async function notifyFailure(prisma: PrismaClient, log: Logger, message: string)
 }
 
 async function _runSync(): Promise<PortafoglioSyncResult | null> {
-  if (_isRunning || !_prisma || !_logger) return null;
+  if (_isRunning || !_prisma) return null;
 
   _isRunning = true;
   _lastRunAt = new Date();
-  const log = _logger;
+  const log = navLogger;
   const prisma = _prisma;
   sseStore.pushToAll({ type: 'sync-state', entity: 'portafoglio', isRunning: true });
 
@@ -140,7 +140,6 @@ export function registerPortafoglioSyncScheduler(
   const run = () => guardedTick().catch(err => fastify.log.error({ err }, 'Portafoglio sync scheduler: tick failed'));
 
   fastify.addHook('onReady', async () => {
-    _logger = fastify.log as unknown as Logger;
     fastify.log.info('Portafoglio sync scheduler: started (tick every minute, configurable interval)');
 
     // First execution immediately after ready (respecting DB config)

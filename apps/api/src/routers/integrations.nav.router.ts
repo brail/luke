@@ -19,6 +19,7 @@ import {
   createStandardError,
   toTRPCError,
 } from '../lib/errorHandler';
+import { navLogger } from '../lib/logger';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { enforceRateLimit } from '../lib/ratelimit';
@@ -305,7 +306,7 @@ const navSyncRouter = router({
 
       // The same lock as the scheduled sync of this entity, so the two never overlap.
       const report = await withSchedulerLock(ctx.prisma, `nav-sync:${input.entity}`, () =>
-        runNavSync(ctx.prisma, getConfig, undefined, input.entity),
+        runNavSync(ctx.prisma, getConfig, navLogger, input.entity),
       )();
       if (!report) {
         throw new TRPCError({
