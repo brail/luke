@@ -10,6 +10,7 @@
  * Uses nav_pf_sync_state for tracking (same schema, "nav_kimo_*" table names).
  */
 
+import { toErrorMessage } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { sanitizeCompany } from '../config.js';
@@ -123,7 +124,7 @@ export async function syncKimoNow(
     // Lines
     stats.push(await syncKimoSalesLines(pool, co, prisma, log));
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = toErrorMessage(err);
     log.error({ err }, 'nav-kimo sync fatal error');
     return {
       stats,

@@ -221,6 +221,15 @@ const DECLARATION_GRAPH_DEPENDENCIES = [
       "through the inferred AppRouter type, and TypeScript resolves that specifier from " +
       "apps/api. Without the declaration apps/web fails to build, while apps/api stays green.",
   },
+  {
+    file: 'packages/nav/package.json',
+    group: 'devDependencies',
+    name: 'pino',
+    why:
+      "nav loads no pino at run time — its callers pass the logger — but its emitted `.d.ts` " +
+      "names pino's `Logger` type in `runNavSync` and the sync functions, and TypeScript resolves " +
+      "that specifier from packages/nav. Without the declaration apps/api's typecheck fails.",
+  },
 ] as const;
 
 /**

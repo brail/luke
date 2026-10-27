@@ -6,8 +6,9 @@ rules:
       An error's message read by hand. `instanceof Error ? .message : …`, or a cast
       to Error, turns an error whose own message is empty (Node's dual-stack
       AggregateError, #49) into an empty string, and keeps neither the stack nor
-      the cause. Text that is stored or shown: toErrorMessage() from
-      apps/api/src/lib/error.ts. A log line where the error ends: the error whole,
+      the cause. Text that is stored or shown: toErrorMessage() (@luke/core;
+      apps/api re-exports it from src/lib/error.ts).
+      A log line where the error ends: the error whole,
       `logger.error({ err }, '…')`, so the root logger's serializer keeps message,
       stack and cause; a site that rethrows it as a cause, or retries:
       toErrorMessage(err).
@@ -18,3 +19,6 @@ rules:
     paths:
       include:
         - /apps/api/src/**/*.ts
+        - /packages/core/src/**/*.ts
+        - /packages/nav/src/**/*.ts
+        - /packages/calendar/src/**/*.ts

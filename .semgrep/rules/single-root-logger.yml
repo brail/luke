@@ -5,11 +5,14 @@ rules:
     message: >-
       A second pino instance has neither the root logger's level nor its
       redaction of credentials. Log through ctx.logger / req.log, or a child of
-      the root: rootLogger.child({ module }) from apps/api/src/lib/logger.ts.
+      the root: rootLogger.child({ module }) from apps/api/src/lib/logger.ts. A
+      package logs through the logger its caller passes.
     pattern: pino(...)
     paths:
       include:
         - /apps/api/src/**/*.ts
+        - /packages/nav/src/**/*.ts
+        - /packages/calendar/src/**/*.ts
       exclude:
         - /apps/api/src/lib/logger.ts
         # Preloaded before the application (--require / --import), with a level of

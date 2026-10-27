@@ -209,10 +209,11 @@ export const VALID_REPO: RepoFiles = {
   'apps/web/package.json': JSON.stringify(WEB_PACKAGE_JSON, null, 2),
   // Every row of `WORKSPACE_POLICY` must be tracked, or P10 reports the row as
   // stale — so the two peer libraries and the tooling package exist here,
-  // minimally. `nav → core` is the baseline's permitted, unused edge.
+  // minimally. `nav → core` mirrors the real edge.
   'packages/db/package.json': JSON.stringify(DB_PACKAGE_JSON, null, 2),
   'packages/nav/package.json': JSON.stringify(
-    { name: '@fixture/nav', private: true, dependencies: { '@fixture/core': 'workspace:*' } },
+    // `pino` only for the declarations (DECLARATION_GRAPH_DEPENDENCIES).
+    { name: '@fixture/nav', private: true, dependencies: { '@fixture/core': 'workspace:*' }, devDependencies: { pino: '^10.4.0' } },
     null,
     2
   ),

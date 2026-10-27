@@ -9,7 +9,8 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 <!-- luke-docs:start:dependents -->
 - `@luke/web` (`apps/web`) — form schemas, shared types, permission evaluation, storage contracts and API URL builders
 - `@luke/api` (`apps/api`) — request validation, AppConfig contracts, RBAC, pricing, storage and server-only secret helpers
-- `@luke/calendar` (`packages/calendar`) — the `initials` text helper that prefixes synchronized Google event titles and participates in their content hashes
+- `@luke/calendar` (`packages/calendar`) — the `initials` text helper that prefixes synchronized Google event titles and participates in their content hashes, the calendar-day helpers, and `toErrorMessage` for the connection test's error text
+- `@luke/nav` (`packages/nav`) — `toErrorMessage` for the connection-test steps' and the sync runs' error text
 <!-- luke-docs:end:dependents -->
 
 ## Main Exports
@@ -45,6 +46,7 @@ Shared, runtime-neutral contracts for the Luke monorepo: Zod schemas and their i
 | Dates and pricing | date formatting and working-day helpers, `priceForward`, `priceInverse`, `landedCostBreakdown`, `retailMargin`, `classifyMargin`, `meetsTargetMargin`, `suggestRetailPrice`, `calcMaxSupplierCost`, `formatCompanyMultiplier` |
 | Storage | `IStorageProvider`, `APP_STORAGE_BUCKETS`, `isValidBucket`, local and S3 configuration schemas, asset kinds and variants |
 | Sanitisation | `sanitizeFileName`, `isPathSafe`, text and Zod helpers |
+| Error text | `toErrorMessage` (a readable message from any caught value), `withoutQueryArguments` (a Prisma error's text without the query values it renders) |
 
 ### Additional entry points
 

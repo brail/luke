@@ -1,5 +1,7 @@
 import { google } from 'googleapis';
 
+import { toErrorMessage } from '@luke/core';
+
 import type { calendar_v3 } from 'googleapis';
 
 /**
@@ -148,7 +150,6 @@ export async function testGoogleConnection(config: CalendarConfig): Promise<{ ok
     await cal.calendarList.list({ maxResults: 1 });
     return { ok: true };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Unknown error';
-    return { ok: false, error: msg };
+    return { ok: false, error: toErrorMessage(err) };
   }
 }

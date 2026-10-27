@@ -20,13 +20,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@luke/core": "workspace:*",
     "@luke/db": "workspace:*",
-    "mssql": "^12.7.10",
-    "pino": "^10.4.0"
+    "mssql": "^12.7.10"
   },
   "devDependencies": {
     "@types/mssql": "^12.3.0",
     "@types/node": "^24.19.2",
+    "pino": "^10.4.0",
     "typescript": "^6.0.3"
   }
 }

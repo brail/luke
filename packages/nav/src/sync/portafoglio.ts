@@ -15,6 +15,7 @@
 
 import mssql from 'mssql';
 
+import { toErrorMessage } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { sanitizeCompany } from '../config.js';
@@ -539,7 +540,7 @@ export async function syncPortafoglioNow(
   const stats: TableSyncStats[] = [];
   // Tables that failed while the others went on (CLAUDE.md rule 2): the run still fails.
   const failures: string[] = [];
-  const failed = (reason: unknown) => failures.push(reason instanceof Error ? reason.message : String(reason));
+  const failed = (reason: unknown) => failures.push(toErrorMessage(reason));
 
   try {
     // 1. Sales Header first (the others depend on the doc_nos)
@@ -599,7 +600,7 @@ export async function syncPortafoglioNow(
     }
 
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = toErrorMessage(err);
     log.error({ err }, 'nav-pf sync fatal error');
     return { stats, totalDurationMs: Date.now() - t0, seasonCodes, error: msg };
   }

@@ -1,5 +1,3 @@
-import pino from 'pino';
-
 import type { PrismaClient } from '@luke/db';
 
 import { getPool } from '../client.js';
@@ -8,6 +6,8 @@ import { getNavDbConfig, type GetConfigFn } from '../config.js';
 import { syncBrands } from './brands.js';
 import { syncSeasons } from './seasons.js';
 import { syncVendors, type SyncResult } from './vendors.js';
+
+import type { Logger } from 'pino';
 
 
 /**
@@ -30,14 +30,14 @@ export interface NavSyncReport {
  *
  * @param prisma - Prisma client used to read AppConfig and write local tables
  * @param getConfig - Config accessor injected from `apps/api/src/lib/configManager`
- * @param logger - Pino logger instance (defaults to `info` level)
+ * @param logger - The caller's logger (the API passes `navLogger`, a child of its root logger)
  * @param entity - When provided, syncs only that entity; omit to sync all three
  * @returns Report with per-entity upsert counts and overall timing
  */
 export async function runNavSync(
   prisma: PrismaClient,
   getConfig: GetConfigFn,
-  logger = pino({ level: 'info' }),
+  logger: Logger,
   entity?: 'vendor' | 'brand' | 'season',
 ): Promise<NavSyncReport> {
   const startedAt = new Date();

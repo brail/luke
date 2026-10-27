@@ -108,7 +108,7 @@ describe('the tRPC error line', () => {
   });
 });
 
-/** A log line keeps a Prisma error's call and reason, not its query values (`src/lib/queryArguments.ts`). */
+/** A log line keeps a Prisma error's call and reason, not its query values (`src/lib/queryArguments.ts`, `@luke/core`). */
 describe('a Prisma validation error in a log line', () => {
   const SENTINEL = 'query-value-sentinel';
 

@@ -1,5 +1,5 @@
 /**
- * The query values a Prisma validation error renders (`src/lib/queryArguments.ts`) reach neither the
+ * The query values a Prisma validation error renders (`withoutQueryArguments` in `@luke/core`) reach neither the
  * log line of the failed call nor its FAILURE audit row, and the rejected row Postgres attaches to a
  * refusal does not reach the log line (#104). The errors come from the real client, in both forms it
  * renders, so a change of Prisma's format at an upgrade fails here first.

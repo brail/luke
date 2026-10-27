@@ -7,12 +7,11 @@
  * Generates the complete dataset for Excel download of order portfolio.
  */
 
-import pino from 'pino';
-
 import { sanitizeCompany } from '../config.js';
 import { createSyncRequest } from '../sync/utils.js';
 
 import type * as mssql from 'mssql';
+import type { Logger } from 'pino';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -775,7 +774,7 @@ OPTION (RECOMPILE);
  * @param pool - mssql connection pool (from `getPool()`)
  * @param company - Raw NAV company name (e.g. `'NewEra'`); bracket-escaped before use
  * @param params - Filter parameters; `seasonCode` and `trademarkCode` are required
- * @param logger - Pino logger instance (defaults to `info` level)
+ * @param logger - The caller's logger (the API passes `navLogger`, a child of its root logger)
  * @returns Array of rows ready for the xlsx builder; column names match NAV field aliases
  *
  * @example
@@ -789,7 +788,7 @@ export async function queryPortafoglioOrdini(
   pool: mssql.ConnectionPool,
   company: string,
   params: PortafoglioParams,
-  logger = pino({ level: 'info' }),
+  logger: Logger,
 ): Promise<PortafoglioRow[]> {
   const sanitized = sanitizeCompany(company);
 

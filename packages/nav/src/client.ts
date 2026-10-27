@@ -1,5 +1,7 @@
 import mssql from 'mssql';
 
+import { toErrorMessage } from '@luke/core';
+
 import type { NavDbConfig } from './config.js';
 
 /**
@@ -49,7 +51,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
       message: `Connesso a ${config.host}:${config.port} — database "${config.database}" accessibile`,
     });
   } catch (err: unknown) {
-    const msg: string = err instanceof Error ? err.message : String(err);
+    const msg = toErrorMessage(err);
     const hint = msg.includes('Login failed')
       ? 'Credenziali non valide.'
       : msg.includes('Cannot open database')
@@ -73,7 +75,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
     steps.push({
       name: 'SQL Query',
       ok: false,
-      message: `Query error: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Query error: ${toErrorMessage(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };
@@ -110,7 +112,7 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
     steps.push({
       name: 'Company Verification',
       ok: false,
-      message: `Company verification error: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Company verification error: ${toErrorMessage(err)}`,
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };

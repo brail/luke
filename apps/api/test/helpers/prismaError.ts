@@ -14,7 +14,7 @@ export function prismaKnownError(code: string, constraint?: string): Prisma.Pris
 }
 
 /**
- * A Prisma validation error in the argument-tree form (`src/lib/queryArguments.ts`), with `value` as
+ * A Prisma validation error in the argument-tree form (`withoutQueryArguments` in `@luke/core`), with `value` as
  * the query value its text renders.
  */
 export function prismaValidationError(value: string): Prisma.PrismaClientValidationError {

@@ -34,7 +34,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `runNavSync(prisma, getConfig, logger?, entity?)` | function | Orchestrates vendors, brands and seasons — or the single entity requested — each in its own try/catch |
+| `runNavSync(prisma, getConfig, logger, entity?)` | function | Orchestrates vendors, brands and seasons — or the single entity requested — each in its own try/catch |
 | `syncVendors` / `syncBrands` / `syncSeasons` | function | Per-entity sync: NAV read, `nav_*` replica upsert and local master upsert inside one transaction |
 | `navDateOrNull(value)` | function | A NAV date, or `null` when the field is empty — missing, or NAV's blank date `1753-01-01`; the season sync stores `Starting Date` and `Ending Date` through it |
 
@@ -44,7 +44,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 |--------|------|-------------|
 | `syncPortafoglioNow(pool, company, prisma, logger)` | function | Refreshes the `nav_pf_*` order-portfolio replica: rowversion-incremental tables, active-season scoping on the sales documents, full refresh for the small lookups |
 | `syncKimoNow(pool, company, prisma, logger)` | function | Refreshes the `nav_kimo_*` KIMO-FASHION replica with the same rowversion pattern and sync-state table |
-| `queryPortafoglioOrdini(pool, company, params, logger?)` | function | Builds the order-portfolio dataset straight from NAV over mssql — the Excel export's fallback when the replica holds no row for the season and brand |
+| `queryPortafoglioOrdini(pool, company, params, logger)` | function | Builds the order-portfolio dataset straight from NAV over mssql — the Excel export's fallback when the replica holds no row for the season and brand |
 | `queryPortafoglioFromPg(prisma, params)` | function | Same output shape, read from the local `nav_pf_*` replica — the Excel export's first choice |
 | `queryKimoFromPg(prisma, params)` | function | Sales-order and basket union report, read from `nav_pf_*` and `nav_kimo_*` |
 
@@ -66,7 +66,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 <!-- luke-docs:start:concepts -->
 
-- **Nothing is imported from `apps/api`.** Configuration arrives through `GetConfigFn`, and the Prisma client is passed in by the caller. `@luke/db` supplies Prisma types; `@luke/core` is not a dependency. The direction is enforced by two checks, not by convention: `tools/scripts/check-platform-integrity.ts` holds declared dependencies to the layer policy, and `@luke/no-undeclared-workspace-import` holds imports to what is declared.
+- **Nothing is imported from `apps/api`.** Configuration arrives through `GetConfigFn`, and the Prisma client is passed in by the caller. `@luke/db` supplies Prisma types and `@luke/core` the error text (`toErrorMessage`); the logger is the caller's too. The direction is enforced by two checks, not by convention: `tools/scripts/check-platform-integrity.ts` holds declared dependencies to the layer policy, and `@luke/no-undeclared-workspace-import` holds imports to what is declared.
 - **Dual entity, and a soft delete the sync cannot undo.** Every synced entity has a `nav_*` replica faithful to NAV plus an enriched local master (`vendors`, `brands`, `seasons`). The sync writes only the fields that come from NAV — never `isActive`, never the enriched columns — so an entity deactivated by an administrator is never reactivated by a later run.
 - **Table names are composed, never parameterized.** SQL Server cannot bind an identifier, so every table is built as `[${sanitizeCompany(config.company)}$TableName]` and `sanitizeCompany` rejects anything outside `[A-Za-z0-9 _\-.]` before escaping `]`. `CLAUDE.md` places NAV SQL in this package, yet `apps/api` still queries NAV directly in two places, both through `createSyncRequest`: the salesperson fallback in `routers/sales.ts` and the live previews in `routers/integrations.nav.router.ts`. Raw PostgreSQL here takes three unsafe calls, all with bound values: `$executeRawUnsafe` in `bulkUpsert`, whose identifiers come from the caller, and `$queryRawUnsafe` in `queryPortafoglioFromPg` and `queryKimoFromPg`, whose values travel through `PgParams`.
 - **Two watermark strategies, for two kinds of table.** Vendor sync runs differentially on `[Last Date Modified]`, with an `OR [Last Date Modified] IS NULL` predicate because SQL Server drops NULLs from `>` comparisons — and whitelist mode deliberately ignores the watermark, so a vendor added to the list is picked up even if it was synced before. Brand and season always run a full sync because those NAV tables expose no modification date. The analytics replicas page on the SQL Server `rowversion` in chunks of 3 000 rows and persist their position in `nav_pf_sync_state`.
@@ -81,6 +81,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 ```typescript
 import type { PrismaClient } from '@luke/db';
+import type { Logger } from 'pino';
 import {
   closePool,
   getNavDbConfig,
@@ -94,6 +95,7 @@ import {
 export async function resyncVendors(
   prisma: PrismaClient,
   getConfig: GetConfigFn,
+  logger: Logger,
 ): Promise<NavSyncReport> {
   const config = await getNavDbConfig(prisma, getConfig);
 
@@ -103,7 +105,7 @@ export async function resyncVendors(
   }
 
   // runNavSync resolves the configuration and the singleton pool itself.
-  const report = await runNavSync(prisma, getConfig, undefined, 'vendor');
+  const report = await runNavSync(prisma, getConfig, logger, 'vendor');
   await closePool();
 
   // report.results: [{ entity: 'vendor', upserted, skipped, filterMode }]
