@@ -159,7 +159,10 @@ jobs:
 
   integration:
     name: Integration Tests
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: Ubuntu 26.04, which ubuntu-latest began serving on 2026-10-27,
+    # ships PostgreSQL 18 only, so the client pin below cannot install 16 there. Lift it with the
+    # server's major, or install 16 from the PostgreSQL apt repository, before 24.04 runners retire.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
