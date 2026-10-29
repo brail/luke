@@ -4,6 +4,73 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.1.0-rc.1] - 2026-10-29
+
+**Upgrade note:** follow `docs/upgrade-3.0-to-3.1.md` — check the stored picture keys before the
+update and encrypt the stored credentials once after it.
+
+### Added
+- **calendar**: Give a phase a description, a duration and a colour
+- **calendar**: Draw phases in their colour and suggest template offsets
+- **calendar**: Order a planning group's phases by their deadlines
+- **calendar**: Drop the catalog's phase order and code
+- **collection-layout**: Propose the next phase in the phase change dialog
+- **merch**: Add an overview of the MOQ clusters to Control
+
+### CI
+- Run the integration job on Ubuntu 24.04
+
+### Changed
+- **core**: Move to the Zod 4 top-level string formats
+- **pricing**: Give each calculation mode its own input shape
+- **calendar**: Stop reading the season calendar status
+
+### Dependencies
+- **deps**: Bump dependencies within existing majors
+- **deps**: Bump the OpenTelemetry family to 0.223
+- **deps**: Bump googleapis 176->186
+- **deps**: Bump vitest 4->5
+
+### Documentation
+- Two lessons from the 3.0.1 hotfix
+- Two findings from the 3.0.2 release
+- **lessons**: A stale Codex rate-limit snapshot is no budget evidence
+- Add the 3.0 to 3.1 upgrade guide
+- **lessons**: A cited issue is not a planned one
+
+### Fixed
+- **deps**: Bump vite to 8.3.4 for the launch-editor advisories
+- **tools**: Refuse unknown flags and read pnpm policy values fail-closed
+- **core**: Accept only http(s) URLs where a link is followed
+- **deps**: Clear the fast-uri and msal-node advisories
+- **calendar**: Send no notice about an event once its deadline passes
+- **calendar**: Apply event visibility to the freeze-time holiday warning
+- **calendar**: Identify the default planning group by its flag, not its name
+- **web**: Render tooltip content in a portal
+- **collection-layout**: Take the row picture key from the confirmed upload only
+- **web**: Call the API on the page's own origin
+- **platform**: Always store configuration secrets encrypted
+- **platform**: Decrypt every AppConfig read
+- **config**: Say when a masked config value is encrypted
+- **api**: Name the unique constraint a duplicate is caught on
+- **api**: Log errors whole through one root logger
+- **api**: Store error text and log errors one way
+- **api**: Keep query values out of Prisma error text
+- **nav**: Read error text through the core helper
+- **api**: Log an error's cause chain once
+- **api**: Answer each tRPC code with its own status in the REST handler
+
+### Maintenance
+- **infra**: Move to pnpm 11.28.6 and clear the #155 dependency items
+
+### Tests
+- **tools**: Isolate the tools tests from an inherited git repository
+- **web**: Match the parameter set name field by its full label
+- **api**: Drive the route specs through app.inject()
+- **api**: Run the integration files in parallel, one database per worker
+- **api**: Pin the phase alerts of a season in catalog order
+- **web**: Log out a dedicated account in the smoke suite
+
 ## [3.0.2] - 2026-10-19
 
 **Upgrade note:** every user signs in again once after the upgrade.
