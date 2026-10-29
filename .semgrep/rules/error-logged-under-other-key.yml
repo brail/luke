@@ -1,0 +1,34 @@
+rules:
+  - id: luke-error-logged-under-other-key
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      A caught error logged under a key other than `err`. Only `err` goes through
+      the root logger's error serializer: under any other key an Error prints as
+      `{}`, without message, stack or cause (a key nested deeper is not checked).
+      Log it as `{ err: <caught> }`, or its
+      text, `{ error: toErrorMessage(<caught>) }`, for an expected refusal or a
+      site that rethrows it.
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              try { ... } catch ($E) { ... }
+          - pattern-inside: |
+              try { ... } catch ($E) { ... } finally { ... }
+          - pattern-inside: '$P.then($OK, ($E) => ...)'
+          - pattern-inside: '$P.catch(($E) => ...)'
+          - pattern-inside: '$P.catch(($E: $T) => ...)'
+          - pattern-inside: '$P.catch(($E: $T) => { ... })'
+      - pattern: '$LOG.$LEVEL({..., $KEY: $E, ...}, ...)'
+      - metavariable-regex:
+          metavariable: $LEVEL
+          regex: ^(fatal|error|warn|info|debug|trace)$
+      - metavariable-regex:
+          metavariable: $KEY
+          regex: ^(?!err$)
+    paths:
+      include:
+        - /apps/api/src/**/*.ts
+        - /packages/core/src/**/*.ts
+        - /packages/nav/src/**/*.ts
+        - /packages/calendar/src/**/*.ts

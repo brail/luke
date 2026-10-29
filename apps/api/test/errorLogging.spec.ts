@@ -144,3 +144,57 @@ describe('a Prisma validation error in a log line', () => {
     expect(lines[0]?.cause).toContain('Unknown argument `notAField`');
   });
 });
+
+/**
+ * A wrapper that already ends with its cause's message, and carries the cause too, logs the reason
+ * once — pino's standard serializer appends every cause's message again (`…: X: X`).
+ */
+describe('an error whose message already ends with its cause', () => {
+  it('writes the cause once', () => {
+    const { logger, lines } = captureLogger();
+    const cause = new Error('connect ETIMEDOUT');
+
+    logger.error({ err: new Error(`Impossibile inviare email: ${cause.message}`, { cause }) }, 'failed');
+
+    expect(lines[0]?.err?.message).toBe('Impossibile inviare email: connect ETIMEDOUT');
+  });
+
+  it('keeps a cause the message does not end with, a short one included', () => {
+    const { logger, lines } = captureLogger();
+
+    logger.error({ err: new Error('x marks the spot', { cause: new Error('x') }) }, 'failed');
+    logger.error({ err: new Error('backup failed', { cause: new Error('disk full') }) }, 'failed');
+
+    expect(lines.map(line => line.err?.message)).toEqual(['x marks the spot: x', 'backup failed: disk full']);
+  });
+
+  it('walks three levels, and stops at an empty or non-error cause and at a cycle', () => {
+    const { logger, lines } = captureLogger();
+    const root = new Error('ECONNREFUSED');
+    const middle = new Error(`S3 unreachable: ${root.message}`, { cause: root });
+    const first = new Error('first');
+    const second = new Error('second', { cause: first });
+    first.cause = second;
+
+    logger.error({ err: new Error('Connessione allo storage S3 fallita', { cause: middle }) }, 'failed');
+    logger.error({ err: new Error('outer', { cause: new Error('') }) }, 'failed');
+    logger.error({ err: new Error('outer', { cause: 'a string cause' }) }, 'failed');
+    logger.error({ err: second }, 'failed');
+
+    expect(lines.map(line => line.err?.message)).toEqual([
+      'Connessione allo storage S3 fallita: S3 unreachable: ECONNREFUSED',
+      'outer',
+      'outer',
+      'second: first: ...',
+    ]);
+  });
+
+  it('logs an error whose message is not a string instead of throwing', () => {
+    const { logger, lines } = captureLogger();
+    const odd = Object.assign(new Error('placeholder', { cause: new Error('inner') }), { message: 42 });
+
+    logger.error({ err: odd }, 'failed');
+
+    expect(lines).toHaveLength(1);
+  });
+});
