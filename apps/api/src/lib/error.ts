@@ -4,6 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
+import { getHTTPStatusCodeFromError } from '@trpc/server/http';
 import { ZodError } from 'zod';
 
 import { isProduction, toErrorMessage } from '@luke/core';
@@ -71,23 +72,9 @@ export function getTraceId(req: FastifyRequest): string | undefined {
   return (Array.isArray(header) ? header[0] : header) || req.id;
 }
 
+/** A tRPC error's status as tRPC's own adapter answers it; any other error's `statusCode`, or 500. */
 function mapHttpStatus(err: unknown): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'UNAUTHORIZED':
-        return 401;
-      case 'FORBIDDEN':
-        return 403;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      default:
-        return 500;
-    }
-  }
+  if (err instanceof TRPCError) return getHTTPStatusCodeFromError(err);
   const statusCode =
     err && typeof err === 'object' && 'statusCode' in err && typeof err.statusCode === 'number'
       ? err.statusCode
@@ -96,30 +83,21 @@ function mapHttpStatus(err: unknown): number {
   return 500;
 }
 
-function safeMessage(err: unknown): string {
+/**
+ * In production a 4xx tRPC error keeps its message — written for the caller, as the tRPC formatter
+ * keeps it — and everything else reads `Internal server error`: a 5xx can carry internals, and a
+ * Fastify error's text (a body parser's, say) was never written for the caller.
+ */
+function safeMessage(err: unknown, status: number): string {
   if (!isProd) return toErrorMessage(err);
-  // In production, do not expose back-end messages
-  if (err instanceof TRPCError) {
-    // Keep the user-facing message of known errors
-    if (
-      [
-        'BAD_REQUEST',
-        'UNAUTHORIZED',
-        'FORBIDDEN',
-        'NOT_FOUND',
-        'CONFLICT',
-      ].includes(err.code)
-    ) {
-      return err.message || 'Richiesta non valida';
-    }
-  }
+  if (err instanceof TRPCError && status < 500) return err.message || 'Richiesta non valida';
   return 'Internal server error';
 }
 
-function toResponseBody(err: unknown, traceId?: string) {
+function toResponseBody(err: unknown, status: number, traceId?: string) {
   const base: Record<string, unknown> = {
     error: true,
-    message: safeMessage(err),
+    message: safeMessage(err, status),
     code: err instanceof TRPCError ? err.code : 'INTERNAL_SERVER_ERROR',
     traceId,
   };
@@ -144,7 +122,7 @@ export function setGlobalErrorHandler(app: FastifyInstance): void {
       reply
         .code(status)
         .type('application/json')
-        .send(toResponseBody(err, traceId));
+        .send(toResponseBody(err, status, traceId));
     }
   );
 }

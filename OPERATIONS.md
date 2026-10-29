@@ -216,6 +216,11 @@ message reaches the client:
   still reach the `tRPC error` log line, whole with the stack for an unexpected
   one (`INTERNAL_SERVER_ERROR`), less the arguments a Prisma error renders
   ([API documentation](apps/api/README.md#hardening--shutdown-semantics)).
+- A tRPC error a REST route lets through to the API's error handler (the
+  calendar exports do) answers the same way: the code's own status, and in
+  production its message for a 4xx only. Any other error keeps its HTTP status
+  with the generic text. The upload routes still answer their errors
+  themselves, mapping only `BAD_REQUEST`, `NOT_FOUND` and `FORBIDDEN`.
 
 Clients and operators branch on `error.data.code` and `error.data.httpStatus`,
 never on the message text:
