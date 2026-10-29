@@ -109,6 +109,13 @@ pnpm --filter @luke/web test:e2e      # Playwright smoke suite
 ```
 <!-- luke-docs:end:dev -->
 
+The smoke suite runs against a running stack — `localhost` by default, another one through
+`PLAYWRIGHT_BASE_URL` and `E2E_API_URL` — and signs in as `E2E_USERNAME`/`E2E_PASSWORD` (default:
+the seeded `admin`). The logout test needs its own account
+(`E2E_LOGOUT_USERNAME`/`E2E_LOGOUT_PASSWORD`; logout revokes all of that user's sessions): create
+it once per environment, approved and, where `auth.requireEmailVerification` is on, with a
+verified email — a `viewer` is enough. The test fails if unset.
+
 ## Client data refresh after mutations
 
 tRPC mutations go through `useStandardMutation`

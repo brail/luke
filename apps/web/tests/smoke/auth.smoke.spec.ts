@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-import { login, expectNoErrorBoundary } from '../support/smoke';
+import { login, expectNoErrorBoundary, logoutAccount } from '../support/smoke';
 
 /**
  * Login is the only flow whose failure makes the application entirely unusable: no
@@ -36,7 +36,8 @@ test.describe('smoke: authentication', () => {
   });
 
   test('logout closes the session', async ({ page }) => {
-    await login(page);
+    const { username, password } = logoutAccount();
+    await login(page, username, password);
     await expect(page).toHaveURL(/\/dashboard$/);
 
     // The user menu trigger is the only `div` with aria-haspopup: the other sidebar

@@ -16,6 +16,21 @@ export const SMOKE_USERNAME = process.env.E2E_USERNAME ?? 'admin';
 const SMOKE_PASSWORD = process.env.E2E_PASSWORD ?? 'changeme';
 
 /**
+ * The logout test's own account: `auth.logout` revokes every session of its user, so the shared
+ * smoke user must never log out. No default; the test fails rather than skips without it.
+ */
+export function logoutAccount(): { username: string; password: string } {
+  const username = process.env.E2E_LOGOUT_USERNAME;
+  const password = process.env.E2E_LOGOUT_PASSWORD;
+  if (!username || !password) {
+    throw new Error(
+      'Set E2E_LOGOUT_USERNAME and E2E_LOGOUT_PASSWORD to the dedicated logout account (apps/web/README.md).'
+    );
+  }
+  return { username, password };
+}
+
+/**
  * storageState produced by `auth.setup.ts` and reused by every smoke spec.
  * Resolved from `__dirname` and not from the cwd, so the suite also starts when invoked
  * from the monorepo root.

@@ -113,7 +113,7 @@ Commands:
 ```bash
 pnpm test                          # unit
 pnpm test:integration:local        # integration: starts the container and passes TEST_DATABASE_URL
-pnpm --filter @luke/web test:e2e   # smoke, with the app stack running
+pnpm --filter @luke/web test:e2e   # smoke, with the app stack running and the logout account set (apps/web/README.md)
 ```
 
 Without `TEST_DATABASE_URL` the suite **fails**, it doesn't skip: that's
