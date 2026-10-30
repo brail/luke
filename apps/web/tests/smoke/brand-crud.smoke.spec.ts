@@ -1,10 +1,11 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import { HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
 
 import {
   expectContextConfigured,
   expectNoErrorBoundary,
+  test,
   uniqueBrandCode,
 } from '../support/smoke';
 

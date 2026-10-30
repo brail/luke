@@ -1,8 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 import {
   expectContextConfigured,
   expectNoErrorBoundary,
+  test,
 } from '../support/smoke';
 
 /**

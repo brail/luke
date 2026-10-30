@@ -1,4 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+
+import { test } from '../support/smoke';
 
 /**
  * Regression for the bug where the feedback dialog never opened: it was mounted inside

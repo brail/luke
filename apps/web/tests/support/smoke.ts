@@ -1,10 +1,37 @@
 import path from 'path';
+import { setTimeout as sleep } from 'timers/promises';
 
-import { expect, type Page } from '@playwright/test';
+import { expect, test as base, type Page } from '@playwright/test';
 
 import { addCalendarDays, calendarDateIn } from '@luke/core';
 
 import { dailyGreetingSeenKey } from '../../src/lib/dailyGreetingKey';
+
+/** Below this many requests left in the API's window, a test waits for the next window. */
+const MIN_RATE_LIMIT_REMAINING = 50;
+
+/**
+ * The `test` of every smoke spec. A deployed stack limits requests per IP (`apps/api/src/server.ts`)
+ * and the full suite sends more than a window allows, so each test first reads the server's own
+ * `x-ratelimit-*` counter, server-side calls included, and waits out the window when too little is
+ * left.
+ */
+export const test = base.extend<{ rateLimitHeadroom: void }>({
+  rateLimitHeadroom: [
+    async ({ request }, use) => {
+      const response = await request.get('/trpc/public.appInfo');
+      const headers = response.headers();
+      const remaining = Number(headers['x-ratelimit-remaining']);
+      // The local dev stack sends no such headers: `NaN` compares false and nothing waits.
+      if (remaining < MIN_RATE_LIMIT_REMAINING) {
+        await sleep((Number(headers['x-ratelimit-reset']) + 1) * 1000);
+      }
+      await use();
+    },
+    // Its own timeout: a full window's wait does not fit in a test's 30 seconds.
+    { auto: true, timeout: 90 * 1000 },
+  ],
+});
 
 /**
  * Smoke credentials. The default is the user created by `apps/api/prisma/seed.ts`: it is not

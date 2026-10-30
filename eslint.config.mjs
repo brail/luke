@@ -490,6 +490,26 @@ export default [
     },
   },
   {
+    // A spec on Playwright's own `test` skips the rate-limit wait, and only a deployed run would
+    // show it, as random 429s. ESLint's rule, not the plugin's: only this name is restricted,
+    // `expect` and the types stay, and the plugin rule judges a whole specifier.
+    files: ['apps/web/tests/smoke/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              importNames: ['test'],
+              message: 'Import `test` from `tests/support/smoke.ts`: it waits for the API rate limit on a deployed stack.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Node runtime — see the classification comment above `API_NODE_FILES`.
     // `NodeJS.Timeout`/`NodeJS.ReadableStream`-style type references also
     // appear here, hence the namespace global alongside `globals.node`.

@@ -1,11 +1,12 @@
 import { readdirSync } from 'fs';
 import path from 'path';
 
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 import {
   expectContextConfigured,
   expectNoErrorBoundary,
+  test,
 } from '../support/smoke';
 
 /**

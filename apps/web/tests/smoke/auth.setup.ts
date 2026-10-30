@@ -1,10 +1,11 @@
-import { test as setup, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
 
 import {
   ADMIN_STORAGE_STATE,
   SMOKE_USERNAME,
   login,
   suppressDailyGreeting,
+  test as setup,
 } from '../support/smoke';
 
 /**

@@ -109,9 +109,14 @@ pnpm --filter @luke/web test:e2e      # Playwright smoke suite
 ```
 <!-- luke-docs:end:dev -->
 
-The smoke suite runs against a running stack — `localhost` by default, another one through
-`PLAYWRIGHT_BASE_URL` and `E2E_API_URL` — and signs in as `E2E_USERNAME`/`E2E_PASSWORD` (default:
-the seeded `admin`). The logout test needs its own account
+The smoke suite runs against a running stack — `localhost` by default, a deployed one through
+`PLAYWRIGHT_BASE_URL`, which also stops it from starting `pnpm dev` — and signs in as
+`E2E_USERNAME`/`E2E_PASSWORD` (default: the seeded `admin`). Against a deployed stack a test waits
+for the next window when the API's per-IP limit is close, so specs import `test` from
+`tests/support/smoke.ts`. The login limits are not waited for: a run logs in four times, `admin`
+twice, against 5 a minute per IP and 10 in 15 minutes per username, so leave a minute between two
+runs and run at most five times in 15 minutes.
+The logout test needs its own account
 (`E2E_LOGOUT_USERNAME`/`E2E_LOGOUT_PASSWORD`; logout revokes all of that user's sessions): create
 it once per environment, approved and, where `auth.requireEmailVerification` is on, with a
 verified email — a `viewer` is enough. The test fails if unset.

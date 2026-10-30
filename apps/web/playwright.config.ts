@@ -19,9 +19,10 @@ export default defineConfig({
    *    one is still using.
    * 2. Headroom on the API rate limit. In development localhost is on the
    *    allowList, but with the suite pointed at a non-dev environment the
-   *    100 req/min per IP apply — and more workers exceed them.
+   *    100 req/min per IP apply, and the `test` of `tests/support/smoke.ts` waits between
+   *    tests: a worker in flight beside it would outrun that wait.
    *
-   * A pre-release smoke run can afford the extra minute. For the same reason,
+   * A pre-release smoke run can afford the extra minutes. For the same reason,
    * no `fullyParallel`: it would be inert with a single worker.
    */
   workers: 1,
@@ -59,8 +60,8 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: process.env.CI
+  /* Run your local dev server before starting the tests, unless they target another stack */
+  webServer: process.env.CI || process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
         command: 'pnpm dev',

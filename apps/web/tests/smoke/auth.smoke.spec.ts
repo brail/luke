@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
 
-import { login, expectNoErrorBoundary, logoutAccount } from '../support/smoke';
+import { login, expectNoErrorBoundary, logoutAccount, test } from '../support/smoke';
 
 /**
  * Login is the only flow whose failure makes the application entirely unusable: no
