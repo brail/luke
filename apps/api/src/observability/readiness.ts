@@ -11,7 +11,7 @@ import { Client } from 'ldapts';
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
-import { getLdapConfig, isLdapEnabled } from '../lib/configManager';
+import { getLdapConfig, isLdapEnabled, UnreadableStoredConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 
 import type { FastifyLoggerInstance } from 'fastify';
@@ -94,6 +94,10 @@ export async function checkLdap(
       }
     }
   } catch (error: unknown) {
+    // A fixed text: `/readyz` is open to anyone, and which stored key is broken is not for them.
+    if (error instanceof UnreadableStoredConfigError) {
+      return { ok: false, message: 'LDAP configuration cannot be read' };
+    }
     return { ok: false, message: toErrorMessage(error) };
   }
 }

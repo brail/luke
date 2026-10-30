@@ -12,12 +12,16 @@ import {
 } from '../ui/form';
 import { Input } from '../ui/input';
 
+import { UnreadableValueNotice } from './UnreadableValueNotice';
+
 import type { Noop, RefCallBack } from 'react-hook-form';
 
 interface SensitiveFieldProps {
   label: React.ReactNode;
   description?: string;
   hasValue?: boolean;
+  /** The stored value does not decrypt: it has to be entered again. */
+  unreadable?: boolean;
   placeholder?: string;
   disabled?: boolean;
   /** react-hook-form `field` object; typed structurally since the caller's field schema varies per form. */
@@ -44,6 +48,7 @@ export function SensitiveField({
   label,
   description,
   hasValue = false,
+  unreadable = false,
   placeholder,
   disabled = false,
   field,
@@ -87,6 +92,7 @@ export function SensitiveField({
         </div>
       </FormControl>
       {description && <FormDescription>{description}</FormDescription>}
+      {unreadable && <UnreadableValueNotice />}
       {hasValue && !description && (
         <FormDescription>
           Password già salvata e cifrata. Lascia vuoto per mantenerla invariata.

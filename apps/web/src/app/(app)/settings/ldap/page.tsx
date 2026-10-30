@@ -2,7 +2,7 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import React, { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -13,6 +13,7 @@ import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
+import { UNREADABLE_VALUE_MESSAGE, UnreadableValueNotice } from '../../../../components/settings/UnreadableValueNotice';
 import { Button } from '../../../../components/ui/button';
 import {
   Dialog,
@@ -67,9 +68,6 @@ export default function LdapSettingsPage() {
     },
   });
 
-  // State for flags indicating presence of sensitive fields
-  const [hasBindDN, setHasBindDN] = React.useState(false);
-  const [hasBindPassword, setHasBindPassword] = React.useState(false);
   const [testConnectionStatus, setTestConnectionStatus] = React.useState<
     'idle' | 'success' | 'error'
   >('idle');
@@ -91,6 +89,11 @@ export default function LdapSettingsPage() {
     refetch: refetchConfig,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
+  const unreadable = existingConfig?.unreadable ?? [];
+  // With LDAP off the fields are locked, but one that has to be entered again must stay editable.
+  const enabled = useWatch({ control: form.control, name: 'enabled' });
+  const fieldsLocked = !canUpdate || (!enabled && unreadable.length === 0);
+
   // Update form when existing configuration arrives
   useEffect(() => {
     if (existingConfig) {
@@ -106,9 +109,6 @@ export default function LdapSettingsPage() {
         roleMapping: existingConfig.roleMapping,
         strategy: existingConfig.strategy,
       });
-
-      setHasBindDN(existingConfig.hasBindDN);
-      setHasBindPassword(existingConfig.hasBindPassword);
     }
   }, [existingConfig, form]);
 
@@ -118,6 +118,8 @@ export default function LdapSettingsPage() {
       toast.success('Configurazione LDAP salvata con successo');
       setTestConnectionStatus('idle');
       setTestConnectionMessage('');
+      // What is stored changed: credentials just entered, unreadable values replaced.
+      void refetchConfig();
     },
     onError: err => {
       toast.error('Errore durante il salvataggio', {
@@ -175,6 +177,13 @@ export default function LdapSettingsPage() {
 
   const handleTestConnection = () => {
     const formData = form.getValues();
+    // Answered here: the server would say the same, and spend the small `ldapTest` budget that the
+    // test after the repair needs.
+    if (unreadable.length > 0) {
+      setTestConnectionStatus('error');
+      setTestConnectionMessage(UNREADABLE_VALUE_MESSAGE);
+      return;
+    }
     if (!formData.enabled) {
       toast.error('Abilita LDAP prima di testare la connessione');
       return;
@@ -187,6 +196,10 @@ export default function LdapSettingsPage() {
 
   const handleTestSearch = () => {
     const formData = form.getValues();
+    if (unreadable.length > 0) {
+      toast.error('Test ricerca fallito', { description: UNREADABLE_VALUE_MESSAGE });
+      return;
+    }
     if (!formData.enabled) {
       toast.error('Abilita LDAP prima di testare la ricerca');
       return;
@@ -245,7 +258,7 @@ export default function LdapSettingsPage() {
                   <FormLabel>Strategia Autenticazione</FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    value={field.value}
                     disabled={!canUpdate}
                   >
                     <FormControl>
@@ -290,13 +303,14 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="ldap://server.example.com:389"
-                        disabled={!canUpdate || !form.watch('enabled')}
+                        disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
                       URL del server LDAP (es. ldap://server.example.com:389)
                     </FormDescription>
+                    {unreadable.includes('url') && <UnreadableValueNotice />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -314,13 +328,14 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="dc=example,dc=com"
-                        disabled={!canUpdate || !form.watch('enabled')}
+                        disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
                       Base DN dove cercare gli utenti
                     </FormDescription>
+                    {unreadable.includes('searchBase') && <UnreadableValueNotice />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -338,7 +353,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="(uid=${username})"
-                        disabled={!canUpdate || !form.watch('enabled')}
+                        disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
@@ -346,6 +361,7 @@ export default function LdapSettingsPage() {
                       Filtro LDAP per cercare utenti (usa ${'{username}'} come
                       placeholder)
                     </FormDescription>
+                    {unreadable.includes('searchFilter') && <UnreadableValueNotice />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -361,13 +377,14 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="ou=groups,dc=example,dc=com"
-                        disabled={!canUpdate || !form.watch('enabled')}
+                        disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
                     <FormDescription>
                       Base DN dove cercare i gruppi dell&apos;utente
                     </FormDescription>
+                    {unreadable.includes('groupSearchBase') && <UnreadableValueNotice />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -383,7 +400,7 @@ export default function LdapSettingsPage() {
                     <FormControl>
                       <Input
                         placeholder="(member=${userDN})"
-                        disabled={!canUpdate || !form.watch('enabled')}
+                        disabled={fieldsLocked}
                         {...field}
                       />
                     </FormControl>
@@ -391,6 +408,7 @@ export default function LdapSettingsPage() {
                       Filtro LDAP per cercare gruppi (usa ${'{userDN}'} come
                       placeholder)
                     </FormDescription>
+                    {unreadable.includes('groupSearchFilter') && <UnreadableValueNotice />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -405,9 +423,10 @@ export default function LdapSettingsPage() {
                 <SensitiveField
                   label="Bind DN"
                   description="DN dell'account di servizio con cui cercare gli utenti. Va sempre configurato insieme alla password: senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene."
-                  hasValue={hasBindDN}
+                  hasValue={existingConfig?.hasBindDN ?? false}
+                  unreadable={unreadable.includes('bindDN')}
                   placeholder="cn=admin,dc=example,dc=com"
-                  disabled={!canUpdate || !form.watch('enabled')}
+                  disabled={fieldsLocked}
                   field={field}
                 />
               )}
@@ -421,9 +440,10 @@ export default function LdapSettingsPage() {
                 <SensitiveField
                   label="Bind Password"
                   description="Password dell'account amministrativo"
-                  hasValue={hasBindPassword}
+                  hasValue={existingConfig?.hasBindPassword ?? false}
+                  unreadable={unreadable.includes('bindPassword')}
                   placeholder="Inserisci password"
-                  disabled={!canUpdate || !form.watch('enabled')}
+                  disabled={fieldsLocked}
                   field={field}
                 />
               )}
@@ -443,7 +463,7 @@ export default function LdapSettingsPage() {
   "CN=Editors,DC=example,DC=com": "editor",
   "CN=Users,DC=example,DC=com": "viewer"
 }`}
-                      disabled={!canUpdate || !form.watch('enabled')}
+                      disabled={fieldsLocked}
                       // 120px: enough rows to show the JSON placeholder example without scrolling; no exact scale match
                       className="min-h-[120px] font-mono"
                       {...field}
@@ -453,6 +473,7 @@ export default function LdapSettingsPage() {
                     Mappa i gruppi LDAP ai ruoli dell&apos;applicazione (admin,
                     editor, viewer)
                   </FormDescription>
+                  {unreadable.includes('roleMapping') && <UnreadableValueNotice />}
                   <FormMessage />
                 </FormItem>
               )}

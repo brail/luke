@@ -187,6 +187,7 @@ Configuration pages under `settings/` share the components in
 | `SettingsFormGate` | Loading, error and retry gate for a form inside a card or tab: renders the form only after its stored values are read |
 | `SettingsActions` | Save button and optional test button, with pending states |
 | `SensitiveField` | Credential input with a show/hide toggle that never displays the stored value |
+| `UnreadableValueNotice` | Beside a field whose stored value this instance cannot decrypt: enter it again and save |
 | `TestStatusBanner` | Connection-test result (`idle`, `success`, `error`), announced through `role="status"` |
 | `KeyValueGrid` | Responsive two- or three-column grid for form fields |
 
@@ -195,6 +196,10 @@ Forms use React Hook Form with the shared Zod schema from `@luke/core`.
 the browser: the API answers with a flag such as `hasPassword` or
 `hasSecretKey`, `SensitiveField` shows a masked placeholder, and leaving the
 field blank keeps the stored value.
+A stored value that does not decrypt, as after a restore under another master
+key, does not stop the page: the field comes back blank and marked, a blank save
+keeps the row, and the test buttons ask for the value again. The LDAP and storage
+pages do this; the others read masked values or presence only.
 
 ## Dashboard widgets
 

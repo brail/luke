@@ -9,7 +9,14 @@ import { Client } from 'ldapts';
 import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getLdapConfig, saveConfigs, type ConfigWrite } from '../lib/configManager';
+import {
+  ConfigDecryptionError,
+  getLdapConfig,
+  getLdapConfigForForm,
+  saveConfigs,
+  unreadableConfigError,
+  type ConfigWrite,
+} from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
 import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
@@ -74,7 +81,16 @@ export const ldapRouter = router({
           { key: 'auth.ldap.bindDN', value: input.bindDN, encrypt: true },
           { key: 'auth.ldap.bindPassword', value: input.bindPassword, encrypt: true },
         ];
-        const writes = [...configMappings, ...credentials.filter(({ value }) => value)];
+        // An unreadable field left blank stays as it is, like a blank credential: deleting it would
+        // lose what the right master key can still read, and with a role mapping would silently
+        // change the role of whoever signs in next.
+        const { unreadable } = await getLdapConfigForForm(ctx.prisma);
+        const writes = [
+          ...configMappings.filter(
+            ({ key, value }) => value !== '' || !unreadable.some(field => key === `auth.ldap.${field}`)
+          ),
+          ...credentials.filter(({ value }) => value),
+        ];
 
         // `ldap-only` leaves the local administrators as the only way in when LDAP authenticates
         // nobody. Refused when none could use it — checked now, not guaranteed later.
@@ -162,16 +178,17 @@ export const ldapRouter = router({
    *
    * @auth {config:read}
    * @input {none}
-   * @output {{ enabled, url, hasBindDN, hasBindPassword, searchBase, searchFilter, roleMapping, strategy, ... }}
+   * @output {{ enabled, url, hasBindDN, hasBindPassword, searchBase, searchFilter, roleMapping, strategy, unreadable, ... }}
    */
   getLdapConfig: protectedProcedure
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
       try {
-        const config = await getLdapConfig(ctx.prisma);
+        const { config, unreadable } = await getLdapConfigForForm(ctx.prisma);
 
-        // Convert roleMapping object to JSON string for the frontend
-        const roleMappingJson = JSON.stringify(config.roleMapping, null, 2);
+        // Convert roleMapping object to JSON string for the frontend; blank when it cannot be read,
+        // so that the form does not offer an empty mapping as the stored one
+        const roleMappingJson = unreadable.includes('roleMapping') ? '' : JSON.stringify(config.roleMapping, null, 2);
 
         // For security, omit sensitive data
         return {
@@ -185,6 +202,7 @@ export const ldapRouter = router({
           groupSearchFilter: config.groupSearchFilter,
           roleMapping: roleMappingJson,
           strategy: config.strategy,
+          unreadable,
         };
       } catch (error: unknown) {
         throw new TRPCError({
@@ -253,6 +271,9 @@ export const ldapRouter = router({
       } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
+        }
+        if (error instanceof ConfigDecryptionError) {
+          throw unreadableConfigError(error);
         }
 
         throw new TRPCError({
@@ -379,6 +400,9 @@ export const ldapRouter = router({
       } catch (error: unknown) {
         if (error instanceof TRPCError) {
           throw error;
+        }
+        if (error instanceof ConfigDecryptionError) {
+          throw unreadableConfigError(error);
         }
 
         throw new TRPCError({

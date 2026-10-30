@@ -125,7 +125,7 @@ describe('LDAP Config Management', () => {
     const result = await checkLdap(prisma);
 
     expect(result.ok).toBe(false);
-    // The read itself failed: no bind was tried.
-    expect(result.message).not.toMatch(/bind failed/);
+    // The read itself failed: no bind was tried. A fixed text: `/readyz` is open to anyone.
+    expect(result.message).toBe('LDAP configuration cannot be read');
   });
 });

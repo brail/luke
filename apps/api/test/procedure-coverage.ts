@@ -87,8 +87,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   integrations: {
     reason:
-      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.testLdapSearch, whose input is refused before any directory is contacted, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, which builds the URL and its state without contacting Google, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission); everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
-    uncovered: 13,
+      'saveLdapConfig, mail.saveConfig, google.saveConfig, google.disconnectOAuth and nav.saveConfig, which only write AppConfig (nav.saveConfig with the pool close spied), auth.getLdapConfig, auth.testLdapConnection and auth.testLdapSearch, with the directory client stubbed, google.exchangeOAuthCode, with the Google exchange spied, google.getOAuthUrl, which builds the URL and its state without contacting Google, nav.sync.run, with runNavSync spied, nav.testConnection and mail.test, whose missing-configuration refusal comes before any connection, and nav.sync.getFilter, on its refusal to sales readers (salesSyncPermission); everything else talks to real external systems (NAV via mssql, Google OAuth, SMTP, S3 storage) and needs a fake layer before it can be tested',
+    uncovered: 11,
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
@@ -101,11 +101,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
     reason:
       'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts; listCountries, deleteHoliday and the closure reads have no test yet',
     uncovered: 4,
-  },
-  storage: {
-    reason:
-      'saveConfig and getConfig covered by the write-authority and AppConfig-defaults specs, requestUpload and confirmUpload by the immutable-bucket spec; testS3Connection needs a real S3 endpoint',
-    uncovered: 1,
   },
   maintenance: {
     reason:

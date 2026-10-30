@@ -343,6 +343,37 @@ export class ConfigDecryptionError extends UnreadableStoredConfigError {
   }
 }
 
+/**
+ * The answer to a settings test or save that met a stored value it cannot decrypt: the admin can
+ * repair it, and a 5xx's text is masked in production. Names no key: several may be unreadable, and
+ * which one a concurrent read reaches first is a race.
+ */
+export function unreadableConfigError(cause: ConfigDecryptionError): TRPCError {
+  return new TRPCError({
+    code: 'BAD_REQUEST',
+    message: 'Un valore salvato non è leggibile: inseriscilo di nuovo e salva.',
+    cause,
+  });
+}
+
+/**
+ * `getConfig` for a settings form, which must open to let the admin repair what it cannot read.
+ *
+ * @returns The value, with `unreadable` set and a null value for a row that does not decrypt.
+ * @throws Whatever else `getConfig` throws.
+ */
+export async function getConfigForForm(
+  prisma: PrismaClient,
+  key: AppConfigKey
+): Promise<{ value: string | null; unreadable: boolean }> {
+  try {
+    return { value: await getConfig(prisma, key), unreadable: false };
+  } catch (error) {
+    if (error instanceof ConfigDecryptionError) return { value: null, unreadable: true };
+    throw error;
+  }
+}
+
 /** Whether `key` is stored, for a check that needs no value — a credential's, above all. */
 export async function hasConfig(prisma: PrismaClient, key: AppConfigKey): Promise<boolean> {
   return (await prisma.appConfig.count({ where: { key } })) > 0;
@@ -843,14 +874,22 @@ export async function isLdapEnabled(prisma: PrismaClient): Promise<boolean> {
   return ldapEnabledFrom(row?.value);
 }
 
-/**
- * Assembles the full LDAP configuration from multiple AppConfig keys.
- * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
- * Returns a safe default configuration when no LDAP keys exist in the database.
- *
- * @returns Fully populated and decrypted `LdapConfig`.
- */
-export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
+/** The LDAP settings stored under `auth.ldap.`, encrypted by the settings form. */
+export type LdapStoredField =
+  | 'url'
+  | 'bindDN'
+  | 'bindPassword'
+  | 'searchBase'
+  | 'searchFilter'
+  | 'groupSearchBase'
+  | 'groupSearchFilter'
+  | 'roleMapping';
+
+/** Assembles the LDAP configuration; `decrypt` decides what an undecryptable row means. */
+async function loadLdapConfig(
+  prisma: PrismaClient,
+  decrypt: (field: LdapStoredField, value: string) => string
+): Promise<LdapConfig> {
   const configKeys = [
     'auth.ldap.enabled',
     'auth.ldap.url',
@@ -892,22 +931,23 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   }
 
   // Helper to retrieve a value with fallback
-  const getConfigValue = (key: string, defaultValue: string = ''): string => {
-    const config = configMap.get(key);
+  const getConfigValue = (field: LdapStoredField, defaultValue: string = ''): string => {
+    const config = configMap.get(`auth.ldap.${field}`);
     if (!config) return defaultValue;
-    return config.isEncrypted ? decryptValue(config.value) : config.value;
+    return config.isEncrypted ? decrypt(field, config.value) : config.value;
   };
 
   // Retrieve and decrypt values, falling back for missing keys
   const enabled = ldapEnabledFrom(configMap.get('auth.ldap.enabled')?.value);
-  const url = getConfigValue('auth.ldap.url');
-  const bindDN = getConfigValue('auth.ldap.bindDN');
-  const bindPassword = getConfigValue('auth.ldap.bindPassword');
-  const searchBase = getConfigValue('auth.ldap.searchBase');
-  const searchFilter = getConfigValue('auth.ldap.searchFilter');
-  const groupSearchBase = getConfigValue('auth.ldap.groupSearchBase');
-  const groupSearchFilter = getConfigValue('auth.ldap.groupSearchFilter');
-  const roleMappingStr = getConfigValue('auth.ldap.roleMapping', '{}');
+  const url = getConfigValue('url');
+  const bindDN = getConfigValue('bindDN');
+  const bindPassword = getConfigValue('bindPassword');
+  const searchBase = getConfigValue('searchBase');
+  const searchFilter = getConfigValue('searchFilter');
+  const groupSearchBase = getConfigValue('groupSearchBase');
+  const groupSearchFilter = getConfigValue('groupSearchFilter');
+  // `|| '{}'`: blank is what the form's reader makes of a row it cannot decrypt, not invalid JSON.
+  const roleMappingStr = getConfigValue('roleMapping') || '{}';
   const strategy =
     (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
     'local-first';
@@ -938,6 +978,46 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   };
 
   return result;
+}
+
+/**
+ * Assembles the full LDAP configuration from multiple AppConfig keys.
+ * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
+ * Returns a safe default configuration when no LDAP keys exist in the database.
+ *
+ * @returns Fully populated and decrypted `LdapConfig`.
+ * @throws {ConfigDecryptionError} When a stored value does not decrypt.
+ */
+export function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
+  return loadLdapConfig(prisma, (field, value) => {
+    try {
+      return decryptValue(value);
+    } catch (error) {
+      throw new ConfigDecryptionError(`auth.ldap.${field}`, { cause: error });
+    }
+  });
+}
+
+/**
+ * `getLdapConfig` for the settings form: a row that does not decrypt comes back blank and named, so
+ * the admin can repair it. Nothing that connects to the directory may use this configuration.
+ *
+ * @returns The configuration, and the fields unreadable, without the `auth.ldap.` prefix.
+ */
+export async function getLdapConfigForForm(
+  prisma: PrismaClient
+): Promise<{ config: LdapConfig; unreadable: LdapStoredField[] }> {
+  const unreadable: LdapStoredField[] = [];
+  const config = await loadLdapConfig(prisma, (field, value) => {
+    try {
+      return decryptValue(value);
+    } catch (error) {
+      logger.error({ key: `auth.ldap.${field}`, error: toErrorMessage(error) }, 'Config decryption error');
+      unreadable.push(field);
+      return '';
+    }
+  });
+  return { config, unreadable };
 }
 
 /**

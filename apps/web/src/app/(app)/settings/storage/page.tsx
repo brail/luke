@@ -9,6 +9,7 @@ import { storageSaveConfigSchema, type StorageSaveConfig } from '@luke/core';
 import { SectionCard } from '../../../../components/SectionCard';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
+import { UnreadableValueNotice } from '../../../../components/settings/UnreadableValueNotice';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
 import {
@@ -346,6 +347,7 @@ export default function StoragePage() {
                         <FormControl>
                           <Input {...field} autoComplete="off" disabled={disabled} />
                         </FormControl>
+                        {config?.s3.accessKeyUnreadable && <UnreadableValueNotice />}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -357,6 +359,7 @@ export default function StoragePage() {
                       <SensitiveField
                         label={<>Secret Key {!config?.s3.hasSecretKey && <span className="text-red-500">*</span>}</>}
                         hasValue={config?.s3.hasSecretKey ?? false}
+                        unreadable={config?.s3.secretKeyUnreadable ?? false}
                         description={
                           config?.s3.hasSecretKey
                             ? 'Già salvata e cifrata. Lascia vuoto per mantenerla invariata.'

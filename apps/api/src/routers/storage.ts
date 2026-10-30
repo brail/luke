@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, getConfigOrDefault, hasConfig, saveConfigs } from '../lib/configManager';
+import { ConfigDecryptionError, getConfig, getConfigForForm, getConfigOrDefault, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
@@ -197,6 +197,7 @@ export const storageRouter = router({
       try {
         provider = await loadS3Provider(ctx.prisma);
       } catch (err: unknown) {
+        if (err instanceof ConfigDecryptionError) throw unreadableConfigError(err);
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
           message: `Errore caricamento config storage S3: ${toErrorMessage(err)}`,
@@ -256,7 +257,7 @@ export const storageRouter = router({
       const [
         type,
         basePath, maxFileSizeMB, enableProxy,
-        endpoint, port, useSSL, s3AccessKey, hasSecretKey,
+        endpoint, port, useSSL, s3AccessKey, s3SecretKey,
         region, s3PublicBaseUrl, presignedPutTtl, presignedGetTtl,
       ] = await Promise.all([
         getConfigOrDefault(ctx.prisma, 'storage.type'),
@@ -266,8 +267,10 @@ export const storageRouter = router({
         getConfigOrDefault(ctx.prisma, 'storage.s3.endpoint'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.port'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.useSSL'),
-        getConfig(ctx.prisma, 'storage.s3.accessKey'),
-        hasConfig(ctx.prisma, 'storage.s3.secretKey'),
+        getConfigForForm(ctx.prisma, 'storage.s3.accessKey'),
+        // Decrypted only to tell a stored secret from an unreadable one: a blank field means "keep
+        // it", which the page must not offer for one that cannot be kept. Never returned.
+        getConfigForForm(ctx.prisma, 'storage.s3.secretKey'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.region'),
         getConfig(ctx.prisma, 'storage.s3.publicBaseUrl'),
         getConfigOrDefault(ctx.prisma, 'storage.s3.presignedPutTtl'),
@@ -287,8 +290,10 @@ export const storageRouter = router({
           useSSL,
           // Blank, not the provider's dev fallback: this feeds a settings form, and offering a
           // credential the database does not hold invites an admin to save it as if it were real.
-          accessKey: s3AccessKey || '',
-          hasSecretKey,
+          accessKey: s3AccessKey.value || '',
+          accessKeyUnreadable: s3AccessKey.unreadable,
+          hasSecretKey: !!s3SecretKey.value,
+          secretKeyUnreadable: s3SecretKey.unreadable,
           region,
           publicBaseUrl: s3PublicBaseUrl || '',
           presignedPutTtl,
@@ -323,7 +328,10 @@ export const storageRouter = router({
         // before it (CLAUDE.md rule 3). With none stored, saving would switch to an S3 provider that
         // cannot connect.
         const secretKey =
-          input.secretKey || (await getConfig(ctx.prisma, 'storage.s3.secretKey'));
+          input.secretKey ||
+          (await getConfig(ctx.prisma, 'storage.s3.secretKey').catch((err: unknown) => {
+            throw err instanceof ConfigDecryptionError ? unreadableConfigError(err) : err;
+          }));
         if (!secretKey) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
         }
