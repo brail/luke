@@ -121,6 +121,19 @@ describe('authenticateViaLdap', () => {
       expect(bind).not.toHaveBeenCalled();
     });
 
+    it('a stored key this instance cannot decrypt, the configuration otherwise complete', async () => {
+      await configureLdap();
+      await prisma.appConfig.update({
+        where: { key: 'auth.ldap.bindPassword' },
+        data: { value: 'not-a-ciphertext', isEncrypted: true },
+      });
+
+      await expect(authenticateViaLdap(prisma, 'alice', 'pw')).rejects.toMatchObject({
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+      expect(bind).not.toHaveBeenCalled();
+    });
+
     it('a service-account bind the directory refuses', async () => {
       await configureLdap();
       bind.mockRejectedValue(new InvalidCredentialsError());
@@ -157,6 +170,14 @@ describe('authenticateViaLdap', () => {
 
     it('LDAP disabled', async () => {
       await saveConfig(prisma, 'auth.ldap.enabled', 'false');
+
+      expect(await authenticateViaLdap(prisma, 'alice', 'pw')).toEqual(REFUSED);
+      expect(bind).not.toHaveBeenCalled();
+    });
+
+    it('its flag stored encrypted: off', async () => {
+      // `config.set` can encrypt any key, and the flag is read as stored: ciphertext is not `true`.
+      await saveConfig(prisma, 'auth.ldap.enabled', 'true', true);
 
       expect(await authenticateViaLdap(prisma, 'alice', 'pw')).toEqual(REFUSED);
       expect(bind).not.toHaveBeenCalled();

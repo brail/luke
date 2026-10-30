@@ -11,7 +11,7 @@ import { Client } from 'ldapts';
 import { deriveSecret, validateMasterKey } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
-import { getLdapConfig } from '../lib/configManager';
+import { getLdapConfig, isLdapEnabled } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 
 import type { FastifyLoggerInstance } from 'fastify';
@@ -68,10 +68,11 @@ export async function checkLdap(
   prisma: PrismaClient
 ): Promise<{ ok: boolean; message?: string }> {
   try {
-    const config = await getLdapConfig(prisma);
-    if (!config.enabled) {
+    if (!(await isLdapEnabled(prisma))) {
       return { ok: true, message: 'LDAP disabled, skipped' };
     }
+
+    const config = await getLdapConfig(prisma);
 
     // Ping LDAP with a short timeout (ldapts: lazy connection on first bind)
     const client = new Client({

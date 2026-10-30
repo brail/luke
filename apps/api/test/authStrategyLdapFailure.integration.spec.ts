@@ -200,3 +200,56 @@ describe('an outage met after the username was sent to the directory', () => {
     expect(metadata).not.toHaveProperty('errorCode');
   });
 });
+
+describe('a stored LDAP row this instance cannot decrypt', () => {
+  // A backup restored under another master key. Nothing is mocked: the row has to reach the decryption.
+  beforeEach(async () => {
+    await prisma.appConfig.create({
+      data: { key: 'auth.ldap.bindPassword', value: 'not-a-ciphertext', isEncrypted: true },
+    });
+  });
+
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
+    '%s, LDAP off: a wrong password is answered and audited as one',
+    async strategy => {
+      await useStrategy(strategy);
+      await prisma.appConfig.create({ data: { key: 'auth.ldap.enabled', value: 'false', isEncrypted: false } });
+      const { user } = await createTestUser('editor');
+
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        message: 'Credenziali non valide',
+      });
+      expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'invalid_credentials' });
+    },
+  );
+
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
+    '%s, the LDAP flag itself is the row: off, and a wrong password is answered as one',
+    async strategy => {
+      await useStrategy(strategy);
+      await prisma.appConfig.create({
+        data: { key: 'auth.ldap.enabled', value: 'not-a-ciphertext', isEncrypted: true },
+      });
+      const { user } = await createTestUser('editor');
+
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject({
+        code: 'UNAUTHORIZED',
+        message: 'Credenziali non valide',
+      });
+      expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'invalid_credentials' });
+    },
+  );
+
+  it.each(['ldap-first', 'local-first', 'ldap-only'] as const)(
+    '%s, LDAP on: the configuration is broken, and answered as an outage',
+    async strategy => {
+      await useStrategy(strategy);
+      await prisma.appConfig.create({ data: { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false } });
+      const { user } = await createTestUser('editor');
+
+      await expect(login(user.username, 'Wrong-password-1!').result).rejects.toMatchObject(UNAVAILABLE);
+      expect((await lastAudit('AUTH_LOGIN_FAILED'))?.metadata).toMatchObject({ reason: 'ldap_unavailable' });
+    },
+  );
+});

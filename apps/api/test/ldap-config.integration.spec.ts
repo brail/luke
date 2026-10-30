@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 
 import { PrismaClient } from '@luke/db';
 
-import { getLdapConfig } from '../src/lib/configManager';
+import { getLdapConfig, saveConfig } from '../src/lib/configManager';
+import { checkLdap } from '../src/observability/readiness';
 
 import { setupTestDb } from './helpers/database';
 
@@ -80,5 +81,51 @@ describe('LDAP Config Management', () => {
     expect(config.bindDN).toBe('cn=admin,dc=example,dc=com');
     expect(config.bindPassword).toBe('secret123');
     expect(config.url).toBe(''); // Default value
+  });
+
+  describe('the readiness check, LDAP off', () => {
+    const SKIPPED = { ok: true, message: 'LDAP disabled, skipped' };
+
+    it('skips a row this instance cannot decrypt', async () => {
+      await prisma.appConfig.createMany({
+        data: [
+          { key: 'auth.ldap.enabled', value: 'false', isEncrypted: false },
+          { key: 'auth.ldap.bindPassword', value: 'not-a-ciphertext', isEncrypted: true },
+        ],
+      });
+
+      expect(await checkLdap(prisma)).toEqual(SKIPPED);
+    });
+
+    it('skips when the flag itself cannot be decrypted', async () => {
+      await prisma.appConfig.create({
+        data: { key: 'auth.ldap.enabled', value: 'not-a-ciphertext', isEncrypted: true },
+      });
+
+      expect(await checkLdap(prisma)).toEqual(SKIPPED);
+    });
+
+    it('its flag stored encrypted: off', async () => {
+      await saveConfig(prisma, 'auth.ldap.enabled', 'true', true);
+
+      expect(await checkLdap(prisma)).toEqual(SKIPPED);
+    });
+  });
+
+  it('the readiness check, LDAP on: a row this instance cannot decrypt is not ready', async () => {
+    await prisma.appConfig.createMany({
+      data: [
+        { key: 'auth.ldap.enabled', value: 'true', isEncrypted: false },
+        // A closed local port: if the read did not fail, this would reach the bind and say so.
+        { key: 'auth.ldap.url', value: 'ldap://127.0.0.1:1', isEncrypted: false },
+        { key: 'auth.ldap.bindPassword', value: 'not-a-ciphertext', isEncrypted: true },
+      ],
+    });
+
+    const result = await checkLdap(prisma);
+
+    expect(result.ok).toBe(false);
+    // The read itself failed: no bind was tried.
+    expect(result.message).not.toMatch(/bind failed/);
   });
 });

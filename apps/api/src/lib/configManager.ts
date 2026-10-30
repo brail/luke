@@ -10,6 +10,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
+  AppConfigRegistry,
   DEFAULT_PASSWORD_POLICY,
   type AppConfigKey,
   type AppConfigValue,
@@ -822,6 +823,26 @@ export async function getPasswordPolicy(prisma: PrismaClient): Promise<PasswordP
   };
 }
 
+/** On only for the stored text the registry reads as true: ciphertext, invalid or absent is off. */
+function ldapEnabledFrom(stored: string | undefined): boolean {
+  return AppConfigRegistry['auth.ldap.enabled'].safeParse(stored).data === true;
+}
+
+/**
+ * Whether LDAP is on, read alone and never decrypted: LDAP off needs no encrypted key, and a row
+ * this instance cannot decrypt must not turn a wrong password into an outage.
+ *
+ * @param prisma - Prisma client.
+ * @returns `true` when `auth.ldap.enabled` is stored as the plain word `true`.
+ */
+export async function isLdapEnabled(prisma: PrismaClient): Promise<boolean> {
+  const row = await prisma.appConfig.findUnique({
+    where: { key: 'auth.ldap.enabled' },
+    select: { value: true },
+  });
+  return ldapEnabledFrom(row?.value);
+}
+
 /**
  * Assembles the full LDAP configuration from multiple AppConfig keys.
  * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
@@ -878,7 +899,7 @@ export async function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
   };
 
   // Retrieve and decrypt values, falling back for missing keys
-  const enabled = configMap.get('auth.ldap.enabled')?.value === 'true';
+  const enabled = ldapEnabledFrom(configMap.get('auth.ldap.enabled')?.value);
   const url = getConfigValue('auth.ldap.url');
   const bindDN = getConfigValue('auth.ldap.bindDN');
   const bindPassword = getConfigValue('auth.ldap.bindPassword');

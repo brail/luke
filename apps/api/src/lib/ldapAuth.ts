@@ -13,6 +13,7 @@ import {
   getConfigOrDefault,
   getLdapConfig,
   getLdapResilienceConfig,
+  isLdapEnabled,
   type LdapConfig,
 } from './configManager';
 import { isSyntheticLdapEmail, sendVerificationEmail } from './emailHelpers';
@@ -88,17 +89,16 @@ export async function authenticateViaLdap(
   let ldapClient: ResilientLdapClient | null = null;
 
   try {
+    if (!(await isLdapEnabled(prisma))) {
+      logger.debug('LDAP authentication disabled');
+      return REFUSED;
+    }
+
     // Fetch LDAP configurations
     const [config, resilienceConfig] = await Promise.all([
       getLdapConfig(prisma),
       getLdapResilienceConfig(prisma),
     ]);
-
-    // Check that LDAP is enabled
-    if (!config.enabled) {
-      logger.debug('LDAP authentication disabled');
-      return REFUSED;
-    }
 
     // Check that the configuration is complete
     if (!config.url || !config.searchBase || !config.searchFilter) {

@@ -25,17 +25,7 @@ import { setupTestDb } from './helpers';
 
 // Mock of LDAP configuration
 vi.mock('../src/lib/configManager', () => ({
-  getLdapConfig: vi.fn().mockResolvedValue({
-    enabled: false,
-    url: '',
-    bindDN: '',
-    bindPassword: '',
-    searchBase: '',
-    searchFilter: '',
-    groupSearchBase: '',
-    groupSearchFilter: '',
-    roleMapping: {},
-  }),
+  isLdapEnabled: vi.fn().mockResolvedValue(false),
 }));
 
 // Mock of core functions
