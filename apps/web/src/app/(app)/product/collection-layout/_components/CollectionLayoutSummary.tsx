@@ -14,14 +14,28 @@ import { useSeasonPhaseOrder } from '../_hooks/useSeasonPhaseOrder';
 
 type CollectionLayoutData = NonNullable<RouterOutputs['collectionLayout']['get']>;
 
-
 interface CollectionLayoutSummaryProps {
   layout: CollectionLayoutData;
 }
 
+function StatLine({ label, detail, pct }: { label: string; detail: string; pct: number }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">{label}</span>
+        <span className="text-xs text-muted-foreground tabular-nums">{detail}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Progress value={pct} aria-label={label} className="h-1.5 flex-1" />
+        <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
+      </div>
+    </div>
+  );
+}
+
 /**
- * Summary cards for a collection layout showing progress distribution and
- * per-group SKU budget vs forecast.
+ * Summary cards for a collection layout: per phase, the share of SKU and the
+ * share of completed rows; per vendor, rows, SKU and pairs.
  *
  * Returns null when the layout has no rows.
  */
@@ -50,6 +64,10 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
     })(),
   ].filter(s => s.count > 0);
 
+  // ── Completed rows: a row share, independent of the phase (#181) ──
+  const completedCount = allRows.filter(r => r.completedAt).length;
+  const completedPct = Math.round((completedCount / allRows.length) * 100);
+
   // ── By vendor ─────────────────────────────────────────────────────
   const vendorStats = groupRowsByVendor(allRows, '—')
     .map(v => ({
@@ -68,19 +86,13 @@ export function CollectionLayoutSummary({ layout }: CollectionLayoutSummaryProps
         </CardHeader>
         <CardContent className="space-y-3">
           {progressStats.map(({ label, count, sku, qty, pct }) => (
-            <div key={label} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{label}</span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {count} righe · {sku} SKU · {qty} paia
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Progress value={pct} className="h-1.5 flex-1" />
-                <span className="text-xs text-muted-foreground tabular-nums w-8 text-right">{pct}%</span>
-              </div>
-            </div>
+            <StatLine key={label} label={label} detail={`${count} righe · ${sku} SKU · ${qty} paia`} pct={pct} />
           ))}
+          {completedCount > 0 && (
+            <div className="border-t pt-3">
+              <StatLine label="Righe concluse" detail={`${completedCount} di ${allRows.length} righe`} pct={completedPct} />
+            </div>
+          )}
         </CardContent>
       </Card>
 
