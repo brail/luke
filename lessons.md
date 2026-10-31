@@ -934,6 +934,17 @@ unknown — say so in the plan and, per CLAUDE.md "Collaboration with Codex",
 use an independent read-only Claude agent, or ask the owner whether to wait,
 when the owner asked for Codex by name.
 
+**Update (2026-10-31): supersedes the Rule above.** A local snapshot changes
+only when Codex runs, so rejecting an old one meant Codex could never run
+again. On 2026-10-31 the newest snapshot was six days old (5-hour window 78 %,
+week 25 %), while a live read showed 0 % and 0 % with ordinary usage allowed.
+Read the live limits with `node scripts/codex-budget.mjs`, as CLAUDE.md
+"Collaboration with Codex" says; the age of a snapshot is no longer evidence
+either way. A permission the server reports as unavailable stays unknown even
+when the percentages are low or a reset has passed. First calibration point:
+one high-effort plan review moved the 5-hour window from 0 % to 37 % and the
+week from 0 % to 6 % (Plus plan).
+
 ### A cited issue is not a planned one (2026-10-26)
 
 **What happened.** The 3.1.0 dev plan passed an "every open issue number is in

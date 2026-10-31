@@ -25,12 +25,15 @@ Codex; Codex's side of this contract is `AGENTS.md`.
   verification fails, the findings stay open until corrected and verified again — the round limit
   implies no approval. A second Codex round only when the findings changed the design, or the
   owner asks.
-- Before a round, check that the latest rate-limit snapshot (`rate_limits` in the newest rollout
-  under `~/.codex/sessions`) is current and sufficient for the scoped review, and state the basis.
-  If it is not, or is unknown, or the review does not need a second model family, use an
-  independent read-only Claude agent instead: Sonnet for fact-checks and focused unit reviews, Opus
-  or Fable for judgment-heavy reviews. If the owner explicitly asked for Codex, report the
-  limitation before substituting.
+- Before a round, run `node scripts/codex-budget.mjs`, a live read of the Codex limits that costs
+  no model usage, and record its line in the plan before and after the round. Only `go` starts
+  Codex (usage allowed, at most 50% of the 5-hour window and 80% of the week). On `insufficient`
+  with `offerWait`, offer the owner a wait and a new check. Otherwise on `insufficient`, on
+  `unknown` (also report that the probe needs attention), or when the review does not need a
+  second model family, use an independent read-only Claude agent instead: Sonnet for fact-checks
+  and focused unit reviews, Opus or Fable for judgment-heavy reviews. If Codex stops on a limit
+  mid-round, that agent completes the review and the plan records it. If the owner explicitly
+  asked for Codex, report the limitation before substituting.
 - Run Codex through the plugin's rescue task (`codex:codex-rescue`, read-only) on the model in
   `~/.codex/config.toml`; for plan, security and governance reviews raise the reasoning effort to
   `high` (`--effort high`, which `task` accepts and `/codex:review` does not).
