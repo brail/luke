@@ -16,6 +16,7 @@ import {
   resolveLayoutBrandAccess,
   resolveRowBrandAccess,
 } from '../services/brandScope.service';
+import { maskBottleneck, maskCriticality, maskCriticalityList } from '../services/eventMasking.service';
 import {
   computeBottleneckByEvent,
   computeCriticality,
@@ -25,7 +26,6 @@ import {
   resolveAlertThresholds,
   resolveMissingPhasesForRow,
 } from '../services/phaseAlert.service';
-import { maskBottleneck, maskCriticality, maskCriticalityList } from '../services/phaseAlertVisibility.service';
 
 export const phaseAlertRouter = router({
   /**

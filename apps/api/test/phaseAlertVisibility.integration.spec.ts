@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'crypto';
 
+import ExcelJS from 'exceljs';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
@@ -18,6 +19,7 @@ let prisma: PrismaClient;
 let adminCaller: ReturnType<typeof createCallerWithSession>;
 let memberCaller: ReturnType<typeof createCallerWithSession>; // functions: open and restricted
 let outsiderCaller: ReturnType<typeof createCallerWithSession>; // functions: open only
+let adminUserId: string;
 let openFn: string;
 let restrictedFn: string;
 let layoutId: string;
@@ -56,6 +58,7 @@ beforeAll(async () => {
   const uid = randomUUID().substring(0, 6);
 
   const [admin, member, outsider] = await Promise.all([createTestUser('admin'), createTestUser('editor'), createTestUser('editor')]);
+  adminUserId = admin.user.id;
   adminCaller = createCallerWithSession(admin.session as UserSession);
   memberCaller = createCallerWithSession(member.session as UserSession);
   outsiderCaller = createCallerWithSession(outsider.session as UserSession);
@@ -209,5 +212,80 @@ describe('phaseAlert.bottleneckByEvent', () => {
     const seen = await outsiderCaller.phaseAlert.bottleneckByEvent({ collectionLayoutId: layoutId });
 
     expect(seen.map(e => e.eventId)).toEqual([firstEvent]);
+  });
+});
+
+describe('collectionLayoutRevision', () => {
+  const NOTE = 'Evento raggiunto: "First secret" — Gruppo: "G"';
+  const RESERVED = 'Evento riservato';
+  let revisionNumber = 0;
+
+  async function milestoneRevision(milestoneId: string) {
+    revisionNumber += 1;
+    return prisma.collectionLayoutRevision.create({
+      data: {
+        collectionLayoutId: layoutId, revisionNumber, revisionTypeValue: `TEST_${revisionNumber}`,
+        cause: 'MILESTONE', milestoneId, notes: NOTE, createdByUserId: adminUserId,
+      },
+    });
+  }
+
+  const listed = async (caller: typeof adminCaller, id: string) =>
+    (await caller.collectionLayoutRevision.list({ collectionLayoutId: layoutId })).find(r => r.id === id);
+
+  /** The note an export prints, read back from its XLSX. */
+  async function exportedNote(caller: typeof adminCaller, revisionId: string) {
+    const { data } = await caller.collectionLayoutRevision.export.xlsx({ revisionId });
+    const workbook = new ExcelJS.Workbook();
+    // ExcelJS types its input as its own `Buffer extends ArrayBuffer`: hand it a plain ArrayBuffer.
+    await workbook.xlsx.load(Uint8Array.from(Buffer.from(data, 'base64')).buffer);
+    const rows: string[] = [];
+    workbook.getWorksheet('Nota revisione')?.eachRow(row => rows.push(row.values?.toString() ?? ''));
+    return rows.join('\n');
+  }
+
+  it('masks the note and the event reference of a revision on a hidden event, everywhere it is read', async () => {
+    await setVisibility(firstEvent, 'restricted');
+    const { id } = await milestoneRevision(firstEvent);
+
+    expect(await listed(outsiderCaller, id)).toMatchObject({ cause: 'MILESTONE', milestoneId: null, notes: RESERVED });
+    expect(await outsiderCaller.collectionLayoutRevision.getDetail({ revisionId: id }))
+      .toMatchObject({ milestoneId: null, notes: RESERVED });
+    const asOf = await outsiderCaller.collectionLayoutRevision.getLayoutAsOf({ collectionLayoutId: layoutId, revisionId: id });
+    expect(asOf.revision).toMatchObject({ milestoneId: null, notes: RESERVED });
+    expect(await exportedNote(outsiderCaller, id)).toContain(RESERVED);
+    expect(await exportedNote(outsiderCaller, id)).not.toContain('First secret');
+  });
+
+  it('shows them to a member of its functions and to an admin', async () => {
+    await setVisibility(firstEvent, 'restricted');
+    const { id } = await milestoneRevision(firstEvent);
+
+    for (const caller of [memberCaller, adminCaller]) {
+      expect(await listed(caller, id)).toMatchObject({ milestoneId: firstEvent, notes: NOTE });
+      expect(await caller.collectionLayoutRevision.getDetail({ revisionId: id })).toMatchObject({ milestoneId: firstEvent, notes: NOTE });
+      expect((await caller.collectionLayoutRevision.getLayoutAsOf({ collectionLayoutId: layoutId, revisionId: id })).revision)
+        .toMatchObject({ milestoneId: firstEvent, notes: NOTE });
+      expect(await exportedNote(caller, id)).toContain('First secret');
+    }
+  });
+
+  it('masks them when the event no longer exists, except for an admin', async () => {
+    const { id } = await milestoneRevision(randomUUID());
+
+    expect(await listed(memberCaller, id)).toMatchObject({ milestoneId: null, notes: RESERVED });
+    expect(await listed(adminCaller, id)).toMatchObject({ notes: NOTE });
+  });
+
+  it('leaves the free-text note of a manual revision alone', async () => {
+    revisionNumber += 1;
+    const { id } = await prisma.collectionLayoutRevision.create({
+      data: {
+        collectionLayoutId: layoutId, revisionNumber, revisionTypeValue: `TEST_${revisionNumber}`,
+        cause: 'MANUAL', notes: 'Prezzi aggiornati', createdByUserId: adminUserId,
+      },
+    });
+
+    expect(await listed(outsiderCaller, id)).toMatchObject({ milestoneId: null, notes: 'Prezzi aggiornati' });
   });
 });

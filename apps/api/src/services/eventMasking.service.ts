@@ -1,5 +1,5 @@
 /**
- * The alert engine's answers as a given caller may read them. `phaseAlert.service.ts` stays
+ * What names or dates a calendar event, as a given caller may read it. `phaseAlert.service.ts` stays
  * viewer-independent, because the deadline scheduler and `rows.setCompleted` need every event;
  * what leaves through a query passes here. A row keeps its band and state, since those measure the
  * row; what names or dates an event the caller cannot list goes.
@@ -18,6 +18,7 @@ type IsVisible = (eventId: string) => boolean;
 /** Whether the caller may see each of `eventIds`. An admin sees every event: no query. */
 async function visibilityOf(ctx: BrandScopeCtx, eventIds: string[]): Promise<IsVisible> {
   if ((await getAllowedFunctionIds(ctx)) === null) return () => true;
+  if (eventIds.length === 0) return () => false;
   const visible = await ctx.prisma.calendarEvent.findMany({
     where: { id: { in: [...new Set(eventIds)] }, AND: [await callerEventVisibility(ctx)] },
     select: { id: true },
@@ -90,4 +91,28 @@ export async function maskBottleneck(ctx: BrandScopeCtx, entries: BottleneckEntr
   }
   const mergedBands = [...bands.values()].sort((a, b) => a.label.localeCompare(b.label));
   return [...shown, { eventId: null, eventTitle: null, eventStartDay: null, bands: mergedBands }];
+}
+
+interface MilestoneRevision { milestoneId: string | null; notes: string | null }
+
+function maskRevisionWith<R extends MilestoneRevision>(revision: R, isVisible: IsVisible): R {
+  return revision.milestoneId === null || isVisible(revision.milestoneId)
+    ? revision
+    : { ...revision, milestoneId: null, notes: 'Evento riservato' };
+}
+
+/**
+ * Revisions as the caller may read them. An automatic revision's note names the event it records,
+ * and its reference goes with it when the caller cannot list that event, a deleted one included:
+ * it has no visibility left to check, so only an admin still reads it. A manual revision has no
+ * event: its note is the author's.
+ */
+export async function maskRevisions<R extends MilestoneRevision>(ctx: BrandScopeCtx, revisions: R[]): Promise<R[]> {
+  const isVisible = await visibilityOf(ctx, revisions.flatMap(r => r.milestoneId ?? []));
+  return revisions.map(r => maskRevisionWith(r, isVisible));
+}
+
+/** `maskRevisions` for one revision. */
+export async function maskRevision<R extends MilestoneRevision>(ctx: BrandScopeCtx, revision: R): Promise<R> {
+  return maskRevisionWith(revision, await visibilityOf(ctx, revision.milestoneId ? [revision.milestoneId] : []));
 }

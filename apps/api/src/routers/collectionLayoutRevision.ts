@@ -27,6 +27,7 @@ import { getUserTimeZone } from '../lib/userTimeZone';
 import {
   resolveLayoutBrandAccess,
   resolveRevisionBrandAccess,
+  type BrandScopeCtx,
 } from '../services/brandScope.service';
 import { buildRevisionXlsx, buildRevisionPdf } from '../services/collectionLayout.export.revision.service';
 import {
@@ -35,7 +36,16 @@ import {
   getRevisionDetail,
   getLayoutAsOfRevision,
 } from '../services/collectionLayoutRevision.service';
+import { maskRevision, maskRevisions } from '../services/eventMasking.service';
 import { copyToImmutableBucket } from '../storage';
+
+/** What both exports print about a revision, its note as the caller may read it. */
+async function revisionForExport(ctx: BrandScopeCtx, revisionId: string) {
+  return maskRevision(ctx, await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
+    where: { id: revisionId },
+    select: { revisionNumber: true, revisionTypeValue: true, milestoneId: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
+  }));
+}
 
 export const collectionLayoutRevisionRouter = router({
   /**
@@ -90,14 +100,15 @@ export const collectionLayoutRevisionRouter = router({
    *
    * @auth collection_layout:view_revisions
    * @input GetRevisionsListInputSchema
-   * @output Array of revision summaries
+   * @output Array of revision summaries — on an event the caller cannot list, `milestoneId` is `null`
+   *   and `notes` a fixed text, as in `getDetail`, `getLayoutAsOf` and both exports
    */
   list: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionsListInputSchema)
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
-      return listRevisions(input.collectionLayoutId, ctx.prisma);
+      return maskRevisions(ctx, await listRevisions(input.collectionLayoutId, ctx.prisma));
     }),
 
   /**
@@ -105,14 +116,14 @@ export const collectionLayoutRevisionRouter = router({
    *
    * @auth collection_layout:view_revisions
    * @input GetRevisionDetailInputSchema
-   * @output Full CollectionLayoutRevision with snapshot rows
+   * @output Full CollectionLayoutRevision with snapshot rows, masked as in `list`
    */
   getDetail: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetRevisionDetailInputSchema)
     .query(async ({ input, ctx }) => {
       await resolveRevisionBrandAccess(ctx, input.revisionId);
-      return getRevisionDetail(input.revisionId, ctx.prisma);
+      return maskRevision(ctx, await getRevisionDetail(input.revisionId, ctx.prisma));
     }),
 
   /**
@@ -120,18 +131,19 @@ export const collectionLayoutRevisionRouter = router({
    *
    * @auth collection_layout:view_revisions
    * @input GetLayoutAsOfRevisionInputSchema
-   * @output Layout snapshot data as of the specified revision
+   * @output Layout snapshot data as of the specified revision, masked as in `list`
    */
   getLayoutAsOf: protectedProcedure
     .use(requirePermission('collection_layout:view_revisions'))
     .input(GetLayoutAsOfRevisionInputSchema)
     .query(async ({ input, ctx }) => {
       await resolveRevisionBrandAccess(ctx, input.revisionId);
-      return getLayoutAsOfRevision(
+      const asOf = await getLayoutAsOfRevision(
         input.collectionLayoutId,
         input.revisionId,
         ctx.prisma,
       );
+      return { ...asOf, revision: await maskRevision(ctx, asOf.revision) };
     }),
 
   export: router({
@@ -155,10 +167,7 @@ export const collectionLayoutRevisionRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 
-        const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
-          where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
-        });
+        const revision = await revisionForExport(ctx, input.revisionId);
         const buf = await buildRevisionXlsx(input.revisionId, collectionLayoutId, revision, ctx.prisma, ctx.logger);
         const { brand, season } = revision.collectionLayout;
         const timeZone = await getUserTimeZone(ctx.prisma, ctx.session.user.id, ctx.logger);
@@ -183,10 +192,7 @@ export const collectionLayoutRevisionRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { collectionLayoutId } = await resolveRevisionBrandAccess(ctx, input.revisionId);
 
-        const revision = await ctx.prisma.collectionLayoutRevision.findUniqueOrThrow({
-          where: { id: input.revisionId },
-          select: { revisionNumber: true, revisionTypeValue: true, notes: true, collectionLayout: { select: { brand: { select: { code: true } }, season: { select: { code: true } } } } },
-        });
+        const revision = await revisionForExport(ctx, input.revisionId);
         const exportUser = await ctx.prisma.user.findUnique({
           where: { id: ctx.session.user.id },
           select: { firstName: true, lastName: true, username: true },
