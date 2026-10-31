@@ -21,6 +21,9 @@ import { getConfigOrDefault } from '../lib/configManager';
 import { rootLogger } from '../lib/logger';
 
 import { eventVisibilityWhere } from './calendarAudience.service';
+import { visibilityOf } from './eventMasking.service';
+
+import type { BrandScopeCtx } from './brandScope.service';
 
 const MS_PER_DAY = 86_400_000;
 const logger = rootLogger.child({ module: 'season-calendar' });
@@ -932,23 +935,27 @@ export async function deleteTemplateItem(id: string, prisma: PrismaClient) {
 
 // ─── Clone ────────────────────────────────────────────────────────────────────
 
+/** Stands for an event the caller cannot list, in a refusal only someone with access can resolve. */
+const HIDDEN_EVENT_NAME = 'un evento riservato: rivolgiti a chi lo gestisce';
+
 /**
  * `event`'s dates moved `days` calendar days in `businessZone` (`shiftEventByDays`, ADR-036), held to
- * `assertEventDates` like every generated date. The refusal names the event: a source written before
+ * `assertEventDates` like every generated date. The refusal says which event: a source written before
  * those checks (an end before its start) is the user's to find and correct.
  *
+ * @param name - The event as this caller may read it, for the refusal.
  * @param businessZone - Already valid (the registry parses `app.defaultTimezone`): a `RangeError` of
  *   the shift is then a date out of range, never the zone.
  * @throws {TRPCError} BAD_REQUEST
  */
-function clonedDates(event: EventDates & { title: string }, days: number, businessZone: string): EventDates {
+function clonedDates(event: EventDates, name: string, days: number, businessZone: string): EventDates {
   try {
     const dates = { ...shiftEventByDays(event, days, businessZone), allDay: event.allDay };
     assertEventDates(dates);
     return dates;
   } catch (error) {
     const refusal = error instanceof RangeError ? outOfRange() : error;
-    if (refusal instanceof TRPCError) throw new TRPCError({ code: refusal.code, message: `«${event.title}»: ${refusal.message}` });
+    if (refusal instanceof TRPCError) throw new TRPCError({ code: refusal.code, message: `${name}: ${refusal.message}` });
     throw refusal;
   }
 }
@@ -964,11 +971,10 @@ function clonedDates(event: EventDates & { title: string }, days: number, busine
  * @throws {TRPCError} NOT_FOUND if the source calendar or any of the selected groups do not exist.
  * @throws {TRPCError} BAD_REQUEST if an all-day source is stored off UTC midnight, or a cloned event's
  *   dates are refused (`clonedDates`).
+ *   A refusal names only the events the caller can list.
  */
-export async function cloneFromBrandSeason(
-  input: CloneSeasonCalendarInput,
-  prisma: PrismaClient
-) {
+export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx: BrandScopeCtx) {
+  const { prisma } = ctx;
   const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, sourcePlanningGroupIds, dateShiftDays, includeCancelled } = input;
 
   const sourceCalendar = await prisma.seasonCalendar.findUnique({
@@ -992,20 +998,24 @@ export async function cloneFromBrandSeason(
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Uno o più gruppi di pianificazione sorgente non trovati' });
   }
 
+  const sourceEvents = sourceGroups.flatMap(g => g.events);
+  const isVisible = await visibilityOf(ctx, sourceEvents.map(e => e.id));
+  const nameOf = (event: { id: string; title: string }) => isVisible(event.id) ? `«${event.title}»` : HIDDEN_EVENT_NAME;
+
   // The shift reads an all-day value's UTC date, so a source stored off midnight would land on that
   // date: refused, not normalised — which date it was meant to be depends on the zone it was entered
   // in, which the row does not record.
-  const offMidnight = sourceGroups.flatMap(g => g.events).filter(isOffMidnightAllDay);
+  const offMidnight = sourceEvents.filter(isOffMidnightAllDay);
   if (offMidnight.length > 0) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
-      message: `Eventi di un giorno intero con una data non valida, da correggere prima di clonare: ${offMidnight.map(e => `«${e.title}»`).join(', ')}`,
+      message: `Eventi di un giorno intero con una data non valida, da correggere prima di clonare: ${[...new Set(offMidnight.map(nameOf))].join(', ')}`,
     });
   }
 
   const businessZone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
   // Shifted before the transaction opens: a refused event writes nothing.
-  const groups = sourceGroups.map(g => ({ ...g, events: g.events.map(e => ({ ...e, ...clonedDates(e, dateShiftDays, businessZone) })) }));
+  const groups = sourceGroups.map(g => ({ ...g, events: g.events.map(e => ({ ...e, ...clonedDates(e, nameOf(e), dateShiftDays, businessZone) })) }));
 
   return prisma.$transaction(async tx => {
     const targetCalendar = await tx.seasonCalendar.upsert({

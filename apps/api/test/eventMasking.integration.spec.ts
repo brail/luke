@@ -1,6 +1,7 @@
 /**
- * The alert surfaces show what the calendar shows: a user outside an event's functions learns the
- * band of a row measured against it, never which event it is, when it falls or how far away it is.
+ * What leaves the API shows what the calendar shows: a user outside an event's functions learns the
+ * band of a row measured against it, never which event it is, when it falls or how far away it is,
+ * in the alert surfaces, in revisions, or in the answers and refusals of a template or a clone.
  * The engine stays viewer-independent, so the band is the same for everyone.
  */
 
@@ -25,6 +26,11 @@ let restrictedFn: string;
 let layoutId: string;
 let collectionGroupId: string;
 let planningGroupId: string;
+let calendarId: string;
+let brandId: string;
+let seasonId: string;
+let targetBrandId: string;
+let targetSeasonId: string;
 let firstEvent: string;
 let secondEvent: string;
 const phaseIds: string[] = [];
@@ -55,6 +61,12 @@ beforeAll(async () => {
   prisma = await setupTestDb();
   const fixture = await createCalendarFixture(prisma, { prefix: 'PAV' });
   planningGroupId = fixture.planningGroupId;
+  calendarId = fixture.calendarId;
+  brandId = fixture.brandId;
+  seasonId = fixture.seasonId;
+  const target = await createCalendarFixture(prisma, { prefix: 'PAT' });
+  targetBrandId = target.brandId;
+  targetSeasonId = target.seasonId;
   const uid = randomUUID().substring(0, 6);
 
   const [admin, member, outsider] = await Promise.all([createTestUser('admin'), createTestUser('editor'), createTestUser('editor')]);
@@ -63,8 +75,8 @@ beforeAll(async () => {
   memberCaller = createCallerWithSession(member.session as UserSession);
   outsiderCaller = createCallerWithSession(outsider.session as UserSession);
 
-  const open = await grantBrandAccess(prisma, { brandIds: [fixture.brandId], userIds: [member.user.id, outsider.user.id], label: 'PAV open' });
-  const restricted = await grantBrandAccess(prisma, { brandIds: [fixture.brandId], userIds: [member.user.id], label: 'PAV restricted' });
+  const open = await grantBrandAccess(prisma, { brandIds: [fixture.brandId, target.brandId], userIds: [member.user.id, outsider.user.id], label: 'PAV open' });
+  const restricted = await grantBrandAccess(prisma, { brandIds: [fixture.brandId, target.brandId], userIds: [member.user.id], label: 'PAV restricted' });
   openFn = open.functionId;
   restrictedFn = restricted.functionId;
 
@@ -287,5 +299,101 @@ describe('collectionLayoutRevision', () => {
     });
 
     expect(await listed(outsiderCaller, id)).toMatchObject({ milestoneId: null, notes: 'Prezzi aggiornati' });
+  });
+});
+
+describe('seasonCalendar.applyTemplate', () => {
+  async function applyWith(caller: typeof adminCaller) {
+    const uid = randomUUID().substring(0, 6);
+    const [group, template] = await Promise.all([
+      prisma.planningGroup.create({ data: { calendarId, name: `Apply ${uid}`, anchorDate: new Date('2099-01-01') } }),
+      prisma.milestoneTemplate.create({
+        data: {
+          name: `Template ${uid}`,
+          items: {
+            create: [
+              { title: 'Item for all', offsetDays: 0 },
+              { title: 'Item restricted', offsetDays: 1, visibilities: { create: { functionId: restrictedFn } } },
+            ],
+          },
+        },
+      }),
+    ]);
+    const answer = await caller.seasonCalendar.applyTemplate({ planningGroupId: group.id, templateId: template.id });
+    return { answer, created: await prisma.calendarEvent.count({ where: { planningGroupId: group.id } }) };
+  }
+
+  it('answers only the events the caller can list, and still creates them all', async () => {
+    const { answer, created } = await applyWith(outsiderCaller);
+
+    expect(answer.map(e => e.title)).toEqual(['Item for all']);
+    expect(created).toBe(2);
+  });
+
+  it.each([['a member of its functions', () => memberCaller], ['an admin', () => adminCaller]])('answers everything to %s', async (_who, caller) => {
+    const { answer } = await applyWith(caller());
+
+    expect(answer.map(e => e.title).sort()).toEqual(['Item for all', 'Item restricted']);
+  });
+});
+
+describe('seasonCalendar.cloneFromBrandSeason', () => {
+  const MIDNIGHT = new Date('2099-05-01T00:00:00.000Z');
+
+  /** A source group with one event for everyone and one only `restrictedFn` sees, as given. */
+  async function sourceGroup(restricted: { startAt: Date; allDay: boolean; title?: string }) {
+    const uid = randomUUID().substring(0, 6);
+    const group = await prisma.planningGroup.create({ data: { calendarId, name: `Clone ${uid}` } });
+    await prisma.calendarEvent.create({
+      data: { calendarId, planningGroupId: group.id, title: 'Open source', startAt: MIDNIGHT, allDay: true },
+    });
+    const hidden = await prisma.calendarEvent.create({
+      data: { calendarId, planningGroupId: group.id, title: 'Secret source', ...restricted },
+    });
+    await prisma.calendarEventVisibility.create({ data: { eventId: hidden.id, functionId: restrictedFn } });
+    return group.id;
+  }
+
+  const clone = (caller: typeof adminCaller, groupId: string, dateShiftDays = 7) =>
+    caller.seasonCalendar.cloneFromBrandSeason({
+      sourceBrandId: brandId, sourceSeasonId: seasonId, targetBrandId, targetSeasonId,
+      sourcePlanningGroupIds: [groupId], dateShiftDays, includeCancelled: false,
+    });
+
+  it('answers only the copies the caller can list, and still copies them all', async () => {
+    const before = await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } });
+
+    const answer = await clone(outsiderCaller, await sourceGroup({ startAt: MIDNIGHT, allDay: true }));
+
+    expect(answer.createdEventIds).toHaveLength(1);
+    expect(answer.milestonesCreated).toBe(1);
+    expect(await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } })).toBe(before + 2);
+  });
+
+  it('answers all the copies to a member of the functions', async () => {
+    const answer = await clone(memberCaller, await sourceGroup({ startAt: MIDNIGHT, allDay: true }));
+
+    expect(answer.milestonesCreated).toBe(2);
+  });
+
+  it('does not name a hidden event when refusing a source off midnight', async () => {
+    const groupId = await sourceGroup({ startAt: new Date('2099-05-01T10:00:00.000Z'), allDay: true });
+
+    const refusal = await clone(outsiderCaller, groupId).catch((e: unknown) => e);
+
+    expect(refusal).toMatchObject({ code: 'BAD_REQUEST' });
+    expect((refusal as Error).message).toContain('un evento riservato');
+    expect((refusal as Error).message).not.toContain('Secret source');
+    await expect(clone(memberCaller, groupId)).rejects.toThrow('Secret source');
+  });
+
+  it('does not name a hidden event when refusing a shifted date', async () => {
+    const groupId = await sourceGroup({ startAt: new Date('9999-12-30T00:00:00.000Z'), allDay: true });
+
+    const refusal = await clone(outsiderCaller, groupId).catch((e: unknown) => e);
+
+    expect((refusal as Error).message).toContain('un evento riservato');
+    expect((refusal as Error).message).not.toContain('Secret source');
+    await expect(clone(memberCaller, groupId)).rejects.toThrow('Secret source');
   });
 });

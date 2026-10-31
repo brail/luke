@@ -43,7 +43,7 @@ import type { CalendarEventItem } from './types';
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Called with the events just created by the apply, so the caller can hand them to the wizard. */
+  /** Called with the events just created that the user can list, so the caller can hand them to the wizard. */
   onApplied: (createdEvents: CalendarEventItem[], planningGroupId: string) => void;
   brandId: string;
   seasonId: string;
@@ -98,7 +98,7 @@ export function ApplyTemplateDialog({ open, onClose, onApplied, brandId, seasonI
 
   const applyMutation = trpc.seasonCalendar.applyTemplate.useMutation({
     onSuccess: (data) => {
-      toast.success(`Template applicato: ${data.length} milestone create`);
+      toast.success(`Template applicato: ${data.length} milestone visibili`);
       onApplied(narrowRouterOutput<CalendarEventItem[]>(data), planningGroupId);
       onClose();
     },

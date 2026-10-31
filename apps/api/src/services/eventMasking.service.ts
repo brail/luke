@@ -1,7 +1,7 @@
 /**
  * What names or dates a calendar event, as a given caller may read it. `phaseAlert.service.ts` stays
  * viewer-independent, because the deadline scheduler and `rows.setCompleted` need every event;
- * what leaves through a query passes here. A row keeps its band and state, since those measure the
+ * what leaves the API passes here. A row keeps its band and state, since those measure the
  * row; what names or dates an event the caller cannot list goes.
  */
 
@@ -16,7 +16,7 @@ type BottleneckEntry = Awaited<ReturnType<typeof computeBottleneckByEvent>>[numb
 type IsVisible = (eventId: string) => boolean;
 
 /** Whether the caller may see each of `eventIds`. An admin sees every event: no query. */
-async function visibilityOf(ctx: BrandScopeCtx, eventIds: string[]): Promise<IsVisible> {
+export async function visibilityOf(ctx: BrandScopeCtx, eventIds: string[]): Promise<IsVisible> {
   if ((await getAllowedFunctionIds(ctx)) === null) return () => true;
   if (eventIds.length === 0) return () => false;
   const visible = await ctx.prisma.calendarEvent.findMany({

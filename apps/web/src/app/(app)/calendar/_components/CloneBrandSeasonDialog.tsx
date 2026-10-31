@@ -108,7 +108,7 @@ export function CloneBrandSeasonDialog({ open, onClose, onCloned, targetBrandId,
 
   const cloneMutation = trpc.seasonCalendar.cloneFromBrandSeason.useMutation({
     onSuccess: data => {
-      toast.success(`Clonato: ${data.milestonesCreated} milestone create`);
+      toast.success(`Clonato: ${data.milestonesCreated} milestone visibili`);
       onCloned();
       onClose();
     },

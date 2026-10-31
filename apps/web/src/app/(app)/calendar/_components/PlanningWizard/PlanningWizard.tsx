@@ -45,7 +45,7 @@ interface Props {
   seasonId: string;
   /** The reader zone when the wizard opens: each event's first date is read in it, and moves are made in it. */
   zone: string;
-  /** Events just created by the `applyTemplate` call for `planningGroupId` — not the whole calendar. */
+  /** Events just created by the `applyTemplate` call for `planningGroupId` that the user can list — not the whole calendar. */
   events: CalendarEventItem[];
   holidayDates: HolidayMap;
 }

@@ -692,7 +692,8 @@ export default function CalendarPage() {
           onApplied={(createdEvents, planningGroupId) => {
             setTemplateOpen(false);
             void refetch();
-            setPostApplyWizard({ planningGroupId, events: createdEvents });
+            // All of them may be outside the user's functions: nothing to walk through then.
+            if (createdEvents.length > 0) setPostApplyWizard({ planningGroupId, events: createdEvents });
           }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}

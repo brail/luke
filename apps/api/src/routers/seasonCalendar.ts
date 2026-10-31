@@ -61,6 +61,7 @@ import {
 } from '../services/brandScope.service.js';
 import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
+import { visibilityOf } from '../services/eventMasking.service.js';
 import {
   syncOneMilestone,
   deleteGoogleCopies,
@@ -720,7 +721,7 @@ export const seasonCalendarRouter = router({
    *
    * @auth season_calendar:update
    * @input { planningGroupId, templateId, anchorDate?, force }
-   * @output Array of created CalendarEvent records
+   * @output The created events the caller can list; the others exist all the same
    */
   applyTemplate: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -740,7 +741,8 @@ export const seasonCalendarRouter = router({
         calendarId: group.calendarId,
         eventKey: 'CALENDAR_APPLY_TEMPLATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on apply template'));
-      return result;
+      const isVisible = await visibilityOf(ctx, result.map(e => e.id));
+      return result.filter(e => isVisible(e.id));
     }),
 
   // ─── Template CRUD ──────────────────────────────────────────────────────────
@@ -855,7 +857,7 @@ export const seasonCalendarRouter = router({
    *
    * @auth season_calendar:update
    * @input CloneSeasonCalendarInputSchema
-   * @output { calendarId, milestonesCreated, createdEventIds }
+   * @output { calendarId, milestonesCreated, createdEventIds } — of the copies, those the caller can list
    */
   cloneFromBrandSeason: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -865,7 +867,7 @@ export const seasonCalendarRouter = router({
       await assertBrandAccess(ctx, input.sourceBrandId);
       await assertBrandAccess(ctx, input.targetBrandId);
 
-      const result = await cloneFromBrandSeason(input, ctx.prisma);
+      const result = await cloneFromBrandSeason(input, ctx);
       await logAudit(ctx, { action: 'SEASON_CALENDAR_CLONE', targetType: 'SeasonCalendar', targetId: result.calendarId, result: 'SUCCESS', metadata: { sourceBrandId: input.sourceBrandId, sourceSeasonId: input.sourceSeasonId, sourcePlanningGroupIds: input.sourcePlanningGroupIds } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: input.targetSeasonId });
       notifyCalendarChange(ctx.prisma, {
@@ -876,7 +878,9 @@ export const seasonCalendarRouter = router({
         calendarId: result.calendarId,
         eventKey: 'CALENDAR_CLONE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on clone'));
-      return result;
+      const isVisible = await visibilityOf(ctx, result.createdEventIds);
+      const createdEventIds = result.createdEventIds.filter(isVisible);
+      return { ...result, createdEventIds, milestonesCreated: createdEventIds.length };
     }),
 
   // ─── Google sync ─────────────────────────────────────────────────────────────
