@@ -12,7 +12,8 @@
  *
  * `resolveEventAudience` answers "who receives a notification about event X" (reverse).
  * `eventVisibilityWhere` answers "which events can user X see" (forward, a Prisma `where`
- * fragment for `listMilestonesDb`) — a pure function of already-resolved function ids, mirroring
+ * fragment for `listMilestonesDb` and, through `callerEventVisibility`, every read and write by id:
+ * ADR-040) — a pure function of already-resolved function ids, mirroring
  * how brand ids are already resolved upstream (`filterAllowedBrandIds`) rather than queried here.
  * Both implement the same predicate — notifications must never exceed what the read path grants,
  * and vice versa.

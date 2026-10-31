@@ -460,8 +460,9 @@ type EventWith<I extends EventInclude> = Prisma.CalendarEventGetPayload<{ includ
 /**
  * Calendar event, by `eventId`: event → `calendar.brandId`. Returns the event's fields, its
  * calendar's `brandId` and `seasonId`, and the relations in `include`, so a procedure checks the
- * brand, then that the caller may see the event, before anything about its state: an event the
- * caller cannot list answers as a missing one.
+ * brand, then that the caller may see the event, before anything about its state: within an
+ * allowed brand, an event the caller cannot list answers as a missing one; a brand outside scope
+ * stays FORBIDDEN, which does tell that the event exists.
  */
 export async function resolveEventBrandAccess<I extends EventInclude = Record<never, never>>(
   ctx: BrandScopeCtx,

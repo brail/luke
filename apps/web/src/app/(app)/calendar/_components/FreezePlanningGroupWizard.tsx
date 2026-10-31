@@ -51,7 +51,8 @@ function overlapReasonLabel(entry: { reason: 'weekend' | 'company' | 'vendor'; v
  * A group plans only the phases it needs (#159), so nothing blocks the freeze. One soft warning:
  * events whose deadline countdown depends on a calendar (`calendarDaysRelevance`
  * COMPANY/VENDOR/BOTH) landing on a non-working day (`holidayOverlapsForGroup`) — informational
- * only, the user can freeze anyway.
+ * only, the user can freeze anyway. The freeze also covers events outside the user's functions,
+ * which this list does not show: the warning gives only how many of those are flagged.
  *
  * @param milestones - The planning group's events, used for the summary list.
  * @param onFrozen - Called after the group is successfully frozen.
@@ -66,13 +67,15 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
 
   const overlapsByEvent = useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const entry of holidayOverlaps ?? []) {
+    for (const entry of holidayOverlaps?.entries ?? []) {
       const label = overlapReasonLabel(entry);
       if (!map.has(entry.eventId)) map.set(entry.eventId, new Set());
       map.get(entry.eventId)!.add(label);
     }
     return map;
   }, [holidayOverlaps]);
+
+  const hiddenCount = holidayOverlaps?.hiddenCount ?? 0;
 
   const freezeMutation = trpc.seasonCalendar.freezePlanningGroup.useMutation({
     onSuccess: () => {
@@ -100,8 +103,8 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
 
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Salva uno snapshot immutabile delle date correnti di tutti gli eventi ({milestones.length}) del
-              gruppo di pianificazione come baseline &quot;in teoria&quot;. Le date degli eventi restano modificabili dopo
+              Salva uno snapshot immutabile delle date correnti di tutti gli eventi del gruppo di pianificazione,
+              compresi quelli fuori dalle tue funzioni, come baseline &quot;in teoria&quot;. Le date degli eventi restano modificabili dopo
               il congelamento — solo lo snapshot resta fisso, per misurare in futuro lo scostamento tra piano e realtà.
             </p>
 
@@ -112,6 +115,16 @@ export function FreezePlanningGroupWizard({ open, onClose, onFrozen, planningGro
                   <p className="font-medium">{overlapsByEvent.size} eventi cadono su un giorno non lavorativo</p>
                   <p className="text-xs mt-0.5">Solo per eventi il cui conteggio giorni scadenza usa un calendario (azienda/fornitore). Verifica le date, se necessario — non blocca il congelamento.</p>
                 </div>
+              </div>
+            )}
+
+            {hiddenCount > 0 && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800 flex gap-2">
+                <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                <p>
+                  {hiddenCount === 1 ? '1 evento fuori dalle tue funzioni cade' : `${hiddenCount} eventi fuori dalle tue funzioni cadono`} su
+                  un giorno non lavorativo. Non blocca il congelamento.
+                </p>
               </div>
             )}
 

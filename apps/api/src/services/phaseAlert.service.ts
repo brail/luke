@@ -396,21 +396,19 @@ export interface HolidayOverlapEntry {
  * Purely informational (soft warning) — callers decide whether to let the user proceed regardless.
  * Rows with no vendor assigned simply don't contribute a vendor country — no error, no false alert.
  *
- * Names events, so it is a calendar read path (ADR-014): only the events `visibleTo` lets the
- * caller see are listed.
+ * Viewer-independent, as the freeze it warns about covers every event: its entries name events, so
+ * an answer to a caller goes through `maskHolidayOverlaps`.
  *
- * @param visibleTo - The caller's `eventVisibilityWhere`.
  * @returns One entry per (event, reason) — an event under `BOTH` can appear once for the company
  *   calendar and once per distinct vendor country among the group's rows.
  */
 export async function resolveHolidayOverlapsForGroup(
   planningGroupId: string,
   prisma: PrismaClient,
-  visibleTo: Prisma.CalendarEventWhereInput,
 ): Promise<HolidayOverlapEntry[]> {
   const [events, rows, timeZone] = await Promise.all([
     prisma.calendarEvent.findMany({
-      where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null }, AND: [visibleTo] },
+      where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null } },
       select: { id: true, title: true, startAt: true, allDay: true, calendarDaysRelevance: true },
     }),
     prisma.collectionLayoutRow.findMany({

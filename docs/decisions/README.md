@@ -42,6 +42,7 @@
 | [037](037-core-package-export-boundary-two-subpaths.md) | Core Package Export Boundary: Two Subpaths | Accepted |
 | [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Accepted |
 | [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Accepted |
+| [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
 
-_Last updated: 2026-10-19_
+_Last updated: 2026-10-31_
 <!-- luke-docs:end:adr-index -->

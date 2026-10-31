@@ -184,7 +184,7 @@ export default function CalendarPage() {
     onSuccess: () => refetchAfterEventChange(),
     onError: err => {
       toast.error(getTrpcErrorMessage(err));
-      // Refused because the list is stale (an event cancelled or frozen meanwhile): show the current one.
+      // Refused because the list is stale (an event cancelled, frozen or hidden meanwhile): show the current one.
       if (isStaleListError(err)) refetchAfterEventChange();
     },
   });

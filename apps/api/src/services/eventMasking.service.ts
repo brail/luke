@@ -9,7 +9,7 @@ import type { CalendarDate } from '@luke/core';
 
 import { callerEventVisibility, getAllowedFunctionIds, type BrandScopeCtx } from './brandScope.service';
 
-import type { computeBottleneckByEvent, computeCriticality } from './phaseAlert.service';
+import type { computeBottleneckByEvent, computeCriticality, HolidayOverlapEntry } from './phaseAlert.service';
 
 type Criticality = NonNullable<Awaited<ReturnType<typeof computeCriticality>>>;
 type BottleneckEntry = Awaited<ReturnType<typeof computeBottleneckByEvent>>[number];
@@ -115,4 +115,16 @@ export async function maskRevisions<R extends MilestoneRevision>(ctx: BrandScope
 /** `maskRevisions` for one revision. */
 export async function maskRevision<R extends MilestoneRevision>(ctx: BrandScopeCtx, revision: R): Promise<R> {
   return maskRevisionWith(revision, await visibilityOf(ctx, revision.milestoneId ? [revision.milestoneId] : []));
+}
+
+/**
+ * `resolveHolidayOverlapsForGroup`'s answer, for the caller: the entries they can read, and how many
+ * other events land on a non-working day. The freeze the warning precedes covers those too.
+ */
+export async function maskHolidayOverlaps(ctx: BrandScopeCtx, entries: HolidayOverlapEntry[]) {
+  const isVisible = await visibilityOf(ctx, entries.map(e => e.eventId));
+  return {
+    entries: entries.filter(e => isVisible(e.eventId)),
+    hiddenCount: new Set(entries.map(e => e.eventId).filter(id => !isVisible(id))).size,
+  };
 }

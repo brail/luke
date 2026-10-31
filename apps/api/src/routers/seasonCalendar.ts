@@ -61,7 +61,7 @@ import {
 } from '../services/brandScope.service.js';
 import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
-import { visibilityOf } from '../services/eventMasking.service.js';
+import { maskHolidayOverlaps, visibilityOf } from '../services/eventMasking.service.js';
 import {
   syncOneMilestone,
   deleteGoogleCopies,
@@ -185,23 +185,20 @@ export const seasonCalendarRouter = router({
    * Flags, per event, whether a phase-tagged event in the group lands on a non-working day
    * (weekend, company holiday, or a vendor's holiday) — but only for events whose
    * `calendarDaysRelevance` actually makes that relevant to their deadline countdown. Purely
-   * informational: never blocks `freezePlanningGroup`, the caller decides whether to warn. Lists
-   * only the events the caller can see (`eventVisibilityWhere`, ADR-014).
+   * informational: never blocks `freezePlanningGroup`, the caller decides whether to warn. Names
+   * only the events the caller can see, and counts the others (ADR-040).
    *
    * @auth season_calendar:read
    * @input { planningGroupId }
-   * @output HolidayOverlapEntry[]
+   * @output { entries: HolidayOverlapEntry[], hiddenCount } — the entries the caller can read, and how
+   *   many other events are flagged
    */
   holidayOverlapsForGroup: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ planningGroupId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
-      return resolveHolidayOverlapsForGroup(
-        input.planningGroupId,
-        ctx.prisma,
-        await callerEventVisibility(ctx),
-      );
+      return maskHolidayOverlaps(ctx, await resolveHolidayOverlapsForGroup(input.planningGroupId, ctx.prisma));
     }),
 
   // ─── Calendar event queries ─────────────────────────────────────────────────

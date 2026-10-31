@@ -64,8 +64,7 @@ export function sortByFirstDay<T extends EventDates>(events: T[], zone: string):
 /**
  * Whether a refused write means the calendar list is out of date, so it must be reloaded: a lock
  * the list did not show yet (the deadline was reached while the page was open), a move someone
- * else made meanwhile, or an event no longer there for this user. The one rule every caller that
- * moves an event applies.
+ * else made meanwhile, or an event no longer there for this user.
  */
 export function isStaleListError(err: { data?: { code?: string } | null }): boolean {
   return err.data?.code === 'PRECONDITION_FAILED' || err.data?.code === 'CONFLICT' || err.data?.code === 'NOT_FOUND';
