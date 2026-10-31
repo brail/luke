@@ -599,6 +599,7 @@ function nextPhaseInfo(nextEvent: CalendarEventWithContext, now: Date, timeZone:
   );
   return {
     phaseId: nextEvent.phaseId,
+    eventId: nextEvent.id,
     eventTitle: nextEvent.title,
     deadlineDay: due,
     daysUntil: days,

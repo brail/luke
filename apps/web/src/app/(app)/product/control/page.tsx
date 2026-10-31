@@ -13,6 +13,7 @@ import { bandBadgeStyle } from '../../../../lib/alertBandStyle';
 import { trpc } from '../../../../lib/trpc';
 import { cn } from '../../../../lib/utils';
 import { assignBrandColors, resolveBrandColor } from '../../calendar/utils';
+import { HIDDEN_EVENT_LABEL } from '../collection-layout/_components/CriticalityBadge';
 
 import { ClusterMoqCoverage } from './_components/ClusterMoqCoverage';
 import { CollectionStatistics } from './_components/CollectionStatistics';
@@ -246,11 +247,11 @@ function BottleneckTab() {
             {events.map(event => {
               const total = event.bands.reduce((s, b) => s + b.count, 0);
               return (
-                <div key={event.eventId} className="space-y-1.5">
+                <div key={event.eventId ?? 'hidden'} className="space-y-1.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{event.eventTitle}</span>
+                    <span className="font-medium">{event.eventTitle ?? HIDDEN_EVENT_LABEL}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">
-                      {formatCalendarDate(event.eventStartDay, NUMERIC_DATE)} · {total} righe
+                      {event.eventStartDay && `${formatCalendarDate(event.eventStartDay, NUMERIC_DATE)} · `}{total} righe
                     </span>
                   </div>
                   <div className="flex h-3 w-full rounded overflow-hidden bg-muted">

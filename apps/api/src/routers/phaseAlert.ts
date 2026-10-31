@@ -25,6 +25,7 @@ import {
   resolveAlertThresholds,
   resolveMissingPhasesForRow,
 } from '../services/phaseAlert.service';
+import { maskBottleneck, maskCriticality, maskCriticalityList } from '../services/phaseAlertVisibility.service';
 
 export const phaseAlertRouter = router({
   /**
@@ -34,10 +35,11 @@ export const phaseAlertRouter = router({
    * @input {{ rowId: string }}
    * @output {{ state: 'active', rowId, eventId, eventTitle, eventStartDay, phaseId, deadlineDay,
    *   daysToDeadline, reached, daysMode, relevantCountryCodes, band, nextPhase }
-   *   | { state: 'completed', rowId, completedDay, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
+   *   | { state: 'completed', rowId, completedDay, eventHidden, eventId, eventTitle, deadlineDay, daysVsDeadline, late,
    *   daysMode, relevantCountryCodes, band } | null} — counts in the business time zone;
    *   `reached`/`late` decide lateness, the count stays real; `deadlineDay`/`eventStartDay` are
-   *   calendar dates — an all-day event's own, a timed one's in that zone — and `completedDay` is
+   *   calendar dates — an all-day event's own, a timed one's in that zone, `null` with the event's
+   *   identity and day counts for an event the caller cannot list — and `completedDay` is
    *   the completion's day in that zone.
    */
   criticalityForRow: protectedProcedure
@@ -45,7 +47,7 @@ export const phaseAlertRouter = router({
     .input(z.object({ rowId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
-      return computeCriticality(input.rowId, new Date(), ctx.prisma);
+      return maskCriticality(ctx, await computeCriticality(input.rowId, new Date(), ctx.prisma));
     }),
 
   /**
@@ -83,7 +85,7 @@ export const phaseAlertRouter = router({
     .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
-      return computeCriticalityForLayout(input.collectionLayoutId, new Date(), ctx.prisma);
+      return maskCriticalityList(ctx, await computeCriticalityForLayout(input.collectionLayoutId, new Date(), ctx.prisma));
     }),
 
   /**
@@ -153,7 +155,8 @@ export const phaseAlertRouter = router({
    *
    * @auth {collection_alert:read}
    * @input {{ collectionLayoutId: string }}
-   * @output {{ eventId, eventTitle, eventStartDay, bands: { label, color, emphasis, count }[] }[]} — sorted by
+   * @output {{ eventId, eventTitle, eventStartDay, bands: { label, color, emphasis, count }[] }[]} — the events
+   *   the caller cannot list merged into one last entry with `null` fields, the others sorted by
    *   eventStartDay (a calendar date, as for `criticalityForRow`), then title and id.
    */
   bottleneckByEvent: protectedProcedure
@@ -161,7 +164,7 @@ export const phaseAlertRouter = router({
     .input(z.object({ collectionLayoutId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveLayoutBrandAccess(ctx, input.collectionLayoutId);
-      return computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma);
+      return maskBottleneck(ctx, await computeBottleneckByEvent(input.collectionLayoutId, new Date(), ctx.prisma));
     }),
 
   /**

@@ -31,11 +31,19 @@ describe(`criticality tooltips (${ZONE})`, () => {
     expect(tooltip).toBe('3 gg di calendario alla scadenza — «Consegna»: 03/10/2026');
   });
 
+  test('an event the user cannot list is named as reserved, with no date or count', () => {
+    const active = formatCriticalityTooltip({ ...COMMON, eventTitle: null, daysToDeadline: null, reached: false, deadlineDay: null });
+    expect(active).toBe('Evento riservato');
+    expect(formatCriticalityTooltip({ ...COMMON, eventTitle: null, daysToDeadline: null, reached: true, deadlineDay: null })).toBe('Scaduta — Evento riservato');
+    const completed = formatCompletionTooltip({ ...COMMON, eventTitle: null, completedDay: date('2026-10-01'), eventHidden: true, daysVsDeadline: null, late: true, deadlineDay: null });
+    expect(completed).toBe('Conclusa il 01/10/2026 — Evento riservato');
+  });
+
   test('a completion prints the server’s completion and deadline dates, or says there is no milestone', () => {
     const completedDay = date('2026-10-01');
-    const withMilestone = formatCompletionTooltip({ ...COMMON, completedDay, daysVsDeadline: 2, late: false, deadlineDay: date('2026-10-03') });
+    const withMilestone = formatCompletionTooltip({ ...COMMON, completedDay, eventHidden: false, daysVsDeadline: 2, late: false, deadlineDay: date('2026-10-03') });
     expect(withMilestone).toBe('Conclusa il 01/10/2026, 2 gg di calendario di anticipo su «Consegna»: 03/10/2026');
-    const without = formatCompletionTooltip({ ...COMMON, completedDay, daysVsDeadline: null, late: false, deadlineDay: null, eventTitle: null });
+    const without = formatCompletionTooltip({ ...COMMON, completedDay, eventHidden: false, daysVsDeadline: null, late: false, deadlineDay: null, eventTitle: null });
     expect(without).toBe('Conclusa il 01/10/2026 — nessuna milestone di riferimento');
   });
 });

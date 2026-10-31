@@ -25,6 +25,9 @@ type CriticalityInfo = Extract<RowCriticality, { state: 'active' }>;
 type CompletionInfo = Extract<RowCriticality, { state: 'completed' }>;
 type CriticalityBand = RowCriticality['band'];
 
+/** In place of an event the user cannot list: the band stays, what names or dates the event goes. */
+export const HIDDEN_EVENT_LABEL = 'Evento riservato';
+
 /**
  * "gg lavorativi (IT+CN)" / "gg di calendario" — the unit every tooltip of this feature must state
  * the same way: showing "gg" for both modes would be misleadingly precise about what is actually
@@ -42,6 +45,9 @@ function daysUnitLabel(daysMode: 'calendar' | 'working', relevantCountryCodes: s
  * either way, only the fetch strategy differs.
  */
 export function formatCriticalityTooltip({ daysToDeadline, reached, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CriticalityInfo, 'daysToDeadline' | 'reached' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
+  if (eventTitle === null || deadlineDay === null || daysToDeadline === null) {
+    return reached ? `Scaduta — ${HIDDEN_EVENT_LABEL}` : HIDDEN_EVENT_LABEL;
+  }
   // The day the count runs to, as the server names it in the business zone — formatting the
   // instant here would show a different day to a viewer in another zone.
   const dateLabel = formatCalendarDate(deadlineDay, NUMERIC_DATE);
@@ -65,8 +71,9 @@ export function formatCriticalityTooltip({ daysToDeadline, reached, deadlineDay,
  * completed after a timed deadline on its own day is past it, not "on the day". Both dates are the
  * server's calendar days in the business zone, the days the count runs between.
  */
-export function formatCompletionTooltip({ completedDay, daysVsDeadline, late, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CompletionInfo, 'completedDay' | 'daysVsDeadline' | 'late' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
+export function formatCompletionTooltip({ completedDay, eventHidden, daysVsDeadline, late, deadlineDay, eventTitle, daysMode, relevantCountryCodes }: Pick<CompletionInfo, 'completedDay' | 'eventHidden' | 'daysVsDeadline' | 'late' | 'deadlineDay' | 'eventTitle' | 'daysMode' | 'relevantCountryCodes'>): string {
   const completedLabel = formatCalendarDate(completedDay, NUMERIC_DATE);
+  if (eventHidden) return `Conclusa il ${completedLabel} — ${HIDDEN_EVENT_LABEL}`;
   if (daysVsDeadline === null || deadlineDay === null) {
     return `Conclusa il ${completedLabel} — nessuna milestone di riferimento`;
   }
@@ -155,11 +162,13 @@ export function CriticalitySituation({ rowId, phaseById, className }: Props & { 
     <div className={cn('flex items-center gap-1.5 text-xs', className)}>
       <CriticalityBandBadge band={data.band} tooltip={formatCriticalityTooltip(data)} />
       {isLate && (
-        <span className="text-muted-foreground">{formatDaysLabel(data.daysToDeadline, data.reached)}</span>
+        <span className="text-muted-foreground">
+          {data.daysToDeadline === null ? `scaduta · ${HIDDEN_EVENT_LABEL}` : formatDaysLabel(data.daysToDeadline, data.reached)}
+        </span>
       )}
       {!isLate && data.nextPhase && (
         <span className="text-muted-foreground">
-          Prossima fase: {nextPhaseLabel} · {formatDaysLabel(data.nextPhase.daysUntil, data.nextPhase.reached)}
+          Prossima fase: {nextPhaseLabel} · {data.nextPhase.daysUntil === null ? HIDDEN_EVENT_LABEL : formatDaysLabel(data.nextPhase.daysUntil, data.nextPhase.reached)}
         </span>
       )}
     </div>

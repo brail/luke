@@ -144,8 +144,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   phaseAlert: {
     reason:
-      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec, seasonPhaseOrder by its own spec (order and brand scope); criticalityForLayout and the thresholds get/update pair remain uncovered',
-    uncovered: 3,
+      'criticalityForRow and bottleneckByEvent are invoked by collectionRowCompletion.integration.spec.ts (the outcome of a completed row, and excluding completed rows from the bottleneck index), saturationHeatmap by the brand-scope spec, seasonPhaseOrder by its own spec (order and brand scope), criticalityForLayout by the visibility spec; the thresholds get/update pair remains uncovered',
+    uncovered: 2,
   },
   planningGroup: {
     reason:
