@@ -1,3 +1,8 @@
 # Every entry names one advisory, says why its code never runs in production, and
 # expires: past `ignoreUntil` the finding is reported again and the gate goes
 # red, so the decision is re-taken instead of forgotten.
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-12-03T00:00:00Z
+reason = "minimatch glob pattern amplification, fixed only in 11.0.1, which no consumer admits (re-checked 2026-10-31): 11 removed makeRe, which eslint-plugin-import-x imports, so an override breaks lint. 10.2.6 holds the code: at runtime only @fastify/otel carries it, and loads it only for ignorePaths or OTEL_FASTIFY_IGNORE_PATHS, which Luke does not set and whose pattern comes from the operator, never from a request; the other copies are ESLint devDependencies. 3.1.5 and 5.1.9 (exceljs, ESLint plugins) run in production but have no firstPhasePreProcess. Re-check when eslint-plugin-import-x declares ^11."
