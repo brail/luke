@@ -56,7 +56,7 @@ been sent to the directory yet:
 
 | Where the LDAP login stopped | `authenticateViaLdap` | Answer when nobody is authenticated | Audit `reason` |
 |------------------------------|-----------------------|-------------------------------------|----------------|
-| Before the username is sent: incomplete configuration, breaker open, service-account bind refused or left without an answer | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
+| Before the username is sent: incomplete configuration, a stored value that does not decrypt, breaker open, service-account bind refused or left without an answer | throws | `SERVICE_UNAVAILABLE` | `ldap_unavailable` |
 | From the search on: no entry, a search or user bind the directory refused | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
 | From the search on: a search or user bind left without a usable answer, a search filter that does not parse | returns a refusal | `UNAUTHORIZED` | `ldap_unavailable` |
 | LDAP disabled | returns a refusal | `UNAUTHORIZED` | `invalid_credentials` |
