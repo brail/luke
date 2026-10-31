@@ -110,6 +110,16 @@ export async function callerEventVisibility(ctx: BrandScopeCtx): Promise<Prisma.
   return eventVisibilityWhere(requireSession(ctx).user.id, await getAllowedFunctionIds(ctx));
 }
 
+/** Throws NOT_FOUND, as for an id that does not exist, unless the user may see every one of `eventIds`. */
+export async function assertEventsVisible(ctx: BrandScopeCtx, eventIds: string[]): Promise<void> {
+  const visible = await ctx.prisma.calendarEvent.count({
+    where: { id: { in: eventIds }, AND: [await callerEventVisibility(ctx)] },
+  });
+  if (visible < eventIds.length) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
+  }
+}
+
 /**
  * Throws FORBIDDEN if the user doesn't have access to the brand.
  *
@@ -450,7 +460,8 @@ type EventWith<I extends EventInclude> = Prisma.CalendarEventGetPayload<{ includ
 /**
  * Calendar event, by `eventId`: event → `calendar.brandId`. Returns the event's fields, its
  * calendar's `brandId` and `seasonId`, and the relations in `include`, so a procedure checks the
- * brand before anything about the event's state.
+ * brand, then that the caller may see the event, before anything about its state: an event the
+ * caller cannot list answers as a missing one.
  */
 export async function resolveEventBrandAccess<I extends EventInclude = Record<never, never>>(
   ctx: BrandScopeCtx,
@@ -466,6 +477,7 @@ export async function resolveEventBrandAccess<I extends EventInclude = Record<ne
   }
 
   await assertBrandAccess(ctx, event.calendar.brandId);
+  await assertEventsVisible(ctx, [event.id]);
   // The query's include is `{ ...include, ...EVENT_CALENDAR }`, which is `EventWith<I>`'s; TypeScript
   // cannot resolve Prisma's payload type for a generic `I`, so it cannot see the two are equal.
   return event as EventWith<I>;

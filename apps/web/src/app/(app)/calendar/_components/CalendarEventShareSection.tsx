@@ -53,12 +53,15 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
     const toAdd = localGrantedIds.filter(id => !originalIds.includes(id));
     const toRemove = originalIds.filter(id => !localGrantedIds.includes(id));
     try {
-      const ops: Promise<unknown>[] = [];
-      if (toAdd.length > 0) ops.push(grantMutation.mutateAsync({ eventId, userIds: toAdd }));
-      if (toRemove.length > 0) ops.push(revokeMutation.mutateAsync({ eventId, userIds: toRemove }));
-      await Promise.all(ops);
+      // The grant first: a user who sees the event only through a grant may be revoking their own,
+      // and from then on cannot reach the event.
+      if (toAdd.length > 0) await grantMutation.mutateAsync({ eventId, userIds: toAdd });
+      if (toRemove.length > 0) await revokeMutation.mutateAsync({ eventId, userIds: toRemove });
       toast.success('Condivisione aggiornata');
-      await utils.seasonCalendar.listGrantCandidates.invalidate({ eventId });
+      await Promise.all([
+        utils.seasonCalendar.listGrantCandidates.invalidate({ eventId }),
+        utils.seasonCalendar.listMilestones.invalidate(),
+      ]);
     } catch {
       // errors already toasted
     }

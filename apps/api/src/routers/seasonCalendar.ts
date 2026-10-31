@@ -51,6 +51,7 @@ import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
   assertBrandAccessAll,
+  assertEventsVisible,
   callerEventVisibility,
   filterAllowedBrandIds,
   getAllowedFunctionIds,
@@ -492,7 +493,8 @@ export const seasonCalendarRouter = router({
   /**
    * Bulk-deletes up to 100 calendar events, then their Google Calendar copies. Duplicate ids count
    * once and ids no longer found (already deleted) are skipped; the whole selection is refused if
-   * any event is cancelled or a phase event of a frozen group, or becomes one before the delete.
+   * the caller cannot see one of the events (NOT_FOUND), or if any is cancelled or a phase event of
+   * a frozen group, or becomes one before the delete.
    *
    * @auth season_calendar:update
    * @input { ids: string[] (1–100) }
@@ -510,6 +512,8 @@ export const seasonCalendarRouter = router({
       if (events.length === 0) return { success: true, count: 0 };
       // The brands first: a caller outside them must learn nothing about the events or their calendars.
       await assertBrandAccessAll(ctx, [...new Set(events.map(e => e.calendar.brandId))]);
+      // All or nothing: dropping a hidden id silently would report a delete the caller did not get.
+      await assertEventsVisible(ctx, events.map(e => e.id));
       assertEventsDeletable(events);
       const calendarIds = [...new Set(events.map(e => e.calendarId))];
       await Promise.all(calendarIds.map(id => assertUnlocked('SEASON_CALENDAR', id, ctx.session.user.id, ctx.prisma)));

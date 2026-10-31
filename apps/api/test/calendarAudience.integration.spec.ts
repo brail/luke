@@ -365,3 +365,142 @@ describe("share procedures — the caller's brand boundary", () => {
     }
   });
 });
+
+describe('an event by id answers as the list does', () => {
+  const NOT_FOUND = { code: 'NOT_FOUND', message: 'Evento non trovato' };
+  const NOW = new Date('2098-02-01T00:00:00.000Z');
+  let editorSession: UserSession; // fnA, brandX: may update, outside the hidden event's audience
+  let memberSession: UserSession; // fnC, brandX: in the hidden event's audience
+  let grantedSession: UserSession; // fnA, brandX, granted the hidden event by name
+  let grantedId: string;
+  let groupId: string;
+
+  /** A brandX event only `fnC` sees, with a start the writes below would move. */
+  async function hiddenEvent(data: { cancelledAt?: Date } = {}) {
+    const event = await prisma.calendarEvent.create({
+      data: { calendarId: calX, planningGroupId: groupId, title: 'Hidden', startAt: NOW, ...data },
+    });
+    await prisma.calendarEventVisibility.create({ data: { eventId: event.id, functionId: fnC } });
+    return event;
+  }
+
+  /** What a refused call must leave as it was. */
+  async function stateOf(eventId: string) {
+    const [event, notes, shares] = await Promise.all([
+      prisma.calendarEvent.findUnique({ where: { id: eventId } }),
+      prisma.calendarEventPersonalNote.count({ where: { eventId } }),
+      prisma.calendarEventUserVisibility.count({ where: { eventId } }),
+    ]);
+    return { event, notes, shares };
+  }
+
+  const expected = { startAt: NOW.toISOString(), endAt: null, allDay: false };
+  type Caller = ReturnType<typeof createCallerWithSession>;
+  // `uncancelMilestone` is not here: only an admin holds its permission, and an admin sees every event.
+  const BY_ID: [string, (caller: Caller, id: string) => Promise<unknown>][] = [
+    ['updateMilestone', (c, id) => c.seasonCalendar.updateMilestone({ id, data: { title: 'Changed' }, expected })],
+    ['rescheduleMilestone', (c, id) => c.seasonCalendar.rescheduleMilestone({ id, startAt: '2098-03-01T00:00:00.000Z', reason: 'Spostato di un mese', expected })],
+    ['deleteMilestone', (c, id) => c.seasonCalendar.deleteMilestone({ id })],
+    ['cancelMilestone', (c, id) => c.seasonCalendar.cancelMilestone({ id, reason: 'Non serve più' })],
+    ['upsertNote', (c, id) => c.seasonCalendar.upsertNote({ eventId: id, body: 'note' })],
+    ['deleteNote', (c, id) => c.seasonCalendar.deleteNote({ eventId: id })],
+    ['listGrantCandidates', (c, id) => c.seasonCalendar.listGrantCandidates({ eventId: id })],
+    ['grantUserVisibility', (c, id) => c.seasonCalendar.grantUserVisibility({ eventId: id, userIds: [grantedId] })],
+    ['revokeUserVisibility', (c, id) => c.seasonCalendar.revokeUserVisibility({ eventId: id, userIds: [grantedId] })],
+  ];
+
+  beforeAll(async () => {
+    const [editor, member, granted] = await Promise.all([
+      createTestUser('editor'),
+      createTestUser('editor'),
+      createTestUser('editor'),
+    ]);
+    editorSession = editor.session;
+    memberSession = member.session;
+    grantedSession = granted.session;
+    grantedId = granted.user.id;
+    await Promise.all([
+      grantBrandAccess(prisma, { functionId: fnA, brandIds: [brandX], userIds: [editor.user.id, granted.user.id], label: 'Team A/X by id' }),
+      grantBrandAccess(prisma, { functionId: fnC, brandIds: [brandX], userIds: [member.user.id], label: 'Team C/X by id' }),
+    ]);
+    const group = await prisma.planningGroup.create({ data: { calendarId: calX, name: `By id ${randomUUID().substring(0, 6)}` } });
+    groupId = group.id;
+  });
+
+  it.each(BY_ID)('%s answers NOT_FOUND for an event the caller cannot list, and changes nothing', async (_name, call) => {
+    const event = await hiddenEvent();
+    const before = await stateOf(event.id);
+
+    await expectToThrow(call(createCallerWithSession(editorSession), event.id), NOT_FOUND);
+
+    expect(await stateOf(event.id)).toEqual(before);
+  });
+
+  it.each(BY_ID)('%s answers a missing id the same way', async (_name, call) => {
+    await expectToThrow(call(createCallerWithSession(editorSession), randomUUID()), NOT_FOUND);
+  });
+
+  it('a cancelled hidden event answers NOT_FOUND too, not its state', async () => {
+    const event = await hiddenEvent({ cancelledAt: NOW });
+
+    await expectToThrow(
+      createCallerWithSession(editorSession).seasonCalendar.updateMilestone({ id: event.id, data: { title: 'Changed' }, expected }),
+      NOT_FOUND,
+    );
+  });
+
+  describe('who can reach it', () => {
+    async function reaches(session: UserSession, eventId: string) {
+      const caller = createCallerWithSession(session);
+      await expect(caller.seasonCalendar.listGrantCandidates({ eventId })).resolves.toBeDefined();
+      await expect(caller.seasonCalendar.upsertNote({ eventId, body: 'note' })).resolves.toBeDefined();
+    }
+
+    it('a member of a function the event names', async () => {
+      await reaches(memberSession, (await hiddenEvent()).id);
+    });
+
+    it('a user the event is shared with by name', async () => {
+      const event = await hiddenEvent();
+      await prisma.calendarEventUserVisibility.create({ data: { eventId: event.id, userId: grantedId } });
+
+      await reaches(grantedSession, event.id);
+    });
+
+    it('anyone in the brand, on an event with no visibility rows', async () => {
+      await reaches(editorSession, eventNoVis);
+    });
+
+    it('an admin with no team', async () => {
+      await reaches(adminNoTeamSession, (await hiddenEvent()).id);
+    });
+  });
+
+  describe('deleteMilestones', () => {
+    const remove = (ids: string[]) => createCallerWithSession(editorSession).seasonCalendar.deleteMilestones({ ids });
+    const visibleEvent = () =>
+      prisma.calendarEvent.create({ data: { calendarId: calX, planningGroupId: groupId, title: 'Visible', startAt: NOW } });
+
+    it('with a hidden event among the ids deletes nothing', async () => {
+      const [visible, hidden] = await Promise.all([visibleEvent(), hiddenEvent()]);
+
+      await expectToThrow(remove([visible.id, hidden.id, visible.id]), NOT_FOUND);
+
+      expect(await prisma.calendarEvent.count({ where: { id: { in: [visible.id, hidden.id] } } })).toBe(2);
+    });
+
+    it('still deletes what the caller can see, ignoring an id that does not exist', async () => {
+      const visible = await visibleEvent();
+
+      await expect(remove([visible.id, visible.id, randomUUID()])).resolves.toMatchObject({ count: 1 });
+    });
+
+    it('answers FORBIDDEN for another brand before anything about the hidden ones', async () => {
+      const hidden = await hiddenEvent();
+
+      await expectToThrow(remove([hidden.id, eventY]), { code: 'FORBIDDEN' });
+
+      expect(await prisma.calendarEvent.count({ where: { id: { in: [hidden.id, eventY] } } })).toBe(2);
+    });
+  });
+});

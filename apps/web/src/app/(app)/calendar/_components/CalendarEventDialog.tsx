@@ -393,7 +393,10 @@ export function CalendarEventDialog({
       onClose();
       onDeleted?.();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   const cancelMutation = trpc.seasonCalendar.cancelMilestone.useMutation({
@@ -404,7 +407,10 @@ export function CalendarEventDialog({
       onSaved();
       onClose();
     },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: err => {
+      toast.error(getTrpcErrorMessage(err));
+      if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
+    },
   });
 
   const uncancelMutation = trpc.seasonCalendar.uncancelMilestone.useMutation({

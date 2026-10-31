@@ -192,6 +192,7 @@ describe(`calendar day helpers (${ZONE})`, () => {
   test('isStaleListError: a write refused because the list was out of date, and nothing else', () => {
     expect(isStaleListError({ data: { code: 'PRECONDITION_FAILED' } })).toBe(true);
     expect(isStaleListError({ data: { code: 'CONFLICT' } })).toBe(true);
+    expect(isStaleListError({ data: { code: 'NOT_FOUND' } })).toBe(true);
     expect(isStaleListError({ data: { code: 'BAD_REQUEST' } })).toBe(false);
     expect(isStaleListError({ data: null })).toBe(false);
   });
