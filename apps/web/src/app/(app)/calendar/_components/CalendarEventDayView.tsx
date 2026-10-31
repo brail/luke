@@ -87,7 +87,6 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
   const showNow = isToday && nowMinutes / 60 >= GRID_START && nowMinutes / 60 <= GRID_END;
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const dragRef = useRef<DragState | null>(null);
   const wasDraggingRef = useRef(false);
   const cleanupDragRef = useRef<(() => void) | null>(null);
 
@@ -99,34 +98,36 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
     const origStartAt = new Date(m.startAt);
     const origEndAt = m.endAt ? new Date(m.endAt) : null;
     const state: DragState = { id: m.id, startY: e.clientY, deltaMinutes: 0, origStartAt, origEndAt };
-    dragRef.current = state;
     setDrag(state);
 
     const onMove = (ev: PointerEvent) => {
       const snapped = Math.round(((ev.clientY - state.startY) / ROW_H) * 60 / SNAP_MIN) * SNAP_MIN;
-      const next = { ...state, deltaMinutes: snapped };
-      dragRef.current = next;
-      setDrag(next);
+      setDrag({ ...state, deltaMinutes: snapped });
     };
     const onUp = (ev: PointerEvent) => {
       cleanup();
-      cleanupDragRef.current = null;
       const snapped = Math.round(((ev.clientY - state.startY) / ROW_H) * 60 / SNAP_MIN) * SNAP_MIN;
-      if (snapped === 0) { setDrag(null); dragRef.current = null; return; }
+      if (snapped === 0) { setDrag(null); return; }
       wasDraggingRef.current = true;
       const newStart = new Date(state.origStartAt.getTime() + snapped * 60_000);
       const newEnd = state.origEndAt ? new Date(state.origEndAt.getTime() + snapped * 60_000) : null;
       onEventUpdate(m.id, { startAt: newStart.toISOString(), endAt: newEnd ? newEnd.toISOString() : null });
       setDrag(null);
-      dragRef.current = null;
+    };
+    const onCancel = () => {
+      cleanup();
+      setDrag(null);
     };
     const cleanup = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      cleanupDragRef.current = null;
     };
     cleanupDragRef.current = cleanup;
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   }, [onEventUpdate]);
 
   return (

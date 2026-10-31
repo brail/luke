@@ -42,6 +42,7 @@ function isBlocked(iso: string, holidayDates: HolidayMap, closedDates: Set<strin
 export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, closedDates }: Props) {
   const stripRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef(value);
 
   const days = useMemo(
     () => Array.from({ length: WINDOW_HALF * 2 + 1 }, (_, i) => addCalendarDays(anchorDate, i - WINDOW_HALF)),
@@ -119,6 +120,7 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
             aria-label="Sposta evento"
             onPointerDown={e => {
               e.currentTarget.setPointerCapture(e.pointerId);
+              dragStartRef.current = value;
               setIsDragging(true);
             }}
             onPointerMove={e => {
@@ -126,6 +128,12 @@ export function EventTimelineDrag({ anchorDate, value, onChange, holidayDates, c
               commitDrag(e.clientX);
             }}
             onPointerUp={() => setIsDragging(false)}
+            onLostPointerCapture={() => setIsDragging(false)}
+            onPointerCancel={() => {
+              if (!isDragging) return;
+              if (dragStartRef.current !== value) onChange(dragStartRef.current);
+              setIsDragging(false);
+            }}
             className={cn(
               'absolute top-0 flex items-center justify-center text-white text-xs font-medium rounded cursor-grab active:cursor-grabbing',
               blocked ? 'bg-destructive' : 'bg-emerald-600'

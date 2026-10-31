@@ -142,7 +142,6 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
     }), [sorted, box, functionsById, zone]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const dragRef = useRef<DragState | null>(null);
   const wasDraggingRef = useRef(false);
   const eventsRef = useRef(milestones);
   useEffect(() => { eventsRef.current = milestones; }, [milestones]);
@@ -152,23 +151,30 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
     e.preventDefault();
     e.stopPropagation();
     const state: DragState = { id, mode, startX: e.clientX, deltaX: 0 };
-    dragRef.current = state;
     setDrag(state);
-    const onMove = (ev: PointerEvent) => { dragRef.current = { ...state, deltaX: ev.clientX - state.startX }; setDrag({ ...state, deltaX: ev.clientX - state.startX }); };
-    const onUp = (ev: PointerEvent) => {
+    const onMove = (ev: PointerEvent) => setDrag({ ...state, deltaX: ev.clientX - state.startX });
+    const cleanup = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+    };
+    const onCancel = () => {
+      cleanup();
+      setDrag(null);
+    };
+    const onUp = (ev: PointerEvent) => {
+      cleanup();
       const dayDelta = Math.round((ev.clientX - state.startX) / dayW);
-      if (dayDelta === 0) { setDrag(null); dragRef.current = null; return; }
+      if (dayDelta === 0) { setDrag(null); return; }
       wasDraggingRef.current = true;
       const m = eventsRef.current.find(x => x.id === id);
       const change = m && (mode === 'drag' ? moveEvent(m, dayDelta, zone) : resizeEvent(m, dayDelta, zone));
       if (change) onEventUpdate(id, change);
       setDrag(null);
-      dragRef.current = null;
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   }, [canUpdate, dayW, onEventUpdate, zone]);
 
   return (
