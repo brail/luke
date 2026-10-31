@@ -18,7 +18,6 @@ import {
   getBackupScheduleSettings,
   getConfigOrDefault,
   getStoredConfigOrDefault,
-  hasConfig,
   saveConfigs,
 } from '../src/lib/configManager';
 import { getMaintenanceState } from '../src/lib/maintenanceMode';
@@ -53,15 +52,6 @@ describe('the readers decrypt', () => {
     });
 
     await expect(getConfigOrDefault(prisma, 'storage.local.maxFileSizeMB')).rejects.toThrow();
-  });
-});
-
-describe('hasConfig', () => {
-  it('answers whether a key is stored, and nothing else', async () => {
-    await saveConfigs(prisma, [{ key: 'storage.s3.secretKey', value: 'sentinel-secret' }]);
-
-    expect(await hasConfig(prisma, 'storage.s3.secretKey')).toBe(true);
-    expect(await hasConfig(prisma, 'smtp.pass')).toBe(false);
   });
 });
 

@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { PRESIGNED_UPLOAD_BUCKETS, storageSaveConfigSchema, type Permission, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfig, getConfigForForm, getConfigOrDefault, saveConfigs, unreadableConfigError } from '../lib/configManager';
+import { ConfigDecryptionError, getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import { requirePermission } from '../lib/permissions';
 import { withSectionAccess } from '../lib/sectionAccessMiddleware';
@@ -329,9 +329,7 @@ export const storageRouter = router({
         // cannot connect.
         const secretKey =
           input.secretKey ||
-          (await getConfig(ctx.prisma, 'storage.s3.secretKey').catch((err: unknown) => {
-            throw err instanceof ConfigDecryptionError ? unreadableConfigError(err) : err;
-          }));
+          (await getConfig(ctx.prisma, 'storage.s3.secretKey').catch(rethrowUnreadable));
         if (!secretKey) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Secret key richiesta' });
         }

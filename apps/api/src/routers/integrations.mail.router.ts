@@ -4,12 +4,12 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import * as nodemailer from 'nodemailer';
+import nodemailer from 'nodemailer';
 
 import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfigsMasked, saveConfigs } from '../lib/configManager';
+import { ConfigDecryptionError, getConfigsMasked, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toTRPCError, IntegrationErrorHandler } from '../lib/errorHandler';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
@@ -127,6 +127,7 @@ export const mailRouter = router({
           sentTo: recipient,
         };
       } catch (error: unknown) {
+        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
         // An incomplete configuration arrives as PRECONDITION_FAILED, which the admin can act on.
         if (error instanceof TRPCError) throw error;
         // The reason goes nowhere else: the client sees a fixed text and the error's cause is

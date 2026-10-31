@@ -197,14 +197,17 @@ the browser: the API answers with a flag such as `hasPassword` or
 `hasSecretKey`, `SensitiveField` shows a masked placeholder, and leaving the
 field blank keeps the stored value.
 A stored value that does not decrypt, as after a restore under another master
-key, does not stop the LDAP page, nor the storage page for its two credentials:
-the field comes back blank and marked, and the test buttons ask for the value
-again. On the LDAP page a blank save keeps the row; the storage page refuses it
-until the value is entered again. Mail, NAV and the company time-zone card read
-masked values, and Google reports its credentials by presence. The other Google
-and storage fields and the collection-control thresholds go through the decrypting
-readers and throw on such a row; their forms store them in plaintext, so only a
-generic `config.*` write with `encrypt` set can leave one encrypted.
+key, does not stop the LDAP page, nor the storage and Google pages for their
+credentials: the field comes back blank and marked, and the test buttons ask for
+the value again. On the LDAP and Google pages a blank save keeps the row; the
+storage page refuses it until the value is entered again. Google's refresh token
+has no field: the page asks to connect the account again, or to disconnect it.
+Mail and NAV read masked values, so their pages show such a password as stored and
+only their test buttons ask for it again; the company time-zone card reads masked
+values too. The other Google and storage fields, the NAV connection fields read on
+save and the collection-control thresholds go through the decrypting readers and
+throw on such a row; their forms store them in plaintext, so only a generic
+`config.*` write with `encrypt` set can leave one encrypted.
 
 ## Dashboard widgets
 

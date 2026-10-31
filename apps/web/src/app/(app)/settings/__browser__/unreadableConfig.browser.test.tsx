@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
 import { UNREADABLE_VALUE_MESSAGE as NOTICE } from '../../../../components/settings/UnreadableValueNotice';
+import GoogleWorkspacePage from '../google/page';
 import LdapSettingsPage from '../ldap/page';
 import StoragePage from '../storage/page';
 
@@ -42,15 +43,36 @@ const STORAGE = {
   },
 };
 
+const GOOGLE = {
+  authMode: 'oauth_user',
+  domain: 'example.com',
+  calendarSyncEnabled: false,
+  serviceEmail: '',
+  hasServiceKey: false,
+  serviceKeyUnreadable: false,
+  impersonateEmail: '',
+  oauthClientId: 'client-id',
+  hasOauthClientSecret: true,
+  oauthClientSecretUnreadable: false,
+  hasOauthToken: true,
+  oauthTokenUnreadable: false,
+  oauthUserEmail: 'admin@example.com',
+};
+const TOKEN_NOTICE = "Il token salvato non è leggibile: connetti di nuovo l'account.";
+
 const h = vi.hoisted(() => ({
   ldap: {} as Record<string, unknown>,
+  google: {} as Record<string, unknown>,
   refetchLdap: vi.fn(),
   saveLdap: vi.fn(),
   testConnection: vi.fn(),
   saveStorage: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: { user: { role: 'admin' }, accessToken: 't' } }),
 }));
@@ -76,6 +98,14 @@ vi.mock('../../../../lib/trpc', () => {
           testLdapConnection: { useMutation: () => ({ mutate: h.testConnection, isPending: false }) },
           testLdapSearch: idle,
         },
+        google: {
+          getConfig: { useQuery: () => ({ data: h.google, isPending: false, error: null, refetch: vi.fn() }) },
+          saveConfig: idle,
+          testConnection: idle,
+          getOAuthUrl: idle,
+          exchangeOAuthCode: idle,
+          disconnectOAuth: idle,
+        },
       },
       storage: {
         getConfig: { useQuery: () => ({ data: STORAGE, isPending: false, error: null, refetch: vi.fn() }) },
@@ -88,6 +118,7 @@ vi.mock('../../../../lib/trpc', () => {
 
 beforeEach(() => {
   h.ldap = LDAP;
+  h.google = GOOGLE;
 });
 
 afterEach(() => {
@@ -147,4 +178,50 @@ test('an unreadable storage secret is marked, and a blank one is not saved', asy
 
   await expect.element(screen.getByText('Secret key richiesta')).toBeVisible();
   expect(h.saveStorage).not.toHaveBeenCalled();
+});
+
+test('Google with everything readable: no notice, and the account shows as connected', async () => {
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText('Connesso', { exact: true })).toBeVisible();
+  await expect.element(screen.getByText('admin@example.com')).toBeVisible();
+  expect(screen.getByText(NOTICE).elements()).toHaveLength(0);
+  expect(screen.getByText(TOKEN_NOTICE).elements()).toHaveLength(0);
+});
+
+test('Google: an unreadable service key is marked and can be entered again', async () => {
+  h.google = { ...GOOGLE, authMode: 'service_account', serviceKeyUnreadable: true };
+
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText(NOTICE)).toBeVisible();
+  await expect.element(screen.getByLabelText(/^Private Key/)).toBeEnabled();
+});
+
+test('Google: an unreadable client secret is marked', async () => {
+  h.google = { ...GOOGLE, hasOauthClientSecret: false, oauthClientSecretUnreadable: true };
+
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText(NOTICE)).toBeVisible();
+});
+
+test('Google: an unreadable token names its account, is not connected, and can be replaced or removed', async () => {
+  h.google = { ...GOOGLE, hasOauthToken: false, oauthTokenUnreadable: true };
+
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText(TOKEN_NOTICE)).toBeVisible();
+  await expect.element(screen.getByText('admin@example.com')).toBeVisible();
+  expect(screen.getByText('Connesso', { exact: true }).elements()).toHaveLength(0);
+  await expect.element(screen.getByRole('button', { name: 'Disconnetti' })).toBeEnabled();
+  await expect.element(screen.getByRole('button', { name: 'Riconnetti' })).toBeEnabled();
+});
+
+test('Google: a connected account without an address still shows as connected', async () => {
+  h.google = { ...GOOGLE, oauthUserEmail: '' };
+
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText('Connesso', { exact: true })).toBeVisible();
 });

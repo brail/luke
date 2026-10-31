@@ -12,7 +12,7 @@ import { createSyncRequest, getNavDbConfig, getPool, closePool, navDateOrNull, r
 
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, saveConfigs } from '../lib/configManager';
+import { ConfigDecryptionError, getConfig, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
@@ -530,7 +530,8 @@ export const navRouter = router({
       let config;
       try {
         config = await getNavDbConfig(ctx.prisma, getConfig);
-      } catch {
+      } catch (error) {
+        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
         const err = createStandardError(
           ErrorCode.CONFIG_ERROR,
           'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company) prima di testare.'

@@ -230,11 +230,10 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
   the operation. Credentials have no default: their readers refuse to start (`loadS3Provider`,
   `getSmtpConfig`)
 - `getConfig` always decrypts rows marked `isEncrypted`; it has no `decrypt` option. Typed and
-  default readers use this behavior. Decryption errors propagate. Use presence-only reads
-  (`hasConfig`) when only existence is needed, and masked reads (`getConfigsMasked`,
-  `listConfigsPaged`) at outbound boundaries; never expose stored ciphertext or decrypted diagnostic
-  values. For numbers and booleans use the typed readers, never
-  `parseInt`/`=== 'true'` on a `getConfig` result
+  default readers use this behavior. Decryption errors propagate. Use masked reads
+  (`getConfigsMasked`, `listConfigsPaged`) at outbound boundaries and when only existence is needed;
+  never expose stored ciphertext or decrypted diagnostic values. For numbers and booleans use the
+  typed readers, never `parseInt`/`=== 'true'` on a `getConfig` result
 - `SECRET_CONFIG_KEYS` in `packages/core/src/schemas/config.ts`, bound to `AppConfigKey` with its
   derived `SecretConfigKey`, defines mandatory encryption. Every writer, including seeds and
   dedicated writers, must enforce it regardless of caller flags. Audit metadata, responses and

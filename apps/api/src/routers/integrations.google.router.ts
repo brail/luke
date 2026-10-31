@@ -4,10 +4,10 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefreshTokenError } from '@luke/calendar';
-import { googleWorkspaceConfigSchema, httpUrl } from '@luke/core';
+import { type AppConfigKey, googleWorkspaceConfigSchema, httpUrl } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, getConfigOrDefault, hasConfig, saveConfigs } from '../lib/configManager';
+import { getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, saveConfigs } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
@@ -60,24 +60,25 @@ export const googleRouter = router({
         calendarSyncEnabled,
         // service account
         serviceEmail,
-        hasServiceKey,
+        serviceKey,
         impersonateEmail,
         // oauth
         oauthClientId,
-        hasOauthClientSecret,
-        hasOauthToken,
+        oauthClientSecret,
+        oauthToken,
         oauthUserEmail,
       ] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.authMode'),
         getConfig(ctx.prisma, 'integrations.google.domain'),
         getConfigOrDefault(ctx.prisma, 'integrations.google.calendarSync.enabled'),
         getConfig(ctx.prisma, 'integrations.google.serviceEmail'),
-        // The three credentials are write-only: the page learns whether each is stored, not its value.
-        hasConfig(ctx.prisma, 'integrations.google.serviceKey'),
+        // The three credentials are write-only: decrypted only to tell a stored one from one that
+        // must be entered again. The page learns which, never the value.
+        getConfigForForm(ctx.prisma, 'integrations.google.serviceKey'),
         getConfig(ctx.prisma, 'integrations.google.impersonateEmail'),
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId'),
-        hasConfig(ctx.prisma, 'integrations.google.oauth.clientSecret'),
-        hasConfig(ctx.prisma, 'integrations.google.oauth.refreshToken'),
+        getConfigForForm(ctx.prisma, 'integrations.google.oauth.clientSecret'),
+        getConfigForForm(ctx.prisma, 'integrations.google.oauth.refreshToken'),
         getConfig(ctx.prisma, 'integrations.google.oauth.userEmail'),
       ]);
 
@@ -87,12 +88,15 @@ export const googleRouter = router({
         calendarSyncEnabled,
         // service account
         serviceEmail: serviceEmail ?? '',
-        hasServiceKey,
+        hasServiceKey: !!serviceKey.value,
+        serviceKeyUnreadable: serviceKey.unreadable,
         impersonateEmail: impersonateEmail ?? '',
         // oauth
         oauthClientId: oauthClientId ?? '',
-        hasOauthClientSecret,
-        hasOauthToken,
+        hasOauthClientSecret: !!oauthClientSecret.value,
+        oauthClientSecretUnreadable: oauthClientSecret.unreadable,
+        hasOauthToken: !!oauthToken.value,
+        oauthTokenUnreadable: oauthToken.unreadable,
         oauthUserEmail: oauthUserEmail ?? '',
       };
     }),
@@ -163,7 +167,7 @@ export const googleRouter = router({
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId'),
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret'),
-      ]);
+      ]).catch(rethrowUnreadable);
       if (!clientId || !clientSecret) {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
@@ -194,7 +198,7 @@ export const googleRouter = router({
       const [clientId, clientSecret] = await Promise.all([
         getConfig(ctx.prisma, 'integrations.google.oauth.clientId'),
         getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret'),
-      ]);
+      ]).catch(rethrowUnreadable);
       if (!clientId || !clientSecret) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Client ID e Client Secret non configurati' });
       }
@@ -270,27 +274,33 @@ export const googleRouter = router({
   testConnection: protectedProcedure
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
-      const authMode = await getConfig(ctx.prisma, 'integrations.google.authMode');
-      const domain = await getConfig(ctx.prisma, 'integrations.google.domain');
+      const read = (key: AppConfigKey) => getConfig(ctx.prisma, key).catch(rethrowUnreadable);
+
+      const authMode = await read('integrations.google.authMode');
+      const domain = await read('integrations.google.domain');
       if (!domain) return { ok: false as const, error: 'Workspace domain non configurato' };
 
       let result: { ok: true } | { ok: false; error: string };
 
       if (authMode === 'oauth_user') {
         const [clientId, clientSecret, refreshToken] = await Promise.all([
-          getConfig(ctx.prisma, 'integrations.google.oauth.clientId'),
-          getConfig(ctx.prisma, 'integrations.google.oauth.clientSecret'),
-          getConfig(ctx.prisma, 'integrations.google.oauth.refreshToken'),
+          read('integrations.google.oauth.clientId'),
+          read('integrations.google.oauth.clientSecret'),
+          getConfigForForm(ctx.prisma, 'integrations.google.oauth.refreshToken'),
         ]);
-        if (!clientId || !clientSecret || !refreshToken) {
+        // No field to enter it again in: connecting the account is what writes it.
+        if (refreshToken.unreadable) {
+          return { ok: false as const, error: "Il token salvato non è leggibile: connetti di nuovo l'account." };
+        }
+        if (!clientId || !clientSecret || !refreshToken.value) {
           return { ok: false as const, error: 'Account OAuth non connesso' };
         }
-        result = await testGoogleConnection({ mode: 'oauth_user', clientId, clientSecret, refreshToken, workspaceDomain: domain });
+        result = await testGoogleConnection({ mode: 'oauth_user', clientId, clientSecret, refreshToken: refreshToken.value, workspaceDomain: domain });
       } else {
         const [serviceEmail, serviceKey, impersonateEmail] = await Promise.all([
-          getConfig(ctx.prisma, 'integrations.google.serviceEmail'),
-          getConfig(ctx.prisma, 'integrations.google.serviceKey'),
-          getConfig(ctx.prisma, 'integrations.google.impersonateEmail'),
+          read('integrations.google.serviceEmail'),
+          read('integrations.google.serviceKey'),
+          read('integrations.google.impersonateEmail'),
         ]);
         if (!serviceEmail || !serviceKey) {
           return { ok: false as const, error: 'Credenziali service account non configurate' };

@@ -5,12 +5,15 @@
  */
 
 import { Client } from 'ldapts';
+import nodemailer from 'nodemailer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as calendar from '@luke/calendar';
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
+import * as nav from '@luke/nav';
 
-import { saveConfig } from '../src/lib/configManager';
+import { saveConfig, saveConfigs } from '../src/lib/configManager';
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerAs, setupTestDb } from './helpers';
@@ -191,6 +194,244 @@ describe('storage settings', () => {
       accessKeyUnreadable: false,
       hasSecretKey: true,
       secretKeyUnreadable: false,
+    });
+  });
+});
+
+describe('mail settings', () => {
+  const FORM = {
+    host: 'smtp.test',
+    port: 587,
+    secure: false,
+    user: 'mailer',
+    pass: 'smtp-password',
+    from: 'luke@example.com',
+    baseUrl: 'https://luke.example.com',
+  };
+  const verify = vi.fn(async () => true);
+
+  beforeEach(async () => {
+    verify.mockClear();
+    vi.spyOn(nodemailer, 'createTransport').mockReturnValue({
+      verify,
+      sendMail: vi.fn(async () => ({ messageId: 'id' })),
+      close: vi.fn(),
+    } as never); // Only what the test procedure calls of a transport.
+    await caller.integrations.mail.saveConfig(FORM);
+  });
+
+  it('with every value readable the test reaches the server', async () => {
+    await caller.integrations.mail.test({});
+
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({ auth: { user: 'mailer', pass: 'smtp-password' } }));
+  });
+
+  it('the test asks again for an unreadable password, and connects to nothing', async () => {
+    await makeUnreadable('smtp.pass');
+
+    await expect(caller.integrations.mail.test({})).rejects.toMatchObject(ENTER_IT_AGAIN);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('entering the password again and saving repairs the test', async () => {
+    await makeUnreadable('smtp.pass');
+
+    await caller.integrations.mail.saveConfig({ ...FORM, pass: 'new-password' });
+    await caller.integrations.mail.test({});
+
+    expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({ auth: { user: 'mailer', pass: 'new-password' } }));
+  });
+});
+
+describe('NAV settings', () => {
+  const FORM = {
+    host: 'nav.test',
+    port: 1433,
+    database: 'NAV',
+    user: 'reader',
+    password: 'nav-password',
+    company: 'CO',
+    readOnly: true,
+    syncEnabled: false,
+  };
+  const connects = () => vi.mocked(nav.testNavConnection);
+
+  beforeEach(async () => {
+    vi.spyOn(nav, 'closePool').mockResolvedValue(undefined);
+    vi.spyOn(nav, 'testNavConnection').mockResolvedValue({ success: true, steps: [] });
+    await caller.integrations.nav.saveConfig(FORM);
+  });
+
+  it('with every value readable the test reaches the server', async () => {
+    await caller.integrations.nav.testConnection();
+
+    expect(connects()).toHaveBeenCalledWith(expect.objectContaining({ password: 'nav-password' }));
+  });
+
+  it('the test asks again for an unreadable password, and connects to nothing', async () => {
+    await makeUnreadable('integrations.nav.password');
+
+    await expect(caller.integrations.nav.testConnection()).rejects.toMatchObject(ENTER_IT_AGAIN);
+    expect(connects()).not.toHaveBeenCalled();
+  });
+
+  it('a missing password is still reported as incomplete', async () => {
+    await prisma.appConfig.delete({ where: { key: 'integrations.nav.password' } });
+
+    await expect(caller.integrations.nav.testConnection()).rejects.toThrow(/incompleta/);
+  });
+
+  it('entering the password again and saving repairs the test', async () => {
+    await makeUnreadable('integrations.nav.password');
+
+    await caller.integrations.nav.saveConfig({ ...FORM, password: 'new-password' });
+    await caller.integrations.nav.testConnection();
+
+    expect(connects()).toHaveBeenCalledWith(expect.objectContaining({ password: 'new-password' }));
+  });
+});
+
+describe('Google settings', () => {
+  const connects = () => vi.mocked(calendar.testGoogleConnection);
+
+  beforeEach(() => {
+    vi.spyOn(calendar, 'testGoogleConnection').mockResolvedValue({ ok: true });
+  });
+
+  describe('service account', () => {
+    const FORM = {
+      authMode: 'service_account',
+      domain: 'example.com',
+      calendarSyncEnabled: false,
+      serviceEmail: 'luke@project.iam.gserviceaccount.com',
+      serviceKey: 'service-key-sentinel',
+      impersonateEmail: '',
+    } as const;
+
+    beforeEach(async () => {
+      await caller.integrations.google.saveConfig(FORM);
+    });
+
+    it('with the key readable the page reports it without its value, and the test connects', async () => {
+      const config = await caller.integrations.google.getConfig();
+
+      expect(config).toMatchObject({ hasServiceKey: true, serviceKeyUnreadable: false });
+      expect(JSON.stringify(config)).not.toContain(FORM.serviceKey);
+
+      await expect(caller.integrations.google.testConnection()).resolves.toEqual({ ok: true });
+      expect(connects()).toHaveBeenCalledWith(expect.objectContaining({ serviceAccountPrivateKey: FORM.serviceKey }));
+    });
+
+    it('an unreadable key is marked, not reported as stored, and the test asks for it again', async () => {
+      await makeUnreadable('integrations.google.serviceKey');
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ hasServiceKey: false, serviceKeyUnreadable: true });
+      await expect(caller.integrations.google.testConnection()).rejects.toMatchObject(ENTER_IT_AGAIN);
+      expect(connects()).not.toHaveBeenCalled();
+    });
+
+    it('a save that leaves the key blank keeps it, still marked', async () => {
+      await makeUnreadable('integrations.google.serviceKey');
+
+      await caller.integrations.google.saveConfig({ ...FORM, domain: 'other.example.com', serviceKey: '' });
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ domain: 'other.example.com', serviceKeyUnreadable: true });
+    });
+
+    it('entering the key again and saving repairs the page and the test', async () => {
+      await makeUnreadable('integrations.google.serviceKey');
+
+      await caller.integrations.google.saveConfig({ ...FORM, serviceKey: 'new-key' });
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ hasServiceKey: true, serviceKeyUnreadable: false });
+      await expect(caller.integrations.google.testConnection()).resolves.toEqual({ ok: true });
+    });
+  });
+
+  describe('OAuth', () => {
+    const FORM = {
+      authMode: 'oauth_user',
+      domain: 'example.com',
+      calendarSyncEnabled: false,
+      oauthClientId: 'client-id',
+      oauthClientSecret: 'client-secret-sentinel',
+    } as const;
+    const TOKEN = 'refresh-token-sentinel';
+    const REDIRECT_URI = 'https://luke.example.com/api/google/oauth/callback';
+
+    beforeEach(async () => {
+      await caller.integrations.google.saveConfig(FORM);
+      await saveConfigs(prisma, [
+        { key: 'integrations.google.oauth.refreshToken', value: TOKEN, encrypt: true },
+        { key: 'integrations.google.oauth.userEmail', value: 'admin@example.com' },
+      ]);
+    });
+
+    it('with both readable the page reports them without their values, and the test connects', async () => {
+      const config = await caller.integrations.google.getConfig();
+
+      expect(config).toMatchObject({
+        hasOauthClientSecret: true,
+        oauthClientSecretUnreadable: false,
+        hasOauthToken: true,
+        oauthTokenUnreadable: false,
+      });
+      expect(JSON.stringify(config)).not.toContain(FORM.oauthClientSecret);
+      expect(JSON.stringify(config)).not.toContain(TOKEN);
+
+      await expect(caller.integrations.google.testConnection()).resolves.toEqual({ ok: true });
+      expect(connects()).toHaveBeenCalledWith(expect.objectContaining({ refreshToken: TOKEN }));
+    });
+
+    it('an unreadable client secret is marked, and the test and the connection ask for it again', async () => {
+      await makeUnreadable('integrations.google.oauth.clientSecret');
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ hasOauthClientSecret: false, oauthClientSecretUnreadable: true });
+      await expect(caller.integrations.google.testConnection()).rejects.toMatchObject(ENTER_IT_AGAIN);
+      await expect(caller.integrations.google.getOAuthUrl({ redirectUri: REDIRECT_URI })).rejects.toMatchObject(ENTER_IT_AGAIN);
+      expect(connects()).not.toHaveBeenCalled();
+    });
+
+    it('a connection already started asks again for a client secret unreadable by its return', async () => {
+      const { url } = await caller.integrations.google.getOAuthUrl({ redirectUri: REDIRECT_URI });
+      const state = new URL(url).searchParams.get('state') ?? '';
+      await makeUnreadable('integrations.google.oauth.clientSecret');
+
+      await expect(
+        caller.integrations.google.exchangeOAuthCode({ code: 'code', state, redirectUri: REDIRECT_URI }),
+      ).rejects.toMatchObject(ENTER_IT_AGAIN);
+    });
+
+    it('an unreadable token is marked with its account, and the test asks to connect again', async () => {
+      await makeUnreadable('integrations.google.oauth.refreshToken');
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({
+        hasOauthToken: false,
+        oauthTokenUnreadable: true,
+        oauthUserEmail: 'admin@example.com',
+      });
+      await expect(caller.integrations.google.testConnection()).resolves.toEqual({
+        ok: false,
+        error: "Il token salvato non è leggibile: connetti di nuovo l'account.",
+      });
+      expect(connects()).not.toHaveBeenCalled();
+    });
+
+    it('an unreadable token can be disconnected', async () => {
+      await makeUnreadable('integrations.google.oauth.refreshToken');
+
+      await caller.integrations.google.disconnectOAuth();
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ hasOauthToken: false, oauthTokenUnreadable: false, oauthUserEmail: '' });
+    });
+
+    it('entering the client secret again and saving repairs the page and the connection', async () => {
+      await makeUnreadable('integrations.google.oauth.clientSecret');
+
+      await caller.integrations.google.saveConfig({ ...FORM, oauthClientSecret: 'new-secret' });
+
+      expect(await caller.integrations.google.getConfig()).toMatchObject({ hasOauthClientSecret: true, oauthClientSecretUnreadable: false });
+      await expect(caller.integrations.google.getOAuthUrl({ redirectUri: REDIRECT_URI })).resolves.toHaveProperty('url');
     });
   });
 });

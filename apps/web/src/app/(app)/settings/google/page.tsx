@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { CheckCircle, FileJson, LogOut, Unplug } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { useForm, type UseFormReturn } from 'react-hook-form';
+import { useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { googleWorkspaceConfigSchema, type GoogleWorkspaceConfig } from '@luke/core';
@@ -14,6 +14,7 @@ import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
+import { UnreadableValueNotice } from '../../../../components/settings/UnreadableValueNotice';
 import { Alert, AlertDescription } from '../../../../components/ui/alert';
 import { Badge } from '../../../../components/ui/badge';
 import { Button } from '../../../../components/ui/button';
@@ -55,10 +56,6 @@ export default function GoogleWorkspacePage() {
   const canUpdate = can('config:update');
   const searchParams = useSearchParams();
 
-  const [hasServiceKey, setHasServiceKey] = useState(false);
-  const [hasOauthClientSecret, setHasOauthClientSecret] = useState(false);
-  const [hasOauthToken, setHasOauthToken] = useState(false);
-  const [oauthUserEmail, setOauthUserEmail] = useState('');
   const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [jsonPaste, setJsonPaste] = useState('');
@@ -76,17 +73,17 @@ export default function GoogleWorkspacePage() {
     },
   });
 
-  const authMode = form.watch('authMode');
+  const authMode = useWatch({ control: form.control, name: 'authMode' });
 
   const { data: config, isPending, error, refetch } = trpc.integrations.google.getConfig.useQuery();
+  const hasServiceKey = config?.hasServiceKey;
+  const hasOauthClientSecret = config?.hasOauthClientSecret;
+  const hasOauthToken = config?.hasOauthToken;
+  const oauthUserEmail = config?.oauthUserEmail;
+  const tokenStored = hasOauthToken || config?.oauthTokenUnreadable;
 
   useEffect(() => {
     if (!config) return;
-    setHasServiceKey(config.hasServiceKey);
-    setHasOauthClientSecret(config.hasOauthClientSecret);
-    setHasOauthToken(config.hasOauthToken);
-    setOauthUserEmail(config.oauthUserEmail);
-
     if (config.authMode === 'service_account') {
       form.reset({
         authMode: 'service_account',
@@ -111,8 +108,6 @@ export default function GoogleWorkspacePage() {
   const exchangeMutation = trpc.integrations.google.exchangeOAuthCode.useMutation({
     onSuccess: (data) => {
       toast.success(data.userEmail ? `Account Google connesso: ${data.userEmail}` : 'Account Google connesso');
-      setHasOauthToken(true);
-      setOauthUserEmail(data.userEmail ?? '');
       void utils.integrations.google.getConfig.invalidate();
     },
     onError: (error) => {
@@ -163,8 +158,6 @@ export default function GoogleWorkspacePage() {
   const disconnectMutation = trpc.integrations.google.disconnectOAuth.useMutation({
     onSuccess: () => {
       toast.success('Account Google disconnesso');
-      setHasOauthToken(false);
-      setOauthUserEmail('');
       void utils.integrations.google.getConfig.invalidate();
     },
     onError: (error) => {
@@ -354,6 +347,7 @@ export default function GoogleWorkspacePage() {
                       <FormDescription>
                         {hasServiceKey ? 'Già configurata e cifrata. Lascia vuoto per mantenerla.' : 'Estratta automaticamente dal JSON.'}
                       </FormDescription>
+                      {config?.serviceKeyUnreadable && <UnreadableValueNotice />}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -406,6 +400,7 @@ export default function GoogleWorkspacePage() {
                     <SensitiveField
                       label={<>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</>}
                       hasValue={hasOauthClientSecret}
+                      unreadable={config?.oauthClientSecretUnreadable}
                       placeholder={hasOauthClientSecret ? undefined : 'GOCSPX-...'}
                       description={
                         hasOauthClientSecret
@@ -422,18 +417,21 @@ export default function GoogleWorkspacePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium">Account connesso</p>
-                      {hasOauthToken && oauthUserEmail ? (
+                      {tokenStored ? (
                         <div className="flex items-center gap-2 mt-1">
-                          <CheckCircle size={14} className="text-green-600" />
-                          <span className="text-sm text-muted-foreground">{oauthUserEmail}</span>
-                          <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 text-xs">Connesso</Badge>
+                          {hasOauthToken && <CheckCircle size={14} className="text-green-600" />}
+                          {oauthUserEmail && <span className="text-sm text-muted-foreground">{oauthUserEmail}</span>}
+                          {hasOauthToken && <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50 text-xs">Connesso</Badge>}
                         </div>
                       ) : (
                         <p className="text-sm text-muted-foreground mt-1">Nessun account connesso</p>
                       )}
+                      {config?.oauthTokenUnreadable && (
+                        <p className="text-sm text-status-critical mt-1">Il token salvato non è leggibile: connetti di nuovo l&apos;account.</p>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                      {hasOauthToken && (
+                      {tokenStored && (
                         <Button
                           type="button"
                           variant="outline"
@@ -452,7 +450,7 @@ export default function GoogleWorkspacePage() {
                         disabled={getOAuthUrlMutation.isPending || !canUpdate}
                       >
                         <LogOut size={14} className="mr-1" />
-                        {hasOauthToken ? 'Riconnetti' : 'Connetti account Google'}
+                        {tokenStored ? 'Riconnetti' : 'Connetti account Google'}
                       </Button>
                     </div>
                   </div>

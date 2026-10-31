@@ -296,7 +296,7 @@ export async function saveConfigs(
  * reader ever sees ciphertext. A value that does not decrypt throws — never read as absent.
  *
  * **Security note**: an internal read. What leaves the process goes through a masked read
- * (`getConfigsMasked`, `listConfigsPaged`), or `hasConfig` when only existence matters.
+ * (`getConfigsMasked`, `listConfigsPaged`).
  *
  * @param prisma - Prisma client.
  * @param key - Configuration key to look up.
@@ -356,6 +356,11 @@ export function unreadableConfigError(cause: ConfigDecryptionError): TRPCError {
   });
 }
 
+/** For a read's `.catch` in a settings test or save: `unreadableConfigError`, or the error as it is. */
+export function rethrowUnreadable(error: unknown): never {
+  throw error instanceof ConfigDecryptionError ? unreadableConfigError(error) : error;
+}
+
 /**
  * `getConfig` for a settings form, which must open to let the admin repair what it cannot read.
  *
@@ -372,11 +377,6 @@ export async function getConfigForForm(
     if (error instanceof ConfigDecryptionError) return { value: null, unreadable: true };
     throw error;
   }
-}
-
-/** Whether `key` is stored, for a check that needs no value — a credential's, above all. */
-export async function hasConfig(prisma: PrismaClient, key: AppConfigKey): Promise<boolean> {
-  return (await prisma.appConfig.count({ where: { key } })) > 0;
 }
 
 /**
