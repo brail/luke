@@ -243,16 +243,17 @@ export async function resolveEventAudienceOne(
 /**
  * `P_relevance` in the forward direction: a Prisma `where` fragment restricting `CalendarEvent`
  * to what the user may see, given their already-resolved allowed function ids (`null` = admin,
- * no restriction — resolve via `getUserAllowedFunctionIds`/`getUserAllowedIds`/
- * `brandScope.service.ts`'s `getAllowedFunctionIds`, whichever the caller already has in hand).
- * The caller must still apply brand filtering separately (`filterAllowedBrandIds`/
- * `assertBrandAccess`), this only narrows within already-brand-allowed calendars.
+ * no restriction: an empty fragment — resolve via `getUserAllowedFunctionIds`/`getUserAllowedIds`,
+ * or `brandScope.service.ts`'s `callerEventVisibility` for a request's caller). Compose it with
+ * `AND: [fragment]`, so that it cannot overwrite a key of the `where` it joins. The caller must
+ * still apply brand filtering separately (`filterAllowedBrandIds`/`assertBrandAccess`), this only
+ * narrows within already-brand-allowed calendars.
  */
 export function eventVisibilityWhere(
   userId: string,
   functionIds: string[] | null
-): Prisma.CalendarEventWhereInput | null {
-  if (functionIds === null) return null;
+): Prisma.CalendarEventWhereInput {
+  if (functionIds === null) return {};
 
   return {
     OR: [

@@ -421,17 +421,15 @@ export async function rescheduleMilestone(
  *   to this specific company function are returned, on top of (not instead of) the user's own
  *   restriction.
  * @param allowedFunctionIds - The caller's allowed function ids (`null` = admin, unrestricted),
- *   already resolved by the caller — see `eventVisibilityWhere`'s doc comment. Omitted only by
- *   call sites pre-dating this restriction that haven't been updated yet; treated as `[]` (most
- *   restrictive) rather than defaulting open.
+ *   already resolved by the caller — see `eventVisibilityWhere`'s doc comment.
  */
 export async function listMilestonesDb(
   seasonId: string,
   brandIds: string[],
   userId: string,
   prisma: PrismaClient,
-  functionId?: string,
-  allowedFunctionIds?: string[] | null
+  functionId: string | undefined,
+  allowedFunctionIds: string[] | null
 ) {
   const [calendars, timeZone] = await Promise.all([
     prisma.seasonCalendar.findMany({
@@ -440,9 +438,6 @@ export async function listMilestonesDb(
     }),
     getConfigOrDefault(prisma, 'app.defaultTimezone'),
   ]);
-  // `undefined` (parameter omitted) and `null` (admin, unrestricted) are distinct — collapsing
-  // them with `??` would treat an admin as having no functions instead of no restriction.
-  const visibilityWhere = eventVisibilityWhere(userId, allowedFunctionIds === undefined ? [] : allowedFunctionIds);
   const calendarIds = calendars.map(c => c.id);
   const calendarBrandMap = new Map(calendars.map(c => [c.id, c.brandId]));
 
@@ -452,7 +447,7 @@ export async function listMilestonesDb(
       ...(functionId
         ? { visibilities: { some: { functionId } } }
         : {}),
-      ...(visibilityWhere ?? {}),
+      AND: [eventVisibilityWhere(userId, allowedFunctionIds)],
     },
     include: {
       visibilities: true,

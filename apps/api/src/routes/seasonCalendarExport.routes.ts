@@ -78,8 +78,8 @@ async function fetchExportMilestones(
   userId: string,
   prisma: PrismaClient,
   timeZone: string,
-  functionId?: string,
-  allowedFunctionIds?: string[] | null
+  functionId: string | undefined,
+  allowedFunctionIds: string[] | null
 ): Promise<ExportMilestone[]> {
   const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId, allowedFunctionIds);
 

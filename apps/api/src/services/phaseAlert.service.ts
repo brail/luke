@@ -399,18 +399,18 @@ export interface HolidayOverlapEntry {
  * Names events, so it is a calendar read path (ADR-014): only the events `visibleTo` lets the
  * caller see are listed.
  *
- * @param visibleTo - The caller's `eventVisibilityWhere`; `null` for an admin, who sees every event.
+ * @param visibleTo - The caller's `eventVisibilityWhere`.
  * @returns One entry per (event, reason) — an event under `BOTH` can appear once for the company
  *   calendar and once per distinct vendor country among the group's rows.
  */
 export async function resolveHolidayOverlapsForGroup(
   planningGroupId: string,
   prisma: PrismaClient,
-  visibleTo: Prisma.CalendarEventWhereInput | null,
+  visibleTo: Prisma.CalendarEventWhereInput,
 ): Promise<HolidayOverlapEntry[]> {
   const [events, rows, timeZone] = await Promise.all([
     prisma.calendarEvent.findMany({
-      where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null }, ...visibleTo },
+      where: { planningGroupId, cancelledAt: null, phaseId: { not: null }, calendarDaysRelevance: { not: null }, AND: [visibleTo] },
       select: { id: true, title: true, startAt: true, allDay: true, calendarDaysRelevance: true },
     }),
     prisma.collectionLayoutRow.findMany({

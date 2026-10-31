@@ -34,6 +34,7 @@ import { TRPCError } from '@trpc/server';
 import { type Role } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
+import { eventVisibilityWhere } from './calendarAudience.service';
 import { getUserAllowedIds, type UserAllowedIds } from './context.service';
 
 
@@ -49,6 +50,16 @@ export interface BrandScopeCtx {
   session: { user: { id: string; role: string } } | null;
   /** See `allowedTeamAccess`. Present on `Context`, optional elsewhere. */
   _allowedTeamAccessPromise?: Promise<UserAllowedIds>;
+}
+
+function requireSession(ctx: BrandScopeCtx): NonNullable<BrandScopeCtx['session']> {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: 'UNAUTHORIZED',
+      message: 'Devi essere autenticato per accedere a questa risorsa',
+    });
+  }
+  return ctx.session;
 }
 
 /**
@@ -67,20 +78,16 @@ export interface BrandScopeCtx {
  * the rejection. That's intentional — the request must fail, not retry.
  */
 async function allowedTeamAccess(ctx: BrandScopeCtx): Promise<UserAllowedIds> {
-  if (!ctx.session) {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Devi essere autenticato per accedere a questa risorsa',
-    });
-  }
+  const { user } = requireSession(ctx);
 
   // Watch out with `{ ...ctx, prisma: tx }`: the spread copies the slot by value, and
   // the `??=` would write to the copy. If a transaction client is needed, pass it
   // as an explicit parameter.
   ctx._allowedTeamAccessPromise ??= getUserAllowedIds(
-    ctx.session.user.id,
+    user.id,
     ctx.prisma,
-    ctx.session.user.role as Role
+    // This context types the role as a string; the session it comes from is signed with a `Role`.
+    user.role as Role
   );
 
   return ctx._allowedTeamAccessPromise;
@@ -96,6 +103,11 @@ async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
  */
 export async function getAllowedFunctionIds(ctx: BrandScopeCtx): Promise<string[] | null> {
   return (await allowedTeamAccess(ctx)).functionIds;
+}
+
+/** `eventVisibilityWhere` for the requesting user: the events they may see within an allowed brand. */
+export async function callerEventVisibility(ctx: BrandScopeCtx): Promise<Prisma.CalendarEventWhereInput> {
+  return eventVisibilityWhere(requireSession(ctx).user.id, await getAllowedFunctionIds(ctx));
 }
 
 /**

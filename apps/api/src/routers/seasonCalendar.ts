@@ -51,13 +51,14 @@ import { router, protectedProcedure } from '../lib/trpc.js';
 import {
   assertBrandAccess,
   assertBrandAccessAll,
+  callerEventVisibility,
   filterAllowedBrandIds,
   getAllowedFunctionIds,
   resolveCalendarBrandAccess,
   resolveEventBrandAccess,
   resolvePlanningGroupBrandAccess,
 } from '../services/brandScope.service.js';
-import { eventVisibilityWhere, listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
+import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
 import {
   syncOneMilestone,
@@ -197,7 +198,7 @@ export const seasonCalendarRouter = router({
       return resolveHolidayOverlapsForGroup(
         input.planningGroupId,
         ctx.prisma,
-        eventVisibilityWhere(ctx.session.user.id, await getAllowedFunctionIds(ctx)),
+        await callerEventVisibility(ctx),
       );
     }),
 
@@ -251,7 +252,7 @@ export const seasonCalendarRouter = router({
       } as const;
       const event = 'eventId' in input
         ? await ctx.prisma.calendarEvent.findFirst({
-            where: { id: input.eventId, ...eventVisibilityWhere(ctx.session.user.id, await getAllowedFunctionIds(ctx)) },
+            where: { id: input.eventId, AND: [await callerEventVisibility(ctx)] },
             select: { id: true, title: true, startAt: true, endAt: true, allDay: true, calendar: { select: calendarSelect } },
           })
         : null;
