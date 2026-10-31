@@ -150,7 +150,7 @@ caveat about verifying it against the actual backend.
 | Permission | Role | Operation |
 |------------|------|-----------|
 | `collection_layout:revise` | editor, admin | Create revisions manually |
-| `collection_layout:view_revisions` | editor, viewer, admin | View history and details |
+| `collection_layout:view_revisions` | editor, viewer, admin | View history and details, an automatic revision as described in [Automatic Revisions](#automatic-revisions-causemilestone) |
 | `collection_layout:configure` | admin | Manage revision types and the other catalog options ([ADR-038](decisions/038-resource-action-permissions-grants-follow-section-visibility.md)) |
 
 ---
@@ -190,6 +190,11 @@ and retries on its next hourly tick, so an event still failing when it leaves th
 7-day lookback window gets no `MILESTONE_DATA` revision; the phase trigger logs
 it and does not retry, and the group's next phase change snapshots the layout as
 it is then.
+
+The note of an automatic revision names its event. A reader who cannot list that
+event gets `milestoneId: null` and the note `Evento riservato`, in the revision
+pages and both exports; once the event is deleted, only an admin reads the
+original. The stored note does not change (ADR-040).
 
 **Known gap:** until 2026-09-26 automatic revisions stored keys of the live
 `collection-row-pictures` bucket, while the revision page and the revision

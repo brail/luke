@@ -201,7 +201,10 @@ Every date is read in the business time zone. The deadline is always the
 event's live `endAt ?? startAt` (`deadlineDay` / `deadlineReachedAt`) and never
 the frozen baseline. Each result carries `daysMode` (`'calendar'` or
 `'working'`) and `relevantCountryCodes`, so that the UI can state the unit. The
-next-phase entry carries them too, but the UI does not render its unit.
+next-phase entry carries them too, but the UI does not render its unit. For an
+event the caller cannot list, the API answer carries `null` counts and
+placeholder unit fields, the band stays, and the UI shows `Evento riservato`
+(ADR-040).
 
 Alert bands (`collectionControl.alertThresholds`) do not know which unit they
 receive: the same `minDaysToDeadline` / `maxDaysToDeadline` bounds classify both
@@ -318,8 +321,9 @@ the countdown, with these rules:
 
 - It checks only events that are not cancelled, are tagged with a phase and have
   a relevance set.
-- It lists only the events the caller can see (`eventVisibilityWhere`, ADR-014);
-  an admin sees every one.
+- It checks every such event of the group, because the freeze covers them all.
+  `maskHolidayOverlaps` names only the events the caller can see and counts the
+  others as `hiddenCount` (ADR-040); an admin sees every one.
 - It checks the date of the event's `startAt` (an all-day value's own date, a
   timed one read in the business zone), not its deadline.
 - An event on a weekend is reported once, as `weekend`.
