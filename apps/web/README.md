@@ -193,9 +193,10 @@ Configuration pages under `settings/` share the components in
 
 Forms use React Hook Form with the shared Zod schema from `@luke/core`.
 `settings/mail/page.tsx` is the reference page. A secret never travels back to
-the browser: the API answers with a flag such as `hasPassword` or
-`hasSecretKey`, `SensitiveField` shows a masked placeholder, and leaving the
-field blank keeps the stored value.
+the browser: the API answers with a flag such as `hasBindPassword` or
+`hasSecretKey`, or the page derives one from a masked row, as this one does for
+`hasPassword`. `SensitiveField` shows a masked placeholder, and leaving the field
+blank keeps the stored value.
 A stored value that does not decrypt, as after a restore under another master
 key, does not stop the LDAP page, nor the storage and Google pages for their
 credentials: the field comes back blank and marked, and the test buttons ask for

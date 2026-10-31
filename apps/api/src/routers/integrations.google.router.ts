@@ -45,11 +45,11 @@ function consumeOAuthState(userId: string, state: string): boolean {
 
 export const googleRouter = router({
   /**
-   * Returns the current Google Workspace integration configuration (secrets masked).
+   * Returns the current Google Workspace integration configuration: each secret as flags, never its value.
    *
    * @auth {config:read}
    * @input {none}
-   * @output {{ authMode, domain, calendarSyncEnabled, serviceEmail, hasServiceKey, oauthClientId, hasOauthToken, ... }}
+   * @output {{ authMode, domain, calendarSyncEnabled, serviceEmail, hasServiceKey, serviceKeyUnreadable, oauthClientId, hasOauthToken, oauthTokenUnreadable, ... }}
    */
   getConfig: protectedProcedure
     .use(requirePermission('config:read'))
