@@ -4,6 +4,8 @@ import { render } from 'vitest-browser-react';
 import { UNREADABLE_VALUE_MESSAGE as NOTICE } from '../../../../components/settings/UnreadableValueNotice';
 import GoogleWorkspacePage from '../google/page';
 import LdapSettingsPage from '../ldap/page';
+import MailSettingsPage from '../mail/page';
+import NavSettingsPage from '../nav/page';
 import StoragePage from '../storage/page';
 
 /**
@@ -63,6 +65,7 @@ const TOKEN_NOTICE = "Il token salvato non è leggibile: connetti di nuovo l'acc
 const h = vi.hoisted(() => ({
   ldap: {} as Record<string, unknown>,
   google: {} as Record<string, unknown>,
+  passwordUnreadable: false,
   refetchLdap: vi.fn(),
   saveLdap: vi.fn(),
   testConnection: vi.fn(),
@@ -78,10 +81,38 @@ vi.mock('next-auth/react', () => ({
 }));
 vi.mock('../../../../lib/trpc', () => {
   const idle = { useMutation: () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }) };
+  // Stable across renders: the pages reset their form when these change.
+  const storedRows = {
+    items: [
+      { key: 'smtp.pass', valuePreview: '••••' },
+      { key: 'integrations.nav.password', valuePreview: '••••' },
+    ],
+  };
+  const noRows: unknown[] = [];
+  const passwordState = {
+    useQuery: () => ({
+      data: { hasPassword: !h.passwordUnreadable, passwordUnreadable: h.passwordUnreadable },
+    }),
+  };
   return {
     trpc: {
-      useUtils: () => ({ storage: { getConfig: { invalidate: vi.fn() } } }),
+      useUtils: () => ({
+        storage: { getConfig: { invalidate: vi.fn() } },
+        config: { invalidate: vi.fn() },
+        integrations: {
+          mail: { getPasswordState: { invalidate: vi.fn() } },
+          nav: { getPasswordState: { invalidate: vi.fn() } },
+        },
+      }),
+      config: {
+        list: {
+          useQuery: () => ({ data: storedRows, isPending: false, error: null, refetch: vi.fn() }),
+        },
+        getMultiple: { useQuery: () => ({ data: noRows, isPending: false, error: null, refetch: vi.fn() }) },
+      },
       integrations: {
+        mail: { getPasswordState: passwordState, saveConfig: idle, test: idle },
+        nav: { getPasswordState: passwordState, saveConfig: idle, testConnection: idle },
         auth: {
           getLdapConfig: {
             useQuery: () => ({ data: h.ldap, isPending: false, error: null, refetch: h.refetchLdap }),
@@ -119,6 +150,7 @@ vi.mock('../../../../lib/trpc', () => {
 beforeEach(() => {
   h.ldap = LDAP;
   h.google = GOOGLE;
+  h.passwordUnreadable = false;
 });
 
 afterEach(() => {
@@ -204,6 +236,49 @@ test('Google: an unreadable client secret is marked', async () => {
   const screen = await render(<GoogleWorkspacePage />);
 
   await expect.element(screen.getByText(NOTICE)).toBeVisible();
+});
+
+test('Google: a value a blank save would keep carries no required mark', async () => {
+  h.google = { ...GOOGLE, hasOauthClientSecret: false, oauthClientSecretUnreadable: true };
+
+  const screen = await render(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText(/^OAuth Client Secret/)).toBeVisible();
+  expect(screen.getByText(/^OAuth Client Secret/).element().textContent).not.toContain('*');
+
+  h.google = { ...GOOGLE, authMode: 'service_account', serviceKeyUnreadable: true };
+  await screen.rerender(<GoogleWorkspacePage />);
+
+  await expect.element(screen.getByText(/^Private Key/)).toBeVisible();
+  expect(screen.getByText(/^Private Key/).element().textContent).not.toContain('*');
+});
+
+test.each([
+  ['mail', MailSettingsPage, 'Password SMTP'],
+  ['NAV', NavSettingsPage, 'Password SQL'],
+])('%s: an unreadable password is marked, not shown as stored, and can be entered again', async (_page, Page, label) => {
+  h.passwordUnreadable = true;
+
+  const screen = await render(<Page />);
+
+  await expect.element(screen.getByText(NOTICE)).toBeVisible();
+  expect(screen.getByText(new RegExp(`^${label}`)).element().textContent).not.toContain('*');
+  const field = screen.getByLabelText(new RegExp(`^${label}`));
+  await expect.element(field).toBeEnabled();
+  await expect.element(field).not.toHaveAttribute('placeholder', expect.stringContaining('già configurato'));
+});
+
+test.each([
+  ['mail', MailSettingsPage, 'Password SMTP'],
+  ['NAV', NavSettingsPage, 'Password SQL'],
+])('%s: a readable password shows as stored, with no notice', async (_page, Page, label) => {
+  const screen = await render(<Page />);
+
+  await expect.element(screen.getByLabelText(new RegExp(`^${label}`))).toHaveAttribute(
+    'placeholder',
+    expect.stringContaining('già configurato')
+  );
+  expect(screen.getByText(NOTICE).elements()).toHaveLength(0);
 });
 
 test('Google: an unreadable token names its account, is not connected, and can be replaced or removed', async () => {

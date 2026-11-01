@@ -12,7 +12,7 @@ import { createSyncRequest, getNavDbConfig, getPool, closePool, navDateOrNull, r
 
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfig, saveConfigs, unreadableConfigError } from '../lib/configManager';
+import { ConfigDecryptionError, getConfig, getConfigForForm, rethrowUnreadable, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
@@ -51,7 +51,7 @@ const navSyncRouter = router({
     .use(requirePermission('config:read'))
     .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .query(async ({ input, ctx }) => {
-      const config = await getNavDbConfig(ctx.prisma, getConfig);
+      const config = await getNavDbConfig(ctx.prisma, getConfig).catch(rethrowUnreadable);
       const pool = await getPool(config);
 
       if (input.entity === 'brand') {
@@ -297,6 +297,12 @@ const navSyncRouter = router({
     .use(requirePermission('config:update'))
     .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .mutation(async ({ input, ctx }) => {
+      // Before the budget below: the answer to a value to enter again must not spend the one attempt.
+      // Anything else this read refuses is the sync's own to report.
+      await getNavDbConfig(ctx.prisma, getConfig).catch((error: unknown) => {
+        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
+      });
+
       // One manual sync per entity per window, not one for all three: syncing vendors must not
       // block brands. Keyed by user and entity here, where the entity is known, whatever `keyBy`
       // the policy carries (the AppConfig override has no writer). The scheduler lock below keeps
@@ -433,6 +439,21 @@ const navSeasonsRouter = router({
 
 export const navRouter = router({
   /**
+   * Whether a password is stored, and whether it does not decrypt, for the settings page to show:
+   * the masked rows it reads cannot tell. An unreadable one reports as not stored.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ hasPassword: boolean, passwordUnreadable: boolean }}
+   */
+  getPasswordState: protectedProcedure
+    .use(requirePermission('config:read'))
+    .query(async ({ ctx }) => {
+      const { value, unreadable } = await getConfigForForm(ctx.prisma, 'integrations.nav.password');
+      return { hasPassword: !!value, passwordUnreadable: unreadable };
+    }),
+
+  /**
    * Saves the NAV SQL Server connection config to AppConfig; resets the mssql pool if credentials changed.
    *
    * @auth {config:update}
@@ -449,14 +470,15 @@ export const navRouter = router({
         // Password updated only if the field isn't empty (form doesn't touch the field → empty string)
         const passwordUpdated = !!input.password && input.password.length > 0;
 
-        // Reads the current values to detect connection changes
-        const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = await Promise.all([
-          getConfig(ctx.prisma, 'integrations.nav.host'),
-          getConfig(ctx.prisma, 'integrations.nav.port'),
-          getConfig(ctx.prisma, 'integrations.nav.database'),
-          getConfig(ctx.prisma, 'integrations.nav.user'),
-          getConfig(ctx.prisma, 'integrations.nav.company'),
-        ]);
+        // Reads the current values to detect connection changes. One that does not decrypt counts as
+        // changed: the save replaces it with the submitted value.
+        const [prevHost, prevPort, prevDatabase, prevUser, prevCompany] = (await Promise.all([
+          getConfigForForm(ctx.prisma, 'integrations.nav.host'),
+          getConfigForForm(ctx.prisma, 'integrations.nav.port'),
+          getConfigForForm(ctx.prisma, 'integrations.nav.database'),
+          getConfigForForm(ctx.prisma, 'integrations.nav.user'),
+          getConfigForForm(ctx.prisma, 'integrations.nav.company'),
+        ])).map(stored => stored.value);
 
         const connectionChanged =
           prevHost !== input.host ||

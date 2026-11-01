@@ -161,7 +161,7 @@ describe('NAV closes the old pool only once the new configuration is committed',
 
   it('runs the whole save through the NAV configuration queue', async () => {
     vi.spyOn(nav, 'closePool').mockResolvedValue(undefined);
-    const getConfigSpy = vi.spyOn(configManager, 'getConfig');
+    const readSpy = vi.spyOn(configManager, 'getConfigForForm');
     const writes = vi.spyOn(configManager, 'saveConfigs');
     const pause = vi.spyOn(navScheduler, 'pauseNavScheduler');
     let held: (() => Promise<unknown>) | undefined;
@@ -177,11 +177,11 @@ describe('NAV closes the old pool only once the new configuration is committed',
     await vi.waitFor(() => expect(held).toBeDefined());
 
     // Nothing of the save has started outside the queued operation: no read, pause or write.
-    expect(getConfigSpy).not.toHaveBeenCalled();
+    expect(readSpy).not.toHaveBeenCalled();
     expect(pause).not.toHaveBeenCalled();
     expect(writes).not.toHaveBeenCalled();
     await held!();
-    expect(getConfigSpy).toHaveBeenCalled();
+    expect(readSpy).toHaveBeenCalled();
     expect(writes).toHaveBeenCalledOnce();
   });
 });

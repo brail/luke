@@ -116,11 +116,9 @@ history.
   throws at runtime at the point of use, not at boot. Reset them by hand with
   RC-appropriate values for each integration RC needs; until then LDAP login,
   mail delivery, S3 storage, NAV sync, Google sync and GitHub feedback fail on RC.
-  The LDAP, storage and Google settings pages open with an unreadable credential
-  marked, and saving a new value there repairs it; Google's refresh token is
-  repaired by connecting the account again. The mail and NAV pages show such a
-  password as stored, with no mark: enter it again there; their test buttons ask
-  for it.
+  The LDAP, storage, Google, mail and NAV settings pages open with an unreadable
+  credential marked, and saving a new value there repairs it; Google's refresh
+  token is repaired by connecting the account again.
 - Only encrypted values are protected that way. A credential in
   `SECRET_CONFIG_KEYS` is always stored encrypted, but the generic configuration
   API stores any other key unencrypted unless asked, and a credential an earlier

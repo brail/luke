@@ -40,7 +40,6 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 export default function MailPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
-  const [hasPassword, setHasPassword] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>(
     'idle'
   );
@@ -82,7 +81,6 @@ export default function MailPage() {
       const smtpPort = configs.find(c => c.key === 'smtp.port');
       const smtpSecure = configs.find(c => c.key === 'smtp.secure');
       const smtpUser = configs.find(c => c.key === 'smtp.user');
-      const smtpPass = configs.find(c => c.key === 'smtp.pass');
       const smtpFrom = configs.find(c => c.key === 'smtp.from');
 
       form.reset({
@@ -96,19 +94,18 @@ export default function MailPage() {
         // encrypted cannot be shown, and the empty field keeps it on save.
         baseUrl: baseUrlEncrypted ? '' : baseUrlConfig?.[0]?.value || process.env.NEXT_PUBLIC_FRONTEND_URL || '',
       });
-
-      // Whether the password is already configured
-      setHasPassword(!!smtpPass);
     }
   }, [existingConfigs, baseUrlConfig, baseUrlEncrypted, form]);
 
+  const { data: passwordState } = trpc.integrations.mail.getPasswordState.useQuery();
+  const hasPassword = passwordState?.hasPassword;
   const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
     onSuccess: () => {
       // The cached rows predate the save: coming back to the page must not refill the old values.
       void utils.config.invalidate();
+      void utils.integrations.mail.getPasswordState.invalidate();
       toast.success('Configurazione SMTP salvata con successo');
-      setHasPassword(true);
       setTestStatus('idle');
       setTestMessage('');
     },
@@ -296,7 +293,7 @@ export default function MailPage() {
                   label={
                     <>
                       Password SMTP{' '}
-                      {!hasPassword && <span className="text-red-500">*</span>}
+                      {passwordState && !hasPassword && !passwordState.passwordUnreadable && <span className="text-red-500">*</span>}
                     </>
                   }
                   description={
@@ -305,9 +302,8 @@ export default function MailPage() {
                       : 'Per Gmail: usa App Password (non la password normale)'
                   }
                   hasValue={hasPassword}
-                  placeholder={
-                    hasPassword ? undefined : 'App Password o password account'
-                  }
+                  unreadable={passwordState?.passwordUnreadable}
+                  placeholder="App Password o password account"
                   field={field}
                 />
               )}

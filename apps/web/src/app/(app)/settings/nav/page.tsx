@@ -33,7 +33,6 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 export default function NavSettingsPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
-  const [hasPassword, setHasPassword] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
 
@@ -67,7 +66,6 @@ export default function NavSettingsPage() {
       const port = find('integrations.nav.port');
       const database = find('integrations.nav.database');
       const user = find('integrations.nav.user');
-      const password = find('integrations.nav.password');
       const company = find('integrations.nav.company');
       const readOnly = find('integrations.nav.readOnly');
       const syncEnabled = find('integrations.nav.syncEnabled');
@@ -82,17 +80,17 @@ export default function NavSettingsPage() {
         readOnly: readOnly?.valuePreview !== 'false',
         syncEnabled: syncEnabled?.valuePreview === 'true',
       });
-
-      setHasPassword(!!password);
     }
   }, [existingConfigs, form]);
 
+  const { data: passwordState } = trpc.integrations.nav.getPasswordState.useQuery();
+  const hasPassword = passwordState?.hasPassword;
   const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
     onSuccess: data => {
       // The cached rows predate the save: coming back to the page must not refill the old values.
       void utils.config.invalidate();
-      setHasPassword(true);
+      void utils.integrations.nav.getPasswordState.invalidate();
       setTestStatus('idle');
       setTestMessage('');
       if (data.connectionChanged) {
@@ -236,11 +234,12 @@ export default function NavSettingsPage() {
                   label={
                     <>
                       Password SQL{' '}
-                      {!hasPassword && <span className="text-red-500">*</span>}
+                      {passwordState && !hasPassword && !passwordState.passwordUnreadable && <span className="text-red-500">*</span>}
                     </>
                   }
                   hasValue={hasPassword}
-                  placeholder={hasPassword ? undefined : 'Password utente SQL Server'}
+                  unreadable={passwordState?.passwordUnreadable}
+                  placeholder="Password utente SQL Server"
                   field={field}
                 />
               )}

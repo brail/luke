@@ -233,6 +233,16 @@ describe('mail settings', () => {
     expect(verify).not.toHaveBeenCalled();
   });
 
+  it('the page is told an unreadable password from a stored one, until it is entered again', async () => {
+    await expect(caller.integrations.mail.getPasswordState()).resolves.toEqual({ hasPassword: true, passwordUnreadable: false });
+
+    await makeUnreadable('smtp.pass');
+    await expect(caller.integrations.mail.getPasswordState()).resolves.toEqual({ hasPassword: false, passwordUnreadable: true });
+
+    await caller.integrations.mail.saveConfig({ ...FORM, pass: 'new-password' });
+    await expect(caller.integrations.mail.getPasswordState()).resolves.toEqual({ hasPassword: true, passwordUnreadable: false });
+  });
+
   it('entering the password again and saving repairs the test', async () => {
     await makeUnreadable('smtp.pass');
 
@@ -279,6 +289,36 @@ describe('NAV settings', () => {
     await prisma.appConfig.delete({ where: { key: 'integrations.nav.password' } });
 
     await expect(caller.integrations.nav.testConnection()).rejects.toThrow(/incompleta/);
+  });
+
+  it('the page is told an unreadable password from a stored one, until it is entered again', async () => {
+    await expect(caller.integrations.nav.getPasswordState()).resolves.toEqual({ hasPassword: true, passwordUnreadable: false });
+
+    await makeUnreadable('integrations.nav.password');
+    await expect(caller.integrations.nav.getPasswordState()).resolves.toEqual({ hasPassword: false, passwordUnreadable: true });
+
+    await caller.integrations.nav.saveConfig({ ...FORM, password: 'new-password' });
+    await expect(caller.integrations.nav.getPasswordState()).resolves.toEqual({ hasPassword: true, passwordUnreadable: false });
+  });
+
+  it('the preview and the sync ask again for an unreadable password, and connect to nothing', async () => {
+    const getPool = vi.spyOn(nav, 'getPool');
+    await makeUnreadable('integrations.nav.password');
+
+    await expect(caller.integrations.nav.sync.preview({ entity: 'brand' })).rejects.toMatchObject(ENTER_IT_AGAIN);
+    // Twice: the answer spends none of the one attempt the sync has per window.
+    await expect(caller.integrations.nav.sync.run({ entity: 'brand' })).rejects.toMatchObject(ENTER_IT_AGAIN);
+    await expect(caller.integrations.nav.sync.run({ entity: 'brand' })).rejects.toMatchObject(ENTER_IT_AGAIN);
+    expect(getPool).not.toHaveBeenCalled();
+  });
+
+  it('a save replaces a connection key stored encrypted that does not decrypt', async () => {
+    await makeUnreadable('integrations.nav.host');
+
+    await expect(caller.integrations.nav.saveConfig(FORM)).resolves.toMatchObject({ connectionChanged: true });
+
+    await caller.integrations.nav.testConnection();
+    expect(connects()).toHaveBeenCalledWith(expect.objectContaining({ host: 'nav.test' }));
   });
 
   it('entering the password again and saving repairs the test', async () => {

@@ -9,13 +9,28 @@ import nodemailer from 'nodemailer';
 import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfigsMasked, saveConfigs, unreadableConfigError } from '../lib/configManager';
+import { ConfigDecryptionError, getConfigForForm, getConfigsMasked, saveConfigs, unreadableConfigError } from '../lib/configManager';
 import { toTRPCError, IntegrationErrorHandler } from '../lib/errorHandler';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 
 export const mailRouter = router({
+  /**
+   * Whether a password is stored, and whether it does not decrypt, for the settings page to show:
+   * the masked rows it reads cannot tell. An unreadable one reports as not stored.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ hasPassword: boolean, passwordUnreadable: boolean }}
+   */
+  getPasswordState: protectedProcedure
+    .use(requirePermission('config:read'))
+    .query(async ({ ctx }) => {
+      const { value, unreadable } = await getConfigForForm(ctx.prisma, 'smtp.pass');
+      return { hasPassword: !!value, passwordUnreadable: unreadable };
+    }),
+
   /**
    * Saves the SMTP configuration to AppConfig; password is stored encrypted.
    *

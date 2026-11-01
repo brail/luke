@@ -333,7 +333,7 @@ export default function GoogleWorkspacePage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Private Key {!hasServiceKey && <span className="text-red-500">*</span>}
+                        Private Key {!hasServiceKey && !config?.serviceKeyUnreadable && <span className="text-red-500">*</span>}
                       </FormLabel>
                       <FormControl>
                         <Textarea
@@ -398,7 +398,7 @@ export default function GoogleWorkspacePage() {
                   name="oauthClientSecret"
                   render={({ field }) => (
                     <SensitiveField
-                      label={<>OAuth Client Secret {!hasOauthClientSecret && <span className="text-red-500">*</span>}</>}
+                      label={<>OAuth Client Secret {!hasOauthClientSecret && !config?.oauthClientSecretUnreadable && <span className="text-red-500">*</span>}</>}
                       hasValue={hasOauthClientSecret}
                       unreadable={config?.oauthClientSecretUnreadable}
                       placeholder={hasOauthClientSecret ? undefined : 'GOCSPX-...'}

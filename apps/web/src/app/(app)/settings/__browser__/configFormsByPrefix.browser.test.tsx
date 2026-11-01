@@ -35,7 +35,14 @@ vi.mock('../../../../lib/trpc', () => {
   };
   const baseUrl = { ...settled, data: [{ key: 'app.baseUrl', value: 'https://luke.example.test', found: true }] };
   const baseUrlFailed = { ...settled, data: undefined, error: new Error('rete') };
-  const utils = { config: { invalidate: vi.fn() } };
+  const passwordState = { useQuery: () => ({ data: { hasPassword: true, passwordUnreadable: false } }) };
+  const utils = {
+    config: { invalidate: vi.fn() },
+    integrations: {
+      mail: { getPasswordState: { invalidate: vi.fn() } },
+      nav: { getPasswordState: { invalidate: vi.fn() } },
+    },
+  };
   return {
     trpc: {
       useUtils: () => utils,
@@ -48,8 +55,8 @@ vi.mock('../../../../lib/trpc', () => {
         },
       },
       integrations: {
-        mail: { saveConfig: save, test: mutation },
-        nav: { saveConfig: save, testConnection: mutation },
+        mail: { getPasswordState: passwordState, saveConfig: save, test: mutation },
+        nav: { getPasswordState: passwordState, saveConfig: save, testConnection: mutation },
       },
     },
   };
