@@ -20,10 +20,9 @@ import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db'
 import { getConfigOrDefault } from '../lib/configManager';
 import { rootLogger } from '../lib/logger';
 
+import { callerEventVisibility, type BrandScopeCtx } from './brandScope.service';
 import { eventVisibilityWhere } from './calendarAudience.service';
 import { visibilityOf } from './eventMasking.service';
-
-import type { BrandScopeCtx } from './brandScope.service';
 
 const MS_PER_DAY = 86_400_000;
 const logger = rootLogger.child({ module: 'season-calendar' });
@@ -1082,12 +1081,12 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
 // ─── Sync status ──────────────────────────────────────────────────────────────
 
 /**
- * Returns Google Calendar sync status for a SeasonCalendar,
+ * Returns Google Calendar sync status for a SeasonCalendar, over the events the caller can list,
  * aggregated by company function: event count and last sync timestamp.
  */
-export async function getSyncStatus(calendarId: string, prisma: PrismaClient) {
-  const mappings = await prisma.googleEventMapping.findMany({
-    where: { event: { calendarId } },
+export async function getSyncStatus(calendarId: string, ctx: BrandScopeCtx) {
+  const mappings = await ctx.prisma.googleEventMapping.findMany({
+    where: { event: { calendarId, AND: [await callerEventVisibility(ctx)] } },
     orderBy: { lastSyncedAt: 'desc' as const },
   });
 

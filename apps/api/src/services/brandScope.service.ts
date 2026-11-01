@@ -194,8 +194,8 @@ export async function filterAllowedBrandIds(
 //
 // Chains: layout → `brandId` (0 hop) · group and row → `collectionLayout.brandId`
 // (1 hop, `collectionLayoutId` is denormalized on the row) · quotation →
-// `row.collectionLayout.brandId` (2 hop) · season calendar → `brandId` (0 hop) · calendar event and
-// planning group → `calendar.brandId` (1 hop).
+// `row.collectionLayout.brandId` (2 hop) · season calendar and pricing parameter set → `brandId`
+// (0 hop) · calendar event and planning group → `calendar.brandId` (1 hop).
 
 /** Layout, by `collectionLayoutId`. */
 export async function resolveLayoutBrandAccess(
@@ -432,6 +432,20 @@ export async function resolvePlanningGroupBrandAccess(
 
   await assertBrandAccess(ctx, group.calendar.brandId);
   return group;
+}
+
+/** Pricing parameter set, by `setId`. */
+export async function resolveParameterSetBrandAccess(ctx: BrandScopeCtx, setId: string) {
+  const set = await ctx.prisma.pricingParameterSet.findUnique({
+    where: { id: setId },
+    select: { brandId: true },
+  });
+  if (!set) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'Set di parametri non trovato' });
+  }
+
+  await assertBrandAccess(ctx, set.brandId);
+  return set;
 }
 
 /** Season calendar, by `calendarId`. */

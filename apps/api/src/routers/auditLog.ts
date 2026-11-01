@@ -4,6 +4,8 @@
  * pricing parameter set) and the full admin browse/export page.
  */
 
+import { TRPCError } from '@trpc/server';
+
 import {
   AuditLogFiltersSchema,
   AuditLogGetLastChangeInputSchema,
@@ -17,6 +19,13 @@ import { auditActorName, auditSubjectOf, buildAuditLogWhere, resolveAuditSubject
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
 import { getUserTimeZone } from '../lib/userTimeZone';
+import {
+  resolveEventBrandAccess,
+  resolveParameterSetBrandAccess,
+  resolvePlanningGroupBrandAccess,
+  resolveRowBrandAccess,
+  type BrandScopeCtx,
+} from '../services/brandScope.service';
 import { signAuditLogExportToken } from '../utils/downloadToken';
 
 /**
@@ -29,6 +38,17 @@ const LAST_CHANGE_TARGET_PERMISSIONS: Record<AuditLogLastChangeTargetType, Permi
   PlanningGroup: 'season_calendar:read',
   CalendarEvent: 'season_calendar:read',
   PricingParameterSet: 'pricing:read',
+};
+
+/**
+ * Throws FORBIDDEN or NOT_FOUND unless the caller may open the entity: the permission above says
+ * what they may read, this says which one, by brand and, for an event, by visibility.
+ */
+const LAST_CHANGE_TARGET_ACCESS: Record<AuditLogLastChangeTargetType, (ctx: BrandScopeCtx, targetId: string) => Promise<unknown>> = {
+  CollectionLayoutRow: resolveRowBrandAccess,
+  PlanningGroup: resolvePlanningGroupBrandAccess,
+  CalendarEvent: resolveEventBrandAccess,
+  PricingParameterSet: resolveParameterSetBrandAccess,
 };
 
 /**
@@ -74,12 +94,20 @@ export const auditLogRouter = router({
    * @auth {read permission of the target entity, see LAST_CHANGE_TARGET_PERMISSIONS}
    * @input {AuditLogGetLastChangeInputSchema} — targetType and targetId of the entity to look up.
    * @output {{ action: string, createdAt: Date, actorName: string | null } | null} — most recent
-   *   successful audit event for the target, or null if none exists.
+   *   successful audit event for the target; null if none exists, and equally if the target is
+   *   missing or out of the caller's scope, so the answer does not tell these apart.
    */
   getLastChange: protectedProcedure
     .input(AuditLogGetLastChangeInputSchema)
     .use(requirePermission<AuditLogGetLastChangeInput>(input => LAST_CHANGE_TARGET_PERMISSIONS[input.targetType]))
     .query(async ({ ctx, input }) => {
+      try {
+        await LAST_CHANGE_TARGET_ACCESS[input.targetType](ctx, input.targetId);
+      } catch (err) {
+        if (err instanceof TRPCError && (err.code === 'FORBIDDEN' || err.code === 'NOT_FOUND')) return null;
+        throw err;
+      }
+
       const entry = await ctx.prisma.auditLog.findFirst({
         where: { targetType: input.targetType, targetId: input.targetId, result: 'SUCCESS' },
         orderBy: { createdAt: 'desc' },

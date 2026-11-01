@@ -897,14 +897,14 @@ export const seasonCalendarRouter = router({
    *
    * @auth season_calendar:read
    * @input { calendarId }
-   * @output Sync status details
+   * @output Sync status details, over the events the caller can list
    */
   getSyncStatus: protectedProcedure
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ calendarId: z.uuid() }))
     .query(async ({ input, ctx }) => {
       await resolveCalendarBrandAccess(ctx, input.calendarId);
-      return getSyncStatus(input.calendarId, ctx.prisma);
+      return getSyncStatus(input.calendarId, ctx);
     }),
 
   /**
