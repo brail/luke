@@ -1,7 +1,7 @@
 /**
  * Unit tests for `bulkAssignRowsPlanningGroup` (collectionLayout.service.ts) — Prisma mocked
  * with only the methods touched (editLock/collectionLayout/planningGroup for the guards,
- * updateMany for the actual mutation).
+ * findMany and updateMany for the actual mutation).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -21,15 +21,17 @@ interface FakePrismaOpts {
   planningGroupSeasonId?: string;
   layoutBrandId?: string;
   layoutSeasonId?: string;
+  /** Rows of the selection to write, or completed: those already in the target are left out. */
+  expectedIds?: string[];
   updatedCount?: number;
-  /** How many rows in the selection are already completed — the guard rejects the whole batch. */
-  completedCount?: number;
+  /** Expected rows already completed — the guard rejects the whole batch. */
+  completedIds?: string[];
 }
 
 function buildFakePrisma(opts: FakePrismaOpts = {}) {
   const updateManyCalls: any[] = [];
 
-  const fake = {
+  const fake: Record<string, unknown> = {
     editLock: {
       findUnique: vi.fn(async () =>
         opts.lockedByOtherUser
@@ -55,8 +57,14 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
             }
       ),
     },
+    $transaction: vi.fn(async (run: (tx: unknown) => unknown) => run(fake)),
     collectionLayoutRow: {
-      count: vi.fn(async () => opts.completedCount ?? 0),
+      findMany: vi.fn(async (args: any) =>
+        (opts.expectedIds ?? args.where.id.in).map((id: string) => ({
+          id,
+          completedAt: opts.completedIds?.includes(id) ? new Date() : null,
+        }))
+      ),
       updateMany: vi.fn(async (args: any) => {
         updateManyCalls.push(args);
         return { count: opts.updatedCount ?? args.where.id.in.length };
@@ -69,22 +77,22 @@ function buildFakePrisma(opts: FakePrismaOpts = {}) {
 }
 
 describe('bulkAssignRowsPlanningGroup', () => {
-  it('excludes rows already in the target group from the where, so they are not rewritten for nothing', async () => {
-    const { prisma, updateManyCalls } = buildFakePrisma();
-    const rowIds = ['row-1', 'row-2'];
+  it('carries the freeze in the write, and leaves out rows already in the target group', async () => {
+    const { prisma, updateManyCalls } = buildFakePrisma({ expectedIds: ['row-1'] });
 
-    await bulkAssignRowsPlanningGroup(rowIds, LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID);
+    await bulkAssignRowsPlanningGroup(['row-1', 'row-2'], LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID);
 
     expect(updateManyCalls).toHaveLength(1);
     expect(updateManyCalls[0].where).toEqual({
-      id: { in: rowIds },
+      id: { in: ['row-1'] },
+      completedAt: null,
       planningGroupId: { not: TARGET_GROUP_ID },
     });
     expect(updateManyCalls[0].data).toEqual({ planningGroupId: TARGET_GROUP_ID });
   });
 
   it('the returned count reflects the rows actually modified, not the selected ones', async () => {
-    const { prisma } = buildFakePrisma({ updatedCount: 1 });
+    const { prisma } = buildFakePrisma({ expectedIds: ['row-1'], updatedCount: 1 });
     const rowIds = ['row-1', 'row-2', 'row-3']; // 3 selected, only 1 actually outside the target group
 
     const result = await bulkAssignRowsPlanningGroup(rowIds, LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID);
@@ -125,7 +133,7 @@ describe('bulkAssignRowsPlanningGroup', () => {
   it('rejects the whole selection if it contains completed rows (CONFLICT), writing none of them', async () => {
     // Silently discarding the completed ones would return a partial count indistinguishable from
     // an intended success: the user would believe they'd moved all the selected rows.
-    const { prisma, updateManyCalls } = buildFakePrisma({ completedCount: 1 });
+    const { prisma, updateManyCalls } = buildFakePrisma({ completedIds: ['row-2'] });
 
     await expectToThrow(
       bulkAssignRowsPlanningGroup(['row-1', 'row-2'], LAYOUT_ID, TARGET_GROUP_ID, prisma, USER_ID),

@@ -83,7 +83,7 @@ const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
  */
 export async function getCalendarEventsForLayout(
   collectionLayoutId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient | Prisma.TransactionClient
 ): Promise<CalendarEventWithContext[]> {
   const layout = await prisma.collectionLayout.findUnique({
     where: { id: collectionLayoutId },
@@ -575,13 +575,23 @@ export function getMissingPhasesForCompletion(
  * @returns Empty if the row doesn't exist — the caller is already handling the NOT_FOUND elsewhere.
  */
 export async function resolveMissingPhasesForRow(rowId: string, prisma: PrismaClient) {
+  return missingPhasesForRowInZone(rowId, prisma, await getConfigOrDefault(prisma, 'app.defaultTimezone'));
+}
+
+/** The same read with the business zone in hand, so it can run on a transaction's client. */
+export async function missingPhasesForRowInZone(
+  rowId: string,
+  prisma: PrismaClient | Prisma.TransactionClient,
+  timeZone: string
+) {
   const row = await prisma.collectionLayoutRow.findUnique({
     where: { id: rowId },
     select: { collectionLayoutId: true, planningGroupId: true, phaseId: true },
   });
   if (!row) return [];
 
-  const group = await getRankedGroup(row.collectionLayoutId, row.planningGroupId, prisma);
+  const events = await getCalendarEventsForLayout(row.collectionLayoutId, prisma);
+  const group = groupRanker(events, timeZone)(row.planningGroupId);
   return getMissingPhasesForCompletion(group.events, group.rankOf(row.phaseId));
 }
 

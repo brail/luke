@@ -28,8 +28,11 @@ import {
   grantBrandAccess,
   setupTestDb,
 } from './helpers';
+import { createCalendarFixture } from './helpers/calendarFixture';
+import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
+import type { Client } from 'pg';
 
 let prisma: PrismaClient;
 let adminSession: UserSession;
@@ -49,6 +52,8 @@ let skipGroupId: string;
 /** Group whose only milestones sit on a retired phase: it no longer measures anything. */
 let onlyRetiredGroupId: string;
 let finalPhaseValue: string;
+let finalPhaseId: string;
+let calendarId: string;
 
 const asAdmin = () => createCallerWithSession(adminSession);
 const asEditor = () => createCallerWithSession(editorSession);
@@ -111,9 +116,11 @@ beforeAll(async () => {
   ]);
   phaseId = phase.id;
   finalPhaseValue = finalPhase.value;
+  finalPhaseId = finalPhase.id;
 
   // The season calendar is the one the engine resolves from the layout (brand + season).
   const calendar = await prisma.seasonCalendar.create({ data: { brandId: brand.id, seasonId: season.id } });
+  calendarId = calendar.id;
   const [future, past, retired, skip, onlyRetired] = await Promise.all([
     prisma.planningGroup.create({ data: { calendarId: calendar.id, name: `Futuro ${uid}` } }),
     prisma.planningGroup.create({ data: { calendarId: calendar.id, name: `Passato ${uid}` } }),
@@ -433,6 +440,141 @@ describe('completed row — frozen fields', () => {
 
     const untouched = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: open.id } });
     expect(untouched.planningGroupId).toBe(futureDeadlineGroupId);
+  });
+});
+
+describe('the completed-row freeze holds until the write commits', () => {
+  const complete = (rowId: string) => (holder: Client) =>
+    holder.query('UPDATE collection_layout_rows SET "completedAt" = now() WHERE id = $1', [rowId]);
+  const rows = () => asAdmin().collectionLayout.rows;
+
+  it('refuses a phase change that waited on a completion', async () => {
+    const row = await createRowAtEarlierPhase();
+
+    const outcome = await whileHeld(complete(row.id), () => rows().update({ rowId: row.id, data: { phaseId: finalPhaseId } }));
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    const stored = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: row.id } });
+    expect(stored.phaseId).toBe(phaseId);
+  });
+
+  it('refuses a stale phase that would rewrite the one a completion just recorded', async () => {
+    const row = await createRowAtEarlierPhase();
+
+    const outcome = await whileHeld(
+      holder =>
+        holder.query('UPDATE collection_layout_rows SET "phaseId" = $2, "completedAt" = now() WHERE id = $1', [
+          row.id,
+          finalPhaseId,
+        ]),
+      () => rows().update({ rowId: row.id, data: { phaseId } })
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    const stored = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: row.id } });
+    expect(stored.phaseId).toBe(finalPhaseId);
+  });
+
+  it('still saves other fields, with the phase unchanged, after waiting on a completion', async () => {
+    const row = await createRowAtEarlierPhase();
+
+    const outcome = await whileHeld(complete(row.id), () =>
+      rows().update({ rowId: row.id, data: { phaseId, styleNotes: 'ancora modificabile' } })
+    );
+
+    expect(outcome).toMatchObject({ status: 'fulfilled', value: { styleNotes: 'ancora modificabile' } });
+  });
+
+  it('counts the missing phases on the phase a waited-on save recorded, not the earlier one', async () => {
+    const row = await createRowAtEarlierPhase();
+
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM collection_layout_rows WHERE id = $1 FOR UPDATE', [row.id]),
+      () => rows().setCompleted({ rowId: row.id, completed: true, note: 'motivazione di test' }),
+      holder => holder.query('UPDATE collection_layout_rows SET "phaseId" = $2 WHERE id = $1', [row.id, finalPhaseId])
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'COLLECTION_ROW_COMPLETE', targetId: row.id },
+    });
+    expect(audit.metadata).not.toHaveProperty('completionForced');
+  });
+
+  it('refuses the whole selection when a completion lands during a bulk assignment', async () => {
+    const [open, closing] = await Promise.all([createRow(futureDeadlineGroupId), createRow(futureDeadlineGroupId)]);
+
+    const outcome = await whileHeld(complete(closing.id), () =>
+      rows().bulkAssignPlanningGroup({ rowIds: [open.id, closing.id], planningGroupId: pastDeadlineGroupId })
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    const stored = await prisma.collectionLayoutRow.findMany({ where: { id: { in: [open.id, closing.id] } } });
+    expect(stored.map(r => r.planningGroupId)).toEqual([futureDeadlineGroupId, futureDeadlineGroupId]);
+  });
+
+  it('refuses the whole selection when a row moves during a bulk assignment', async () => {
+    const [open, moving] = await Promise.all([createRow(futureDeadlineGroupId), createRow(futureDeadlineGroupId)]);
+
+    const outcome = await whileHeld(
+      holder =>
+        holder.query('UPDATE collection_layout_rows SET "planningGroupId" = $2 WHERE id = $1', [
+          moving.id,
+          pastDeadlineGroupId,
+        ]),
+      () => rows().bulkAssignPlanningGroup({ rowIds: [open.id, moving.id], planningGroupId: pastDeadlineGroupId })
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    const stored = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: open.id } });
+    expect(stored.planningGroupId).toBe(futureDeadlineGroupId);
+  });
+});
+
+describe('a row write naming a planning group', () => {
+  const rows = () => asAdmin().collectionLayout.rows;
+
+  /** A planning group a held transaction deletes while the write runs: the write's foreign key waits on it. */
+  async function whileGroupDeleted<T>(write: (planningGroupId: string) => Promise<T>) {
+    const group = await prisma.planningGroup.create({
+      data: { calendarId, name: `Cancellato ${randomUUID().slice(0, 8)}` },
+    });
+    return whileHeld(
+      holder => holder.query('DELETE FROM planning_groups WHERE id = $1', [group.id]),
+      () => write(group.id)
+    );
+  }
+
+  it('refuses a group outside the layout on create', async () => {
+    const foreign = await createCalendarFixture(prisma);
+
+    await expect(createRow(foreign.planningGroupId)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('answers CONFLICT when the group is deleted during a create', async () => {
+    const outcome = await whileGroupDeleted(createRow);
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+  });
+
+  it('answers CONFLICT when the group is deleted during a reassignment', async () => {
+    const row = await createRow(futureDeadlineGroupId);
+
+    const outcome = await whileGroupDeleted(planningGroupId => rows().update({ rowId: row.id, data: { planningGroupId } }));
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+  });
+
+  it('answers CONFLICT when the group is deleted during a bulk assignment, writing nothing', async () => {
+    const row = await createRow(futureDeadlineGroupId);
+
+    const outcome = await whileGroupDeleted(planningGroupId =>
+      rows().bulkAssignPlanningGroup({ rowIds: [row.id], planningGroupId })
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    const stored = await prisma.collectionLayoutRow.findUniqueOrThrow({ where: { id: row.id } });
+    expect(stored.planningGroupId).toBe(futureDeadlineGroupId);
   });
 });
 

@@ -47,6 +47,16 @@ export type RowWithVendor = CollectionLayoutRow & {
 };
 
 /**
+ * The foreign key's answer to a row write naming a planning group deleted since the scope check.
+ */
+function rethrowPlanningGroupGone(err: unknown): never {
+  if (isForeignKeyViolation(err, 'collection_layout_rows_planningGroupId_fkey')) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'Il gruppo di pianificazione non esiste più: riprova' });
+  }
+  throw err;
+}
+
+/**
  * Verifies a planning group belongs to the same brand+season as a collection layout.
  *
  * @throws {TRPCError} NOT_FOUND if the layout or planning group does not exist.
@@ -521,6 +531,9 @@ export async function createRow(
   });
 
   const { order, planningGroupId, ...rowData } = input;
+  if (planningGroupId) {
+    await assertPlanningGroupInLayoutScope(group.collectionLayoutId, planningGroupId, prisma);
+  }
   const resolvedPlanningGroupId = planningGroupId ?? await resolveDefaultPlanningGroupId(
     group.collectionLayout.brandId,
     group.collectionLayout.seasonId,
@@ -553,7 +566,16 @@ export async function createRow(
       groupId: input.groupId,
     },
     include: ROW_VENDOR_INCLUDE,
-  }) as Promise<RowWithVendor>;
+  }).catch(rethrowPlanningGroupGone) as Promise<RowWithVendor>;
+}
+
+/**
+ * Holds a row until the transaction commits, so what the transaction reads from it stays true.
+ * Raw SQL exception: a row lock, which the ORM cannot express, inside an interactive transaction.
+ * NO KEY: it conflicts with every write to the row, without blocking a child's foreign key check.
+ */
+export async function lockRow(tx: Prisma.TransactionClient, rowId: string): Promise<void> {
+  await tx.$queryRaw(Prisma.sql`SELECT 1 FROM collection_layout_rows WHERE id = ${rowId} FOR NO KEY UPDATE`);
 }
 
 /**
@@ -580,7 +602,7 @@ function completedRowConflict(count: number): TRPCError {
  *
  * @param existingRow - Caller-fetched row state, reused instead of a redundant internal
  *   `findUnique` — the row-drawer save path (only caller) already fetches this for its own
- *   before/after audit diff.
+ *   before/after audit diff. Read under `lockRow`: the completed-row check below holds only then.
  * @throws {TRPCError} CONFLICT if the row is completed and the phase or planning group changes.
  * @throws {TRPCError} NOT_FOUND if the destination group does not exist.
  * @throws {TRPCError} BAD_REQUEST if the gender or cross-layout move is invalid.
@@ -645,7 +667,7 @@ export async function updateRow(
     // pick that branch of the union instead of the other.
     data: input as Prisma.CollectionLayoutRowUncheckedUpdateInput,
     include: ROW_VENDOR_INCLUDE,
-  }) as RowWithVendor;
+  }).catch(rethrowPlanningGroupGone) as RowWithVendor;
 
   // Phase history hook: record every transition, never a separate job — avoids drift between
   // the row's live phaseId and its history.
@@ -668,6 +690,7 @@ export async function updateRow(
  * Callers are expected to have resolved and validated `layoutId` from `rowIds` themselves.
  *
  * @throws {TRPCError} BAD_REQUEST if the target planning group belongs to a different brand/season.
+ * @throws {TRPCError} CONFLICT if the selection holds a completed row, or changed during the write.
  */
 export async function bulkAssignRowsPlanningGroup(
   rowIds: string[],
@@ -679,20 +702,30 @@ export async function bulkAssignRowsPlanningGroup(
   await assertUnlocked('COLLECTION_LAYOUT', layoutId, userId, prisma);
   await assertPlanningGroupInLayoutScope(layoutId, planningGroupId, prisma);
 
-  // Same constraint as `updateRow`, applied before the updateMany. Completed rows are not
-  // filtered out of the selection: a bulk action that silently skips part of it is worse than an
-  // error, because the returned count would look like an intended partial success.
-  const completedCount = await prisma.collectionLayoutRow.count({
-    where: { id: { in: rowIds }, completedAt: { not: null } },
-  });
-  if (completedCount > 0) throw completedRowConflict(completedCount);
+  // Same constraint as `updateRow`. Completed rows are not filtered out of the selection: a bulk
+  // action that silently skips part of it is worse than an error, because the returned count would
+  // look like an intended partial success. The write repeats the condition, so it holds until the
+  // commit: a row completed or moved since the read falls short, and the transaction rolls back.
+  return prisma.$transaction(async tx => {
+    const expected = await tx.collectionLayoutRow.findMany({
+      where: {
+        id: { in: rowIds },
+        OR: [{ planningGroupId: { not: planningGroupId } }, { completedAt: { not: null } }],
+      },
+      select: { id: true, completedAt: true },
+    });
+    const completedCount = expected.filter(r => r.completedAt !== null).length;
+    if (completedCount > 0) throw completedRowConflict(completedCount);
 
-  const { count } = await prisma.collectionLayoutRow.updateMany({
-    where: { id: { in: rowIds }, planningGroupId: { not: planningGroupId } },
-    data: { planningGroupId },
-  });
-
-  return { success: true, count };
+    const { count } = await tx.collectionLayoutRow.updateMany({
+      where: { id: { in: expected.map(r => r.id) }, completedAt: null, planningGroupId: { not: planningGroupId } },
+      data: { planningGroupId },
+    }).catch(rethrowPlanningGroupGone);
+    if (count < expected.length) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Le righe selezionate sono cambiate nel frattempo: riprova' });
+    }
+    return { success: true as const, count };
+  }, { timeout: 15_000 }); // as long as the save it can wait on
 }
 
 /**
@@ -704,22 +737,21 @@ export async function bulkAssignRowsPlanningGroup(
  * call doesn't overwrite the date of the first completion, which is the value the outcome is
  * measured against. Reopening always resets it.
  *
+ * @param tx - A transaction holding `lockRow` on the row, when the caller checked its state first.
  * @returns The resulting row state — `completedAt` is what the caller records in the audit log.
  */
 export async function setRowCompleted(
   rowId: string,
   completed: boolean,
-  prisma: PrismaClient
+  tx: Prisma.TransactionClient
 ): Promise<{ id: string; completedAt: Date | null }> {
-  return prisma.$transaction(async tx => {
-    await tx.collectionLayoutRow.updateMany({
-      where: { id: rowId, ...(completed ? { completedAt: null } : {}) },
-      data: { completedAt: completed ? new Date() : null },
-    });
-    return tx.collectionLayoutRow.findUniqueOrThrow({
-      where: { id: rowId },
-      select: { id: true, completedAt: true },
-    });
+  await tx.collectionLayoutRow.updateMany({
+    where: { id: rowId, ...(completed ? { completedAt: null } : {}) },
+    data: { completedAt: completed ? new Date() : null },
+  });
+  return tx.collectionLayoutRow.findUniqueOrThrow({
+    where: { id: rowId },
+    select: { id: true, completedAt: true },
   });
 }
 

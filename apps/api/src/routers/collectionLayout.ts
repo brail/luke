@@ -26,6 +26,7 @@ import {
 import { Prisma, type PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { getConfigOrDefault } from '../lib/configManager';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
@@ -58,6 +59,7 @@ import {
   deleteGroup,
   createRow,
   updateRow,
+  lockRow,
   setRowCompleted,
   deleteRow,
   duplicateRow,
@@ -74,7 +76,7 @@ import {
   syncRowQuotations,
 } from '../services/collectionRow.quotation.service';
 import { assertUnlocked } from '../services/editLock.service';
-import { resolveMissingPhasesForRow } from '../services/phaseAlert.service';
+import { missingPhasesForRowInZone } from '../services/phaseAlert.service';
 import { deleteObjectByKey } from '../storage';
 
 import type { Context } from '../lib/trpc';
@@ -323,13 +325,11 @@ const rowsRouter = router({
       const layoutScope = { brandId: rowAccess.collectionLayout.brandId, seasonId: rowAccess.collectionLayout.seasonId };
 
       const { result, before, quotationsSync, oldPictureKey } = await ctx.prisma.$transaction(async tx => {
-        // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL": a row lock inside an
-        // interactive transaction), taken only when the picture changes. The stored picture key read
-        // below is then the one deleted after the commit: a concurrent picture change of this row
-        // waits here instead of replacing it in between and leaving a confirmed picture no row references.
-        if (pendingPictureFileObjectId || removePicture) {
-          await tx.$queryRaw(Prisma.sql`SELECT 1 FROM collection_layout_rows WHERE id = ${input.rowId} FOR UPDATE`);
-        }
+        // The row read below then stays true until the commit. `updateRow`'s completed-row check
+        // holds against a completion, which waits here. The stored picture key is the one deleted
+        // after the commit: a concurrent picture change of this row waits instead of replacing it
+        // in between and leaving a confirmed picture no row references.
+        await lockRow(tx, input.rowId);
         // Unconditional (not only when there's a pending photo): always needed for the
         // phase/group diff used in the consolidated audit log below, and as `existingRow` for `updateRow`
         // (a single row fetch instead of one per function that needs it).
@@ -452,18 +452,21 @@ const rowsRouter = router({
     .mutation(async ({ input, ctx }) => {
       await resolveRowBrandAccess(ctx, input.rowId);
 
-      // Only when concluding: reopening skips nothing, it just puts the row back in progress.
-      const missingPhases = input.completed
-        ? await resolveMissingPhasesForRow(input.rowId, ctx.prisma)
-        : [];
-      if (missingPhases.length > 0 && input.force !== true) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A questa riga mancano queste fasi prima di poter considerare concluso lo sviluppo: ${missingPhases.map(p => p.label).join(', ')}. Conferma la forzatura per procedere.`,
-        });
-      }
-
-      const row = await setRowCompleted(input.rowId, input.completed, ctx.prisma);
+      const timeZone = await getConfigOrDefault(ctx.prisma, 'app.defaultTimezone');
+      const { row, missingPhases } = await ctx.prisma.$transaction(async tx => {
+        // The row's phase and planning group, which the missing phases come from, stay true until
+        // the commit. The calendar's milestones are not held: an edit to them is a later change.
+        await lockRow(tx, input.rowId);
+        // Only when concluding: reopening skips nothing, it just puts the row back in progress.
+        const missingPhases = input.completed ? await missingPhasesForRowInZone(input.rowId, tx, timeZone) : [];
+        if (missingPhases.length > 0 && input.force !== true) {
+          throw new TRPCError({
+            code: 'CONFLICT',
+            message: `A questa riga mancano queste fasi prima di poter considerare concluso lo sviluppo: ${missingPhases.map(p => p.label).join(', ')}. Conferma la forzatura per procedere.`,
+          });
+        }
+        return { row: await setRowCompleted(input.rowId, input.completed, tx), missingPhases };
+      }, { timeout: 15000 }); // as long as the save it can wait on
 
       await logAudit(ctx, {
         action: input.completed ? 'COLLECTION_ROW_COMPLETE' : 'COLLECTION_ROW_REOPEN',
