@@ -1,6 +1,6 @@
 'use client';
 
-import { DndContext, DragEndEvent, DragOverlay, DragStartEvent, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import { DragEndEvent, DragOverlay, DragStartEvent, useDroppable } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
 import { type CSSProperties, ReactNode, useCallback, useMemo, useState } from 'react';
 
@@ -11,6 +11,7 @@ import { cn } from '../../../../lib/utils';
 import { DAY_LABELS_IT, cancelledClass } from '../constants';
 import { canEditMilestone, eventDays, groupBadge, groupEventsByDay, groupTooltip, moveToCell, resolveBrandColor } from '../utils';
 
+import { CalendarDndContext } from './CalendarDndContext';
 import { DraggableEventChip } from './DraggableEventChip';
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayEntry, type HolidayMap } from './useHolidays';
@@ -76,8 +77,6 @@ export function CalendarEventWeekView({ milestones, viewDate, zone, onViewDateCh
   const today = calendarDateIn(new Date(), zone);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
-
   const byDay = useMemo(() => groupEventsByDay(milestones, days, zone), [milestones, days, zone]);
 
   const weekLabel = useMemo(() => {
@@ -99,7 +98,7 @@ export function CalendarEventWeekView({ milestones, viewDate, zone, onViewDateCh
   }, [canUpdate, milestones, onEventUpdate, zone]);
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <CalendarDndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingId(null)}>
       <div className="flex flex-col">
         <div className="flex items-center gap-2 px-4 py-2 border-b">
           <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(weekStart, -7))}><ChevronLeft size={14} /></Button>
@@ -215,6 +214,6 @@ export function CalendarEventWeekView({ milestones, viewDate, zone, onViewDateCh
           </div>
         )}
       </DragOverlay>
-    </DndContext>
+    </CalendarDndContext>
   );
 }

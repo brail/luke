@@ -1,7 +1,8 @@
 'use client';
 
+import { type DragEndEvent, type DragMoveEvent } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, StickyNote } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { addCalendarDays, calendarDateIn, type CalendarDate, formatCalendarDate, wallTimeIn } from '@luke/core';
 
@@ -10,6 +11,7 @@ import { cn } from '../../../../lib/utils';
 import { cancelledClass } from '../constants';
 import { canEditMilestone, groupBadge, groupEventsByDay, groupTooltip, hoursWithinDay, resolveBrandColor, wallMinutes } from '../utils';
 
+import { CalendarDndContext, PreviewDragSource } from './CalendarDndContext';
 import { type CalendarEventItem as CalendarEvent } from './types';
 
 interface Props {
@@ -38,7 +40,9 @@ const LABEL_W = 52;
 const SNAP_MIN = 15;
 const HOURS = Array.from({ length: GRID_END - GRID_START }, (_, i) => GRID_START + i);
 
-type DragState = { id: string; startY: number; deltaMinutes: number; origStartAt: Date; origEndAt: Date | null };
+type DragState = { id: string; deltaMinutes: number };
+
+const snappedMinutes = (deltaY: number) => Math.round((deltaY / ROW_H) * 60 / SNAP_MIN) * SNAP_MIN;
 
 /**
  * Hour-grid day view for calendar events, with drag-to-reschedule support.
@@ -87,50 +91,24 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
   const showNow = isToday && nowMinutes / 60 >= GRID_START && nowMinutes / 60 <= GRID_END;
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const wasDraggingRef = useRef(false);
-  const cleanupDragRef = useRef<(() => void) | null>(null);
+  const handleDragMove = ({ active, delta }: DragMoveEvent) => {
+    const id = String(active.id);
+    const deltaMinutes = snappedMinutes(delta.y);
+    // Most moves stay within a snap: keeping the state skips their render.
+    setDrag(prev => (prev?.id === id && prev.deltaMinutes === deltaMinutes ? prev : { id, deltaMinutes }));
+  };
 
-  useEffect(() => () => { cleanupDragRef.current?.(); }, []);
-
-  const startDrag = useCallback((e: React.PointerEvent, m: CalendarEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const origStartAt = new Date(m.startAt);
-    const origEndAt = m.endAt ? new Date(m.endAt) : null;
-    const state: DragState = { id: m.id, startY: e.clientY, deltaMinutes: 0, origStartAt, origEndAt };
-    setDrag(state);
-
-    const onMove = (ev: PointerEvent) => {
-      const snapped = Math.round(((ev.clientY - state.startY) / ROW_H) * 60 / SNAP_MIN) * SNAP_MIN;
-      setDrag({ ...state, deltaMinutes: snapped });
-    };
-    const onUp = (ev: PointerEvent) => {
-      cleanup();
-      const snapped = Math.round(((ev.clientY - state.startY) / ROW_H) * 60 / SNAP_MIN) * SNAP_MIN;
-      if (snapped === 0) { setDrag(null); return; }
-      wasDraggingRef.current = true;
-      const newStart = new Date(state.origStartAt.getTime() + snapped * 60_000);
-      const newEnd = state.origEndAt ? new Date(state.origEndAt.getTime() + snapped * 60_000) : null;
-      onEventUpdate(m.id, { startAt: newStart.toISOString(), endAt: newEnd ? newEnd.toISOString() : null });
-      setDrag(null);
-    };
-    const onCancel = () => {
-      cleanup();
-      setDrag(null);
-    };
-    const cleanup = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onCancel);
-      cleanupDragRef.current = null;
-    };
-    cleanupDragRef.current = cleanup;
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-  }, [onEventUpdate]);
+  const handleDragEnd = ({ active, delta }: DragEndEvent) => {
+    setDrag(null);
+    const snapped = snappedMinutes(delta.y);
+    const m = milestones.find(x => x.id === active.id);
+    if (snapped === 0 || !m) return;
+    const shifted = (at: string | Date) => new Date(new Date(at).getTime() + snapped * 60_000).toISOString();
+    onEventUpdate(m.id, { startAt: shifted(m.startAt), endAt: m.endAt ? shifted(m.endAt) : null });
+  };
 
   return (
+    <CalendarDndContext autoScroll={false} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={() => setDrag(null)}>
     <div className="flex flex-col">
       <div className="flex items-center gap-2 px-4 py-2 border-b">
         <Button variant="ghost" size="icon-sm" onClick={() => onViewDateChange(addCalendarDays(viewDate, -1))}><ChevronLeft size={14} /></Button>
@@ -192,10 +170,7 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
               {canUpdate && onDayClick && (
                 <div
                   className="flex-1 cursor-pointer hover:bg-muted/20 transition-colors"
-                  onClick={() => {
-                    if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
-                    onDayClick(viewDate, `${String(h).padStart(2, '0')}:00`);
-                  }}
+                  onClick={() => onDayClick(viewDate, `${String(h).padStart(2, '0')}:00`)}
                 />
               )}
             </div>
@@ -234,17 +209,17 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
             const previewEnd = isDragging ? new Date(end.getTime() + deltaMin * 60_000) : end;
             const badge = groupBadge(showGroupBadge, m.planningGroupName);
             return (
-              <div
+              <PreviewDragSource
                 key={m.id}
+                dragId={m.id}
+                disabled={!canDrag}
                 className={cn('absolute rounded-r group/timed z-10 [border-left:3px_solid_var(--ev-color)]', isOtherBrand && 'opacity-40', cancelledClass(!!m.cancelledAt), isDragging && 'z-30 shadow-lg')}
                 style={{ top, left: LABEL_W + 4, right: 8, height, '--ev-color': color, background: isDragging ? `${color}44` : `${color}22`, cursor: canDrag ? (isDragging ? 'grabbing' : 'grab') : 'default' } as React.CSSProperties}
-                onPointerDown={canDrag ? (e) => startDrag(e, m) : undefined}
               >
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                     onEventClick(m.id);
                   }}
                   className={cn('w-full h-full flex flex-col items-start px-2 py-1 text-left rounded-r overflow-hidden', isDragging && 'pointer-events-none')}
@@ -271,11 +246,12 @@ export function CalendarEventDayView({ milestones, viewDate, zone, onViewDateCha
                     <StickyNote size={11} />
                   </button>
                 )}
-              </div>
+              </PreviewDragSource>
             );
           })}
         </div>
       </div>
     </div>
+    </CalendarDndContext>
   );
 }

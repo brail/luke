@@ -1,7 +1,8 @@
 'use client';
 
+import { type DragEndEvent, type DragMoveEvent, type UniqueIdentifier } from '@dnd-kit/core';
 import { StickyNote } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { addCalendarDays, calendarDateIn, calendarDaysBetween, type CalendarDate, formatCalendarDate, isWorkingDate } from '@luke/core';
 
@@ -9,6 +10,7 @@ import { cn } from '../../../../lib/utils';
 import { MONTH_NAMES_SHORT_IT, cancelledClass } from '../constants';
 import { canEditMilestone, eventDays, formatVisibleFunctions, groupBadge, groupTooltip, moveEvent, resizeEvent, resolveBrandColor, sortByFirstDay } from '../utils';
 
+import { CalendarDndContext, PreviewDragSource } from './CalendarDndContext';
 import { type CalendarEventItem as CalendarEvent } from './types';
 import { type HolidayMap } from './useHolidays';
 
@@ -53,7 +55,15 @@ function dragLabel([first, last]: [CalendarDate, CalendarDate], mode: 'drag' | '
   return `→ ${FMT(last)} (${calendarDaysBetween(first, last) + 1} gg)`;
 }
 
-type DragState = { id: string; mode: 'drag' | 'resize'; startX: number; deltaX: number };
+type DragState = { id: string; mode: 'drag' | 'resize'; dayDelta: number };
+
+const RESIZE_PREFIX = 'resize:';
+
+/** What a dragged source moves: its id survives the source unmounting during its own drag. */
+function parseDragId(id: UniqueIdentifier): Pick<DragState, 'id' | 'mode'> {
+  const raw = String(id);
+  return raw.startsWith(RESIZE_PREFIX) ? { id: raw.slice(RESIZE_PREFIX.length), mode: 'resize' } : { id: raw, mode: 'drag' };
+}
 
 /**
  * Gantt-chart view for calendar events with drag-to-move and drag-to-resize.
@@ -142,42 +152,25 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
     }), [sorted, box, functionsById, zone]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
-  const wasDraggingRef = useRef(false);
-  const eventsRef = useRef(milestones);
-  useEffect(() => { eventsRef.current = milestones; }, [milestones]);
+  const handleDragMove = ({ active, delta }: DragMoveEvent) => {
+    const { id, mode } = parseDragId(active.id);
+    const dayDelta = Math.round(delta.x / dayW);
+    // Most moves stay within a day: keeping the state skips their render.
+    setDrag(prev => (prev?.id === id && prev.mode === mode && prev.dayDelta === dayDelta ? prev : { id, mode, dayDelta }));
+  };
 
-  const startDrag = useCallback((e: React.PointerEvent, id: string, mode: 'drag' | 'resize') => {
-    if (!canUpdate) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const state: DragState = { id, mode, startX: e.clientX, deltaX: 0 };
-    setDrag(state);
-    const onMove = (ev: PointerEvent) => setDrag({ ...state, deltaX: ev.clientX - state.startX });
-    const cleanup = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onCancel);
-    };
-    const onCancel = () => {
-      cleanup();
-      setDrag(null);
-    };
-    const onUp = (ev: PointerEvent) => {
-      cleanup();
-      const dayDelta = Math.round((ev.clientX - state.startX) / dayW);
-      if (dayDelta === 0) { setDrag(null); return; }
-      wasDraggingRef.current = true;
-      const m = eventsRef.current.find(x => x.id === id);
-      const change = m && (mode === 'drag' ? moveEvent(m, dayDelta, zone) : resizeEvent(m, dayDelta, zone));
-      if (change) onEventUpdate(id, change);
-      setDrag(null);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onCancel);
-  }, [canUpdate, dayW, onEventUpdate, zone]);
+  const handleDragEnd = ({ active, delta }: DragEndEvent) => {
+    setDrag(null);
+    const dayDelta = Math.round(delta.x / dayW);
+    if (dayDelta === 0) return;
+    const { id, mode } = parseDragId(active.id);
+    const m = milestones.find(x => x.id === id);
+    const change = m && (mode === 'drag' ? moveEvent(m, dayDelta, zone) : resizeEvent(m, dayDelta, zone));
+    if (change) onEventUpdate(id, change);
+  };
 
   return (
+    <CalendarDndContext autoScroll={false} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={() => setDrag(null)}>
     <div className="overflow-x-auto overflow-y-visible">
       <div style={{ minWidth: LABEL_W + totalW }}>
 
@@ -233,13 +226,13 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
           {bars.map((m, i) => {
             const isOtherBrand = !!activeBrandId && !!m.brandId && m.brandId !== activeBrandId;
             const isDragging = drag?.id === m.id;
-            const dayDeltaPreview = isDragging ? Math.round(drag.deltaX / dayW) : 0;
-            const preview = isDragging && dayDeltaPreview !== 0 ? previewDays(m, dayDeltaPreview, drag.mode, zone) : null;
+            const preview = isDragging && drag.dayDelta !== 0 ? previewDays(m, drag.dayDelta, drag.mode, zone) : null;
             const { left: previewLeft, width: previewWidth } = preview ? box(preview) : m;
             const barColor = resolveBrandColor(m.brandId, brandColorMap);
             const label = isDragging ? dragLabel(preview ?? m.days, drag.mode) : null;
             const hasNote = !!(m.notes?.[0]?.body);
             const badge = groupBadge(showGroupBadge, m.planningGroupName);
+            const canEdit = canEditMilestone(m, canUpdate, activeBrandId);
 
             return (
               <div key={m.id} className={cn('flex group hover:bg-muted/20 transition-colors', isOtherBrand && 'opacity-40')} style={{ height: ROW_H }}>
@@ -269,7 +262,6 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
                   className={cn('relative flex-1', i < bars.length - 1 && 'border-b border-border/40')}
                   style={{ height: ROW_H, overflow: 'visible' }}
                   onClick={(e) => {
-                    if (wasDraggingRef.current) return;
                     if (!onDayClick) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const dayIndex = Math.floor((e.clientX - rect.left) / dayW);
@@ -281,15 +273,15 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
                       <div className="absolute top-1/2 -translate-y-1/2 rounded pointer-events-none"
                         style={{ left: m.left, width: m.width, height: 22, background: barColor, opacity: 0.15, outline: `1px dashed ${barColor}`, outlineOffset: 1 }} />
                     )}
-                    <div
+                    <PreviewDragSource
+                      dragId={m.id}
+                      disabled={!canEdit}
                       className={cn('absolute top-1/2 -translate-y-1/2 rounded', 'text-white text-xs font-medium whitespace-nowrap',
                         cancelledClass(!!m.cancelledAt),
                         isDragging ? 'shadow-lg z-20 cursor-grabbing' : cn(canUpdate && 'cursor-grab'))}
                       style={{ left: previewLeft, width: previewWidth, height: 22, background: barColor, userSelect: 'none', overflow: 'visible' }}
-                      onPointerDown={canEditMilestone(m, canUpdate, activeBrandId) ? e => startDrag(e, m.id, 'drag') : undefined}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (wasDraggingRef.current) { wasDraggingRef.current = false; return; }
                         onEventClick(m.id);
                       }}
                       title={groupTooltip(m.planningGroupName, m.title, ` — ${m.visibleFunctionNames}`)}
@@ -304,12 +296,13 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
                           <span className="text-[10px] bg-popover text-popover-foreground border rounded px-1.5 py-0.5 shadow-md whitespace-nowrap font-medium">{label}</span>
                         </div>
                       )}
-                      {canEditMilestone(m, canUpdate, activeBrandId) && !isDragging && (
-                        <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/25 rounded-r"
-                          onPointerDown={e => startDrag(e, m.id, 'resize')}
+                      {canEdit && !isDragging && (
+                        <PreviewDragSource
+                          dragId={`${RESIZE_PREFIX}${m.id}`}
+                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/25 rounded-r"
                           onClick={e => e.stopPropagation()} />
                       )}
-                    </div>
+                    </PreviewDragSource>
                   </div>
                 </div>
               </div>
@@ -318,5 +311,6 @@ export function CalendarEventGantt({ milestones, zone, onEventClick, onEventUpda
         </div>
       </div>
     </div>
+    </CalendarDndContext>
   );
 }
