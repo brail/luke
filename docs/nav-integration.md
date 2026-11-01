@@ -170,9 +170,9 @@ The file `apps/api/src/lib/navSyncScheduler.ts` registers two Fastify hooks:
 
 A per-entity `isRunning` flag prevents overlapping scheduled runs of the same
 entity within one process, and a `SchedulerLock` row (`nav-sync:<entity>`) does
-the same across API instances. Neither guards the manual sync
-(`integrations.nav.sync.run`), which calls `runNavSync` directly and can
-therefore overlap a scheduled run.
+the same across API instances. The manual sync (`integrations.nav.sync.run`)
+takes the same lock, and answers `CONFLICT` while a sync of that entity is
+running.
 
 If `integrations.nav.host` is not configured, the scheduler skips the tick
 silently, without logging errors (expected behavior on a fresh install). It
