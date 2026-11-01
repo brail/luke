@@ -376,6 +376,13 @@ authentication models:
 | `GET /download/audit-log`, `/download/backup/:id/export` | A signed download token in the query string, issued by a tRPC procedure and valid for 5 minutes (`src/utils/downloadToken.ts`), because a plain browser navigation cannot send an `Authorization` header |
 | `GET /api/sse` | A single-use 60-second ticket from `notifications.getSseTicket`, carrying the caller's session; the stream re-checks that session before every heartbeat and ends when it is revoked, or 12 hours after its login ([ADR-039](../../docs/decisions/039-session-revocation-tokenversion-and-absolute-lifetime.md)) |
 
+Upload routes stop keeping a file at the size in `ASSET_KINDS` for their asset
+kind and answer 413. They store one file: send no other part, except the
+specsheet image's optional `caption`, because an extra part is refused with 400
+or ignored, depending on the route and its position. `/upload/backup-import` has
+no size limit of its own, only the request timeout, and its `passphrase` and
+`label` fields must come before the file.
+
 `GET /uploads/:bucket/*` (`src/plugins/storageUpload.ts`) checks no session: it
 is reached only by the web's authenticated `/api/uploads/[...path]` proxy over
 the internal network.
