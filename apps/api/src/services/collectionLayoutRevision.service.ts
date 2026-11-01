@@ -1,3 +1,5 @@
+import { randomUUID } from 'crypto';
+
 import { StorageObjectNotFoundError } from '@luke/core';
 import type { CreateRevisionInput } from '@luke/core';
 import {
@@ -125,6 +127,10 @@ export async function createRevision(
   }
 
   const detail = await prisma.$transaction(async tx => {
+    // Raw SQL exception: a transaction-scoped advisory lock. Under READ COMMITTED the `_max` read holds
+    // nothing, so without it two revisions of a layout take the same number.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`collection-layout-revision:${input.collectionLayoutId}`}))`;
+
     // Next revision number (0-indexed)
     const aggregate = await tx.collectionLayoutRevision.aggregate({
       where: { collectionLayoutId: input.collectionLayoutId },
@@ -145,72 +151,67 @@ export async function createRevision(
       },
     });
 
-    // Snapshot each live group
-    const groupRevisionMap = new Map<string, string>(); // sourceGroupId → groupRevisionId
-    for (const group of layout.groups) {
-      const groupRev = await tx.collectionGroupRevision.create({
-        data: {
-          revisionId: revision.id,
-          sourceGroupId: group.id,
-          name: group.name,
-          order: group.order,
-          skuBudget: group.skuBudget,
-        },
-      });
-      groupRevisionMap.set(group.id, groupRev.id);
-    }
+    // Snapshot every group, row and quotation — revisions always cover the full layout. Ids are
+    // generated here because each level's rows need their parent's id.
+    const groups = layout.groups.map(group => ({ id: randomUUID(), group }));
+    const rows = groups.flatMap(({ id, group }) =>
+      group.rows.map(row => ({ id: randomUUID(), sourceGroupRevisionId: id, row })),
+    );
 
-    // Snapshot every row in the layout — revisions always cover the full layout
-    for (const row of allRows) {
-      const sourceGroupRevisionId = groupRevisionMap.get(row.groupId);
-      if (!sourceGroupRevisionId) continue;
-
-      const rowRev = await tx.collectionLayoutRowRevision.create({
-        data: {
-          revisionId: revision.id,
-          sourceGroupRevisionId,
-          sourceRowId: row.id,
-          wasDeleted: false,
-          gender: row.gender,
-          vendorId: row.vendorId,
-          vendorName: row.vendor?.nickname ?? row.vendor?.name ?? null,
-          line: row.line,
-          article: row.article,
-          status: row.status,
-          skuForecast: row.skuForecast,
-          qtyForecast: row.qtyForecast,
-          productCategory: row.productCategory,
-          strategy: row.strategy,
-          styleStatus: row.styleStatus,
-          progress: row.phase?.value ?? null,
-          designer: row.designer,
-          pictureKey: photoCopyMap.get(row.id) ?? null,
-          styleNotes: row.styleNotes,
-          materialNotes: row.materialNotes,
-          colorNotes: row.colorNotes,
-          toolingNotes: row.toolingNotes,
-          toolingQuotation: row.toolingQuotation,
-          pricePositioning: row.pricePositioning,
-          order: row.order,
-        },
-      });
-
-      // Snapshot quotations
-      for (const quotation of row.quotations) {
-        await tx.collectionRowQuotationRevision.create({
-          data: {
-            rowRevisionId: rowRev.id,
-            order: quotation.order,
-            pricingParameterSetId: quotation.pricingParameterSetId,
-            pricingParameterSetName: quotation.pricingParameterSet?.name ?? null,
-            retailPrice: quotation.retailPrice,
-            supplierQuotation: quotation.supplierQuotation,
-            notes: quotation.notes,
-            sku: quotation.sku,
-          },
-        });
-      }
-    }
+    await tx.collectionGroupRevision.createMany({
+      data: groups.map(({ id, group }) => ({
+        id,
+        revisionId: revision.id,
+        sourceGroupId: group.id,
+        name: group.name,
+        order: group.order,
+        skuBudget: group.skuBudget,
+      })),
+    });
+    await tx.collectionLayoutRowRevision.createMany({
+      data: rows.map(({ id, sourceGroupRevisionId, row }) => ({
+        id,
+        revisionId: revision.id,
+        sourceGroupRevisionId,
+        sourceRowId: row.id,
+        wasDeleted: false,
+        gender: row.gender,
+        vendorId: row.vendorId,
+        vendorName: row.vendor?.nickname ?? row.vendor?.name ?? null,
+        line: row.line,
+        article: row.article,
+        status: row.status,
+        skuForecast: row.skuForecast,
+        qtyForecast: row.qtyForecast,
+        productCategory: row.productCategory,
+        strategy: row.strategy,
+        styleStatus: row.styleStatus,
+        progress: row.phase?.value ?? null,
+        designer: row.designer,
+        pictureKey: photoCopyMap.get(row.id) ?? null,
+        styleNotes: row.styleNotes,
+        materialNotes: row.materialNotes,
+        colorNotes: row.colorNotes,
+        toolingNotes: row.toolingNotes,
+        toolingQuotation: row.toolingQuotation,
+        pricePositioning: row.pricePositioning,
+        order: row.order,
+      })),
+    });
+    await tx.collectionRowQuotationRevision.createMany({
+      data: rows.flatMap(({ id, row }) =>
+        row.quotations.map(quotation => ({
+          rowRevisionId: id,
+          order: quotation.order,
+          pricingParameterSetId: quotation.pricingParameterSetId,
+          pricingParameterSetName: quotation.pricingParameterSet?.name ?? null,
+          retailPrice: quotation.retailPrice,
+          supplierQuotation: quotation.supplierQuotation,
+          notes: quotation.notes,
+          sku: quotation.sku,
+        })),
+      ),
+    });
 
     // Mark rows as revised, in one statement: a row deleted since the layout was loaded is skipped.
     await tx.collectionLayoutRow.updateMany({
@@ -226,7 +227,7 @@ export async function createRevision(
         groups: {
           include: {
             rows: {
-              include: { quotationRevisions: true },
+              include: { quotationRevisions: { orderBy: { order: 'asc' } } },
               orderBy: { order: 'asc' },
             },
           },
@@ -234,7 +235,8 @@ export async function createRevision(
         },
       },
     });
-  }, { timeout: 30_000 }) as unknown as RevisionDetail;
+  // A 2000-row layout takes about 1 s; the timeout also covers the wait for the numbering lock.
+  }, { timeout: 15_000 }) as unknown as RevisionDetail;
 
   return { revision: detail, missingPhotoRowIds };
 }

@@ -252,6 +252,19 @@ describe('createRevisionsForReachedEvents', () => {
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
+  it('reports a P2002 on the revision number as a failure, not as a duplicate', async () => {
+    const prisma = buildFakePrisma({
+      events: [reachedEvent('ev-1', 'Consegna prototipi', 'Uomo FW26')],
+      layouts: [LAYOUT],
+    });
+    vi.mocked(createRevision).mockRejectedValue(
+      prismaKnownError('P2002', 'collection_layout_revisions_collectionLayoutId_revisionNumber_key')
+    );
+
+    expect(await createRevisionsForReachedEvents(prisma, NOW, ROME, fakeLogger)).toBe(0);
+    expect(fakeLogger.warn).toHaveBeenCalled();
+  });
+
   it('one failing event does not block the others', async () => {
     const prisma = buildFakePrisma({
       events: [
