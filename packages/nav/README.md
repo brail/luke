@@ -24,7 +24,8 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `getNavDbConfig(prisma, getConfig)` | function | Reads the `integrations.nav.*` keys from AppConfig — password decrypted, everything else plain — into a `NavDbConfig`; throws when a required key is missing |
+| `getNavDbConfig(prisma, getConfig)` | function | Reads the `integrations.nav.*` keys from AppConfig — password decrypted, everything else plain — into a `NavDbConfig`; throws `NavConfigIncompleteError` when a required key is missing |
+| `NavConfigIncompleteError` | class | What `getNavDbConfig` throws on a missing key; a caller that answers an admin maps it to its own message |
 | `sanitizeCompany(company)` | function | Validates the NAV company name and bracket-escapes it before it is interpolated into a `[COMPANY$Table]` identifier |
 | `getPool(config)` / `closePool()` | function | Per-process mssql pool singleton: reconnects when host, port, database, user or password change — a `readOnly` change alone keeps the existing pool — and shares one in-flight connect between concurrent callers |
 | `testNavConnection(config)` | function | Three-step diagnostic on a throwaway pool — SQL Server authentication, `SELECT 1`, existence of at least one `[COMPANY$…]` table — used by the NAV settings UI |

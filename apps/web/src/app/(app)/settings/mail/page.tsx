@@ -97,7 +97,8 @@ export default function MailPage() {
     }
   }, [existingConfigs, baseUrlConfig, baseUrlEncrypted, form]);
 
-  const { data: passwordState } = trpc.integrations.mail.getPasswordState.useQuery();
+  const { data: passwordState, isPending: passwordPending, error: passwordError, refetch: refetchPassword } =
+    trpc.integrations.mail.getPasswordState.useQuery();
   const hasPassword = passwordState?.hasPassword;
   const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.mail.saveConfig.useMutation({
@@ -164,14 +165,15 @@ export default function MailPage() {
     <SettingsFormShell
       title="Configurazione Mail"
       description="Gestisci l'integrazione SMTP per l'invio delle email transazionali (reset password, verifica email)"
-      isPending={smtpPending || baseUrlPending}
+      isPending={smtpPending || baseUrlPending || passwordPending}
       // Both: the form saves `app.baseUrl` too, and a fallback written over an unread value would
       // replace the address of every password-reset and verification link.
-      error={smtpError ?? baseUrlError}
-      hasData={!!existingConfigs && !!baseUrlConfig}
+      error={smtpError ?? baseUrlError ?? passwordError}
+      hasData={!!existingConfigs && !!baseUrlConfig && !!passwordState}
       onRetry={() => {
         void refetchSmtp();
         void refetchBaseUrl();
+        void refetchPassword();
       }}
     >
       <SectionCard

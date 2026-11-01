@@ -66,6 +66,8 @@ const h = vi.hoisted(() => ({
   ldap: {} as Record<string, unknown>,
   google: {} as Record<string, unknown>,
   passwordUnreadable: false,
+  passwordError: null as Error | null,
+  refetchPassword: vi.fn(),
   refetchLdap: vi.fn(),
   saveLdap: vi.fn(),
   testConnection: vi.fn(),
@@ -91,7 +93,12 @@ vi.mock('../../../../lib/trpc', () => {
   const noRows: unknown[] = [];
   const passwordState = {
     useQuery: () => ({
-      data: { hasPassword: !h.passwordUnreadable, passwordUnreadable: h.passwordUnreadable },
+      data: h.passwordError
+        ? undefined
+        : { hasPassword: !h.passwordUnreadable, passwordUnreadable: h.passwordUnreadable },
+      isPending: false,
+      error: h.passwordError,
+      refetch: h.refetchPassword,
     }),
   };
   return {
@@ -151,10 +158,24 @@ beforeEach(() => {
   h.ldap = LDAP;
   h.google = GOOGLE;
   h.passwordUnreadable = false;
+  h.passwordError = null;
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+test.each([
+  ['mail', MailSettingsPage],
+  ['NAV', NavSettingsPage],
+])('%s: a failed read of the password state is the page load error, with a retry', async (_label, Page) => {
+  h.passwordError = new Error('password state failed');
+
+  const screen = await render(<Page />);
+
+  await screen.getByRole('button', { name: 'Riprova' }).click();
+  expect(h.refetchPassword).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText(/^Password/).elements()).toHaveLength(0);
 });
 
 test('LDAP off: the unreadable field is marked and editable, and only with something to repair', async () => {

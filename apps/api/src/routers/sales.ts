@@ -19,7 +19,7 @@ import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
 import { appVersion } from '../lib/appVersion';
-import { getConfig } from '../lib/configManager';
+import { getConfig, rethrowUnreadable } from '../lib/configManager';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import {
   triggerKimoSyncNow,
@@ -297,7 +297,7 @@ const portafoglioRouter = router({
           'Portafoglio PG replica empty — falling back to NAV directly',
         );
         dataSource = 'nav';
-        const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
+        const navConfig = await getNavDbConfig(ctx.prisma, getConfig).catch(rethrowUnreadable);
         const pool = await getPool(navConfig);
         rows = await queryPortafoglioOrdini(pool, navConfig.company, {
           seasonCode: season.code,

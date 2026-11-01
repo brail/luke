@@ -312,6 +312,20 @@ describe('NAV settings', () => {
     expect(getPool).not.toHaveBeenCalled();
   });
 
+  it('the portafoglio, with no replica to read, asks again for an unreadable password', async () => {
+    const getPool = vi.spyOn(nav, 'getPool');
+    const [brand, season] = await Promise.all([
+      prisma.brand.create({ data: { code: 'PF', name: 'Portafoglio' } }),
+      prisma.season.create({ data: { code: 'PF', name: 'Portafoglio', year: 2034 } }),
+    ]);
+    await makeUnreadable('integrations.nav.password');
+
+    await expect(
+      caller.sales.statistics.portafoglio.download({ brandId: brand.id, seasonId: season.id })
+    ).rejects.toMatchObject(ENTER_IT_AGAIN);
+    expect(getPool).not.toHaveBeenCalled();
+  });
+
   it('a save replaces a connection key stored encrypted that does not decrypt', async () => {
     await makeUnreadable('integrations.nav.host');
 

@@ -26,6 +26,7 @@ afterEach(() => {
 /** `runNavSync` spied on the package namespace: `appRouter` is loaded before any `vi.mock`. */
 function spyRunNavSync() {
   const now = new Date();
+  vi.spyOn(nav, 'getNavDbConfig').mockResolvedValue({} as nav.NavDbConfig); // read before the budget
   return vi.spyOn(nav, 'runNavSync').mockResolvedValue({ startedAt: now, completedAt: now, results: [] } as never);
 }
 

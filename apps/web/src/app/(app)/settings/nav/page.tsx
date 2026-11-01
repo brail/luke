@@ -83,7 +83,8 @@ export default function NavSettingsPage() {
     }
   }, [existingConfigs, form]);
 
-  const { data: passwordState } = trpc.integrations.nav.getPasswordState.useQuery();
+  const { data: passwordState, isPending: passwordPending, error: passwordError, refetch: refetchPassword } =
+    trpc.integrations.nav.getPasswordState.useQuery();
   const hasPassword = passwordState?.hasPassword;
   const utils = trpc.useUtils();
   const saveConfigMutation = trpc.integrations.nav.saveConfig.useMutation({
@@ -137,10 +138,13 @@ export default function NavSettingsPage() {
     <SettingsFormShell
       title="Configurazione Microsoft NAV"
       description="Gestisci la connessione a Microsoft Dynamics NAV tramite SQL Server"
-      isPending={isPending}
-      error={error}
-      hasData={!!existingConfigs}
-      onRetry={() => void refetch()}
+      isPending={isPending || passwordPending}
+      error={error ?? passwordError}
+      hasData={!!existingConfigs && !!passwordState}
+      onRetry={() => {
+        void refetch();
+        void refetchPassword();
+      }}
     >
       <SectionCard
         title="Connessione SQL Server"

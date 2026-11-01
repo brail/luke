@@ -356,7 +356,7 @@ export function unreadableConfigError(cause: ConfigDecryptionError): TRPCError {
   });
 }
 
-/** For a read's `.catch` in a settings test or save: `unreadableConfigError`, or the error as it is. */
+/** For a read's `.catch` where a user waits for the answer: `unreadableConfigError`, or the error as it is. */
 export function rethrowUnreadable(error: unknown): never {
   throw error instanceof ConfigDecryptionError ? unreadableConfigError(error) : error;
 }

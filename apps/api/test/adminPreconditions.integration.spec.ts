@@ -10,7 +10,9 @@
 
 import { randomUUID } from 'crypto';
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+import * as nav from '@luke/nav';
 
 import { saveConfig } from '../src/lib/configManager';
 
@@ -22,6 +24,10 @@ beforeEach(async () => {
   prisma = await setupTestDb();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('incomplete configuration reaches the admin as a 4xx', () => {
   it('NAV connection test', async () => {
     const caller = await createCallerAs('admin');
@@ -30,6 +36,35 @@ describe('incomplete configuration reaches the admin as a 4xx', () => {
       code: 'PRECONDITION_FAILED',
       message: expect.stringMatching(/^Configurazione NAV incompleta/),
     });
+  });
+
+  it('NAV preview, connecting to nothing', async () => {
+    const caller = await createCallerAs('admin');
+    const getPool = vi.spyOn(nav, 'getPool');
+
+    await expect(caller.integrations.nav.sync.preview({ entity: 'brand' })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: expect.stringMatching(/^Configurazione NAV incompleta/),
+    });
+    expect(getPool).not.toHaveBeenCalled();
+  });
+
+  it('NAV manual sync, spending none of its one attempt', async () => {
+    const caller = await createCallerAs('admin');
+    const incomplete = {
+      code: 'PRECONDITION_FAILED',
+      message: expect.stringMatching(/^Configurazione NAV incompleta/),
+    };
+
+    await expect(caller.integrations.nav.sync.run({ entity: 'brand' })).rejects.toMatchObject(incomplete);
+    await expect(caller.integrations.nav.sync.run({ entity: 'brand' })).rejects.toMatchObject(incomplete);
+  });
+
+  it('a failure to read the NAV configuration is not reported as an incomplete one', async () => {
+    const caller = await createCallerAs('admin');
+    vi.spyOn(nav, 'getNavDbConfig').mockRejectedValueOnce(new Error('database unreachable'));
+
+    await expect(caller.integrations.nav.testConnection()).rejects.toThrow('database unreachable');
   });
 
   it('SMTP test', async () => {

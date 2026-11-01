@@ -8,11 +8,12 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
-import { createSyncRequest, getNavDbConfig, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+import type { PrismaClient } from '@luke/db';
+import { createSyncRequest, getNavDbConfig, NavConfigIncompleteError, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfig, getConfigForForm, rethrowUnreadable, saveConfigs, unreadableConfigError } from '../lib/configManager';
+import { getConfig, getConfigForForm, rethrowUnreadable, saveConfigs } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 import {
   ErrorCode,
@@ -37,6 +38,21 @@ function navCalendarDate(value: Date | null): CalendarDate | null {
   return date && isInstantInRange(date, { allDay: true }) ? calendarDateOf(date) : null;
 }
 
+/** The saved connection, or the answer an admin can act on when it is unreadable or incomplete. */
+function readNavConfig(prisma: PrismaClient) {
+  return getNavDbConfig(prisma, getConfig).catch((error: unknown) => {
+    if (error instanceof NavConfigIncompleteError) {
+      throw toTRPCError(
+        createStandardError(
+          ErrorCode.CONFIG_ERROR,
+          'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
+        )
+      );
+    }
+    return rethrowUnreadable(error);
+  });
+}
+
 // ── Sync sub-router ───────────────────────────────────────────────────────────
 
 const navSyncRouter = router({
@@ -51,7 +67,7 @@ const navSyncRouter = router({
     .use(requirePermission('config:read'))
     .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .query(async ({ input, ctx }) => {
-      const config = await getNavDbConfig(ctx.prisma, getConfig).catch(rethrowUnreadable);
+      const config = await readNavConfig(ctx.prisma);
       const pool = await getPool(config);
 
       if (input.entity === 'brand') {
@@ -297,11 +313,8 @@ const navSyncRouter = router({
     .use(requirePermission('config:update'))
     .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .mutation(async ({ input, ctx }) => {
-      // Before the budget below: the answer to a value to enter again must not spend the one attempt.
-      // Anything else this read refuses is the sync's own to report.
-      await getNavDbConfig(ctx.prisma, getConfig).catch((error: unknown) => {
-        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
-      });
+      // Before the budget below: an answer the admin can act on must not spend the one attempt.
+      await readNavConfig(ctx.prisma);
 
       // One manual sync per entity per window, not one for all three: syncing vendors must not
       // block brands. Keyed by user and entity here, where the entity is known, whatever `keyBy`
@@ -549,17 +562,7 @@ export const navRouter = router({
     .use(requirePermission('config:read'))
     .mutation(async ({ ctx }) => {
       // Reads the entire saved config (including decrypted password)
-      let config;
-      try {
-        config = await getNavDbConfig(ctx.prisma, getConfig);
-      } catch (error) {
-        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
-        const err = createStandardError(
-          ErrorCode.CONFIG_ERROR,
-          'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company) prima di testare.'
-        );
-        throw toTRPCError(err);
-      }
+      const config = await readNavConfig(ctx.prisma);
 
       const result = await testNavConnection(config);
 

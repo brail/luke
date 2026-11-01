@@ -39,11 +39,19 @@ export function sanitizeCompany(company: string): string {
   return company.replace(/\]/g, ']]');
 }
 
+/** A required `integrations.nav.*` key is missing: what an admin can fix by saving the settings. */
+export class NavConfigIncompleteError extends Error {
+  constructor() {
+    super('Incomplete NAV configuration: check the integrations.nav.* keys in AppConfig.');
+    this.name = 'NavConfigIncompleteError';
+  }
+}
+
 /**
  * Reads all NAV connection parameters from AppConfig via the injected `getConfig` function, which
  * decrypts whatever is stored encrypted.
  *
- * @throws {Error} When any required key (`host`, `port`, `database`, `user`, `password`, `company`) is missing.
+ * @throws {NavConfigIncompleteError} When any required key (`host`, `port`, `database`, `user`, `password`, `company`) is missing.
  */
 export async function getNavDbConfig(
   prisma: PrismaClient,
@@ -61,9 +69,7 @@ export async function getNavDbConfig(
     ]);
 
   if (!host || !port || !database || !user || !password || !company) {
-    throw new Error(
-      'Configurazione NAV incompleta. Verifica le chiavi integrations.nav.* in AppConfig.',
-    );
+    throw new NavConfigIncompleteError();
   }
 
   return {

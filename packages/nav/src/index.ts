@@ -1,4 +1,4 @@
-export { getNavDbConfig, sanitizeCompany } from './config.js';
+export { getNavDbConfig, NavConfigIncompleteError, sanitizeCompany } from './config.js';
 export type { NavDbConfig, GetConfigFn } from './config.js';
 
 export { getPool, closePool, testNavConnection } from './client.js';
