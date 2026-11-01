@@ -38,6 +38,7 @@ const HIDDEN_EVENT = {
   eventTitle: null,
   deadlineDay: null,
   daysMode: 'calendar' as const,
+  // Widened from `never[]`: a masked row keeps the type of an unmasked one.
   relevantCountryCodes: [] as string[],
 };
 

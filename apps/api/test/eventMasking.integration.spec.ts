@@ -8,9 +8,11 @@
 import { randomUUID } from 'crypto';
 
 import ExcelJS from 'exceljs';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
+
+import * as eventMasking from '../src/services/eventMasking.service';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, grantBrandAccess, setupTestDb } from './helpers';
 
@@ -302,6 +304,10 @@ describe('collectionLayoutRevision', () => {
   });
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('seasonCalendar.applyTemplate', () => {
   async function applyWith(caller: typeof adminCaller) {
     const uid = randomUUID().substring(0, 6);
@@ -334,6 +340,15 @@ describe('seasonCalendar.applyTemplate', () => {
     const { answer } = await applyWith(caller());
 
     expect(answer.map(e => e.title).sort()).toEqual(['Item for all', 'Item restricted']);
+  });
+
+  it('stays successful, listing nothing, when the read after the save fails', async () => {
+    vi.spyOn(eventMasking, 'visibilityOf').mockRejectedValueOnce(new Error('read failed'));
+
+    const { answer, created } = await applyWith(outsiderCaller);
+
+    expect(answer).toEqual([]);
+    expect(created).toBe(2);
   });
 });
 
@@ -368,6 +383,30 @@ describe('seasonCalendar.cloneFromBrandSeason', () => {
     expect(answer.createdEventIds).toHaveLength(1);
     expect(answer.milestonesCreated).toBe(1);
     expect(await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } })).toBe(before + 2);
+  });
+
+  it('stays successful, listing nothing, when the read after the save fails', async () => {
+    const groupId = await sourceGroup({ startAt: MIDNIGHT, allDay: true });
+    const before = await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } });
+    // The clone reads visibility once before saving: only the second read is the one after the save.
+    const real = eventMasking.visibilityOf;
+    vi.spyOn(eventMasking, 'visibilityOf').mockImplementationOnce(real).mockRejectedValueOnce(new Error('read failed'));
+
+    const answer = await clone(outsiderCaller, groupId);
+
+    expect(answer.createdEventIds).toEqual([]);
+    expect(answer.milestonesCreated).toBe(0);
+    expect(await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } })).toBe(before + 2);
+  });
+
+  it('refuses the clone, saving nothing, when the read before the save fails', async () => {
+    const groupId = await sourceGroup({ startAt: MIDNIGHT, allDay: true });
+    const before = await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } });
+    vi.spyOn(eventMasking, 'visibilityOf').mockRejectedValueOnce(new Error('read failed'));
+
+    await expect(clone(outsiderCaller, groupId)).rejects.toThrow('read failed');
+
+    expect(await prisma.calendarEvent.count({ where: { calendarId: { not: calendarId } } })).toBe(before);
   });
 
   it('answers all the copies to a member of the functions', async () => {

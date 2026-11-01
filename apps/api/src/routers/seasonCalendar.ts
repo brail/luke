@@ -718,7 +718,7 @@ export const seasonCalendarRouter = router({
    *
    * @auth season_calendar:update
    * @input { planningGroupId, templateId, anchorDate?, force }
-   * @output The created events the caller can list; the others exist all the same
+   * @output The created events the caller can list; the others exist all the same. None when that read fails after the save
    */
   applyTemplate: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -738,7 +738,12 @@ export const seasonCalendarRouter = router({
         calendarId: group.calendarId,
         eventKey: 'CALENDAR_APPLY_TEMPLATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on apply template'));
-      const isVisible = await visibilityOf(ctx, result.map(e => e.id));
+      // Already saved and audited: this read only trims the answer, so a failure lists nothing
+      // instead of reporting a saved write as failed, which a retry would repeat.
+      const isVisible = await visibilityOf(ctx, result.map(e => e.id)).catch(err => {
+        ctx.logger.error(err, 'calendar visibility read failed on apply template');
+        return () => false;
+      });
       return result.filter(e => isVisible(e.id));
     }),
 
@@ -854,7 +859,7 @@ export const seasonCalendarRouter = router({
    *
    * @auth season_calendar:update
    * @input CloneSeasonCalendarInputSchema
-   * @output { calendarId, milestonesCreated, createdEventIds } — of the copies, those the caller can list
+   * @output { calendarId, milestonesCreated, createdEventIds } — of the copies, those the caller can list; none when that read fails after the save
    */
   cloneFromBrandSeason: protectedProcedure
     .use(requirePermission('season_calendar:update'))
@@ -875,7 +880,12 @@ export const seasonCalendarRouter = router({
         calendarId: result.calendarId,
         eventKey: 'CALENDAR_CLONE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on clone'));
-      const isVisible = await visibilityOf(ctx, result.createdEventIds);
+      // Already saved and audited: this read only trims the answer, so a failure lists nothing
+      // instead of reporting a saved write as failed, which a retry would repeat.
+      const isVisible = await visibilityOf(ctx, result.createdEventIds).catch(err => {
+        ctx.logger.error(err, 'calendar visibility read failed on clone');
+        return () => false;
+      });
       const createdEventIds = result.createdEventIds.filter(isVisible);
       return { ...result, createdEventIds, milestonesCreated: createdEventIds.length };
     }),
