@@ -1,3 +1,4 @@
+import { GitHubIssueSchema } from '@luke/core';
 import type { PrismaClient, FeedbackSubmission } from '@luke/db';
 
 import { getConfig, getTypedConfig } from './configManager';
@@ -6,12 +7,6 @@ import { createNotification } from './notifications';
 import { withSchedulerLock } from './schedulerLock';
 
 import type { FastifyInstance } from 'fastify';
-
-interface GitHubIssue {
-  state: 'open' | 'closed';
-  comments: number;
-  html_url: string;
-}
 
 async function syncSubmission(
   prisma: PrismaClient,
@@ -22,6 +17,7 @@ async function syncSubmission(
   const res = await fetch(
     `https://api.github.com/repos/${submission.repo}/issues/${submission.issueNumber}`,
     {
+      signal: AbortSignal.timeout(10_000),
       headers: {
         Authorization: `Bearer ${token}`,
         Accept: 'application/vnd.github+json',
@@ -38,15 +34,18 @@ async function syncSubmission(
     return;
   }
 
-  const issue = await res.json() as GitHubIssue;
+  const parsed = GitHubIssueSchema.safeParse(await res.json().catch(() => null));
+  if (!parsed.success) {
+    logger.warn(
+      { issueNumber: submission.issueNumber, repo: submission.repo, issues: parsed.error.issues },
+      'Feedback sync: GitHub answer not understood',
+    );
+    return;
+  }
+  const issue = parsed.data;
   const justClosed = issue.state === 'closed' && submission.status === 'open';
   const hasNewComments = issue.comments > submission.commentCount;
   if (!justClosed && !hasNewComments) return;
-
-  await prisma.feedbackSubmission.update({
-    where: { id: submission.id },
-    data: { status: issue.state, commentCount: issue.comments },
-  });
 
   await createNotification(prisma, {
     userId: submission.userId,
@@ -57,6 +56,12 @@ async function syncSubmission(
       : `C'è una nuova risposta sulla tua segnalazione #${submission.issueNumber}`,
     link: issue.html_url,
     data: { issueNumber: submission.issueNumber, type: justClosed ? 'feedback_closed' : 'feedback_comment' },
+  });
+
+  // After the notice: a failed insert leaves the change to find again on the next tick.
+  await prisma.feedbackSubmission.update({
+    where: { id: submission.id },
+    data: { status: issue.state, commentCount: issue.comments },
   });
 }
 

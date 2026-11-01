@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { FeedbackSubmitInputSchema } from '@luke/core';
+import { FeedbackSubmitInputSchema, GitHubCreatedIssueSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getTypedConfig } from '../lib/configManager';
@@ -44,7 +44,14 @@ export const feedbackRouter = router({
         `Inviato da: ${displayName} (${user?.email ?? ctx.session.user.email})`,
       ].join('\n');
 
+      const failed = () =>
+        new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Errore nella creazione della segnalazione. Riprova.',
+        });
+
       const res = await fetch(`https://api.github.com/repos/${repo}/issues`, {
+        signal: AbortSignal.timeout(10_000),
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -57,6 +64,9 @@ export const feedbackRouter = router({
           body,
           labels: LABEL_MAP[input.type],
         }),
+      }).catch((err: unknown) => {
+        ctx.logger.error({ err, repo }, 'GitHub issue creation failed');
+        throw failed();
       });
 
       if (!res.ok) {
@@ -65,13 +75,15 @@ export const feedbackRouter = router({
           { status: res.status, repo, body: errorBody },
           'GitHub issue creation failed',
         );
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Errore nella creazione della segnalazione. Riprova.',
-        });
+        throw failed();
       }
 
-      const issue = await res.json() as { html_url: string; number: number };
+      const parsed = GitHubCreatedIssueSchema.safeParse(await res.json().catch(() => null));
+      if (!parsed.success) {
+        ctx.logger.error({ repo, issues: parsed.error.issues }, 'GitHub issue creation: answer not understood');
+        throw failed();
+      }
+      const issue = parsed.data;
 
       await ctx.prisma.feedbackSubmission.create({
         data: {

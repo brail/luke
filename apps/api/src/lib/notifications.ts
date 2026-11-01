@@ -87,19 +87,25 @@ export async function createNotification(
  * already has the recipient id list on hand — e.g. because it also needs it for something
  * else in the same request — can call this directly instead of forcing another `user.findMany`
  * through `notifyAllUsers`'s own internal query.
+ *
+ * @returns Whether anyone received it.
  */
 export async function bulkNotify(
   prisma: PrismaClient,
   userIds: string[],
   params: Omit<NotificationRow, 'userId'>
-): Promise<void> {
+): Promise<boolean> {
   const toNotify = await recipientsOf(prisma, userIds, params.category);
-  await insertNotifications(prisma, toNotify.map(userId => ({ userId, ...params })));
+  return insertNotifications(prisma, toNotify.map(userId => ({ userId, ...params })));
 }
 
-/** Inserts `rows` in one statement and pings each recipient over SSE. No preference check (`recipientsOf`). */
-export async function insertNotifications(prisma: PrismaClient, rows: NotificationRow[]): Promise<void> {
-  if (rows.length === 0) return;
+/**
+ * Inserts `rows` in one statement and pings each recipient over SSE. No preference check (`recipientsOf`).
+ *
+ * @returns Whether there was anything to insert.
+ */
+export async function insertNotifications(prisma: PrismaClient, rows: NotificationRow[]): Promise<boolean> {
+  if (rows.length === 0) return false;
   await prisma.notification.createMany({
     data: rows.map(r => ({
       userId: r.userId,
@@ -112,6 +118,7 @@ export async function insertNotifications(prisma: PrismaClient, rows: Notificati
     })),
   });
   for (const { userId } of rows) sseStore.pushToUser(userId, { type: 'notification', payload: {} });
+  return true;
 }
 
 // ─── Aggregation buffer for calendar notifications ─────────────────────────────
@@ -325,19 +332,19 @@ export const SYSTEM_FAILURE_DEDUP_MS = 6 * 60 * 60 * 1000;
  * The dedup ledger is persisted in `NotificationDedupKey` (not in-memory) so it survives
  * process restarts — otherwise every redeploy/restart would reset the window and re-fire
  * recurring notifications (e.g. sync failures, deadline notices) regardless of how
- * recently one was already sent. The timestamp is updated only after `send()` resolves
- * without throwing, so a failed send is retried on the next call instead of being silently
- * suppressed for the full window.
+ * recently one was already sent. The timestamp is updated only after `send()` reports a delivery,
+ * so a failed send, or one every recipient had muted, is retried on the next call instead of being
+ * silently suppressed for the full window.
  */
 export async function notifyDeduped(
   prisma: PrismaClient,
   key: string,
   windowMs: number,
-  send: () => Promise<void>
+  send: () => Promise<boolean>
 ): Promise<void> {
   const existing = await prisma.notificationDedupKey.findUnique({ where: { key } });
   if (existing && Date.now() - existing.lastSentAt.getTime() < windowMs) return;
-  await send();
+  if (!(await send())) return;
   await prisma.notificationDedupKey.upsert({
     where: { key },
     create: { key, lastSentAt: new Date() },
@@ -349,16 +356,18 @@ export async function notifyDeduped(
  * Broadcasts a notification to all active admin users in a single `createMany` call.
  * Respects per-user notification preferences (disabled entries are excluded).
  * Sends an SSE ping to each notified admin's active connections.
+ *
+ * @returns Whether any admin received it.
  */
 export async function notifyAdmins(
   prisma: PrismaClient,
   params: Omit<NotificationRow, 'userId'>
-): Promise<void> {
+): Promise<boolean> {
   const admins = await prisma.user.findMany({
     where: { role: 'admin', isActive: true },
     select: { id: true },
   });
-  await bulkNotify(prisma, admins.map(a => a.id), params);
+  return bulkNotify(prisma, admins.map(a => a.id), params);
 }
 
 /**

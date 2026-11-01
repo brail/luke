@@ -57,7 +57,7 @@ function mockGitHubIssueCreate(overrides: MockIssueResponse = {}) {
     errorText = 'Bad credentials',
   } = overrides;
 
-  const fetchMock = vi.fn(async (_url: string, _init?: { headers: Record<string, string>; body: string }) => ({
+  const fetchMock = vi.fn(async (_url: string, _init?: { headers: Record<string, string>; body: string; signal: AbortSignal }) => ({
     ok,
     status: ok ? 201 : 401,
     json: async () => ({ number, html_url }),
@@ -99,7 +99,7 @@ describe('feedback.submit', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     // `RequestInit` isn't recognized by this file's eslint env; the shape only needs
     // what's read below, so a narrow local type stands in for it.
-    const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string>; body: string }];
+    const [url, init] = fetchMock.mock.calls[0] as [string, { headers: Record<string, string>; body: string; signal: AbortSignal }];
     expect(url).toBe(`https://api.github.com/repos/${repo}/issues`);
     expect(init.headers.Authorization).toBe('Bearer ghp_test_token');
     const requestBody = JSON.parse(init.body as string);
@@ -168,6 +168,36 @@ describe('feedback.submit', () => {
     // no issue was actually created on GitHub — orphan state pointing nowhere.
     expect(await prisma.feedbackSubmission.count()).toBe(0);
     expect(await prisma.auditLog.count({ where: { action: 'FEEDBACK_SUBMIT' } })).toBe(0);
+  });
+
+  it.each([
+    ['no issue number', { number: Number.NaN }],
+    ['a link that is not https', { html_url: 'javascript:alert(1)' }],
+    ['a link outside GitHub', { html_url: 'https://elsewhere.example/issues/42' }],
+  ])('a GitHub answer with %s → INTERNAL_SERVER_ERROR, no orphan submission or audit', async (_label, answer) => {
+    await seedFeedbackConfig();
+    mockGitHubIssueCreate(answer);
+    const { session } = await createTestUser('admin');
+
+    await expect(
+      createCallerWithSession(session).feedback.submit({ type: 'bug', title: 'x', description: 'y' })
+    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR', message: 'Errore nella creazione della segnalazione. Riprova.' });
+
+    expect(await prisma.feedbackSubmission.count()).toBe(0);
+    expect(await prisma.auditLog.count({ where: { action: 'FEEDBACK_SUBMIT' } })).toBe(0);
+  });
+
+  it('a call GitHub never answers is bounded, and answers the same message', async () => {
+    await seedFeedbackConfig();
+    const fetchMock = mockGitHubIssueCreate();
+    fetchMock.mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'));
+    const { session } = await createTestUser('admin');
+
+    await expect(
+      createCallerWithSession(session).feedback.submit({ type: 'bug', title: 'x', description: 'y' })
+    ).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR', message: 'Errore nella creazione della segnalazione. Riprova.' });
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('an empty title is rejected by the Zod schema before any fetch', async () => {

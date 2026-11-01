@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { createNotification, flushAllCalendarNotifications, notifyCalendarChange } from '../src/lib/notifications';
+import { createNotification, flushAllCalendarNotifications, notifyAdmins, notifyCalendarChange, notifyDeduped } from '../src/lib/notifications';
 
 import { createCallerWithSession, createTestUser, setupTestDb } from './helpers';
 import { createSilentLogger } from './helpers/logger';
@@ -32,6 +32,28 @@ describe('notifications.preferences.listCalendarEventOverrides', () => {
     await caller.notifications.preferences.updateCalendarEventOverride({ eventKey: 'CALENDAR_DIGEST', enabled: true });
     await caller.notifications.preferences.update({ category: 'CALENDAR', enabled: false });
     expect(await enabled()).toMatchObject({ CALENDAR_PHASE_OVERDUE: false, CALENDAR_DIGEST: false, CALENDAR_CREATE: false });
+  });
+});
+
+describe('notifyDeduped', () => {
+  it('holds no window for a notice nobody received, and one for a notice delivered', async () => {
+    await createTestUser('admin');
+    const admins = await prisma.user.findMany({ where: { role: 'admin', isActive: true }, select: { id: true } });
+    await prisma.notificationPreference.createMany({
+      data: admins.map(({ id }) => ({ userId: id, category: 'SYSTEM' as const, eventKey: '', enabled: false })),
+    });
+    const notice = () =>
+      notifyDeduped(prisma, 'test:failure', 60_000, () =>
+        notifyAdmins(prisma, { category: 'SYSTEM', title: 't', message: 'm' })
+      );
+
+    await notice();
+    expect(await prisma.notificationDedupKey.count({ where: { key: 'test:failure' } })).toBe(0);
+
+    await prisma.notificationPreference.deleteMany({ where: { userId: { in: admins.map(a => a.id) } } });
+    await notice();
+    await notice();
+    expect(await prisma.notification.count({ where: { title: 't', userId: { in: admins.map(a => a.id) } } })).toBe(admins.length);
   });
 });
 

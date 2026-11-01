@@ -67,7 +67,7 @@ function mockGitHubIssue(
   overrides: Partial<{ ok: boolean; state: 'open' | 'closed'; comments: number; html_url: string }> = {}
 ) {
   const { ok = true, state = 'open', comments = 0, html_url = 'https://github.com/luke-org/luke/issues/42' } = overrides;
-  const fetchMock = vi.fn(async () => ({
+  const fetchMock = vi.fn(async (_url: string, _init?: { signal: AbortSignal }) => ({
     ok,
     status: ok ? 200 : 404,
     json: async () => ({ state, comments, html_url }),
@@ -201,7 +201,7 @@ describe('feedbackSyncScheduler', () => {
       'fetch',
       vi.fn(async (url: string) => {
         if (url.includes('/issues/1')) throw new Error('network error');
-        return { ok: true, status: 200, json: async () => ({ state: 'open', comments: 1, html_url: 'x' }) };
+        return { ok: true, status: 200, json: async () => ({ state: 'open', comments: 1, html_url: 'https://github.com/luke-org/luke/issues/2' }) };
       })
     );
 
@@ -214,6 +214,34 @@ describe('feedbackSyncScheduler', () => {
       where: { id: 'sub-ok' },
       data: { status: 'open', commentCount: 1 },
     });
+  });
+
+  it('an answer that is not an issue, or links outside https → no update, no notification', async () => {
+    mockGitHubIssue({ comments: 1, html_url: 'javascript:alert(1)' });
+    const prisma = buildFakePrisma([buildSubmission()]);
+
+    await runFirstTick(prisma);
+
+    expect(prisma.feedbackSubmission.update).not.toHaveBeenCalled();
+    expect(createNotification).not.toHaveBeenCalled();
+  });
+
+  it('a notification that fails leaves the change to find again on the next tick', async () => {
+    mockGitHubIssue({ comments: 1 });
+    vi.mocked(createNotification).mockRejectedValueOnce(new Error('insert failed'));
+    const prisma = buildFakePrisma([buildSubmission()]);
+
+    await runFirstTick(prisma);
+
+    expect(prisma.feedbackSubmission.update).not.toHaveBeenCalled();
+  });
+
+  it('the call to GitHub is bounded', async () => {
+    const fetchMock = mockGitHubIssue();
+
+    await runFirstTick(buildFakePrisma([buildSubmission()]));
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('unreachable issue (GitHub 404/401) → no update, no notification, no exception propagated', async () => {
