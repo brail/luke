@@ -112,9 +112,11 @@ packages/
 - **Raw SQL** only in `packages/nav/src/`, never in application logic. Exceptions, each with a
   justifying comment: the health-probe `SELECT 1` (`observability/readiness.ts`); a
   transaction-scoped advisory lock (`pg_advisory_xact_lock`, e.g. `acquireLastAdminLock`) or a row
-  lock (`SELECT … FOR UPDATE`, which excludes a foreign-key check's `FOR KEY SHARE`, e.g.
-  `removeParameterSet`) inside an interactive `$transaction`; application-domain queries that need
-  SQL the ORM cannot express (e.g. `DISTINCT ON` + `json_agg ... FILTER`) — always the `Prisma.sql`
+  lock (`SELECT … FOR UPDATE` to exclude other row locks, including a foreign-key check's
+  `FOR KEY SHARE`, e.g. `removeParameterSet`, or `SELECT … FOR NO KEY UPDATE` to serialize writes
+  without blocking that check, e.g. `lockRow`) inside an interactive `$transaction`;
+  application-domain queries that need SQL the ORM cannot express (e.g. `DISTINCT ON` +
+  `json_agg ... FILTER`) — always the `Prisma.sql`
   tagged template, never `$queryRawUnsafe`/`$executeRawUnsafe`.
 - **API layer**: tRPC for all dashboard/UI routes; direct Prisma for AI agent queries.
 - **Validation**: Zod schemas from `@luke/core` — never redefine inline. The catalog is
