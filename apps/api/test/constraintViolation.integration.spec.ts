@@ -9,6 +9,7 @@
  * no writer's error handling names, the default planning group's, is pinned here too.
  */
 
+import { randomUUID } from 'crypto';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
@@ -16,9 +17,11 @@ import { describe, it, expect, beforeEach } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { isForeignKeyViolation, isUniqueViolation } from '../src/lib/error';
+import { FOREIGN_KEYS, isForeignKeyViolation, isUniqueViolation, refuseOnForeignKey } from '../src/lib/error';
 
 import { setupTestDb } from './helpers/database';
+
+
 
 const SRC = join(import.meta.dirname, '..', 'src');
 
@@ -36,16 +39,27 @@ describe('constraint violations', () => {
 
     expect(isUniqueViolation(err, 'brands_code_key')).toBe(true);
     expect(isUniqueViolation(err, 'brands_navBrandId_key')).toBe(false);
-    expect(isForeignKeyViolation(err, 'brands_code_key')).toBe(false);
   });
 
   it('a missing reference is a foreign-key violation naming its constraint', async () => {
-    const err = await prisma.season
-      .create({ data: { code: 'S1', name: 'S1', navSeasonId: 'NO-SUCH-NAV-SEASON' } })
+    const season = await prisma.season.create({ data: { code: 'S1', name: 'S1', year: 2034 } });
+
+    const err = await prisma.collectionLayout
+      .create({ data: { brandId: randomUUID(), seasonId: season.id } })
       .catch((e: unknown) => e);
 
-    expect(isForeignKeyViolation(err, 'seasons_navSeasonId_fkey')).toBe(true);
-    expect(isUniqueViolation(err, 'seasons_navSeasonId_fkey')).toBe(false);
+    expect(isForeignKeyViolation(err, FOREIGN_KEYS.layoutBrand)).toBe(true);
+    expect(isUniqueViolation(err, FOREIGN_KEYS.layoutBrand)).toBe(false);
+  });
+
+  it('refuseOnForeignKey answers a refusal of its constraint and leaves any other error alone', async () => {
+    const season = await prisma.season.create({ data: { code: 'FK', name: 'FK', year: 2034 } });
+    const write = () => prisma.collectionLayout.create({ data: { brandId: randomUUID(), seasonId: season.id } });
+    const answer = new Error('the answer');
+
+    await expect(refuseOnForeignKey(FOREIGN_KEYS.layoutBrand, () => answer, write)).rejects.toBe(answer);
+    await expect(refuseOnForeignKey(FOREIGN_KEYS.layoutSeason, () => answer, write)).rejects.toMatchObject({ code: 'P2003' });
+    await expect(refuseOnForeignKey(FOREIGN_KEYS.layoutBrand, () => answer, async () => 'written')).resolves.toBe('written');
   });
 
   it('only the default planning group has no stored name', async () => {
@@ -65,11 +79,11 @@ describe('constraint violations', () => {
   });
 
   it('every constraint the code names exists in the migrated schema', async () => {
-    const named = new Set<string>();
+    const named = new Set<string>(Object.values(FOREIGN_KEYS));
     for (const file of readdirSync(SRC, { recursive: true, encoding: 'utf8' })) {
       // Production code only: a unit test names constraints inside nested fixture calls.
       if (!file.endsWith('.ts') || file.includes('__tests__')) continue;
-      for (const call of readFileSync(join(SRC, file), 'utf8').matchAll(/is(?:Unique|ForeignKey)Violation\(([^)]*)\)/g)) {
+      for (const call of readFileSync(join(SRC, file), 'utf8').matchAll(/isUniqueViolation\(([^)]*)\)/g)) {
         for (const literal of call[1].matchAll(/'([^']+)'/g)) named.add(literal[1]);
       }
     }

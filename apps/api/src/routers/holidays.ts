@@ -5,7 +5,7 @@ import { NagerHolidaysSchema, parseCalendarDate, utcMidnightOf, VendorClosureUps
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
-import { isForeignKeyViolation } from '../lib/error.js';
+import { FOREIGN_KEYS, isForeignKeyViolation } from '../lib/error.js';
 import { requirePermission } from '../lib/permissions.js';
 import { router, protectedProcedure } from '../lib/trpc.js';
 import { resolveCompanyCountryCode } from '../services/companyProfile.service.js';
@@ -16,7 +16,7 @@ function rethrowClosureNotFound(e: unknown): never {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Periodo non trovato' });
   }
-  if (isForeignKeyViolation(e, 'vendor_closure_periods_vendorId_fkey') || isForeignKeyViolation(e, 'vendor_closure_periods_seasonId_fkey')) {
+  if (isForeignKeyViolation(e, FOREIGN_KEYS.closureVendor, FOREIGN_KEYS.closureSeason)) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Fornitore o stagione non trovati' });
   }
   throw e;

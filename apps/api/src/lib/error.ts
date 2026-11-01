@@ -47,12 +47,45 @@ function violates(err: unknown, code: string, constraints: readonly string[]): b
   return constraint !== undefined && constraints.includes(constraint);
 }
 
+/** The foreign keys the code answers a refusal of, so that a rename is one edit and a typo does not compile. */
+export const FOREIGN_KEYS = {
+  closureSeason: 'vendor_closure_periods_seasonId_fkey',
+  closureVendor: 'vendor_closure_periods_vendorId_fkey',
+  eventNoteEvent: 'calendar_event_personal_notes_eventId_fkey',
+  layoutBrand: 'collection_layouts_brandId_fkey',
+  layoutSeason: 'collection_layouts_seasonId_fkey',
+  merchRowParameterSet: 'merchandising_plan_rows_pricingParameterSetId_fkey',
+  quotationParameterSet: 'collection_row_quotations_pricingParameterSetId_fkey',
+  rowPlanningGroup: 'collection_layout_rows_planningGroupId_fkey',
+  specsheetImageSpecsheet: 'merchandising_images_specsheetId_fkey',
+} as const;
+export type ForeignKey = (typeof FOREIGN_KEYS)[keyof typeof FOREIGN_KEYS];
+
 /**
  * `true` when `err` is Prisma's foreign-key violation (P2003) on one of the named constraints — and
  * only on those, so a failure on another relation keeps its own answer.
  */
-export function isForeignKeyViolation(err: unknown, ...constraints: [string, ...string[]]): boolean {
+export function isForeignKeyViolation(err: unknown, ...constraints: [ForeignKey, ...ForeignKey[]]): boolean {
   return violates(err, 'P2003', constraints);
+}
+
+/**
+ * Runs a write whose precondition a foreign key holds until it commits (CLAUDE.md, Development
+ * Patterns rule 3): the key's refusal gets the check's answer, not a 500.
+ *
+ * @throws What `answer` builds, on a violation of `constraint`; anything else as it is.
+ */
+export async function refuseOnForeignKey<T>(
+  constraint: ForeignKey,
+  answer: () => Error,
+  write: () => Promise<T>
+): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (isForeignKeyViolation(err, constraint)) throw answer();
+    throw err;
+  }
 }
 
 /**

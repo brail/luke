@@ -42,7 +42,7 @@ import {
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
-import { isForeignKeyViolation } from '../lib/error.js';
+import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error.js';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -667,15 +667,12 @@ export const seasonCalendarRouter = router({
         await deleteNote(input.eventId, ctx.session.user.id, ctx.prisma);
         return null;
       }
-      try {
-        return await upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma);
-      } catch (err) {
-        // The event was deleted after the lookup above: the lookup's answer, not a 500.
-        if (isForeignKeyViolation(err, 'calendar_event_personal_notes_eventId_fkey')) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
-        }
-        throw err;
-      }
+      // The event was deleted after the lookup above: the lookup's answer, not a 500.
+      return refuseOnForeignKey(
+        FOREIGN_KEYS.eventNoteEvent,
+        () => new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' }),
+        () => upsertNote(input.eventId, ctx.session.user.id, input.body, ctx.prisma)
+      );
     }),
 
   /**

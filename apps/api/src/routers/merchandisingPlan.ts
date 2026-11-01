@@ -25,7 +25,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { isForeignKeyViolation } from '../lib/error';
+import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
 import { createNotification } from '../lib/notifications';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
@@ -66,15 +66,8 @@ async function assertParameterSetOfPlan(
  * No transaction around the check and the write — under READ COMMITTED it would not hold the check;
  * the foreign key does.
  */
-async function writeCheckedRow<T>(write: () => Promise<T>): Promise<T> {
-  try {
-    return await write();
-  } catch (err) {
-    if (isForeignKeyViolation(err, 'merchandising_plan_rows_pricingParameterSetId_fkey')) {
-      throw invalidParameterSet();
-    }
-    throw err;
-  }
+function writeCheckedRow<T>(write: () => Promise<T>): Promise<T> {
+  return refuseOnForeignKey(FOREIGN_KEYS.merchRowParameterSet, invalidParameterSet, write);
 }
 
 const PLAN_SUMMARY_SELECT = {

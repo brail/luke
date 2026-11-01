@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
-import { isForeignKeyViolation } from '../lib/error';
+import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error';
 import { confirmPendingFile } from '../lib/pendingFile';
 
 import { ingestImageAsset } from './asset.service';
@@ -63,7 +63,10 @@ export async function uploadSpecsheetImage(
 
   const result = await ingestImageAsset(ctx, { kind: 'specsheet-image', file: params.file, pending: true });
 
-  const image = await ctx.prisma.$transaction(async tx => {
+  // A cascade from deleting the plan row or the specsheet does not take the lock, so the
+  // specsheet can still go between the re-read and the insert; the whole transaction, the file's
+  // confirmation included, has rolled back.
+  const image = await refuseOnForeignKey(FOREIGN_KEYS.specsheetImageSpecsheet, specsheetNotFound, () => ctx.prisma.$transaction(async tx => {
     await lockSpecsheetImages(tx, params.specsheetId);
 
     const specsheet = await tx.merchandisingSpecsheet.findUnique({
@@ -97,13 +100,7 @@ export async function uploadSpecsheetImage(
         caption: params.caption ?? null,
       },
     });
-  }).catch((err: unknown) => {
-    // A cascade from deleting the plan row or the specsheet does not take the lock, so the
-    // specsheet can still go between the re-read and the insert; the whole transaction, the file's
-    // confirmation included, has rolled back.
-    if (isForeignKeyViolation(err, 'merchandising_images_specsheetId_fkey')) throw specsheetNotFound();
-    throw err;
-  });
+  }));
 
   await logAudit(ctx, {
     action: 'SPECSHEET_IMAGE_UPLOADED',

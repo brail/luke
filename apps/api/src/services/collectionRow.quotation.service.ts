@@ -17,7 +17,7 @@ import type {
   PricingParameterSet,
 } from '@luke/db';
 
-import { isForeignKeyViolation } from '../lib/error.js';
+import { FOREIGN_KEYS, refuseOnForeignKey } from '../lib/error.js';
 
 export type QuotationWithParamSet = CollectionRowQuotation & {
   pricingParameterSet: PricingParameterSet | null;
@@ -41,15 +41,8 @@ function paramSetOutOfScope(): TRPCError {
  * use, so a write that loses that race meets the foreign key, and the refusal gets the check's
  * answer instead of a 500. Inside a transaction the error still propagates, and it rolls back whole.
  */
-async function writeCheckedQuotations<T>(write: () => Promise<T>): Promise<T> {
-  try {
-    return await write();
-  } catch (err) {
-    if (isForeignKeyViolation(err, 'collection_row_quotations_pricingParameterSetId_fkey')) {
-      throw paramSetOutOfScope();
-    }
-    throw err;
-  }
+function writeCheckedQuotations<T>(write: () => Promise<T>): Promise<T> {
+  return refuseOnForeignKey(FOREIGN_KEYS.quotationParameterSet, paramSetOutOfScope, write);
 }
 
 /**

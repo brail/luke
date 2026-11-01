@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 
+import { FOREIGN_KEYS } from '../src/lib/error';
 import { copiedQuotation, copyFailure } from '../src/services/collectionLayout.service';
 
 import { prismaKnownError } from './helpers/prismaError';
@@ -52,7 +53,7 @@ describe('copiedQuotation', () => {
 describe('copyFailure', () => {
   const error = prismaKnownError;
 
-  it.each(['collection_layout_rows_planningGroupId_fkey', 'collection_row_quotations_pricingParameterSetId_fkey'])(
+  it.each([FOREIGN_KEYS.rowPlanningGroup, FOREIGN_KEYS.quotationParameterSet])(
     'answers CONFLICT when a target reference went away (%s)',
     index => {
       expect(copyFailure(error('P2003', index))).toMatchObject({ code: 'CONFLICT' });

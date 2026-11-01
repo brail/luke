@@ -25,7 +25,7 @@ import type {
   PricingParameterSet,
 } from '@luke/db';
 
-import { isForeignKeyViolation, isUniqueViolation } from '../lib/error.js';
+import { FOREIGN_KEYS, isForeignKeyViolation, isUniqueViolation, refuseOnForeignKey } from '../lib/error.js';
 
 import { assertUnlocked } from './editLock.service.js';
 import { resolveDefaultPlanningGroupId } from './seasonCalendar.service.js';
@@ -50,7 +50,7 @@ export type RowWithVendor = CollectionLayoutRow & {
  * The foreign key's answer to a row write naming a planning group deleted since the scope check.
  */
 function rethrowPlanningGroupGone(err: unknown): never {
-  if (isForeignKeyViolation(err, 'collection_layout_rows_planningGroupId_fkey')) {
+  if (isForeignKeyViolation(err, FOREIGN_KEYS.rowPlanningGroup)) {
     throw new TRPCError({ code: 'CONFLICT', message: 'Il gruppo di pianificazione non esiste più: riprova' });
   }
   throw err;
@@ -211,8 +211,7 @@ export function copiedQuotation(q: SourceQuotation, rowId: string, targetSets: M
  */
 export function copyFailure(err: unknown): TRPCError | null {
   if (
-    isForeignKeyViolation(err, 'collection_layout_rows_planningGroupId_fkey') ||
-    isForeignKeyViolation(err, 'collection_row_quotations_pricingParameterSetId_fkey')
+    isForeignKeyViolation(err, FOREIGN_KEYS.rowPlanningGroup, FOREIGN_KEYS.quotationParameterSet)
   ) {
     return new TRPCError({
       code: 'CONFLICT',
@@ -324,7 +323,7 @@ export async function copyFromSeason(
           if (isUniqueViolation(err, 'collection_layouts_brandId_seasonId_key')) {
             throw new TRPCError({ code: 'CONFLICT', message: 'Esiste già un collection layout per questo brand/stagione' });
           }
-          if (isForeignKeyViolation(err, 'collection_layouts_brandId_fkey') || isForeignKeyViolation(err, 'collection_layouts_seasonId_fkey')) {
+          if (isForeignKeyViolation(err, FOREIGN_KEYS.layoutBrand, FOREIGN_KEYS.layoutSeason)) {
             throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione di destinazione non trovati' });
           }
           throw err;
@@ -811,51 +810,46 @@ export async function duplicateRow(
   }
   await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
-  try {
-    return await prisma.$transaction(async tx => {
-      // Shift rows below source by +1
-      await tx.collectionLayoutRow.updateMany({
-        where: {
-          groupId: row.groupId,
-          order: { gt: row.order },
-        },
-        data: { order: { increment: 1 } },
-      });
-
-      const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
-
-      const newRow = await tx.collectionLayoutRow.create({
-        data: {
-          ...rowData,
-          order: row.order + 1,
-          pictureKey: null, // picture not duplicated, to avoid shared references
-        },
-      });
-
-      // Duplicate quotations
-      for (const q of quotations) {
-        const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
-        await tx.collectionRowQuotation.create({
-          data: { ...qData, rowId: newRow.id },
-        });
-      }
-
-      return tx.collectionLayoutRow.findUniqueOrThrow({
-        where: { id: newRow.id },
-        include: ROW_VENDOR_INCLUDE,
-      }) as Promise<RowWithVendor>;
+  // `removeParameterSet` refuses a set in use, so a set deleted between the read above and the
+  // copy is the only way a quotation's foreign key can refuse here.
+  const setGone = () =>
+    new TRPCError({
+      code: 'CONFLICT',
+      message: 'Un set di parametri della riga è stato eliminato durante la duplicazione: riprova',
     });
-  } catch (err) {
-    // `removeParameterSet` refuses a set in use, so a set deleted between the read above and the
-    // copy is the only way a quotation's foreign key can refuse here.
-    if (isForeignKeyViolation(err, 'collection_row_quotations_pricingParameterSetId_fkey')) {
-      throw new TRPCError({
-        code: 'CONFLICT',
-        message: 'Un set di parametri della riga è stato eliminato durante la duplicazione: riprova',
+  return refuseOnForeignKey(FOREIGN_KEYS.quotationParameterSet, setGone, () => prisma.$transaction(async tx => {
+    // Shift rows below source by +1
+    await tx.collectionLayoutRow.updateMany({
+      where: {
+        groupId: row.groupId,
+        order: { gt: row.order },
+      },
+      data: { order: { increment: 1 } },
+    });
+
+    const { id: _id, createdAt: _ca, updatedAt: _ua, pictureKey: _pic, quotations, ...rowData } = row;
+
+    const newRow = await tx.collectionLayoutRow.create({
+      data: {
+        ...rowData,
+        order: row.order + 1,
+        pictureKey: null, // picture not duplicated, to avoid shared references
+      },
+    });
+
+    // Duplicate quotations
+    for (const q of quotations) {
+      const { id: _qid, rowId: _qrowId, createdAt: _qca, updatedAt: _qua, pricingParameterSet: _ps, ...qData } = q;
+      await tx.collectionRowQuotation.create({
+        data: { ...qData, rowId: newRow.id },
       });
     }
-    throw err;
-  }
+
+    return tx.collectionLayoutRow.findUniqueOrThrow({
+      where: { id: newRow.id },
+      include: ROW_VENDOR_INCLUDE,
+    }) as Promise<RowWithVendor>;
+  }));
 }
 
 /**

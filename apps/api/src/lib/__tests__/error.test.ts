@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { prismaKnownError as prismaError, prismaValidationError } from '../../../test/helpers/prismaError';
-import { isUniqueViolation, toErrorMessage } from '../error';
+import { FOREIGN_KEYS, isForeignKeyViolation, isUniqueViolation, toErrorMessage } from '../error';
 
 /**
  * A duplicate on a named key is Prisma's P2002 naming that index, as the driver adapter reports it
@@ -29,6 +29,16 @@ describe('isUniqueViolation', () => {
 });
 
 /** `toErrorMessage` lives in `@luke/core`; here, on a real Prisma error class, through the API's re-export. */
+describe('isForeignKeyViolation', () => {
+  it('matches its code on a named constraint, and nothing else', () => {
+    const key = FOREIGN_KEYS.layoutBrand;
+
+    expect(isForeignKeyViolation(prismaError('P2003', key), FOREIGN_KEYS.layoutSeason, key)).toBe(true);
+    expect(isForeignKeyViolation(prismaError('P2003', FOREIGN_KEYS.layoutSeason), key)).toBe(false);
+    expect(isForeignKeyViolation(prismaError('P2002', key), key)).toBe(false);
+  });
+});
+
 describe('toErrorMessage on a Prisma validation error', () => {
   it('keeps the call and the reason, without the query values', () => {
     const message = toErrorMessage(prismaValidationError('query-value-sentinel'));
