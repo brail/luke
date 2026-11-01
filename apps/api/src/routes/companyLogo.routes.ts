@@ -4,21 +4,19 @@
  * Endpoint: POST /upload/company-logo
  *
  * Requires authentication and the `company_profile:update` permission.
- * Delegates to the company logo service, which validates MIME type, enforces the
- * file size limit and stores the file as **pending**. It does not touch the
+ * Delegates to the company logo service, which validates MIME type and stores the
+ * file as **pending**. It does not touch the
  * CompanyProfile: the linking happens in `company.profile.update`, passing
  * the `fileObjectId` that this route returns.
  */
 
-import { Readable } from 'stream';
-
-import { TRPCError } from '@trpc/server';
 import fp from 'fastify-plugin';
 
 import type { PrismaClient } from '@luke/db';
 
 import { requireSessionWithPermission } from '../lib/auth.js';
 import { getTraceId } from '../lib/error.js';
+import { readUploadFile, sendUploadError } from '../lib/multipartUpload.js';
 import { uploadCompanyLogo } from '../services/companyLogo.service.js';
 
 import type { FastifyInstance } from 'fastify';
@@ -39,38 +37,13 @@ export default fp(
       };
 
       try {
-        const data = await req.file();
-        if (!data) {
-          return reply.code(400).send({ error: 'Bad Request', message: 'Nessun file ricevuto' });
-        }
+        const file = await readUploadFile(req, 'company-asset');
 
-        const chunks: Buffer[] = [];
-        for await (const chunk of data.file) {
-          chunks.push(chunk as Buffer);
-        }
-        const buffer = Buffer.concat(chunks);
-
-        const result = await uploadCompanyLogo(ctx, {
-          file: {
-            filename: data.filename,
-            mimetype: data.mimetype,
-            stream: Readable.from(buffer),
-            size: buffer.length,
-          },
-        });
+        const result = await uploadCompanyLogo(ctx, { file });
 
         return reply.code(200).send(result);
       } catch (error: unknown) {
-        req.log.error({ err: error }, 'Company logo upload error');
-
-        if (error instanceof TRPCError && (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND')) {
-          return reply.code(error.code === 'NOT_FOUND' ? 404 : 400).send({
-            error: error.code,
-            message: error.message,
-          });
-        }
-
-        return reply.code(500).send({ error: 'Internal Server Error', message: 'Errore durante upload logo' });
+        return sendUploadError(req, reply, error, { log: 'Company logo upload error', message: 'Errore durante upload logo' });
       }
     });
   },

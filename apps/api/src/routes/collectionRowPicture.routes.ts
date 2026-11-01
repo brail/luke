@@ -12,13 +12,13 @@
  */
 
 import rateLimit from '@fastify/rate-limit';
-import { TRPCError } from '@trpc/server';
 
 import { isDevelopment } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import { getTraceId } from '../lib/error';
+import { readUploadFile, sendUploadError } from '../lib/multipartUpload';
 import { uploadCollectionRowPicture, uploadTempCollectionRowPicture } from '../services/collectionRowPicture.service';
 
 import type { FastifyInstance } from 'fastify';
@@ -50,35 +50,13 @@ export default async function collectionRowPictureRoutes(
     };
 
     try {
-      const data = await req.file();
-      if (!data) {
-        return reply.code(400).send({ error: 'Bad Request', message: 'Nessun file ricevuto' });
-      }
+      const file = await readUploadFile(req, 'collection-row-picture');
 
-      const chunks: Buffer[] = [];
-      for await (const chunk of data.file) {
-        chunks.push(chunk as Buffer);
-      }
-      const buffer = Buffer.concat(chunks);
-
-      const result = await uploadTempCollectionRowPicture(ctx, {
-        file: {
-          filename: data.filename,
-          mimetype: data.mimetype,
-          stream: require('stream').Readable.from(buffer),
-          size: buffer.length,
-        },
-      });
+      const result = await uploadTempCollectionRowPicture(ctx, { file });
 
       return reply.code(200).send(result);
     } catch (error: unknown) {
-      req.log.error({ err: error }, 'Temp collection row picture upload error');
-
-      if (error instanceof TRPCError && error.code === 'BAD_REQUEST') {
-        return reply.code(400).send({ error: error.code, message: error.message });
-      }
-
-      return reply.code(500).send({ error: 'Internal Server Error', message: 'Errore durante upload foto' });
+      return sendUploadError(req, reply, error, { log: 'Temp collection row picture upload error', message: 'Errore durante upload foto' });
     }
   });
 
@@ -98,46 +76,13 @@ export default async function collectionRowPictureRoutes(
     };
 
     try {
-      const data = await req.file();
-      if (!data) {
-        return reply.code(400).send({ error: 'Bad Request', message: 'Nessun file ricevuto' });
-      }
+      const file = await readUploadFile(req, 'collection-row-picture');
 
-      const chunks: Buffer[] = [];
-      for await (const chunk of data.file) {
-        chunks.push(chunk as Buffer);
-      }
-      const buffer = Buffer.concat(chunks);
-
-      const result = await uploadCollectionRowPicture(ctx, {
-        rowId: req.params.rowId,
-        file: {
-          filename: data.filename,
-          mimetype: data.mimetype,
-          stream: require('stream').Readable.from(buffer),
-          size: buffer.length,
-        },
-      });
+      const result = await uploadCollectionRowPicture(ctx, { rowId: req.params.rowId, file });
 
       return reply.code(200).send(result);
     } catch (error: unknown) {
-      req.log.error(
-        { err: error, rowId: req.params.rowId },
-        'Collection row picture upload error'
-      );
-
-      if (
-        error instanceof TRPCError &&
-        (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND' || error.code === 'FORBIDDEN')
-      ) {
-        const status = { BAD_REQUEST: 400, NOT_FOUND: 404, FORBIDDEN: 403 }[error.code];
-        return reply.code(status).send({
-          error: error.code,
-          message: error.message,
-        });
-      }
-
-      return reply.code(500).send({ error: 'Internal Server Error', message: 'Errore durante upload foto' });
+      return sendUploadError(req, reply, error, { log: 'Collection row picture upload error', message: 'Errore durante upload foto' });
     }
   });
 }

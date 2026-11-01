@@ -50,6 +50,11 @@ export function sniffContentType(buffer: Buffer): string | null {
   return null;
 }
 
+/** The refusal of a file over `maxSizeBytes`. */
+export function fileTooLargeMessage(maxSizeBytes: number): string {
+  return `File troppo grande. Max ${Math.round(maxSizeBytes / 1024 / 1024)}MB`;
+}
+
 /**
  * Validates an uploaded image file against MIME type, size, and extension constraints.
  * Sanitises the filename by stripping special characters.
@@ -71,10 +76,7 @@ export function validateImageFile(
   }
 
   if (file.size > config.maxSizeBytes) {
-    throw new TRPCError({
-      code: 'BAD_REQUEST',
-      message: `File troppo grande. Max ${Math.round(config.maxSizeBytes / 1024 / 1024)}MB`,
-    });
+    throw new TRPCError({ code: 'BAD_REQUEST', message: fileTooLargeMessage(config.maxSizeBytes) });
   }
 
   const sanitizedFilename = path

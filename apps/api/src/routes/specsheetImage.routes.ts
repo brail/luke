@@ -5,7 +5,7 @@
  *
  * Requires authentication, the `merchandising_plan:update` permission and brand scope on the
  * specsheet's plan.
- * Rate-limited to 30 req/min per user (100 in development). Max file size: 10 MB.
+ * Rate-limited to 30 req/min per user (100 in development). Max file size: `ASSET_KINDS['specsheet-image']`.
  * Accepted MIME types: image/png, image/jpeg, image/webp.
  * An optional `caption` field may be included in the multipart form data.
  */
@@ -18,9 +18,12 @@ import type { PrismaClient } from '@luke/db';
 
 import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 import { getTraceId } from '../lib/error';
+import { noFileError, sendUploadError, toUploadFile, uploadLimits, type UploadFile } from '../lib/multipartUpload';
 import { uploadSpecsheetImage } from '../services/specsheetImage.service';
 
 import type { FastifyInstance } from 'fastify';
+
+const MAX_CAPTION_BYTES = 2048;
 
 export default async function specsheetImageRoutes(
   app: FastifyInstance,
@@ -48,57 +51,33 @@ export default async function specsheetImageRoutes(
       };
 
       try {
-        const parts = req.parts();
-        let fileBuffer: Buffer | null = null;
-        let filename = 'upload';
-        let mimetype = 'application/octet-stream';
+        const parts = req.parts({
+          limits: { ...uploadLimits('specsheet-image'), fields: 1, parts: 2, fieldSize: MAX_CAPTION_BYTES },
+        });
+        let file: UploadFile | null = null;
         let caption: string | undefined;
+        let captionTooLong = false;
 
         for await (const part of parts) {
-          if (part.type === 'field' && part.fieldname === 'caption') {
+          if (part.type === 'file') {
+            file = await toUploadFile(part, 'specsheet-image');
+          } else if (part.fieldname === 'caption') {
+            // A field over `fieldSize` arrives cut, not refused. Answered after the loop, which
+            // reads the rest of the body: a route that stops here leaves the client's send stalled.
+            captionTooLong = part.valueTruncated;
             caption = String(part.value);
-          } else if (part.type === 'file') {
-            const chunks: Buffer[] = [];
-            for await (const chunk of part.file) {
-              chunks.push(chunk as Buffer);
-            }
-            fileBuffer = Buffer.concat(chunks);
-            filename = part.filename;
-            mimetype = part.mimetype;
           }
         }
 
-        if (!fileBuffer) {
-          return reply.code(400).send({ error: 'Bad Request', message: 'Nessun file ricevuto' });
-        }
+        if (captionTooLong) throw new TRPCError({ code: 'PAYLOAD_TOO_LARGE', message: 'Didascalia troppo lunga' });
 
-        const result = await uploadSpecsheetImage(ctx, {
-          specsheetId: req.params.specsheetId,
-          caption,
-          file: {
-            filename,
-            mimetype,
-            stream: require('stream').Readable.from(fileBuffer),
-            size: fileBuffer.length,
-          },
-        });
+        if (!file) throw noFileError();
+
+        const result = await uploadSpecsheetImage(ctx, { specsheetId: req.params.specsheetId, caption, file });
 
         return reply.code(200).send(result);
       } catch (error: unknown) {
-        req.log.error({ err: error, specsheetId: req.params.specsheetId }, 'Specsheet image upload error');
-
-        if (
-          error instanceof TRPCError &&
-          (error.code === 'BAD_REQUEST' || error.code === 'NOT_FOUND' || error.code === 'FORBIDDEN')
-        ) {
-          const status = { BAD_REQUEST: 400, NOT_FOUND: 404, FORBIDDEN: 403 }[error.code];
-          return reply.code(status).send({
-            error: error.code,
-            message: error.message,
-          });
-        }
-
-        return reply.code(500).send({ error: 'Internal Server Error', message: 'Errore durante upload immagine' });
+        return sendUploadError(req, reply, error, { log: 'Specsheet image upload error', message: 'Errore durante upload immagine' });
       }
     }
   );

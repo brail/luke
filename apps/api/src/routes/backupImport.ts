@@ -40,6 +40,7 @@ export async function registerBackupImportRoute(
     const session = await requireSessionWithPermission(request, reply, 'maintenance:backup_restore', prisma);
     if (!session) return;
 
+    // The fields must precede the file: `data` holds only what was parsed before it, and the file streams.
     const data = await request.file({ limits: { fileSize: Number.MAX_SAFE_INTEGER, files: 1 } });
     if (!data) {
       reply.code(400).send({ error: 'Bad Request', message: 'File mancante' });
@@ -51,6 +52,7 @@ export async function registerBackupImportRoute(
       label: getMultipartFieldValue(data.fields.label) || undefined,
     });
     if (!parsedFields.success) {
+      data.file.resume();
       reply.code(400).send({
         error: 'Bad Request',
         message: parsedFields.error.issues[0]?.message ?? 'Campi non validi',
@@ -85,6 +87,10 @@ export async function registerBackupImportRoute(
 
       reply.send({ id });
     } catch (err) {
+      // The job stops reading at its first refusal, and a body left unread stalls the client's send.
+      // Its suspended reader keeps a `readable` listener, which makes `resume` alone do nothing.
+      data.file.removeAllListeners('readable');
+      data.file.resume();
       if (err instanceof BackupImportValidationError) {
         reply.code(400).send({ error: 'Bad Request', message: err.message });
         return;

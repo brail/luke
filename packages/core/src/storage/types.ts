@@ -101,7 +101,7 @@ export interface StoragePutParams {
   stream: NodeJS.ReadableStream;
   /** Explicit key to use instead of auto-generated (e.g. to pair blob and sidecar). Optional — if absent, provider generates a date-partitioned key. */
   key?: string;
-  /** If true, skips `maxFileSizeMB` limit of local provider. Reserved for privileged internal writes (e.g. backup engine) — never expose to user uploads. */
+  /** If true, skips `maxFileSizeMB` limit of local provider. Reserved for privileged writes (e.g. backup engine, and the permission-gated backup import) — never expose to asset uploads. */
   bypassSizeLimit?: boolean;
 }
 

@@ -42,6 +42,7 @@ import { registerKimoSyncScheduler } from './lib/kimoSyncScheduler';
 import { rootLogger } from './lib/logger';
 import { registerMaintenanceModeScheduler } from './lib/maintenanceModeScheduler';
 import { registerMilestoneDeadlineScheduler } from './lib/milestoneDeadlineScheduler';
+import { MULTIPART_GLOBAL_LIMITS } from './lib/multipartUpload';
 import { registerNavSyncScheduler } from './lib/navSyncScheduler';
 import { registerPortafoglioSyncScheduler } from './lib/portafoglioSyncScheduler';
 import { rateLimitStore } from './lib/ratelimit';
@@ -201,18 +202,13 @@ async function registerTRPCPlugin() {
 }
 
 /**
- * Registers `@fastify/multipart` globally with a 50 MB file size limit.
+ * Registers `@fastify/multipart` globally, with the largest asset kind as the file size limit.
  *
- * A global ceiling for every multipart route. The per-asset-kind upload routes (brand logo,
- * collection pictures, etc.) enforce stricter limits; the backup import raises it per request.
+ * A default for every multipart route. The per-asset-kind upload routes (brand logo, collection
+ * pictures, etc.) enforce stricter limits; the backup import raises it per request.
  */
 async function registerMultipart() {
-  await fastify.register(multipart, {
-    limits: {
-      fileSize: 50 * 1024 * 1024, // 50MB
-      files: 1,
-    },
-  });
+  await fastify.register(multipart, { limits: MULTIPART_GLOBAL_LIMITS });
 }
 
 /** Registers the generic storage asset proxy (`/uploads/:bucket/*`). */

@@ -157,7 +157,6 @@ describe('Brand Logo Upload Integration', () => {
     filename,
     type: 'text/plain',
   });
-  const tempId: MultipartPart = { name: 'tempId', value: 'temp-123' };
 
   describe('POST /upload/brand-logo/:brandId', () => {
     it('should upload brand logo successfully', async () => {
@@ -199,7 +198,7 @@ describe('Brand Logo Upload Integration', () => {
 
       const response = await upload(`/upload/brand-logo/${testBrand.id}`, [pngPart('large.png', largeBuffer)]);
 
-      expect(response.statusCode).toBe(400);
+      expect(response.statusCode).toBe(413);
     });
 
     it('should reject non-existent brand', async () => {
@@ -238,7 +237,7 @@ describe('Brand Logo Upload Integration', () => {
 
   describe('POST /upload/brand-logo/temp', () => {
     it('should upload temp logo successfully', async () => {
-      const response = await upload('/upload/brand-logo/temp', [tempId, pngPart('temp-logo.png')]);
+      const response = await upload('/upload/brand-logo/temp', [pngPart('temp-logo.png')]);
 
       expect(response.statusCode).toBe(200);
 
@@ -252,28 +251,19 @@ describe('Brand Logo Upload Integration', () => {
     });
 
     it('should reject request without authentication', async () => {
-      const response = await upload('/upload/brand-logo/temp', [tempId, pngPart('temp-logo.png')], false);
+      const response = await upload('/upload/brand-logo/temp', [pngPart('temp-logo.png')], false);
 
       expect(response.statusCode).toBe(401);
     });
 
-    it('accepts the upload without tempId: the field is no longer part of the contract', async () => {
-      // The file id is assigned by the server (`fileObjectId`), not the client: a
-      // `tempId` sent by the caller is neither required nor used.
-      const response = await upload('/upload/brand-logo/temp', [pngPart('temp-logo.png')]);
-
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toHaveProperty('fileObjectId');
-    });
-
     it('should reject request without file', async () => {
-      const response = await upload('/upload/brand-logo/temp', [tempId]);
+      const response = await upload('/upload/brand-logo/temp', []);
 
       expect(response.statusCode).toBe(400);
     });
 
     it('should reject invalid file type for temp upload', async () => {
-      const response = await upload('/upload/brand-logo/temp', [tempId, text('test.txt')]);
+      const response = await upload('/upload/brand-logo/temp', [text('test.txt')]);
 
       expect(response.statusCode).toBe(400);
     });

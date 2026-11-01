@@ -93,9 +93,10 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
 
   const handleImport = (data: BackupImportFormData) => {
     const formData = new globalThis.FormData();
-    formData.append('file', data.file);
+    // Before the file: the API streams it and reads only the fields that came first.
     formData.append('passphrase', data.passphrase);
     if (data.label.trim()) formData.append('label', data.label.trim());
+    formData.append('file', data.file);
 
     const xhr = new globalThis.XMLHttpRequest();
     xhr.upload.addEventListener('progress', e => {
@@ -108,8 +109,12 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
         onOpenChange(false);
         onImported();
       } else {
-        const errorData = JSON.parse(xhr.responseText || '{}');
-        toast.error(errorData.message || `Import fallito (${xhr.status})`);
+        try {
+          toast.error(JSON.parse(xhr.responseText).message || `Import fallito (${xhr.status})`);
+        } catch {
+          // A reverse proxy's own error page is not JSON.
+          toast.error(`Import fallito (${xhr.status})`);
+        }
       }
     });
     xhr.addEventListener('error', () => {

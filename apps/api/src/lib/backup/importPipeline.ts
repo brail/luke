@@ -67,6 +67,7 @@ export async function runImportJob(params: RunImportJobParams): Promise<{ id: st
     contentType: 'application/octet-stream',
     size: 0,
     stream: body,
+    bypassSizeLimit: true, // a backup is no user asset: same as the backup engine's own blob
   });
 
   if (uploadResult.checksumSha256 !== header.checksumSha256) {
