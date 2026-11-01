@@ -5,7 +5,8 @@
  * violation under `meta.driverAdapterError.cause.constraint.index`, not the legacy `meta.target`.
  * These run the two refusals against the database, so a driver upgrade that moves the field fails
  * here rather than turning every named check into "not this constraint" — and every constraint the
- * code names must exist, or its refusal reaches the caller as a 500 with no test failing.
+ * code names must exist, or its refusal reaches the caller as a 500 with no test failing. A CHECK
+ * no writer's error handling names, the default planning group's, is pinned here too.
  */
 
 import { readFileSync, readdirSync } from 'fs';
@@ -45,6 +46,22 @@ describe('constraint violations', () => {
 
     expect(isForeignKeyViolation(err, 'seasons_navSeasonId_fkey')).toBe(true);
     expect(isUniqueViolation(err, 'seasons_navSeasonId_fkey')).toBe(false);
+  });
+
+  it('only the default planning group has no stored name', async () => {
+    const [brand, season] = await Promise.all([
+      prisma.brand.create({ data: { code: 'PG', name: 'PG' } }),
+      prisma.season.create({ data: { code: 'PG', name: 'PG', year: 2034 } }),
+    ]);
+    const { id: calendarId } = await prisma.seasonCalendar.create({ data: { brandId: brand.id, seasonId: season.id } });
+    const constraint = /planning_groups_default_has_no_name/;
+
+    await expect(prisma.planningGroup.create({ data: { calendarId, name: 'Named', isDefault: true } })).rejects.toThrow(constraint);
+    await expect(prisma.planningGroup.create({ data: { calendarId, name: null, isDefault: false } })).rejects.toThrow(constraint);
+
+    await prisma.planningGroup.create({ data: { calendarId, name: null, isDefault: true } });
+    await prisma.planningGroup.create({ data: { calendarId, name: 'Parallel', isDefault: false } });
+    await expect(prisma.planningGroup.count({ where: { calendarId } })).resolves.toBe(2);
   });
 
   it('every constraint the code names exists in the migrated schema', async () => {

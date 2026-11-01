@@ -109,7 +109,7 @@ model CollectionLayoutRow {
   toolingNotes  String?
 
   // Optional — pricing
-  /// Tooling/mold cost quoted for this row (in purchaseCurrency of the active parameter set).
+  /// Tooling/mold cost quoted for this row, in euros.
   toolingQuotation Float?
   /// Pricing quotations for this row, one per parameter set variant.
   quotations       CollectionRowQuotation[]

@@ -19,6 +19,8 @@ What 3.1 changes for the operator so far:
   rewritten: step 4 encrypts those rows once.
 - **A collection row's picture belongs to the row.** Replacing or removing a picture now deletes
   the row's previous file: step 2 checks that no stored picture is shared or missing first.
+- **A season calendar has no status any more.** 3.1 drops the column: step 2 lists the calendars an
+  earlier release archived.
 
 ## 1. Shell variables
 
@@ -31,7 +33,7 @@ svc() { docker ps -q --filter "label=com.docker.compose.project=$STACK" --filter
 PG=$(svc postgres); API=$(svc api)
 ```
 
-## 2. Before the update: picture keys (read-only)
+## 2. Before the update: picture keys and archived calendars (read-only)
 
 Both queries must return no rows. A row they list keeps its picture on 3.1 only after a decision,
 taken row by row before the update: usually clearing its `pictureKey`, which leaves the row
@@ -48,6 +50,20 @@ LEFT JOIN file_objects f ON f.bucket = 'collection-row-pictures' AND f.key = r."
 WHERE r."pictureKey" IS NOT NULL AND f.id IS NULL;
 SQL
 ```
+
+This query lists the calendars an earlier release archived. A row it returns blocks nothing, but the
+calendar loses its archived state and its deadline notices resume on 3.1:
+
+```bash
+docker exec -i "$PG" psql -U luke -d luke <<'SQL'
+SELECT b.code AS brand, s.code AS season FROM season_calendars c
+JOIN brands b ON b.id = c."brandId" JOIN seasons s ON s.id = c."seasonId"
+WHERE c.status = 'ARCHIVED';
+SQL
+```
+
+From the first 3.1 candidate that carries this migration on, the column is gone and the query fails
+with `column c.status does not exist`: nothing is left to check.
 
 ## 3. Backup and update
 

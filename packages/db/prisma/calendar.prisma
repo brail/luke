@@ -41,14 +41,6 @@ model MilestoneTemplateItemVisibility {
 
 // ─── Season Calendar ──────────────────────────────────────────────────────────
 
-/// Former season calendar lifecycle status. Unused since #127 (nothing ever moved a calendar out of
-/// DRAFT); kept, with its column, only until a later migration drops both.
-enum SeasonCalendarStatus {
-  DRAFT
-  ACTIVE
-  ARCHIVED
-}
-
 /// Which holiday calendar(s) count toward an event's working-days deadline countdown, if any.
 /// Null (unset) means the deadline countdown stays in plain calendar days — this is opt-in per
 /// event/template item, not a default behavior change. COMPANY resolves to `CompanyProfile.countryCode`;
@@ -69,16 +61,13 @@ enum VendorOverrideType {
 /// Season calendar for a brand+season pair. Unique per pair. Owns N PlanningGroups (always at least
 /// one default) which carry the per-group anchorDate/frozenAt.
 model SeasonCalendar {
-  id        String               @id @default(uuid())
+  id        String   @id @default(uuid())
   /// FK to Brand. Restrict delete.
   brandId   String
   /// FK to Season. Restrict delete.
   seasonId  String
-  /// Unused since #127: ignored by the client, so no code reads or writes it; new rows take the
-  /// column default. Dropped with its enum in a later migration.
-  status    SeasonCalendarStatus @default(DRAFT) @ignore
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   /// The brand this calendar belongs to.
   brand          Brand                   @relation(fields: [brandId], references: [id], onDelete: Restrict)
@@ -163,8 +152,9 @@ model PlanningGroup {
   /// FK to SeasonCalendar. Cascade delete — a calendar's groups are meaningless once it's gone.
   calendarId String
   /// NULL for the default group: its displayed name is a UI string (`planningGroupName` in
-  /// `@luke/core`), never a stored key, so a user group may take any name. A CHECK tying NULL to
-  /// `isDefault` follows in a later migration (#128).
+  /// `@luke/core`), never a stored key, so a user group may take any name. Tied to `isDefault` by a
+  /// CHECK constraint Prisma does not model (migration
+  /// `20261101200000_drop_unused_calendar_columns`).
   name       String?
   /// True only for the single auto-created group per calendar. Enforced by a partial unique index
   /// (see migration) plus an application-level check on creation — cannot be renamed or deleted.
@@ -408,12 +398,6 @@ model Phase {
   value        String   @unique
   /// Human-readable display label (editable without changing the value).
   label        String
-  /// No longer read (#159): the phase order comes from the calendar (`rankGroupEvents`). Kept out
-  /// of the client until a later release drops the column, so the release that stops reading it
-  /// survives a rollback from that one.
-  code         String?  @ignore
-  /// No longer read (#159), as `code`: dropped by a later release.
-  order        Int      @default(0) @ignore
   /// What the phase covers, shown in the phase catalog.
   description  String?
   /// How long the phase takes, in calendar days (bounds in `PhaseInputBaseSchema`). Read only to

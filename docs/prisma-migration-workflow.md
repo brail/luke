@@ -62,7 +62,8 @@ migration with SQL added by hand:
   comment on the fields it covers, since the schema alone does not show it. They are
   `company_profile_singleton` (`20260515000000_company_structure`) and the calendar date bounds
   (`20260929224334_calendar_dates_in_supported_years`, narrowed and extended to holidays and vendor
-  closures by `20261012220000_user_timezone_and_calendar_date_bounds`).
+  closures by `20261012220000_user_timezone_and_calendar_date_bounds`). A generated migration can
+  append one: `planning_groups_default_has_no_name` (`20261101200000_drop_unused_calendar_columns`).
 - **A one-time rewrite of stored data** that must reach every database, restored backups included:
   only a versioned migration is replayed by the backup migration bridge, which a `db:*` script is
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
@@ -74,7 +75,8 @@ migration with SQL added by hand:
   change — `20261024170000_phase_description_duration_colour` gives every phase the badge colour it
   showed before (#158); `20261024194219_default_planning_group_by_flag` makes a calendar's group
   named `Predefinito` its default group where it has none, then clears the default group's stored
-  name (#128). The same rules hold for the appended step: a header, the rule frozen in the file,
+  name (#128); `20261101200000_drop_unused_calendar_columns` clears it again before adding its
+  constraint. The same rules hold for the appended step: a header, the rule frozen in the file,
   safe to run twice. `db push` gives the development database the columns but not the data: run
   only the appended statement there.
 
