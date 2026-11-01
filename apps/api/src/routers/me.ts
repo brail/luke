@@ -292,8 +292,12 @@ export const meRouter = router({
    * @auth {authenticated}
    * @input {ChangePasswordSchema} — currentPassword, newPassword.
    * @output {{ ok: true }}
+   * @throws {TRPCError} TOO_MANY_REQUESTS when the login's per-IP or the per-account bucket is full.
    */
   changePassword: selfProcedure
+    // A password is checked here: the login's per-IP bucket (rule 12). `passwordChange` is the
+    // per-account one.
+    .use(withRateLimit('login'))
     .use(withRateLimit('passwordChange'))
     .input(ChangePasswordSchema)
     .use(withIdempotency())

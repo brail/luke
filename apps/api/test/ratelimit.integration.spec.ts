@@ -195,6 +195,26 @@ describe('Rate-Limit Integration', () => {
         { code: 'TOO_MANY_REQUESTS' }
       );
     });
+
+    it('should share the per-IP login bucket, across users, and count each IP on its own', async () => {
+      const guess = (caller: Awaited<ReturnType<typeof createCallerWithIP>>) =>
+        caller.me.changePassword({
+          currentPassword: 'WrongPassw0rd!23',
+          newPassword: 'NewPassw0rd!2345',
+          confirmNewPassword: 'NewPassw0rd!2345',
+        });
+      // Two users, because one alone stops at the per-user bucket's third guess.
+      const first = await createCallerWithIP('192.168.1.100', 'viewer');
+      const second = await createCallerWithIP('192.168.1.100', 'viewer');
+
+      for (const caller of [first, first, first, second]) {
+        await expectToThrow(guess(caller), { code: 'UNAUTHORIZED' });
+      }
+      await expectToThrow(second.auth.login({ username: 'test', password: 'wrong' }), { code: 'UNAUTHORIZED' });
+
+      await expectToThrow(guess(second), { code: 'TOO_MANY_REQUESTS' });
+      await expectToThrow(guess(await createCallerWithIP('192.168.1.200', 'viewer')), { code: 'UNAUTHORIZED' });
+    });
   });
 
   describe('users mutations rate limiting', () => {
