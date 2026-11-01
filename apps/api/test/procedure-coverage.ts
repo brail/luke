@@ -152,10 +152,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
       'list is invoked by collectionLayoutCopy.integration.spec.ts (the default group\'s displayed name); create, rename and delete remain uncovered, even though a group is the scope of events and layout rows',
     uncovered: 3,
   },
-  editLock: {
-    reason: "acquireMany's permission refusal covered by the access-denied logging spec; release, renew and the lock itself, the planning wizard's session lock, have no tests",
-    uncovered: 2,
-  },
   catalog: {
     reason:
       'no tests written on the brand/season lists filtered by the user whitelist',

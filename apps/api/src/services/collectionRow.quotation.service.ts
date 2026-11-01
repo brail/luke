@@ -268,8 +268,7 @@ export async function syncRowQuotations(
   const deletedIds = [...existingIds].filter(id => !submittedIds.has(id));
 
   // deleteMany and the per-draft writes touch disjoint sets of rows (`deletedIds` is the complement
-  // of `submittedIds`) — run in parallel instead of in sequence, same principle already applied to
-  // the locks in editLock.service.ts (Promise.all on tx).
+  // of `submittedIds`) — run in parallel instead of in sequence.
   const [, writes] = await writeCheckedQuotations(() => Promise.all([
     deletedIds.length > 0
       ? prisma.collectionRowQuotation.deleteMany({ where: { id: { in: deletedIds }, rowId } })

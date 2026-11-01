@@ -233,7 +233,7 @@ enum LockEntityType {
 
 /// Session-scoped edit lock preventing concurrent editing of a SeasonCalendar or CollectionLayout
 /// while a user has the planning wizard open: a UI-session lock, released on completion/unmount
-/// or expired via a fixed TTL (no renewal/heartbeat).
+/// or on TTL expiry; the wizard's heartbeat renews it while the session is open.
 model EditLock {
   id             String         @id @default(uuid())
   /// Which kind of entity this lock targets: SEASON_CALENDAR or COLLECTION_LAYOUT.
@@ -245,7 +245,7 @@ model EditLock {
   /// The user holding this lock.
   lockedByUser   User           @relation(fields: [lockedByUserId], references: [id], onDelete: Cascade)
   lockedAt       DateTime       @default(now())
-  /// Hard cutoff — no renewal. Past this instant the lock is considered stale and ignorable.
+  /// Pushed out by each renewal. Past this instant the lock is considered stale and ignorable.
   expiresAt      DateTime
 
   @@index([lockedByUserId])
@@ -255,8 +255,8 @@ model EditLock {
 
 /// Leader lock for tick-based schedulers (backup, NAV sync, calendar digest, ...) — prevents two
 /// API instances from running the same scheduled job concurrently if ever scaled horizontally.
-/// See withSchedulerLock() in apps/api/src/lib/schedulerLock.ts. Unlike EditLock, acquisition is
-/// a conditional upsert (INSERT ... ON CONFLICT DO UPDATE ... WHERE), not a plain insert-or-fail —
+/// See withSchedulerLock() in apps/api/src/lib/schedulerLock.ts. Acquisition is a conditional
+/// upsert (INSERT ... ON CONFLICT DO UPDATE ... WHERE);
 /// expiresAt is a crash-safety ceiling only, since the normal path releases explicitly right after
 /// the tick finishes.
 model SchedulerLock {

@@ -12,6 +12,7 @@ import type { LockEntityType } from '@luke/db';
 import { can, logAccessDenied } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
+import { resolveCalendarBrandAccess, resolveLayoutBrandAccess } from '../services/brandScope.service';
 import { acquireLocks, releaseLocks, renewLocks } from '../services/editLock.service';
 
 import type { Context } from '../lib/trpc';
@@ -20,8 +21,9 @@ import type { Context } from '../lib/trpc';
 const LOCK_ENTITY_TYPES = ['SEASON_CALENDAR', 'COLLECTION_LAYOUT'] as const satisfies readonly LockEntityType[];
 const LockEntityTypeSchema = z.enum(LOCK_ENTITY_TYPES);
 const AcquireInputSchema = z.object({ entityType: LockEntityTypeSchema, entityId: z.uuid() });
-const AcquireManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
-const ReleaseManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1) });
+// Each entity costs its own queries: a wizard session locks two.
+const AcquireManyInputSchema = z.object({ entities: z.array(AcquireInputSchema).min(1).max(10) });
+const ReleaseManyInputSchema = AcquireManyInputSchema;
 
 /**
  * SEASON_CALENDAR locks require calendar update rights, COLLECTION_LAYOUT locks require layout
@@ -54,6 +56,29 @@ function assertLockPermissions(ctx: Context, entities: { entityType: z.infer<typ
   }
 }
 
+/**
+ * The permissions, then the targets: each one must exist and be in the caller's brands. The lock row
+ * references nothing, so without this a lock on a missing or foreign target would be written.
+ * Exhaustive over the Prisma enum, as `permissionFor`.
+ */
+async function assertLockAccess(ctx: Context, entities: z.infer<typeof AcquireManyInputSchema>['entities']) {
+  assertLockPermissions(ctx, entities);
+  for (const { entityType, entityId } of entities) {
+    switch (entityType) {
+      case 'SEASON_CALENDAR':
+        await resolveCalendarBrandAccess(ctx, entityId);
+        break;
+      case 'COLLECTION_LAYOUT':
+        await resolveLayoutBrandAccess(ctx, entityId);
+        break;
+      default: {
+        const unhandled: never = entityType;
+        throw new Error(`Unhandled lock entity type: ${String(unhandled)}`);
+      }
+    }
+  }
+}
+
 export const editLockRouter = router({
   /**
    * Acquires locks on several entities atomically (all-or-nothing) — for flows like the planning
@@ -61,16 +86,16 @@ export const editLockRouter = router({
    * never leaves the other partially acquired. See `acquireLocks` in the edit-lock service.
    *
    * @auth {season_calendar:update and/or collection_layout:update per entity type, checked
-   *   manually via assertLockPermissions (AND semantics), not requirePermission}
+   *   manually via assertLockAccess (AND semantics), not requirePermission, and every target's brand}
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to lock.
-   * @output {EditLock[]} — the upserted lock records (locked by the caller, with new expiresAt).
+   * @output {EditLock[]} — the lock records, each once (locked by the caller, with new expiresAt).
    */
-  // nosemgrep: luke-procedure-requires-permission -- assertLockPermissions checks every entity type's permission (AND), which requirePermission's array form (OR) cannot express
+  // nosemgrep: luke-procedure-requires-permission -- assertLockAccess checks every entity type's permission (AND), which requirePermission's array form (OR) cannot express
   acquireMany: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
     .mutation(async ({ input, ctx }) => {
-      assertLockPermissions(ctx, input.entities);
+      await assertLockAccess(ctx, input.entities);
       return acquireLocks(input.entities, ctx.session!.user.id, ctx.prisma);
     }),
 
@@ -79,21 +104,21 @@ export const editLockRouter = router({
    * TTL on locks already held by the caller. See `renewLocks` in the edit-lock service.
    *
    * @auth {season_calendar:update and/or collection_layout:update per entity type, checked
-   *   manually via assertLockPermissions (AND semantics), not requirePermission}
+   *   manually via assertLockAccess (AND semantics), not requirePermission, and every target's brand}
    * @input {AcquireManyInputSchema} — non-empty array of { entityType, entityId } to renew.
    * @output {EditLock[]} — the renewed lock records with pushed-out expiresAt.
    */
-  // nosemgrep: luke-procedure-requires-permission -- same AND check as acquireMany, via assertLockPermissions
+  // nosemgrep: luke-procedure-requires-permission -- same AND check as acquireMany, via assertLockAccess
   renew: protectedProcedure
     .input(AcquireManyInputSchema)
     .use(withRateLimit('configMutations'))
     .mutation(async ({ input, ctx }) => {
-      assertLockPermissions(ctx, input.entities);
+      await assertLockAccess(ctx, input.entities);
       return renewLocks(input.entities, ctx.session!.user.id, ctx.prisma);
     }),
 
   /**
-   * Releases locks on several entities in a single query — mirrors `acquireMany`. No explicit
+   * Releases locks on several entities — mirrors `acquireMany`. No explicit
    * permission check: the delete is scoped to `lockedByUserId: caller`, so a user can only ever
    * release their own locks regardless of section permissions.
    *
