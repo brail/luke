@@ -163,8 +163,9 @@ automatically.
 ## Error pages and components
 
 - `src/app/not-found.tsx` (404), `src/app/error.tsx` (segment errors, with
-  `reset`) and `src/app/global-error.tsx` (root fallback) cover every route, so a
-  new route inherits them without code. Signed-in users can report the problem
+  `retry`, which fetches the segment again), its copy inside the app shell
+  `src/app/(app)/error.tsx` and `src/app/global-error.tsx` (root fallback) cover
+  every route, so a new route inherits them without code. Signed-in users can report the problem
   from the 404 and error pages through `ReportIssueButton`, which opens
   `FeedbackDialog` and renders nothing without a session (`feedback.submit` is a
   protected procedure).

@@ -10,10 +10,10 @@ import { debugError } from '../lib/debug';
 
 export default function GlobalError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     debugError(error);
@@ -35,7 +35,7 @@ export default function GlobalError({
             <ErrorState
               title="Qualcosa è andato storto"
               description="Riprova l'azione. Se l'errore persiste, contatta il supporto."
-              actionSlot={<RetryButton onRetry={reset} autoFocus />}
+              actionSlot={<RetryButton onRetry={retry} autoFocus />}
             />
           </SectionCard>
         </div>

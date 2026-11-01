@@ -14,7 +14,6 @@ import { cache } from 'react';
 import type { Section } from '@luke/core';
 
 import { auth } from '../../auth';
-import { debugWarn } from '../../lib/debug';
 import { createAuthedTrpcClient } from '../../lib/trpcAuth';
 
 import type { Route } from 'next';
@@ -27,22 +26,23 @@ const getSession = cache(auth);
 const FORCE_LOGOUT_URL = '/api/auth/force-logout' as Route;
 
 // cache() deduplicates the tRPC call across nested layouts in the same server render.
-const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<string, boolean> | undefined> => {
+const fetchEffectiveAccess = cache(async (accessToken: string): Promise<Record<string, boolean>> => {
   try {
     return await createAuthedTrpcClient(accessToken, await headers()).sectionAccess.getEffectiveForMe.query();
   } catch (err) {
     if (err instanceof TRPCClientError && err.data?.code === 'UNAUTHORIZED') {
       redirect(FORCE_LOGOUT_URL);
     }
-    debugWarn('assertSectionAccess: fetch failed:', err);
-    return undefined;
+    throw err;
   }
 });
 
 /**
  * Asserts that the currently authenticated user has access to the given section.
  * Redirects to `/login` (clearing the session) if unauthenticated or the token is
- * stale/revoked, or to `/dashboard` if access is genuinely denied.
+ * stale/revoked, or to `/dashboard` if access is genuinely denied. A failed check is not a denial:
+ * it throws to the error boundary (`app/(app)/error.tsx`), which offers a retry, and the section does
+ * not render.
  * Must be called from a server component or async layout.
  *
  * @param section - The section key to check (e.g. `'settings.ldap'`).
@@ -54,7 +54,7 @@ export async function assertSectionAccess(section: Section) {
 
   const effectiveAccess = await fetchEffectiveAccess(session.accessToken);
 
-  if (!effectiveAccess?.[section]) {
+  if (!effectiveAccess[section]) {
     redirect('/dashboard' as Route);
   }
 }

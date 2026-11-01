@@ -11,10 +11,10 @@ import { debugError } from '../lib/debug';
 
 export default function Error({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     debugError(error);
@@ -36,7 +36,7 @@ export default function Error({
           description="Riprova l'azione. Se l'errore persiste, contatta il supporto."
           actionSlot={
             <div className="flex gap-3">
-              <RetryButton onRetry={reset} autoFocus />
+              <RetryButton onRetry={retry} autoFocus />
               <ReportIssueButton />
             </div>
           }
