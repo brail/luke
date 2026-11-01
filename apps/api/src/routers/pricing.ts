@@ -201,12 +201,12 @@ const parameterSetsRouter = router({
    * Deletes a pricing parameter set that no quotation or merchandising row uses; auto-promotes the
    * next set as default if needed. A set still in use is refused with CONFLICT.
    *
-   * @auth {pricing:update}
+   * @auth {pricing:delete}
    * @input {{ id: string, brandId: string, seasonId: string }}
    * @output {{ success: true }}
    */
   remove: protectedProcedure
-    .use(requirePermission('pricing:update'))
+    .use(requirePermission('pricing:delete'))
     .input(
       z.object({
         id: z.uuid(),

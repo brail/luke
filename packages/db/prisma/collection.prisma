@@ -146,10 +146,10 @@ model CollectionRowQuotation {
   row                   CollectionLayoutRow  @relation(fields: [rowId], references: [id], onDelete: Cascade)
   /// Display order within the row's quotation list.
   order                 Int                  @default(0)
-  /// FK to PricingParameterSet (optional). SetNull if the parameter set is deleted.
+  /// FK to PricingParameterSet (optional). Restrict delete — a set in use cannot be deleted.
   pricingParameterSetId String?
   /// The pricing parameter set used for this quotation.
-  pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  pricingParameterSet   PricingParameterSet? @relation(fields: [pricingParameterSetId], references: [id], onDelete: Restrict)
   retailPrice           Float?
   /// FOB price in the purchaseCurrency defined by the linked parameter set.
   supplierQuotation     Float? // FOB in purchaseCurrency of the param set

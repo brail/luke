@@ -28,7 +28,6 @@ describe('isUniqueViolation', () => {
   });
 });
 
-/** `toErrorMessage` lives in `@luke/core`; here, on a real Prisma error class, through the API's re-export. */
 describe('isForeignKeyViolation', () => {
   it('matches its code on a named constraint, and nothing else', () => {
     const key = FOREIGN_KEYS.layoutBrand;
@@ -39,6 +38,7 @@ describe('isForeignKeyViolation', () => {
   });
 });
 
+/** `toErrorMessage` lives in `@luke/core`; here, on a real Prisma error class, through the API's re-export. */
 describe('toErrorMessage on a Prisma validation error', () => {
   it('keeps the call and the reason, without the query values', () => {
     const message = toErrorMessage(prismaValidationError('query-value-sentinel'));

@@ -19,6 +19,8 @@ import {
 import { Prisma } from '@luke/db';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
+import { FOREIGN_KEYS, isForeignKeyViolation } from '../lib/error';
+
 // ─────────────────────────────────────────────────────────────────
 // Internal types
 // ─────────────────────────────────────────────────────────────────
@@ -447,12 +449,35 @@ export async function updateParameterSet(
 }
 
 /**
+ * The answer to a delete the database refused: what still uses the set, by the rows committed now.
+ * It reads no lock: an answer, not a check. `0` uses, gone since the refusal, get the plain message.
+ */
+async function parameterSetInUse(id: string, prisma: PrismaClient): Promise<TRPCError> {
+  const [quotations, merchandisingRows] = await Promise.all([
+    prisma.collectionRowQuotation.count({ where: { pricingParameterSetId: id } }),
+    prisma.merchandisingPlanRow.count({ where: { pricingParameterSetId: id } }),
+  ]);
+  const uses = [
+    quotations > 0 && `${quotations} ${quotations === 1 ? 'quotazione' : 'quotazioni'}`,
+    merchandisingRows > 0 &&
+      `${merchandisingRows} ${merchandisingRows === 1 ? 'riga' : 'righe'} di merchandising`,
+  ].filter(Boolean);
+  const total = quotations + merchandisingRows;
+  return new TRPCError({
+    code: 'CONFLICT',
+    message:
+      total === 0
+        ? 'Set parametri in uso'
+        : `Set parametri in uso da ${uses.join(' e ')}: ${total === 1 ? 'riassegnala' : 'riassegnale'} prima di eliminarlo`,
+  });
+}
+
+/**
  * Deletes a pricing parameter set that nothing uses. If it was the default, promotes the next set
- * (by orderIndex then createdAt) to default.
- *
- * A set still linked to a collection quotation or a merchandising row is refused: both foreign keys
- * are `onDelete: SetNull`, so deleting it would silently unlink those rows and drop their purchase
- * price and margin.
+ * (by orderIndex then createdAt) to default. The foreign keys of collection quotations and
+ * merchandising rows are `onDelete: Restrict`, so the database refuses a set they use, by any path;
+ * a vendor's enablement of the set goes with it.
+ * Concurrent changes to the default flag are not serialised here.
  *
  * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
  * @throws {TRPCError} CONFLICT if a quotation or a merchandising row still uses the set.
@@ -463,64 +488,34 @@ export async function removeParameterSet(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<void> {
-  await prisma.$transaction(
-    async tx => {
-      // FOR UPDATE, which the ORM cannot express (CLAUDE.md, "Raw SQL"). A write that links a
-      // quotation or a merchandising row to this set takes FOR KEY SHARE on it for its foreign-key
-      // check, and FOR UPDATE is the only row lock that excludes it. So the counts below, read after
-      // the lock, see every link committed before it, and a link attempted after it waits, then
-      // fails its foreign key once the set is gone. This guards the references only: concurrent
-      // changes to the default flag are not serialised here.
-      const locked = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
-        SELECT id FROM pricing_parameter_sets
-        WHERE id = ${id} AND "brandId" = ${brandId} AND "seasonId" = ${seasonId}
-        FOR UPDATE
-      `);
-      if (locked.length === 0) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Set parametri non trovato',
-        });
-      }
-
-      const [quotations, merchandisingRows] = await Promise.all([
-        tx.collectionRowQuotation.count({
-          where: { pricingParameterSetId: id },
-        }),
-        tx.merchandisingPlanRow.count({ where: { pricingParameterSetId: id } }),
-      ]);
-      if (quotations + merchandisingRows > 0) {
-        const uses = [
-          quotations > 0 &&
-            `${quotations} ${quotations === 1 ? 'quotazione' : 'quotazioni'}`,
-          merchandisingRows > 0 &&
-            `${merchandisingRows} ${merchandisingRows === 1 ? 'riga' : 'righe'} di merchandising`,
-        ].filter(Boolean);
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `Set parametri in uso da ${uses.join(' e ')}: ${
-            quotations + merchandisingRows === 1 ? 'riassegnala' : 'riassegnale'
-          } prima di eliminarlo`,
-        });
-      }
-
-      // `isDefault` is read here, under the lock, not before the transaction.
-      const deleted = await tx.pricingParameterSet.delete({ where: { id } });
-      if (deleted.isDefault) {
-        const next = await tx.pricingParameterSet.findFirst({
-          where: { brandId, seasonId },
-          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-        });
-        if (next) {
-          await tx.pricingParameterSet.update({
-            where: { id: next.id },
-            data: { isDefault: true },
+  try {
+    await prisma.$transaction(
+      async tx => {
+        const deleted = await tx.pricingParameterSet.delete({ where: { id, brandId, seasonId } });
+        if (deleted.isDefault) {
+          const next = await tx.pricingParameterSet.findFirst({
+            where: { brandId, seasonId },
+            orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
           });
+          if (next) {
+            // `updateMany`: a set deleted since the read leaves no default, not a false NOT_FOUND.
+            await tx.pricingParameterSet.updateMany({
+              where: { id: next.id },
+              data: { isDefault: true },
+            });
+          }
         }
-      }
-    },
-    // Stated rather than inherited: the reasoning above holds under READ COMMITTED, where each
-    // statement reads what was committed before it started.
-    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
-  );
+      },
+      // Stated rather than inherited: the promotion above reads what was committed before it started.
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+    );
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Set parametri non trovato' });
+    }
+    if (isForeignKeyViolation(err, FOREIGN_KEYS.quotationParameterSet, FOREIGN_KEYS.merchRowParameterSet)) {
+      throw await parameterSetInUse(id, prisma);
+    }
+    throw err;
+  }
 }

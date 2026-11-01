@@ -78,8 +78,8 @@ function buildRows(set: PricingParameterSet) {
  * Side panel listing pricing parameter sets with expand/collapse detail view.
  *
  * Lets the user select a set (highlighted as active), mark one as default,
- * create new sets, edit existing ones, and delete non-default ones.
- * All write actions are gated by `pricing:update`.
+ * create new sets, edit existing ones, and delete any while more than one exists.
+ * Write actions are gated by `pricing:update`, deleting a set by `pricing:delete`.
  *
  * @param selectedSetId - Currently selected parameter set ID.
  * @param onSelectSet - Called when the user selects a different set.
@@ -97,6 +97,7 @@ export function ParameterSetPanel({
 }: ParameterSetPanelProps) {
   const { can } = usePermission();
   const canUpdate = can('pricing:update');
+  const canDelete = can('pricing:delete');
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -204,9 +205,10 @@ export function ParameterSetPanel({
                   {/* Delete (only when more than one set exists) */}
                   {sets.length > 1 && (
                     <PermissionButton
-                      hasPermission={canUpdate}
+                      hasPermission={canDelete}
                       tooltip="Non hai i permessi per eliminare le varianti"
                       infoTooltip="Elimina variante"
+                      aria-label="Elimina variante"
                       variant="ghost"
                       size="icon-sm"
                       className="text-destructive hover:text-destructive"

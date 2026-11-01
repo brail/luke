@@ -113,7 +113,8 @@ packages/
   justifying comment: the health-probe `SELECT 1` (`observability/readiness.ts`); a
   transaction-scoped advisory lock (`pg_advisory_xact_lock`, e.g. `acquireLastAdminLock`) or a row
   lock (`SELECT … FOR UPDATE` to exclude other row locks, including a foreign-key check's
-  `FOR KEY SHARE`, e.g. `removeParameterSet`, or `SELECT … FOR NO KEY UPDATE` to serialize writes
+  `FOR KEY SHARE`, e.g. `lockUserEmail` in `apps/api/src/lib/emailHelpers.ts`, or
+  `SELECT … FOR NO KEY UPDATE` to serialize writes
   without blocking that check, e.g. `lockRow`) inside an interactive `$transaction`;
   application-domain queries that need SQL the ORM cannot express (e.g. `DISTINCT ON` +
   `json_agg ... FILTER`) — always the `Prisma.sql`
@@ -138,7 +139,8 @@ packages/
    (`pg_advisory_xact_lock`, as `acquireLastAdminLock`) inside a `$transaction`. A `$transaction`
    alone is not enough: under READ COMMITTED its read holds nothing. A foreign key counts only for
    the property it enforces, and its refusal gets the check's answer, not a 500
-   (`isForeignKeyViolation` in `apps/api/src/lib/error.ts`)
+   (`refuseOnForeignKey` for a single-constraint write, or `isForeignKeyViolation` for
+   explicit handling, in `apps/api/src/lib/error.ts`)
 4. **Audit logging on every mutation** — create/update/delete/restore/unlink → `withAuditLog`
    (`apps/api/src/lib/auditMiddleware.ts`) or `logAudit()` (`apps/api/src/lib/auditLog.ts`).
    Metadata keys are typed against `SAFE_KEY_LIST`: adding one is a decision that it is safe to
@@ -267,6 +269,8 @@ Two distinct layers that must stay in sync.
 - An admin-only operation on a resource another role holds through `resource:*`, a permanent
   delete, or one that acts on authorization itself (section access management) requires `*:*`
   (ADR-029, ADR-038)
+- Exception: permanent removal of pricing parameter sets requires `pricing:delete` (#130).
+  Only admin currently holds it, through `*:*`; editor and viewer retain read-only pricing access.
 
 **Layer 2 — Section visibility** (dot-notation: `product.pricing`, `settings.ldap`, ...):
 

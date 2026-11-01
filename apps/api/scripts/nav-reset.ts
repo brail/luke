@@ -5,7 +5,8 @@
  *  - Clears NAV replica tables (nav_vendors, nav_brands, nav_seasons)
  *  - Deletes all brand/season/vendor except seed records
  *    (Brand ACME and Season PE00, required for the mandatory context edge case)
- *  - Clears dependent collection_layouts and pricing_parameter_sets
+ *  - Clears what depends on them: merchandising plans, layout revisions, collection layouts,
+ *    season calendars and pricing parameter sets
  *
  * Usage:
  *   pnpm --filter @luke/api db:nav-reset
@@ -35,18 +36,21 @@ async function main() {
 
     // ── 1. Brand/season dependencies (no onDelete: Cascade) ──────────
 
-    const [clCount, ppsCount] = await Promise.all([
-      prisma.collectionLayout.count(),
-      prisma.pricingParameterSet.count(),
-    ]);
-
-    const [delCL, delPPS] = await Promise.all([
+    // In one transaction, in this order: plans and layouts hold the sets (`Restrict`), revisions hold
+    // the layouts, and all but the revisions hold the brands and seasons deleted below.
+    const [delMP, delCR, delCL, delSC, delPPS] = await prisma.$transaction([
+      prisma.merchandisingPlan.deleteMany({}),
+      prisma.collectionLayoutRevision.deleteMany({}),
       prisma.collectionLayout.deleteMany({}),
+      prisma.seasonCalendar.deleteMany({}),
       prisma.pricingParameterSet.deleteMany({}),
     ]);
 
-    console.log(`🗑  collection_layouts:       ${delCL.count} / ${clCount}`);
-    console.log(`🗑  pricing_parameter_sets:   ${delPPS.count} / ${ppsCount}`);
+    console.log(`🗑  merchandising_plans:      ${delMP.count}`);
+    console.log(`🗑  layout_revisions:         ${delCR.count}`);
+    console.log(`🗑  collection_layouts:       ${delCL.count}`);
+    console.log(`🗑  season_calendars:         ${delSC.count}`);
+    console.log(`🗑  pricing_parameter_sets:   ${delPPS.count}`);
 
     // ── 2. NAV replica tables ─────────────────────────────────────────────
 

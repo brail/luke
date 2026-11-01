@@ -37,7 +37,7 @@ function paramSetOutOfScope(): TRPCError {
 
 /**
  * Runs a quotation write whose parameter sets `assertParamSetsInScope` has checked. The check goes
- * stale only if a set is deleted before the write commits: `removeParameterSet` refuses a set in
+ * stale only if a set is deleted before the write commits: the database refuses a set in
  * use, so a write that loses that race meets the foreign key, and the refusal gets the check's
  * answer instead of a 500. Inside a transaction the error still propagates, and it rolls back whole.
  */

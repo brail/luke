@@ -1,11 +1,9 @@
 /**
- * `pricing.parameterSets.remove` refuses a set that is still in use (#77).
+ * `pricing.parameterSets.remove` refuses a set that is still in use (#77, #130).
  *
  * Both foreign keys onto a parameter set — collection quotations and merchandising rows — are
- * `onDelete: SetNull`, so a delete that went through silently unlinked every row using the set,
- * and those rows lost their purchase price and margin. `removeParameterSet` now locks the set row
- * `FOR UPDATE` before counting its uses, which serialises it with any write that links a row to
- * the set (that write's foreign-key check takes `FOR KEY SHARE` on the same row).
+ * `onDelete: Restrict`, so the database itself refuses the delete, by any path, and the rows keep
+ * their purchase price and margin. The refusal gets the API's CONFLICT.
  *
  * The concurrent cases prove both orders against a real transaction held open on a separate
  * connection, and observe the other side actually waiting on it (`pg_blocking_pids`) before
@@ -20,7 +18,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { COLLECTION_STATUS } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { createCallerAs, setupTestDb } from './helpers';
+import { FOREIGN_KEYS, isForeignKeyViolation } from '../src/lib/error';
+
+import { createCallerAs, grantEditor, setupTestDb } from './helpers';
 import { whileHeld } from './helpers/heldTransaction';
 
 import type { Client } from 'pg';
@@ -101,6 +101,57 @@ const setExists = async () =>
   (await prisma.pricingParameterSet.count({ where: { id: setId } })) === 1;
 
 describe('removing a parameter set in use', () => {
+  const directDelete = () =>
+    prisma.pricingParameterSet.delete({ where: { id: setId } }).catch((e: unknown) => e);
+
+  it('the database names the quotation key when the set is deleted', async () => {
+    await admin.collectionLayout.quotations.create({
+      rowId,
+      pricingParameterSetId: setId,
+    });
+
+    expect(isForeignKeyViolation(await directDelete(), FOREIGN_KEYS.quotationParameterSet)).toBe(true);
+  });
+
+  it('the database names the merchandising key when the set is deleted', async () => {
+    const plan = await admin.merchandisingPlan.getOrCreate({ brandId, seasonId });
+    await admin.merchandisingPlan.createRow({
+      planId: plan.id,
+      articleCode: 'ART-1',
+      styleDescription: 'Style',
+      colorCode: 'C1',
+      colorDescription: 'Black',
+      gender: 'MAN',
+      productCategory: 'SNEAKER',
+      pricingParameterSetId: setId,
+    });
+
+    expect(isForeignKeyViolation(await directDelete(), FOREIGN_KEYS.merchRowParameterSet)).toBe(true);
+  });
+
+  it('pricing:update alone does not remove a set', async () => {
+    grantEditor('pricing:update');
+    const editor = await createCallerAs('editor');
+
+    await expect(
+      editor.pricing.parameterSets.remove({ id: setId, brandId, seasonId })
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(await setExists()).toBe(true);
+  });
+
+  it('an unused set goes, and one of another brand or season is not found', async () => {
+    await expect(
+      admin.pricing.parameterSets.remove({ id: setId, brandId, seasonId: randomUUID() })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(
+      admin.pricing.parameterSets.remove({ id: setId, brandId: randomUUID(), seasonId })
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(await setExists()).toBe(true);
+
+    await expect(remove()).resolves.toEqual({ success: true });
+    expect(await setExists()).toBe(false);
+  });
+
   it('a set used by a quotation is refused, and the quotation stays linked', async () => {
     await admin.collectionLayout.quotations.create({
       rowId,
@@ -145,7 +196,7 @@ describe('removing a parameter set in use', () => {
 });
 
 describe('removing a parameter set while a quotation links to it', () => {
-  it('link first: the removal waits on the lock, then sees the committed quotation and refuses', async () => {
+  it('link first: the removal waits on the quotation key, then refuses with its count', async () => {
     const outcome = await whileHeld(
       holder =>
         holder.query(
@@ -158,19 +209,14 @@ describe('removing a parameter set while a quotation links to it', () => {
 
     expect(outcome).toMatchObject({
       status: 'rejected',
-      reason: { code: 'CONFLICT' },
+      reason: { code: 'CONFLICT', message: expect.stringContaining('1 quotazione') },
     });
     expect(await setExists()).toBe(true);
     expect(await linkedQuotations()).toBe(1);
   });
 
-  // The removal's side, held by the test: lock the set and delete it, as `removeParameterSet`
-  // does once it has counted no use.
+  // The removal's side, held by the test: delete the set, as `removeParameterSet` does.
   const deleteSet = async (holder: Client) => {
-    await holder.query(
-      'SELECT id FROM pricing_parameter_sets WHERE id = $1 FOR UPDATE',
-      [setId]
-    );
     await holder.query('DELETE FROM pricing_parameter_sets WHERE id = $1', [
       setId,
     ]);
@@ -220,21 +266,22 @@ describe('removing a parameter set while a quotation links to it', () => {
     ).toBe('Row');
   });
 
-  it('delete first: duplicating a row waits, answers CONFLICT, and creates no copy', async () => {
+  it('a set a row uses cannot go, so the row keeps its link and still duplicates', async () => {
     await admin.collectionLayout.quotations.create({
       rowId,
       pricingParameterSetId: setId,
     });
-    const rowsBefore = await prisma.collectionLayoutRow.count();
 
-    const outcome = await whileHeld(deleteSet, () =>
-      admin.collectionLayout.rows.duplicate({ rowId })
-    );
+    await expect(
+      prisma.$executeRaw`DELETE FROM pricing_parameter_sets WHERE id = ${setId}`
+    ).rejects.toThrow(/collection_row_quotations_pricingParameterSetId_fkey/);
 
-    expect(outcome).toMatchObject({
-      status: 'rejected',
-      reason: { code: 'CONFLICT' },
-    });
-    expect(await prisma.collectionLayoutRow.count()).toBe(rowsBefore);
+    const copy = await admin.collectionLayout.rows.duplicate({ rowId });
+    expect(
+      await prisma.collectionRowQuotation.count({
+        where: { rowId: copy.id, pricingParameterSetId: setId },
+      })
+    ).toBe(1);
+    expect(await linkedQuotations()).toBe(2);
   });
 });

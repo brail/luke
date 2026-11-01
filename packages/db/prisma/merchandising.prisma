@@ -92,7 +92,7 @@ model MerchandisingPlanRow {
   cancellationStatus String?
   designer           String?
 
-  /// FK to PricingParameterSet (optional). SetNull if deleted.
+  /// FK to PricingParameterSet (optional). Restrict delete — a set in use cannot be deleted.
   pricingParameterSetId String?
 
   targetFobPrice  Decimal? @db.Decimal(10, 4)
@@ -119,7 +119,7 @@ model MerchandisingPlanRow {
   /// User assigned to work on this row.
   assignedUser        User?                   @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   /// Pricing parameter set used for cost calculations on this row.
-  pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: SetNull)
+  pricingParameterSet PricingParameterSet?    @relation(fields: [pricingParameterSetId], references: [id], onDelete: Restrict)
 
   @@index([planId])
   @@index([assignedUserId])

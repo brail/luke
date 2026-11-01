@@ -810,8 +810,8 @@ export async function duplicateRow(
   }
   await assertUnlocked('COLLECTION_LAYOUT', row.collectionLayoutId, userId, prisma);
 
-  // `removeParameterSet` refuses a set in use, so a set deleted between the read above and the
-  // copy is the only way a quotation's foreign key can refuse here.
+  // A set in use cannot be deleted, so its foreign key can refuse here only if the row's quotation
+  // and then the set both went between the read above and the copy.
   const setGone = () =>
     new TRPCError({
       code: 'CONFLICT',

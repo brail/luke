@@ -93,7 +93,7 @@ export const VALID_RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   [RESOURCES.SETTINGS]: ['read', 'update'] as const,
   [RESOURCES.MAINTENANCE]: ['read', 'update', 'backup_create', 'backup_restore', 'backup_delete', 'backup_export', 'mode_manage'] as const,
   [RESOURCES.DASHBOARD]: ['read'] as const,
-  [RESOURCES.PRICING]: ['read', 'update'] as const,
+  [RESOURCES.PRICING]: ['read', 'update', 'delete'] as const,
   [RESOURCES.COLLECTION_LAYOUT]: ['read', 'update', 'revise', 'view_revisions', 'configure'] as const,
   [RESOURCES.VENDORS]: ['create', 'read', 'update', 'delete'] as const,
   [RESOURCES.SALES]: ['read', 'sync'] as const,
