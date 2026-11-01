@@ -190,7 +190,8 @@ export const googleRouter = router({
    */
   exchangeOAuthCode: protectedProcedure
     .use(requirePermission('config:update'))
-    // Rule 12: it checks a `state`, so an IP bucket and an account bucket, both before the check.
+    // Rule 12: a random `state` needs the IP bucket. The account bucket stays because this writes
+    // configuration. Both run before the check.
     .use(withRateLimit('googleOAuthExchange'))
     .use(withRateLimit('configMutations'))
     .input(z.object({ code: z.string().min(1), state: z.string().min(1).max(128), redirectUri: httpUrl() }))

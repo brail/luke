@@ -88,8 +88,8 @@ export const RATE_LIMIT_CONFIG = {
     keyBy: 'userId' as const,
   },
   googleOAuthExchange: {
-    // The IP half of the OAuth code exchange's pair (CLAUDE.md rule 12): it checks a `state`.
-    // The account half is `configMutations`, since the exchange writes configuration.
+    // The IP bucket the OAuth code exchange's random `state` needs (CLAUDE.md rule 12).
+    // Its account bucket is `configMutations`, kept because the exchange writes configuration.
     max: 10,
     windowMs: 900_000, // 15 minutes
     keyBy: 'ip' as const,

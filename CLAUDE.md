@@ -162,9 +162,10 @@ packages/
     brand/season receives `brandId`/`seasonId` as explicit Zod inputs, never from `userPreference`
     server-side. The frontend passes them from `useAppContext()` with
     `enabled: !!brand?.id && !!season?.id`. Reference: `pricing.parameterSets.list`
-12. **Auth-adjacent endpoint → double rate limit (IP + account)** — login and every endpoint that
-    verifies credentials or tokens has a `keyBy: 'ip'` bucket and one keyed on the identity
-    (username/account). Reference: `login` + `loginByUsername` in `apps/api/src/lib/ratelimit.ts`
+12. **Credential checks → IP + account rate limits** — login, password checks, LDAP binds and other
+    guessable secrets require `keyBy: 'ip'` and identity buckets before verification. Random 256-bit
+    token checks require the IP bucket; an account bucket is optional. Reference: `login` +
+    `loginByUsername` in `apps/api/src/lib/ratelimit.ts`
 13. **Server-to-server web→api calls forward the real client IP** — every fetch `apps/web` makes to
     `apps/api` on behalf of a user sends `X-Forwarded-For` through `forwardedFor()`
     (`lib/clientIp.ts`), inline in the call's headers

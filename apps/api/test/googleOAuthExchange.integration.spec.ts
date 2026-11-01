@@ -12,7 +12,8 @@
  *
  * A code is exchanged only with the `state` of a flow the same user started (#143): one use, ten
  * minutes, a stale tab's state refused without ending the current flow, and the IP and account
- * buckets checked first (CLAUDE.md rule 12).
+ * buckets checked first: CLAUDE.md rule 12 requires the IP one, the configuration write keeps the
+ * account one.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
