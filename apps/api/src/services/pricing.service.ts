@@ -19,7 +19,7 @@ import {
 import { Prisma } from '@luke/db';
 import type { PrismaClient, PricingParameterSet } from '@luke/db';
 
-import { FOREIGN_KEYS, isForeignKeyViolation } from '../lib/error';
+import { FOREIGN_KEYS, isForeignKeyViolation, isUniqueViolation } from '../lib/error';
 
 // ─────────────────────────────────────────────────────────────────
 // Internal types
@@ -292,8 +292,18 @@ export async function getPreviousSeasonSets(
 }
 
 /**
+ * Serializes every writer of one brand+season's default flag — create, set-default, delete — so
+ * "exactly one default while the scope holds sets" survives concurrent requests: each decides on
+ * what it reads after taking the lock. Scoped to the transaction, released on commit or rollback.
+ * Raw SQL because the Prisma ORM has no advisory locks — the `acquireLastAdminLock` pattern.
+ */
+async function lockDefaultSet(tx: Prisma.TransactionClient, brandId: string, seasonId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`pricing-default-set:${brandId}:${seasonId}`}))`;
+}
+
+/**
  * Atomically marks one parameter set as default and clears the flag on all others
- * in the same brand+season scope.
+ * in the same brand+season scope, under the scope's lock (`lockDefaultSet`).
  *
  * @throws {TRPCError} NOT_FOUND if the parameter set does not belong to the given brand+season.
  */
@@ -303,35 +313,31 @@ export async function setAsDefault(
   seasonId: string,
   prisma: PrismaClient
 ): Promise<PricingParameterSet> {
-  const target = await prisma.pricingParameterSet.findFirst({
-    where: { id, brandId, seasonId },
-  });
-
-  if (!target) {
-    throw new TRPCError({
-      code: 'NOT_FOUND',
-      message: 'Set parametri non trovato',
-    });
-  }
-
-  // Atomic transaction
-  return prisma.$transaction(async tx => {
-    // Remove default from all others
-    await tx.pricingParameterSet.updateMany({
-      where: { brandId, seasonId, NOT: { id } },
-      data: { isDefault: false },
-    });
-    // Set this one as default
-    return tx.pricingParameterSet.update({
-      where: { id },
-      data: { isDefault: true },
-    });
-  });
+  const notFound = () => new TRPCError({ code: 'NOT_FOUND', message: 'Set parametri non trovato' });
+  return prisma.$transaction(
+    async tx => {
+      await lockDefaultSet(tx, brandId, seasonId);
+      // Remove default from all others
+      await tx.pricingParameterSet.updateMany({
+        where: { brandId, seasonId, NOT: { id } },
+        data: { isDefault: false },
+      });
+      // Conditional: a set deleted meanwhile (a purge takes no lock of this scope) is not found.
+      const { count } = await tx.pricingParameterSet.updateMany({
+        where: { id, brandId, seasonId },
+        data: { isDefault: true },
+      });
+      if (count === 0) throw notFound();
+      return tx.pricingParameterSet.findUniqueOrThrow({ where: { id } });
+    },
+    // Stated rather than inherited: each read after the lock must see what the previous holder committed.
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  );
 }
 
 /**
  * Creates a new pricing parameter set. Automatically marks it as default if it is the
- * first set for the given brand+season.
+ * first set for the given brand+season, counting under the scope's lock (`lockDefaultSet`).
  *
  * @throws {TRPCError} NOT_FOUND if the brand or season does not exist.
  * @throws {TRPCError} CONFLICT if a set with the same name already exists for this brand+season.
@@ -342,54 +348,58 @@ export async function createParameterSet(
   input: PricingParameterSetInput,
   prisma: PrismaClient
 ): Promise<PricingParameterSet> {
-  // Check that brand and season exist
-  const [brand, season] = await Promise.all([
-    prisma.brand.findUnique({ where: { id: brandId }, select: { id: true } }),
-    prisma.season.findUnique({ where: { id: seasonId }, select: { id: true } }),
-  ]);
+  return prisma.$transaction(
+    async tx => {
+      await lockDefaultSet(tx, brandId, seasonId);
+      // The first set of a brand+season becomes its default; a new one goes after the last.
+      const { _count, _max } = await tx.pricingParameterSet.aggregate({
+        where: { brandId, seasonId },
+        _count: true,
+        _max: { orderIndex: true },
+      });
 
-  if (!brand)
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
-  if (!season)
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
-
-  // Check name uniqueness for brand+season
-  const existing = await prisma.pricingParameterSet.findUnique({
-    where: { brandId_seasonId_name: { brandId, seasonId, name: input.name } },
-  });
-  if (existing) {
-    throw new TRPCError({
-      code: 'CONFLICT',
-      message: `Esiste già una variante con nome "${input.name}" per questa combinazione brand+stagione`,
-    });
-  }
-
-  // If it's the first set for this brand+season, it becomes default
-  const existingCount = await prisma.pricingParameterSet.count({
-    where: { brandId, seasonId },
-  });
-  const isDefault = existingCount === 0;
-
-  return prisma.pricingParameterSet.create({
-    data: {
-      brandId,
-      seasonId,
-      name: input.name,
-      countryCode: input.countryCode,
-      purchaseCurrency: input.purchaseCurrency,
-      sellingCurrency: input.sellingCurrency,
-      qualityControlPercent: input.qualityControlPercent,
-      transportInsuranceCost: input.transportInsuranceCost,
-      duty: input.duty,
-      exchangeRate: input.exchangeRate,
-      italyAccessoryCosts: input.italyAccessoryCosts,
-      tools: input.tools,
-      retailMultiplier: input.retailMultiplier,
-      optimalMargin: input.optimalMargin,
-      isDefault,
-      orderIndex: existingCount,
+      // The unique (brand, season, name) and the foreign keys answer a taken name or a missing
+      // brand or season.
+      return tx.pricingParameterSet
+        .create({
+          data: {
+            brandId,
+            seasonId,
+            name: input.name,
+            countryCode: input.countryCode,
+            purchaseCurrency: input.purchaseCurrency,
+            sellingCurrency: input.sellingCurrency,
+            qualityControlPercent: input.qualityControlPercent,
+            transportInsuranceCost: input.transportInsuranceCost,
+            duty: input.duty,
+            exchangeRate: input.exchangeRate,
+            italyAccessoryCosts: input.italyAccessoryCosts,
+            tools: input.tools,
+            retailMultiplier: input.retailMultiplier,
+            optimalMargin: input.optimalMargin,
+            isDefault: _count === 0,
+            orderIndex: (_max.orderIndex ?? -1) + 1,
+          },
+        })
+        .catch((err: unknown) => {
+          if (isUniqueViolation(err, 'pricing_parameter_sets_brandId_seasonId_name_key')) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: `Esiste già una variante con nome "${input.name}" per questa combinazione brand+stagione`,
+            });
+          }
+          if (isForeignKeyViolation(err, FOREIGN_KEYS.parameterSetBrand)) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
+          }
+          if (isForeignKeyViolation(err, FOREIGN_KEYS.parameterSetSeason)) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+          }
+          throw err;
+        });
     },
-  });
+    // Stated rather than inherited: the count after the lock must see what the previous holder committed.
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  );
 }
 
 /**
@@ -476,8 +486,8 @@ async function parameterSetInUse(id: string, prisma: PrismaClient): Promise<TRPC
  * Deletes a pricing parameter set that nothing uses. If it was the default, promotes the next set
  * (by orderIndex then createdAt) to default. The foreign keys of collection quotations and
  * merchandising rows are `onDelete: Restrict`, so the database refuses a set they use, by any path;
- * a vendor's enablement of the set goes with it.
- * Concurrent changes to the default flag are not serialised here.
+ * a vendor's enablement of the set goes with it. The scope's lock (`lockDefaultSet`) serializes it
+ * with the other writers of the default flag.
  *
  * @throws {TRPCError} NOT_FOUND if the set does not belong to the given brand+season.
  * @throws {TRPCError} CONFLICT if a quotation or a merchandising row still uses the set.
@@ -491,6 +501,7 @@ export async function removeParameterSet(
   try {
     await prisma.$transaction(
       async tx => {
+        await lockDefaultSet(tx, brandId, seasonId);
         const deleted = await tx.pricingParameterSet.delete({ where: { id, brandId, seasonId } });
         if (deleted.isDefault) {
           const next = await tx.pricingParameterSet.findFirst({
