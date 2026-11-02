@@ -5,6 +5,7 @@ import {
   deleteEvent,
   buildCalendarSummary,
   createCalendar,
+  deleteCalendar,
   syncCalendarReaders,
   enforceDomainReadOnly,
   type MilestoneForSync,
@@ -232,6 +233,28 @@ export async function deleteGoogleCopies(
     logger.warn({ failed, total: copies.length }, 'Some Google Calendar copies of deleted events were not deleted');
   }
   logger.info({ count: copies.length - failed }, 'Google Calendar copies of deleted events removed');
+}
+
+/**
+ * Deletes Google calendars Luke provisioned, once their bindings are gone (a purged season calendar).
+ * Best effort, as `deleteGoogleCopies`: a calendar Google refuses to delete is logged and stays.
+ * No-ops if the integration is disabled.
+ */
+export async function deleteGoogleCalendars(
+  googleCalendarIds: string[],
+  prisma: PrismaClient,
+  logger: SyncLogger
+): Promise<void> {
+  if (googleCalendarIds.length === 0) return;
+  const creds = await getConfiguredGoogleClient(prisma);
+  if (!creds) return;
+
+  const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id)));
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed > 0) {
+    logger.warn({ failed, total: googleCalendarIds.length }, 'Some provisioned Google calendars were not deleted');
+  }
+  logger.info({ count: googleCalendarIds.length - failed }, 'Provisioned Google calendars deleted');
 }
 
 /**

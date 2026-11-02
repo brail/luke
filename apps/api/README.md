@@ -411,7 +411,7 @@ values in the environment table below, and no configuration file is read. Ration
 |-----------|-------------|
 | `auditLog.*` | Audit trail lookups — "last modified" per entity and the full export page |
 | `auth.*` | Login, API token refresh, logout (ends every session of the caller), password reset, email verification (own address, by an administrator, or from the login page with the password), and the email a pending LDAP account submits with its password |
-| `brand.*` | Brand management (CRUD, soft delete, logo upload) |
+| `brand.*` | Brand management (CRUD, soft delete, logo upload, hard delete, purge of an inactive test brand with its data) |
 | `catalog.*` | Master Brand/Season lists for context selection, filtered by the user's allowlist |
 | `collectionCatalog.*` | Collection catalog items |
 | `collectionLayout.*` | Collection plan — layout, groups, rows, quotations, drag-and-drop ordering |
@@ -440,7 +440,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `pricing.*` | Pricing engine — parameter sets, forward/inverse/margin calculation |
 | `public.*` | Public endpoints, no authentication |
 | `sales.*` | Order portfolio statistics and the KIMO sales+returns report (NAV replicas `nav_pf_*` / `nav_kimo_*`) |
-| `season.*` | Season management (CRUD, soft delete) |
+| `season.*` | Season management (CRUD, soft delete, hard delete, purge of an inactive test season with its data) |
 | `seasonCalendar.*` | Seasonal milestone calendar, planning groups, templates and Google sync |
 | `sectionAccess.*` | RBAC section visibility: per-user overrides and per-role defaults |
 | `storage.*` | Upload slots and FileObject confirmation (presigned S3 uploads), S3 connection test, storage configuration |

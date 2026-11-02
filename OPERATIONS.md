@@ -21,6 +21,7 @@ the health and readiness probes are documented in the
 - [Email deliverability](#email-deliverability)
 - [Reverse proxy](#reverse-proxy)
 - [Release build variables](#release-build-variables)
+- [Purging a test brand or season](#purging-a-test-brand-or-season)
 - [Related documentation](#related-documentation)
 
 ---
@@ -407,6 +408,30 @@ on `main`, whose 3.0 workflow still reads them for a hotfix.
 
 Web images before 3.1.0-rc.1 bake `http://<hostname>`: after the switch to
 HTTPS, rolling the web back to one of them brings mixed content back.
+
+---
+
+## Purging a test brand or season
+
+A real brand or season comes from NAV. One created only in Luke, for a test, can be purged: deleted
+with everything under it — layouts with their groups, rows, quotations and revisions, season
+calendars with their planning groups and events, merchandising plans, parameter sets, and then the
+brand or season itself. A season's purge takes that data for every brand. Only an administrator can
+purge (`*:*`), and only an entity with no NAV link that was deactivated first: deactivate, then purge,
+as two separate steps. The purge shows what it would delete and asks for the entity's name.
+
+It runs in one transaction with one audit entry (`BRAND_PURGE` or `SEASON_PURGE`, with the counts):
+a failure anywhere deletes nothing. It is refused while data of another brand or season uses one of
+its planning groups or parameter sets.
+
+After the commit, each on its own and logged when it fails, it removes the brand logo, the row
+pictures and the merchandising images that no surviving record names, the Google copies of the
+events, and the Google calendars Luke created for the season calendars. What it does not remove:
+
+- revision pictures in the immutable bucket, shared across brands by checksum
+  ([storage-immutable-bucket.md](docs/storage-immutable-bucket.md)); the audit entry counts them;
+- a Google copy written by a sync already running, and an exported ICS imported elsewhere;
+- history with no foreign key: notifications, links, sales data matched by code.
 
 ---
 

@@ -11,6 +11,7 @@ import {
   BrandHardDeleteInputSchema,
   BrandIdSchema,
   BrandListInputSchema,
+  PurgeInputSchema,
   BrandUpdateInputSchema,
   normalizeCode,
   type Role,
@@ -24,7 +25,7 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
-import { assertUnreferenced, deleteUnreferenced } from '../services/catalogDelete.service';
+import { assertUnreferenced, deleteUnreferenced, previewPurge, purge } from '../services/catalogDelete.service';
 import { getUserAllowedBrandIds } from '../services/context.service.js';
 import { deleteObjectByKey } from '../storage';
 
@@ -411,8 +412,43 @@ export const brandRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: 'Il brand è cambiato nel frattempo: riprova' });
       }
       await logAudit(ctx, { action: 'BRAND_HARD_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name } });
+      // After the delete, best effort: a failure leaves an orphan logo and a log line.
+      if (brand.logoKey) {
+        await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: brand.logoKey }).catch((err: unknown) =>
+          ctx.logger.warn({ err, key: brand.logoKey }, 'Hard delete: brand logo left behind')
+        );
+      }
       return { success: true };
     }),
+
+  /**
+   * What purging a brand would delete: counts, the seasons its data spans, the revision
+   * pictures kept, and references from outside that would refuse it. Not authoritative: the purge
+   * counts again under its locks.
+   *
+   * @auth {*:*} — admin only, as the purge.
+   * @input {BrandIdSchema}
+   * @output The preview of `previewPurge`.
+   */
+  purgePreview: protectedProcedure
+    .use(requirePermission('*:*'))
+    .input(BrandIdSchema)
+    .query(({ input, ctx }) => previewPurge(ctx.prisma, 'brand', input.id)),
+
+  /**
+   * Deletes an inactive, NAV-free brand with everything under it (test data: a real one comes
+   * from NAV), in one transaction with one audit entry; stored files and Google copies go after the
+   * commit. See `purge` in `catalogDelete.service.ts`.
+   *
+   * @auth {*:*} — admin only, as the hard delete.
+   * @input {PurgeInputSchema} — brand UUID plus its name, typed to confirm.
+   * @output {{ deletedCounts, keptPictureReferences }}
+   */
+  purge: protectedProcedure
+    .use(requirePermission('*:*'))
+    .use(withRateLimit('brandMutations'))
+    .input(PurgeInputSchema)
+    .mutation(({ input, ctx }) => purge(ctx, 'brand', input.id, input.confirmName)),
 
   /**
    * Restores a soft-deleted brand by setting isActive=true.

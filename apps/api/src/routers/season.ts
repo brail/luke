@@ -11,6 +11,7 @@ import {
   SeasonHardDeleteInputSchema,
   SeasonIdSchema,
   SeasonListInputSchema,
+  PurgeInputSchema,
   SeasonUpdateInputSchema,
   normalizeCode,
 } from '@luke/core';
@@ -20,7 +21,7 @@ import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
-import { assertUnreferenced, deleteUnreferenced } from '../services/catalogDelete.service';
+import { assertUnreferenced, deleteUnreferenced, previewPurge, purge } from '../services/catalogDelete.service';
 
 
 const SEASON_SELECT = {
@@ -296,6 +297,35 @@ export const seasonRouter = router({
       await logAudit(ctx, { action: 'SEASON_HARD_DELETE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name } });
       return { success: true };
     }),
+
+  /**
+   * What purging a season would delete: counts, the brands its data spans, the revision
+   * pictures kept, and references from outside that would refuse it. Not authoritative: the purge
+   * counts again under its locks.
+   *
+   * @auth {*:*} — admin only, as the purge.
+   * @input {SeasonIdSchema}
+   * @output The preview of `previewPurge`.
+   */
+  purgePreview: protectedProcedure
+    .use(requirePermission('*:*'))
+    .input(SeasonIdSchema)
+    .query(({ input, ctx }) => previewPurge(ctx.prisma, 'season', input.id)),
+
+  /**
+   * Deletes an inactive, NAV-free season with everything under it (test data: a real one comes
+   * from NAV), in one transaction with one audit entry; stored files and Google copies go after the
+   * commit. See `purge` in `catalogDelete.service.ts`.
+   *
+   * @auth {*:*} — admin only, as the hard delete.
+   * @input {PurgeInputSchema} — season UUID plus its name, typed to confirm.
+   * @output {{ deletedCounts, keptPictureReferences }}
+   */
+  purge: protectedProcedure
+    .use(requirePermission('*:*'))
+    .use(withRateLimit('configMutations'))
+    .input(PurgeInputSchema)
+    .mutation(({ input, ctx }) => purge(ctx, 'season', input.id, input.confirmName)),
 
   /**
    * Restores a soft-deleted season by setting isActive to true.

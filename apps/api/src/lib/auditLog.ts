@@ -52,6 +52,8 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'BACKUP_IMPORT',
   'BACKUP_MIGRATION_BRIDGE',
   'MAINTENANCE_MODE_ACTIVATED',
+  'BRAND_PURGE',
+  'SEASON_PURGE',
 ]);
 
 /**
@@ -96,6 +98,9 @@ const SAFE_KEY_LIST = [
   'contentType',
   'code',
   'logoKey',
+  // A purge's counts per kind of record deleted, and how many revision pictures it kept.
+  'deletedCounts',
+  'keptPictureReferences',
   'brandId',
   'seasonId',
   'vendorId',
@@ -387,7 +392,9 @@ function joinPath(path: string, key: string): string {
  * walk a value that is already allowed, it never admits one that isn't.
  */
 const MAP_VALUED_KEYS = new Set<string>(
-  ['sectionAccessDefaults'] satisfies readonly AuditMetadataKey[],
+  // `deletedCounts`: numbers by record kind. Its kind names stay out of the global list, where they
+  // would admit every other action's `rows` or `events` field.
+  ['sectionAccessDefaults', 'deletedCounts'] satisfies readonly AuditMetadataKey[],
 );
 
 /**

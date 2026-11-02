@@ -54,6 +54,7 @@ export const FOREIGN_KEYS = {
   closureSeason: 'vendor_closure_periods_seasonId_fkey',
   closureVendor: 'vendor_closure_periods_vendorId_fkey',
   eventNoteEvent: 'calendar_event_personal_notes_eventId_fkey',
+  eventPlanningGroup: 'calendar_events_planningGroupId_fkey',
   layoutBrand: 'collection_layouts_brandId_fkey',
   layoutSeason: 'collection_layouts_seasonId_fkey',
   merchPlanBrand: 'merchandising_plans_brandId_fkey',

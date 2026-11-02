@@ -70,6 +70,11 @@ If the revision transaction fails after `copyToImmutableBucket`:
   S3 lifecycle rules select objects by prefix, tag, size and age, not by
   whether a database row references them
 
+A purge of a test brand or season ([OPERATIONS.md](../OPERATIONS.md#purging-a-test-brand-or-season))
+deletes its revisions but not their files here: a file is shared by checksum with revisions of other
+brands, so the purge keeps them with their `FileObject` rows and counts the references it dropped in
+its audit entry (`keptPictureReferences`).
+
 ### Retention policy configuration (production)
 
 Object Lock (versioning + WORM retention) is a standard S3 feature, not

@@ -36,3 +36,13 @@ export const HARD_DELETE_CONFIRM_PHRASE = 'ELIMINA';
 export const HardDeleteConfirmSchema = z.object({
   confirmPhrase: typedConfirmation(HARD_DELETE_CONFIRM_PHRASE),
 });
+
+/**
+ * Input of a purge (a brand or season deleted with everything under it): the entity and its name,
+ * typed to confirm. Unlike {@link HardDeleteConfirmSchema} the phrase is not constant, so the
+ * server compares it with the stored name.
+ */
+export const PurgeInputSchema = z.object({
+  id: z.uuid(),
+  confirmName: z.string().min(1).max(200),
+});

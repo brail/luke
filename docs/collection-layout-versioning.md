@@ -223,3 +223,4 @@ runs is lost for that revision.
 | Orphan photos in the immutable bucket | Kept with their `FileObject` row and reused by a retried revision (see the Immutable Bucket section) |
 | Revision with 0 rows (layout with no rows) | Allowed — the groups are snapshotted with no rows |
 | Same row snapshotted twice in the same revision | Blocked by `@@unique([revisionId, sourceRowId])` |
+| Test brand or season purged | Its revisions go with its layouts; their photos stay in the immutable bucket ([OPERATIONS.md](../OPERATIONS.md#purging-a-test-brand-or-season)). A brand or season linked to NAV is never purged |
