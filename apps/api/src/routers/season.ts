@@ -20,6 +20,7 @@ import { logAudit } from '../lib/auditLog';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertUnreferenced, deleteUnreferenced } from '../services/catalogDelete.service';
 
 
 const SEASON_SELECT = {
@@ -238,17 +239,7 @@ export const seasonRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'La stagione non è collegata a NAV' });
       }
 
-      const [layoutCount, pricingCount] = await Promise.all([
-        ctx.prisma.collectionLayout.count({ where: { seasonId: input.id } }),
-        ctx.prisma.pricingParameterSet.count({ where: { seasonId: input.id } }),
-      ]);
-
-      if (layoutCount > 0 || pricingCount > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Impossibile scollegare: la stagione è usata in ${layoutCount} collection layout e ${pricingCount} set di pricing`,
-        });
-      }
+      await assertUnreferenced(ctx.prisma, { seasonId: input.id }, 'Impossibile scollegare: la stagione è ancora usata');
 
       const result = await ctx.prisma.season.update({
         where: { id: input.id },
@@ -261,7 +252,9 @@ export const seasonRouter = router({
     }),
 
   /**
-   * Permanently deletes a season; only allowed for seasons not linked to NAV and without active dependencies.
+   * Permanently deletes a season; refused while it is linked to NAV (BAD_REQUEST) or anything
+   * references it (PRECONDITION_FAILED, with the counts), also when either arrives during the delete
+   * (CONFLICT if what refused it is gone by the recount).
    *
    * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
    * body and never reaches the audit log — the same as any other malformed field.
@@ -276,32 +269,30 @@ export const seasonRouter = router({
     .use(withRateLimit('configMutations'))
     .input(SeasonHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const season = await ctx.prisma.season.findUnique({ where: { id: input.id } });
+      // Read again when the delete finds nothing: the season was deleted or linked to NAV meanwhile.
+      const deletable = async () => {
+        const season = await ctx.prisma.season.findUnique({ where: { id: input.id } });
+        if (!season) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+        }
+        if (season.navSeasonId !== null) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Impossibile eliminare definitivamente una stagione collegata a NAV. Usa "Scollega da NAV" prima.',
+          });
+        }
+        return season;
+      };
+      const season = await deletable();
 
-      if (!season) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Stagione non trovata' });
+      // The NAV check holds to the delete: a link made meanwhile leaves nothing to delete.
+      const { count } = await deleteUnreferenced(ctx.prisma, { seasonId: input.id }, 'Impossibile eliminare: la stagione è ancora usata', () =>
+        ctx.prisma.season.deleteMany({ where: { id: input.id, navSeasonId: null } })
+      );
+      if (count === 0) {
+        await deletable();
+        throw new TRPCError({ code: 'CONFLICT', message: 'La stagione è cambiata nel frattempo: riprova' });
       }
-
-      if (season.navSeasonId !== null) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Impossibile eliminare definitivamente una stagione collegata a NAV. Usa "Scollega da NAV" prima.',
-        });
-      }
-
-      const [layoutCount, pricingCount] = await Promise.all([
-        ctx.prisma.collectionLayout.count({ where: { seasonId: input.id } }),
-        ctx.prisma.pricingParameterSet.count({ where: { seasonId: input.id } }),
-      ]);
-
-      if (layoutCount > 0 || pricingCount > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Impossibile eliminare: la stagione è usata in ${layoutCount} collection layout e ${pricingCount} set di pricing`,
-        });
-      }
-
-      await ctx.prisma.season.delete({ where: { id: input.id } });
       await logAudit(ctx, { action: 'SEASON_HARD_DELETE', targetType: 'Season', targetId: input.id, result: 'SUCCESS', metadata: { name: season.name } });
       return { success: true };
     }),

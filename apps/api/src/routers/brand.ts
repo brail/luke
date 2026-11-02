@@ -24,6 +24,7 @@ import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { makeUrlResolver } from '../lib/storageUrl';
 import { router, protectedProcedure } from '../lib/trpc';
+import { assertUnreferenced, deleteUnreferenced } from '../services/catalogDelete.service';
 import { getUserAllowedBrandIds } from '../services/context.service.js';
 import { deleteObjectByKey } from '../storage';
 
@@ -354,17 +355,7 @@ export const brandRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Il brand non è collegato a NAV' });
       }
 
-      const [layoutCount, pricingCount] = await Promise.all([
-        ctx.prisma.collectionLayout.count({ where: { brandId: input.id } }),
-        ctx.prisma.pricingParameterSet.count({ where: { brandId: input.id } }),
-      ]);
-
-      if (layoutCount > 0 || pricingCount > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Impossibile scollegare: il brand è usato in ${layoutCount} collection layout e ${pricingCount} set di pricing`,
-        });
-      }
+      await assertUnreferenced(ctx.prisma, { brandId: input.id }, 'Impossibile scollegare: il brand è ancora usato');
 
       const result = await ctx.prisma.brand.update({
         where: { id: input.id },
@@ -378,7 +369,9 @@ export const brandRouter = router({
     }),
 
   /**
-   * Permanently deletes a brand; blocked if it has a NAV link or active dependencies.
+   * Permanently deletes a brand; refused while it is linked to NAV (BAD_REQUEST) or anything
+   * references it (PRECONDITION_FAILED, with the counts), also when either arrives during the delete
+   * (CONFLICT if what refused it is gone by the recount).
    *
    * A wrong or missing `confirmPhrase` is rejected in input validation, so it never reaches this
    * body and never reaches the audit log — the same as any other malformed field.
@@ -393,32 +386,30 @@ export const brandRouter = router({
     .use(withRateLimit('brandMutations'))
     .input(BrandHardDeleteInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const brand = await ctx.prisma.brand.findUnique({ where: { id: input.id } });
+      // Read again when the delete finds nothing: the brand was deleted or linked to NAV meanwhile.
+      const deletable = async () => {
+        const brand = await ctx.prisma.brand.findUnique({ where: { id: input.id } });
+        if (!brand) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
+        }
+        if (brand.navBrandId !== null) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Impossibile eliminare definitivamente un brand collegato a NAV. Usa "Scollega da NAV" prima.',
+          });
+        }
+        return brand;
+      };
+      const brand = await deletable();
 
-      if (!brand) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand non trovato' });
+      // The NAV check holds to the delete: a link made meanwhile leaves nothing to delete.
+      const { count } = await deleteUnreferenced(ctx.prisma, { brandId: input.id }, 'Impossibile eliminare: il brand è ancora usato', () =>
+        ctx.prisma.brand.deleteMany({ where: { id: input.id, navBrandId: null } })
+      );
+      if (count === 0) {
+        await deletable();
+        throw new TRPCError({ code: 'CONFLICT', message: 'Il brand è cambiato nel frattempo: riprova' });
       }
-
-      if (brand.navBrandId !== null) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Impossibile eliminare definitivamente un brand collegato a NAV. Usa "Scollega da NAV" prima.',
-        });
-      }
-
-      const [layoutCount, pricingCount] = await Promise.all([
-        ctx.prisma.collectionLayout.count({ where: { brandId: input.id } }),
-        ctx.prisma.pricingParameterSet.count({ where: { brandId: input.id } }),
-      ]);
-
-      if (layoutCount > 0 || pricingCount > 0) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: `Impossibile eliminare: il brand è usato in ${layoutCount} collection layout e ${pricingCount} set di pricing`,
-        });
-      }
-
-      await ctx.prisma.brand.delete({ where: { id: input.id } });
       await logAudit(ctx, { action: 'BRAND_HARD_DELETE', targetType: 'Brand', targetId: input.id, result: 'SUCCESS', metadata: { name: brand.name } });
       return { success: true };
     }),

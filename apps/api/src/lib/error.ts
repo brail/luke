@@ -49,12 +49,18 @@ function violates(err: unknown, code: string, constraints: readonly string[]): b
 
 /** The foreign keys the code answers a refusal of, so that a rename is one edit and a typo does not compile. */
 export const FOREIGN_KEYS = {
+  calendarBrand: 'season_calendars_brandId_fkey',
+  calendarSeason: 'season_calendars_seasonId_fkey',
   closureSeason: 'vendor_closure_periods_seasonId_fkey',
   closureVendor: 'vendor_closure_periods_vendorId_fkey',
   eventNoteEvent: 'calendar_event_personal_notes_eventId_fkey',
   layoutBrand: 'collection_layouts_brandId_fkey',
   layoutSeason: 'collection_layouts_seasonId_fkey',
+  merchPlanBrand: 'merchandising_plans_brandId_fkey',
+  merchPlanSeason: 'merchandising_plans_seasonId_fkey',
   merchRowParameterSet: 'merchandising_plan_rows_pricingParameterSetId_fkey',
+  parameterSetBrand: 'pricing_parameter_sets_brandId_fkey',
+  parameterSetSeason: 'pricing_parameter_sets_seasonId_fkey',
   quotationParameterSet: 'collection_row_quotations_pricingParameterSetId_fkey',
   rowPlanningGroup: 'collection_layout_rows_planningGroupId_fkey',
   specsheetImageSpecsheet: 'merchandising_images_specsheetId_fkey',
