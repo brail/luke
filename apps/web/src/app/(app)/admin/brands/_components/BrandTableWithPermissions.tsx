@@ -40,6 +40,8 @@ interface BrandTableWithPermissionsProps {
   onRestore: (brand: Brand) => void;
   onUnlink: (brand: Brand) => void;
   onHardDelete: (brand: Brand) => void;
+  /** Called to delete an inactive, NAV-free brand with its data. */
+  onPurge: (brand: Brand) => void;
   onRetry?: () => void;
 }
 
@@ -64,6 +66,7 @@ export function BrandTableWithPermissions({
   onRestore,
   onUnlink,
   onHardDelete,
+  onPurge,
   onRetry,
 }: BrandTableWithPermissionsProps) {
   const { can } = usePermission();
@@ -166,16 +169,28 @@ export function BrandTableWithPermissions({
           Riattiva
         </PermissionButton>
         {!brand.navBrandId && (
-          <PermissionButton
-            hasPermission={canHardDelete}
-            tooltip="Non hai i permessi per eliminare definitivamente i brand"
-            variant="outline"
-            size="sm"
-            onClick={() => onHardDelete(brand)}
-            className="text-destructive hover:text-destructive"
-          >
-            Elimina
-          </PermissionButton>
+          <>
+            <PermissionButton
+              hasPermission={canHardDelete}
+              tooltip="Non hai i permessi per eliminare definitivamente i brand"
+              variant="outline"
+              size="sm"
+              onClick={() => onHardDelete(brand)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina
+            </PermissionButton>
+            <PermissionButton
+              hasPermission={canHardDelete}
+              tooltip="Non hai i permessi per eliminare i brand con i loro dati"
+              variant="outline"
+              size="sm"
+              onClick={() => onPurge(brand)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina con i dati
+            </PermissionButton>
+          </>
         )}
       </>
     );

@@ -43,6 +43,13 @@ interface ConfirmDialogProps {
   actionType?: 'delete' | 'disable' | 'hardDelete' | 'revokeSessions' | 'warning';
   /** When set, the action unlocks only once the user types this exact phrase. */
   confirmPhrase?: string;
+  /**
+   * With `confirmPhrase`, false keeps the dialog open after confirming, showing `isLoading`, for a
+   * caller that closes it once its action settles (a long one, whose failure the user should see).
+   */
+  closeOnConfirm?: boolean;
+  /** With `confirmPhrase`, keeps the action locked whatever is typed, e.g. while its subject loads. */
+  confirmDisabled?: boolean;
 }
 
 /**
@@ -67,10 +74,12 @@ export function ConfirmDialog({
   userEmail,
   actionType = 'delete',
   confirmPhrase,
+  closeOnConfirm = true,
+  confirmDisabled = false,
 }: ConfirmDialogProps) {
   const handleConfirm = (typed?: string) => {
     onConfirm(typed);
-    onOpenChange(false);
+    if (closeOnConfirm) onOpenChange(false);
   };
 
   // Esc and outside-click close through onOpenChange, a path the Cancel button does not take:
@@ -211,7 +220,7 @@ export function ConfirmDialog({
                 <Button
                   type="submit"
                   variant={getActionVariant()}
-                  disabled={isLoading || !form.formState.isValid}
+                  disabled={isLoading || confirmDisabled || !form.formState.isValid}
                 >
                   {isLoading ? 'Elaborazione...' : confirmText}
                 </Button>

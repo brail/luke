@@ -415,10 +415,15 @@ HTTPS, rolling the web back to one of them brings mixed content back.
 
 A real brand or season comes from NAV. One created only in Luke, for a test, can be purged: deleted
 with everything under it — layouts with their groups, rows, quotations and revisions, season
-calendars with their planning groups and events, merchandising plans, parameter sets, and then the
-brand or season itself. A season's purge takes that data for every brand. Only an administrator can
-purge (`*:*`), and only an entity with no NAV link that was deactivated first: deactivate, then purge,
-as two separate steps. The purge shows what it would delete and asks for the entity's name.
+calendars with their planning groups and events, merchandising plans, parameter sets, a brand's
+team brand scopes or a season's vendor closure periods, and then the brand or season itself. A
+season's purge takes that data for every brand. Only an administrator can purge (`*:*`), and only an
+entity with no NAV link that was deactivated first: deactivate, then purge, as two separate steps. In
+the admin page, `Elimina con i dati` on such a row shows what the purge would delete and asks for the
+entity's name.
+
+Nothing proves the data is test data: being inactive and NAV-free is the whole test. `Scollega da NAV`
+leaves a real brand or season in exactly that state, so after an unlink it can be purged at once.
 
 It runs in one transaction with one audit entry (`BRAND_PURGE` or `SEASON_PURGE`, with the counts):
 a failure anywhere deletes nothing. It is refused while data of another brand or season uses one of

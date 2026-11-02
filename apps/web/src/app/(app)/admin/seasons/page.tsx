@@ -16,6 +16,7 @@ import { useInvalidateContext } from '../../../../contexts/useInvalidateContext'
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { PurgeConfirmDialog } from '../_components/PurgeConfirmDialog';
 
 import { SeasonDialog } from './_components/SeasonDialog';
 import { SeasonTable } from './_components/SeasonTable';
@@ -30,6 +31,7 @@ export default function SeasonsPage() {
   const [deletingSeason, setDeletingSeason] = useState<SeasonItem | null>(null);
   const [unlinkingSeason, setUnlinkingSeason] = useState<SeasonItem | null>(null);
   const [hardDeletingSeason, setHardDeletingSeason] = useState<SeasonItem | null>(null);
+  const [purgingSeason, setPurgingSeason] = useState<SeasonItem | null>(null);
   const { can } = usePermission();
 
   const {
@@ -101,6 +103,24 @@ export default function SeasonsPage() {
       toast.success(`Stagione "${season.code}" scollegata da NAV e disattivata`);
     },
     onError: error => toast.error(getTrpcErrorMessage(error)),
+  });
+
+  const purgePreview = trpc.season.purgePreview.useQuery(
+    { id: purgingSeason?.id ?? '' },
+    // A refusal (reactivated, linked to NAV meanwhile) is an answer, not a fault to retry.
+    { enabled: !!purgingSeason, retry: false }
+  );
+  const purgeMutation = trpc.season.purge.useMutation({
+    onSuccess: () => {
+      // Closed first, so the preview of what no longer exists is not fetched again.
+      setPurgingSeason(null);
+      // It deletes layouts, calendars, plans and sets under it too: every cached list may hold them.
+      void utils.invalidate();
+      toast.success('Stagione eliminata con i suoi dati');
+    },
+    onError: error => {
+      toast.error(getTrpcErrorMessage(error));
+    },
   });
 
   const hardDeleteMutation = trpc.season.hardDelete.useMutation({
@@ -179,6 +199,7 @@ export default function SeasonsPage() {
           onRestore={season => restoreMutation.mutate({ id: season.id })}
           onUnlink={setUnlinkingSeason}
           onHardDelete={setHardDeletingSeason}
+          onPurge={setPurgingSeason}
           onRetry={() => refetch()}
         />
       </SectionCard>
@@ -220,6 +241,19 @@ export default function SeasonsPage() {
           if (hardDeletingSeason && phrase) hardDeleteMutation.mutate({ id: hardDeletingSeason.id, confirmPhrase: phrase });
         }}
         isLoading={hardDeleteMutation.isPending}
+      />
+
+      <PurgeConfirmDialog
+        open={!!purgingSeason}
+        onOpenChange={open => { if (!open) setPurgingSeason(null); }}
+        kind="season"
+        name={purgingSeason?.name ?? ''}
+        preview={purgePreview.data}
+        previewError={purgePreview.error}
+        onConfirm={confirmName => {
+          if (purgingSeason) purgeMutation.mutate({ id: purgingSeason.id, confirmName });
+        }}
+        isLoading={purgeMutation.isPending}
       />
 
       <SeasonDialog

@@ -19,6 +19,7 @@ import { useInvalidateContext } from '../../../../contexts/useInvalidateContext'
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { PurgeConfirmDialog } from '../_components/PurgeConfirmDialog';
 
 import { BrandDialogWithPermissions } from './_components/BrandDialogWithPermissions';
 import { BrandTableWithPermissions } from './_components/BrandTableWithPermissions';
@@ -33,6 +34,7 @@ export default function BrandsPage() {
   const [deletingBrand, setDeletingBrand] = useState<BrandItem | null>(null);
   const [unlinkingBrand, setUnlinkingBrand] = useState<BrandItem | null>(null);
   const [hardDeletingBrand, setHardDeletingBrand] = useState<BrandItem | null>(null);
+  const [purgingBrand, setPurgingBrand] = useState<BrandItem | null>(null);
   const { brand: currentBrand } = useAppContext();
   const { can } = usePermission();
 
@@ -110,6 +112,25 @@ export default function BrandsPage() {
       invalidateContext();
       setUnlinkingBrand(null);
       toast.success(`Brand "${unlinkedBrand.name}" scollegato da NAV e disattivato`);
+    },
+    onError: error => {
+      toast.error(getTrpcErrorMessage(error));
+    },
+  });
+
+  const purgePreview = trpc.brand.purgePreview.useQuery(
+    { id: purgingBrand?.id ?? '' },
+    // A refusal (reactivated, linked to NAV meanwhile) is an answer, not a fault to retry.
+    { enabled: !!purgingBrand, retry: false }
+  );
+  const utils = trpc.useUtils();
+  const purgeMutation = trpc.brand.purge.useMutation({
+    onSuccess: () => {
+      // Closed first, so the preview of what no longer exists is not fetched again.
+      setPurgingBrand(null);
+      // It deletes layouts, calendars, plans and sets under it too: every cached list may hold them.
+      void utils.invalidate();
+      toast.success('Brand eliminato con i suoi dati');
     },
     onError: error => {
       toast.error(getTrpcErrorMessage(error));
@@ -199,6 +220,7 @@ export default function BrandsPage() {
           onRestore={brand => restoreMutation.mutate({ id: brand.id })}
           onUnlink={setUnlinkingBrand}
           onHardDelete={setHardDeletingBrand}
+          onPurge={setPurgingBrand}
           onRetry={() => refetch()}
         />
       </SectionCard>
@@ -240,6 +262,19 @@ export default function BrandsPage() {
           if (hardDeletingBrand && phrase) hardDeleteMutation.mutate({ id: hardDeletingBrand.id, confirmPhrase: phrase });
         }}
         isLoading={hardDeleteMutation.isPending}
+      />
+
+      <PurgeConfirmDialog
+        open={!!purgingBrand}
+        onOpenChange={open => { if (!open) setPurgingBrand(null); }}
+        kind="brand"
+        name={purgingBrand?.name ?? ''}
+        preview={purgePreview.data}
+        previewError={purgePreview.error}
+        onConfirm={confirmName => {
+          if (purgingBrand) purgeMutation.mutate({ id: purgingBrand.id, confirmName });
+        }}
+        isLoading={purgeMutation.isPending}
       />
 
       <BrandDialogWithPermissions

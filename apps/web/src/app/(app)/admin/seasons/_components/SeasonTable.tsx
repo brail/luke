@@ -29,6 +29,8 @@ interface SeasonTableProps {
   onRestore: (season: SeasonItem) => void;
   onUnlink: (season: SeasonItem) => void;
   onHardDelete: (season: SeasonItem) => void;
+  /** Called to delete an inactive, NAV-free season with its data, for every brand. */
+  onPurge: (season: SeasonItem) => void;
   onRetry?: () => void;
 }
 
@@ -52,6 +54,7 @@ export function SeasonTable({
   onRestore,
   onUnlink,
   onHardDelete,
+  onPurge,
   onRetry,
 }: SeasonTableProps) {
   const { can } = usePermission();
@@ -154,16 +157,28 @@ export function SeasonTable({
           Riattiva
         </PermissionButton>
         {!season.navSeasonId && (
-          <PermissionButton
-            hasPermission={canHardDelete}
-            tooltip="Non hai i permessi per eliminare definitivamente le stagioni"
-            variant="outline"
-            size="sm"
-            onClick={() => onHardDelete(season)}
-            className="text-destructive hover:text-destructive"
-          >
-            Elimina
-          </PermissionButton>
+          <>
+            <PermissionButton
+              hasPermission={canHardDelete}
+              tooltip="Non hai i permessi per eliminare definitivamente le stagioni"
+              variant="outline"
+              size="sm"
+              onClick={() => onHardDelete(season)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina
+            </PermissionButton>
+            <PermissionButton
+              hasPermission={canHardDelete}
+              tooltip="Non hai i permessi per eliminare le stagioni con i loro dati"
+              variant="outline"
+              size="sm"
+              onClick={() => onPurge(season)}
+              className="text-destructive hover:text-destructive"
+            >
+              Elimina con i dati
+            </PermissionButton>
+          </>
         )}
       </>
     );
