@@ -4,6 +4,64 @@ All notable changes to Luke are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [3.1.0-rc.2] - 2026-11-02
+
+### Added
+- **web**: Show completed rows progress in the phase summary card
+- **collection-layout**: Copy into an empty layout
+- **catalog**: Purge an inactive test brand or season
+- **web**: Purge action on the brand and season pages
+
+### Changed
+- **calendar**: Route event visibility through one predicate
+- **calendar**: Drop the unused phase and calendar columns
+- **api**: Answer a foreign-key refusal through one helper
+
+### Dependencies
+- **deps**: Ignore a minimatch advisory no consumer can take yet
+
+### Documentation
+- Record how unreadable stored values behave
+- Correct what the audit of unreadable values found
+- Describe what a caller cannot list in alerts and revisions
+- **api**: Describe the upload routes' limits
+- Narrow rule 12 to guessable credentials
+- Name both row lock modes in the raw SQL rule
+- Align the mail and NAV unreadable-password notes
+- Name the lock the manual NAV sync takes
+
+### Fixed
+- **auth**: Keep a wrong password an auth failure with LDAP off
+- **config**: Open settings pages with an unreadable stored value
+- **config**: Answer unreadable values in mail, NAV and Google settings
+- **calendar**: Answer an event by id as the list does
+- **merch**: Show alert surfaces only what the calendar shows
+- **merch**: Name a hidden event in no revision the caller reads
+- **calendar**: Answer a template or clone with what the caller can list
+- **calendar**: Count hidden events in the freeze warning
+- **web**: End calendar drags on pointercancel
+- **web**: Drive calendar drags through one dnd-kit context
+- **calendar**: Keep a saved template or clone successful when a read fails
+- **platform**: Answer last change and sync status within the caller's scope
+- **storage**: Enforce upload limits while streaming
+- **auth**: Align rate limits across password checks
+- **collection-layout**: Lock revision numbering and batch the snapshot
+- **collection-layout**: Hold the completed-row freeze until the write commits
+- **platform**: Make edit lock acquire and renew hold under concurrency
+- **config**: Answer the remaining unreadable values in mail, NAV and Google
+- **nav**: Answer an incomplete configuration and a failed password read
+- **platform**: Bound and validate GitHub calls, dedupe only delivered notices
+- **web**: Show an error when the section access check fails
+- **pricing**: Let the database refuse deleting a parameter set in use
+- **catalog**: Answer a refused hard delete with its counts
+- **pricing**: Serialise changes to the default parameter set
+
+### Maintenance
+- Check the Codex budget with a live read
+
+### Tests
+- **web**: Run the smoke suite against a deployed stack
+
 ## [3.1.0-rc.1] - 2026-10-29
 
 **Upgrade note:** follow `docs/upgrade-3.0-to-3.1.md` — check the stored picture keys before the
