@@ -895,6 +895,7 @@ export const collectionLayoutRouter = router({
         input.fromSeasonId,
         input.toBrandId,
         input.toSeasonId,
+        ctx.session.user.id,
         ctx.prisma,
         input.rows ? { rows: input.rows } : undefined
       );

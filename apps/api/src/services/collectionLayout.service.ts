@@ -226,18 +226,60 @@ export function copyFailure(err: unknown): TRPCError | null {
 }
 
 /**
+ * The layout a copy fills, holding the check until the copy commits. An existing layout is locked
+ * first: a group's foreign key check waits on this lock, so an empty layout stays empty, and a
+ * concurrent copy finds what this one wrote. With no layout, the unique (brand, season) decides
+ * between concurrent creations, and only this insert's refusal means it.
+ * Raw SQL exception: a row lock, which the ORM cannot express, inside an interactive transaction.
+ *
+ * @throws {TRPCError} CONFLICT if the layout has content, is being edited by another user or was
+ *   created meanwhile; NOT_FOUND if the brand or season does not exist.
+ */
+async function copyTarget(
+  tx: Prisma.TransactionClient,
+  brandId: string,
+  seasonId: string,
+  settings: Pick<Prisma.CollectionLayoutUncheckedCreateInput, 'availableGenders' | 'hiddenColumns'>,
+  userId: string
+): Promise<{ id: string }> {
+  const [existing] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT id FROM collection_layouts WHERE "brandId" = ${brandId} AND "seasonId" = ${seasonId} FOR UPDATE
+  `);
+  if (existing) {
+    await assertUnlocked('COLLECTION_LAYOUT', existing.id, userId, tx);
+    // Every row belongs to a group: no group, no rows.
+    if (await tx.collectionGroup.count({ where: { collectionLayoutId: existing.id } }) > 0) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Il collection layout di questo brand/stagione contiene già gruppi o righe' });
+    }
+    return tx.collectionLayout.update({ where: { id: existing.id }, data: settings, select: { id: true } });
+  }
+  return tx.collectionLayout
+    .create({ data: { brandId, seasonId, ...settings }, select: { id: true } })
+    .catch((err: unknown) => {
+      if (isUniqueViolation(err, 'collection_layouts_brandId_seasonId_key')) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Esiste già un collection layout per questo brand/stagione' });
+      }
+      if (isForeignKeyViolation(err, FOREIGN_KEYS.layoutBrand, FOREIGN_KEYS.layoutSeason)) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione di destinazione non trovati' });
+      }
+      throw err;
+    });
+}
+
+/**
  * Copies a collection layout from one brand+season to another, into the target's own references:
  * a row goes to the target calendar's planning group of the same name, else its default group; a
  * quotation to the target parameter set of the same name (`copiedQuotation`). Rows arrive neither
  * completed nor revised, with no phase and no photo; hidden columns come along, SKU budgets do not —
- * they are the new season's targets. Optionally restricts which rows are copied and whether their
+ * they are the new season's targets. An existing target layout with no groups is filled, taking the
+ * source's genders and hidden columns. Optionally restricts which rows are copied and whether their
  * quotations are included.
  *
  * @param options - When provided, only the listed row IDs are copied; each entry controls quotation copy.
  * @throws {TRPCError} NOT_FOUND if the source layout does not exist.
  * @throws {TRPCError} BAD_REQUEST if the selection is empty, repeats a row, or names a row the source lacks.
- * @throws {TRPCError} CONFLICT if a layout already exists for the target brand+season, or a target
- *   reference changed during the copy (`copyFailure`).
+ * @throws {TRPCError} CONFLICT if the target layout has content (`copyTarget`), or a target reference
+ *   changed during the copy (`copyFailure`).
  * @throws {TRPCError} TIMEOUT if the copy runs past `COPY_TIMEOUT_MS`.
  */
 export async function copyFromSeason(
@@ -245,6 +287,7 @@ export async function copyFromSeason(
   fromSeasonId: string,
   toBrandId: string,
   toSeasonId: string,
+  userId: string,
   prisma: PrismaClient,
   options?: { rows: RowCopySelection[] }
 ): Promise<CollectionLayoutWithRelations> {
@@ -285,9 +328,9 @@ export async function copyFromSeason(
     });
   }
 
-  // An empty selection, or an id outside the source, would leave a partial or empty layout reported
-  // as a success, and a retry would then meet the CONFLICT below; a repeated id would let the last
-  // entry silently decide its quotations.
+  // An empty selection, or an id outside the source, would report a partial or empty copy as a
+  // success, and a retry of a partial one would then meet the CONFLICT below; a repeated id would
+  // let the last entry silently decide its quotations.
   if (options && rowMap) {
     const found = source.groups.reduce((n, g) => n + g.rows.length, 0);
     if (rowMap.size === 0 || rowMap.size !== options.rows.length || found !== rowMap.size) {
@@ -308,26 +351,10 @@ export async function copyFromSeason(
   let layoutId: string;
   try {
     layoutId = await prisma.$transaction(async tx => {
-      // The unique (brand, season) decides between concurrent copies, and only this insert's refusal means it.
-      const layout = await tx.collectionLayout
-        .create({
-          data: {
-            brandId: toBrandId,
-            seasonId: toSeasonId,
-            availableGenders: source.availableGenders,
-            hiddenColumns: hiddenColumns ?? Prisma.JsonNull,
-          },
-          select: { id: true },
-        })
-        .catch((err: unknown) => {
-          if (isUniqueViolation(err, 'collection_layouts_brandId_seasonId_key')) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Esiste già un collection layout per questo brand/stagione' });
-          }
-          if (isForeignKeyViolation(err, FOREIGN_KEYS.layoutBrand, FOREIGN_KEYS.layoutSeason)) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione di destinazione non trovati' });
-          }
-          throw err;
-        });
+      const layout = await copyTarget(tx, toBrandId, toSeasonId, {
+        availableGenders: source.availableGenders,
+        hiddenColumns: hiddenColumns ?? Prisma.JsonNull,
+      }, userId);
 
       const planningGroups = await tx.planningGroup.findMany({
         where: { calendar: { brandId: toBrandId, seasonId: toSeasonId } },

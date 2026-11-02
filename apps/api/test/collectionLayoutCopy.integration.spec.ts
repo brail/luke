@@ -2,6 +2,7 @@
  * Copy from season with a row selection: the copy dialog sends the rows to bring over and, for
  * each, whether its quotations come too. A selected id outside the source used to be skipped in
  * silence — a partial or empty layout reported as copied, after which a retry met CONFLICT.
+ * A target layout with no groups is filled; one with content refuses.
  */
 
 import { randomUUID } from 'crypto';
@@ -14,6 +15,7 @@ import type { PrismaClient } from '@luke/db';
 import { getOrCreateCalendar, resolveDefaultPlanningGroupId } from '../src/services/seasonCalendar.service';
 
 import { createCalendarFixture, createCallerWithSession, createTestUser, setupTestDb } from './helpers';
+import { whileHeld } from './helpers/heldTransaction';
 
 let prisma: PrismaClient;
 let asAdmin: ReturnType<typeof createCallerWithSession>;
@@ -243,14 +245,81 @@ describe('collectionLayout.copyFromSeason — into the target season', () => {
     expect(copy.groups[0].rows[0]).toMatchObject({ completedAt: null, lastRevisedAt: null, phaseId: null, pictureKey: null });
   });
 
-  it('answers CONFLICT, through the unique constraint, when the target layout already exists', async () => {
+  it('fills an existing empty layout, taking the source settings', async () => {
+    const source = await fixture();
+    await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
+    const target = await newSeason();
+    const existing = await prisma.collectionLayout.create({
+      data: { brandId: source.brandId, seasonId: target, availableGenders: ['WOMAN'], skuBudget: 7 },
+    });
+
+    const copy = await copyAll(source, target);
+
+    expect(copy).toMatchObject({ id: existing.id, hiddenColumns: ['notes'], availableGenders: ['MAN', 'WOMAN'], skuBudget: 7 });
+    expect(copy.groups[0].rows.map(r => r.line)).toEqual(['Tote']);
+  });
+
+  it('answers CONFLICT for a target layout with content, and adds nothing', async () => {
+    const source = await fixture();
+    await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
+    const target = await newSeason();
+    const existing = await prisma.collectionLayout.create({ data: { brandId: source.brandId, seasonId: target } });
+    await prisma.collectionGroup.create({ data: { collectionLayoutId: existing.id, name: 'Mine' } });
+
+    await expect(copyAll(source, target)).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await prisma.collectionGroup.count({ where: { collectionLayoutId: existing.id } })).toBe(1);
+  });
+
+  it('refuses to fill an empty layout another user is editing', async () => {
+    const source = await fixture();
+    await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
+    const target = await newSeason();
+    const existing = await prisma.collectionLayout.create({ data: { brandId: source.brandId, seasonId: target } });
+    const other = await createTestUser('admin');
+    await prisma.editLock.create({
+      data: {
+        entityType: 'COLLECTION_LAYOUT', entityId: existing.id,
+        lockedByUserId: other.user.id, expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    await expect(copyAll(source, target)).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect(await prisma.collectionGroup.count({ where: { collectionLayoutId: existing.id } })).toBe(0);
+  });
+
+  it('lets one of two concurrent copies through, onto an empty layout or onto none', async () => {
+    const source = await fixture();
+    await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
+    const emptyTarget = await newSeason();
+    await prisma.collectionLayout.create({ data: { brandId: source.brandId, seasonId: emptyTarget } });
+
+    for (const target of [emptyTarget, await newSeason()]) {
+      const outcomes = await Promise.allSettled([copyAll(source, target), copyAll(source, target)]);
+
+      expect(outcomes.filter(o => o.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.find(o => o.status === 'rejected')).toMatchObject({ reason: { code: 'CONFLICT' } });
+      expect(await prisma.collectionLayoutRow.count({
+        where: { collectionLayout: { brandId: source.brandId, seasonId: target } },
+      })).toBe(1);
+    }
+  });
+
+  it('waits for a group being added by hand, then refuses', async () => {
     const source = await fixture();
     await prisma.collectionLayoutRow.create({ data: rowData(source, source.planningGroupId, 'Tote') });
     const target = await newSeason();
     const existing = await prisma.collectionLayout.create({ data: { brandId: source.brandId, seasonId: target } });
 
-    await expect(copyAll(source, target)).rejects.toMatchObject({ code: 'CONFLICT' });
-    expect(await prisma.collectionGroup.count({ where: { collectionLayoutId: existing.id } })).toBe(0);
+    const outcome = await whileHeld(
+      holder => holder.query(
+        `INSERT INTO collection_groups (id, "collectionLayoutId", name, "updatedAt") VALUES ($1, $2, 'Mine', now())`,
+        [randomUUID(), existing.id]
+      ),
+      () => copyAll(source, target)
+    );
+
+    expect(outcome).toMatchObject({ status: 'rejected', reason: { code: 'CONFLICT' } });
+    expect(await prisma.collectionLayoutRow.count({ where: { collectionLayoutId: existing.id } })).toBe(0);
   });
 
   it('answers NOT_FOUND for a target season that does not exist', async () => {

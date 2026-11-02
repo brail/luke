@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, Download, FileSpreadsheet, FileText, Layers, LoaderCircle, Maximize2, Minimize2, Plus, RotateCcw, Search, Settings2 } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 
 import type { RouterOutputs } from '@luke/api';
 import {
@@ -69,6 +69,8 @@ interface CollectionLayoutTableProps {
   onExportPdf?: (filteredRowIds?: string[]) => void;
   isExportingPdf?: boolean;
   readOnly?: boolean;
+  /** Offered beside the empty message when the layout has no groups (hidden in read-only mode). */
+  emptyAction?: ReactNode;
 }
 
 /**
@@ -103,6 +105,7 @@ export function CollectionLayoutTable({
   onExportPdf,
   isExportingPdf = false,
   readOnly = false,
+  emptyAction,
 }: CollectionLayoutTableProps) {
   const [search, setSearch] = useState('');
   const [columnsPopoverOpen, setColumnsPopoverOpen] = useState(false);
@@ -362,8 +365,9 @@ export function CollectionLayoutTable({
         ))}
 
         {layout.groups.length === 0 && (
-          <div className="py-12 text-center text-sm text-muted-foreground">
-            Nessun gruppo. Aggiungi il primo gruppo per iniziare.
+          <div className="py-12 text-center text-sm text-muted-foreground space-y-4">
+            <p>Nessun gruppo. Aggiungi il primo gruppo per iniziare.</p>
+            {!readOnly && emptyAction}
           </div>
         )}
       </div>

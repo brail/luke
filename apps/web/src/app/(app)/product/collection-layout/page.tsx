@@ -24,6 +24,7 @@ import { CollectionGroupDialog } from './_components/CollectionGroupDialog';
 import { CollectionLayoutSummary } from './_components/CollectionLayoutSummary';
 import { CollectionLayoutTable } from './_components/CollectionLayoutTable';
 import { CollectionRowDrawer } from './_components/CollectionRowDrawer';
+import { CopyFromSeasonButton, type RowCopySelection } from './_components/CopyFromSeasonButton';
 import { CreateRevisionDialog } from './_components/CreateRevisionDialog';
 import { CriticalityLayoutBanner } from './_components/CriticalityLayoutBanner';
 import { EmptyCollectionLayoutState } from './_components/EmptyCollectionLayoutState';
@@ -120,11 +121,22 @@ export default function CollectionLayoutPage() {
       },
       onError: (err: unknown) =>
         toast.error(
-          // The server's own words: a CONFLICT may be an existing layout or a reference changed during
+          // The server's own words: a CONFLICT may be a layout with content or a reference changed during
           // the copy, a NOT_FOUND the source layout or the target brand/season.
           getTrpcErrorMessage(err, { CONFLICT: true, NOT_FOUND: true })
         ),
     });
+
+  const copyInto =
+    (brandId: string, seasonId: string) =>
+    (fromSeasonId: string, rows: RowCopySelection[]) =>
+      copyFromSeasonMutation.mutate({
+        fromBrandId: brandId,
+        fromSeasonId,
+        toBrandId: brandId,
+        toSeasonId: seasonId,
+        rows,
+      });
 
   const createGroupMutation = trpc.collectionLayout.groups.create.useMutation({
     onSuccess: () => {
@@ -373,15 +385,7 @@ export default function CollectionLayoutPage() {
                 availableGenders,
               })
             }
-            onCopyFromSeason={(fromSeasonId, rows) =>
-              copyFromSeasonMutation.mutate({
-                fromBrandId: brand.id,
-                fromSeasonId,
-                toBrandId: brand.id,
-                toSeasonId: season.id,
-                rows,
-              })
-            }
+            onCopyFromSeason={copyInto(brand.id, season.id)}
             isLoading={
               getOrCreateMutation.isPending || copyFromSeasonMutation.isPending
             }
@@ -424,6 +428,14 @@ export default function CollectionLayoutPage() {
                   exportPdfMutation.mutate({ collectionLayoutId: layout.id, rowIds })
                 }
                 isExportingPdf={exportPdfMutation.isPending}
+                emptyAction={
+                  <CopyFromSeasonButton
+                    brandId={brand.id}
+                    seasonId={season.id}
+                    onCopyFromSeason={copyInto(brand.id, season.id)}
+                    isLoading={copyFromSeasonMutation.isPending}
+                  />
+                }
               />
             </CardContent>
           </Card>

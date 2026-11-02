@@ -1,6 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 
+import { TooltipProvider } from '../../../../../components/ui/tooltip';
 import CollectionLayoutPage from '../page';
 
 /**
@@ -94,6 +95,33 @@ beforeEach(() => {
     }
     return undefined;
   };
+});
+
+test('an existing empty layout offers the copy, not a second blank layout', async () => {
+  const loaded = h.query;
+  h.query = (path, input) =>
+    path === 'collectionLayout.get' && input?.seasonId === SEASON ? { id: 'layout-1', availableGenders: ['MAN'], groups: [] } : loaded(path, input);
+  const screen = await render(<TooltipProvider><CollectionLayoutPage /></TooltipProvider>);
+
+  await expect.element(screen.getByRole('button', { name: 'Crea layout vuoto' })).not.toBeInTheDocument();
+  await openRowStep(screen, 'FW 2026');
+  await screen.getByRole('button', { name: 'Copia 3 righe' }).click();
+
+  expect(h.mutate).toHaveBeenCalledWith(
+    'collectionLayout.copyFromSeason',
+    expect.objectContaining({ fromSeasonId: PREVIOUS, toSeasonId: SEASON })
+  );
+});
+
+test('a layout with a group does not offer the copy', async () => {
+  const loaded = h.query;
+  h.query = (path, input) =>
+    path === 'collectionLayout.get' && input?.seasonId === SEASON
+      ? { id: 'layout-1', availableGenders: ['MAN'], groups: [{ id: 'group-9', name: 'Mine', rows: [] }] }
+      : loaded(path, input);
+  const screen = await render(<TooltipProvider><CollectionLayoutPage /></TooltipProvider>);
+
+  await expect.element(screen.getByRole('button', { name: 'Copia da stagione precedente' })).not.toBeInTheDocument();
 });
 
 test('a blank layout is created with the genders chosen', async () => {

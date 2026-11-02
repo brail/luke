@@ -1,0 +1,325 @@
+'use client';
+
+import { AlertCircle, ArrowLeft, Copy } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+
+import { PermissionButton } from '../../../../../components/PermissionButton';
+import { Alert, AlertDescription } from '../../../../../components/ui/alert';
+import { Button } from '../../../../../components/ui/button';
+import { Checkbox } from '../../../../../components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../../../../components/ui/dialog';
+import { usePermission } from '../../../../../hooks/usePermission';
+import { trpc } from '../../../../../lib/trpc';
+import { cn } from '../../../../../lib/utils';
+
+/** A row to copy, and whether its quotations come too. */
+export type RowCopySelection = { id: string; copyQuotations: boolean };
+
+interface CopyFromSeasonButtonProps {
+  brandId: string;
+  seasonId: string;
+  onCopyFromSeason: (fromSeasonId: string, rows: RowCopySelection[]) => void;
+  isLoading?: boolean;
+}
+
+type RowSelection = { included: boolean; copyQuotations: boolean };
+
+/**
+ * Copies rows from another season via a two-step dialog: pick the source season, then which rows to
+ * include and whether to carry over their quotations. Renders nothing with no other active season.
+ *
+ * @param onCopyFromSeason - Called with the source season ID and row selection to copy.
+ */
+export function CopyFromSeasonButton({
+  brandId,
+  seasonId,
+  onCopyFromSeason,
+  isLoading = false,
+}: CopyFromSeasonButtonProps) {
+  const { can } = usePermission();
+  const canUpdate = can('collection_layout:update');
+
+  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
+  const [selectedFromSeasonId, setSelectedFromSeasonId] = useState<string | null>(null);
+  const [step, setStep] = useState<1 | 2>(1);
+  const [rowSelections, setRowSelections] = useState<Map<string, RowSelection>>(new Map());
+  const rowSelectionsInitialized = useRef(false);
+
+  const { data: seasons = [] } = trpc.season.list.useQuery(
+    { isActive: true },
+    { select: data => data.items.filter(s => s.id !== seasonId) }
+  );
+
+  const { data: sourceLayout, isLoading: isLoadingLayout } = trpc.collectionLayout.get.useQuery(
+    { brandId, seasonId: selectedFromSeasonId ?? '' },
+    { enabled: step === 2 && !!selectedFromSeasonId }
+  );
+
+  // Init all rows as included+with quotations on first load. Ref-guard prevents background
+  // refetches (SWR) from resetting in-progress user selections.
+  useEffect(() => {
+    if (!sourceLayout || rowSelectionsInitialized.current) return;
+    rowSelectionsInitialized.current = true;
+    const allRows = sourceLayout.groups.flatMap(g => g.rows);
+    setRowSelections(new Map(allRows.map(r => [r.id, { included: true, copyQuotations: true }])));
+  }, [sourceLayout]);
+
+  const sourceRowIds = new Set(sourceLayout?.groups.flatMap(g => g.rows.map(r => r.id)));
+  // A row deleted from the source after the dialog loaded it stays in the map, where no checkbox
+  // reaches it: only rows still in the source can be copied.
+  const selectedRows = [...rowSelections.entries()]
+    .filter(([id, s]) => s.included && sourceRowIds.has(id))
+    .map(([id, s]) => ({ id, copyQuotations: s.copyQuotations }));
+
+  function setAllIncluded(included: boolean) {
+    setRowSelections(prev => {
+      const next = new Map(prev);
+      for (const id of sourceRowIds) {
+        const cur = next.get(id) ?? { included: false, copyQuotations: true };
+        next.set(id, { ...cur, included });
+      }
+      return next;
+    });
+  }
+
+  function setAllQuotations(copyQuotations: boolean) {
+    setRowSelections(prev => {
+      const next = new Map(prev);
+      for (const [id, sel] of next) {
+        if (sel.included) next.set(id, { ...sel, copyQuotations });
+      }
+      return next;
+    });
+  }
+
+  function toggleRowIncluded(id: string, included: boolean) {
+    setRowSelections(prev => {
+      const next = new Map(prev);
+      const cur = next.get(id) ?? { included: false, copyQuotations: true };
+      next.set(id, { ...cur, included });
+      return next;
+    });
+  }
+
+  function toggleRowQuotations(id: string, copyQuotations: boolean) {
+    setRowSelections(prev => {
+      const next = new Map(prev);
+      const cur = next.get(id) ?? { included: false, copyQuotations: true };
+      next.set(id, { ...cur, copyQuotations });
+      return next;
+    });
+  }
+
+  // Another source season has other rows: the selection made for the previous one must not reach
+  // the copy, so the next step starts again from all of the new season's rows.
+  function chooseSourceSeason(id: string) {
+    if (id === selectedFromSeasonId) return;
+    setSelectedFromSeasonId(id);
+    clearRowSelections();
+  }
+
+  function clearRowSelections() {
+    setRowSelections(new Map());
+    rowSelectionsInitialized.current = false;
+  }
+
+  function resetDialogState() {
+    setIsCopyDialogOpen(false);
+    setSelectedFromSeasonId(null);
+    setStep(1);
+    clearRowSelections();
+  }
+
+  function handleCopy() {
+    if (!selectedFromSeasonId || selectedRows.length === 0) return;
+    onCopyFromSeason(selectedFromSeasonId, selectedRows);
+    resetDialogState();
+  }
+
+  if (seasons.length === 0) return null;
+
+  return (
+    <>
+      <PermissionButton
+        hasPermission={canUpdate}
+        tooltip="Non hai i permessi per creare il collection layout"
+        variant="outline"
+        onClick={() => setIsCopyDialogOpen(true)}
+        disabled={isLoading}
+      >
+        <Copy className="h-4 w-4 mr-2" />
+        Copia da stagione precedente
+      </PermissionButton>
+
+      {/* The dialog only opens from the `canUpdate`-gated button above, so the `!canUpdate`
+          guards inside it are defence in depth on a state no user can reach — no tooltip needed. */}
+      <Dialog open={isCopyDialogOpen} onOpenChange={open => { if (!open) resetDialogState(); }}>
+        <DialogContent className={step === 2 ? 'max-w-2xl' : 'max-w-md'}>
+          {/* ── Step 1: pick the source season ──────────────── */}
+          {step === 1 && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Copia da stagione precedente</DialogTitle>
+                <DialogDescription>
+                  Seleziona la stagione da cui copiare il collection layout.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {seasons.map(s => (
+                  <button
+                    type="button"
+                    key={s.id}
+                    onClick={() => chooseSourceSeason(s.id)}
+                    className={cn(
+                      'w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors',
+                      selectedFromSeasonId === s.id
+                        ? 'border-primary bg-primary/5 font-medium'
+                        : 'border-border hover:border-primary/50 hover:bg-muted/50'
+                    )}
+                  >
+                    {s.code} {s.year}
+                  </button>
+                ))}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={resetDialogState}>
+                  Annulla
+                </Button>
+                <Button
+                  onClick={() => setStep(2)}
+                  disabled={!selectedFromSeasonId}
+                >
+                  Avanti →
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {/* ── Step 2: pick the rows to copy ───────────────── */}
+          {step === 2 && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Scegli righe da copiare</DialogTitle>
+                <DialogDescription>
+                  Seleziona le righe da includere e se copiarne le quotazioni (prezzi e fornitori).
+                </DialogDescription>
+              </DialogHeader>
+
+              <Alert className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <AlertDescription className="space-y-1 text-xs text-amber-800 dark:text-amber-300">
+                  <p>
+                    Vengono copiati gruppi, righe, le quotazioni scelte e le colonne nascoste. Non vengono
+                    copiati <strong>fase</strong>, foto, stato concluso e revisione, budget SKU.
+                  </p>
+                  <p>
+                    Ogni riga va nel gruppo di pianificazione con lo stesso nome nella stagione di destinazione,
+                    altrimenti in quello predefinito; ogni quotazione nel set di parametri con lo stesso nome,
+                    altrimenti in nessuno. Un prezzo resta solo se il set di destinazione ha la stessa valuta.
+                  </p>
+                </AlertDescription>
+              </Alert>
+
+              {/* Global shortcuts */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(true)}>
+                  Seleziona tutte
+                </Button>
+                <Button variant="ghost" size="xs" onClick={() => setAllIncluded(false)}>
+                  Deseleziona tutte
+                </Button>
+                <span className="text-muted-foreground self-center">·</span>
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(true)}
+                  disabled={selectedRows.length === 0}>
+                  Tutte con quotazioni
+                </Button>
+                <Button variant="ghost" size="xs" onClick={() => setAllQuotations(false)}
+                  disabled={selectedRows.length === 0}>
+                  Tutte senza quotazioni
+                </Button>
+              </div>
+
+              {isLoadingLayout ? (
+                <p className="text-sm text-muted-foreground text-center py-6">Caricamento righe...</p>
+              ) : (
+                <div className="space-y-4 max-h-96 overflow-y-auto pr-1">
+                  {/* Header colonne — custom track sizes (label + 2 action columns) not expressible via grid-cols-N */}
+                  <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center px-1">
+                    <span />
+                    <span className="text-xs font-medium text-muted-foreground text-center w-16">Includi</span>
+                    <span className="text-xs font-medium text-muted-foreground text-center w-20">Quotazioni</span>
+                  </div>
+
+                  {sourceLayout?.groups.map(group => (
+                    <div key={group.id} className="space-y-1">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1">
+                        {group.name}
+                      </p>
+                      {group.rows.map(row => {
+                        const sel = rowSelections.get(row.id) ?? { included: false, copyQuotations: true };
+                        const label = `${row.gender} — ${row.line}${row.article ? ' ' + row.article : ''}`;
+                        return (
+                          <div
+                            key={row.id}
+                            className={cn(
+                              // custom track sizes matching the header row above; not expressible via grid-cols-N
+                              'grid grid-cols-[1fr_auto_auto] gap-2 items-center rounded-md border px-3 py-2 text-sm transition-colors',
+                              sel.included ? 'border-primary/30 bg-primary/5' : 'border-border bg-muted/20'
+                            )}
+                          >
+                            <span className={cn('truncate', !sel.included && 'text-muted-foreground')}>
+                              {label}
+                            </span>
+                            <div className="flex justify-center w-16">
+                              <Checkbox
+                                checked={sel.included}
+                                onCheckedChange={v => toggleRowIncluded(row.id, !!v)}
+                                disabled={!canUpdate}
+                              />
+                            </div>
+                            <div className="flex justify-center w-20">
+                              <Checkbox
+                                checked={sel.included && sel.copyQuotations}
+                                onCheckedChange={v => toggleRowQuotations(row.id, !!v)}
+                                disabled={!canUpdate || !sel.included}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button variant="outline" onClick={() => setStep(1)} className="sm:mr-auto">
+                  <ArrowLeft className="h-4 w-4 mr-1" />
+                  Indietro
+                </Button>
+                <Button variant="outline" onClick={resetDialogState}>
+                  Annulla
+                </Button>
+                <Button
+                  onClick={handleCopy}
+                  disabled={!canUpdate || selectedRows.length === 0 || isLoading}
+                >
+                  Copia {selectedRows.length} {selectedRows.length === 1 ? 'riga' : 'righe'}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
