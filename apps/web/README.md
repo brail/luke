@@ -1,7 +1,7 @@
 # apps/web — Luke Frontend
 
 <!-- luke-docs:start:overview -->
-Luke's web interface: Next.js with the App Router, shadcn/ui components on Tailwind CSS, and NextAuth sessions. It renders the whole management platform — collection plan, pricing, seasonal calendar, sales statistics, administration and maintenance — behind section-level RBAC, with light/dark theming and a Playwright end-to-end suite. Every backend call goes through tRPC with types imported from `@luke/api`; in a containerized deployment the browser reaches only Next.js, which forwards `/trpc`, `/upload`, `/download` and the SSE endpoint (`/api/sse`) to `apps/api` through the rewrites in `next.config.js`.
+Luke's web interface: Next.js with the App Router, shadcn/ui components on Tailwind CSS, and NextAuth sessions. It renders the whole management platform — collection plan, pricing, seasonal calendar, sales statistics, administration and maintenance — behind section-level RBAC, with light/dark theming and a Playwright end-to-end suite. Every backend call goes through tRPC with types imported from `@luke/api`; in a containerized deployment the browser reaches only Next.js, which forwards `/trpc`, `/download` and the SSE endpoint (`/api/sse`) to `apps/api` through the rewrites in `next.config.js`, and streams `/upload` through a route handler.
 <!-- luke-docs:end:overview -->
 
 ## Main Routes
@@ -54,14 +54,15 @@ Public group `(public)/`:
 - `/auth/reset` — password reset through an emailed token
 - `/auth/verify` — email address verification
 
-Route handlers `api/`:
+Route handlers:
 
 - `/api/auth/[...nextauth]` — NextAuth handler
 - `/api/auth/force-logout` — server-side session teardown for a stale or revoked cookie, then redirect to `/login`
 - `/api/google/oauth/callback` — Google OAuth 2.0 callback
 - `/api/uploads/[...path]` — authenticated proxy that streams stored files from the API, with per-segment path validation
+- `/upload/[...path]` — streams every browser upload to the same API path, which authenticates it (`lib/uploadProxy.ts` says why it is not a rewrite)
 
-Every other API path (`/trpc`, `/upload`, `/download`, `/api/sse`) is proxied to `apps/api` by the rewrites in `next.config.js`: the browser calls the API on the page's own origin.
+Every other API path (`/trpc`, `/download`, `/api/sse`) is proxied to `apps/api` by the rewrites in `next.config.js`: the browser calls the API on the page's own origin.
 <!-- luke-docs:end:routes -->
 
 ## Internal Dependencies

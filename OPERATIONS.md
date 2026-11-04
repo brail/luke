@@ -397,8 +397,9 @@ docker inspect nginx-proxy-manager --format '{{range $k, $v := .NetworkSettings.
 API service of the channel (`http://api:3001`, or `http://api-rc:3001` for an rc
 tag), which the `next.config.js` rewrites are generated from, and `APP_VERSION`.
 No public hostname or scheme is baked: the browser calls the API on the page's
-own origin, and the rewrites forward `/trpc`, `/upload`, `/download` and
-`/api/sse` to the API. A new hostname, or the switch to HTTPS, needs no new
+own origin. The rewrites forward `/trpc`, `/download` and `/api/sse` to the
+API, and a route handler streams `/upload` to it on the runtime
+`INTERNAL_API_URL`. A new hostname, or the switch to HTTPS, needs no new
 image: set the stack's `PUBLIC_HOSTNAME` (`RC_PUBLIC_HOSTNAME`), `PUBLIC_SCHEME`
 and `COOKIE_SECURE`, the application base URL in the mail settings
 (`app.baseUrl`, the origin of the links in emails), and, with Google connected,

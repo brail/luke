@@ -27,7 +27,8 @@ export interface IPrismaConfigClient {
  *
  * Server: `INTERNAL_API_URL`, or the local development API.
  * Browser: `''` — the page's own origin, where the `next.config.js` rewrites proxy `/trpc`,
- * `/upload`, `/download` and `/api/sse`, so the API follows the page's scheme.
+ * `/download` and `/api/sse` and a route handler streams `/upload`, so the API follows the page's
+ * scheme.
  *
  * @returns API base URL
  */

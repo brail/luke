@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { BackupImportFieldsSchema, buildBackupImportUrl } from '@luke/core';
 
+import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
 import {
   Dialog,
@@ -64,6 +65,9 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
   const { data: session } = useSession();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  // Shown in the dialog, not in a toast: the form stays open after a failure, and a toast that
+  // vanished unread leaves it looking as if the import had silently started over.
+  const [importError, setImportError] = useState<string | null>(null);
 
   const form = useForm<BackupImportFormData>({
     resolver: zodResolver(BackupImportFormSchema),
@@ -80,6 +84,7 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
     if (open) {
       form.reset({ passphrase: '', label: '' });
       setUploadProgress(0);
+      setImportError(null);
     }
   }, [open, form]);
 
@@ -109,17 +114,18 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
         onOpenChange(false);
         onImported();
       } else {
+        let message: string | undefined;
         try {
-          toast.error(JSON.parse(xhr.responseText).message || `Import fallito (${xhr.status})`);
+          message = JSON.parse(xhr.responseText).message;
         } catch {
           // A reverse proxy's own error page is not JSON.
-          toast.error(`Import fallito (${xhr.status})`);
         }
+        setImportError(message || `Import fallito (${xhr.status})`);
       }
     });
     xhr.addEventListener('error', () => {
       setIsUploading(false);
-      toast.error('Errore di rete durante l\'import');
+      setImportError('Errore di rete durante l\'import');
     });
 
     xhr.open('POST', buildBackupImportUrl());
@@ -128,6 +134,7 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
     }
     setIsUploading(true);
     setUploadProgress(0);
+    setImportError(null);
     xhr.send(formData);
   };
 
@@ -201,6 +208,12 @@ export function BackupImportDialog({ open, onOpenChange, onImported }: BackupImp
               />
 
               {isUploading && <Progress value={uploadProgress} />}
+
+              {importError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{importError}</AlertDescription>
+                </Alert>
+              )}
             </div>
 
             <DialogFooter>

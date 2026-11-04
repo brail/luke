@@ -24,7 +24,7 @@ const nextConfig = {
    * API proxy rewrites (Option B — single hostname via NPM → Next.js → API).
    *
    * In production, all traffic arrives on the public hostname (e.g. luke.febos.local).
-   * The browser can only reach Next.js, so tRPC calls and file uploads must be
+   * The browser can only reach Next.js, so tRPC calls and downloads must be
    * forwarded to the API container via these rewrites.
    *
    * INTERNAL_API_URL points to the API container on the internal Docker network
@@ -36,21 +36,16 @@ const nextConfig = {
    * Routes NOT proxied here (already handled by Next.js route handlers):
    *   /api/auth/...               → NextAuth
    *   /api/uploads/...            → app/api/uploads/[...path]/route.ts
-   *
-   * The temporary brand-logo upload has no route handler of its own: the
-   * dialog posts straight to `/upload/brand-logo/temp`
-   * (`buildTempBrandLogoUploadUrl()`) with its Bearer token, and reaches the
-   * API through the `/upload/:path*` rewrite below like every other upload.
-   * A handler at `app/api/upload/brand-logo/temp/route.ts` used to exist; it
-   * was never tracked (`.gitignore` ignores every `temp/` directory) and was
-   * retired as stale residue in Monorepo Audit Cycle 10.
+   *   /upload/...                 → app/upload/[...path]/route.ts, which streams the body: this
+   *                                 rewrite proxy forwards only the first
+   *                                 `proxyClientMaxBodySize` bytes (10 MB) and drops the rest
    *
    * An API path missing from this list does NOT fail loudly: it falls through to Next's own
    * routing, which answers with the 404 page. A `fetch` caller sees `res.ok === false`, but an
    * `<a download>` caller just saves that HTML under the requested filename — which is how
    * backup downloads shipped 24KB of 404 page instead of the backup. To keep that impossible,
-   * every raw browser-facing API route lives under `/download/` (GET, streamed responses) or
-   * `/upload/` (POST, streamed request bodies), both wildcarded below, and
+   * every raw browser-facing API route lives under `/download/` (GET, streamed responses),
+   * wildcarded below, or `/upload/` (POST, streamed request bodies), served by its route handler, and
    * `apps/api/test/rawRouteProxy.spec.ts` fails the build on a route registered outside them.
    */
   async rewrites() {
@@ -59,8 +54,6 @@ const nextConfig = {
     return [
       // tRPC batch/streaming
       { source: '/trpc/:path*',    destination: `${apiUrl}/trpc/:path*` },
-      // Direct file uploads (brand logo by id, collection row pictures, backup import)
-      { source: '/upload/:path*',  destination: `${apiUrl}/upload/:path*` },
       // Streamed downloads (backup blob/export, audit log CSV, season calendar exports)
       { source: '/download/:path*', destination: `${apiUrl}/download/:path*` },
       // SSE notifications push

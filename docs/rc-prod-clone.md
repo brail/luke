@@ -127,9 +127,12 @@ history.
   switch and plaintext credential rows before the RC API starts; this flow
   restores into a running RC API and neutralizes nothing, so its schedulers
   start on prod's configuration at once.
-- The `.lukebak` package is buffered entirely in memory during upload (no
-  streaming multipart client in scope). Acceptable for `DB`-only backups; to be
-  revisited if the flow is ever extended to `DB_AND_FILES`.
+- The script reads the whole `.lukebak` package into memory before uploading it
+  (no streaming multipart client in scope). Acceptable for `DB`-only backups; to
+  be revisited if the flow is ever extended to `DB_AND_FILES`. Past the script,
+  apps/web streams the upload on to the API
+  (`apps/web/src/app/upload/[...path]/route.ts`); before 3.1.0 its rewrite proxy
+  kept only the first 10 MB of the body, so a larger package failed to import.
 
 ## Relationship with `refresh-rc-db.sh`
 

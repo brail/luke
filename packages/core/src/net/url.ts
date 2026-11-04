@@ -108,7 +108,8 @@ export function buildSpecsheetImageUploadUrl(specsheetId: string): string {
 // Raw (non-tRPC) endpoints the *browser* calls directly must live under `/download/` (streamed
 // GET) or `/upload/` (streamed POST). In production the browser can only reach Next.js (apps/api
 // publishes no port — see docker-compose.prod.yml), so such a path is reachable only if
-// `apps/web/next.config.js` rewrites it; those two prefixes are the ones wired there wholesale.
+// apps/web forwards it: `next.config.js` rewrites `/download/` wholesale, and
+// `app/upload/[...path]/route.ts` streams `/upload/` (a rewrite keeps only the first 10 MB of a body).
 // A path outside them resolves to a Next.js page route instead: no error, just Next's own 404
 // HTML delivered under the requested filename — exactly how backup downloads shipped 24KB of 404
 // page in place of the backup. Enforced by `apps/api/test/rawRouteProxy.spec.ts`.

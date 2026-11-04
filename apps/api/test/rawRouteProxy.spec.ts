@@ -4,14 +4,15 @@
  *
  * In production the browser can only reach Next.js — apps/api publishes no port
  * (docker-compose.prod.yml) — so a raw route is reachable only if `apps/web/next.config.js`
- * rewrites its path to the API container. A path with no rewrite does not fail loudly: it falls
- * through to Next's own routing and comes back as the 404 page. A `fetch` caller at least sees
+ * rewrites its path to the API container, or a Next route handler forwards it. A path with neither
+ * does not fail loudly: it falls through to Next's own routing and comes back as the 404 page. A `fetch` caller at least sees
  * `res.ok === false`; an `<a download>` caller silently saves that HTML under the requested
  * filename. That is how backup downloads shipped 24KB of Next 404 page in place of a 4 MB backup.
  *
  * Rather than diff two lists of paths (which drift), the invariant is a naming rule: browser-facing
- * raw routes live under `/download/` (streamed GET responses) or `/upload/` (streamed POST bodies),
- * and next.config.js wildcards exactly those two prefixes. This test enforces both halves.
+ * raw routes live under `/download/` (streamed GET responses), which next.config.js wildcards, or
+ * `/upload/` (streamed POST bodies), which a catch-all route handler streams: the rewrite proxy
+ * forwards only the first 10 MB of a body. This test enforces both halves.
  *
  * It also checks the other side of the contract: that the paths callers actually request exist.
  * Renaming these routes once left `scripts/rc-prod-clone.ts` posting to a path that had moved,
@@ -26,12 +27,13 @@ import { describe, expect, it } from 'vitest';
 
 const API_SRC = join(import.meta.dirname, '..', 'src');
 const NEXT_CONFIG = join(import.meta.dirname, '..', '..', 'web', 'next.config.js');
+const UPLOAD_ROUTE_HANDLER = join(import.meta.dirname, '..', '..', 'web', 'src', 'app', 'upload', '[...path]', 'route.ts');
 
-/** The two prefixes next.config.js proxies wholesale. Any browser-facing raw route must use one. */
+/** The two prefixes apps/web proxies wholesale. Any browser-facing raw route must use one. */
 const PROXIED_PREFIXES = ['/download/', '/upload/'] as const;
 
 /**
- * Raw routes that are NOT called by a browser, and so need no rewrite.
+ * Raw routes that are NOT called by a browser, and so need no forwarding by apps/web.
  *
  * Deliberately short and justified one by one: adding a browser-facing path here re-opens the
  * exact bug this test exists to catch, so each entry has to state why no browser ever requests it.
@@ -163,7 +165,8 @@ describe('raw route proxying', () => {
 
     expect(
       unreachable.map(r => `${r.path}  (${r.file.slice(r.file.indexOf('apps/'))})`),
-      'These raw routes have no rewrite in apps/web/next.config.js, so in production they resolve ' +
+      'These raw routes are not forwarded by apps/web (no rewrite in next.config.js, no route ' +
+        'handler), so in production they resolve ' +
         'to the Next.js 404 page instead of the API. Move them under /download/ or /upload/, or — ' +
         'only if no browser ever calls them — add them to NOT_BROWSER_FACING with a reason.'
     ).toEqual([]);
@@ -191,10 +194,11 @@ describe('raw route proxying', () => {
     ).toEqual([]);
   });
 
-  it('keeps a wildcard rewrite in next.config.js for each proxied prefix', () => {
+  it('proxies /download/ with a wildcard rewrite and /upload/ with its route handler', () => {
     const config = readFileSync(NEXT_CONFIG, 'utf8');
-    for (const prefix of PROXIED_PREFIXES) {
-      expect(config, `next.config.js must rewrite ${prefix}:path*`).toContain(`source: '${prefix}:path*'`);
-    }
+    expect(config, 'next.config.js must rewrite /download/:path*').toContain(`source: '/download/:path*'`);
+    // A rewrite would take /upload/ back through the proxy that truncates request bodies.
+    expect(config, 'next.config.js must not rewrite /upload').not.toMatch(/source:\s*['"`]\/upload\b/);
+    expect(existsSync(UPLOAD_ROUTE_HANDLER), 'apps/web/src/app/upload/[...path]/route.ts must exist').toBe(true);
   });
 });

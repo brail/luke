@@ -5,14 +5,11 @@ import { buildApiUrl } from '@luke/core';
 import { auth } from '../../../../auth';
 import { forwardedFor } from '../../../../lib/clientIp';
 import { debugError } from '../../../../lib/debug';
-
-// Allow only safe path segments: alphanumeric, dots, dashes, underscores
-// Rejects '..' traversal and any segment with shell-special characters
-const SAFE_SEGMENT_RE = /^[a-zA-Z0-9._-]+$/;
+import { isSafePathSegment } from '../../../../lib/pathSegment';
 
 /**
  * Handles GET /api/uploads/[...path]. Authenticated proxy that streams static files from the API
- * backend storage at `/uploads/<path>`. Validates each path segment against {@link SAFE_SEGMENT_RE}
+ * backend storage at `/uploads/<path>`. Validates each path segment with {@link isSafePathSegment}
  * to prevent path traversal attacks. The cache policy is the API's: its `Cache-Control` is
  * forwarded as is (`apps/api/src/plugins/storageUpload.ts`).
  * @auth {session-required}
@@ -30,7 +27,7 @@ export const GET = auth(async function GET(req) {
     // Validate each segment to prevent path traversal attacks
     if (
       pathSegments.length === 0 ||
-      pathSegments.some(seg => !SAFE_SEGMENT_RE.test(seg))
+      !pathSegments.every(isSafePathSegment)
     ) {
       return new NextResponse('Bad Request', { status: 400 });
     }
