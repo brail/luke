@@ -55,6 +55,9 @@ const RECONCILE_BATCH_LIMIT = 200;
 const DERIVATIVE_CONCURRENCY = 8;
 const derivativeLimit = pLimit(DERIVATIVE_CONCURRENCY);
 
+/** Jobs `enqueueDerivatives` scheduled that have not finished: what `derivativeWorkIdle` waits on. */
+const scheduledJobs = new Set<Promise<void>>();
+
 /** Exported for `asset.service.ts`'s `ingestImageAsset`, whose synchronous sync-variant generation must honor the same kill switch — see the call site there for why. */
 export async function derivativesEnabled(prisma: PrismaClient): Promise<boolean> {
   return getConfigOrDefault(prisma, 'storage.derivatives.enabled');
@@ -223,11 +226,36 @@ async function markAttemptFailed(prisma: PrismaClient, masterId: string): Promis
  * in the same tick.
  */
 export function enqueueDerivatives(prisma: PrismaClient, masterId: string, logger?: Logger): void {
-  setImmediate(() => {
-    derivativeLimit(() => processMaster(prisma, masterId, logger)).catch(err => {
-      logger?.error?.({ err, masterId }, 'asset derivative worker: unhandled error processing master');
+  const job = new Promise<void>(resolve => {
+    setImmediate(() => {
+      derivativeLimit(() => processMaster(prisma, masterId, logger))
+        .catch(err => {
+          logger?.error?.({ err, masterId }, 'asset derivative worker: unhandled error processing master');
+        })
+        // Settles the job even if the logger itself throws.
+        .then(resolve, resolve);
     });
   });
+  scheduledJobs.add(job);
+  void job.finally(() => scheduledJobs.delete(job));
+}
+
+/**
+ * Resolves once every job `enqueueDerivatives` scheduled has finished, those scheduled meanwhile
+ * included, and throws if they are still running after `timeoutMs`. For the tests: a job still
+ * running after its test writes rows the next test's `TRUNCATE` deadlocks on, and re-creates
+ * storage directories under the next test's base path.
+ */
+export async function derivativeWorkIdle(timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (scheduledJobs.size > 0) {
+    const remaining = deadline - Date.now();
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<true>(resolve => { timer = setTimeout(() => resolve(true), Math.max(remaining, 0)); });
+    const expired = await Promise.race([Promise.all(scheduledJobs).then(() => false), timedOut]);
+    clearTimeout(timer);
+    if (expired) throw new Error(`${scheduledJobs.size} derivative job(s) still running after ${timeoutMs} ms`);
+  }
 }
 
 async function reconcileTick(prisma: PrismaClient, logger: FastifyInstance['log']): Promise<void> {

@@ -2,20 +2,15 @@
  * Integration tests for Brand Logo Upload Endpoints
  * Verifies the Fastify multipart endpoints through `app.inject()`
  *
- * **Known load-sensitive failures.** A successful upload leaves work in flight: `ingestImageAsset`
- * calls `enqueueDerivatives` without awaiting it, and that defers through `setImmediate` before
- * queueing on a `pLimit`. So `processMaster` can start after the test has finished and after
- * `afterEach` has reset the memoized storage provider and removed `basePath` — at which point it
- * calls `getStorageProvider()` again and re-initialises against whatever the config now points at,
- * creating the bucket directories inside the *next* test's `basePath`.
- *
- * That is why `rm` here carries retries, and it is how the "service layer errors" test below fails
- * intermittently: it needs to write a plain file where `brand-logos` goes, and if a leftover
- * `init()` has already created that directory, `writeFile` throws `EISDIR` before the assertion is
- * ever reached — a red that has nothing to do with what the test checks.
- *
- * Not fixed by draining the queue in `afterEach`: that would only make the test blind to unowned
- * work still running, which is the actual defect and lives at the call site, not here.
+ * **Work left in flight.** A successful upload does not wait for its derivatives: `ingestImageAsset`
+ * calls `enqueueDerivatives`, fire-and-forget by design, which defers through `setImmediate` before
+ * queueing on a `pLimit`. Left running, `processMaster` re-initialised the storage provider after
+ * `afterEach` had reset it, creating bucket directories inside the *next* test's `basePath` (the
+ * "service layer errors" test then failed on `EISDIR`), and its writes deadlocked the next test's
+ * `TRUNCATE` (`40P01`). `afterEach` waits for it (`derivativeWorkIdle`) before resetting storage,
+ * and `resetTestData` does before truncating. Waiting is not hiding a defect: the request is meant
+ * not to wait, the reconciler retries a job that never finished, and what the tests need is that
+ * one test's work does not land in the next.
  */
 
 import { mkdtemp, rm, writeFile } from 'fs/promises';
@@ -27,6 +22,7 @@ import { FastifyInstance } from 'fastify';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 
+import { derivativeWorkIdle } from '../src/lib/assets/derivativeWorker';
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 import { resetStorageProvider } from '../src/storage';
 
@@ -140,6 +136,7 @@ describe('Brand Logo Upload Integration', () => {
     // `createContextForRole` in the `beforeEach` of the next test.
     await app.close();
     vi.clearAllMocks();
+    await derivativeWorkIdle();
     resetStorageProvider();
     await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });

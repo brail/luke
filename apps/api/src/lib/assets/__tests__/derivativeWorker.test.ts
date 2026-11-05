@@ -22,7 +22,7 @@ import type { PrismaClient } from '@luke/db';
 import { prismaKnownError } from '../../../../test/helpers/prismaError';
 import { putDerivativeObject, readFileBuffer } from '../../../storage';
 import { getConfigOrDefault } from '../../configManager';
-import { enqueueDerivatives, processMaster, registerDerivativeScheduler } from '../derivativeWorker';
+import { derivativeWorkIdle, enqueueDerivatives, processMaster, registerDerivativeScheduler } from '../derivativeWorker';
 import { deriveVariant, probeHasAlpha } from '../pipeline';
 
 import type { FastifyInstance } from 'fastify';
@@ -329,6 +329,38 @@ describe('enqueueDerivatives concurrency cap', () => {
     // not the literal number — a future retune of the constant shouldn't break this.
     expect(peak).toBeLessThan(masterIds.length);
     expect(peak).toBeGreaterThan(1); // proves it's actually concurrent, not accidentally serialized to 1
+  });
+});
+
+describe('derivativeWorkIdle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('resolves only after every scheduled job has finished', async () => {
+    const pending: Array<() => void> = [];
+    const release = () => pending.splice(0).forEach(resolve => resolve());
+    vi.mocked(getConfigOrDefault).mockImplementation(
+      () => new Promise(resolve => { pending.push(() => resolve('false')); })
+    );
+    enqueueDerivatives(makePrisma(), 'master-1');
+
+    let idle = false;
+    const waiting = derivativeWorkIdle().then(() => { idle = true; });
+    await expect.poll(() => vi.mocked(getConfigOrDefault).mock.calls.length).toBe(1);
+    expect(idle).toBe(false);
+
+    release();
+    await waiting;
+    expect(idle).toBe(true);
+  });
+
+  // Leaves its job pending for the rest of this file: nothing after it waits for idle.
+  it('throws when a job is still running at the deadline', async () => {
+    vi.mocked(getConfigOrDefault).mockImplementation(() => new Promise(() => undefined));
+    enqueueDerivatives(makePrisma(), 'master-stuck');
+
+    await expect(derivativeWorkIdle(20)).rejects.toThrow('1 derivative job(s) still running after 20 ms');
   });
 });
 
