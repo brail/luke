@@ -40,13 +40,12 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useState } from 'react';
-import { toast } from 'sonner';
 
+import { useLogout } from '../hooks/useLogout';
 import { useMenuAccess } from '../hooks/useMenuAccess';
 import { useMenuPreferences } from '../hooks/useMenuPreferences';
-import { trpc } from '../lib/trpc';
 
 import { AppVersionLabel } from './AppVersionLabel';
 import { FeedbackDialog } from './FeedbackDialog';
@@ -91,23 +90,7 @@ export default function AppSidebar() {
   const isActive = (href: string) => pathname.startsWith(href);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
-  // Ends the API sessions first, then the browser's. A failure keeps the user signed in, so the
-  // button can be pressed again rather than leaving a live bearer behind.
-  const logout = trpc.auth.logout.useMutation({
-    onSuccess: () => signOut({ callbackUrl: '/login' }),
-    onError: error => {
-      // The bearer is already revoked or expired: nothing is left to end with it.
-      if (error.data?.code === 'UNAUTHORIZED') {
-        void signOut({ callbackUrl: '/login' });
-        return;
-      }
-      toast.error(
-        error.data?.code === 'SERVICE_UNAVAILABLE'
-          ? 'Uscita non disponibile durante la manutenzione: riprova al termine'
-          : 'Uscita non riuscita: riprova'
-      );
-    },
-  });
+  const logout = useLogout();
 
   // Build the initials from firstName and lastName
   const getUserInitials = (firstName?: string, lastName?: string) => {

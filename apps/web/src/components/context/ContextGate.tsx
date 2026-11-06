@@ -10,6 +10,7 @@ import { BrandInputSchema, SeasonInputSchema, normalizeCode } from '@luke/core';
 
 import { useAppContext } from '../../contexts/AppContextProvider';
 import { useContextMutation } from '../../contexts/useContextMutation';
+import { useLogout } from '../../hooks/useLogout';
 import { usePermission } from '../../hooks/usePermission';
 import { trpc } from '../../lib/trpc';
 import { Button } from '../ui/button';
@@ -71,7 +72,7 @@ const SeasonCreateFormSchema: z.ZodType<SeasonCreateFormData, SeasonCreateFormDa
  * Blocking modal for the initial context selection.
  *
  * Appears when there is no active Brand or Season (FAILED_PRECONDITION).
- * It cannot be closed until a valid Brand and Season are selected.
+ * It cannot be closed until a valid Brand and Season are selected; `Logout` is the other way out.
  * If the DB is empty, it offers inline creation of brand/season (only for those with the permissions).
  */
 export function ContextGate() {
@@ -79,6 +80,9 @@ export function ContextGate() {
   const { setContext, isPending } = useContextMutation();
   const { can } = usePermission();
   const utils = trpc.useUtils();
+  // The gate cannot be closed and covers the sidebar: without its own way out, a user it has
+  // nothing to offer would stay signed in until the session expires.
+  const logout = useLogout();
 
   // Context selection
   const [selectedBrandId, setSelectedBrandId] = useState<string>('');
@@ -148,7 +152,7 @@ export function ContextGate() {
   // A brand is available if there are brands in the list OR one was just created (selectedBrandId is set)
   const noBrands = !brandsLoading && brands.length === 0 && !selectedBrandId;
   const noSeasons = !!selectedBrandId && !seasonsLoading && seasons.length === 0 && !selectedSeasonId;
-  const isConfirmEnabled = selectedBrandId && selectedSeasonId && !isPending;
+  const isConfirmEnabled = selectedBrandId && selectedSeasonId && !isPending && !logout.isPending;
 
   const dialogProps = {
     open: needsSetup,
@@ -159,7 +163,19 @@ export function ContextGate() {
     className: 'sm:max-w-[500px]', // px: dialog width tuned to this form's content; no exact Tailwind max-w scale match
     onInteractOutside: (e: globalThis.Event) => e.preventDefault(),
     onEscapeKeyDown: (e: KeyboardEvent) => e.preventDefault(),
+    // Focus the dialog itself: where `Logout` is the only enabled control, the default would focus
+    // it, and a stray Enter would sign the user out.
+    onOpenAutoFocus: (e: globalThis.Event) => {
+      e.preventDefault();
+      if (e.currentTarget instanceof HTMLElement) e.currentTarget.focus();
+    },
   } as const;
+
+  const logoutButton = (
+    <Button variant="outline" onClick={() => logout.mutate()} disabled={logout.isPending || isPending}>
+      Logout
+    </Button>
+  );
 
   if (brandsLoading || (!!selectedBrandId && seasonsLoading)) {
     return (
@@ -173,6 +189,7 @@ export function ContextGate() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
+          <div className="flex pt-4">{logoutButton}</div>
         </DialogContent>
       </Dialog>
     );
@@ -398,7 +415,8 @@ export function ContextGate() {
             </div>
           )}
 
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-between pt-4">
+            {logoutButton}
             <Button
               onClick={handleConfirm}
               disabled={!isConfirmEnabled}
