@@ -53,7 +53,7 @@ export default function CalendarPage() {
   const viewDay = viewDate ?? fmt.today;
 
   const [selectedBrandIds, setSelectedBrandIds] = useState<string[]>([]);
-  const [selectedFunctionIds, setSelectedFunctionIds] = useState<string[]>([]);
+  const [hiddenFunctionIds, setHiddenFunctionIds] = useState<string[]>([]);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const [noteEventId, setNoteEventId] = useState<string | null>(null);
   /** The new event being created: its first day and, from the day view, its start time; `null` when none is. */
@@ -125,11 +125,12 @@ export default function CalendarPage() {
       .map(f => ({ id: f.id, name: f.name }));
   }, [functionsData, milestones]);
 
-  useEffect(() => {
-    if (availableFunctions.length > 0 && selectedFunctionIds.length === 0) {
-      setSelectedFunctionIds(availableFunctions.map(f => f.id));
-    }
-  }, [availableFunctions]); // intentional: only initialize when empty
+  // The chips remember what the user hid, not what is shown: a function that appears later, say on
+  // an event just shared with it, starts shown, so that event does not vanish right after saving.
+  const selectedFunctionIds = useMemo(
+    () => availableFunctions.filter(f => !hiddenFunctionIds.includes(f.id)).map(f => f.id),
+    [availableFunctions, hiddenFunctionIds]
+  );
 
   const { data: syncStatus } = trpc.seasonCalendar.getSyncStatus.useQuery(
     { calendarId: calendar?.id ?? '' },
@@ -423,7 +424,7 @@ export default function CalendarPage() {
                 <button
                   type="button"
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-muted-foreground hover:bg-muted transition-colors mb-1"
-                  onClick={() => setSelectedFunctionIds(availableFunctions.map(f => f.id))}
+                  onClick={() => setHiddenFunctionIds([])}
                 >
                   Seleziona tutte
                 </button>
@@ -437,8 +438,8 @@ export default function CalendarPage() {
                   key={fn.id}
                   type="button"
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-muted transition-colors"
-                  onClick={() => setSelectedFunctionIds(prev =>
-                    checked ? prev.filter(id => id !== fn.id) : [...prev, fn.id]
+                  onClick={() => setHiddenFunctionIds(prev =>
+                    checked ? [...prev, fn.id] : prev.filter(id => id !== fn.id)
                   )}
                 >
                   <Check size={12} className={cn('shrink-0 text-primary', !checked && 'opacity-0')} />
@@ -650,8 +651,6 @@ export default function CalendarPage() {
           onDeleted={() => { setActiveEventId(null); refetchAfterEventChange(); }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}
-          availableFunctions={availableFunctions}
-          functionsById={functionsById}
           event={activeEvent}
           existingMilestones={milestones ?? []}
           readOnly={!canEditActiveEvent}
@@ -666,8 +665,6 @@ export default function CalendarPage() {
           onSaved={() => { setCreateAt(null); refetchAfterEventChange(); }}
           brandId={contextBrandId ?? ''}
           seasonId={season?.id ?? ''}
-          availableFunctions={availableFunctions}
-          functionsById={functionsById}
           existingMilestones={milestones ?? []}
           defaultDate={createAt.date}
           defaultTime={createAt.time}

@@ -90,8 +90,6 @@ interface Props {
   onSaved: () => void;
   brandId: string;
   seasonId: string;
-  availableFunctions: { id: string; name: string }[];
-  functionsById?: Record<string, string>;
   event?: ExistingEvent;
   existingMilestones?: CalendarEventItem[];
   /** The day a new event starts on. */
@@ -186,8 +184,6 @@ function describeBaselineDrift(event: ExistingEvent, zone: string): string | nul
  *
  * @param brandId - Brand of the calendar (used to resolve planning groups in create mode).
  * @param seasonId - Season of the calendar (used to resolve planning groups in create mode).
- * @param availableFunctions - Company functions available as visibility targets.
- * @param functionsById - Map of function ID → name for display in read-only mode.
  * @param event - Existing event to edit; omit for create mode.
  * @param defaultDate - Date pre-filled in the start-date field on create.
  * @param defaultTime - Wall time pre-filled on create; without one the new event is all-day.
@@ -195,7 +191,7 @@ function describeBaselineDrift(event: ExistingEvent, zone: string): string | nul
  * @param onDeleted - Called after the event is successfully deleted.
  */
 export function CalendarEventDialog({
-  open, onClose, onSaved, brandId, seasonId, availableFunctions, functionsById = {},
+  open, onClose, onSaved, brandId, seasonId,
   event, existingMilestones = [], defaultDate, defaultTime, readOnly = false, onDeleted,
 }: Props) {
   const isEdit = !!event;
@@ -220,6 +216,10 @@ export function CalendarEventDialog({
   const isDeleteLocked = !!event && eventDeleteBlock(event) === 'frozen';
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
+  // Every active company function, not only those on the loaded events: an event can be made
+  // visible to a function no event uses yet (#196).
+  const { data: functions = [] } = trpc.company.function.list.useQuery();
+  const functionsById = useMemo(() => Object.fromEntries(functions.map(f => [f.id, f.name])), [functions]);
   const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
     { enabled: open && !isEdit }
@@ -694,7 +694,7 @@ export function CalendarEventDialog({
                 <FormItem className="space-y-1.5">
                   <FormLabel>Visibile a *</FormLabel>
                   <div className="flex flex-wrap gap-3">
-                    {availableFunctions.map(fn => (
+                    {functions.map(fn => (
                       <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
                         <Checkbox checked={visibilityFunctionIds.includes(fn.id)} onCheckedChange={() => toggleVisible(fn.id)} />
                         <span className="text-sm">{fn.name}</span>

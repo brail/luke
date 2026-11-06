@@ -16,11 +16,12 @@ import { CalendarEventDialog } from '../CalendarEventDialog';
 
 // Every query result is one object reused across renders, the way react-query keeps a settled
 // result stable: a fresh `[]` per render feeds the dialog's effects a new value every time.
-const { updateMock, idleMutation, emptyList, noData } = vi.hoisted(() => ({
+const { updateMock, idleMutation, emptyList, noData, functions } = vi.hoisted(() => ({
   updateMock: vi.fn(),
   idleMutation: () => ({ mutate: () => undefined, isPending: false }),
   emptyList: { data: [], isLoading: false, isError: false },
   noData: { data: undefined, isLoading: false, isError: false },
+  functions: { data: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Funzione' }], isLoading: false, isError: false },
 }));
 
 // Only what the dialog and its children call while rendering. `me.get` answers with the profile
@@ -33,7 +34,10 @@ vi.mock('../../../../../lib/trpc', async () => {
     planningGroup: { list: { useQuery: () => emptyList } },
     auditLog: { getLastChange: { useQuery: () => noData } },
     me: { get: { useQuery: () => me } },
-    company: { profile: { get: { useQuery: () => noData } } },
+    company: {
+      profile: { get: { useQuery: () => noData } },
+      function: { list: { useQuery: () => functions } },
+    },
     seasonCalendar: {
       createMilestone: { useMutation: idleMutation },
       updateMilestone: { useMutation: () => ({ mutate: updateMock, isPending: false }) },
@@ -56,7 +60,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: v
 
 afterEach(() => updateMock.mockReset());
 
-// The form validates visibility ids as uuids.
+// The form validates visibility ids as uuids; the same id `company.function.list` answers with.
 const FUNCTION_ID = '00000000-0000-4000-8000-000000000001';
 
 type DialogEvent = NonNullable<Parameters<typeof CalendarEventDialog>[0]['event']>;
@@ -69,7 +73,7 @@ function renderDialog(event: DialogEvent | undefined, readOnly = false, defaults
   return render(
     <TooltipProvider delayDuration={0}>
       <CalendarEventDialog open onClose={() => undefined} onSaved={() => undefined} brandId="b1" seasonId="s1"
-        availableFunctions={[{ id: FUNCTION_ID, name: 'Funzione' }]} event={event} readOnly={readOnly}
+        event={event} readOnly={readOnly}
         defaultDate={defaults.date} defaultTime={defaults.time} />
     </TooltipProvider>,
   );
