@@ -3,6 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { calcBackoffDelay, type StorageBucket } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
+import { runInBackground } from '../lib/backgroundWork';
 import { getStorageProvider, deleteObjectByKey } from '../storage';
 
 import { ingestImageAsset } from './asset.service';
@@ -81,7 +82,7 @@ export async function uploadBrandLogo(
   });
 
   if (brand.logoKey) {
-    setImmediate(async () => {
+    runInBackground(async () => {
       try {
         await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: brand.logoKey! });
       } catch (err) {

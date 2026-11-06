@@ -14,7 +14,7 @@ import { Readable } from 'stream';
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { derivativeWorkIdle } from '../src/lib/assets/derivativeWorker';
+import { backgroundWorkIdle } from '../src/lib/backgroundWork';
 import { appRouter } from '../src/routers/index';
 import {
   uploadBrandLogo,
@@ -55,7 +55,7 @@ describe('Brand Logo Upload Service', () => {
   });
 
   afterEach(async () => {
-    await derivativeWorkIdle();
+    await backgroundWorkIdle();
     resetStorageProvider();
     await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });

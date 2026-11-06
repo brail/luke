@@ -19,6 +19,7 @@ import {
 import type { Prisma } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog';
+import { runInBackground } from '../lib/backgroundWork';
 import { isUniqueViolation } from '../lib/error';
 import { confirmPendingFile } from '../lib/pendingFile';
 import { requirePermission } from '../lib/permissions';
@@ -291,7 +292,7 @@ export const brandRouter = router({
 
       if (oldLogoKey) {
         const keyToDelete = oldLogoKey;
-        setImmediate(async () => {
+        runInBackground(async () => {
           try {
             await deleteObjectByKey(ctx, { bucket: 'brand-logos', key: keyToDelete });
           } catch (err) {

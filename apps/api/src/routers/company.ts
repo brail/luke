@@ -23,6 +23,7 @@ import {
 import type { PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
+import { runInBackground } from '../lib/backgroundWork.js';
 import { createNotification } from '../lib/notifications.js';
 import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -119,7 +120,7 @@ const companyProfileRouter = router({
       // `company-assets` forever.
       if (oldLogoKey && oldLogoKey !== profile.logoKey) {
         const staleKey = oldLogoKey;
-        setImmediate(async () => {
+        runInBackground(async () => {
           try {
             await deleteObjectByKey(ctx, { bucket: 'company-assets', key: staleKey });
           } catch (err) {

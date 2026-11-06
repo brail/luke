@@ -24,7 +24,7 @@ import { execSync } from 'child_process';
 
 import { createPrismaClient, type PrismaClient, PRISMA_PACKAGE_ROOT } from '@luke/db';
 
-import { derivativeWorkIdle } from '../../src/lib/assets/derivativeWorker';
+import { backgroundWorkIdle } from '../../src/lib/backgroundWork';
 
 /** Required marker in the database name: guards against pointing at dev or production. */
 const REQUIRED_DB_NAME_MARKER = 'test';
@@ -178,9 +178,9 @@ export async function resetTestData(
     );
   }
 
-  // An upload of the previous test leaves derivative work running, whose writes deadlock the
-  // TRUNCATE (`40P01`).
-  await derivativeWorkIdle();
+  // Background work of the previous test (derivatives, a replaced logo's cleanup) writes rows
+  // that deadlock the TRUNCATE (`40P01`).
+  await backgroundWorkIdle();
 
   // `$executeRawUnsafe` is unavoidable: table names are identifiers, not
   // parameters, and can't be expressed with Prisma.sql. The strings come

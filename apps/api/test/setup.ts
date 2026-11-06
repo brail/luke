@@ -10,7 +10,7 @@
  * must fail explicitly, not fall back to an arbitrary database.
  */
 
-import { afterAll, beforeEach } from 'vitest';
+import { afterAll, afterEach, beforeEach } from 'vitest';
 
 process.env.NODE_ENV = 'test';
 
@@ -43,6 +43,17 @@ beforeEach(async () => {
   ]);
   rateLimitStore.clear();
   idempotencyStore.clear();
+});
+
+/**
+ * Work a test started without waiting for it (derivatives, a replaced logo's cleanup) settles
+ * before the next test, or the next file on the same worker database, begins: left running, it
+ * writes into their database and storage. After each test rather than before, so the last test of
+ * a file is covered too.
+ */
+afterEach(async () => {
+  const { backgroundWorkIdle } = await import('../src/lib/backgroundWork');
+  await backgroundWorkIdle();
 });
 
 // The single point where the test Prisma client gets closed: once per file.

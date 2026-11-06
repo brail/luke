@@ -3,11 +3,11 @@
  * Verifies the Fastify multipart endpoints through `app.inject()`
  *
  * **Work left in flight.** A successful upload does not wait for its derivatives: `ingestImageAsset`
- * calls `enqueueDerivatives`, fire-and-forget by design, which defers through `setImmediate` before
- * queueing on a `pLimit`. Left running, `processMaster` re-initialised the storage provider after
+ * calls `enqueueDerivatives`, fire-and-forget by design, which defers through `runInBackground`
+ * before queueing on a `pLimit`. Left running, `processMaster` re-initialised the storage provider after
  * `afterEach` had reset it, creating bucket directories inside the *next* test's `basePath` (the
  * "service layer errors" test then failed on `EISDIR`), and its writes deadlocked the next test's
- * `TRUNCATE` (`40P01`). `afterEach` waits for it (`derivativeWorkIdle`) before resetting storage,
+ * `TRUNCATE` (`40P01`). `afterEach` waits for it (`backgroundWorkIdle`) before resetting storage,
  * and `resetTestData` does before truncating. Waiting is not hiding a defect: the request is meant
  * not to wait, the reconciler retries a job that never finished, and what the tests need is that
  * one test's work does not land in the next.
@@ -22,7 +22,7 @@ import { FastifyInstance } from 'fastify';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 
-import { derivativeWorkIdle } from '../src/lib/assets/derivativeWorker';
+import { backgroundWorkIdle } from '../src/lib/backgroundWork';
 import brandLogoRoutes from '../src/routes/brandLogo.routes';
 import { resetStorageProvider } from '../src/storage';
 
@@ -136,7 +136,7 @@ describe('Brand Logo Upload Integration', () => {
     // `createContextForRole` in the `beforeEach` of the next test.
     await app.close();
     vi.clearAllMocks();
-    await derivativeWorkIdle();
+    await backgroundWorkIdle();
     resetStorageProvider();
     await rm(basePath, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
