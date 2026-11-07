@@ -17,8 +17,7 @@ import {
   unreadableConfigError,
   type ConfigWrite,
 } from '../lib/configManager';
-import { toErrorCode, toErrorMessage } from '../lib/error';
-import { externalCheckFailed } from '../lib/errorHandler';
+import { externalCheckFailed, toErrorCode, toErrorMessage } from '../lib/error';
 import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';

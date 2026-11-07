@@ -10,7 +10,7 @@ import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import { getConfigForForm, getConfigsMasked, rethrowUnreadable, saveConfigs } from '../lib/configManager';
-import { externalCheckFailed } from '../lib/errorHandler';
+import { externalCheckFailed } from '../lib/error';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';

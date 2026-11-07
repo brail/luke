@@ -104,6 +104,17 @@ export function isUniqueViolation(err: unknown, ...constraints: [string, ...stri
 }
 
 /**
+ * What a settings test, or a live read, answers when the external system refuses it (#193):
+ * PRECONDITION_FAILED, as for a stored configuration that does not let the operation succeed, with a
+ * fixed text the admin can act on. A 4xx keeps its message in production, where a 5xx is masked. The
+ * system's own error stays out of it and the caller logs it; a database or internal failure never
+ * comes here.
+ */
+export function externalCheckFailed(message: string): TRPCError {
+  return new TRPCError({ code: 'PRECONDITION_FAILED', message });
+}
+
+/**
  * Extracts the trace ID from the `x-luke-trace-id` request header,
  * falling back to the Fastify-assigned request ID.
  */

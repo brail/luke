@@ -13,7 +13,7 @@ import { createSyncRequest, getNavDbConfig, NavConfigIncompleteError, getPool, c
 
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigForForm, rethrowUnreadable, saveConfigs } from '../lib/configManager';
-import { externalCheckFailed } from '../lib/errorHandler';
+import { externalCheckFailed } from '../lib/error';
 import { navLogger } from '../lib/logger';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
