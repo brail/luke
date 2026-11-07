@@ -10,6 +10,7 @@ import ExcelJS from 'exceljs';
 import {
   calcMaxSupplierCost,
   classifyMargin,
+  currencySymbol,
   landedCostBreakdown,
   NUMERIC_DATE_TIME,
   priceMargin,
@@ -43,16 +44,6 @@ export type RowExportContext = {
   season: Pick<Season, 'name' | 'code' | 'year'>;
   row: CollectionRowForExport;
 };
-
-// ─── Currency symbols ────────────────────────────────────────────────────────
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', CHF: 'CHF', CNY: '¥',
-};
-
-function currSym(code: string): string {
-  return CURRENCY_SYMBOLS[code] ?? code;
-}
 
 // ─── Margin computation ───────────────────────────────────────────────────────
 
@@ -214,8 +205,8 @@ export async function buildCollectionRowPdf(
   const quotRows: Content[][] = row.quotations.map(q => {
     const ps = q.pricingParameterSet;
     const m  = computeQuotationMargin(q);
-    const sellSym = ps ? currSym(ps.sellingCurrency) : '€';
-    const buySym  = ps ? currSym(ps.purchaseCurrency) : '$';
+    const sellSym = ps ? currencySymbol(ps.sellingCurrency) : '€';
+    const buySym  = ps ? currencySymbol(ps.purchaseCurrency) : '$';
 
     const marginColor = m.status === 'green' ? '#22c55e' : m.status === 'yellow' ? '#f59e0b' : m.status === 'red' ? '#ef4444' : '#555555';
 

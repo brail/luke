@@ -26,6 +26,7 @@ import {
   calculateForward,
   calculateInverse,
   calculateMarginOnly,
+  toCalcParams,
   createParameterSet,
   getParameterSets,
   getPreviousSeasonSets,
@@ -308,18 +309,7 @@ export const pricingRouter = router({
         });
       }
 
-      const params = {
-        qualityControlPercent: paramSet.qualityControlPercent,
-        transportInsuranceCost: paramSet.transportInsuranceCost,
-        duty: paramSet.duty,
-        exchangeRate: paramSet.exchangeRate,
-        italyAccessoryCosts: paramSet.italyAccessoryCosts,
-        tools: paramSet.tools,
-        retailMultiplier: paramSet.retailMultiplier,
-        optimalMargin: paramSet.optimalMargin,
-        purchaseCurrency: paramSet.purchaseCurrency,
-        sellingCurrency: paramSet.sellingCurrency,
-      };
+      const params = toCalcParams(paramSet);
 
       switch (input.mode) {
         case 'forward':

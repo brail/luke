@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { Roles } from '../rbac.js';
+
 import { HardDeleteConfirmSchema } from './confirmation.js';
 import { passwordPrefilterSchema } from './password.js';
 
@@ -21,7 +23,7 @@ export const UserSchema = z.object({
   lastName: z.string().default(''),
 
   /** User role in the system */
-  role: z.enum(['admin', 'editor', 'viewer']),
+  role: z.enum(Roles),
 
   /** User activation state */
   isActive: z.boolean(),
@@ -46,7 +48,7 @@ export const CreateUserInputSchema = z.object({
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
   password: passwordPrefilterSchema,
-  role: z.enum(['admin', 'editor', 'viewer']),
+  role: z.enum(Roles),
 });
 
 /** Input schema for partially updating a user. All fields are optional except `id`. */
@@ -59,7 +61,7 @@ export const UpdateUserInputSchema = z.object({
     .optional(),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
-  role: z.enum(['admin', 'editor', 'viewer']).optional(),
+  role: z.enum(Roles).optional(),
   isActive: z.boolean().optional(),
   password: passwordPrefilterSchema.optional(),
 });

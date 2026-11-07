@@ -16,7 +16,7 @@ import { classifyMargin } from '@luke/core';
 import { PrismaClient } from '@luke/db';
 
 import { seedAdminUser, seedAppConfigs, seedContextData } from '../prisma/seed';
-import { calculateForward } from '../src/services/pricing.service';
+import { calculateForward, toCalcParams } from '../src/services/pricing.service';
 
 import { setupTestDb } from './helpers/database';
 
@@ -211,7 +211,8 @@ describe('Bootstrap & Seed', () => {
       await seedContextData(prisma);
       const set = await prisma.pricingParameterSet.findFirstOrThrow();
 
-      const result = calculateForward(100, set);
+      // `toCalcParams` also refuses a currency the seed should not write.
+      const result = calculateForward(100, toCalcParams(set));
 
       // Doesn't assert the exact number — that would be a tautological test of the
       // formula. Asserts what makes the seed *usable*: retail exceeds the purchase

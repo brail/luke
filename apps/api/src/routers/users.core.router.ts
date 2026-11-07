@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { CreateUserInputSchema, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
+import { CreateUserInputSchema, Roles, UpdateUserInputSchema, UserHardDeleteInputSchema, UserIdSchema, hasPermission, privilegedUserUpdateFields } from '@luke/core';
 import type { LockedFields, Role } from '@luke/core';
 import { invalidateRbacCache } from '@luke/core/server';
 import { Prisma } from '@luke/db';
@@ -44,7 +44,7 @@ export const usersCoreRouter = router({
           page: z.number().min(1).default(1),
           limit: z.number().min(1).max(100).default(10),
           search: z.string().optional(),
-          role: z.enum(['admin', 'editor', 'viewer']).optional(),
+          role: z.enum(Roles).optional(),
           sortBy: z
             .enum([
               'email',

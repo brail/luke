@@ -211,6 +211,18 @@ describe('pricing — brand+season scoping', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 
+  it('calculate refuses a stored currency outside the supported list', async () => {
+    const { brandId, seasonId } = await createBrandAndSeason();
+    const admin = callerAs('admin');
+    const set = await admin.parameterSets.create({ brandId, seasonId, data: validInput('Valuta ritirata') });
+    // The column is a plain string: a value written before the list changed, or by hand.
+    await prisma.pricingParameterSet.update({ where: { id: set.id }, data: { sellingCurrency: 'JPY' } });
+
+    await expect(
+      admin.calculate({ mode: 'forward', purchasePrice: 100, parameterSetId: set.id, brandId, seasonId })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+  });
+
   it('calculate reports a nonexistent set as NOT_FOUND', async () => {
     const { brandId, seasonId } = await createBrandAndSeason();
 

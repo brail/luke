@@ -6,28 +6,6 @@
  */
 
 /**
- * Logical buckets to organize files
- * - uploads: Files uploaded by users
- * - exports: Files exported by the system
- * - assets: Static assets and resources
- * - brand-logos: Brand logos (pending + confirmed)
- * - collection-row-pictures: Collection layout row photos
- * - collection-row-pictures-revisions: Row photos — immutable bucket for quality log
- * - merchandising-specsheet-images: Specsheet images
- * - backups: Encrypted backup archives (private, never exposed via public proxy /uploads/:bucket/*)
- */
-export type StorageBucket =
-  | 'uploads'
-  | 'exports'
-  | 'assets'
-  | 'brand-logos'
-  | 'collection-row-pictures'
-  | 'collection-row-pictures-revisions'
-  | 'merchandising-specsheet-images'
-  | 'company-assets'
-  | 'backups';
-
-/**
  * Buckets that hold real application files, as opposed to `backups` (internal/private).
  * Used by the backup engine to enumerate "all files" for a DB_AND_FILES backup — deliberately
  * excludes `backups` itself so a backup never recursively embeds prior backup blobs. Also the
@@ -43,7 +21,24 @@ export const APP_STORAGE_BUCKETS = [
   'collection-row-pictures-revisions',
   'merchandising-specsheet-images',
   'company-assets',
-] as const satisfies readonly StorageBucket[];
+] as const;
+
+/** Every bucket: the application buckets plus the private `backups` bucket. */
+export const STORAGE_BUCKETS = [...APP_STORAGE_BUCKETS, 'backups'] as const;
+
+/**
+ * Logical buckets to organize files
+ * - uploads: Files uploaded by users
+ * - exports: Files exported by the system
+ * - assets: Static assets and resources
+ * - brand-logos: Brand logos (pending + confirmed)
+ * - collection-row-pictures: Collection layout row photos
+ * - collection-row-pictures-revisions: Row photos — immutable bucket for quality log
+ * - merchandising-specsheet-images: Specsheet images
+ * - company-assets: Company-wide assets uploaded through presigned slots
+ * - backups: Encrypted backup archives (private, never exposed via public proxy /uploads/:bucket/*)
+ */
+export type StorageBucket = (typeof STORAGE_BUCKETS)[number];
 
 /**
  * Buckets the presigned `storage.requestUpload` / `confirmUpload` pair may write — its callers'

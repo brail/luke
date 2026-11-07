@@ -321,7 +321,7 @@ function determineUserRole(
 async function createOrUpdateUser(
   prisma: PrismaClient,
   username: string,
-  role: 'admin' | 'editor' | 'viewer',
+  role: Role,
   userAttributes: Record<string, string[]>
 ): Promise<User | null> {
   // Extract email from LDAP attributes

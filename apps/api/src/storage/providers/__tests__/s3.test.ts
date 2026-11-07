@@ -1,8 +1,8 @@
 import { NoSuchKey } from '@aws-sdk/client-s3';
 import { describe, it, expect, vi } from 'vitest';
 
-import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
-import type { S3StorageConfig, StorageBucket } from '@luke/core';
+import { APP_STORAGE_BUCKETS, STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
+import type { S3StorageConfig } from '@luke/core';
 
 import { S3Provider } from '../s3';
 
@@ -28,9 +28,6 @@ const CONFIG: S3StorageConfig = {
   presignedPutTtl: 3600,
   presignedGetTtl: 3600,
 };
-
-/** Every bucket `init()` must ensure: the application buckets plus the private `backups` bucket. */
-const EXPECTED_BUCKETS: readonly StorageBucket[] = [...APP_STORAGE_BUCKETS, 'backups'];
 
 interface RecordedCommand {
   name: string;
@@ -77,9 +74,9 @@ describe('S3Provider.init — bucket provisioning', () => {
 
     await provider.init();
 
-    expect(bucketsFor(sent, 'HeadBucketCommand')).toEqual([...EXPECTED_BUCKETS].sort());
+    expect(bucketsFor(sent, 'HeadBucketCommand')).toEqual([...STORAGE_BUCKETS].sort());
     expect(bucketsFor(sent, 'CreateBucketCommand')).toEqual([]);
-    expect(send).toHaveBeenCalledTimes(EXPECTED_BUCKETS.length);
+    expect(send).toHaveBeenCalledTimes(STORAGE_BUCKETS.length);
   });
 
   it('creates exactly the buckets whose HeadBucket check fails', async () => {
@@ -89,7 +86,7 @@ describe('S3Provider.init — bucket provisioning', () => {
 
     await provider.init();
 
-    expect(bucketsFor(sent, 'HeadBucketCommand')).toEqual([...EXPECTED_BUCKETS].sort());
+    expect(bucketsFor(sent, 'HeadBucketCommand')).toEqual([...STORAGE_BUCKETS].sort());
     expect(bucketsFor(sent, 'CreateBucketCommand')).toEqual(['backups', 'exports']);
   });
 

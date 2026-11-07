@@ -76,6 +76,7 @@ import pLimit from 'p-limit';
 
 import {
   APP_STORAGE_BUCKETS,
+  STORAGE_BUCKETS,
   s3StorageConfigSchema,
   storageTypeSchema,
   type S3StorageConfig,
@@ -144,7 +145,7 @@ if (fromSide === toSide && fromSide === 'local') {
 const BUCKETS: StorageBucket[] = bucketArg
   ? [bucketArg as StorageBucket]
   : includeBackups
-    ? [...APP_STORAGE_BUCKETS, 'backups']
+    ? [...STORAGE_BUCKETS]
     : [...APP_STORAGE_BUCKETS];
 
 type S3OverrideFields = Partial<Pick<S3StorageConfig, 'endpoint' | 'port' | 'useSSL' | 'accessKey' | 'secretKey' | 'region'>>;

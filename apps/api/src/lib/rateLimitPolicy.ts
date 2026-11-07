@@ -3,7 +3,7 @@
  * Resolves a route's policy: AppConfig → built-in default.
  */
 
-import { RateLimitConfigSchema, type RateLimitPolicy, isDevelopment } from '@luke/core';
+import { RateLimitConfigSchema, type RateLimitConfig, type RateLimitPolicy, isDevelopment } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig } from './configManager';
@@ -15,12 +15,11 @@ const logger = rootLogger.child({ module: 'rate-limit-policy' });
  * Conservative built-in defaults for backwards compatibility.
  * Development environments use relaxed limits (100× the production values).
  *
- * Exported because staying in sync with `RATE_LIMIT_CONFIG` (`lib/ratelimit.ts`) is
- * a checkable invariant: `resolveRateLimitPolicy` throws at runtime on a route
- * missing from here, so a key added to only one of the two maps
- * becomes a production crash instead of a compile-time error.
+ * Keyed by every route of `RateLimitConfig`, so a route added to the config schema and
+ * missing here fails `tsc`. Exported because staying in sync with `RATE_LIMIT_CONFIG`
+ * (`lib/ratelimit.ts`) is a checkable invariant, tested in `ratelimit.spec.ts`.
  */
-export const RATE_LIMIT_POLICY_DEFAULTS: Record<string, RateLimitPolicy> = {
+export const RATE_LIMIT_POLICY_DEFAULTS: Record<keyof RateLimitConfig, RateLimitPolicy> = {
   login: { max: 5, timeWindow: '1m', keyBy: 'ip' },
   loginByUsername: { max: 10, timeWindow: '15m', keyBy: 'username' },
   passwordChange: { max: 3, timeWindow: '15m', keyBy: 'userId' },

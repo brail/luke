@@ -14,6 +14,8 @@ import {
   priceMargin,
   retailMargin,
   suggestRetailPrice,
+  PricingParameterSetInputSchema,
+  type PricingCurrency,
   type PricingParameterSetInput,
 } from '@luke/core';
 import { Prisma } from '@luke/db';
@@ -34,8 +36,8 @@ export interface CalcParams {
   tools: number;
   retailMultiplier: number;
   optimalMargin: number;
-  purchaseCurrency: string;
-  sellingCurrency: string;
+  purchaseCurrency: PricingCurrency;
+  sellingCurrency: PricingCurrency;
 }
 
 export interface ForwardResult {
@@ -54,8 +56,8 @@ export interface ForwardResult {
   retailPriceRaw: number;
   retailPrice: number;
   companyMargin: number;
-  purchaseCurrency: string;
-  sellingCurrency: string;
+  purchaseCurrency: PricingCurrency;
+  sellingCurrency: PricingCurrency;
 }
 
 export interface InverseResult {
@@ -71,8 +73,8 @@ export interface InverseResult {
   purchasePriceRaw: number;
   purchasePrice: number;
   companyMargin: number;
-  purchaseCurrency: string;
-  sellingCurrency: string;
+  purchaseCurrency: PricingCurrency;
+  sellingCurrency: PricingCurrency;
 }
 
 export interface MarginResult {
@@ -83,8 +85,36 @@ export interface MarginResult {
   wholesalePrice: number;
   companyMargin: number;
   companyMultiplier: number;
-  purchaseCurrency: string;
-  sellingCurrency: string;
+  purchaseCurrency: PricingCurrency;
+  sellingCurrency: PricingCurrency;
+}
+
+/**
+ * The calculation parameters of a stored set. Its currencies are plain columns: one outside
+ * `PRICING_CURRENCIES` is refused with PRECONDITION_FAILED, not cast.
+ */
+export function toCalcParams(set: PricingParameterSet): CalcParams {
+  const currencies = PricingParameterSetInputSchema.pick({
+    purchaseCurrency: true,
+    sellingCurrency: true,
+  }).safeParse(set);
+  if (!currencies.success) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'Il set di parametri usa una valuta non supportata: correggila nel set',
+    });
+  }
+  return {
+    qualityControlPercent: set.qualityControlPercent,
+    transportInsuranceCost: set.transportInsuranceCost,
+    duty: set.duty,
+    exchangeRate: set.exchangeRate,
+    italyAccessoryCosts: set.italyAccessoryCosts,
+    tools: set.tools,
+    retailMultiplier: set.retailMultiplier,
+    optimalMargin: set.optimalMargin,
+    ...currencies.data,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { intInRange, PortSchema } from '../schemas/number.js';
 
-import { APP_STORAGE_BUCKETS, type StorageBucket } from './types.js';
+import { STORAGE_BUCKETS, type StorageBucket } from './types.js';
 
 /**
  * What `LocalFsProvider` needs to run: nothing more.
@@ -118,7 +118,7 @@ export type StorageType = z.infer<typeof storageTypeSchema>;
  * Use before constructing storage paths to avoid runtime errors from typos.
  */
 export function isValidBucket(bucket: string): bucket is StorageBucket {
-  return ([...APP_STORAGE_BUCKETS, 'backups'] as readonly string[]).includes(bucket);
+  return (STORAGE_BUCKETS as readonly string[]).includes(bucket);
 }
 
 /**

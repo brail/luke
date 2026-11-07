@@ -28,7 +28,7 @@ import {
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-import { APP_STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
+import { STORAGE_BUCKETS, StorageObjectNotFoundError } from '@luke/core';
 import type {
   IStorageCapabilities,
   IStorageProvider,
@@ -96,18 +96,14 @@ export class S3Provider implements IStorageProvider {
   /**
    * Ensures all known buckets exist, creating any that are missing.
    *
-   * Derived from `APP_STORAGE_BUCKETS` rather than respelled here: since the `mc`-based
+   * Derived from `STORAGE_BUCKETS` rather than respelled here: since the `mc`-based
    * sidecar was removed (ADR-012), this is the only path that creates buckets on an
    * S3-compatible backend, so a bucket added to the shared list and forgotten here would
-   * never be created and its first upload would fail at runtime. `backups` is appended
-   * because it is deliberately not an application bucket — it is excluded from
-   * `APP_STORAGE_BUCKETS` so a backup never enumerates prior backup blobs — but it must
-   * still exist on the backend.
+   * never be created and its first upload would fail at runtime. The list includes the
+   * private `backups` bucket, which `APP_STORAGE_BUCKETS` deliberately leaves out.
    */
   async init(): Promise<void> {
-    const allBuckets: StorageBucket[] = [...APP_STORAGE_BUCKETS, 'backups'];
-
-    await Promise.all(allBuckets.map(async bucket => {
+    await Promise.all(STORAGE_BUCKETS.map(async bucket => {
       try {
         await this.client.send(new HeadBucketCommand({ Bucket: bucket }));
       } catch {

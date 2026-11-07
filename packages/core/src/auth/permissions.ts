@@ -10,7 +10,7 @@
  * - `resource:action` = specific action (e.g. 'brands:create')
  */
 
-import type { Role } from '../rbac.js';
+import { Roles, type Role } from '../rbac.js';
 
 /**
  * Available resources in the Luke system. Each entry represents a functional entity or domain area.
@@ -350,9 +350,8 @@ export function getPermissionMatrix(): {
   expandedRolePermissions: Record<Role, Permission[]>;
   allPermissions: Permission[];
 } {
-  const roles: Role[] = ['admin', 'editor', 'viewer'];
   const expandedRolePermissions = Object.fromEntries(
-    roles.map(role => [role, expandRole(role)]),
+    Roles.map(role => [role, expandRole(role)]),
   ) as Record<Role, Permission[]>;
 
   return {
@@ -393,14 +392,13 @@ export function validatePermissionMatrix(): { valid: boolean; errors: string[] }
 
 /** Serializes the permission matrix to CSV with columns: Resource, Action, Admin, Editor, Viewer. */
 export function permissionMatrixToCSV(): string {
-  const roles: Role[] = ['admin', 'editor', 'viewer'];
   const rows: string[] = ['Resource,Action,Admin,Editor,Viewer'];
 
   for (const resource of Object.values(RESOURCES) as Resource[]) {
     const actions = VALID_RESOURCE_ACTIONS[resource];
     for (const action of actions) {
       const perm = `${resource}:${action}` as Permission;
-      const cols = roles.map(role => {
+      const cols = Roles.map(role => {
         const user = { role, id: '' };
         return hasPermission(user, perm) ? 'Yes' : 'No';
       });

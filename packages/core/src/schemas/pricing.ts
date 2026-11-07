@@ -6,6 +6,27 @@ import { z } from 'zod';
 export const PRICING_CURRENCIES = ['USD', 'EUR', 'GBP', 'CHF', 'CNY'] as const;
 export type PricingCurrency = (typeof PRICING_CURRENCIES)[number];
 
+/** One pricing currency code. */
+const PricingCurrencySchema = z.enum(PRICING_CURRENCIES);
+
+/** Display symbol of each pricing currency. */
+const CURRENCY_SYMBOLS: Record<PricingCurrency, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  CHF: 'CHF',
+  CNY: '¥',
+};
+
+/**
+ * The display symbol of a currency code. Takes a `string` because stored currencies are plain
+ * columns: a code outside `PRICING_CURRENCIES` is shown as itself.
+ */
+export function currencySymbol(code: string): string {
+  const parsed = PricingCurrencySchema.safeParse(code);
+  return parsed.success ? CURRENCY_SYMBOLS[parsed.data] : code;
+}
+
 /**
  * Schema for creating/updating a parameter set
  */
