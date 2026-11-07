@@ -64,6 +64,7 @@ import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, expectedDates, isStal
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
 import { type CalendarEventItem } from './types';
+import { useHideFromSaverPrompt } from './useHideFromSaverPrompt';
 
 interface ExistingEvent {
   id: string;
@@ -275,17 +276,8 @@ export function CalendarEventDialog({
   const planningGroupId = form.watch('planningGroupId');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
-  /**
-   * A save the server refused because the event would leave the saver's own calendar
-   * (PRECONDITION_REQUIRED, #199): its message, and the same save sent again as confirmed.
-   */
-  const [hidesFromSaver, setHidesFromSaver] = useState<{ message: string; confirm: () => void } | null>(null);
-  /** True when `err` is that refusal: the prompt opens, and confirming calls `resend`. */
-  const askBeforeHiding = (err: { data?: { code?: string } | null; message: string }, resend: () => void): boolean => {
-    if (err.data?.code !== 'PRECONDITION_REQUIRED') return false;
-    setHidesFromSaver({ message: err.message, confirm: resend });
-    return true;
-  };
+  // A save that would take the event out of the saver's own calendar asks first (#199).
+  const hideFromSaver = useHideFromSaverPrompt('Salva comunque');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
 
@@ -390,7 +382,7 @@ export function CalendarEventDialog({
   const createMutation = trpc.seasonCalendar.createMilestone.useMutation({
     onSuccess: () => { toast.success('Evento creato'); onSaved(); onClose(); },
     onError: (err, variables) => {
-      if (askBeforeHiding(err, () => createMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
+      if (hideFromSaver.ask(err, () => createMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
       toast.error(getTrpcErrorMessage(err));
     },
   });
@@ -406,7 +398,7 @@ export function CalendarEventDialog({
       onClose();
     },
     onError: (err, variables) => {
-      if (askBeforeHiding(err, () => updateMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
+      if (hideFromSaver.ask(err, () => updateMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
       toast.error(getTrpcErrorMessage(err));
       if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
     },
@@ -736,7 +728,7 @@ export function CalendarEventDialog({
             />
 
             {isEdit && event?.id && (
-              <CalendarEventShareSection eventId={event.id} readOnly={readOnly} />
+              <CalendarEventShareSection eventId={event.id} readOnly={readOnly} onLostAccess={() => { onSaved(); onClose(); }} />
             )}
 
             <FormField
@@ -873,15 +865,7 @@ export function CalendarEventDialog({
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={hidesFromSaver !== null}
-        onOpenChange={v => { if (!v) setHidesFromSaver(null); }}
-        title="L'evento sparirà dal tuo calendario"
-        description={hidesFromSaver?.message ?? ''}
-        confirmText="Salva comunque"
-        actionType="warning"
-        onConfirm={() => hidesFromSaver?.confirm()}
-      />
+      {hideFromSaver.prompt}
 
       {isEdit && (
         <ConfirmDialog

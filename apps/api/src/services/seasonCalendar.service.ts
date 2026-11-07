@@ -476,8 +476,8 @@ export async function listMilestonesDb(
 // ─── Milestone create/update/delete ──────────────────────────────────────────
 
 /**
- * Refuses, with PRECONDITION_REQUIRED, a save after which the saver could not read the event, so
- * the client can ask before saving (#199); the throw rolls back the transaction it runs in.
+ * Refuses, with PRECONDITION_REQUIRED, a write after which the saver could not read the event, so
+ * the client can ask first (#199); the throw rolls back the transaction it runs in.
  * `saverSees` is what the saver may read (`callerEventVisibility`); the caller passes none once the
  * user has confirmed (`confirmHidesFromCaller`). Called after the visibility rows are written, so
  * it reads them as the calendar lists them, personal grants included.
@@ -487,7 +487,7 @@ export async function listMilestonesDb(
  * change or revoke of their own grant can skip or add a prompt. Nothing breaks when it is missed:
  * the event stays readable to its functions and to admins.
  */
-async function refuseIfHiddenFromSaver(
+export async function refuseIfHiddenFromSaver(
   tx: Prisma.TransactionClient,
   eventId: string,
   saverSees: Prisma.CalendarEventWhereInput
@@ -496,7 +496,7 @@ async function refuseIfHiddenFromSaver(
   if (visible === 0) {
     throw new TRPCError({
       code: 'PRECONDITION_REQUIRED',
-      message: 'Salvato così, l\'evento non comparirà nel tuo calendario: è visibile solo a funzioni di cui non fai parte.',
+      message: 'Così l\'evento non comparirà nel tuo calendario: non fai parte di nessuna delle sue funzioni e non ti è condiviso.',
     });
   }
 }

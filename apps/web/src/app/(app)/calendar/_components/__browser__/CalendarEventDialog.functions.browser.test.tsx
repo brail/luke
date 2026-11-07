@@ -12,7 +12,7 @@ import { CalendarEventDialog } from '../CalendarEventDialog';
  * leave the saver's calendar asks before it is sent again as confirmed (#199).
  */
 
-const HIDDEN_MESSAGE = "Salvato così, l'evento non comparirà nel tuo calendario: è visibile solo a funzioni di cui non fai parte.";
+const HIDDEN_MESSAGE = "Così l'evento non comparirà nel tuo calendario: non fai parte di nessuna delle sue funzioni e non ti è condiviso.";
 
 // One object per query result, reused across renders as react-query keeps a settled result stable.
 const h = vi.hoisted(() => ({
@@ -34,10 +34,13 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-type UpdateOptions = { onError?: (err: { data: { code: string }; message: string }, variables: { confirmHidesFromCaller?: boolean }) => void };
+type UpdateOptions = { onError?: (err: unknown, variables: { confirmHidesFromCaller?: boolean }) => void };
 
-vi.mock('../../../../../lib/trpc', () => ({
-  trpc: {
+vi.mock('../../../../../lib/trpc', async () => {
+  const { TRPCClientError } = await import('@trpc/client');
+  // `TRPCClientError` keeps the response shape it is given; the prompt reads only `data.code`.
+  const refusal = () => TRPCClientError.from({ error: { code: -1, message: HIDDEN_MESSAGE, data: { code: 'PRECONDITION_REQUIRED' } } } as never);
+  return { trpc: {
     phase: { list: { useQuery: () => h.emptyList } },
     planningGroup: { list: { useQuery: () => h.emptyList } },
     auditLog: { getLastChange: { useQuery: () => h.noData } },
@@ -50,7 +53,7 @@ vi.mock('../../../../../lib/trpc', () => ({
           mutate: (variables: { confirmHidesFromCaller?: boolean }) => {
             h.updateMock(variables);
             if (h.refuseUnconfirmed && !variables.confirmHidesFromCaller) {
-              options.onError?.({ data: { code: 'PRECONDITION_REQUIRED' }, message: HIDDEN_MESSAGE }, variables);
+              options.onError?.(refusal(), variables);
             }
           },
           isPending: false,
@@ -65,8 +68,8 @@ vi.mock('../../../../../lib/trpc', () => ({
       revokeUserVisibility: { useMutation: h.idleMutation },
     },
     useUtils: () => ({}),
-  },
-}));
+  } };
+});
 vi.mock('../../../../../hooks/usePermission', () => ({ usePermission: () => ({ can: () => true }) }));
 vi.mock('next-auth/react', () => ({ useSession: () => ({ data: { accessToken: 'token' }, status: 'authenticated' }) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));

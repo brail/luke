@@ -9,9 +9,13 @@ import { Label } from '../../../../components/ui/label';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
+import { useHideFromSaverPrompt } from './useHideFromSaverPrompt';
+
 interface Props {
   eventId: string;
   readOnly?: boolean;
+  /** After the user revoked their own last way to the event: they can no longer see it. */
+  onLostAccess?: () => void;
 }
 
 function displayName(u: { firstName: string; lastName: string; username: string }) {
@@ -27,7 +31,7 @@ function displayName(u: { firstName: string; lastName: string; username: string 
  * own brand-access validation), and leaves out who already sees the event as saved, unless
  * already granted.
  */
-export function CalendarEventShareSection({ eventId, readOnly = false }: Props) {
+export function CalendarEventShareSection({ eventId, readOnly = false, onLostAccess }: Props) {
   const utils = trpc.useUtils();
   const { data: candidates, isLoading, error } = trpc.seasonCalendar.listGrantCandidates.useQuery({ eventId });
 
@@ -37,17 +41,20 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
     if (candidates) setLocalGrantedIds(candidates.filter(c => c.alreadyGranted).map(c => c.id));
   }, [candidates]);
 
-  const grantMutation = trpc.seasonCalendar.grantUserVisibility.useMutation({
-    onError: err => toast.error(getTrpcErrorMessage(err)),
-  });
-  const revokeMutation = trpc.seasonCalendar.revokeUserVisibility.useMutation({
-    onError: err => toast.error(getTrpcErrorMessage(err)),
-  });
+  // Their errors are handled where they are called: refusing one's own last grant asks instead (#199).
+  const grantMutation = trpc.seasonCalendar.grantUserVisibility.useMutation();
+  const revokeMutation = trpc.seasonCalendar.revokeUserVisibility.useMutation();
+  const hideFromSaver = useHideFromSaverPrompt('Revoca comunque');
   const isPending = grantMutation.isPending || revokeMutation.isPending;
 
   const originalIds = (candidates ?? []).filter(c => c.alreadyGranted).map(c => c.id);
   const hasChanges = originalIds.length !== localGrantedIds.length
     || originalIds.some(id => !localGrantedIds.includes(id));
+
+  const refresh = () => Promise.all([
+    utils.seasonCalendar.listGrantCandidates.invalidate({ eventId }),
+    utils.seasonCalendar.listMilestones.invalidate(),
+  ]);
 
   const handleSave = async () => {
     const toAdd = localGrantedIds.filter(id => !originalIds.includes(id));
@@ -57,14 +64,28 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
       // and from then on cannot reach the event.
       if (toAdd.length > 0) await grantMutation.mutateAsync({ eventId, userIds: toAdd });
       if (toRemove.length > 0) await revokeMutation.mutateAsync({ eventId, userIds: toRemove });
-      toast.success('Condivisione aggiornata');
-      await Promise.all([
-        utils.seasonCalendar.listGrantCandidates.invalidate({ eventId }),
-        utils.seasonCalendar.listMilestones.invalidate(),
-      ]);
-    } catch {
-      // errors already toasted
+    } catch (err) {
+      if (!hideFromSaver.ask(err, () => void revokeConfirmed(toRemove))) toast.error(getTrpcErrorMessage(err));
+      // Grants may have landed before the revoke failed: show what is saved.
+      if (toAdd.length > 0) await refresh();
+      return;
     }
+    toast.success('Condivisione aggiornata');
+    await refresh();
+  };
+
+  /** The revoke the user confirmed after being told the event leaves their calendar. */
+  const revokeConfirmed = async (userIds: string[]) => {
+    try {
+      await revokeMutation.mutateAsync({ eventId, userIds, confirmHidesFromCaller: true });
+    } catch (err) {
+      toast.error(getTrpcErrorMessage(err));
+      return;
+    }
+    toast.success('Condivisione aggiornata');
+    // The event is gone for this user: its share list can no longer be read, the calendar can.
+    await utils.seasonCalendar.listMilestones.invalidate();
+    onLostAccess?.();
   };
 
   const toggle = (id: string) =>
@@ -102,6 +123,7 @@ export function CalendarEventShareSection({ eventId, readOnly = false }: Props) 
           {isPending ? 'Salvataggio…' : 'Salva condivisioni'}
         </Button>
       )}
+      {hideFromSaver.prompt}
     </div>
   );
 }

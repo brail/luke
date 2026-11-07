@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { calendarDaysBetween } from '../utils/dateUtils.js';
 import { partialWithoutDefaults } from '../utils/zod.js';
 
+import { CalendarEventUserVisibilityInputSchema } from './company.js';
 import { CalendarDateSchema, CalendarInstantSchema } from './dates.js';
 import { MandatoryReasonSchema } from './reason.js';
 
@@ -143,8 +144,8 @@ export const EventDatesExpectedSchema = z.object({
 export type EventDatesExpected = z.infer<typeof EventDatesExpectedSchema>;
 
 /**
- * The caller's go-ahead for a save that leaves the event out of their own calendar: visible only
- * to functions they are not in, and not shared with them. Without it the server refuses such a save
+ * The caller's go-ahead for a write that leaves the event out of their own calendar: visible only
+ * to functions they are not in, and not shared with them. Without it the server refuses such a write
  * with PRECONDITION_REQUIRED, so the client can ask first (#199). A request flag, not event data.
  */
 const ConfirmHidesFromCallerSchema = z.boolean().optional();
@@ -159,6 +160,11 @@ export const CalendarEventUpdateInputSchema = z.object({
   id: z.uuid(),
   data: partialWithoutDefaults(CalendarEventBaseSchema).omit({ planningGroupId: true }),
   expected: EventDatesExpectedSchema,
+  confirmHidesFromCaller: ConfirmHidesFromCallerSchema,
+});
+
+/** What `seasonCalendar.revokeUserVisibility` accepts: revoking one's own grant can hide the event too. */
+export const CalendarEventUserVisibilityRevokeInputSchema = CalendarEventUserVisibilityInputSchema.extend({
   confirmHidesFromCaller: ConfirmHidesFromCallerSchema,
 });
 

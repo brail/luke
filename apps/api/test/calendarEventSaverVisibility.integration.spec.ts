@@ -1,8 +1,9 @@
 /**
  * `createMilestone` and `updateMilestone` refuse, with PRECONDITION_REQUIRED, a save after which the
  * saver could no longer see the event — visible only to functions they are not in, not shared with
- * them — unless the request confirms it (`confirmHidesFromCaller`, #199). The refusal leaves nothing
- * behind; admins, who see every event, are never asked.
+ * them — unless the request confirms it (`confirmHidesFromCaller`, #199); so does
+ * `revokeUserVisibility` when the caller revokes their own last way to the event. The refusal
+ * leaves nothing behind; admins, who see every event, are never asked.
  */
 
 import { randomUUID } from 'crypto';
@@ -31,6 +32,7 @@ let adminSession: UserSession;
 let editorSession: UserSession;
 let viewerSession: UserSession;
 let editorId: string;
+let adminId: string;
 
 let planningGroupId: string;
 let calendarId: string;
@@ -89,6 +91,7 @@ beforeAll(async () => {
   editorSession = editor.session;
   viewerSession = viewer.session;
   editorId = editor.user.id;
+  adminId = admin.user.id;
 
   const fixture = await createCalendarFixture(prisma, { prefix: 'SAV', groupName: 'Main group' });
   planningGroupId = fixture.planningGroupId;
@@ -208,5 +211,60 @@ describe('updateMilestone — new functions that would hide the event from the s
       asEditor().seasonCalendar.updateMilestone({ ...save, confirmHidesFromCaller: true })
     ).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(await visibleFunctionIds(event.id)).toEqual([editorFunctionId]);
+  });
+});
+
+describe('revokeUserVisibility — the caller revoking their own last way to the event', () => {
+  function revokedRows(eventId: string, userId: string) {
+    return prisma.auditLog.count({ where: { action: 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED', targetId: `${eventId}:${userId}` } });
+  }
+
+  async function grantOf(eventId: string, userId: string) {
+    return prisma.calendarEventUserVisibility.count({ where: { eventId, userId } });
+  }
+
+  it('is refused with PRECONDITION_REQUIRED, keeping the grant and writing no audit row', async () => {
+    const event = await createEvent([otherFunctionId], [editorId]);
+
+    await expect(
+      asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [editorId] })
+    ).rejects.toMatchObject({ code: 'PRECONDITION_REQUIRED', message: expect.stringContaining('non comparirà nel tuo calendario') });
+
+    expect(await grantOf(event.id, editorId)).toBe(1);
+    expect(await revokedRows(event.id, editorId)).toBe(0);
+  });
+
+  it('is revoked once confirmed', async () => {
+    const event = await createEvent([otherFunctionId], [editorId]);
+
+    await asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [editorId], confirmHidesFromCaller: true });
+
+    expect(await grantOf(event.id, editorId)).toBe(0);
+    expect(await revokedRows(event.id, editorId)).toBe(1);
+  });
+
+  it('needs no confirmation when the caller still sees the event through a function', async () => {
+    const event = await createEvent([editorFunctionId], [editorId]);
+
+    await asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [editorId] });
+
+    expect(await grantOf(event.id, editorId)).toBe(0);
+  });
+
+  it('needs no confirmation to revoke someone else\'s grant', async () => {
+    const event = await createEvent([otherFunctionId], [editorId, adminId]);
+
+    await asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [adminId] });
+
+    expect(await grantOf(event.id, adminId)).toBe(0);
+    expect(await grantOf(event.id, editorId)).toBe(1);
+  });
+
+  it('needs no confirmation from an admin, who sees every event', async () => {
+    const event = await createEvent([otherFunctionId], [adminId]);
+
+    await asAdmin().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [adminId] });
+
+    expect(await grantOf(event.id, adminId)).toBe(0);
   });
 });

@@ -29,6 +29,7 @@ import {
   CloneSeasonCalendarInputSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
+  CalendarEventUserVisibilityRevokeInputSchema,
   ApplyTemplateInputSchema,
   MilestoneCancelInputSchema,
   MilestoneRescheduleInputSchema,
@@ -94,6 +95,7 @@ import {
   deleteTemplateItem,
   cloneFromBrandSeason,
   getSyncStatus,
+  refuseIfHiddenFromSaver,
 } from '../services/seasonCalendar.service.js';
 
 
@@ -1058,18 +1060,27 @@ export const seasonCalendarRouter = router({
    * Sends an in-app notification to each affected user.
    *
    * @auth season_calendar:update
-   * @input { eventId, userIds }
+   * @input CalendarEventUserVisibilityRevokeInputSchema — { eventId, userIds, confirmHidesFromCaller? }
    * @output { ok: true }
+   * @throws PRECONDITION_REQUIRED when the caller revokes their own grant and could then no longer
+   *   see the event, unless `confirmHidesFromCaller` (#199)
    */
   revokeUserVisibility: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('companyStructureMutations'))
-    .input(z.object({ eventId: z.uuid(), userIds: z.array(z.uuid()).min(1) }))
+    .input(CalendarEventUserVisibilityRevokeInputSchema)
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.eventId);
 
-      await ctx.prisma.calendarEventUserVisibility.deleteMany({
-        where: { eventId: input.eventId, userId: { in: input.userIds } },
+      // Only revoking one's own grant can take the event away from the caller; confirmed, nothing to check.
+      const saverSees = input.userIds.includes(ctx.session.user.id) && !input.confirmHidesFromCaller
+        ? await callerEventVisibility(ctx)
+        : undefined;
+      await ctx.prisma.$transaction(async tx => {
+        await tx.calendarEventUserVisibility.deleteMany({
+          where: { eventId: input.eventId, userId: { in: input.userIds } },
+        });
+        if (saverSees) await refuseIfHiddenFromSaver(tx, input.eventId, saverSees);
       });
 
       await Promise.all(
