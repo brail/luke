@@ -960,6 +960,23 @@ finding has a unit with its block and its release candidate. Place a new one at
 the end of the current cycle — after the push, before the next phase — and
 update the plan's progress log in the same step.
 
+### Recommend the better design, not the cheaper one (2026-11-07)
+
+**What happened.** For #199 (warn before saving an event that would vanish from
+the saver's calendar) the plan offered A, the web re-deriving the visibility
+rule from cached data (`me.get` function ids plus the share list), and B, the
+server refusing such a save until it is confirmed, checked with the same
+`eventVisibilityWhere` inside the write's transaction. It recommended A because
+it was smaller. Asked for B's merits, the answer was: one source for the rule,
+exact by construction, the same guard for every API client, and the usual
+`force`/`confirm` pattern. B was the better design from the start.
+
+**Rule.** Between viable designs, recommend the one that is best for the
+architecture: one source of truth, server-side domain rules, no duplicated
+logic, no reliance on stale client data. A smaller diff, fewer files or no Codex
+round are costs to state next to it, never the reason to choose. Recommend the
+cheaper option only with a stated reason the better one does not fit.
+
 ---
 
 ## React & UI
