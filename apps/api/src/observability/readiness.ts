@@ -14,7 +14,7 @@ import type { PrismaClient } from '@luke/db';
 import { getLdapConfig, isLdapEnabled, UnreadableStoredConfigError } from '../lib/configManager';
 import { toErrorMessage } from '../lib/error';
 
-import type { FastifyLoggerInstance } from 'fastify';
+import type { FastifyBaseLogger } from 'fastify';
 
 
 /** Describes a single readiness check with a name and an async probe function. */
@@ -121,32 +121,41 @@ export function getReadinessChecks(prisma: PrismaClient): ReadinessCheck[] {
 /**
  * Runs all registered readiness checks in parallel and aggregates the results.
  *
+ * The returned status map holds only `ok` or `failed` per check: a failing check's
+ * message is logged, never returned.
+ *
  * @returns An object with `allOk` (true if every check passed), a per-check status map,
  *          and the current ISO timestamp.
  */
-export async function runReadinessChecks(prisma: PrismaClient): Promise<{
+export async function runReadinessChecks(
+  prisma: PrismaClient,
+  logger: Pick<FastifyBaseLogger, 'warn'>
+): Promise<{
   allOk: boolean;
-  checks: Record<string, string>;
+  checks: Record<string, 'ok' | 'failed'>;
   timestamp: string;
 }> {
   const checks = getReadinessChecks(prisma);
-  const results = await Promise.allSettled(
-    checks.map(async c => ({ name: c.name, ...(await c.check()) }))
-  );
+  const results = await Promise.allSettled(checks.map(c => c.check()));
 
-  const checksStatus: Record<string, string> = {};
-  let allOk = true;
+  const checksStatus: Record<string, 'ok' | 'failed'> = {};
+  const failures: Record<string, string> = {};
 
-  for (const result of results) {
-    if (result.status === 'fulfilled') {
-      const { name, ok, message } = result.value;
-      checksStatus[name] = ok ? 'ok' : `failed: ${message}`;
-      if (!ok) allOk = false;
-    } else {
-      checksStatus['unknown'] = 'error';
-      allOk = false;
+  results.forEach((result, i) => {
+    const { name } = checks[i];
+    if (result.status === 'fulfilled' && result.value.ok) {
+      checksStatus[name] = 'ok';
+      return;
     }
-  }
+    checksStatus[name] = 'failed';
+    failures[name] =
+      result.status === 'fulfilled'
+        ? (result.value.message ?? 'no message')
+        : toErrorMessage(result.reason);
+  });
+
+  const allOk = Object.keys(failures).length === 0;
+  if (!allOk) logger.warn({ checks: failures }, 'Readiness check failed');
 
   return {
     allOk,
@@ -163,7 +172,7 @@ export async function runReadinessChecks(prisma: PrismaClient): Promise<{
  */
 export async function checkBootstrapDependencies(
   prisma: PrismaClient,
-  logger: FastifyLoggerInstance
+  logger: FastifyBaseLogger
 ): Promise<void> {
   try {
     // Test database connection

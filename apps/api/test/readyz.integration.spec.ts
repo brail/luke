@@ -151,6 +151,7 @@ describe('Bootstrap Fail-Fast Behavior', () => {
 
 describe('/readyz Endpoint Behavior', () => {
   let prisma: PrismaClient;
+  const logger = { warn: vi.fn() };
 
   beforeEach(async () => {
     prisma = await setupTestDb();
@@ -167,32 +168,34 @@ describe('/readyz Endpoint Behavior', () => {
         'mock-secret'
       );
 
-      const result = await runReadinessChecks(prisma);
+      const result = await runReadinessChecks(prisma, logger);
 
       expect(result.allOk).toBe(true);
-      expect(result.checks.database).toBe('ok');
-      expect(result.checks.secrets).toBe('ok');
-      expect(result.checks.ldap).toBe('ok');
+      expect(result.checks).toEqual({ database: 'ok', secrets: 'ok', ldap: 'ok' });
       expect(result.timestamp).toBeDefined();
+      expect(logger.warn).not.toHaveBeenCalled();
     });
 
-    it('should return allOk=false when the database fails', async () => {
-      // Mock DB disconnected
+    it('should return a fixed status and log the reason when the database fails', async () => {
+      // Mock DB disconnected; the error text stands for driver details
       const mockPrisma = {
         $queryRaw: vi
           .fn()
           .mockRejectedValue(new Error('Database connection failed')),
       } as any;
 
-      const result = await runReadinessChecks(mockPrisma);
+      const result = await runReadinessChecks(mockPrisma, logger);
 
       expect(result.allOk).toBe(false);
-      expect(result.checks.database).toContain(
-        'failed: Database connection failed'
+      expect(result.checks.database).toBe('failed');
+      expect(JSON.stringify(result)).not.toContain('Database connection failed');
+      expect(logger.warn).toHaveBeenCalledWith(
+        { checks: expect.objectContaining({ database: 'Database connection failed' }) },
+        'Readiness check failed'
       );
     });
 
-    it('should return allOk=false when secrets fail', async () => {
+    it('should return a fixed status and log the reason when secrets fail', async () => {
       // Mock secrets fails
       (deriveSecret as MockedFunction<typeof deriveSecret>).mockImplementation(
         () => {
@@ -200,11 +203,13 @@ describe('/readyz Endpoint Behavior', () => {
         }
       );
 
-      const result = await runReadinessChecks(prisma);
+      const result = await runReadinessChecks(prisma, logger);
 
       expect(result.allOk).toBe(false);
-      expect(result.checks.secrets).toContain(
-        'failed: Secret derivation failed'
+      expect(result.checks.secrets).toBe('failed');
+      expect(logger.warn).toHaveBeenCalledWith(
+        { checks: { secrets: 'Secret derivation failed' } },
+        'Readiness check failed'
       );
     });
 
@@ -216,10 +221,15 @@ describe('/readyz Endpoint Behavior', () => {
         }),
       } as any;
 
-      const result = await runReadinessChecks(mockPrisma);
+      const result = await runReadinessChecks(mockPrisma, logger);
 
       expect(result.allOk).toBe(false);
-      expect(result.checks.database).toContain('failed: Unexpected error');
+      expect(result.checks.database).toBe('failed');
+      expect(JSON.stringify(result)).not.toContain('Unexpected error');
+      expect(logger.warn).toHaveBeenCalledWith(
+        { checks: expect.objectContaining({ database: 'Unexpected error' }) },
+        'Readiness check failed'
+      );
     });
   });
 });

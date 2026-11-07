@@ -256,14 +256,10 @@ async function registerHealthRoute() {
   });
 
   // Readiness: system ready to serve requests
-  fastify.get('/readyz', async (_request, reply) => {
-    const result = await runReadinessChecks(prisma);
+  fastify.get('/readyz', async (request, reply) => {
+    const result = await runReadinessChecks(prisma, request.log);
 
-    if (!result.allOk) {
-      reply.status(503);
-      // Internal log without exposing it in the HTTP response
-      fastify.log.warn({ checks: result.checks }, 'Readiness check failed');
-    }
+    if (!result.allOk) reply.status(503);
 
     return {
       status: result.allOk ? 'ready' : 'unready',

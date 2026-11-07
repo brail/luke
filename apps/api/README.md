@@ -322,7 +322,8 @@ failed logins.
 `/readyz` runs its checks in parallel (`src/observability/readiness.ts`):
 `database` (a `SELECT 1`), `secrets` (derives `api.jwt`) and `ldap` (a
 connection when LDAP is enabled, skipped otherwise). The response carries each
-check's status:
+check's status, `ok` or `failed`; a failed check's reason goes to the API log
+(`Readiness check failed`), never to the response:
 
 ```json
 {
