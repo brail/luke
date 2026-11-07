@@ -75,6 +75,10 @@ async function visibleFunctionIds(eventId: string): Promise<string[]> {
   return rows.map(r => r.functionId);
 }
 
+async function auditMetadata(action: string, targetId: string) {
+  return (await prisma.auditLog.findFirstOrThrow({ where: { action, targetId } })).metadata;
+}
+
 function auditRows(action: string, title: string) {
   return prisma.auditLog.count({ where: { action, metadata: { path: ['title'], equals: title } } });
 }
@@ -135,6 +139,8 @@ describe('createMilestone — an event the saver could not see', () => {
     expect(await visibleFunctionIds(event.id)).toEqual([otherFunctionId]);
     expect(await auditRows('CALENDAR_EVENT_CREATE', title)).toBe(1);
     expect(push).toHaveBeenCalledTimes(1);
+    // The row says the saver confirmed (#202).
+    expect(await auditMetadata('CALENDAR_EVENT_CREATE', event.id)).toMatchObject({ confirmedHidesFromCaller: true });
   });
 
   it('needs no confirmation when the saver is in one of its functions', async () => {
@@ -187,6 +193,7 @@ describe('updateMilestone — new functions that would hide the event from the s
     expect(await visibleFunctionIds(event.id)).toEqual([otherFunctionId]);
     expect(await prisma.auditLog.count({ where: { action: 'CALENDAR_EVENT_UPDATE', targetId: event.id } })).toBe(1);
     expect(push).toHaveBeenCalledTimes(1);
+    expect(await auditMetadata('CALENDAR_EVENT_UPDATE', event.id)).toMatchObject({ confirmedHidesFromCaller: true });
   });
 
   it('need no confirmation when the event is shared with the saver personally', async () => {
@@ -234,13 +241,15 @@ describe('revokeUserVisibility — the caller revoking their own last way to the
     expect(await revokedRows(event.id, editorId)).toBe(0);
   });
 
-  it('is revoked once confirmed', async () => {
-    const event = await createEvent([otherFunctionId], [editorId]);
+  it('is revoked once confirmed, the confirmation marked on the caller\'s row only', async () => {
+    const event = await createEvent([otherFunctionId], [editorId, adminId]);
 
-    await asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [editorId], confirmHidesFromCaller: true });
+    await asEditor().seasonCalendar.revokeUserVisibility({ eventId: event.id, userIds: [editorId, adminId], confirmHidesFromCaller: true });
 
     expect(await grantOf(event.id, editorId)).toBe(0);
     expect(await revokedRows(event.id, editorId)).toBe(1);
+    expect(await auditMetadata('CALENDAR_EVENT_USER_VISIBILITY_REVOKED', `${event.id}:${editorId}`)).toMatchObject({ confirmedHidesFromCaller: true });
+    expect(await auditMetadata('CALENDAR_EVENT_USER_VISIBILITY_REVOKED', `${event.id}:${adminId}`)).not.toHaveProperty('confirmedHidesFromCaller');
   });
 
   it('needs no confirmation when the caller still sees the event through a function', async () => {

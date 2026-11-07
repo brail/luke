@@ -99,6 +99,32 @@ import {
 } from '../services/seasonCalendar.service.js';
 
 
+/** A field `updateMilestone` can change, as its input names it. */
+type MilestoneUpdateField = keyof z.infer<typeof CalendarEventUpdateInputSchema>['data'];
+
+/**
+ * How each field an update can change reaches its `CALENDAR_EVENT_UPDATE` row (#202): the label it
+ * adds to `changedFields`, which the calendar digest lists under "Altri campi", or `null` and why.
+ * Keyed by every field of the input, so a field added to the schema does not compile until it is
+ * placed here; a field with old and new values of its own records them as well, in the procedure.
+ */
+const UPDATE_AUDIT_LABELS: Record<MilestoneUpdateField, string | null> = {
+  title: 'Titolo',
+  description: 'Descrizione',
+  phaseId: 'Fase',
+  calendarDaysRelevance: 'Giorni lavorativi',
+  publishExternally: 'Sincronizzazione Google',
+  allDay: 'Giornata intera',
+  // A change of who sees the event: in the digest too, or an event newly visible to a function
+  // would reach its members with nothing to say (owner decision, #202).
+  visibilityFunctionIds: 'Visibilità',
+  // The digest describes a date move from oldStartAt/newStartAt and oldEndAt/newEndAt.
+  startAt: null,
+  endAt: null,
+  // Accepted by the input schema but never written by updateMilestone.
+  templateItemId: null,
+};
+
 export const seasonCalendarRouter = router({
   // ─── Calendar management ────────────────────────────────────────────────────
 
@@ -306,7 +332,7 @@ export const seasonCalendarRouter = router({
         eventKey: 'CALENDAR_CREATE',
       }).catch(err => ctx.logger.error(err, 'calendar notification failed on create'));
       syncOneMilestone(result.id, ctx.prisma, ctx.logger).catch(err => ctx.logger.error(err, 'gcal sync failed on create'));
-      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, title: result.title } });
+      await logAudit(ctx, { action: 'CALENDAR_EVENT_CREATE', targetType: 'CalendarEvent', targetId: result.id, result: 'SUCCESS', metadata: { calendarId: group.calendarId, planningGroupId: input.planningGroupId, title: result.title, visibilityFunctionIds: [...input.visibilityFunctionIds].sort(), confirmedHidesFromCaller: input.confirmHidesFromCaller ? true : undefined } });
       return result;
     }),
 
@@ -326,7 +352,10 @@ export const seasonCalendarRouter = router({
     .use(withRateLimit('configMutations'))
     .input(CalendarEventUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
-      const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
+      const event = await resolveEventBrandAccess(ctx, input.id, {
+        planningGroup: { select: { frozenAt: true } },
+        visibilities: { select: { functionId: true } },
+      });
       if (event.cancelledAt) {
         throw new TRPCError({ code: 'CONFLICT', message: 'Evento annullato: è di sola lettura. Un admin deve ripristinarlo prima di modificarlo.' });
       }
@@ -363,16 +392,18 @@ export const seasonCalendarRouter = router({
       const saverSees = input.confirmHidesFromCaller ? undefined : await callerEventVisibility(ctx);
       const result = await updateMilestone(input.id, input.data, ctx.prisma, datesFromExpected(input.expected), saverSees);
 
-      const dateChanged = event.startAt.getTime() !== result.startAt.getTime()
-        || (event.endAt?.getTime() ?? null) !== (result.endAt?.getTime() ?? null);
-      const FIELD_LABELS: Record<string, string> = {
-        description: 'Descrizione',
-        publishExternally: 'Sincronizzazione Google', templateItemId: 'Template',
-        allDay: 'Giornata intera',
-      };
-      const changedFields = Object.keys(FIELD_LABELS).filter(
-        k => JSON.stringify((event as Record<string, unknown>)[k]) !== JSON.stringify((result as Record<string, unknown>)[k])
-      ).map(k => FIELD_LABELS[k]);
+      // Sorted, so a list sent in another order is no change.
+      const oldFunctionIds = event.visibilities.map(v => v.functionId).sort();
+      const newFunctionIds = input.data.visibilityFunctionIds ? [...input.data.visibilityFunctionIds].sort() : oldFunctionIds;
+      const before: Record<MilestoneUpdateField, unknown> = { ...event, visibilityFunctionIds: oldFunctionIds };
+      const after: Record<MilestoneUpdateField, unknown> = { ...result, visibilityFunctionIds: newFunctionIds };
+      // A Date compares as its ISO string.
+      const changed = (field: MilestoneUpdateField) => JSON.stringify(before[field]) !== JSON.stringify(after[field]);
+      const dateChanged = changed('startAt') || changed('endAt');
+      // `Object.keys` widens the keys to string; they are those of UPDATE_AUDIT_LABELS.
+      const changedFields = (Object.keys(UPDATE_AUDIT_LABELS) as MilestoneUpdateField[])
+        .filter(field => changed(field))
+        .flatMap(field => UPDATE_AUDIT_LABELS[field] ?? []);
 
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: event.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
@@ -397,8 +428,17 @@ export const seasonCalendarRouter = router({
           allDay: dateChanged ? result.allDay : undefined,
           // The kind the old dates had: without it the digest would have to infer it from the
           // label in `changedFields`, which is display text.
-          oldAllDay: event.allDay !== result.allDay ? event.allDay : undefined,
+          oldAllDay: changed('allDay') ? event.allDay : undefined,
           changedFields: changedFields.length > 0 ? changedFields : undefined,
+          oldTitle: changed('title') ? event.title : undefined,
+          oldPhaseId: changed('phaseId') ? event.phaseId : undefined,
+          newPhaseId: changed('phaseId') ? result.phaseId : undefined,
+          oldCalendarDaysRelevance: changed('calendarDaysRelevance') ? event.calendarDaysRelevance : undefined,
+          newCalendarDaysRelevance: changed('calendarDaysRelevance') ? result.calendarDaysRelevance : undefined,
+          oldVisibilityFunctionIds: changed('visibilityFunctionIds') ? oldFunctionIds : undefined,
+          newVisibilityFunctionIds: changed('visibilityFunctionIds') ? newFunctionIds : undefined,
+          // Only a save that sent functions can have been asked about (#199).
+          confirmedHidesFromCaller: input.confirmHidesFromCaller && input.data.visibilityFunctionIds ? true : undefined,
         },
       });
       return result;
@@ -1090,7 +1130,8 @@ export const seasonCalendarRouter = router({
             targetType: 'CalendarEventUserVisibility',
             targetId: `${input.eventId}:${userId}`,
             result: 'SUCCESS',
-            metadata: { eventId: input.eventId, userId },
+            // The confirmation is about the caller's own grant, not the others revoked with it.
+            metadata: { eventId: input.eventId, userId, confirmedHidesFromCaller: input.confirmHidesFromCaller && userId === ctx.session.user.id ? true : undefined },
           })
         )
       );

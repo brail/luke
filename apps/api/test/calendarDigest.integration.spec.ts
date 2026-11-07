@@ -225,6 +225,26 @@ describe('buildDigestTasks — event created', () => {
     await prisma.calendarEvent.delete({ where: { id: event.id } });
   });
 
+  it('an update that only shares the event with another function is listed, as a visibility change', async () => {
+    const caller = createCallerWithSession(userDXSession);
+    const otherFn = await prisma.companyFunction.create({
+      data: { slug: `dig_v_${randomUUID().slice(0, 6)}`, name: 'Digest V', order: 93, isActive: true },
+    });
+    const event = await prisma.calendarEvent.create({
+      data: {
+        calendarId: calDX, planningGroupId: planningGroupDX, title: `Visibilità ${randomUUID().slice(0, 6)}`,
+        startAt: new Date('2099-10-20T09:00:00.000Z'), visibilities: { create: [{ functionId: fnD }] },
+      },
+    });
+    await caller.seasonCalendar.updateMilestone({ id: event.id, expected: await expectedOf(prisma, event.id), data: { visibilityFunctionIds: [fnD, otherFn.id] } });
+
+    const { tasks } = await buildDigestTasks(prisma, log, justNow());
+    expect(tasks.find(t => t.email === userDXEmail)?.html).toContain('Altri campi: Visibilità');
+
+    await prisma.calendarEvent.delete({ where: { id: event.id } });
+    await prisma.companyFunction.delete({ where: { id: otherFn.id } });
+  });
+
   it("a manual run (onlyUserId) still sends to the admin with no team — it bypasses P_relevance, not P_access", async () => {
     const caller = createCallerWithSession(userDXSession);
     const created = await caller.seasonCalendar.createMilestone({

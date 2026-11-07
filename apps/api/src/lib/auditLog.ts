@@ -157,6 +157,16 @@ const SAFE_KEY_LIST = [
   'newAllDay',
   'oldStatus',
   'changedFields',
+  // Calendar event rows (#202): what an update changed besides its dates, and who could see the
+  // event — function ids, a days-relevance enum, the previous title (the new one is `title`).
+  'oldTitle',
+  'oldCalendarDaysRelevance',
+  'newCalendarDaysRelevance',
+  'visibilityFunctionIds',
+  'oldVisibilityFunctionIds',
+  'newVisibilityFunctionIds',
+  // A write the caller confirmed past the "it leaves your calendar" prompt (#199).
+  'confirmedHidesFromCaller',
   'safetySnapshotId',
   'scope',
   'trigger',
