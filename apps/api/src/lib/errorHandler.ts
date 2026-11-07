@@ -4,8 +4,6 @@
 
 import { TRPCError } from '@trpc/server';
 
-import { toErrorMessage } from './error';
-
 /**
  * Standardised error codes used across the API.
  */
@@ -20,14 +18,12 @@ export enum ErrorCode {
 
   // Configuration errors
   CONFIG_ERROR = 'CONFIG_ERROR',
-  CONNECTION_ERROR = 'CONNECTION_ERROR',
 
   // Database errors
   DATABASE_ERROR = 'DATABASE_ERROR',
 
   // Integration errors
   INTEGRATION_ERROR = 'INTEGRATION_ERROR',
-  SMTP_ERROR = 'SMTP_ERROR',
   STORAGE_ERROR = 'STORAGE_ERROR',
 
   // Generic errors
@@ -111,17 +107,11 @@ function getTRPCCodeFromErrorCode(
 }
 
 /**
- * Factory helpers for integration error scenarios (currently SMTP).
+ * What a settings test, or a live read, answers when the external system refuses it (#193):
+ * PRECONDITION_FAILED, as for a stored configuration that does not let the operation succeed, with a
+ * fixed text the admin can act on. The system's own error stays out of it — a 4xx keeps its message
+ * in production — and the caller logs it; a database or internal failure never comes here.
  */
-export class IntegrationErrorHandler {
-  static handleSMTPError(error: unknown): StandardError {
-    return createStandardError(
-      ErrorCode.SMTP_ERROR,
-      'Errore configurazione SMTP',
-      {
-        originalError: toErrorMessage(error),
-        type: 'smtp_connection_failed',
-      }
-    );
-  }
+export function externalCheckFailed(message: string): TRPCError {
+  return toTRPCError(createStandardError(ErrorCode.CONFIG_ERROR, message));
 }

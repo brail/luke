@@ -4,7 +4,7 @@
  */
 
 import { TRPCError } from '@trpc/server';
-import { Client } from 'ldapts';
+import { Client, InvalidCredentialsError } from 'ldapts';
 
 import { LDAP_TEST_FIELDS, ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
@@ -18,11 +18,19 @@ import {
   type ConfigWrite,
 } from '../lib/configManager';
 import { toErrorCode, toErrorMessage } from '../lib/error';
+import { externalCheckFailed } from '../lib/errorHandler';
 import { fillLdapFilter } from '../lib/ldapAuth';
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
 import { countBreakGlassAdmins } from '../services/auth.service';
+
+/** The fixed text of a bind the directory refused in a settings test (#193); the caller logs why. */
+function bindFailedMessage(err: unknown): string {
+  return err instanceof InvalidCredentialsError
+    ? 'Connessione LDAP fallita: credenziali di bind non valide'
+    : 'Connessione LDAP fallita: verifica URL, raggiungibilità del server, certificato TLS e bind DN';
+}
 
 export const ldapRouter = router({
   /**
@@ -257,11 +265,8 @@ export const ldapRouter = router({
           await client.bind(config.bindDN, config.bindPassword);
           ctx.logger.info('LDAP connection test successful');
         } catch (err: unknown) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Connessione LDAP fallita. Controllare i log per i dettagli.',
-            cause: err,
-          });
+          ctx.logger.warn({ err }, 'LDAP connection test: bind failed');
+          throw externalCheckFailed(bindFailedMessage(err));
         }
 
         return {
@@ -339,11 +344,8 @@ export const ldapRouter = router({
         try {
           await client.bind(config.bindDN, config.bindPassword);
         } catch (err: unknown) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: `Bind LDAP fallito: ${toErrorMessage(err)}`,
-            cause: err,
-          });
+          ctx.logger.warn({ err }, 'LDAP search test: bind failed');
+          throw externalCheckFailed(bindFailedMessage(err));
         }
 
         // Test user search (input.username escaped against LDAP injection — RFC 4515)
@@ -373,11 +375,8 @@ export const ldapRouter = router({
           });
           searchEntries = result.searchEntries;
         } catch (err: unknown) {
-          throw new TRPCError({
-            code: 'INTERNAL_SERVER_ERROR',
-            message: `Ricerca LDAP fallita: ${toErrorMessage(err)}`,
-            cause: err,
-          });
+          ctx.logger.warn({ err }, 'LDAP search test: search failed');
+          throw externalCheckFailed('Ricerca LDAP fallita: verifica base e filtro di ricerca');
         }
 
         // ldapts returns flat entries: { dn: string; [key]: string | string[] }

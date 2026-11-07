@@ -10,7 +10,10 @@ import type { NavDbConfig } from './config.js';
 export interface NavConnectionStep {
   name: string;
   ok: boolean;
+  /** Fixed text for the admin: never the driver's own error (#193). */
   message: string;
+  /** The driver's error, for the caller's log only: never sent to a client. */
+  detail?: string;
 }
 
 /**
@@ -58,8 +61,8 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
         ? `Database "${config.database}" non trovato o non accessibile.`
         : msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT')
           ? `Impossibile raggiungere ${config.host}:${config.port}.`
-          : msg;
-    steps.push({ name: 'Autenticazione SQL Server', ok: false, message: hint });
+          : 'Connessione a SQL Server non riuscita: verifica server, porta e credenziali.';
+    steps.push({ name: 'Autenticazione SQL Server', ok: false, message: hint, detail: msg });
     return { success: false, steps };
   }
 
@@ -75,7 +78,8 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
     steps.push({
       name: 'SQL Query',
       ok: false,
-      message: `Query error: ${toErrorMessage(err)}`,
+      message: 'Query di prova non riuscita: verifica i permessi sul database.',
+      detail: toErrorMessage(err),
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };
@@ -112,7 +116,8 @@ export async function testNavConnection(config: NavDbConfig): Promise<{
     steps.push({
       name: 'Company Verification',
       ok: false,
-      message: `Company verification error: ${toErrorMessage(err)}`,
+      message: 'Verifica della company non riuscita: verifica il nome della company.',
+      detail: toErrorMessage(err),
     });
     await testPool.close().catch(() => {});
     return { success: false, steps };

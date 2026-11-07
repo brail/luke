@@ -9,11 +9,19 @@ import nodemailer from 'nodemailer';
 import { mailSmtpConfigSchema, mailTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
-import { ConfigDecryptionError, getConfigForForm, getConfigsMasked, saveConfigs, unreadableConfigError } from '../lib/configManager';
-import { toTRPCError, IntegrationErrorHandler } from '../lib/errorHandler';
+import { getConfigForForm, getConfigsMasked, rethrowUnreadable, saveConfigs } from '../lib/configManager';
+import { externalCheckFailed } from '../lib/errorHandler';
 import { getSmtpConfig } from '../lib/mailer';
 import { requirePermission } from '../lib/permissions';
 import { router, protectedProcedure } from '../lib/trpc';
+
+/** The fixed text of a failed SMTP test (#193): a refused login or envelope told apart. */
+function smtpTestFailureMessage(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+  if (code === 'EAUTH') return 'Accesso SMTP rifiutato: credenziali non valide';
+  if (code === 'EENVELOPE') return 'Invio di prova rifiutato: verifica destinatario e mittente';
+  return 'Test SMTP fallito: verifica server, porta e sicurezza';
+}
 
 export const mailRouter = router({
   /**
@@ -103,13 +111,11 @@ export const mailRouter = router({
     .use(requirePermission('config:read'))
     .input(mailTestSchema)
     .mutation(async ({ input, ctx }) => {
+      // Outside the `try` below: an incomplete configuration answers PRECONDITION_FAILED from here,
+      // an unreadable one asks for the value again, and a database failure stays a server error
+      // rather than read as an SMTP refusal (#193).
+      const smtp = await getSmtpConfig(ctx.prisma).catch(rethrowUnreadable);
       try {
-        // `getSmtpConfig` already reads these six keys, checks them and coerces port and secure;
-        // this procedure kept its own copy, down to a second `parseInt` and a second
-        // `=== 'true'`. Its "incomplete configuration" error was thrown inside this same `try`,
-        // so it reached `handleSMTPError` exactly as the one from `getSmtpConfig` now does.
-        const smtp = await getSmtpConfig(ctx.prisma);
-
         const transporter = nodemailer.createTransport({
           host: smtp.host,
           port: smtp.port,
@@ -142,14 +148,9 @@ export const mailRouter = router({
           sentTo: recipient,
         };
       } catch (error: unknown) {
-        if (error instanceof ConfigDecryptionError) throw unreadableConfigError(error);
-        // An incomplete configuration arrives as PRECONDITION_FAILED, which the admin can act on.
-        if (error instanceof TRPCError) throw error;
-        // The reason goes nowhere else: the client sees a fixed text and the error's cause is
-        // a plain object the request log renders empty.
+        // The client sees a fixed text; the server's reply goes to this log only (#193).
         ctx.logger.warn({ err: error }, 'SMTP test failed');
-        const standardError = IntegrationErrorHandler.handleSMTPError(error);
-        throw toTRPCError(standardError);
+        throw externalCheckFailed(smtpTestFailureMessage(error));
       }
     }),
 });

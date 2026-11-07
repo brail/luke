@@ -11,15 +11,9 @@ import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema
 import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, NavConfigIncompleteError, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
-
 import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigForForm, rethrowUnreadable, saveConfigs } from '../lib/configManager';
-import { toErrorMessage } from '../lib/error';
-import {
-  ErrorCode,
-  createStandardError,
-  toTRPCError,
-} from '../lib/errorHandler';
+import { externalCheckFailed } from '../lib/errorHandler';
 import { navLogger } from '../lib/logger';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
@@ -27,6 +21,8 @@ import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
+
+import type { FastifyBaseLogger } from 'fastify';
 
 /**
  * A NAV date column as a calendar day: `null` when NAV left it blank, or when it lies outside the
@@ -42,11 +38,8 @@ function navCalendarDate(value: Date | null): CalendarDate | null {
 function readNavConfig(prisma: PrismaClient) {
   return getNavDbConfig(prisma, getConfig).catch((error: unknown) => {
     if (error instanceof NavConfigIncompleteError) {
-      throw toTRPCError(
-        createStandardError(
-          ErrorCode.CONFIG_ERROR,
-          'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
-        )
+      throw externalCheckFailed(
+        'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
       );
     }
     return rethrowUnreadable(error);
@@ -54,6 +47,15 @@ function readNavConfig(prisma: PrismaClient) {
 }
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
+
+/**
+ * What NAV `preview` answers when SQL Server does not answer it (#193): `externalCheckFailed`, with
+ * the driver's error in the log only.
+ */
+function navQueryFailed(logger: FastifyBaseLogger, err: unknown): TRPCError {
+  logger.warn({ err }, 'NAV preview failed');
+  return externalCheckFailed('Query NAV non riuscita: verifica connessione e company');
+}
 
 const navSyncRouter = router({
   /**
@@ -68,7 +70,9 @@ const navSyncRouter = router({
     .input(z.object({ entity: z.enum(NAV_MASTER_DATA_ENTITIES) }))
     .query(async ({ input, ctx }) => {
       const config = await readNavConfig(ctx.prisma);
-      const pool = await getPool(config);
+      const pool = await getPool(config).catch((e: unknown) => {
+        throw navQueryFailed(ctx.logger, e);
+      });
 
       if (input.entity === 'brand') {
         const tableName = `[${sanitizeCompany(config.company)}$Brand]`;
@@ -81,8 +85,7 @@ const navSyncRouter = router({
             ORDER BY [Code]
           `);
         } catch (e: unknown) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
-          throw toTRPCError(err);
+          throw navQueryFailed(ctx.logger, e);
         }
         return result.recordset.map(row => ({
           navNo: row['Code'],
@@ -111,8 +114,7 @@ const navSyncRouter = router({
             ORDER BY [Code]
           `);
         } catch (e: unknown) {
-          const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
-          throw toTRPCError(err);
+          throw navQueryFailed(ctx.logger, e);
         }
         return result.recordset.map(row => ({
           navNo: row['Code'],
@@ -145,8 +147,7 @@ const navSyncRouter = router({
           ORDER BY [Name]
         `);
       } catch (e: unknown) {
-        const err = createStandardError(ErrorCode.CONNECTION_ERROR, `Errore query NAV: ${toErrorMessage(e)}`);
-        throw toTRPCError(err);
+        throw navQueryFailed(ctx.logger, e);
       }
 
       return result.recordset.map(row => ({
@@ -568,17 +569,15 @@ export const navRouter = router({
 
       if (!result.success) {
         const failedStep = [...result.steps].reverse().find(s => !s.ok);
-        const err = createStandardError(
-          ErrorCode.CONNECTION_ERROR,
-          failedStep?.message ?? 'Test connessione fallito'
-        );
-        throw toTRPCError(err);
+        ctx.logger.warn({ step: failedStep?.name, detail: failedStep?.detail }, 'NAV connection test failed');
+        throw externalCheckFailed(failedStep?.message ?? 'Test connessione fallito');
       }
 
       return {
         success: true,
         message: `Connessione verificata: autenticazione, database e company OK.`,
-        steps: result.steps,
+        // Named field by field: a step's `detail` is for the log, never for the client.
+        steps: result.steps.map(({ name, ok, message }) => ({ name, ok, message })),
       };
     }),
 

@@ -54,7 +54,7 @@ NAV table details and the decisions behind them: [`docs/nav-integration.md`](../
 | Symbol | Type | Description |
 |--------|------|-------------|
 | `NavDbConfig` / `GetConfigFn` | type | Connection parameters, and the injected config-accessor signature that keeps this package free of any dependency on `apps/api` |
-| `NavConnectionStep` | type | One diagnostic step of `testNavConnection`: name, outcome, message |
+| `NavConnectionStep` | type | One diagnostic step of `testNavConnection`: name, outcome, a fixed `message` for the admin, and the driver's error as `detail`, for the caller's log only |
 | `NavSyncReport` / `SyncResult` | type | Run summary (`startedAt`, `completedAt`, `results`) and the per-entity outcome (`entity`, `upserted`, `skipped`, `filterMode`) |
 | `PortafoglioSyncResult` / `KimoSyncResult` | type | Replica sync outcome: per-table statistics, total duration, and the error message when the run failed |
 | `TableSyncStats` | type | Rows upserted and elapsed time for a single replica table |
