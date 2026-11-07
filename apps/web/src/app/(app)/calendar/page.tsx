@@ -39,7 +39,7 @@ import { PlanningWizard } from './_components/PlanningWizard/PlanningWizard';
 import { SelectPlanningGroupDialog } from './_components/SelectPlanningGroupDialog';
 import { useHolidays } from './_components/useHolidays';
 import { useCalendarViewNavigation } from './useCalendarViewNavigation';
-import { assignBrandColors, expectedDates, isStaleListError, resolveBrandColor } from './utils';
+import { assignBrandColors, expectedDates, isStaleListError, matchesFunctionFilter, resolveBrandColor } from './utils';
 
 import type { CalendarEventItem } from './_components/types';
 
@@ -90,11 +90,12 @@ export default function CalendarPage() {
   }, [contextBrandId]); // intentional: only seed brand on context change
 
   const { data: brandsData } = trpc.brand.list.useQuery({ isActive: true, limit: 100 }, { enabled });
-  const { data: functionsData } = trpc.company.function.list.useQuery(undefined, { enabled });
+  const { data: functionsData } = trpc.company.function.list.useQuery({ includeInactive: true }, { enabled });
 
   // Unrestricted name lookup — an event's `visibilities` can name a function the current user
   // doesn't belong to (e.g. shared with Sourcing+Prodotto, user is only in Prodotto), and that
-  // still needs a readable label, not a raw id.
+  // still needs a readable label, not a raw id. Inactive functions included: an event can still
+  // carry one, and needs its name and a chip (#199).
   const functionsById = useMemo(
     () => Object.fromEntries((functionsData ?? []).map(f => [f.id, f.name])),
     [functionsData]
@@ -239,8 +240,8 @@ export default function CalendarPage() {
 
   const filteredMilestones = useMemo(() => {
     if (!milestones) return [];
-    if (selectedFunctionIds.length === 0) return milestones;
-    return milestones.filter(m => m.visibilities.some(v => selectedFunctionIds.includes(v.functionId)));
+    // Every chip hidden shows only the events everyone sees, not every event.
+    return milestones.filter(m => matchesFunctionFilter(m, selectedFunctionIds));
   }, [milestones, selectedFunctionIds]);
 
   /** Group badges only earn their visual cost when the current view actually mixes >1 planning

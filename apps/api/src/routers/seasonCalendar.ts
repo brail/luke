@@ -24,9 +24,9 @@ import { z } from 'zod';
 
 
 import {
-  CalendarEventBaseSchema,
+  CalendarEventCreateInputSchema,
+  CalendarEventUpdateInputSchema,
   CloneSeasonCalendarInputSchema,
-  EventDatesExpectedSchema,
   CalendarEventPersonalNoteInputSchema,
   CalendarEventUserVisibilityInputSchema,
   ApplyTemplateInputSchema,
@@ -278,18 +278,22 @@ export const seasonCalendarRouter = router({
    * Creates a calendar event (milestone) and triggers an async Google Calendar sync.
    *
    * @auth season_calendar:update
-   * @input CalendarEventBaseSchema
+   * @input CalendarEventCreateInputSchema
    * @output The created CalendarEvent
+   * @throws PRECONDITION_REQUIRED when the caller could not see the event once saved, unless
+   *   `confirmHidesFromCaller` (#199)
    */
   createMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(CalendarEventBaseSchema)
+    .input(CalendarEventCreateInputSchema)
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
       await assertUnlocked('SEASON_CALENDAR', group.calendarId, ctx.session.user.id, ctx.prisma);
 
-      const result = await createMilestone(input, group.calendarId, ctx.prisma);
+      // Confirmed: nothing left to check (#199).
+      const saverSees = input.confirmHidesFromCaller ? undefined : await callerEventVisibility(ctx);
+      const result = await createMilestone(input, group.calendarId, ctx.prisma, saverSees);
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         eventId: result.id,
@@ -308,18 +312,17 @@ export const seasonCalendarRouter = router({
    * Updates a calendar event and triggers an async Google Calendar sync.
    *
    * @auth season_calendar:update
-   * @input { id, data: Partial<CalendarEventBase>, expected } — `expected`: the dates the client
-   *   based the write on (`EventDatesExpectedSchema`); CONFLICT when the event no longer holds them
+   * @input CalendarEventUpdateInputSchema — { id, data: Partial<CalendarEventBase>, expected,
+   *   confirmHidesFromCaller? }. `expected`: the dates the client based the write on
+   *   (`EventDatesExpectedSchema`); CONFLICT when the event no longer holds them
    * @output Updated CalendarEvent
+   * @throws PRECONDITION_REQUIRED when new `visibilityFunctionIds` would hide the event from the
+   *   caller, unless `confirmHidesFromCaller` (#199)
    */
   updateMilestone: protectedProcedure
     .use(requirePermission('season_calendar:update'))
     .use(withRateLimit('configMutations'))
-    .input(z.object({
-      id: z.uuid(),
-      data: partialWithoutDefaults(CalendarEventBaseSchema).omit({ planningGroupId: true }),
-      expected: EventDatesExpectedSchema,
-    }))
+    .input(CalendarEventUpdateInputSchema)
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.id, { planningGroup: { select: { frozenAt: true } } });
       if (event.cancelledAt) {
@@ -354,7 +357,9 @@ export const seasonCalendarRouter = router({
       }
 
       // Conditional on the dates the client read and based this write on.
-      const result = await updateMilestone(input.id, input.data, ctx.prisma, datesFromExpected(input.expected));
+      // Confirmed: nothing left to check (#199).
+      const saverSees = input.confirmHidesFromCaller ? undefined : await callerEventVisibility(ctx);
+      const result = await updateMilestone(input.id, input.data, ctx.prisma, datesFromExpected(input.expected), saverSees);
 
       const dateChanged = event.startAt.getTime() !== result.startAt.getTime()
         || (event.endAt?.getTime() ?? null) !== (result.endAt?.getTime() ?? null);

@@ -202,6 +202,14 @@ export function canEditMilestone(
   return !m.dateLocked;
 }
 
+/**
+ * Whether the function chips keep an event: one visible to a shown function, or one with no
+ * function visibility, which everyone sees (`eventVisibilityWhere`) and no chip can stand for (#199).
+ */
+export function matchesFunctionFilter(m: { visibilities: { functionId: string }[] }, shownFunctionIds: string[]): boolean {
+  return m.visibilities.length === 0 || m.visibilities.some(v => shownFunctionIds.includes(v.functionId));
+}
+
 /** Joins a milestone's visible functions into a comma-separated display string. */
 export function formatVisibleFunctions(
   visibilities: { functionId: string }[],

@@ -21,7 +21,7 @@ const { updateMock, idleMutation, emptyList, noData, functions } = vi.hoisted(()
   idleMutation: () => ({ mutate: () => undefined, isPending: false }),
   emptyList: { data: [], isLoading: false, isError: false },
   noData: { data: undefined, isLoading: false, isError: false },
-  functions: { data: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Funzione' }], isLoading: false, isError: false },
+  functions: { data: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Funzione', isActive: true }], isLoading: false, isError: false },
 }));
 
 // Only what the dialog and its children call while rendering. `me.get` answers with the profile

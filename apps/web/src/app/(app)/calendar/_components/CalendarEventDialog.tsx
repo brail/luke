@@ -59,6 +59,7 @@ import {
 } from '../../../../lib/linkedDateRange';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+import { cn } from '../../../../lib/utils';
 import { DELETE_BLOCK_REASON, eventDays, eventDeleteBlock, expectedDates, isStaleListError } from '../utils';
 
 import { CalendarEventShareSection } from './CalendarEventShareSection';
@@ -166,6 +167,11 @@ const ISSUE_PATH_TO_FIELD: Record<string, 'startDate' | 'endDate' | 'reason' | u
   reason: 'reason',
 };
 
+/** A company function's name, marked when it is no longer active. */
+function functionLabel(fn: { name: string; isActive: boolean }): string {
+  return fn.isActive ? fn.name : `${fn.name} (inattiva)`;
+}
+
 /** Label for how far the current start has moved from the frozen baseline start, or null if not frozen / unchanged. */
 function describeBaselineDrift(event: ExistingEvent, zone: string): string | null {
   if (!event.baselineStartAt) return null;
@@ -216,10 +222,15 @@ export function CalendarEventDialog({
   const isDeleteLocked = !!event && eventDeleteBlock(event) === 'frozen';
 
   const { data: phases = [] } = trpc.phase.list.useQuery(undefined, { staleTime: 5 * 60 * 1000 });
-  // Every active company function, not only those on the loaded events: an event can be made
-  // visible to a function no event uses yet (#196).
-  const { data: functions = [] } = trpc.company.function.list.useQuery();
-  const functionsById = useMemo(() => Object.fromEntries(functions.map(f => [f.id, f.name])), [functions]);
+  // Every company function, not only those on the loaded events: an event can be made visible to a
+  // function no event uses yet (#196). Inactive ones too, for the event that still has one (#199).
+  const { data: allFunctions = [] } = trpc.company.function.list.useQuery({ includeInactive: true });
+  const functionsById = useMemo(() => Object.fromEntries(allFunctions.map(f => [f.id, f])), [allFunctions]);
+  // An inactive function is offered only where the event already has it, so it can be removed.
+  const functions = useMemo(
+    () => allFunctions.filter(f => f.isActive || event?.visibilities.some(v => v.functionId === f.id)),
+    [allFunctions, event]
+  );
   const { data: planningGroups = [] } = trpc.planningGroup.list.useQuery(
     { brandId, seasonId },
     { enabled: open && !isEdit }
@@ -264,6 +275,17 @@ export function CalendarEventDialog({
   const planningGroupId = form.watch('planningGroupId');
 
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /**
+   * A save the server refused because the event would leave the saver's own calendar
+   * (PRECONDITION_REQUIRED, #199): its message, and the same save sent again as confirmed.
+   */
+  const [hidesFromSaver, setHidesFromSaver] = useState<{ message: string; confirm: () => void } | null>(null);
+  /** True when `err` is that refusal: the prompt opens, and confirming calls `resend`. */
+  const askBeforeHiding = (err: { data?: { code?: string } | null; message: string }, resend: () => void): boolean => {
+    if (err.data?.code !== 'PRECONDITION_REQUIRED') return false;
+    setHidesFromSaver({ message: err.message, confirm: resend });
+    return true;
+  };
   const [cancelOpen, setCancelOpen] = useState(false);
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
 
@@ -367,7 +389,10 @@ export function CalendarEventDialog({
 
   const createMutation = trpc.seasonCalendar.createMilestone.useMutation({
     onSuccess: () => { toast.success('Evento creato'); onSaved(); onClose(); },
-    onError: err => toast.error(getTrpcErrorMessage(err)),
+    onError: (err, variables) => {
+      if (askBeforeHiding(err, () => createMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
+      toast.error(getTrpcErrorMessage(err));
+    },
   });
 
   const utils = trpc.useUtils();
@@ -380,7 +405,8 @@ export function CalendarEventDialog({
       onSaved();
       onClose();
     },
-    onError: err => {
+    onError: (err, variables) => {
+      if (askBeforeHiding(err, () => updateMutation.mutate({ ...variables, confirmHidesFromCaller: true }))) return;
       toast.error(getTrpcErrorMessage(err));
       if (isStaleListError(err)) void utils.seasonCalendar.listMilestones.invalidate();
     },
@@ -568,11 +594,14 @@ export function CalendarEventDialog({
             <div>
               <p className="text-sm font-medium text-muted-foreground mb-1">Visibile a</p>
               <div className="flex flex-wrap gap-1">
-                {event.visibilities.map(v => (
-                  <Badge key={v.functionId} variant="outline" className="text-xs">
-                    {functionsById[v.functionId] ?? v.functionId}
-                  </Badge>
-                ))}
+                {event.visibilities.map(v => {
+                  const fn = functionsById[v.functionId];
+                  return (
+                    <Badge key={v.functionId} variant="outline" className="text-xs">
+                      {fn ? functionLabel(fn) : v.functionId}
+                    </Badge>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -697,7 +726,7 @@ export function CalendarEventDialog({
                     {functions.map(fn => (
                       <label key={fn.id} className="flex items-center gap-1.5 cursor-pointer">
                         <Checkbox checked={visibilityFunctionIds.includes(fn.id)} onCheckedChange={() => toggleVisible(fn.id)} />
-                        <span className="text-sm">{fn.name}</span>
+                        <span className={cn('text-sm', !fn.isActive && 'text-muted-foreground')}>{functionLabel(fn)}</span>
                       </label>
                     ))}
                   </div>
@@ -843,6 +872,16 @@ export function CalendarEventDialog({
           </Form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={hidesFromSaver !== null}
+        onOpenChange={v => { if (!v) setHidesFromSaver(null); }}
+        title="L'evento sparirà dal tuo calendario"
+        description={hidesFromSaver?.message ?? ''}
+        confirmText="Salva comunque"
+        actionType="warning"
+        onConfirm={() => hidesFromSaver?.confirm()}
+      />
 
       {isEdit && (
         <ConfirmDialog

@@ -476,6 +476,32 @@ export async function listMilestonesDb(
 // ─── Milestone create/update/delete ──────────────────────────────────────────
 
 /**
+ * Refuses, with PRECONDITION_REQUIRED, a save after which the saver could not read the event, so
+ * the client can ask before saving (#199); the throw rolls back the transaction it runs in.
+ * `saverSees` is what the saver may read (`callerEventVisibility`); the caller passes none once the
+ * user has confirmed (`confirmHidesFromCaller`). Called after the visibility rows are written, so
+ * it reads them as the calendar lists them, personal grants included.
+ *
+ * An advisory prompt, not an invariant, so no lock (a deliberate exception to check-then-act): the
+ * saver's functions are resolved once per request, outside this transaction, and a concurrent team
+ * change or revoke of their own grant can skip or add a prompt. Nothing breaks when it is missed:
+ * the event stays readable to its functions and to admins.
+ */
+async function refuseIfHiddenFromSaver(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  saverSees: Prisma.CalendarEventWhereInput
+): Promise<void> {
+  const visible = await tx.calendarEvent.count({ where: { id: eventId, AND: [saverSees] } });
+  if (visible === 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_REQUIRED',
+      message: 'Salvato così, l\'evento non comparirà nel tuo calendario: è visibile solo a funzioni di cui non fai parte.',
+    });
+  }
+}
+
+/**
  * Creates a calendar event and its visibility entries within a single transaction.
  * The owner function always receives a read-write visibility; all others are read-only.
  *
@@ -486,7 +512,8 @@ export async function listMilestonesDb(
 export async function createMilestone(
   input: CalendarEventInput,
   calendarId: string,
-  prisma: PrismaClient
+  prisma: PrismaClient,
+  saverSees?: Prisma.CalendarEventWhereInput
 ) {
   assertEventDates({ startAt: new Date(input.startAt), endAt: input.endAt ? new Date(input.endAt) : null, allDay: input.allDay });
   return prisma.$transaction(async tx => {
@@ -512,6 +539,7 @@ export async function createMilestone(
         functionId: fId,
       })),
     });
+    if (saverSees) await refuseIfHiddenFromSaver(tx, event.id, saverSees);
 
     return event;
   });
@@ -529,7 +557,8 @@ export async function updateMilestone(
   eventId: string,
   input: Partial<CalendarEventInput>,
   prisma: PrismaClient,
-  read: EventDates
+  read: EventDates,
+  saverSees?: Prisma.CalendarEventWhereInput
 ) {
   const next: EventDates = {
     startAt: input.startAt !== undefined ? new Date(input.startAt) : read.startAt,
@@ -561,6 +590,9 @@ export async function updateMilestone(
           functionId: fId,
         })),
       });
+      // Checked when functions are sent, changed or not (the dialog always sends them): without new
+      // functions the event stays as visible as it was when `resolveEventBrandAccess` checked it.
+      if (saverSees) await refuseIfHiddenFromSaver(tx, eventId, saverSees);
     }
 
     return updated;
