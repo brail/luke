@@ -13,7 +13,8 @@ import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import * as nav from '@luke/nav';
 
-import { saveConfig, saveConfigs } from '../src/lib/configManager';
+import { ConfigDecryptionError, getLdapConfig, saveConfig, saveConfigs } from '../src/lib/configManager';
+import { checkLdap } from '../src/observability/readiness';
 import { resetStorageProvider } from '../src/storage';
 
 import { createCallerAs, setupTestDb } from './helpers';
@@ -127,6 +128,54 @@ describe('LDAP settings', () => {
     await caller.integrations.auth.saveLdapConfig({ ...FORM, bindDN: '', bindPassword: '' });
 
     expect((await caller.integrations.auth.getLdapConfig()).unreadable).toEqual(['bindPassword']);
+  });
+
+  describe('a test checks only the fields it reads (#193)', () => {
+    beforeEach(() => {
+      vi.spyOn(Client.prototype, 'bind').mockResolvedValue(undefined);
+      vi.spyOn(Client.prototype, 'unbind').mockResolvedValue(undefined);
+      vi.spyOn(Client.prototype, 'search').mockResolvedValue({ searchEntries: [], searchReferences: [] });
+    });
+
+    it('an unreadable role mapping blocks neither test', async () => {
+      await makeUnreadable('auth.ldap.roleMapping');
+
+      await expect(caller.integrations.auth.testLdapConnection()).resolves.toMatchObject({ success: true });
+      await expect(caller.integrations.auth.testLdapSearch({ username: 'alice' })).resolves.toMatchObject({ success: true });
+    });
+
+    it('an unreadable group search field blocks neither test', async () => {
+      await makeUnreadable('auth.ldap.groupSearchBase');
+      await makeUnreadable('auth.ldap.groupSearchFilter');
+
+      await expect(caller.integrations.auth.testLdapConnection()).resolves.toMatchObject({ success: true });
+      await expect(caller.integrations.auth.testLdapSearch({ username: 'alice' })).resolves.toMatchObject({ success: true });
+    });
+
+    it.each(['auth.ldap.searchBase', 'auth.ldap.searchFilter'] as const)('an unreadable %s lets the connection test run, not the search', async key => {
+      await makeUnreadable(key);
+
+      await expect(caller.integrations.auth.testLdapConnection()).resolves.toMatchObject({ success: true });
+      await expect(caller.integrations.auth.testLdapSearch({ username: 'alice' })).rejects.toMatchObject(ENTER_IT_AGAIN);
+    });
+
+    it('sign-in and readiness still refuse on an unreadable role mapping', async () => {
+      await makeUnreadable('auth.ldap.roleMapping');
+
+      // Sign-in (`authenticateViaLdap`) and `/readyz` read every field.
+      await expect(getLdapConfig(prisma)).rejects.toBeInstanceOf(ConfigDecryptionError);
+      expect(await checkLdap(prisma)).toEqual({ ok: false, message: 'LDAP configuration cannot be read' });
+    });
+  });
+
+  it('Rimuovi deletes an unreadable optional value, which then reads as not set', async () => {
+    await makeUnreadable('auth.ldap.roleMapping');
+
+    await caller.config.delete({ key: 'auth.ldap.roleMapping' });
+
+    // Not set: the empty mapping, as for a role mapping never stored.
+    expect(await caller.integrations.auth.getLdapConfig()).toMatchObject({ roleMapping: '{}', unreadable: [] });
+    expect(await prisma.appConfig.findUnique({ where: { key: 'auth.ldap.roleMapping' } })).toBeNull();
   });
 });
 

@@ -22,8 +22,10 @@ import {
   type BackupScheduleSettings,
   type BackupScopeField,
   CRITICAL_CONFIG_KEYS,
+  LDAP_STORED_FIELDS,
   LdapResilienceSchema,
   type LdapResilienceConfig,
+  type LdapStoredField,
   type LdapStrategy,
   Roles,
   storesEncrypted,
@@ -874,34 +876,27 @@ export async function isLdapEnabled(prisma: PrismaClient): Promise<boolean> {
   return ldapEnabledFrom(row?.value);
 }
 
-/** The LDAP settings stored under `auth.ldap.`, encrypted by the settings form. */
-export type LdapStoredField =
-  | 'url'
-  | 'bindDN'
-  | 'bindPassword'
-  | 'searchBase'
-  | 'searchFilter'
-  | 'groupSearchBase'
-  | 'groupSearchFilter'
-  | 'roleMapping';
-
-/** Assembles the LDAP configuration; `decrypt` decides what an undecryptable row means. */
+/**
+ * Assembles the LDAP configuration: a stored value that does not decrypt throws if `required` names
+ * its field, and otherwise comes back blank and listed in `unreadable` (#193).
+ */
 async function loadLdapConfig(
   prisma: PrismaClient,
-  decrypt: (field: LdapStoredField, value: string) => string
-): Promise<LdapConfig> {
-  const configKeys = [
-    'auth.ldap.enabled',
-    'auth.ldap.url',
-    'auth.ldap.bindDN',
-    'auth.ldap.bindPassword',
-    'auth.ldap.searchBase',
-    'auth.ldap.searchFilter',
-    'auth.ldap.groupSearchBase',
-    'auth.ldap.groupSearchFilter',
-    'auth.ldap.roleMapping',
-    'auth.strategy',
-  ];
+  required: readonly LdapStoredField[]
+): Promise<{ config: LdapConfig; unreadable: LdapStoredField[] }> {
+  const unreadable: LdapStoredField[] = [];
+  const decrypt = (field: LdapStoredField, value: string): string => {
+    try {
+      return decryptValue(value);
+    } catch (error) {
+      if (required.includes(field)) throw new ConfigDecryptionError(`auth.ldap.${field}`, { cause: error });
+      logger.error({ key: `auth.ldap.${field}`, error: toErrorMessage(error) }, 'Config decryption error');
+      unreadable.push(field);
+      return '';
+    }
+  };
+
+  const configKeys = ['auth.ldap.enabled', 'auth.strategy', ...LDAP_STORED_FIELDS.map(field => `auth.ldap.${field}`)];
 
   const configs = await prisma.appConfig.findMany({
     where: {
@@ -917,16 +912,19 @@ async function loadLdapConfig(
   // If there's no LDAP configuration, return the default configuration
   if (configs.length === 0) {
     return {
-      enabled: false,
-      url: '',
-      bindDN: '',
-      bindPassword: '',
-      searchBase: '',
-      searchFilter: '',
-      groupSearchBase: '',
-      groupSearchFilter: '',
-      roleMapping: {},
-      strategy: 'local-first',
+      unreadable,
+      config: {
+        enabled: false,
+        url: '',
+        bindDN: '',
+        bindPassword: '',
+        searchBase: '',
+        searchFilter: '',
+        groupSearchBase: '',
+        groupSearchFilter: '',
+        roleMapping: {},
+        strategy: 'local-first',
+      },
     };
   }
 
@@ -977,7 +975,7 @@ async function loadLdapConfig(
     strategy,
   };
 
-  return result;
+  return { config: result, unreadable };
 }
 
 /**
@@ -985,17 +983,17 @@ async function loadLdapConfig(
  * Encrypted values (e.g. `bindPassword`) are decrypted automatically.
  * Returns a safe default configuration when no LDAP keys exist in the database.
  *
+ * @param required - The fields the caller uses: one of these that does not decrypt throws, any
+ *   other reads as not set (#193). Every field by default, so sign-in and readiness refuse on any
+ *   unreadable row; a settings test passes only its own (`LDAP_TEST_FIELDS`).
  * @returns Fully populated and decrypted `LdapConfig`.
- * @throws {ConfigDecryptionError} When a stored value does not decrypt.
+ * @throws {ConfigDecryptionError} When a required stored value does not decrypt.
  */
-export function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
-  return loadLdapConfig(prisma, (field, value) => {
-    try {
-      return decryptValue(value);
-    } catch (error) {
-      throw new ConfigDecryptionError(`auth.ldap.${field}`, { cause: error });
-    }
-  });
+export async function getLdapConfig(
+  prisma: PrismaClient,
+  required: readonly LdapStoredField[] = LDAP_STORED_FIELDS
+): Promise<LdapConfig> {
+  return (await loadLdapConfig(prisma, required)).config;
 }
 
 /**
@@ -1004,20 +1002,10 @@ export function getLdapConfig(prisma: PrismaClient): Promise<LdapConfig> {
  *
  * @returns The configuration, and the fields unreadable, without the `auth.ldap.` prefix.
  */
-export async function getLdapConfigForForm(
+export function getLdapConfigForForm(
   prisma: PrismaClient
 ): Promise<{ config: LdapConfig; unreadable: LdapStoredField[] }> {
-  const unreadable: LdapStoredField[] = [];
-  const config = await loadLdapConfig(prisma, (field, value) => {
-    try {
-      return decryptValue(value);
-    } catch (error) {
-      logger.error({ key: `auth.ldap.${field}`, error: toErrorMessage(error) }, 'Config decryption error');
-      unreadable.push(field);
-      return '';
-    }
-  });
-  return { config, unreadable };
+  return loadLdapConfig(prisma, []);
 }
 
 /**

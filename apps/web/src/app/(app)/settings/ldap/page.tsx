@@ -6,14 +6,26 @@ import { useForm, useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-import { ldapConfigSchema, ldapSearchTestSchema, type LdapConfigInput } from '@luke/core';
+import {
+  LDAP_TEST_FIELDS,
+  isUndeletableConfigKey,
+  ldapConfigSchema,
+  ldapSearchTestSchema,
+  type LdapConfigInput,
+  type LdapStoredField,
+} from '@luke/core';
 
+import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
 import { SensitiveField } from '../../../../components/settings/SensitiveField';
 import { SettingsFormShell } from '../../../../components/settings/SettingsFormShell';
 import { TestStatusBanner } from '../../../../components/settings/TestStatusBanner';
-import { UNREADABLE_VALUE_MESSAGE, UnreadableValueNotice } from '../../../../components/settings/UnreadableValueNotice';
+import {
+  UNREADABLE_VALUE_MESSAGE,
+  UnreadableValueNotice,
+  type UnreadableValueNoticeProps,
+} from '../../../../components/settings/UnreadableValueNotice';
 import { Button } from '../../../../components/ui/button';
 import {
   Dialog,
@@ -46,6 +58,21 @@ import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog, debugWarn } from '../../../../lib/debug';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
+
+const UNREADABLE_SIGN_IN_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo e salva.';
+const UNREADABLE_REMOVABLE_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo o rimuovilo.';
+
+/** What a bind DN without its password leads to: on the field, and in the confirmation that removes one. */
+const BIND_ALONE_WARNING =
+  'senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene.';
+const BIND_WARNING = ` Bind DN e password vanno configurati insieme: ${BIND_ALONE_WARNING}`;
+
+/** What removing a field changes beyond the field itself, said in the confirmation (#193). */
+const REMOVE_CONSEQUENCE: Partial<Record<LdapStoredField, string>> = {
+  roleMapping: ' I nuovi utenti LDAP riceveranno il ruolo viewer; i ruoli degli utenti esistenti non cambiano.',
+  bindDN: BIND_WARNING,
+  bindPassword: BIND_WARNING,
+};
 
 export default function LdapSettingsPage() {
   const { can } = usePermission();
@@ -89,10 +116,17 @@ export default function LdapSettingsPage() {
     refetch: refetchConfig,
   } = trpc.integrations.auth.getLdapConfig.useQuery(undefined);
 
-  const unreadable = existingConfig?.unreadable ?? [];
-  // With LDAP off the fields are locked, but one that has to be entered again must stay editable.
+  // Removed here with `Rimuovi` (#193): no longer stored, though the query, not refetched so that the
+  // admin's other unsaved edits survive, still names them — until it is read again, which resets it.
+  const [removed, setRemoved] = useState<{ from: typeof existingConfig; fields: LdapStoredField[] }>({ from: undefined, fields: [] });
+  const [removing, setRemoving] = useState<LdapStoredField | null>(null);
+  const storedUnreadable = existingConfig?.unreadable ?? [];
+  const removedFields = removed.from === existingConfig ? removed.fields : [];
+  const unreadable = storedUnreadable.filter(f => !removedFields.includes(f));
+  // With LDAP off the fields are locked, but one that has to be entered again must stay editable,
+  // and stays so after a removal until the page is read again.
   const enabled = useWatch({ control: form.control, name: 'enabled' });
-  const fieldsLocked = !canUpdate || (!enabled && unreadable.length === 0);
+  const fieldsLocked = !canUpdate || (!enabled && storedUnreadable.length === 0);
 
   // Update form when existing configuration arrives
   useEffect(() => {
@@ -128,6 +162,34 @@ export default function LdapSettingsPage() {
       debugWarn('LDAP save error:', err);
     },
   });
+
+  const removeMutation = trpc.config.delete.useMutation({
+    onError: err => toast.error('Rimozione non riuscita', { description: getTrpcErrorMessage(err) }),
+    onSettled: () => setRemoving(null),
+  });
+
+  const remove = (field: LdapStoredField) =>
+    removeMutation.mutate({ key: `auth.ldap.${field}` }, {
+      onSuccess: () => {
+        setRemoved({ from: existingConfig, fields: [...removedFields, field] });
+        form.setValue(field, '');
+        toast.success('Valore rimosso');
+      },
+    });
+
+  /**
+   * `Rimuovi` for an unreadable field, or none for the three LDAP needs, which `config.delete`
+   * refuses and the admin enters again anyway.
+   */
+  const removeAction = (field: LdapStoredField): UnreadableValueNoticeProps => {
+    const removable = !isUndeletableConfigKey(`auth.ldap.${field}`);
+    return {
+      // Any unreadable value stops LDAP sign-in, though only a test's own fields stop that test.
+      message: removable ? UNREADABLE_REMOVABLE_MESSAGE : UNREADABLE_SIGN_IN_MESSAGE,
+      onRemove: removable ? () => setRemoving(field) : undefined,
+      canRemove: canUpdate,
+    };
+  };
 
   const testConnectionMutation =
     trpc.integrations.auth.testLdapConnection.useMutation({
@@ -178,8 +240,8 @@ export default function LdapSettingsPage() {
   const handleTestConnection = () => {
     const formData = form.getValues();
     // Answered here: the server would say the same, and spend the small `ldapTest` budget that the
-    // test after the repair needs.
-    if (unreadable.length > 0) {
+    // test after the repair needs. Only the fields this test reads count (#193).
+    if (LDAP_TEST_FIELDS.connection.some(f => unreadable.includes(f))) {
       setTestConnectionStatus('error');
       setTestConnectionMessage(UNREADABLE_VALUE_MESSAGE);
       return;
@@ -196,7 +258,7 @@ export default function LdapSettingsPage() {
 
   const handleTestSearch = () => {
     const formData = form.getValues();
-    if (unreadable.length > 0) {
+    if (LDAP_TEST_FIELDS.search.some(f => unreadable.includes(f))) {
       toast.error('Test ricerca fallito', { description: UNREADABLE_VALUE_MESSAGE });
       return;
     }
@@ -310,7 +372,7 @@ export default function LdapSettingsPage() {
                     <FormDescription>
                       URL del server LDAP (es. ldap://server.example.com:389)
                     </FormDescription>
-                    {unreadable.includes('url') && <UnreadableValueNotice />}
+                    {unreadable.includes('url') && <UnreadableValueNotice {...removeAction('url')} />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -335,7 +397,7 @@ export default function LdapSettingsPage() {
                     <FormDescription>
                       Base DN dove cercare gli utenti
                     </FormDescription>
-                    {unreadable.includes('searchBase') && <UnreadableValueNotice />}
+                    {unreadable.includes('searchBase') && <UnreadableValueNotice {...removeAction('searchBase')} />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -361,7 +423,7 @@ export default function LdapSettingsPage() {
                       Filtro LDAP per cercare utenti (usa ${'{username}'} come
                       placeholder)
                     </FormDescription>
-                    {unreadable.includes('searchFilter') && <UnreadableValueNotice />}
+                    {unreadable.includes('searchFilter') && <UnreadableValueNotice {...removeAction('searchFilter')} />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -384,7 +446,7 @@ export default function LdapSettingsPage() {
                     <FormDescription>
                       Base DN dove cercare i gruppi dell&apos;utente
                     </FormDescription>
-                    {unreadable.includes('groupSearchBase') && <UnreadableValueNotice />}
+                    {unreadable.includes('groupSearchBase') && <UnreadableValueNotice {...removeAction('groupSearchBase')} />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -408,7 +470,7 @@ export default function LdapSettingsPage() {
                       Filtro LDAP per cercare gruppi (usa ${'{userDN}'} come
                       placeholder)
                     </FormDescription>
-                    {unreadable.includes('groupSearchFilter') && <UnreadableValueNotice />}
+                    {unreadable.includes('groupSearchFilter') && <UnreadableValueNotice {...removeAction('groupSearchFilter')} />}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -422,9 +484,10 @@ export default function LdapSettingsPage() {
               render={({ field }) => (
                 <SensitiveField
                   label="Bind DN"
-                  description="DN dell'account di servizio con cui cercare gli utenti. Va sempre configurato insieme alla password: senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene."
+                  description={`DN dell'account di servizio con cui cercare gli utenti. Va sempre configurato insieme alla password: ${BIND_ALONE_WARNING}`}
                   hasValue={existingConfig?.hasBindDN ?? false}
                   unreadable={unreadable.includes('bindDN')}
+                  unreadableNotice={removeAction('bindDN')}
                   placeholder="cn=admin,dc=example,dc=com"
                   disabled={fieldsLocked}
                   field={field}
@@ -442,6 +505,7 @@ export default function LdapSettingsPage() {
                   description="Password dell'account amministrativo"
                   hasValue={existingConfig?.hasBindPassword ?? false}
                   unreadable={unreadable.includes('bindPassword')}
+                  unreadableNotice={removeAction('bindPassword')}
                   placeholder="Inserisci password"
                   disabled={fieldsLocked}
                   field={field}
@@ -458,22 +522,19 @@ export default function LdapSettingsPage() {
                   <FormLabel>Role Mapping (JSON)</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder={`{
-  "CN=Admins,DC=example,DC=com": "admin",
-  "CN=Editors,DC=example,DC=com": "editor",
-  "CN=Users,DC=example,DC=com": "viewer"
-}`}
+                      // A short placeholder: the JSON example used to read as a stored value (#193).
+                      placeholder="Nessuna mappatura"
                       disabled={fieldsLocked}
-                      // 120px: enough rows to show the JSON placeholder example without scrolling; no exact scale match
+                      // 120px: room for a few mapping lines without scrolling; no exact scale match
                       className="min-h-[120px] font-mono"
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    Mappa i gruppi LDAP ai ruoli dell&apos;applicazione (admin,
-                    editor, viewer)
+                    Mappa i gruppi LDAP ai ruoli dell&apos;applicazione (admin, editor, viewer). Esempio:{' '}
+                    <code>{'{"CN=Admins,DC=example,DC=com": "admin"}'}</code>
                   </FormDescription>
-                  {unreadable.includes('roleMapping') && <UnreadableValueNotice />}
+                  {unreadable.includes('roleMapping') && <UnreadableValueNotice {...removeAction('roleMapping')} />}
                   <FormMessage />
                 </FormItem>
               )}
@@ -601,6 +662,17 @@ export default function LdapSettingsPage() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={v => { if (!v) setRemoving(null); }}
+        title="Rimuovi valore salvato"
+        description={`Rimuove il valore salvato di questo campo, qualunque sia.${removing ? REMOVE_CONSEQUENCE[removing] ?? '' : ''}`}
+        confirmText="Rimuovi"
+        actionType="delete"
+        onConfirm={() => { if (removing) remove(removing); }}
+        isLoading={removeMutation.isPending}
+      />
     </SettingsFormShell>
   );
 }

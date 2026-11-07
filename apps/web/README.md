@@ -189,7 +189,7 @@ Configuration pages under `settings/` share the components in
 | `SettingsFormGate` | Loading, error and retry gate for a form inside a card or tab: renders the form only after its stored values are read |
 | `SettingsActions` | Save button and optional test button, with pending states |
 | `SensitiveField` | Credential input with a show/hide toggle that never displays the stored value |
-| `UnreadableValueNotice` | Beside a field whose stored value this instance cannot decrypt: enter it again and save |
+| `UnreadableValueNotice` | Beside a field whose stored value this instance cannot decrypt: enter it again and save, or remove it where the page offers `Rimuovi` |
 | `TestStatusBanner` | Connection-test result (`idle`, `success`, `error`), announced through `role="status"` |
 | `KeyValueGrid` | Responsive two- or three-column grid for form fields |
 
@@ -201,7 +201,11 @@ placeholder, and leaving the field blank keeps the stored value.
 A stored value that does not decrypt, as after a restore under another master
 key, does not stop the LDAP page, nor the storage, Google, mail and NAV pages for
 their credentials: the field comes back blank and marked, and the test buttons ask
-for the value again, as NAV's preview and manual sync do. On the LDAP, Google, mail
+for the value again, as NAV's preview and manual sync do. On the LDAP page each test
+asks only for the fields it reads, while LDAP sign-in and `/readyz` refuse any
+unreadable LDAP value; an unreadable field there can also be removed with `Rimuovi`
+(through `config.delete`, after a confirmation), except the URL, search base and
+search filter, which LDAP needs. On the LDAP, Google, mail
 and NAV pages a blank save keeps the credential's row; the storage page refuses it
 until the value is entered again. Google's refresh token has no field: the page asks
 to connect the account again, or to disconnect it. The mail and NAV pages read their

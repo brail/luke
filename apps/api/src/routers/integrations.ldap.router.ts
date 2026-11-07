@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { Client } from 'ldapts';
 
-import { ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
+import { LDAP_TEST_FIELDS, ldapConfigSchema, ldapSearchTestSchema } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
 import {
@@ -227,7 +227,7 @@ export const ldapRouter = router({
       let client: Client | null = null;
 
       try {
-        const config = await getLdapConfig(ctx.prisma);
+        const config = await getLdapConfig(ctx.prisma, LDAP_TEST_FIELDS.connection);
 
         if (!config.enabled) {
           throw new TRPCError({
@@ -311,7 +311,7 @@ export const ldapRouter = router({
       let client: Client | null = null;
 
       try {
-        const config = await getLdapConfig(ctx.prisma);
+        const config = await getLdapConfig(ctx.prisma, LDAP_TEST_FIELDS.search);
 
         if (!config.enabled) {
           throw new TRPCError({

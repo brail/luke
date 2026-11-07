@@ -61,6 +61,8 @@ const GOOGLE = {
   oauthUserEmail: 'admin@example.com',
 };
 const TOKEN_NOTICE = "Il token salvato non è leggibile: connetti di nuovo l'account.";
+/** The LDAP page says more: any unreadable value stops LDAP sign-in (#193). */
+const LDAP_NOTICE = /non è leggibile e blocca l'accesso LDAP/;
 
 const h = vi.hoisted(() => ({
   ldap: {} as Record<string, unknown>,
@@ -71,6 +73,7 @@ const h = vi.hoisted(() => ({
   refetchLdap: vi.fn(),
   saveLdap: vi.fn(),
   testConnection: vi.fn(),
+  deleteConfig: vi.fn(),
   saveStorage: vi.fn(),
 }));
 
@@ -116,6 +119,16 @@ vi.mock('../../../../lib/trpc', () => {
           useQuery: () => ({ data: storedRows, isPending: false, error: null, refetch: vi.fn() }),
         },
         getMultiple: { useQuery: () => ({ data: noRows, isPending: false, error: null, refetch: vi.fn() }) },
+        delete: {
+          useMutation: (options: { onSettled?: () => void }) => ({
+            mutate: (variables: { key: string }, call?: { onSuccess?: () => void }) => {
+              h.deleteConfig(variables);
+              call?.onSuccess?.();
+              options.onSettled?.();
+            },
+            isPending: false,
+          }),
+        },
       },
       integrations: {
         mail: { getPasswordState: passwordState, saveConfig: idle, test: idle },
@@ -181,7 +194,7 @@ test.each([
 test('LDAP off: the unreadable field is marked and editable, and only with something to repair', async () => {
   const screen = await render(<LdapSettingsPage />);
 
-  await expect.element(screen.getByText(NOTICE)).toBeVisible();
+  await expect.element(screen.getByText(LDAP_NOTICE)).toBeVisible();
   await expect.element(screen.getByLabelText(/^URL LDAP/)).toBeEnabled();
 });
 
@@ -200,8 +213,60 @@ test('with something unreadable the test answers on the page, and spends no requ
 
   await screen.getByRole('button', { name: 'Test Connessione' }).click();
 
-  await expect.element(screen.getByText(NOTICE).nth(1)).toBeVisible();
+  await expect.element(screen.getByText(NOTICE)).toBeVisible();
   expect(h.testConnection).not.toHaveBeenCalled();
+});
+
+// #193: an unreadable optional value blocks nothing, and can be removed.
+const LDAP_ON_ROLE_MAPPING_UNREADABLE = { ...LDAP, enabled: true, url: 'ldap://dc.test:389', unreadable: ['roleMapping'] };
+
+test('an unreadable role mapping stops neither test', async () => {
+  h.ldap = LDAP_ON_ROLE_MAPPING_UNREADABLE;
+  const screen = await render(<LdapSettingsPage />);
+
+  await screen.getByRole('button', { name: 'Test Connessione' }).click();
+  await vi.waitFor(() => expect(h.testConnection).toHaveBeenCalledTimes(1));
+  await screen.getByRole('button', { name: 'Test Ricerca' }).click();
+
+  await expect.element(screen.getByPlaceholder('Username da cercare')).toBeVisible();
+});
+
+test('Rimuovi asks first, deletes the key, and keeps the other unsaved edits', async () => {
+  h.ldap = LDAP_ON_ROLE_MAPPING_UNREADABLE;
+  const screen = await render(<LdapSettingsPage />);
+
+  await screen.getByLabelText(/^Search Base/).fill('dc=nuovo');
+  await screen.getByRole('button', { name: 'Rimuovi' }).click();
+  await expect.element(screen.getByText(/i ruoli degli utenti esistenti non cambiano/)).toBeVisible();
+  await screen.getByRole('button', { name: 'Rimuovi' }).last().click();
+
+  expect(h.deleteConfig).toHaveBeenCalledWith({ key: 'auth.ldap.roleMapping' });
+  await expect.element(screen.getByText(LDAP_NOTICE)).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText(/^Search Base/)).toHaveValue('dc=nuovo');
+});
+
+test('LDAP off: removing the last unreadable value leaves the fields editable', async () => {
+  h.ldap = { ...LDAP, url: 'ldap://dc.test:389', unreadable: ['roleMapping'] };
+  const screen = await render(<LdapSettingsPage />);
+
+  await screen.getByRole('button', { name: 'Rimuovi' }).click();
+  await screen.getByRole('button', { name: 'Rimuovi' }).last().click();
+
+  await expect.element(screen.getByText(LDAP_NOTICE)).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText(/^URL LDAP/)).toBeEnabled();
+});
+
+test('a field LDAP needs has no Rimuovi: it is entered again', async () => {
+  const screen = await render(<LdapSettingsPage />);
+
+  await expect.element(screen.getByText(LDAP_NOTICE)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Rimuovi' }).elements()).toHaveLength(0);
+});
+
+test('the role mapping placeholder does not read as a stored mapping', async () => {
+  const screen = await render(<LdapSettingsPage />);
+
+  await expect.element(screen.getByLabelText('Role Mapping (JSON)')).toHaveAttribute('placeholder', 'Nessuna mappatura');
 });
 
 test('the stored strategy is the one shown', async () => {

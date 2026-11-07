@@ -114,3 +114,27 @@ export type LdapConnectionTestResponse = z.infer<
   typeof ldapConnectionTestResponseSchema
 >;
 export type LdapOperationResponse = z.infer<typeof ldapOperationResponseSchema>;
+
+/** The LDAP settings stored under `auth.ldap.`, encrypted by the settings form. */
+export const LDAP_STORED_FIELDS = [
+  'url',
+  'bindDN',
+  'bindPassword',
+  'searchBase',
+  'searchFilter',
+  'groupSearchBase',
+  'groupSearchFilter',
+  'roleMapping',
+] as const;
+export type LdapStoredField = (typeof LDAP_STORED_FIELDS)[number];
+
+const LDAP_CONNECTION_TEST_FIELDS = ['url', 'bindDN', 'bindPassword'] as const satisfies readonly LdapStoredField[];
+
+/**
+ * The fields each settings test reads: only an unreadable one of these stops that test, so an
+ * unreadable optional value (the role mapping, the group search) does not block either (#193).
+ */
+export const LDAP_TEST_FIELDS = {
+  connection: LDAP_CONNECTION_TEST_FIELDS,
+  search: [...LDAP_CONNECTION_TEST_FIELDS, 'searchBase', 'searchFilter'],
+} as const satisfies Record<string, readonly LdapStoredField[]>;
