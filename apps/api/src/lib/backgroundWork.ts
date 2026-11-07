@@ -1,7 +1,8 @@
 /**
  * Fire-and-forget work a request starts without waiting for it: derivative generation after an
- * upload, the cleanup of a replaced logo. Each task is tracked until it settles, so the tests can
- * wait for it (`backgroundWorkIdle`) instead of letting one test's work land in the next.
+ * upload, the cleanup of a replaced logo. Each task is tracked until it settles, so shutdown can
+ * wait for it before disconnecting the database (`gracefulShutdown.ts`), and the tests instead of
+ * letting one test's work land in the next (`backgroundWorkIdle`).
  */
 
 import { setImmediate } from 'timers/promises';
@@ -22,10 +23,11 @@ export function runInBackground(task: () => Promise<unknown>): void {
 
 /**
  * Resolves once every task `runInBackground` started has settled, those started meanwhile
- * included, and throws if they are still running after `timeoutMs`. For the tests: a task still
- * running after its test writes rows the next test's `TRUNCATE` deadlocks on, and re-creates
- * storage directories under the next test's base path. The default stays below vitest's default
- * hook timeout (10 s), so a stuck task fails with this message, not a generic timeout.
+ * included, and throws if they are still running after `timeoutMs`. Shutdown passes what is left
+ * of its close budget. In the tests, a task still running after its test writes rows the next
+ * test's `TRUNCATE` deadlocks on, and re-creates storage directories under the next test's base
+ * path; the default stays below vitest's default hook timeout (10 s), so a stuck task fails with
+ * this message, not a generic timeout.
  */
 export async function backgroundWorkIdle(timeoutMs = 5_000): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
