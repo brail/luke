@@ -57,6 +57,13 @@ stale manifest, and would have let a misspelt route through (removed
 2026-10-04). `as Route` stays for a string no manifest can know, such as a path
 built at runtime; `as any` never.
 
+Restoring `next-env.d.ts` points `tsc` back at `.next/dev/types`, which only `next
+dev` refreshes. After a layout is added, the `.next/types` that `typegen` just
+wrote declares routes the stale dev types lack, and `tsc` fails on
+`.next/types/validator.ts` (`Route` not assignable to `LayoutRoutes`) — the
+pre-push typecheck blocked G1g on this (2026-11-08). In a worktree where dev does
+not run, delete `apps/web/.next/types` once the check is done.
+
 ### Bare `crypto.randomUUID()` in a client component — enforced by ESLint `@luke/no-bare-client-random-uuid` (error, `apps/web/src/**`). See `lessons-archive.md`.
 
 ---
