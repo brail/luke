@@ -23,8 +23,9 @@ const TICK_INTERVAL_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Dedup keys name the occurrence (`Notice.occurrence`), so this only has to outlive one overdue
- * stage, three days — as must `notification.dedupRetentionDays`, or a stage is repeated.
+ * Dedup keys name the occurrence (`Notice.occurrence`), never reused once its stage is over, so this
+ * only has to outlive one overdue stage — as must `notification.dedupRetentionDays` (its registry
+ * entry says how long), or a stage is repeated. A sweep shorter than this window is harmless.
  */
 const NOTICE_DEDUP_MS = 7 * DAY_MS;
 

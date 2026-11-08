@@ -224,7 +224,10 @@ export const AppConfigRegistry = {
   'auditLog.retentionDays':             integerConfigSchema(z.number().int().min(1).max(3650)),
   'auditLog.criticalRetentionDays':     integerConfigSchema(z.number().int().min(1).max(36500)),
   'notification.retentionDays':         integerConfigSchema(z.number().int().min(1).max(3650)),
-  'notification.dedupRetentionDays':    integerConfigSchema(z.number().int().min(1).max(3650)),
+  // Min 4: a dedup marker must outlive an overdue stage, three calendar days in the business zone
+  // (`milestoneDeadlineScheduler.ts`) that last 73 h across the end of DST, while the sweep counts
+  // 24-hour days (`retentionScheduler.ts`). A stored 1–3 reads the default.
+  'notification.dedupRetentionDays':    integerConfigSchema(z.number().int().min(4).max(3650)),
 
   // ── Maintenance Mode (schedulable, system-wide) ───────────────────────────
   // Single JSON blob, not one key per field: nothing outside maintenanceMode.ts (apps/api)

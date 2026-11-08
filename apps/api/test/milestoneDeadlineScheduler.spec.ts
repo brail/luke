@@ -9,6 +9,8 @@
 
 import { describe, it, expect } from 'vitest';
 
+import { validateConfigValue } from '@luke/core';
+
 import { deadlineState, phaseOverdueNotice, upcomingNotice } from '../src/lib/milestoneDeadlineScheduler';
 
 const ROME = 'Europe/Rome';
@@ -102,5 +104,29 @@ describe('phaseOverdueNotice', () => {
     expect(phaseOverdueNotice(EVENT, lines, OVERDUE).message).toBe(
       '12 righe non hanno completato "Consegna" entro la scadenza · Brand · Stagione: L1, L2, L3, L4, L5, L6, L7, L8, L9, L10 e altre 2',
     );
+  });
+});
+
+// #112: an overdue stage is three calendar days in the business zone; across the end of DST it lasts
+// 73 hours, longer than three 24-hour days. Its dedup marker must outlive it, so the shortest
+// `notification.dedupRetentionDays` the registry accepts is 4.
+describe('an overdue stage across the end of DST', () => {
+  it('lasts longer than 72 hours and less than the shortest retention the registry accepts', () => {
+    // All-day deadline on 23 October 2026, reached on the 24th; Rome leaves DST on the 25th.
+    const deadline = allDay('2026-10-23');
+    const stage = 'overdue:2026-10-24:0';
+    // The stage starts and ends on a midnight in Rome, so a quarter-hour step finds both exactly.
+    const step = 15 * 60 * 1000;
+    const instants: number[] = [];
+    for (let t = Date.parse('2026-10-23T18:00:00Z'); t < Date.parse('2026-10-27T06:00:00Z'); t += step) {
+      if (deadlineState(deadline, new Date(t), ROME)?.occurrence === stage) instants.push(t);
+    }
+    expect(instants.length).toBeGreaterThan(0);
+    const lasts = instants[instants.length - 1] - instants[0] + step;
+
+    expect(lasts).toBe(73 * 60 * 60 * 1000);
+    expect(validateConfigValue('notification.dedupRetentionDays', '3').success).toBe(false);
+    expect(validateConfigValue('notification.dedupRetentionDays', '4').success).toBe(true);
+    expect(lasts).toBeLessThan(4 * DAY_MS);
   });
 });

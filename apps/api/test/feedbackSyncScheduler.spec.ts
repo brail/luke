@@ -178,6 +178,48 @@ describe('feedbackSyncScheduler', () => {
     expect(createNotification).not.toHaveBeenCalled();
   });
 
+  // #112: the stored count follows GitHub's down as well, or replies after a deletion stay silent
+  // until the count passes the old one.
+  it('comments deleted on GitHub → count stored lower, no notification; the next reply notifies', async () => {
+    const submission = buildSubmission({ commentCount: 3 });
+    mockGitHubIssue({ state: 'open', comments: 2 });
+    const prisma = buildFakePrisma([submission]);
+
+    await runFirstTick(prisma);
+
+    expect(prisma.feedbackSubmission.update).toHaveBeenCalledWith({
+      where: { id: submission.id },
+      data: { status: 'open', commentCount: 2 },
+    });
+    expect(createNotification).not.toHaveBeenCalled();
+
+    submission.commentCount = 2;
+    mockGitHubIssue({ state: 'open', comments: 3 });
+    await vi.advanceTimersByTimeAsync(TEST_INTERVAL_MS);
+
+    expect(createNotification).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ data: { issueNumber: submission.issueNumber, type: 'feedback_comment' } })
+    );
+  });
+
+  it('closed with comments deleted → closing notification, count stored lower', async () => {
+    const submission = buildSubmission({ status: 'open', commentCount: 3 });
+    mockGitHubIssue({ state: 'closed', comments: 1 });
+    const prisma = buildFakePrisma([submission]);
+
+    await runFirstTick(prisma);
+
+    expect(prisma.feedbackSubmission.update).toHaveBeenCalledWith({
+      where: { id: submission.id },
+      data: { status: 'closed', commentCount: 1 },
+    });
+    expect(createNotification).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ data: { issueNumber: submission.issueNumber, type: 'feedback_closed' } })
+    );
+  });
+
   it('a submission already closed elsewhere (status=closed) is not even queried', async () => {
     const fetchMock = mockGitHubIssue();
     // findMany is mocked to return only what the where asks for: here we check

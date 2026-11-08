@@ -147,6 +147,11 @@ describe('the registry is consulted on the write path, not only on the read path
     expect(validateConfigValue('app.sections.disabled', '["product.pricing"]').success).toBe(true);
   });
 
+  it('refuses a dedup retention shorter than an overdue stage can last (#112)', () => {
+    expect(validateConfigValue('notification.dedupRetentionDays', '3').success).toBe(false);
+    expect(validateConfigValue('notification.dedupRetentionDays', '4').success).toBe(true);
+  });
+
   it('refuses a role mapping to a role that does not exist (#112)', () => {
     expect(validateConfigValue('auth.ldap.roleMapping', '{"CN=Admins":"admn"}').success).toBe(false);
     expect(validateConfigValue('auth.ldap.roleMapping', '{"CN=Admins":"admin"}').success).toBe(true);

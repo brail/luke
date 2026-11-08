@@ -44,19 +44,23 @@ async function syncSubmission(
   }
   const issue = parsed.data;
   const justClosed = issue.state === 'closed' && submission.status === 'open';
-  const hasNewComments = issue.comments > submission.commentCount;
-  if (!justClosed && !hasNewComments) return;
+  const notify = justClosed || issue.comments > submission.commentCount;
+  // A lower count (comments deleted on GitHub) is stored too, without a notice: otherwise the
+  // replies after a deletion stay silent until the count passes the old one (#112).
+  if (!notify && issue.comments === submission.commentCount) return;
 
-  await createNotification(prisma, {
-    userId: submission.userId,
-    category: 'SYSTEM',
-    title: justClosed ? 'Segnalazione chiusa' : 'Nuova risposta alla tua segnalazione',
-    message: justClosed
-      ? `La tua segnalazione #${submission.issueNumber} è stata chiusa`
-      : `C'è una nuova risposta sulla tua segnalazione #${submission.issueNumber}`,
-    link: issue.html_url,
-    data: { issueNumber: submission.issueNumber, type: justClosed ? 'feedback_closed' : 'feedback_comment' },
-  });
+  if (notify) {
+    await createNotification(prisma, {
+      userId: submission.userId,
+      category: 'SYSTEM',
+      title: justClosed ? 'Segnalazione chiusa' : 'Nuova risposta alla tua segnalazione',
+      message: justClosed
+        ? `La tua segnalazione #${submission.issueNumber} è stata chiusa`
+        : `C'è una nuova risposta sulla tua segnalazione #${submission.issueNumber}`,
+      link: issue.html_url,
+      data: { issueNumber: submission.issueNumber, type: justClosed ? 'feedback_closed' : 'feedback_comment' },
+    });
+  }
 
   // After the notice: a failed insert leaves the change to find again on the next tick.
   await prisma.feedbackSubmission.update({

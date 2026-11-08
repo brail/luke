@@ -758,9 +758,11 @@ export function getNotificationRetentionDays(prisma: PrismaClient): Promise<numb
 
 /**
  * Reads how many days a `NotificationDedupKey` row stays before it's eligible for retention
- * sweep. Well above the longest dedup window in use (23h) — purely a safety margin.
+ * sweep. It must outlive the longest dedup window in use, an overdue stage: see the registry entry's
+ * minimum.
  *
- * @returns Retention window in days. Defaults to 30; invalid values fall back to the default.
+ * @returns Retention window in days. Defaults to 30; a stored value the registry refuses (below 4)
+ *   falls back to the default, with a warning.
  */
 export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise<number> {
   return getConfigOrDefault(prisma, 'notification.dedupRetentionDays');
