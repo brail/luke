@@ -12,7 +12,7 @@
 import { createHash, randomUUID } from 'crypto';
 import { createReadStream, createWriteStream, realpathSync } from 'fs';
 import { readdir, mkdir, unlink, stat, realpath } from 'fs/promises';
-import { join, dirname, resolve, basename, relative, isAbsolute } from 'path';
+import { join, dirname, resolve, basename, relative, isAbsolute, sep } from 'path';
 import { Transform, type TransformCallback } from 'stream';
 import { pipeline } from 'stream/promises';
 
@@ -302,7 +302,10 @@ export class LocalFsProvider implements IStorageProvider {
   /**
    * Lists files in a bucket with optional prefix filtering and cursor-based pagination.
    *
-   * @returns Lexicographically sorted items and an optional cursor for the next page.
+   * The whole bucket is walked, then sorted by code unit — the order the cursor compares in — and
+   * only the page is `stat`ed (#109). A path with a `.tmp` segment is an upload still being written.
+   *
+   * @returns Items sorted by key and, when more follow, the cursor for the next page.
    */
   async list(params: StorageListParams): Promise<StorageListResult> {
     const prefix = params.prefix || '';
@@ -311,79 +314,36 @@ export class LocalFsProvider implements IStorageProvider {
     // Validate path safety and get the bucket's canonical path
     const bucketPath = this.validatePathSafety(params.bucket);
 
-    const items: StorageListResult['items'] = [];
+    // ponytail: every page walks the whole bucket; page through one walk if local buckets grow large.
+    // Only a missing bucket is an empty one: a subdirectory removed mid-walk must not hide the rest.
+    const entries = await readdir(bucketPath, { recursive: true, withFileTypes: true }).catch((error: unknown) => {
+      const { code, path } = error as NodeJS.ErrnoException;
+      if (code === 'ENOENT' && path === bucketPath) return [];
+      throw error;
+    });
 
-    // Recursively scans the directory
-    async function scanDir(
-      dirPath: string,
-      relativePath: string = ''
-    ): Promise<void> {
-      try {
-        const entries = await readdir(dirPath, { withFileTypes: true });
+    const cursor = params.cursor ?? '';
+    const keys = entries
+      .filter(entry => entry.isFile())
+      .map(entry => relative(bucketPath, join(entry.parentPath, entry.name)))
+      .filter(key => key.startsWith(prefix) && !key.split(sep).includes('.tmp'))
+      // The default sort compares UTF-16 code units, as `>` does below.
+      .sort();
+    const after = keys.filter(key => key > cursor);
+    const page = after.slice(0, limit);
 
-        for (const entry of entries) {
-          // Skip directory .tmp
-          if (entry.name === '.tmp') {
-            continue;
-          }
+    // A file deleted since the walk is left out, not a failure of the whole page.
+    const listed = await Promise.all(
+      page.map(async key => {
+        const stats = await stat(join(bucketPath, key)).catch((error: unknown) => {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+          throw error;
+        });
+        return stats && { key, size: stats.size, modifiedAt: stats.mtime };
+      })
+    );
+    const items = listed.filter(item => item !== null);
 
-          const entryRelPath = join(relativePath, entry.name);
-
-          if (entry.isDirectory()) {
-            // Recurse into subdirectories
-            await scanDir(join(dirPath, entry.name), entryRelPath);
-          } else if (entry.isFile()) {
-            // Filter by prefix
-            if (!entryRelPath.startsWith(prefix)) {
-              continue;
-            }
-
-            // Get stats
-            const stats = await stat(join(dirPath, entry.name));
-
-            items.push({
-              key: entryRelPath,
-              size: stats.size,
-              modifiedAt: stats.mtime,
-            });
-
-            // Limit results
-            if (items.length >= limit) {
-              return;
-            }
-          }
-        }
-      } catch (error) {
-        // If the directory doesn't exist, return an empty array
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          return;
-        }
-        throw error;
-      }
-    }
-
-    await scanDir(bucketPath);
-
-    // Sort by key (lexicographic)
-    items.sort((a, b) => a.key.localeCompare(b.key));
-
-    // Cursor-based pagination
-    let startIndex = 0;
-    if (params.cursor) {
-      startIndex = items.findIndex(item => item.key > params.cursor!);
-      if (startIndex === -1) {
-        startIndex = items.length;
-      }
-    }
-
-    const paginatedItems = items.slice(startIndex, startIndex + limit);
-    const hasMore = items.length > startIndex + limit;
-
-    return {
-      items: paginatedItems,
-      nextCursor: hasMore
-        ? paginatedItems[paginatedItems.length - 1]?.key
-        : undefined,
-    };
+    return { items, nextCursor: after.length > limit ? page[page.length - 1] : undefined };
   }
 }

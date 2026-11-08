@@ -37,7 +37,12 @@ export function buildPostgresUrl(db: PgConnectionParts): string {
   return `postgresql://${encodeURIComponent(db.user)}:${encodeURIComponent(db.password)}@${db.host}:${db.port}/${db.database}`;
 }
 
-/** Spawns a child process, capturing stderr, resolving on exit code 0 — shared low-level primitive behind `runPgBinary` and `runCommand`. */
+/**
+ * Spawns a child process, resolving on exit code 0 — shared low-level primitive behind `runPgBinary`
+ * and `runCommand`. stdout is discarded: no caller reads it, and an unread pipe blocks the child once
+ * full (`pg_restore --list` writes its table of contents there, #109). stderr is kept only up to
+ * `stderrLimit`, all the error message shows.
+ */
 function spawnAndCapture(
   command: string,
   args: string[],
@@ -45,9 +50,13 @@ function spawnAndCapture(
   stderrLimit: number
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, options);
+    const child = spawn(command, args, { ...options, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
-    child.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+    // Decoded as a stream, so a character split across chunks stays whole.
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d: string) => {
+      if (stderr.length < stderrLimit) stderr += d;
+    });
     child.on('error', reject);
     child.on('close', code => {
       if (code === 0) resolve();

@@ -44,8 +44,8 @@ const LIST_LIMIT = 1000;
 
 /**
  * Whether `key` is listed in `bucket`. Absence must be established, so a listing that may be
- * incomplete throws instead of answering false: the local provider stops scanning at `limit`
- * before sorting and may return no cursor, so a full page proves nothing either way.
+ * incomplete throws instead of answering false: a full page, or one with a cursor, proves nothing
+ * either way.
  */
 async function isListed(provider: Provider, bucket: StorageBucket, key: string): Promise<boolean> {
   // ponytail: one listing per key (the local provider scans the bucket); fine for a one-shot run.

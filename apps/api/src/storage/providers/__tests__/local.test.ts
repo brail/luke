@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, symlinkSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, symlinkSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -123,5 +123,59 @@ describe('LocalFsProvider.get - absence', () => {
     const read = provider.get({ bucket: 'collection-row-pictures', key: 'a-directory' });
     await expect(read).rejects.toThrow();
     await expect(read).rejects.not.toBeInstanceOf(StorageObjectNotFoundError);
+  });
+});
+
+// #109: `list` paged a walk cut off at `limit`, sorted differently from its cursor, so every page
+// started over and a bucket of more than one page was silently incomplete.
+describe('LocalFsProvider.list - paging over a whole bucket', () => {
+  const BUCKET = 'collection-row-pictures';
+  let testDir: string;
+  let provider: LocalFsProvider;
+
+  beforeEach(async () => {
+    testDir = mkdtempSync(join(tmpdir(), 'luke-storage-test-'));
+    provider = new LocalFsProvider({ basePath: testDir, maxFileSizeMB: 10 });
+    await provider.init();
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  /** Writes `count` files across subdirectories, with capitals and punctuation in their names. */
+  function seed(count: number): string[] {
+    const keys: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const key = join(['Alpha', 'beta', 'b-c', 'Z_z'][i % 4], `${i % 3 === 0 ? 'File' : 'file'}-${i}.v1!.png`);
+      mkdirSync(dirname(join(testDir, BUCKET, key)), { recursive: true });
+      writeFileSync(join(testDir, BUCKET, key), 'x');
+      keys.push(key);
+    }
+    // An upload still in progress: never listed.
+    writeFileSync(join(testDir, BUCKET, '.tmp', 'partial-upload'), 'x');
+    return keys;
+  }
+
+  it('yields every file exactly once across pages, and no incomplete upload', async () => {
+    const keys = seed(250);
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await provider.list({ bucket: BUCKET, limit: 100, cursor });
+      seen.push(...page.items.map(item => item.key));
+      cursor = page.nextCursor;
+    } while (cursor);
+
+    expect(seen).toHaveLength(250);
+    expect(new Set(seen)).toEqual(new Set(keys));
+  });
+
+  it('answers an empty last page for a cursor past the last key, and for a missing bucket', async () => {
+    seed(3);
+    expect(await provider.list({ bucket: BUCKET, cursor: '\uffff' })).toEqual({ items: [], nextCursor: undefined });
+
+    rmSync(join(testDir, BUCKET), { recursive: true, force: true });
+    expect(await provider.list({ bucket: BUCKET })).toEqual({ items: [], nextCursor: undefined });
   });
 });
