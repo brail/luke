@@ -16,16 +16,16 @@ import { z } from 'zod';
 import { versionLabel } from '@luke/core';
 import type { Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
-import { createSyncRequest, getNavDbConfig, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
+import { createSyncRequest, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
 
 import { appVersion } from '../lib/appVersion';
-import { getConfig, rethrowUnreadable } from '../lib/configManager';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
 import {
   triggerKimoSyncNow,
   isKimoSyncRunning,
 } from '../lib/kimoSyncScheduler';
 import { navLogger } from '../lib/logger';
+import { readNavConfig } from '../lib/navConfig';
 import { requirePermission } from '../lib/permissions';
 import {
   triggerPortafoglioSyncNow,
@@ -152,9 +152,10 @@ const portafoglioRouter = router({
         };
       }
 
-      // Fallback: direct NAV if replica has no data yet
+      // Fallback: direct NAV if replica has no data yet. The configuration is read outside the
+      // `try`: an incomplete or unreadable one is the admin's to fix, not an unreachable server.
+      const navConfig = await readNavConfig(ctx.prisma);
       try {
-        const navConfig = await getNavDbConfig(ctx.prisma, getConfig);
         const pool = await getPool(navConfig);
         const co = sanitizeCompany(navConfig.company);
 
@@ -178,7 +179,8 @@ const portafoglioRouter = router({
           salespersons: result.recordset.map(r => ({ code: r.Code, name: r.Name })),
         };
       } catch (err) {
-        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV unreachable');
+        // Connection or query: an unreachable server, or credentials or a company NAV refuses.
+        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV query failed');
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -297,7 +299,7 @@ const portafoglioRouter = router({
           'Portafoglio PG replica empty — falling back to NAV directly',
         );
         dataSource = 'nav';
-        const navConfig = await getNavDbConfig(ctx.prisma, getConfig).catch(rethrowUnreadable);
+        const navConfig = await readNavConfig(ctx.prisma);
         const pool = await getPool(navConfig);
         rows = await queryPortafoglioOrdini(pool, navConfig.company, {
           seasonCode: season.code,

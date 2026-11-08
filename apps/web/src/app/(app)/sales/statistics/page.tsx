@@ -93,6 +93,8 @@ interface FilterSectionProps {
   salespersons: { code: string; name: string }[];
   isLoading: boolean;
   isDownloading: boolean;
+  /** Why the salesperson list could not be loaded; the code can still be typed. */
+  loadError?: string;
 }
 
 function FilterSection({
@@ -101,6 +103,7 @@ function FilterSection({
   salespersons,
   isLoading,
   isDownloading,
+  loadError,
 }: FilterSectionProps) {
   return (
     <SectionCard title="Filtri" description="Filtra per agente o cliente (opzionale)">
@@ -133,6 +136,7 @@ function FilterSection({
               disabled={isLoading}
             />
           )}
+          {loadError && <p className="text-sm text-destructive">{loadError}</p>}
         </div>
 
         <div className="space-y-1.5">
@@ -272,7 +276,7 @@ export default function StatisticsPage() {
 
   // ── Portafoglio ──────────────────────────────────────────────────────────────
 
-  const { data: pfFiltersData, isLoading: pfFiltersLoading } =
+  const { data: pfFiltersData, isLoading: pfFiltersLoading, error: pfFiltersError } =
     trpc.sales.statistics.portafoglio.getFilters.useQuery(
       { brandId: brand?.id ?? '', seasonId: season?.id ?? '' },
       { enabled, retry: false },
@@ -385,6 +389,11 @@ export default function StatisticsPage() {
             onFiltersChange={setPfFilters}
             salespersons={pfFiltersData?.salespersons ?? []}
             isLoading={contextLoading || pfFiltersLoading}
+            loadError={
+              pfFiltersError
+                ? getTrpcErrorMessage(pfFiltersError, { default: 'Impossibile caricare gli agenti' })
+                : undefined
+            }
             isDownloading={pfDownloadMutation.isPending}
           />
           <DownloadSection

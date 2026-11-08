@@ -8,13 +8,13 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { APP_CONFIG_DEFAULTS, NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
-import { createSyncRequest, getNavDbConfig, NavConfigIncompleteError, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
+import { createSyncRequest, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
 import { logAudit } from '../lib/auditLog';
-import { getConfig, getConfigForForm, rethrowUnreadable, saveConfigs } from '../lib/configManager';
+import { getConfig, getConfigForForm, saveConfigs } from '../lib/configManager';
 import { externalCheckFailed } from '../lib/error';
 import { navLogger } from '../lib/logger';
+import { readNavConfig } from '../lib/navConfig';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { enforceRateLimit } from '../lib/ratelimit';
@@ -32,20 +32,6 @@ import type { FastifyBaseLogger } from 'fastify';
 function navCalendarDate(value: Date | null): CalendarDate | null {
   const date = navDateOrNull(value);
   return date && isInstantInRange(date, { allDay: true }) ? calendarDateOf(date) : null;
-}
-
-/** The saved connection, or the answer an admin can act on when it is unreadable or incomplete. */
-function readNavConfig(prisma: PrismaClient) {
-  return getNavDbConfig(prisma, getConfig).catch((error: unknown) => {
-    if (error instanceof NavConfigIncompleteError) {
-      throw externalCheckFailed(
-        error.invalidPort
-          ? 'La porta NAV salvata non è valida: inseriscila di nuovo e salva.'
-          : 'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
-      );
-    }
-    return rethrowUnreadable(error);
-  });
 }
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
