@@ -58,6 +58,8 @@ test('the dialog lists what goes and what stays, and confirms only on the exact 
   await expect.element(alert.getByText(/righe: 5/)).toBeVisible();
   await expect.element(alert.getByText(/eventi: 3/)).toBeVisible();
   await expect.element(alert.getByText(/quotazioni/)).not.toBeInTheDocument();
+  // The season-only count is absent from a brand preview: left out, never printed as `undefined`.
+  await expect.element(alert.getByText(/chiusure fornitori/)).not.toBeInTheDocument();
   await expect.element(alert.getByText(/SS 2030/)).toBeVisible();
   await expect.element(alert.getByText(/2 foto delle revisioni restano/)).toBeVisible();
 

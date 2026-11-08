@@ -233,7 +233,9 @@ async function census(db: Db, kind: PurgeKind, id: string, { layoutIds, planIds,
       merchandisingPlans: planIds.length,
       merchandisingRows,
       parameterSets,
-      [kind === 'brand' ? 'teamBrandScopes' : 'vendorClosures']: cascaded,
+      // Named keys, not a computed one, which would widen the type the web's label map is keyed by.
+      teamBrandScopes: kind === 'brand' ? cascaded : undefined,
+      vendorClosures: kind === 'season' ? cascaded : undefined,
     },
     keptPictureReferences,
     outside: { rows: outsideRows, events: outsideEvents, quotations: outsideQuotations, merchandisingRows: outsideMerchandisingRows },
@@ -244,7 +246,7 @@ async function census(db: Db, kind: PurgeKind, id: string, { layoutIds, planIds,
   };
 }
 
-function refuseOutside(kind: PurgeKind, outside: Record<string, number>) {
+function refuseOutside(kind: PurgeKind, outside: Awaited<ReturnType<typeof census>>['outside']) {
   if (Object.values(outside).every(n => n === 0)) return;
   throw new TRPCError({
     code: 'PRECONDITION_FAILED',

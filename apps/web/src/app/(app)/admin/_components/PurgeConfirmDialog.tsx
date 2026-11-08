@@ -7,8 +7,10 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
 type PurgePreview = RouterOutputs['brand']['purgePreview'];
 
-/** Italian names of what a purge deletes, keyed as the preview counts them. */
-const COUNT_LABELS: Record<string, string> = {
+type PurgeCount = keyof PurgePreview['counts'];
+
+/** Italian names of what a purge deletes, keyed by the preview's counts: a new count needs a label. */
+const COUNT_LABELS: Record<PurgeCount, string> = {
   layouts: 'collection layout',
   groups: 'gruppi',
   rows: 'righe',
@@ -23,6 +25,9 @@ const COUNT_LABELS: Record<string, string> = {
   teamBrandScopes: 'scope brand dei team',
   vendorClosures: 'chiusure fornitori',
 };
+
+// The keys of a literal typed `Record<PurgeCount, string>`, in its order; `Object.keys` types them `string`.
+const PURGE_COUNTS = Object.keys(COUNT_LABELS) as PurgeCount[];
 
 const KIND = {
   brand: { title: 'Elimina brand con i suoi dati', involved: 'Stagioni coinvolte' },
@@ -42,9 +47,10 @@ function purgeDescription(kind: keyof typeof KIND, preview: PurgePreview | undef
       `pianificazione o set di pricing (${outside} record). Spostali prima di riprovare.`
     );
   }
-  const counts = Object.entries(preview.counts)
-    .filter(([, n]) => n > 0)
-    .map(([key, n]) => `${COUNT_LABELS[key] ?? key}: ${n}`);
+  const counts = PURGE_COUNTS.flatMap(key => {
+    const n = preview.counts[key] ?? 0;
+    return n > 0 ? [`${COUNT_LABELS[key]}: ${n}`] : [];
+  });
   return [
     `Elimina "${preview.name}" e tutti i suoi dati${counts.length > 0 ? ` (${counts.join(', ')})` : ''}.`,
     preview.involved.length > 0 ? `${KIND[kind].involved}: ${preview.involved.join(', ')}.` : '',
