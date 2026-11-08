@@ -74,6 +74,18 @@ describe.each([
   });
 });
 
+it('answers a NAV query the server refuses as NAV preview does, on download', async () => {
+  await store(NAV_ROWS);
+  // The pool is never used: the query helper that would use it is the one stubbed.
+  vi.spyOn(nav, 'getPool').mockResolvedValue({} as Awaited<ReturnType<typeof nav.getPool>>);
+  vi.spyOn(nav, 'queryPortafoglioOrdini').mockRejectedValue(new Error("Invalid object name 'C$Sales Header'"));
+  const caller = await createCallerAs('admin');
+  await expect(caller.sales.statistics.portafoglio.download(ids)).rejects.toMatchObject({
+    code: 'PRECONDITION_FAILED',
+    message: 'Query NAV non riuscita: verifica connessione e company',
+  });
+});
+
 describe('an unreachable NAV server', () => {
   beforeEach(async () => {
     await store(NAV_ROWS);
@@ -85,8 +97,11 @@ describe('an unreachable NAV server', () => {
     await expect(caller.sales.statistics.portafoglio.getFilters(ids)).resolves.toMatchObject({ salespersons: [] });
   });
 
-  it('fails download, which has no fallback, without calling it a configuration problem', async () => {
+  it('fails download, which has no fallback, as NAV preview does: the driver error in the log only', async () => {
     const caller = await createCallerAs('admin');
-    await expect(caller.sales.statistics.portafoglio.download(ids)).rejects.not.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    await expect(caller.sales.statistics.portafoglio.download(ids)).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'Query NAV non riuscita: verifica connessione e company',
+    });
   });
 });

@@ -14,15 +14,13 @@ import { logAudit } from '../lib/auditLog';
 import { getConfig, getConfigForForm, saveConfigs } from '../lib/configManager';
 import { externalCheckFailed } from '../lib/error';
 import { navLogger } from '../lib/logger';
-import { readNavConfig } from '../lib/navConfig';
+import { navQueryFailed, readNavConfig } from '../lib/navConfig';
 import { navConfigChanges, pauseNavScheduler, resumeNavScheduler } from '../lib/navSyncScheduler';
 import { requirePermission } from '../lib/permissions';
 import { enforceRateLimit } from '../lib/ratelimit';
 import { resolveRateLimitPolicy } from '../lib/rateLimitPolicy';
 import { withSchedulerLock } from '../lib/schedulerLock';
 import { router, protectedProcedure } from '../lib/trpc';
-
-import type { FastifyBaseLogger } from 'fastify';
 
 /**
  * A NAV date column as a calendar day: `null` when NAV left it blank, or when it lies outside the
@@ -35,15 +33,6 @@ function navCalendarDate(value: Date | null): CalendarDate | null {
 }
 
 // ── Sync sub-router ───────────────────────────────────────────────────────────
-
-/**
- * What NAV `preview` answers when SQL Server does not answer it (#193): `externalCheckFailed`, with
- * the driver's error in the log only.
- */
-function navQueryFailed(logger: FastifyBaseLogger, err: unknown): TRPCError {
-  logger.warn({ err }, 'NAV preview failed');
-  return externalCheckFailed('Query NAV non riuscita: verifica connessione e company');
-}
 
 const navSyncRouter = router({
   /**
@@ -59,7 +48,7 @@ const navSyncRouter = router({
     .query(async ({ input, ctx }) => {
       const config = await readNavConfig(ctx.prisma);
       const pool = await getPool(config).catch((e: unknown) => {
-        throw navQueryFailed(ctx.logger, e);
+        throw navQueryFailed(ctx.logger, e, 'preview');
       });
 
       if (input.entity === 'brand') {
@@ -73,7 +62,7 @@ const navSyncRouter = router({
             ORDER BY [Code]
           `);
         } catch (e: unknown) {
-          throw navQueryFailed(ctx.logger, e);
+          throw navQueryFailed(ctx.logger, e, 'preview');
         }
         return result.recordset.map(row => ({
           navNo: row['Code'],
@@ -102,7 +91,7 @@ const navSyncRouter = router({
             ORDER BY [Code]
           `);
         } catch (e: unknown) {
-          throw navQueryFailed(ctx.logger, e);
+          throw navQueryFailed(ctx.logger, e, 'preview');
         }
         return result.recordset.map(row => ({
           navNo: row['Code'],
@@ -135,7 +124,7 @@ const navSyncRouter = router({
           ORDER BY [Name]
         `);
       } catch (e: unknown) {
-        throw navQueryFailed(ctx.logger, e);
+        throw navQueryFailed(ctx.logger, e, 'preview');
       }
 
       return result.recordset.map(row => ({

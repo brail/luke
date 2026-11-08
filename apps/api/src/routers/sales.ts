@@ -25,7 +25,7 @@ import {
   isKimoSyncRunning,
 } from '../lib/kimoSyncScheduler';
 import { navLogger } from '../lib/logger';
-import { readNavConfig } from '../lib/navConfig';
+import { logNavQueryFailure, navQueryFailed, readNavConfig } from '../lib/navConfig';
 import { requirePermission } from '../lib/permissions';
 import {
   triggerPortafoglioSyncNow,
@@ -180,7 +180,7 @@ const portafoglioRouter = router({
         };
       } catch (err) {
         // Connection or query: an unreachable server, or credentials or a company NAV refuses.
-        ctx.logger.warn({ err }, 'NAV getFilters fallback — NAV query failed');
+        logNavQueryFailure(ctx.logger, err, 'portafoglio getFilters');
         return {
           brand: { code: brand.code, name: brand.name },
           season: { code: season.code, name: season.name },
@@ -300,13 +300,17 @@ const portafoglioRouter = router({
         );
         dataSource = 'nav';
         const navConfig = await readNavConfig(ctx.prisma);
-        const pool = await getPool(navConfig);
-        rows = await queryPortafoglioOrdini(pool, navConfig.company, {
-          seasonCode: season.code,
-          trademarkCode: brand.code,
-          salespersonCode: input.salespersonCode,
-          customerCode: input.customerCode,
-        }, navLogger);
+        try {
+          const pool = await getPool(navConfig);
+          rows = await queryPortafoglioOrdini(pool, navConfig.company, {
+            seasonCode: season.code,
+            trademarkCode: brand.code,
+            salespersonCode: input.salespersonCode,
+            customerCode: input.customerCode,
+          }, navLogger);
+        } catch (err) {
+          throw navQueryFailed(ctx.logger, err, 'portafoglio download');
+        }
       }
 
       const queryDurationMs = Date.now() - queryStart;
