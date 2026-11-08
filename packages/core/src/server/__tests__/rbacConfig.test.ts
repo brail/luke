@@ -12,11 +12,13 @@ import {
 import type { IPrismaConfigClient } from '../../runtime/env.js';
 
 /** A client whose AppConfig holds exactly `rows`, key → stored value. */
-function clientWith(rows: Record<string, string>): IPrismaConfigClient {
+function clientWith(rows: Record<string, string>, encrypted: readonly string[] = []): IPrismaConfigClient {
   return {
     appConfig: {
       findUnique: async ({ where }: { where: { key: string } }) =>
-        where.key in rows ? { key: where.key, value: rows[where.key], isEncrypted: false } : null,
+        where.key in rows
+          ? { key: where.key, value: rows[where.key], isEncrypted: encrypted.includes(where.key) }
+          : null,
     },
   } as unknown as IPrismaConfigClient;
 }
@@ -95,6 +97,18 @@ describe('getRbacConfig — reporting what it ignored', () => {
     expect(disabledSections).toEqual(['product.pricing']);
     // By position, never the stored text.
     expect(handler).toHaveBeenCalledWith('app.sections.disabled', ['[0]', '[2]']);
+  });
+
+  it('disables nothing for an encrypted kill switch, and says why (#214)', async () => {
+    const handler = vi.fn();
+    setRbacConfigWarningHandler(handler);
+    const { disabledSections } = await getRbacConfig(
+      clientWith({ 'app.sections.disabled': '["product.pricing"]' }, ['app.sections.disabled']),
+      { bypassCache: true }
+    );
+
+    expect(disabledSections).toEqual([]);
+    expect(handler).toHaveBeenCalledWith('app.sections.disabled', ['encrypted']);
   });
 
   it('disables nothing for a kill switch that is not a list', async () => {

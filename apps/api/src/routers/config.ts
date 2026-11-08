@@ -230,8 +230,9 @@ async function upsertConfig(
     }
   }
 
-  // A secret is stored encrypted whatever the client asked: the audit row and the response
-  // follow what is stored, so neither carries the value of a secret sent as plaintext.
+  // A secret is stored encrypted, and a plaintext key in plaintext, whatever the client asked: the
+  // audit row and the response follow what is stored, so neither carries the value of a secret sent
+  // as plaintext nor claims an encryption that did not happen.
   await saveConfig(ctx.prisma, key, value, encrypt);
   const encrypted = storesEncrypted(key, encrypt);
 

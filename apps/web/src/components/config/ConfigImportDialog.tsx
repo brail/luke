@@ -7,6 +7,7 @@ import {
   CONFIG_SECRET_PLACEHOLDER,
   ConfigImportFileSchema,
   ConfigImportItemSchema,
+  isPlaintextConfigKey,
   isSecretConfigKey,
   storesEncrypted,
   type ConfigImportItem,
@@ -174,9 +175,15 @@ export function ConfigImportDialog({
     setPreview(
       rows.map(r => {
         if (r.status !== 'new' || !existingKeys.has(r.key)) return r;
-        // A secret stays encrypted; anything else the file marks as plaintext loses its encryption.
+        // A secret stays encrypted; anything else the file marks as plaintext loses its encryption,
+        // except a key always stored in plaintext, for which that is the repair (#214).
         const downgrade = encryptedKeys.has(r.key) && !storesEncrypted(r.key, r.encrypt);
-        return { ...r, status: 'update', warning: downgrade ? 'Oggi è cifrato: verrà salvato in chiaro' : undefined };
+        const warning = !downgrade
+          ? undefined
+          : isPlaintextConfigKey(r.key)
+            ? 'Oggi è cifrato per errore: verrà salvato in chiaro, come richiede questa impostazione'
+            : 'Oggi è cifrato: verrà salvato in chiaro';
+        return { ...r, status: 'update', warning };
       })
     );
     setStep('preview');
@@ -360,7 +367,11 @@ export function ConfigImportDialog({
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline">
-                          {isSecretConfigKey(item.key) ? 'Cifrato (obbligatorio)' : item.encrypt ? 'Cifrato' : 'Normale'}
+                          {isSecretConfigKey(item.key)
+                            ? 'Cifrato (obbligatorio)'
+                            : isPlaintextConfigKey(item.key)
+                              ? 'In chiaro (obbligatorio)'
+                              : storesEncrypted(item.key, item.encrypt) ? 'Cifrato' : 'Normale'}
                         </Badge>
                       </TableCell>
                       <TableCell>

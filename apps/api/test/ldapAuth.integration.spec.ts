@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { saveConfig } from '../src/lib/configManager';
+import { encryptValue, saveConfig } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { authenticateViaLdap } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
@@ -176,8 +176,13 @@ describe('authenticateViaLdap', () => {
     });
 
     it('its flag stored encrypted: off', async () => {
-      // `config.set` can encrypt any key, and the flag is read as stored: ciphertext is not `true`.
-      await saveConfig(prisma, 'auth.ldap.enabled', 'true', true);
+      // The flag is read as stored: ciphertext is not `true`. No writer stores it encrypted any more
+      // (`PLAINTEXT_CONFIG_KEYS`, #214), so the row an earlier release could leave is written directly.
+      await prisma.appConfig.upsert({
+        where: { key: 'auth.ldap.enabled' },
+        update: { value: encryptValue('true'), isEncrypted: true },
+        create: { key: 'auth.ldap.enabled', value: encryptValue('true'), isEncrypted: true },
+      });
 
       expect(await authenticateViaLdap(prisma, 'alice', 'pw')).toEqual(REFUSED);
       expect(bind).not.toHaveBeenCalled();

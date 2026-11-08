@@ -127,6 +127,13 @@ test('a secret is labelled as always encrypted and its value hidden, whatever th
   expect(screen.getByText('ghp-sentinel').elements()).toHaveLength(0);
 });
 
+test('a key always stored in plaintext is labelled so, and shown, whatever the file says (#214)', async () => {
+  const screen = await selectFile([{ key: 'app.sections.disabled', value: '["settings.storage"]', encrypt: true }]);
+
+  await expect.element(screen.getByText('In chiaro (obbligatorio)')).toBeVisible();
+  await expect.element(screen.getByText('["settings.storage"]')).toBeVisible();
+});
+
 test('an update that would store an encrypted setting in plaintext is flagged, a secret is not', async () => {
   h.fetchExisting.mockResolvedValue([
     { key: 'app.baseUrl', value: null, found: true, isEncrypted: true },

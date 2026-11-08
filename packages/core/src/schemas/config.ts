@@ -422,11 +422,34 @@ export function isSecretConfigKey(key: string): key is SecretConfigKey {
 }
 
 /**
- * Whether a write stores its value encrypted: when the caller asks, and for a key in
- * `SECRET_CONFIG_KEYS` whatever the caller asks. Every writer, its audit row, its response and the
- * import preview follow this decision.
+ * Keys whose readers read the stored value without decrypting it: `getRbacConfig` in core, which
+ * holds no key, and the LDAP readers in the API. Stored encrypted, they would read ciphertext — a
+ * kill switch that disables nothing, LDAP silently off (#214). So they are stored in plaintext
+ * whatever the writer asks; none of them is a credential.
+ */
+export const PLAINTEXT_CONFIG_KEYS = [
+  'app.sections.disabled',
+  'rbac.sectionAccessDefaults',
+  'auth.ldap.enabled',
+  'auth.strategy',
+] as const satisfies readonly AppConfigKey[];
+
+export type PlaintextConfigKey = (typeof PLAINTEXT_CONFIG_KEYS)[number];
+
+const PLAINTEXT_CONFIG_KEY_SET = new Set<string>(PLAINTEXT_CONFIG_KEYS);
+
+/** Whether `key` is read without decryption, so always stored in plaintext. */
+export function isPlaintextConfigKey(key: string): key is PlaintextConfigKey {
+  return PLAINTEXT_CONFIG_KEY_SET.has(key);
+}
+
+/**
+ * Whether a write stores its value encrypted: never for a key in `PLAINTEXT_CONFIG_KEYS`, always
+ * for one in `SECRET_CONFIG_KEYS`, and otherwise when the caller asks. Every writer, its audit row,
+ * its response and the import preview follow this decision.
  */
 export function storesEncrypted(key: string, encrypt?: boolean | null): boolean {
+  if (isPlaintextConfigKey(key)) return false;
   return encrypt === true || isSecretConfigKey(key);
 }
 

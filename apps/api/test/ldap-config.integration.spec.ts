@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 
 import { PrismaClient } from '@luke/db';
 
-import { getLdapConfig, saveConfig } from '../src/lib/configManager';
+import { encryptValue, getLdapConfig } from '../src/lib/configManager';
 import { checkLdap } from '../src/observability/readiness';
 
 import { setupTestDb } from './helpers/database';
@@ -106,7 +106,12 @@ describe('LDAP Config Management', () => {
     });
 
     it('its flag stored encrypted: off', async () => {
-      await saveConfig(prisma, 'auth.ldap.enabled', 'true', true);
+      // Written directly: no writer stores the flag encrypted any more (`PLAINTEXT_CONFIG_KEYS`, #214).
+      await prisma.appConfig.upsert({
+        where: { key: 'auth.ldap.enabled' },
+        update: { value: encryptValue('true'), isEncrypted: true },
+        create: { key: 'auth.ldap.enabled', value: encryptValue('true'), isEncrypted: true },
+      });
 
       expect(await checkLdap(prisma)).toEqual(SKIPPED);
     });

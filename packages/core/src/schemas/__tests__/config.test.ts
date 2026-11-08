@@ -13,7 +13,7 @@
  * asserted it, so lowering it turned nothing red outside the web bundle.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, expectTypeOf } from 'vitest';
 
 import {
   APP_CONFIG_DEFAULTS,
@@ -21,14 +21,19 @@ import {
   CONFIG_ROUTER_KEY_REGEX,
   CONFIG_ROUTER_PREFIXES,
   CRITICAL_CONFIG_KEYS,
+  PLAINTEXT_CONFIG_KEYS,
+  SECRET_CONFIG_KEYS,
   UNDELETABLE_CONFIG_KEYS,
   isAppConfigKey,
   isConfigRouterKey,
   isUndeletableConfigKey,
   parseConfigValue,
+  storesEncrypted,
   validateConfigValue,
   type AppConfigKey,
   type AppConfigValue,
+  type PlaintextConfigKey,
+  type SecretConfigKey,
 } from '../config.js';
 import { passwordPrefilterSchema } from '../password.js';
 
@@ -332,5 +337,25 @@ describe('the generic config router has one set of key rules', () => {
   it('protects app.baseUrl, whose default would silently point every email link at localhost', () => {
     expect(isUndeletableConfigKey('app.baseUrl')).toBe(true);
     expect(isUndeletableConfigKey('security.password.minLength')).toBe(false);
+  });
+});
+
+describe('the encryption decision', () => {
+  it('stores a key whose reader never decrypts in plaintext, whatever the caller asks (#214)', () => {
+    for (const key of PLAINTEXT_CONFIG_KEYS) {
+      expect(storesEncrypted(key, true), key).toBe(false);
+    }
+  });
+
+  it('still encrypts a secret whatever the caller asks, and a free key only on request', () => {
+    for (const key of SECRET_CONFIG_KEYS) {
+      expect(storesEncrypted(key, false), key).toBe(true);
+    }
+    expect(storesEncrypted('app.name', true)).toBe(true);
+    expect(storesEncrypted('app.name', false)).toBe(false);
+  });
+
+  it('never lists a key as both a secret and a plaintext key', () => {
+    expectTypeOf<Extract<PlaintextConfigKey, SecretConfigKey>>().toBeNever();
   });
 });

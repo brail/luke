@@ -201,7 +201,8 @@ async function saveSectionsDisabledGuarded(
  * @param key - Configuration key declared in `AppConfigRegistry`.
  * @param value - Value to store, as the string form the registry schema parses.
  * @param encrypt - When `true`, the value is encrypted with AES-256-GCM before storage. A key in
- *   `SECRET_CONFIG_KEYS` is encrypted whatever this says.
+ *   `SECRET_CONFIG_KEYS` is encrypted, and one in `PLAINTEXT_CONFIG_KEYS` stored in plaintext,
+ *   whatever this says (`storesEncrypted`).
  * @throws {TRPCError} `BAD_REQUEST` when the value fails its registry schema.
  *
  * @example
@@ -255,8 +256,9 @@ export function prepareConfigWrite<K extends AppConfigKey>(write: { key: K; valu
 /**
  * Saves several keys as one change — a settings form, which must not be left half-written.
  *
- * Every value is validated against its registry schema, and encrypted when asked or when its key is
- * in `SECRET_CONFIG_KEYS`, before anything is written; then all the writes run in one transaction,
+ * Every value is validated against its registry schema, and encrypted as `storesEncrypted` decides
+ * (when asked, always for `SECRET_CONFIG_KEYS`, never for `PLAINTEXT_CONFIG_KEYS`), before anything
+ * is written; then all the writes run in one transaction,
  * in order: an upsert for a value, a `deleteMany` for `null` (removing an absent key is not an
  * error). Either every key changes or none does. What it guarantees is one atomic write, not a
  * consistent snapshot for a reader that issues several reads across the commit. The RBAC cache is

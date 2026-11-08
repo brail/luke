@@ -187,6 +187,19 @@ function readDisabledSections(raw: string | undefined): {
   return { sections, ignored };
 }
 
+/** A row's value; a row an earlier release stored encrypted reads as absent, reported (core cannot decrypt). */
+function plaintextValue(
+  key: string,
+  row: { value: string; isEncrypted?: boolean } | null
+): string | undefined {
+  if (!row) return undefined;
+  if (row.isEncrypted) {
+    reportIgnored(key, ['encrypted']);
+    return undefined;
+  }
+  return row.value;
+}
+
 /** In-memory TTL cache for RBAC configuration. Invalidated by `invalidateRbacCache()`. */
 const cache = new Map<string, { data: RbacConfig; ts: number }>();
 const TTL = 60_000; // 60 seconds
@@ -231,15 +244,18 @@ export async function getRbacConfig(
   ]);
 
   let stored: SectionAccessDefaults = {};
-  if (sectionDefaultsRow) {
-    const read = readStoredSectionDefaults(sectionDefaultsRow.value);
+  const sectionDefaultsValue = plaintextValue('rbac.sectionAccessDefaults', sectionDefaultsRow);
+  if (sectionDefaultsValue !== undefined) {
+    const read = readStoredSectionDefaults(sectionDefaultsValue);
     stored = read.stored;
     reportIgnored('rbac.sectionAccessDefaults', read.ignored);
   }
 
   // An unreadable kill switch disables nothing: the alternative, everything disabled, would lock
   // every administrator out of the only place where it can be corrected.
-  const { sections: disabledSections, ignored } = readDisabledSections(disabledRow?.value);
+  const { sections: disabledSections, ignored } = readDisabledSections(
+    plaintextValue('app.sections.disabled', disabledRow)
+  );
   reportIgnored('app.sections.disabled', ignored);
 
   const rbacConfig: RbacConfig = {

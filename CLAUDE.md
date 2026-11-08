@@ -246,6 +246,9 @@ All runtime configuration lives in the `AppConfig` table (Postgres KV), and `App
   derived `SecretConfigKey`, defines mandatory encryption. Every writer, including seeds and
   dedicated writers, must enforce it regardless of caller flags. Audit metadata, responses and
   import previews use the effective encryption decision. Validate plaintext before encryption.
+- `PLAINTEXT_CONFIG_KEYS`, bound to `AppConfigKey` with its derived `PlaintextConfigKey`, defines
+  keys that must remain plaintext for their non-decrypting readers; `storesEncrypted` ignores caller
+  encryption flags for these keys.
 - `CRITICAL_CONFIG_KEYS`: only `auth.strategy`. Add a key only if its absence must block boot
 
 ## Auth & Crypto — DO NOT TOUCH without an explicit request
