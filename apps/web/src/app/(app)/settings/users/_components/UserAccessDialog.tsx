@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../../../components/ui/dialog';
+import { ROLE_LABELS } from '../../../../../lib/roles';
 
 import { SectionAccessList } from './SectionAccessList';
 import { type UserListItem } from './types';
@@ -63,7 +64,7 @@ export function UserAccessDialog({ user, open, onOpenChange }: UserAccessDialogP
           </DialogTitle>
           <DialogDescription>
             Configura sezioni visibili. Gli override si applicano sopra i default del ruolo{' '}
-            <strong>{user.role}</strong>.
+            <strong>{ROLE_LABELS[user.role]}</strong>.
           </DialogDescription>
         </DialogHeader>
 

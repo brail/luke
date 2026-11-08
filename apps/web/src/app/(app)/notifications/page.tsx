@@ -66,7 +66,7 @@ export default function NotificationsPage() {
             <SelectItem value="ALL">Tutte le categorie</SelectItem>
             {notificationCategoryEnum.options.map(category => (
               <SelectItem key={category} value={category}>
-                {NOTIFICATION_CATEGORY_META[category]?.label ?? category}
+                {NOTIFICATION_CATEGORY_META[category].label}
               </SelectItem>
             ))}
           </SelectContent>

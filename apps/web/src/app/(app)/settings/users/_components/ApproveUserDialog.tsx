@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '../../../../../components/ui/select';
 import { usePermission } from '../../../../../hooks/usePermission';
+import { parseRole, ROLE_LABELS, ROLES_LEAST_FIRST } from '../../../../../lib/roles';
 import { trpc } from '../../../../../lib/trpc';
 
 import { SectionAccessList } from './SectionAccessList';
@@ -194,17 +195,19 @@ export function ApproveUserDialog({
             <h3 className="text-sm font-semibold mb-3">Ruolo</h3>
             <Select
               value={shownRole ?? ''}
-              // The items below are exactly the three roles, so the value is one of them.
-              onValueChange={v => chooseRole(v as Role)}
+              onValueChange={v => {
+                const role = parseRole(v);
+                if (role) chooseRole(role);
+              }}
               disabled={!configures || !ready || isSaving}
             >
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="viewer">Viewer</SelectItem>
-                <SelectItem value="editor">Editor</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                {ROLES_LEAST_FIRST.map(role => (
+                  <SelectItem key={role} value={role}>{ROLE_LABELS[role]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

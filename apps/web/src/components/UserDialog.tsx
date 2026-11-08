@@ -1,5 +1,7 @@
 'use client';
 
+import type { Role } from '@luke/core';
+
 import { type SyncedField, type UserSubmitPayload } from '../lib/userFormSchema';
 
 import {
@@ -17,7 +19,7 @@ interface User {
   username: string;
   firstName?: string | null;
   lastName?: string | null;
-  role: 'admin' | 'editor' | 'viewer';
+  role: Role;
   isActive: boolean;
   identities?: Array<{
     provider: 'LOCAL' | 'LDAP' | 'OIDC';

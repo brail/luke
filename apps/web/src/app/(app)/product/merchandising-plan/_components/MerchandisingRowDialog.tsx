@@ -45,6 +45,8 @@ import {
 import { Textarea } from '../../../../../components/ui/textarea';
 import { trpc } from '../../../../../lib/trpc';
 
+import { GENDER_LABELS, LAUNCH_TYPE_LABELS, LIFE_TYPE_LABELS } from './labels';
+
 
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 
@@ -53,25 +55,6 @@ const FormSchema = MerchandisingPlanRowInputSchema.omit({ planId: true }).extend
   pricingParameterSetId: z.string().optional().nullable(),
 });
 type FormValues = z.infer<typeof FormSchema>;
-
-const GENDER_LABELS: Record<string, string> = {
-  MAN: 'Uomo',
-  WOMAN: 'Donna',
-  UNISEX: 'Unisex',
-  KID: 'Bambino',
-};
-
-const LIFE_TYPE_LABELS: Record<string, string> = {
-  NEW_LINE: 'New Line',
-  NEW_STYLE: 'New Style',
-  NEW_COLOR: 'New Color',
-  CARRY_OVER: 'Carry Over',
-};
-
-const LAUNCH_TYPE_LABELS: Record<string, string> = {
-  SAMPLED: 'Sampled',
-  OPEN_TO_BUY: 'Open to Buy',
-};
 
 interface Props {
   open: boolean;
@@ -289,7 +272,7 @@ export function MerchandisingRowDialog({
                         <SelectContent>
                           {MERCHANDISING_GENDER.map(g => (
                             <SelectItem key={g} value={g}>
-                              {GENDER_LABELS[g] ?? g}
+                              {GENDER_LABELS[g]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -350,7 +333,7 @@ export function MerchandisingRowDialog({
                           <SelectItem value="__none__">—</SelectItem>
                           {MERCHANDISING_LIFE_TYPE.map(t => (
                             <SelectItem key={t} value={t}>
-                              {LIFE_TYPE_LABELS[t] ?? t}
+                              {LIFE_TYPE_LABELS[t]}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -379,7 +362,7 @@ export function MerchandisingRowDialog({
                           <SelectItem value="__none__">—</SelectItem>
                           {MERCHANDISING_LAUNCH_TYPE.map(t => (
                             <SelectItem key={t} value={t}>
-                              {LAUNCH_TYPE_LABELS[t] ?? t}
+                              {LAUNCH_TYPE_LABELS[t]}
                             </SelectItem>
                           ))}
                         </SelectContent>

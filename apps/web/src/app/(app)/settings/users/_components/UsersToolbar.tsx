@@ -2,9 +2,12 @@
 
 import React from 'react';
 
+import { Roles } from '@luke/core';
+
 import { CreateActionButton } from '../../../../../components/CreateActionButton';
 import { Button } from '../../../../../components/ui/button';
 import { Input } from '../../../../../components/ui/input';
+import { ROLE_LABELS } from '../../../../../lib/roles';
 
 import { ToolbarProps, ToolbarHandlers } from './types';
 
@@ -48,9 +51,9 @@ export function UsersToolbar({
             className="flex h-10 w-32 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Tutti i ruoli</option>
-            <option value="admin">Admin</option>
-            <option value="editor">Editor</option>
-            <option value="viewer">Viewer</option>
+            {Roles.map(role => (
+              <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+            ))}
           </select>
         </div>
       </div>

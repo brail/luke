@@ -17,20 +17,10 @@ import {
 } from '../../../../../components/ui/table';
 import { cn } from '../../../../../lib/utils';
 
+import { GENDER_LABELS, PLAN_STATUS_LABELS } from './labels';
+
 type MerchandisingRow = RouterOutputs['merchandisingPlan']['listRows'][number];
 type MerchandisingPlan = NonNullable<RouterOutputs['merchandisingPlan']['get']>;
-
-const GENDER_LABELS: Record<string, string> = {
-  MAN: 'Uomo',
-  WOMAN: 'Donna',
-  UNISEX: 'Unisex',
-  KID: 'Bambino',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Bozza',
-  CONFIRMED: 'Confermato',
-};
 
 function formatPrice(value: unknown): string {
   if (value === null || value === undefined) return '—';
@@ -88,7 +78,7 @@ export function MerchandisingPlanTable({
             variant={plan.status === 'CONFIRMED' ? 'default' : 'secondary'}
             className="text-xs"
           >
-            {STATUS_LABELS[plan.status] ?? plan.status}
+            {PLAN_STATUS_LABELS[plan.status]}
           </Badge>
           {canUpdate && (
             <Button
@@ -114,7 +104,7 @@ export function MerchandisingPlanTable({
             <option value="">Tutti i gender</option>
             {genders.map(g => (
               <option key={g} value={g}>
-                {GENDER_LABELS[g] ?? g}
+                {GENDER_LABELS[g]}
               </option>
             ))}
           </select>
@@ -207,7 +197,7 @@ export function MerchandisingPlanTable({
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs">
-                        {GENDER_LABELS[row.gender] ?? row.gender}
+                        {GENDER_LABELS[row.gender]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{row.specsheet?.supplierName ?? '—'}</TableCell>

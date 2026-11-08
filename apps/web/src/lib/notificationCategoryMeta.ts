@@ -1,8 +1,10 @@
+import type { NotificationCategory } from '@luke/core';
+
 /**
  * Visual style + Italian label/description for each notification category — the single shared
  * source for the bell dropdown, the Notification Center page, and the profile preferences panel.
  */
-export const NOTIFICATION_CATEGORY_META: Record<string, { style: string; label: string; description: string }> = {
+export const NOTIFICATION_CATEGORY_META: Record<NotificationCategory, { style: string; label: string; description: string }> = {
   SYSTEM: {
     style: 'bg-blue-100 text-blue-700',
     label: 'Sistema',

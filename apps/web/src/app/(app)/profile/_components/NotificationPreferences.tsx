@@ -145,8 +145,8 @@ export function NotificationPreferences() {
           <div key={pref.category} className="rounded-lg border p-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
-                <p className="text-sm font-medium">{meta?.label ?? pref.category}</p>
-                <p className="text-xs text-muted-foreground">{meta?.description}</p>
+                <p className="text-sm font-medium">{meta.label}</p>
+                <p className="text-xs text-muted-foreground">{meta.description}</p>
               </div>
               <div className="flex items-center gap-3">
                 {pref.category === 'CALENDAR' && (

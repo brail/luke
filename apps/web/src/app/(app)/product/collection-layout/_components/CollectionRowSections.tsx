@@ -7,6 +7,7 @@ import type { RouterOutputs } from '@luke/api';
 import {
   calcMaxSupplierCost,
   classifyMargin,
+  currencySymbol,
   formatMarginPct,
   priceMargin,
   type CollectionGender,
@@ -106,10 +107,6 @@ function parsePositiveInt(value: string): number | null {
   const parsed = parseInt(value, 10);
   return !isNaN(parsed) && parsed >= 1 ? parsed : null;
 }
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', EUR: '€', GBP: '£', CHF: 'CHF', CNY: '¥',
-};
 
 function fmtCurrency(symbol: string, value: number) {
   return `${symbol}${value.toFixed(2)}`;
@@ -1004,8 +1001,8 @@ export function PricingFooterSection({
                   {quotations.map(q => {
                     const ps = parameterSets.find(p => p.id === q.pricingParameterSetId) ?? null;
                     const calc = calcQuotationFields(q, ps);
-                    const sellSym = ps ? (CURRENCY_SYMBOLS[ps.sellingCurrency] ?? ps.sellingCurrency) : '';
-                    const buySym = ps ? (CURRENCY_SYMBOLS[ps.purchaseCurrency] ?? ps.purchaseCurrency) : '';
+                    const sellSym = ps ? currencySymbol(ps.sellingCurrency) : '';
+                    const buySym = ps ? currencySymbol(ps.purchaseCurrency) : '';
                     const hasFilter = enabledParameterSetIds.length > 0;
                     const visibleParamSets = hasFilter
                       ? parameterSets.filter(p => enabledParameterSetIds.includes(p.id))

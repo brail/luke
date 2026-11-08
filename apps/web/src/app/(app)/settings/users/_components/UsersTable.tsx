@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from '../../../../../components/ui/tooltip';
 import { useFormatDate } from '../../../../../hooks/useFormatDate';
+import { ROLE_LABELS } from '../../../../../lib/roles';
 import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 import { SortableHeader } from './SortableHeader';
@@ -300,7 +301,7 @@ export function UsersTable({
                 )}
               </TableCell>
               <TableCell>
-                <Badge variant="secondary">{user.role}</Badge>
+                <Badge variant="secondary">{ROLE_LABELS[user.role]}</Badge>
               </TableCell>
               <TableCell>
                 <Badge variant={user.isActive ? 'default' : 'secondary'}>

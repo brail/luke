@@ -22,6 +22,7 @@ import { trpc } from '../../../../../lib/trpc';
 import { useStandardMutation } from '../../../../../lib/useStandardMutation';
 
 import { ApproveUserDialog } from './ApproveUserDialog';
+import { type UserForApproval } from './types';
 
 /**
  * Tab listing users pending admin approval (LDAP and local accounts with `pendingApproval: true`).
@@ -35,13 +36,7 @@ export function PendingUsersTab() {
   const canUpdate = can('users:update');
   const canDelete = can('users:delete');
 
-  const [approveTarget, setApproveTarget] = useState<{
-    id: string;
-    username: string;
-    firstName: string;
-    lastName: string;
-    role: 'admin' | 'editor' | 'viewer';
-  } | null>(null);
+  const [approveTarget, setApproveTarget] = useState<UserForApproval | null>(null);
 
   const [rejectTarget, setRejectTarget] = useState<{
     id: string;
@@ -143,7 +138,7 @@ export function PendingUsersTab() {
                             username: user.username,
                             firstName: user.firstName || '',
                             lastName: user.lastName || '',
-                            role: user.role as 'admin' | 'editor' | 'viewer',
+                            role: user.role,
                           })
                         }
                       >

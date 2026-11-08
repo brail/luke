@@ -4,7 +4,7 @@ import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE } from '@luke/core';
+import { CreateUserInputSchema, HARD_DELETE_CONFIRM_PHRASE, type Role } from '@luke/core';
 
 import { ConfirmDialog } from '../../../../components/ConfirmDialog';
 import { PageHeader } from '../../../../components/PageHeader';
@@ -20,6 +20,7 @@ import { UserDialog, type UserDialogSubmitData } from '../../../../components/Us
 import { usePermission } from '../../../../hooks/usePermission';
 import { debugLog } from '../../../../lib/debug';
 import { useRefresh } from '../../../../lib/refresh';
+import { parseRole } from '../../../../lib/roles';
 import { trpc } from '../../../../lib/trpc';
 import { type SyncedField } from '../../../../lib/userFormSchema';
 import { useStandardMutation } from '../../../../lib/useStandardMutation';
@@ -105,7 +106,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<UserListItem | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [roleFilter, setRoleFilter] = useState<string>('');
+  const [roleFilter, setRoleFilter] = useState<Role | ''>('');
   const [syncedFields, setSyncedFields] = useState<SyncedField[]>([]);
 
   // State for the confirmation modal
@@ -143,7 +144,7 @@ export default function UsersPage() {
       page: currentPage,
       limit: 10,
       search: searchTerm || undefined,
-      role: (roleFilter as 'admin' | 'editor' | 'viewer') || undefined,
+      role: roleFilter || undefined,
       sortBy,
       sortOrder,
     },
@@ -405,7 +406,7 @@ export default function UsersPage() {
   };
 
   const handleRoleFilter = (value: string) => {
-    setRoleFilter(value);
+    setRoleFilter(parseRole(value) ?? '');
     setCurrentPage(1); // Reset to first page
   };
 

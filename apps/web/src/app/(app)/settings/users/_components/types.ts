@@ -77,7 +77,7 @@ export interface ToolbarHandlers {
  */
 export interface ToolbarProps {
   searchTerm: string;
-  roleFilter: string;
+  roleFilter: Role | '';
   currentPage: number;
   totalPages: number;
   totalUsers: number;

@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 
 import { usePasswordPolicy } from '../hooks/usePasswordValidation';
 import { evaluatePassword } from '../lib/passwordChecks';
+import { ROLE_LABELS, ROLES_LEAST_FIRST } from '../lib/roles';
 import {
   buildUserPayload,
   type SyncedField,
@@ -239,9 +240,9 @@ export function UserForm({
                   errors.role ? 'border-destructive' : ''
                 }`}
               >
-                <option value="viewer">Viewer</option>
-                <option value="editor">Editor</option>
-                <option value="admin">Admin</option>
+                {ROLES_LEAST_FIRST.map(role => (
+                  <option key={role} value={role}>{ROLE_LABELS[role]}</option>
+                ))}
               </select>
               {errors.role && (
                 <p className="text-sm text-destructive">{errors.role}</p>

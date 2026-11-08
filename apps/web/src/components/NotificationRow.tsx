@@ -42,10 +42,10 @@ export function NotificationRow({ notification: n, onMarkAsRead }: NotificationR
               className={cn(
                 // 10px: below Tailwind's text-xs (12px) floor; dense category chip
                 'text-[10px] font-medium px-1.5 py-0.5 rounded',
-                NOTIFICATION_CATEGORY_META[n.category]?.style ?? 'bg-muted text-muted-foreground'
+                NOTIFICATION_CATEGORY_META[n.category].style
               )}
             >
-              {NOTIFICATION_CATEGORY_META[n.category]?.label ?? n.category}
+              {NOTIFICATION_CATEGORY_META[n.category].label}
             </span>
             {!n.isRead && (
               <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
