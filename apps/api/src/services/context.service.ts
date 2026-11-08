@@ -96,32 +96,19 @@ export async function getUserAllowedBrandIds(
 }
 
 /**
- * Returns the set of CompanyFunction IDs the user may access via team membership.
- * Admins receive null (unrestricted). Users in no team receive an empty array (no access).
- *
- * @returns null for admin (unrestricted), or an array of allowed function IDs.
+ * What a user's active teams grant on the calendar: each function, on the brands of the teams that
+ * hold it (ADR-041). A pair (function, brand) is granted only when one team holds both; a team with
+ * no brand scope grants its function on nothing, so it gets no entry.
  */
-export async function getUserAllowedFunctionIds(
-  userId: string,
-  prisma: PrismaClient,
-  userRole?: Role
-): Promise<string[] | null> {
-  if (hasUnrestrictedScope(userRole)) return null;
+export type FunctionBrands = ReadonlyMap<string, ReadonlySet<string>>;
 
-  const memberships = await prisma.companyTeamMembership.findMany({
-    where: { userId, team: { isActive: true } },
-    select: { team: { select: { functionId: true } } },
-  });
-
-  return [...new Set(memberships.map(m => m.team.functionId))];
-}
-
-/** Both halves of `getUserAllowedBrandIds`/`getUserAllowedFunctionIds`, for callers that need both
- * in the same request (today: the calendar's `listMilestonesDb` and its export-route siblings) —
- * one `companyTeamMembership` query instead of two identical-`where`, different-`select` ones. */
+/** Both halves of the user's team access, from one `companyTeamMembership` query: the brands they
+ * may open (union of their teams' scopes) and the function → brands pairs their teams grant. */
 export interface UserAllowedIds {
+  /** `null` = unrestricted (admin). */
   brandIds: string[] | null;
-  functionIds: string[] | null;
+  /** `null` = unrestricted (admin). */
+  functionBrands: FunctionBrands | null;
 }
 
 export async function getUserAllowedIds(
@@ -129,17 +116,22 @@ export async function getUserAllowedIds(
   prisma: PrismaClient,
   userRole?: Role
 ): Promise<UserAllowedIds> {
-  if (hasUnrestrictedScope(userRole)) return { brandIds: null, functionIds: null };
+  if (hasUnrestrictedScope(userRole)) return { brandIds: null, functionBrands: null };
 
   const memberships = await prisma.companyTeamMembership.findMany({
     where: { userId, team: { isActive: true } },
     select: { team: { select: { functionId: true, brandScopes: { select: { brandId: true } } } } },
   });
 
-  return {
-    brandIds: [...unionBrandScopes(memberships)],
-    functionIds: [...new Set(memberships.map(m => m.team.functionId))],
-  };
+  const functionBrands = new Map<string, Set<string>>();
+  for (const { team } of memberships) {
+    for (const { brandId } of team.brandScopes) {
+      const brands = functionBrands.get(team.functionId) ?? new Set<string>();
+      functionBrands.set(team.functionId, brands.add(brandId));
+    }
+  }
+
+  return { brandIds: [...unionBrandScopes(memberships)], functionBrands };
 }
 
 /**

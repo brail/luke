@@ -1,12 +1,12 @@
 /**
  * Query-sharing regression test for `brandScope.service.ts`'s per-request memoization.
  *
- * `assertBrandAccess`/`filterAllowedBrandIds` (brand) and the newer `getAllowedFunctionIds`
+ * `assertBrandAccess`/`filterAllowedBrandIds` (brand) and the newer `getAllowedFunctionBrands`
  * (function) both derive from the same `ctx._allowedTeamAccessPromise`, populated once by
  * `getUserAllowedIds`. The point of that sharing is concrete: `seasonCalendar.listMilestones` is
  * commonly batched in the same tRPC request as `seasonCalendar.getOrCreate` (both fire on the
  * calendar page's initial load) — `getOrCreate` calls `assertBrandAccess`, `listMilestones` calls
- * both `filterAllowedBrandIds` and `getAllowedFunctionIds`. Without sharing, that's 2-3 separate
+ * both `filterAllowedBrandIds` and `getAllowedFunctionBrands`. Without sharing, that's 2-3 separate
  * `companyTeamMembership` queries per page load instead of 1.
  *
  * This asserts the mechanism directly rather than trusting code review: two guards of different
@@ -19,7 +19,7 @@ import { describe, it, expect, beforeAll, vi } from 'vitest';
 
 import type { PrismaClient } from '@luke/db';
 
-import { assertBrandAccess, getAllowedFunctionIds, type BrandScopeCtx } from '../src/services/brandScope.service';
+import { assertBrandAccess, getAllowedFunctionBrands, type BrandScopeCtx } from '../src/services/brandScope.service';
 
 import { setupTestDb } from './helpers/database';
 
@@ -54,12 +54,12 @@ beforeAll(async () => {
 });
 
 describe('brandScope.service.ts — per-request query sharing', () => {
-  it('assertBrandAccess followed by getAllowedFunctionIds on the same ctx: a single companyTeamMembership query', async () => {
+  it('assertBrandAccess followed by getAllowedFunctionBrands on the same ctx: a single companyTeamMembership query', async () => {
     const ctx: BrandScopeCtx = { prisma, session: { user: { id: userId, role: 'viewer' } } };
     const spy = vi.spyOn(prisma.companyTeamMembership, 'findMany');
 
     await assertBrandAccess(ctx, brandId);
-    await getAllowedFunctionIds(ctx);
+    await getAllowedFunctionBrands(ctx);
 
     expect(spy).toHaveBeenCalledTimes(1);
     spy.mockRestore();

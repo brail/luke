@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [041 — Calendar Visibility: Function and Brand from One Team](041-calendar-visibility-function-and-brand-from-one-team.md)
 
 ## Context
 

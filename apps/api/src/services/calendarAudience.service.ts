@@ -1,20 +1,26 @@
 /**
- * Single predicate for calendar event visibility, exposed in both directions:
+ * Single predicate for calendar event visibility (ADR-041, superseding ADR-014's), exposed in both
+ * directions:
  *
  *   canSee(u, e) = u.isActive ∧ ¬u.pendingApproval ∧ P_access(u, e) ∧ P_relevance(u, e)
  *
  *   P_access    : u.role = 'admin'                                    (brand-unrestricted)
  *               ∨ e.calendar.brandId ∈ ⋃ { T.brandScopes : T active team of u }
  *
- *   P_relevance : e has no visibility rows                            (permissive fallback)
+ *   P_relevance : e has no visibility rows of either kind             (whole-brand fallback)
  *               ∨ ∃ active team T : u ∈ T ∧ T.functionId ∈ e.visibilities
+ *                                   ∧ e.calendar.brandId ∈ T.brandScopes
  *               ∨ ∃ CalendarEventUserVisibility(e, u)                 (per-person exception)
+ *
+ * A team grants its function on its own brands only: function and brand come from the same team.
+ * An admin reads every event; they are notified like anyone else, only through a team of theirs
+ * (the fallback included) or a per-person row.
  *
  * `resolveEventAudience` answers "who receives a notification about event X" (reverse).
  * `eventVisibilityWhere` answers "which events can user X see" (forward, a Prisma `where`
  * fragment for `listMilestonesDb` and, through `callerEventVisibility`, every read and write by id:
- * ADR-040) — a pure function of already-resolved function ids, mirroring
- * how brand ids are already resolved upstream (`filterAllowedBrandIds`) rather than queried here.
+ * ADR-040) — a pure function of the user's already-resolved function → brands pairs
+ * (`getUserAllowedIds`), with the brand filter applied upstream (`filterAllowedBrandIds`).
  * Both implement the same predicate — notifications must never exceed what the read path grants,
  * and vice versa.
  *
@@ -24,7 +30,7 @@
 
 import type { Prisma, PrismaClient } from '@luke/db';
 
-import { unionBrandScopes } from './context.service';
+import { unionBrandScopes, type FunctionBrands } from './context.service';
 
 
 /**
@@ -87,10 +93,8 @@ export function hasBrandAccess(access: Set<string> | null | undefined, brandId: 
 }
 
 /**
- * `P_access` for a batch of brands, in the opposite direction: brandId → Set of userIds with
- * access to it (active, not pending, admins included on every brand). Only used for events with
- * zero visibility rows, where `P_relevance`'s fallback makes every brand-accessible user a
- * candidate — there's no smaller candidate set to start from, unlike the function-visibility path.
+ * Who an event with zero visibility rows reaches, per brand: brandId → userIds of the active, not
+ * pending members of an active team scoped to it — admins too, only that way (ADR-041).
  */
 async function usersWithBrandAccess(
   brandIds: string[],
@@ -98,24 +102,17 @@ async function usersWithBrandAccess(
 ): Promise<Map<string, Set<string>>> {
   if (brandIds.length === 0) return new Map();
 
-  const [admins, memberships] = await Promise.all([
-    prisma.user.findMany({
-      where: { role: 'admin', isActive: true, pendingApproval: false },
-      select: { id: true },
-    }),
-    prisma.companyTeamMembership.findMany({
-      where: {
-        team: { isActive: true, brandScopes: { some: { brandId: { in: brandIds } } } },
-        user: { isActive: true, pendingApproval: false },
-      },
-      // Filtered to the requested brands too — a team scoped to brands outside `brandIds` would
-      // otherwise have every one of its (irrelevant) scope rows fetched and then discarded below.
-      select: { userId: true, team: { select: { brandScopes: { where: { brandId: { in: brandIds } }, select: { brandId: true } } } } },
-    }),
-  ]);
+  const memberships = await prisma.companyTeamMembership.findMany({
+    where: {
+      team: { isActive: true, brandScopes: { some: { brandId: { in: brandIds } } } },
+      user: { isActive: true, pendingApproval: false },
+    },
+    // Filtered to the requested brands too — a team scoped to brands outside `brandIds` would
+    // otherwise have every one of its (irrelevant) scope rows fetched and then discarded below.
+    select: { userId: true, team: { select: { brandScopes: { where: { brandId: { in: brandIds } }, select: { brandId: true } } } } },
+  });
 
-  const adminIds = admins.map(a => a.id);
-  const map = new Map<string, Set<string>>(brandIds.map(b => [b, new Set(adminIds)]));
+  const map = new Map<string, Set<string>>(brandIds.map(b => [b, new Set()]));
   for (const m of memberships) {
     for (const bs of m.team.brandScopes) {
       map.get(bs.brandId)?.add(m.userId);
@@ -154,7 +151,7 @@ export async function listUsersWithBrandAccess(
 
 /**
  * Batch resolution of `canSee` in the reverse direction: eventId → recipient userIds.
- * 5 queries when no event needs the zero-visibility fallback, 7 when at least one does.
+ * 5 queries when no event needs the zero-visibility fallback, 6 when at least one does.
  */
 export async function resolveEventAudience(
   eventIds: string[],
@@ -187,26 +184,35 @@ export async function resolveEventAudience(
   const teamMembers = functionIds.length > 0
     ? await prisma.companyTeamMembership.findMany({
         where: { team: { functionId: { in: functionIds }, isActive: true } },
-        select: { userId: true, team: { select: { functionId: true } } },
+        // Only the brands of these events: a pair on another brand is never looked up.
+        select: { userId: true, team: { select: { functionId: true, brandScopes: { where: { brandId: { in: [...new Set(brandByEvent.values())] } }, select: { brandId: true } } } } },
       })
     : [];
 
-  const fnToUsers = new Map<string, Set<string>>();
+  // function → "functionId:brandId" pairs → members of a team holding that pair.
+  const membersByPair = new Map<string, Set<string>>();
   for (const m of teamMembers) {
-    if (!fnToUsers.has(m.team.functionId)) fnToUsers.set(m.team.functionId, new Set());
-    fnToUsers.get(m.team.functionId)!.add(m.userId);
+    for (const bs of m.team.brandScopes) {
+      const pair = `${m.team.functionId}:${bs.brandId}`;
+      if (!membersByPair.has(pair)) membersByPair.set(pair, new Set());
+      membersByPair.get(pair)!.add(m.userId);
+    }
   }
 
-  const candidatesByEvent = new Map<string, Set<string>>(eventIds.map(id => [id, new Set()]));
+  // Through a team holding (function, event brand): brand already checked, only active/pending left.
+  const byTeamByEvent = new Map<string, Set<string>>(eventIds.map(id => [id, new Set()]));
   for (const v of fnVisibilities) {
-    const set = candidatesByEvent.get(v.eventId);
-    if (!set) continue;
-    for (const uid of fnToUsers.get(v.functionId) ?? []) set.add(uid);
+    const brandId = brandByEvent.get(v.eventId);
+    const set = byTeamByEvent.get(v.eventId);
+    if (!brandId || !set) continue;
+    for (const uid of membersByPair.get(`${v.functionId}:${brandId}`) ?? []) set.add(uid);
   }
-  for (const v of userVisibilities) candidatesByEvent.get(v.eventId)?.add(v.userId);
+  // Through a per-person row: brand access from any team still required.
+  const byPersonByEvent = new Map<string, Set<string>>(eventIds.map(id => [id, new Set()]));
+  for (const v of userVisibilities) byPersonByEvent.get(v.eventId)?.add(v.userId);
 
   const allCandidateIds = new Set<string>();
-  for (const set of candidatesByEvent.values()) for (const id of set) allCandidateIds.add(id);
+  for (const set of [...byTeamByEvent.values(), ...byPersonByEvent.values()]) for (const id of set) allCandidateIds.add(id);
 
   const brandIdsNeedingFallback = [...new Set(
     eventIds
@@ -234,7 +240,10 @@ export async function resolveEventAudience(
     }
 
     const recipients = new Set<string>();
-    for (const uid of candidatesByEvent.get(id) ?? []) {
+    for (const uid of byTeamByEvent.get(id) ?? []) {
+      if (accessMap.has(uid)) recipients.add(uid);
+    }
+    for (const uid of byPersonByEvent.get(id) ?? []) {
       if (hasBrandAccess(accessMap.get(uid), brandId)) recipients.add(uid);
     }
     result.set(id, [...recipients]);
@@ -252,23 +261,26 @@ export async function resolveEventAudienceOne(
 
 /**
  * `P_relevance` in the forward direction: a Prisma `where` fragment restricting `CalendarEvent`
- * to what the user may see, given their already-resolved allowed function ids (`null` = admin,
- * no restriction: an empty fragment — resolve via `getUserAllowedFunctionIds`/`getUserAllowedIds`,
- * or `brandScope.service.ts`'s `callerEventVisibility` for a request's caller). Compose it with
- * `AND: [fragment]`, so that it cannot overwrite a key of the `where` it joins. The caller must
- * still apply brand filtering separately (`filterAllowedBrandIds`/`assertBrandAccess`), this only
- * narrows within already-brand-allowed calendars.
+ * to what the user may see, given the function → brands pairs their teams grant (`null` = admin,
+ * no restriction: an empty fragment — resolve via `getUserAllowedIds`, or `brandScope.service.ts`'s
+ * `callerEventVisibility` for a request's caller). Each function arm carries its own brands, so a
+ * pair counts only when one team holds both. Compose it with `AND: [fragment]`, so that it cannot
+ * overwrite a key of the `where` it joins. The caller must still apply brand filtering separately
+ * (`filterAllowedBrandIds`/`assertBrandAccess`): the fallback and the per-person arm need it.
  */
 export function eventVisibilityWhere(
   userId: string,
-  functionIds: string[] | null
+  functionBrands: FunctionBrands | null
 ): Prisma.CalendarEventWhereInput {
-  if (functionIds === null) return {};
+  if (functionBrands === null) return {};
 
   return {
     OR: [
-      { visibilities: { none: {} } },
-      { visibilities: { some: { functionId: { in: functionIds } } } },
+      { visibilities: { none: {} }, userVisibilities: { none: {} } },
+      ...[...functionBrands].map(([functionId, brandIds]) => ({
+        visibilities: { some: { functionId } },
+        calendar: { brandId: { in: [...brandIds] } },
+      })),
       { userVisibilities: { some: { userId } } },
     ],
   };

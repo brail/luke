@@ -26,6 +26,7 @@ import { withRateLimit } from '../lib/ratelimit';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 import { router, protectedProcedure, selfProcedure } from '../lib/trpc';
 import { assertPasswordMeetsPolicy } from '../services/passwordPolicy.service';
+import { refuseIfLastPersonOnEvents } from '../services/seasonCalendar.service';
 import { deleteUserHandler, getLockedFields, resolveEffectiveProvider } from '../services/users.service';
 
 export const usersCoreRouter = router({
@@ -724,6 +725,7 @@ export const usersCoreRouter = router({
             );
           }
 
+          await refuseIfLastPersonOnEvents(tx, input.id);
           await tx.user.delete({
             where: { id: input.id },
           });

@@ -58,3 +58,7 @@ The deadline scheduler and notifications read every event. They answer to no cal
 - The check precedes the write without a lock, as the brand check does: a visibility change committed between the two lets that write through. This is a deliberate exception to the check-then-act rule (`CLAUDE.md`, Development Patterns rule 3): the window is short, and the caller had the access when the request began.
 - `FORBIDDEN` for another brand still tells that an event exists; `locate` avoids the brand resolvers for that reason.
 - Operations by planning group, such as a freeze, act on events the caller may not see. That is by design: they act on the group.
+
+## Errata
+
+- 2026-11-09 — The predicate this ADR composes (`eventVisibilityWhere`, `resolveEventAudience`) is now [ADR-041](041-calendar-visibility-function-and-brand-from-one-team.md)'s, which supersedes ADR-014's: function and brand from one team. The references to ADR-014 above describe the predicate as it was when this ADR was accepted; the decisions here are unchanged.

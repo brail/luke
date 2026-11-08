@@ -204,9 +204,9 @@ export async function authenticateRequest(
 }
 
 /**
- * Authenticates a raw (non-tRPC) Fastify route and checks a permission, sending the
- * appropriate 401/403 response itself on failure. For routes like file streaming/download
- * that can't go through tRPC's request/response cycle.
+ * Authenticates a raw (non-tRPC) Fastify route and checks a permission, or every permission of a
+ * list, sending the appropriate 401/403 response itself on failure. For routes like file
+ * streaming/download that can't go through tRPC's request/response cycle.
  *
  * @returns The session if authenticated and permitted, or `null` after already sending
  *   the error response — callers should `return` immediately when this is `null`.
@@ -214,7 +214,7 @@ export async function authenticateRequest(
 export async function requireSessionWithPermission(
   request: FastifyRequest,
   reply: FastifyReply,
-  permission: Permission,
+  permission: Permission | readonly Permission[],
   prisma: PrismaClient
 ): Promise<UserSession | null> {
   const session = await authenticateRequest(request, reply, prisma);
@@ -222,10 +222,12 @@ export async function requireSessionWithPermission(
     reply.code(401).send({ error: 'Unauthorized' });
     return null;
   }
-  if (!hasPermission({ role: session.user.role as Role }, permission)) {
+  const required: readonly Permission[] = typeof permission === 'string' ? [permission] : permission;
+  const denied = required.filter(p => !hasPermission({ role: session.user.role as Role }, p));
+  if (denied.length > 0) {
     logAccessDenied(
       { logger: request.log, traceId: getTraceId(request), session },
-      { deniedPermissions: [permission] }
+      { deniedPermissions: denied, requestedPermissions: [...required] }
     );
     reply.code(403).send({ error: 'Forbidden' });
     return null;

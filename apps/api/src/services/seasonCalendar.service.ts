@@ -24,6 +24,8 @@ import { callerEventVisibility, type BrandScopeCtx } from './brandScope.service'
 import { eventVisibilityWhere } from './calendarAudience.service';
 import { visibilityOf } from './eventMasking.service';
 
+import type { FunctionBrands } from './context.service';
+
 const MS_PER_DAY = 86_400_000;
 const logger = rootLogger.child({ module: 'season-calendar' });
 
@@ -422,8 +424,8 @@ export async function rescheduleMilestone(
  * @param functionId - When provided, an additional client-side filter chip: only events visible
  *   to this specific company function are returned, on top of (not instead of) the user's own
  *   restriction.
- * @param allowedFunctionIds - The caller's allowed function ids (`null` = admin, unrestricted),
- *   already resolved by the caller — see `eventVisibilityWhere`'s doc comment.
+ * @param functionBrands - The function → brands pairs the caller's teams grant (`null` = admin,
+ *   unrestricted), already resolved by the caller — see `eventVisibilityWhere`'s doc comment.
  */
 export async function listMilestonesDb(
   seasonId: string,
@@ -431,7 +433,7 @@ export async function listMilestonesDb(
   userId: string,
   prisma: PrismaClient,
   functionId: string | undefined,
-  allowedFunctionIds: string[] | null
+  functionBrands: FunctionBrands | null
 ) {
   const [calendars, timeZone] = await Promise.all([
     prisma.seasonCalendar.findMany({
@@ -449,7 +451,7 @@ export async function listMilestonesDb(
       ...(functionId
         ? { visibilities: { some: { functionId } } }
         : {}),
-      AND: [eventVisibilityWhere(userId, allowedFunctionIds)],
+      AND: [eventVisibilityWhere(userId, functionBrands)],
     },
     include: {
       visibilities: true,
@@ -474,6 +476,31 @@ export async function listMilestonesDb(
 }
 
 // ─── Milestone create/update/delete ──────────────────────────────────────────
+
+/**
+ * Whether an event has a function visibility row. Without one, its per-person rows are what decide
+ * between the whole-brand fallback and "those people only" (ADR-041), so shares must not flip it.
+ * Once an event has a function row it keeps one: every save requires at least one.
+ */
+export async function hasFunctionVisibility(db: Prisma.TransactionClient, eventId: string): Promise<boolean> {
+  return (await db.calendarEventVisibility.count({ where: { eventId } })) > 0;
+}
+
+/**
+ * Refuses removing a user who is the only person an event with no function is shared with: the
+ * cascade would leave the event with no visibility row, reaching the whole brand (ADR-041).
+ */
+export async function refuseIfLastPersonOnEvents(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const stranded = await tx.calendarEvent.count({
+    where: { visibilities: { none: {} }, userVisibilities: { some: { userId }, every: { userId } } },
+  });
+  if (stranded > 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: `L'utente è l'unica persona con cui ${stranded === 1 ? 'è condiviso un evento' : `sono condivisi ${stranded} eventi`} senza funzione: assegna loro una funzione prima di eliminarlo`,
+    });
+  }
+}
 
 /**
  * Refuses, with PRECONDITION_REQUIRED, a write after which the saver could not read the event, so
@@ -1021,7 +1048,7 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
       events: {
         // Default clones only active events; cancelled ones are copied only when explicitly requested.
         where: includeCancelled ? {} : { cancelledAt: null },
-        include: { visibilities: true },
+        include: { visibilities: true, _count: { select: { userVisibilities: true } } },
       },
     },
   });
@@ -1041,6 +1068,16 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: `Eventi di un giorno intero con una data non valida, da correggere prima di clonare: ${[...new Set(offMidnight.map(nameOf))].join(', ')}`,
+    });
+  }
+
+  // The copy carries function rows only: a source shared with single people and no function would
+  // land with no visibility row at all, which reaches the whole brand (ADR-041).
+  const personOnly = sourceEvents.filter(e => e.visibilities.length === 0 && e._count.userVisibilities > 0);
+  if (personOnly.length > 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: `Eventi condivisi solo con singole persone, a cui assegnare una funzione prima di copiarli: ${[...new Set(personOnly.map(nameOf))].join(', ')}`,
     });
   }
 

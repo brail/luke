@@ -107,9 +107,9 @@ export interface BrandAccessGrant {
  * (`getUserAllowedBrandIds` returns null for them), so they never need this.
  *
  * **It grants two things, not one.** Team membership also puts the users in the team's
- * `CompanyFunction`, which is a separate authorization axis: it feeds `getUserAllowedFunctionIds`
- * and from there `eventVisibilityWhere`, so an event carrying visibility rows becomes readable to
- * them. A spec meant to prove "this user cannot see that milestone" has to account for it, or it
+ * `CompanyFunction`, on the team's brands: it feeds the function → brands pairs of
+ * `getUserAllowedIds` and from there `eventVisibilityWhere`, so an event of those brands carrying
+ * the function becomes readable to them. A spec meant to prove "this user cannot see that milestone" has to account for it, or it
  * will pass for the wrong reason in the other direction.
  *
  * An empty `brandIds` is legitimate and means a team that sees no brand — the case a spec uses to

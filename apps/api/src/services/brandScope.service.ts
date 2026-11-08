@@ -35,7 +35,7 @@ import { type Role } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
 import { eventVisibilityWhere } from './calendarAudience.service';
-import { getUserAllowedIds, type UserAllowedIds } from './context.service';
+import { getUserAllowedIds, type FunctionBrands, type UserAllowedIds } from './context.service';
 
 
 /**
@@ -98,16 +98,16 @@ async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
 }
 
 /**
- * The function IDs accessible to the requesting user, resolved once — the function-visibility
- * sibling of `filterAllowedBrandIds`, sharing the same per-request cache.
+ * The function → brands pairs the requesting user's teams grant (`null` = admin), resolved once —
+ * the function-visibility sibling of `filterAllowedBrandIds`, sharing the same per-request cache.
  */
-export async function getAllowedFunctionIds(ctx: BrandScopeCtx): Promise<string[] | null> {
-  return (await allowedTeamAccess(ctx)).functionIds;
+export async function getAllowedFunctionBrands(ctx: BrandScopeCtx): Promise<FunctionBrands | null> {
+  return (await allowedTeamAccess(ctx)).functionBrands;
 }
 
 /** `eventVisibilityWhere` for the requesting user: the events they may see within an allowed brand. */
 export async function callerEventVisibility(ctx: BrandScopeCtx): Promise<Prisma.CalendarEventWhereInput> {
-  return eventVisibilityWhere(requireSession(ctx).user.id, await getAllowedFunctionIds(ctx));
+  return eventVisibilityWhere(requireSession(ctx).user.id, await getAllowedFunctionBrands(ctx));
 }
 
 /** Throws NOT_FOUND, as for an id that does not exist, unless the user may see every one of `eventIds`. */

@@ -1,7 +1,8 @@
 /**
  * Fastify plugin for season calendar export endpoints.
  *
- * Endpoints (all require authentication; brand access is enforced per-request):
+ * Endpoints (all require `season_calendar:read` and `season_calendar:export`; brand access and event
+ * visibility, ADR-041, are enforced per-request):
  *  - GET /download/season-calendar/ical  — download milestones as an iCal (.ics) file
  *  - GET /download/season-calendar/pdf   — download milestones as a PDF (list/week/month/gantt view)
  *  - GET /download/season-calendar/xlsx  — download milestones as an Excel workbook
@@ -35,7 +36,7 @@ import {
 } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
+import { rateLimitKeyFromRequest, requireSessionWithPermission } from '../lib/auth';
 // Single entry point to the PDF engine: it's the only place where `setUrlAccessPolicy`
 // and `setLocalAccessPolicy` are locked down. Four hand-built `new PdfPrinter(...)`
 // instances used to live here, inheriting no policy — and which, since the pdfmake
@@ -45,7 +46,7 @@ import { authenticateRequest, rateLimitKeyFromRequest } from '../lib/auth';
 // guards turn into `process.exit(1)`.
 import { createPdfBuffer } from '../lib/export/pdf';
 import { getUserTimeZone } from '../lib/userTimeZone';
-import { getUserAllowedIds } from '../services/context.service';
+import { getUserAllowedIds, type FunctionBrands } from '../services/context.service';
 import { listMilestonesDb } from '../services/seasonCalendar.service';
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
@@ -79,9 +80,9 @@ async function fetchExportMilestones(
   prisma: PrismaClient,
   timeZone: string,
   functionId: string | undefined,
-  allowedFunctionIds: string[] | null
+  functionBrands: FunctionBrands | null
 ): Promise<ExportMilestone[]> {
-  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId, allowedFunctionIds);
+  const milestones = await listMilestonesDb(seasonId, brandIds, userId, prisma, functionId, functionBrands);
 
   const brandMap = new Map<string, string>();
   const functionNameMap = new Map<string, string>();
@@ -549,11 +550,9 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
   };
 
   async function resolveParams(req: FastifyRequest, reply: FastifyReply) {
-    const session = await authenticateRequest(req, reply, prisma);
-    if (!session) {
-      reply.code(401).send({ error: 'Unauthorized' });
-      return null;
-    }
+    // An export is a read leaving the app: it needs both permissions, checked before anything else.
+    const session = await requireSessionWithPermission(req, reply, ['season_calendar:read', 'season_calendar:export'], prisma);
+    if (!session) return null;
 
     const { seasonId, brandIds: brandIdsCsv, functionId, view, viewDate } = req.query as Record<string, string | undefined>;
     if (!seasonId || !brandIdsCsv) {
@@ -591,7 +590,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
       return null;
     }
 
-    return { session, seasonId, allowedBrandIds, allowedFunctionIds: allowed.functionIds, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate, timeZone, today };
+    return { session, seasonId, allowedBrandIds, functionBrands: allowed.functionBrands, functionId, seasonLabel, view: parsedView, viewDate: parsedViewDate, timeZone, today };
   }
 
   app.get('/download/season-calendar/ical', exportRateLimit, async (req, reply) => {
@@ -599,7 +598,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.functionBrands
     );
 
     const icalString = generateIcal(
@@ -622,7 +621,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.functionBrands
     );
 
     let pdfBuffer: Buffer;
@@ -647,7 +646,7 @@ export default fp(async (app: FastifyInstance, options: { prisma: PrismaClient }
     if (!ctx) return;
 
     const milestones = await fetchExportMilestones(
-      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.allowedFunctionIds
+      ctx.seasonId, ctx.allowedBrandIds, ctx.session.user.id, prisma, ctx.timeZone, ctx.functionId, ctx.functionBrands
     );
 
     const xlsxBuffer = await generateXlsx(milestones, ctx.seasonLabel);

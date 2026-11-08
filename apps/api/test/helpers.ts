@@ -171,6 +171,21 @@ export function grantEditor(permission: Permission) {
 }
 
 /**
+ * `grantEditor`'s opposite: the built-in `viewer` loses `permission` for the current test, so a
+ * route can be shown to refuse a caller lacking it — role permissions are static, and no
+ * configuration makes such a role.
+ */
+export function revokeViewer(permission: Permission) {
+  const index = ROLE_PERMISSIONS.viewer.indexOf(permission);
+  expect(index).not.toBe(-1);
+  ROLE_PERMISSIONS.viewer.splice(index, 1);
+  expect(hasPermission({ role: 'viewer' }, permission)).toBe(false);
+  onTestFinished(() => {
+    ROLE_PERMISSIONS.viewer.push(permission);
+  });
+}
+
+/**
  * Creates a tRPC caller with a specific session
  */
 export function createCallerWithSession(session: UserSession) {

@@ -55,7 +55,7 @@ import {
   assertEventsVisible,
   callerEventVisibility,
   filterAllowedBrandIds,
-  getAllowedFunctionIds,
+  getAllowedFunctionBrands,
   resolveCalendarBrandAccess,
   resolveEventBrandAccess,
   resolvePlanningGroupBrandAccess,
@@ -95,6 +95,7 @@ import {
   deleteTemplateItem,
   cloneFromBrandSeason,
   getSyncStatus,
+  hasFunctionVisibility,
   refuseIfHiddenFromSaver,
 } from '../services/seasonCalendar.service.js';
 
@@ -233,9 +234,10 @@ export const seasonCalendarRouter = router({
 
   /**
    * Lists milestones for the given season and brands, filtered to brands the user can access
-   * and further restricted to events relevant to the user's functions (or explicitly granted —
-   * see `eventVisibilityWhere`). An event with no visibility rows at all is visible to everyone
-   * with brand access (fallback, guards against orphaned events).
+   * and further restricted to events visible to one of the user's functions on the brand of the
+   * team granting it (or explicitly granted — see `eventVisibilityWhere`, ADR-041). An event with
+   * no visibility rows of either kind is visible to everyone with brand access (fallback, guards
+   * against orphaned events).
    *
    * Admins see all requested brands and every event in them, with no function restriction.
    *
@@ -253,8 +255,8 @@ export const seasonCalendarRouter = router({
     .query(async ({ input, ctx }) => {
       const allowedBrandIds = await filterAllowedBrandIds(ctx, input.brandIds);
       if (allowedBrandIds.length === 0) return [];
-      const allowedFunctionIds = await getAllowedFunctionIds(ctx);
-      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId, allowedFunctionIds);
+      const functionBrands = await getAllowedFunctionBrands(ctx);
+      return listMilestonesDb(input.seasonId, allowedBrandIds, ctx.session.user.id, ctx.prisma, input.functionId, functionBrands);
     }),
 
   /**
@@ -990,9 +992,10 @@ export const seasonCalendarRouter = router({
    * event's brand (admins included), each flagged with whether they already have an explicit
    * grant. Deliberately not "every user" — the picker must never offer a name that
    * `grantUserVisibility` would then reject. Someone already in the event's audience
-   * (`resolveEventAudience`: through their function, or the whole brand for an event with no
-   * function) is left out unless explicitly granted, so the grant stays revocable; an admin outside
-   * it stays, since a grant is what brings them the event's notifications.
+   * (`resolveEventAudience`: through a team holding one of its functions and its brand) is left out
+   * unless explicitly granted, so the grant stays revocable; an admin outside it stays, since a
+   * grant is what brings them the event's notifications. An event with no visibility row at all
+   * reaches the whole brand and takes no person: nobody is offered (ADR-041).
    *
    * @auth season_calendar:read
    * @input { eventId }
@@ -1002,16 +1005,21 @@ export const seasonCalendarRouter = router({
     .use(requirePermission('season_calendar:read'))
     .input(z.object({ eventId: z.uuid() }))
     .query(async ({ input, ctx }) => {
-      const event = await resolveEventBrandAccess(ctx, input.eventId, { userVisibilities: { select: { userId: true } } });
+      const event = await resolveEventBrandAccess(ctx, input.eventId, {
+        userVisibilities: { select: { userId: true } },
+        visibilities: { select: { functionId: true }, take: 1 },
+      });
 
+      // An event with no visibility row at all takes no person (`grantUserVisibility`).
+      const takesNewPeople = event.visibilities.length > 0 || event.userVisibilities.length > 0;
       const [candidates, audience] = await Promise.all([
         listUsersWithBrandAccess(event.calendar.brandId, ctx.prisma),
-        resolveEventAudienceOne(input.eventId, ctx.prisma),
+        takesNewPeople ? resolveEventAudienceOne(input.eventId, ctx.prisma) : [],
       ]);
       const grantedIds = new Set(event.userVisibilities.map(v => v.userId));
       const seesAlready = new Set(audience);
       return candidates
-        .filter(u => grantedIds.has(u.id) || !seesAlready.has(u.id))
+        .filter(u => grantedIds.has(u.id) || (takesNewPeople && !seesAlready.has(u.id)))
         .map(u => ({ ...u, alreadyGranted: grantedIds.has(u.id) }));
     }),
 
@@ -1025,6 +1033,10 @@ export const seasonCalendarRouter = router({
    * ("Hai accesso all'evento X") would be false — the recipient couldn't actually find the
    * event in `listMilestones`. Validated as a check-then-act inside the same transaction as
    * the grant itself.
+   *
+   * An event with no visibility row at all reaches the whole brand: it takes no person
+   * (PRECONDITION_FAILED) until it has a function, since a first per-person row would narrow it
+   * (ADR-041).
    *
    * Sends an in-app notification to each newly visible user.
    *
@@ -1040,6 +1052,17 @@ export const seasonCalendarRouter = router({
       const event = await resolveEventBrandAccess(ctx, input.eventId);
 
       await ctx.prisma.$transaction(async tx => {
+        // With no visibility row at all the event reaches the whole brand; a first per-person row
+        // would narrow it to that person.
+        if (
+          !(await hasFunctionVisibility(tx, input.eventId))
+          && (await tx.calendarEventUserVisibility.count({ where: { eventId: input.eventId } })) === 0
+        ) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: "L'evento non ha funzioni ed è già visibile a tutto il brand: assegnagli una funzione prima di condividerlo con singole persone",
+          });
+        }
         const accessMap = await resolveBrandAccess(input.userIds, tx);
         const rejectedIds = input.userIds.filter(uid => {
           const access = accessMap.get(uid);
@@ -1117,9 +1140,24 @@ export const seasonCalendarRouter = router({
         ? await callerEventVisibility(ctx)
         : undefined;
       await ctx.prisma.$transaction(async tx => {
+        // With no function, the event's per-person rows keep it from the whole brand: not the last one.
+        let personOnly = !(await hasFunctionVisibility(tx, input.eventId));
+        if (personOnly) {
+          // Row lock (CLAUDE.md "Raw SQL" exception, `FOR NO KEY UPDATE`): two revokes of the last two
+          // rows would each still see the other's and both commit, leaving none. Re-read under it: a
+          // save may have given the event a function meanwhile.
+          await tx.$executeRaw`SELECT 1 FROM calendar_events WHERE id = ${input.eventId} FOR NO KEY UPDATE`;
+          personOnly = !(await hasFunctionVisibility(tx, input.eventId));
+        }
         await tx.calendarEventUserVisibility.deleteMany({
           where: { eventId: input.eventId, userId: { in: input.userIds } },
         });
+        if (personOnly && (await tx.calendarEventUserVisibility.count({ where: { eventId: input.eventId } })) === 0) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: "L'evento non ha funzioni: togliendo l'ultima condivisione diventerebbe visibile a tutto il brand. Assegnagli prima una funzione",
+          });
+        }
         if (saverSees) await refuseIfHiddenFromSaver(tx, input.eventId, saverSees);
       });
 

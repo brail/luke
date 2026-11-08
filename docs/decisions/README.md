@@ -16,7 +16,7 @@
 | [011](011-single-instance-scaling-constraint.md) | Single-Instance Constraint and Process-Local State | Accepted |
 | [012](012-generic-s3-storage-provider.md) | Generic S3 Storage Provider (Renamed from MinIO) + Swap to SeaweedFS | Accepted |
 | [013](013-asset-derivative-pipeline.md) | Automatic Asset Derivative Pipeline (Thumb/Card/Export) | Accepted |
-| [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Accepted |
+| [014](014-calendar-visibility-single-predicate.md) | Calendar Visibility: a Single Predicate for Read and Notify | Superseded by [041](041-calendar-visibility-function-and-brand-from-one-team.md) |
 | [015](015-documentation-architecture-and-canonical-language.md) | Documentation Architecture and Canonical Language | Superseded by [030](030-documentation-architecture-canonical-language-and-historical-records.md) |
 | [016](016-static-resource-action-permissions.md) | Static Resource:Action Permissions and Server-Side Enforcement | Superseded by [026](026-resource-action-permissions-enforced.md) |
 | [017](017-key-based-storage-and-two-phase-upload.md) | Key-Based Storage References and Two-Phase Upload Confirmation | Superseded by [031](031-key-based-storage-two-phase-upload-and-presigned-buckets.md) |
@@ -43,6 +43,7 @@
 | [038](038-resource-action-permissions-grants-follow-section-visibility.md) | Resource:Action Permissions: Role Grants Follow Default Section Visibility | Accepted |
 | [039](039-session-revocation-tokenversion-and-absolute-lifetime.md) | Server-Side Session Revocation with tokenVersion and an Absolute Session Lifetime | Accepted |
 | [040](040-calendar-events-access-by-id-and-masking-outside-the-calendar.md) | Calendar Events: Access by Id and Masking Outside the Calendar | Accepted |
+| [041](041-calendar-visibility-function-and-brand-from-one-team.md) | Calendar Visibility: Function and Brand from One Team | Accepted |
 
 _Last updated: 2026-10-31_
 <!-- luke-docs:end:adr-index -->

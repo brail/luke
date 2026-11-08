@@ -1,13 +1,12 @@
 /**
- * `getUserAllowedIds` — the combined brand+function resolver
- * (apps/api/src/services/context.service.ts), introduced to collapse the two separate
- * `companyTeamMembership` queries `listMilestonesDb` used to issue (one via
- * `getUserAllowedBrandIds`, one via `getUserAllowedFunctionIds`) into one.
+ * `getUserAllowedIds` — the combined brand + function resolver
+ * (apps/api/src/services/context.service.ts), one `companyTeamMembership` query for both halves:
+ * the brands a user may open (union of their teams' scopes) and the function → brands pairs their
+ * teams grant (ADR-041: a pair only from one team).
  *
  * Same policy and fixture shape as `companyAccess.integration.spec.ts`
- * (`getUserAllowedBrandIds`'s own suite) — strict opt-in, `null` reserved for admin — but with
- * the brand/function asymmetry made explicit: a team with no brand scopes still has a
- * `functionId`, so `brandIds` and `functionIds` don't always empty out together.
+ * (`getUserAllowedBrandIds`'s own suite) — strict opt-in, `null` reserved for admin. A team with no
+ * brand scope grants its function on nothing, so it contributes to neither half.
  */
 
 import { randomUUID } from 'crypto';
@@ -72,29 +71,29 @@ beforeAll(async () => {
 });
 
 describe('getUserAllowedIds', () => {
-  it('user with no team → { brandIds: [], functionIds: [] }', async () => {
+  it('user with no team → nothing', async () => {
     const userId = await createUser();
     const result = await getUserAllowedIds(userId, prisma);
-    expect(result).toEqual({ brandIds: [], functionIds: [] });
+    expect(result).toEqual({ brandIds: [], functionBrands: new Map() });
   });
 
-  it('admin → { brandIds: null, functionIds: null }, the only case with null', async () => {
+  it('admin → { brandIds: null, functionBrands: null }, the only case with null', async () => {
     const userId = await createUser();
     const result = await getUserAllowedIds(userId, prisma, 'admin');
-    expect(result).toEqual({ brandIds: null, functionIds: null });
+    expect(result).toEqual({ brandIds: null, functionBrands: null });
   });
 
-  it('team without brandScopes → empty brandIds but functionIds set (the asymmetry)', async () => {
+  it('team without brandScopes → grants its function on nothing', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamMembership.create({ data: { teamId: team.id, userId } });
 
     const result = await getUserAllowedIds(userId, prisma);
     expect(result.brandIds).toEqual([]);
-    expect(result.functionIds).toEqual([functionId]);
+    expect(result.functionBrands).toEqual(new Map());
   });
 
-  it('team with brandScopes=[brandA] → brandIds=[brandA], functionIds=[fn]', async () => {
+  it('team with brandScopes=[brandA] → brandIds=[brandA], fn on [brandA]', async () => {
     const userId = await createUser();
     const team = await createTeam();
     await prisma.companyTeamBrandScope.create({ data: { teamId: team.id, brandId: brandAId } });
@@ -102,10 +101,10 @@ describe('getUserAllowedIds', () => {
 
     const result = await getUserAllowedIds(userId, prisma);
     expect(result.brandIds).toEqual([brandAId]);
-    expect(result.functionIds).toEqual([functionId]);
+    expect(result.functionBrands).toEqual(new Map([[functionId, new Set([brandAId])]]));
   });
 
-  it('several teams with different scopes → union on both brands and functions', async () => {
+  it("several teams with different scopes → brands unioned, each function on its own team's brands", async () => {
     const userId = await createUser();
     const fn2 = await prisma.companyFunction.create({
       data: { slug: `allowed_ids_fn2_${randomUUID().substring(0, 6)}`, name: 'Allowed Ids Fn 2', order: 99, isActive: true },
@@ -122,11 +121,10 @@ describe('getUserAllowedIds', () => {
     const result = await getUserAllowedIds(userId, prisma);
     expect(result.brandIds).toEqual(expect.arrayContaining([brandAId, brandBId]));
     expect(result.brandIds).toHaveLength(2);
-    expect(result.functionIds).toEqual(expect.arrayContaining([functionId, fn2.id]));
-    expect(result.functionIds).toHaveLength(2);
+    expect(result.functionBrands).toEqual(new Map([[functionId, new Set([brandAId])], [fn2.id, new Set([brandBId])]]));
   });
 
-  it('a team with no scope does not widen the sibling brands, but its function still counts', async () => {
+  it('a team with no scope widens neither the brands nor the functions', async () => {
     const userId = await createUser();
     const fn2 = await prisma.companyFunction.create({
       data: { slug: `allowed_ids_fn3_${randomUUID().substring(0, 6)}`, name: 'Allowed Ids Fn 3', order: 100, isActive: true },
@@ -141,17 +139,16 @@ describe('getUserAllowedIds', () => {
 
     const result = await getUserAllowedIds(userId, prisma);
     expect(result.brandIds).toEqual([brandAId]);
-    expect(result.functionIds).toEqual(expect.arrayContaining([functionId, fn2.id]));
-    expect(result.functionIds).toHaveLength(2);
+    expect(result.functionBrands).toEqual(new Map([[functionId, new Set([brandAId])]]));
   });
 
-  it('team with isActive=false → { brandIds: [], functionIds: [] }, an inactive team does not count', async () => {
+  it('team with isActive=false → nothing, an inactive team does not count', async () => {
     const userId = await createUser();
     const inactiveTeam = await createTeam({ isActive: false });
     await prisma.companyTeamBrandScope.create({ data: { teamId: inactiveTeam.id, brandId: brandAId } });
     await prisma.companyTeamMembership.create({ data: { teamId: inactiveTeam.id, userId } });
 
     const result = await getUserAllowedIds(userId, prisma);
-    expect(result).toEqual({ brandIds: [], functionIds: [] });
+    expect(result).toEqual({ brandIds: [], functionBrands: new Map() });
   });
 });

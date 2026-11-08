@@ -15,12 +15,14 @@ import ExcelJS from 'exceljs';
 import fastify, { type FastifyInstance } from 'fastify';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 
+import type { Permission } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { createToken } from '../src/lib/auth';
 import seasonCalendarExportRoutes from '../src/routes/seasonCalendarExport.routes';
 
-import { createCalendarFixture, createTestUser, setupTestDb } from './helpers';
+import { createCalendarFixture, createTestUser, revokeViewer, setupTestDb } from './helpers';
+import { grantBrandAccess } from './helpers/calendarFixture';
 
 let prisma: PrismaClient;
 let app: FastifyInstance;
@@ -143,5 +145,46 @@ describe('GET /download/season-calendar/xlsx — dates in the requester\'s zone'
 
   it('does not stretch a timed event that ends at local midnight into the next day', async () => {
     expect((await datesFor('Europe/Rome')).get('Fino a mezzanotte')).toEqual(['10/03/2032', '10/03/2032']);
+  });
+});
+
+/**
+ * The export routes are reads that leave the app: they require `season_calendar:read` and
+ * `season_calendar:export`, like the tRPC procedures require theirs (CLAUDE.md rule 5); a role
+ * lacking one is made with `revokeViewer`.
+ */
+describe('export permissions', () => {
+  let viewerAuth: string;
+
+  beforeAll(async () => {
+    const { user } = await createTestUser('viewer');
+    await grantBrandAccess(prisma, { brandIds: [brandId], userIds: [user.id], label: 'Export viewer' });
+    viewerAuth = `Bearer ${createToken({ id: user.id, email: user.email, username: user.username, role: user.role, tokenVersion: 0 }, Math.floor(Date.now() / 1000))}`;
+  });
+
+  const get = (format: string) =>
+    app.inject({
+      method: 'GET',
+      url: `/download/season-calendar/${format}?seasonId=${seasonId}&brandIds=${brandId}&viewDate=2032-03-01`,
+      headers: { authorization: viewerAuth },
+    });
+
+  const formats = ['ical', 'pdf', 'xlsx'];
+
+  it.each(formats)('%s: a caller holding read and export gets the file', async format => {
+    expect((await get(format)).statusCode).toBe(200);
+  });
+
+  it.each(formats.flatMap(format => [
+    [format, ['season_calendar:export'] as Permission[]],
+    [format, ['season_calendar:read'] as Permission[]],
+    [format, ['season_calendar:read', 'season_calendar:export'] as Permission[]],
+  ]))('%s: a caller without %j is refused with 403', async (format, missing) => {
+    for (const permission of missing) revokeViewer(permission);
+
+    const res = await get(format);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'Forbidden' });
   });
 });

@@ -7,7 +7,7 @@
 
 import type { CalendarDate } from '@luke/core';
 
-import { callerEventVisibility, getAllowedFunctionIds, type BrandScopeCtx } from './brandScope.service';
+import { callerEventVisibility, getAllowedFunctionBrands, type BrandScopeCtx } from './brandScope.service';
 
 import type { computeBottleneckByEvent, computeCriticality, HolidayOverlapEntry } from './phaseAlert.service';
 
@@ -17,7 +17,7 @@ type IsVisible = (eventId: string) => boolean;
 
 /** Whether the caller may see each of `eventIds`. An admin sees every event: no query. */
 export async function visibilityOf(ctx: BrandScopeCtx, eventIds: string[]): Promise<IsVisible> {
-  if ((await getAllowedFunctionIds(ctx)) === null) return () => true;
+  if ((await getAllowedFunctionBrands(ctx)) === null) return () => true;
   if (eventIds.length === 0) return () => false;
   const visible = await ctx.prisma.calendarEvent.findMany({
     where: { id: { in: [...new Set(eventIds)] }, AND: [await callerEventVisibility(ctx)] },

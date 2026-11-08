@@ -17,7 +17,7 @@ import type { PrismaClient } from '@luke/db';
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 
 import { teamGrantsFunctionAndBrand } from './calendarAudience.service.js';
-import { getUserAllowedFunctionIds } from './context.service.js';
+import { getUserAllowedIds } from './context.service.js';
 
 
 interface SyncLogger {
@@ -411,8 +411,9 @@ export async function reconcileGoogleReaders(
  * for display in the "subscribe" panel. Only includes bindings that have actually been
  * provisioned (a Google Calendar was created for them).
  *
- * Scoped to the requesting user: admins see every section, everyone else only sections for
- * functions they belong to via team membership — mirrors the ACL granted on the Google side.
+ * Scoped to the requesting user by the rule the Google readers follow (`getCalendarReaderEmails`):
+ * admins see every section, anyone else a section only when one of their teams holds both its
+ * function and the calendar's brand.
  */
 export async function listGoogleCalendarBindings(
   calendarId: string,
@@ -420,18 +421,18 @@ export async function listGoogleCalendarBindings(
   userId: string,
   userRole?: Role
 ): Promise<{ companyFunctionId: string; functionName: string; googleCalendarId: string }[]> {
-  const allowedFunctionIds = await getUserAllowedFunctionIds(userId, prisma, userRole);
-  const bindings = await prisma.googleCalendarBinding.findMany({
-    where: {
-      seasonCalendarId: calendarId,
-      isProvisioned: true,
-      ...(allowedFunctionIds !== null && { companyFunctionId: { in: allowedFunctionIds } }),
-    },
-    include: { companyFunction: { select: { name: true } } },
-  });
-  return bindings.map(b => ({
-    companyFunctionId: b.companyFunctionId,
-    functionName: b.companyFunction.name,
-    googleCalendarId: b.googleCalendarId,
-  }));
+  const [{ functionBrands }, bindings] = await Promise.all([
+    getUserAllowedIds(userId, prisma, userRole),
+    prisma.googleCalendarBinding.findMany({
+      where: { seasonCalendarId: calendarId, isProvisioned: true },
+      include: { companyFunction: { select: { name: true } }, seasonCalendar: { select: { brandId: true } } },
+    }),
+  ]);
+  return bindings
+    .filter(b => functionBrands === null || functionBrands.get(b.companyFunctionId)?.has(b.seasonCalendar.brandId))
+    .map(b => ({
+      companyFunctionId: b.companyFunctionId,
+      functionName: b.companyFunction.name,
+      googleCalendarId: b.googleCalendarId,
+    }));
 }
