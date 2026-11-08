@@ -53,8 +53,8 @@ first source that yields a valid one:
 
 1. **AppConfig** — the `rateLimit` key, a JSON object keyed by bucket name. Each
    entry is `{ "max": <positive integer>, "timeWindow": "<n>s" | "<n>m" | "<n>h",
-   "keyBy": "ip" | "userId" | "username" }`, and `keyBy` defaults to `"ip"` when
-   omitted. The schema is `RateLimitConfigSchema` in
+   "keyBy": "ip" | "userId" | "username" }`, with a window from 1 s to 24 h, and
+   `keyBy` defaults to `"ip"` when omitted. The schema is `RateLimitConfigSchema` in
    [`packages/core/src/schemas/appConfig.ts`](packages/core/src/schemas/appConfig.ts).
 2. **Defaults** — `RATE_LIMIT_POLICY_DEFAULTS` in
    [`apps/api/src/lib/rateLimitPolicy.ts`](apps/api/src/lib/rateLimitPolicy.ts).
@@ -68,13 +68,12 @@ database.
 
 Consequences of that resolution:
 
-- **The AppConfig value is validated as a whole.** If any entry fails the schema —
-  a non-positive `max`, an unknown `keyBy`, a `timeWindow` shorter than two
-  characters — no bucket takes its AppConfig override, and every bucket falls
-  through to its default. A JSON syntax error has the same effect. The syntax
-  error is logged as a warning; the schema failure is not. A `timeWindow` of two
-  or more characters that does not parse (`1x`, `0m`) affects only its own
-  bucket, which keeps its default, and is logged.
+- **Each bucket's entry is validated on its own.** An entry that fails the schema —
+  a non-positive `max`, an unknown `keyBy`, a `timeWindow` outside the format or
+  the 1 s–24 h range (`1x`, `0m`, `2d`) — leaves only its own bucket on the
+  default, and the warning names the bucket. A JSON syntax error, or a value that
+  is not an object, leaves every bucket on its default, with a warning. A key
+  that names no bucket is ignored.
 - **`keyBy` must suit the endpoint.** Omitted, it means `ip`. `userId` on a
   bucket whose endpoint has no session (`login`, `passwordReset`,
   `pendingEmail`), or `username` on any bucket but `loginByUsername`, leaves the

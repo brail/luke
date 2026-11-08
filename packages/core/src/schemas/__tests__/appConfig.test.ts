@@ -10,7 +10,12 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { AlertBandSchema, CollectionAlertThresholdsSchema } from '../appConfig.js';
+import {
+  AlertBandSchema,
+  CollectionAlertThresholdsSchema,
+  RateLimitPolicySchema,
+  rateLimitWindowMs,
+} from '../appConfig.js';
 
 /** A band as the editor wrote it before `emphasis` existed. */
 const LEGACY_BAND = {
@@ -77,5 +82,23 @@ describe('CollectionAlertThresholdsSchema — outcome bands', () => {
       completedBand: { color: '', label: 'Chiusa' },
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('RateLimitPolicySchema — timeWindow', () => {
+  // The write side of `rateLimit`: exactly the windows `rateLimitWindowMs` converts, the grammar the
+  // API parsed before it moved here, so no window a stored blob holds today stops reading.
+  const policy = (timeWindow: string) => RateLimitPolicySchema.safeParse({ max: 1, timeWindow });
+
+  it.each(['30s', '1m', '01m', '2h', '24h'])('accepts %s', timeWindow => {
+    expect(policy(timeWindow).success).toBe(true);
+  });
+
+  it.each(['1 minute', '1d', '0m', 'm', '1.5m', '', '25h', '1441m', `${'9'.repeat(400)}h`])('refuses %j', timeWindow => {
+    expect(policy(timeWindow).success).toBe(false);
+  });
+
+  it('converts each unit to milliseconds', () => {
+    expect([rateLimitWindowMs('30s'), rateLimitWindowMs('01m'), rateLimitWindowMs('2h')]).toEqual([30_000, 60_000, 7_200_000]);
   });
 });

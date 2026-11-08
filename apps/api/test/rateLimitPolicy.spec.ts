@@ -11,10 +11,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { RateLimitConfigSchema } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig } from '../src/lib/configManager';
-import { clearRateLimitConfigCache, resolveRateLimitPolicy } from '../src/lib/rateLimitPolicy';
+import {
+  clearRateLimitConfigCache,
+  RATE_LIMIT_POLICY_DEFAULTS,
+  resolveRateLimitPolicy,
+} from '../src/lib/rateLimitPolicy';
 
 
 vi.mock('../src/lib/configManager', () => ({
@@ -66,5 +71,48 @@ describe('resolveRateLimitPolicy — cache of the AppConfig rateLimit blob', () 
     expect(first.max).toBe(1);
     expect(second.max).toBe(1);
     expect(getConfig).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('resolveRateLimitPolicy — a stored entry is validated per route', () => {
+  beforeEach(() => {
+    clearRateLimitConfigCache();
+    vi.mocked(getConfig).mockReset();
+  });
+
+  const stored = (value: unknown) => vi.mocked(getConfig).mockResolvedValue(JSON.stringify(value));
+
+  it('a bad entry on another route keeps this route\'s override', async () => {
+    stored({
+      login: { max: 1, timeWindow: '30s', keyBy: 'ip' },
+      exportGeneration: { max: 5, timeWindow: 'soon', keyBy: 'userId' },
+    });
+
+    expect(await resolveRateLimitPolicy('login', fakePrisma)).toEqual({ max: 1, windowMs: 30_000, keyBy: 'ip' });
+    expect((await resolveRateLimitPolicy('exportGeneration', fakePrisma)).max).toBe(
+      RATE_LIMIT_POLICY_DEFAULTS.exportGeneration.max
+    );
+  });
+
+  it('a window with a leading zero still reads', async () => {
+    stored({ login: { max: 2, timeWindow: '01m', keyBy: 'ip' } });
+
+    expect((await resolveRateLimitPolicy('login', fakePrisma)).windowMs).toBe(60_000);
+  });
+
+  it('every built-in default is a policy the schema accepts', () => {
+    // The defaults are hand-written strings: a window typo would otherwise surface as a throw on
+    // the request path, the one path with no fallback.
+    expect(RateLimitConfigSchema.safeParse(RATE_LIMIT_POLICY_DEFAULTS).error).toBeUndefined();
+  });
+
+  it.each([
+    ['is not an object', () => stored([1, 2])],
+    ['is not JSON', () => vi.mocked(getConfig).mockResolvedValue('{not json')],
+    ['cannot be read', () => vi.mocked(getConfig).mockRejectedValue(new Error('database unreachable'))],
+  ])('a value that %s leaves every route on its default', async (_case, arrange) => {
+    arrange();
+
+    expect((await resolveRateLimitPolicy('login', fakePrisma)).max).toBe(RATE_LIMIT_POLICY_DEFAULTS.login.max);
   });
 });

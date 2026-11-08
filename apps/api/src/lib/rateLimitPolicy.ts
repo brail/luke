@@ -3,7 +3,16 @@
  * Resolves a route's policy: AppConfig → built-in default.
  */
 
-import { RateLimitConfigSchema, type RateLimitConfig, type RateLimitPolicy, isDevelopment } from '@luke/core';
+import { z } from 'zod';
+
+import {
+  RateLimitConfigSchema,
+  RateLimitPolicySchema,
+  type RateLimitConfig,
+  type RateLimitPolicy,
+  isDevelopment,
+  rateLimitWindowMs,
+} from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig } from './configManager';
@@ -77,108 +86,89 @@ export const RATE_LIMIT_POLICY_DEFAULTS: Record<keyof RateLimitConfig, RateLimit
 };
 
 /**
- * In-memory, per-process cache of the raw AppConfig `rateLimit` value. `auth.login`
- * resolves two buckets in the same attempt (`login` via `withRateLimit`, `loginByUsername`
- * in `verifyCredentials()`) — without this cache every login attempt makes TWO
- * identical queries on the same row. Short TTL: a config change via the admin UI takes at
- * most this long to propagate, acceptable for a rate-limit number (unlike a binary
- * security value such as a permission).
+ * In-memory, per-process cache of the stored per-route policies. `auth.login` resolves two
+ * buckets in the same attempt (`login` via `withRateLimit`, `loginByUsername` in
+ * `verifyCredentials()`) — without this cache every login attempt makes TWO identical queries on
+ * the same row, and an invalid entry would be warned about on every request. Short TTL: a config
+ * change via the admin UI takes at most this long to propagate, acceptable for a rate-limit number
+ * (unlike a binary security value such as a permission).
  */
 const RATE_LIMIT_CONFIG_CACHE_TTL_MS = 2000;
-let cachedConfigValue: { value: string | null; expiresAt: number } | null = null;
+type StoredPolicies = Partial<RateLimitConfig>;
+let cachedPolicies: { policies: StoredPolicies; expiresAt: number } | null = null;
 
-async function fetchRateLimitConfigValue(
-  prisma: PrismaClient
-): Promise<string | null> {
-  const now = Date.now();
-  if (cachedConfigValue && cachedConfigValue.expiresAt > now) {
-    return cachedConfigValue.value;
+/**
+ * The stored `rateLimit` value, validated route by route: an invalid entry is dropped with a
+ * warning naming its route, and only that route falls back to its default — a valid stricter
+ * `login` survives a bad `exportGeneration`. Keys that name no route are ignored.
+ */
+function parseStoredPolicies(value: string | null): StoredPolicies {
+  if (!value) return {};
+  let raw: unknown;
+  try {
+    raw = JSON.parse(value);
+  } catch (error) {
+    logger.warn({ err: error }, 'AppConfig rateLimit is not valid JSON: every route uses its default');
+    return {};
+  }
+  const entries = z.record(z.string(), z.unknown()).safeParse(raw);
+  if (!entries.success) {
+    logger.warn('AppConfig rateLimit is not an object: every route uses its default');
+    return {};
   }
 
-  const value = await getConfig(prisma, 'rateLimit');
-  cachedConfigValue = { value, expiresAt: now + RATE_LIMIT_CONFIG_CACHE_TTL_MS };
-  return value;
+  const policies: StoredPolicies = {};
+  for (const route of RateLimitConfigSchema.keyof().options) {
+    const entry = entries.data[route];
+    if (entry === undefined) continue;
+    const policy = RateLimitPolicySchema.safeParse(entry);
+    if (policy.success) policies[route] = policy.data;
+    else logger.warn({ route, issues: policy.error.issues }, 'Invalid AppConfig rateLimit entry: the route uses its default');
+  }
+  return policies;
+}
+
+async function fetchStoredPolicies(prisma: PrismaClient): Promise<StoredPolicies> {
+  const now = Date.now();
+  if (cachedPolicies && cachedPolicies.expiresAt > now) {
+    return cachedPolicies.policies;
+  }
+
+  const policies = parseStoredPolicies(await getConfig(prisma, 'rateLimit'));
+  cachedPolicies = { policies, expiresAt: now + RATE_LIMIT_CONFIG_CACHE_TTL_MS };
+  return policies;
 }
 
 /** Forces the next `resolveRateLimitPolicy` call to re-read AppConfig. Test-only. */
 export function clearRateLimitConfigCache(): void {
-  cachedConfigValue = null;
-}
-
-function parseTimeWindow(window: string): number {
-  const match = window.match(/^(\d+)(s|m|h)$/);
-  if (!match) {
-    throw new Error(
-      `Invalid timeWindow format: ${window}. Expected format: 30s, 1m, 2h`
-    );
-  }
-
-  const [, value, unit] = match;
-  const num = parseInt(value, 10);
-
-  if (isNaN(num) || num <= 0) {
-    throw new Error(
-      `Invalid timeWindow value: ${value}. Must be a positive number`
-    );
-  }
-
-  switch (unit) {
-    case 's':
-      return num * 1000;
-    case 'm':
-      return num * 60 * 1000;
-    case 'h':
-      return num * 60 * 60 * 1000;
-    default:
-      throw new Error(`Unknown time unit: ${unit}. Supported: s, m, h`);
-  }
+  cachedPolicies = null;
 }
 
 /**
  * Resolves the effective rate-limit policy for a named route.
- * Resolution order: AppConfig (`rateLimit` JSON key) → built-in defaults; an invalid or
- * malformed AppConfig value falls through to the defaults. There is no environment tier: it read
- * `parseInt` unchecked (a non-numeric max became `NaN`, which disables the limit) and sat outside
- * the env policy.
+ * Resolution order: the route's AppConfig entry (`rateLimit` JSON key) → built-in default; an
+ * invalid entry falls through to the default for that route only, with a warning. There is no
+ * environment tier: it read `parseInt` unchecked (a non-numeric max became `NaN`, which disables
+ * the limit) and sat outside the env policy.
  *
- * @param routeName - Route identifier; must be present in the RATE_LIMIT_POLICY_DEFAULTS map.
+ * @param routeName - A route of `RateLimitConfig`.
  * @param prisma - Prisma client used to read AppConfig.
  * @returns Resolved policy with `max`, `windowMs`, and `keyBy`.
  */
 export async function resolveRateLimitPolicy(
-  routeName: keyof typeof RATE_LIMIT_POLICY_DEFAULTS,
+  routeName: keyof RateLimitConfig,
   prisma: PrismaClient
-): Promise<{ max: number; windowMs: number; keyBy: 'ip' | 'userId' | 'username' }> {
-  // 1) AppConfig attempt (single 'rateLimit' key with JSON object)
+): Promise<{ max: number; windowMs: number; keyBy: RateLimitPolicy['keyBy'] }> {
+  let policy: RateLimitPolicy | undefined;
   try {
-    const configValue = await fetchRateLimitConfigValue(prisma);
-    if (configValue) {
-      const parsed = JSON.parse(configValue);
-      const validated = RateLimitConfigSchema.safeParse(parsed);
-
-      if (
-        validated.success &&
-        validated.data[routeName as keyof typeof validated.data]
-      ) {
-        const policy =
-          validated.data[routeName as keyof typeof validated.data]!;
-        return {
-          max: policy.max,
-          windowMs: parseTimeWindow(policy.timeWindow),
-          keyBy: policy.keyBy,
-        };
-      }
-    }
+    policy = (await fetchStoredPolicies(prisma))[routeName];
   } catch (error) {
-    // Log the error but continue with fallback
-    logger.warn({ err: error }, 'Failed to parse AppConfig rateLimit');
+    logger.warn({ err: error }, 'Failed to read AppConfig rateLimit: the route uses its default');
   }
 
-  // 2) Safe defaults
-  const def = RATE_LIMIT_POLICY_DEFAULTS[routeName];
-  return {
-    max: def.max,
-    windowMs: parseTimeWindow(def.timeWindow),
-    keyBy: def.keyBy,
-  };
+  const { max, timeWindow, keyBy } = policy ?? RATE_LIMIT_POLICY_DEFAULTS[routeName];
+  const windowMs = rateLimitWindowMs(timeWindow);
+  // Unreachable: a stored entry is validated above, and the defaults are tested against the schema.
+  if (windowMs === null) throw new Error(`Invalid rate-limit window for ${routeName}: ${timeWindow}`);
+  return { max, windowMs, keyBy };
 }
