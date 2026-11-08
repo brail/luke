@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { navConfigSchema, type NavConfigInput } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, navConfigSchema, type NavConfigInput } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
@@ -30,6 +30,9 @@ import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
+/** The port the server reads while none is saved: the registry default. */
+const DEFAULT_PORT = Number(APP_CONFIG_DEFAULTS['integrations.nav.port']);
+
 export default function NavSettingsPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
@@ -40,7 +43,7 @@ export default function NavSettingsPage() {
     resolver: zodResolver(navConfigSchema),
     defaultValues: {
       host: '',
-      port: 1433,
+      port: DEFAULT_PORT,
       database: '',
       user: '',
       password: '',
@@ -72,7 +75,7 @@ export default function NavSettingsPage() {
 
       form.reset({
         host: host?.valuePreview || '',
-        port: port?.valuePreview ? parseInt(port.valuePreview) : 1433,
+        port: port?.valuePreview ? parseInt(port.valuePreview) : DEFAULT_PORT,
         database: database?.valuePreview || '',
         user: user?.valuePreview || '',
         password: '',
@@ -182,12 +185,12 @@ export default function NavSettingsPage() {
                     <FormControl>
                       <Input
                         type="number"
-                        placeholder="1433"
+                        placeholder={APP_CONFIG_DEFAULTS['integrations.nav.port']}
                         {...field}
                         {...numberInputProps(field.value, field.onChange)}
                       />
                     </FormControl>
-                    <FormDescription>Porta SQL Server (default: 1433)</FormDescription>
+                    <FormDescription>Porta SQL Server (default: {DEFAULT_PORT})</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

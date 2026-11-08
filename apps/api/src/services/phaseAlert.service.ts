@@ -17,7 +17,6 @@ import {
   eventCalendarDays,
   isWorkingDate,
   workingDaysBetweenDates,
-  CollectionAlertThresholdsSchema,
   type AlertBand,
   type AlertBandEmphasis,
   type CalendarDate,
@@ -27,12 +26,9 @@ import {
 } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
-import { getConfig, getConfigOrDefault } from '../lib/configManager';
-import { rootLogger } from '../lib/logger';
+import { getConfigOrDefault } from '../lib/configManager';
 
 import { resolveCompanyCountryCode } from './companyProfile.service';
-
-const logger = rootLogger.child({ module: 'phase-alert' });
 
 type CalendarEventWithContext = Prisma.CalendarEventGetPayload<{
   include: {
@@ -55,24 +51,6 @@ export interface RankedGroup {
   /** `-Infinity` for a row with no phase: before the first phase. */
   rankOf(phaseId: string | null): number;
 }
-
-/** Built-in bands used when `collectionControl.alertThresholds` has not been configured yet. */
-const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
-  default: {
-    // -Infinity fails z.number().int() and doesn't round-trip through JSON; a large negative
-    // sentinel acts as "no lower bound" instead.
-    bands: [
-      // Emphasis climbs with severity so the built-in set already demonstrates the three visual
-      // weights an admin can assign per band.
-      { minDaysToDeadline: -9999, maxDaysToDeadline: 0, color: '#B91C1C', label: 'In ritardo', emphasis: 'solid' },
-      { minDaysToDeadline: 0, maxDaysToDeadline: 7, color: '#D97706', label: 'Urgente', emphasis: 'soft' },
-      { minDaysToDeadline: 7, maxDaysToDeadline: 21, color: '#CA8A04', label: 'Attenzione', emphasis: 'outline' },
-      { minDaysToDeadline: 21, maxDaysToDeadline: null, color: '#15803D', label: 'In linea', emphasis: 'outline' },
-    ],
-  },
-  completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' },
-  completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' },
-};
 
 /**
  * Returns every calendar event for the season calendar backing a collection layout (unfiltered by
@@ -226,19 +204,11 @@ export async function computeSeasonPhaseOrder(collectionLayoutId: string, prisma
 }
 
 /**
- * Reads and validates `collectionControl.alertThresholds` from AppConfig, falling back to
- * `DEFAULT_ALERT_THRESHOLDS` if the key is unset, malformed, or fails validation (never throws).
+ * The configured criticality bands: the built-in set in `APP_CONFIG_DEFAULTS` when the key is
+ * unset, or, with a warning, when the stored value fails its schema.
  */
-export async function resolveAlertThresholds(prisma: PrismaClient): Promise<CollectionAlertThresholds> {
-  const raw = await getConfig(prisma, 'collectionControl.alertThresholds');
-  if (!raw) return DEFAULT_ALERT_THRESHOLDS;
-  try {
-    const parsed = CollectionAlertThresholdsSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : DEFAULT_ALERT_THRESHOLDS;
-  } catch (error) {
-    logger.warn({ err: error }, 'Failed to parse AppConfig collectionControl.alertThresholds');
-    return DEFAULT_ALERT_THRESHOLDS;
-  }
+export function resolveAlertThresholds(prisma: PrismaClient): Promise<CollectionAlertThresholds> {
+  return getConfigOrDefault(prisma, 'collectionControl.alertThresholds');
 }
 
 /**

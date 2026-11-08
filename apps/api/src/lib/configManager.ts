@@ -426,9 +426,9 @@ export async function getConfigOrDefault<K extends AppConfigKeyWithDefault>(
     raw,
     key,
     // The default is declared in the string form AppConfig stores, and a test proves every entry
-    // parses; this is the same schema that test uses. Parsed eagerly: with a stored row it is a
-    // wasted Zod parse of a short literal, next to the query this read already makes.
-    parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
+    // parses; this is the same schema that test uses. Parsed only when it is used, so a stored
+    // row costs no parse of a JSON default such as `collectionControl.alertThresholds`.
+    () => parseConfigValue(key, APP_CONFIG_DEFAULTS[key]),
   );
 }
 
@@ -769,14 +769,14 @@ export function getNotificationDedupRetentionDays(prisma: PrismaClient): Promise
 
 /**
  * Parses a raw config value through its `AppConfigRegistry` Zod schema, falling back to
- * `fallback` if the key is unset or the stored value no longer validates.
+ * `fallback()` if the key is unset or the stored value no longer validates.
  */
 function parseConfigOrDefault<K extends AppConfigKey>(
   raw: string | null,
   key: K,
-  fallback: AppConfigValue<K>
+  fallback: () => AppConfigValue<K>
 ): AppConfigValue<K> {
-  if (raw === null) return fallback;
+  if (raw === null) return fallback();
   try {
     return parseConfigValue(key, raw);
   } catch (error) {
@@ -784,7 +784,7 @@ function parseConfigOrDefault<K extends AppConfigKey>(
       { key, err: error },
       'Invalid AppConfig value, using fallback'
     );
-    return fallback;
+    return fallback();
   }
 }
 

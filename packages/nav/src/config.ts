@@ -1,3 +1,4 @@
+import { APP_CONFIG_DEFAULTS, AppConfigRegistry } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 /**
@@ -39,19 +40,27 @@ export function sanitizeCompany(company: string): string {
   return company.replace(/\]/g, ']]');
 }
 
-/** A required `integrations.nav.*` key is missing: what an admin can fix by saving the settings. */
+/**
+ * A required `integrations.nav.*` key is missing, or the stored port is invalid (`invalidPort`):
+ * what an admin can fix by saving the settings.
+ */
 export class NavConfigIncompleteError extends Error {
-  constructor() {
-    super('Incomplete NAV configuration: check the integrations.nav.* keys in AppConfig.');
+  constructor(readonly invalidPort = false) {
+    super(
+      invalidPort
+        ? 'Invalid NAV configuration: the stored integrations.nav.port fails its schema.'
+        : 'Incomplete NAV configuration: check the integrations.nav.* keys in AppConfig.',
+    );
     this.name = 'NavConfigIncompleteError';
   }
 }
 
 /**
  * Reads all NAV connection parameters from AppConfig via the injected `getConfig` function, which
- * decrypts whatever is stored encrypted.
+ * decrypts whatever is stored encrypted. An unset `port` reads its declared default.
  *
- * @throws {NavConfigIncompleteError} When any required key (`host`, `port`, `database`, `user`, `password`, `company`) is missing.
+ * @throws {NavConfigIncompleteError} When any required key (`host`, `database`, `user`, `password`,
+ *   `company`) is missing, or the stored `port` fails its schema (refused, never replaced).
  */
 export async function getNavDbConfig(
   prisma: PrismaClient,
@@ -68,13 +77,19 @@ export async function getNavDbConfig(
       getConfig(prisma, 'integrations.nav.readOnly'),
     ]);
 
-  if (!host || !port || !database || !user || !password || !company) {
+  if (!host || !database || !user || !password || !company) {
     throw new NavConfigIncompleteError();
+  }
+  const parsedPort = AppConfigRegistry['integrations.nav.port'].safeParse(
+    port ?? APP_CONFIG_DEFAULTS['integrations.nav.port'],
+  );
+  if (!parsedPort.success) {
+    throw new NavConfigIncompleteError(true);
   }
 
   return {
     host,
-    port: parseInt(port, 10),
+    port: parsedPort.data,
     database,
     user,
     password,

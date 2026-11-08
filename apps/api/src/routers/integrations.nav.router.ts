@@ -7,7 +7,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, NAV_MASTER_DATA_ENTITIES, NAV_SYNC_ENTITIES, NavSyncScheduleInputSchema, calendarDateOf, isInstantInRange, navConfigSchema, type CalendarDate } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 import { createSyncRequest, getNavDbConfig, NavConfigIncompleteError, getPool, closePool, navDateOrNull, runNavSync, testNavConnection, sanitizeCompany } from '@luke/nav';
 
@@ -39,7 +39,9 @@ function readNavConfig(prisma: PrismaClient) {
   return getNavDbConfig(prisma, getConfig).catch((error: unknown) => {
     if (error instanceof NavConfigIncompleteError) {
       throw externalCheckFailed(
-        'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
+        error.invalidPort
+          ? 'La porta NAV salvata non è valida: inseriscila di nuovo e salva.'
+          : 'Configurazione NAV incompleta. Salva tutti i campi (host, porta, database, utente, password, company).'
       );
     }
     return rethrowUnreadable(error);
@@ -496,7 +498,8 @@ export const navRouter = router({
 
         const connectionChanged =
           prevHost !== input.host ||
-          prevPort !== input.port.toString() ||
+          // An unset port is read as its default: saving that same value changes nothing.
+          (prevPort ?? APP_CONFIG_DEFAULTS['integrations.nav.port']) !== input.port.toString() ||
           prevDatabase !== input.database ||
           prevUser !== input.user ||
           prevCompany !== input.company ||

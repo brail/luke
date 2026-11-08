@@ -9,10 +9,10 @@ import { join } from 'path';
 import { TRPCError } from '@trpc/server';
 import nodemailer from 'nodemailer';
 
-import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant, parseConfigValue } from '@luke/core';
+import { calcBackoffDelay, DEFAULT_LOCALE, formatInstant } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { getConfig, getConfigOrDefault } from './configManager';
+import { getConfig, getConfigOrDefault, getStoredConfigOrDefault, InvalidStoredConfigError } from './configManager';
 import { toErrorMessage } from './error';
 import { rootLogger } from './logger';
 
@@ -36,33 +36,40 @@ export interface SmtpConfig {
 
 /**
  * Reads and assembles the SMTP configuration from AppConfig.
- * The `smtp.pass` key is decrypted automatically.
+ * The `smtp.pass` key is decrypted automatically; an unset `smtp.port` reads its declared default.
  *
- * @throws {TRPCError} PRECONDITION_FAILED if any required SMTP key (host, port, user, pass, from) is
- *   missing: an admin fixes it in the mail settings, so the text must not be masked as a 5xx.
+ * @throws {TRPCError} PRECONDITION_FAILED if any required SMTP key (host, user, pass, from) is
+ *   missing, or the stored `smtp.port` fails its schema (refused, never replaced by the default):
+ *   an admin fixes either in the mail settings, so the text must not be masked as a 5xx.
  */
 export async function getSmtpConfig(prisma: PrismaClient): Promise<SmtpConfig> {
   const [host, port, secure, user, pass, from] = await Promise.all([
     getConfig(prisma, 'smtp.host'),
-    getConfig(prisma, 'smtp.port'),
+    getStoredConfigOrDefault(prisma, 'smtp.port').catch((error: unknown) => {
+      if (!(error instanceof InvalidStoredConfigError)) throw error;
+      throw new TRPCError({
+        code: 'PRECONDITION_FAILED',
+        message: 'La porta SMTP salvata non è valida: inseriscila di nuovo e salva.',
+        cause: error,
+      });
+    }),
     getConfigOrDefault(prisma, 'smtp.secure'),
     getConfig(prisma, 'smtp.user'),
     getConfig(prisma, 'smtp.pass'),
     getConfig(prisma, 'smtp.from'),
   ]);
 
-  if (!host || !port || !user || !pass || !from) {
+  if (!host || !user || !pass || !from) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message:
-        'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.port, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.',
+        'Configurazione SMTP incompleta. Verifica che smtp.host, smtp.user, smtp.pass e smtp.from siano configurati in AppConfig.',
     });
   }
 
   return {
     host,
-    // Parsed by the key's own registry schema — `port` is guaranteed non-null by the guard above.
-    port: parseConfigValue('smtp.port', port),
+    port,
     secure,
     auth: {
       user,

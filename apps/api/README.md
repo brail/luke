@@ -238,7 +238,8 @@ with bodies built in code.
   `false`; a stored value the registry refuses, or one that does not decrypt, is
   read as `true` and logged as a warning.
 
-SMTP keys: `smtp.host`, `smtp.port`, `smtp.secure` (TLS from the first byte
+SMTP keys: `smtp.host`, `smtp.port` (default `587`; a stored value the registry
+refuses is refused, not replaced), `smtp.secure` (TLS from the first byte
 when `true`, STARTTLS otherwise), `smtp.user`, `smtp.pass` (stored encrypted)
 and `smtp.from`; every link starts with `app.baseUrl`, whose default — and
 seeded value — is `http://localhost:3000`, so set the public origin before

@@ -13,8 +13,12 @@ import { join } from 'path';
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
-import { APP_CONFIG_DEFAULTS } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, parseConfigValue } from '@luke/core';
+import { getNavDbConfig, NavConfigIncompleteError } from '@luke/nav';
 
+import { getConfig, InvalidStoredConfigError } from '../src/lib/configManager';
+import { getSmtpConfig } from '../src/lib/mailer';
+import { resolveAlertThresholds } from '../src/services/phaseAlert.service';
 import { getStorageProvider, loadS3Provider, resetStorageProvider } from '../src/storage';
 
 import { setupTestDb, createCallerAs } from './helpers';
@@ -149,5 +153,72 @@ describe('AppConfig defaults', () => {
         dailyTime: '03:00', scope: null,
       });
     });
+  });
+
+  describe('ports', () => {
+    // Only an unset port takes the default: a stored one that fails its schema is refused, as a
+    // credential that is missing still is — never quietly replaced.
+    const SMTP_ROWS = { 'smtp.host': 'smtp.test', 'smtp.user': 'u', 'smtp.pass': 'p', 'smtp.from': 'luke@test' };
+    const NAV_ROWS = {
+      'integrations.nav.host': 'nav.test',
+      'integrations.nav.database': 'NAV',
+      'integrations.nav.user': 'u',
+      'integrations.nav.password': 'p',
+      'integrations.nav.company': 'C',
+    };
+    const store = (rows: Record<string, string>) =>
+      testPrisma.appConfig.createMany({
+        data: Object.entries(rows).map(([key, value]) => ({ key, value, isEncrypted: false })),
+      });
+
+    beforeEach(async () => {
+      await testPrisma.appConfig.deleteMany({
+        where: { OR: [{ key: { startsWith: 'smtp.' } }, { key: { startsWith: 'integrations.nav.' } }] },
+      });
+    });
+
+    it.each([
+      ['unset', {}, Number(APP_CONFIG_DEFAULTS['smtp.port'])],
+      ['stored', { 'smtp.port': '25' }, 25],
+    ])('SMTP reads the %s port', async (_case, port, expected) => {
+      await store({ ...SMTP_ROWS, ...port });
+      expect((await getSmtpConfig(testPrisma)).port).toBe(expected);
+    });
+
+    it('SMTP refuses a stored port that fails its schema, and a missing credential', async () => {
+      await store({ ...SMTP_ROWS, 'smtp.port': 'not-a-port' });
+      // PRECONDITION_FAILED keeps the text in production and lets the digest skip a tick.
+      await expect(getSmtpConfig(testPrisma)).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+        cause: expect.any(InvalidStoredConfigError),
+      });
+
+      await testPrisma.appConfig.deleteMany({ where: { key: { in: ['smtp.port', 'smtp.user'] } } });
+      await expect(getSmtpConfig(testPrisma)).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    });
+
+    it.each([
+      ['unset', {}, Number(APP_CONFIG_DEFAULTS['integrations.nav.port'])],
+      ['stored', { 'integrations.nav.port': '14330' }, 14330],
+    ])('NAV reads the %s port', async (_case, port, expected) => {
+      await store({ ...NAV_ROWS, ...port });
+      expect((await getNavDbConfig(testPrisma, getConfig)).port).toBe(expected);
+    });
+
+    it('NAV refuses a stored port that fails its schema, naming the key, and a missing value', async () => {
+      await store({ ...NAV_ROWS, 'integrations.nav.port': 'not-a-port' });
+      const refusal = getNavDbConfig(testPrisma, getConfig);
+      await expect(refusal).rejects.toMatchObject({ name: 'NavConfigIncompleteError', invalidPort: true });
+
+      await testPrisma.appConfig.deleteMany({ where: { key: { in: ['integrations.nav.port', 'integrations.nav.company'] } } });
+      await expect(getNavDbConfig(testPrisma, getConfig)).rejects.toBeInstanceOf(NavConfigIncompleteError);
+    });
+  });
+
+  it('reads the built-in criticality bands while none are configured', async () => {
+    await testPrisma.appConfig.deleteMany({ where: { key: 'collectionControl.alertThresholds' } });
+    expect(await resolveAlertThresholds(testPrisma)).toEqual(
+      parseConfigValue('collectionControl.alertThresholds', APP_CONFIG_DEFAULTS['collectionControl.alertThresholds']),
+    );
   });
 });

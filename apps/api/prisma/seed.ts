@@ -290,11 +290,6 @@ export async function seedAppConfigs(prisma: PrismaClient): Promise<void> {
       encrypt: false,
     },
     {
-      key: 'integrations.nav.port',
-      value: '1433',
-      encrypt: false,
-    },
-    {
       key: 'integrations.nav.database',
       value: 'NAV_DATABASE',
       encrypt: false,

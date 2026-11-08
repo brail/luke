@@ -5,10 +5,10 @@
 
 import { TRPCError } from '@trpc/server';
 
-import { AppContextDefaultsSchema, hasPermission, type AppContextDefaults, type Role } from '@luke/core';
+import { hasPermission, type Role } from '@luke/core';
 import type { Prisma, PrismaClient } from '@luke/db';
 
-import { rootLogger } from '../lib/logger';
+import { getConfigOrDefault } from '../lib/configManager';
 import { makeUrlResolver } from '../lib/storageUrl';
 
 /**
@@ -21,8 +21,6 @@ export {
   assertBrandAccessAll,
   filterAllowedBrandIds,
 } from './brandScope.service';
-
-const logger = rootLogger.child({ module: 'context' });
 
 /** Shape of `UserPreference.data` (Json column) — see the doc comment on the model in `identity.prisma`. */
 interface UserPreferenceData {
@@ -157,10 +155,10 @@ export async function resolveContext(
   userRole?: Role
 ): Promise<ContextResult> {
   // Load data in parallel for performance
-  const [prefs, allowedBrandIds, appConfig] = await Promise.all([
+  const [prefs, allowedBrandIds, contextDefaults] = await Promise.all([
     prisma.userPreference.findUnique({ where: { userId } }),
     getUserAllowedBrandIds(userId, prisma, userRole),
-    prisma.appConfig.findUnique({ where: { key: 'app.context.defaults' } }),
+    getConfigOrDefault(prisma, 'app.context.defaults'),
   ]);
 
   const [brands, seasons] = await Promise.all([
@@ -200,17 +198,6 @@ export async function resolveContext(
   ): T | undefined => {
     return id ? list.find(x => x.id === id) : undefined;
   };
-
-  // Parse org-level defaults
-  let contextDefaults: AppContextDefaults = { context: {} };
-  if (appConfig) {
-    try {
-      const parsed = JSON.parse(appConfig.value);
-      contextDefaults = AppContextDefaultsSchema.parse(parsed);
-    } catch (error) {
-      logger.warn({ err: error }, 'Failed to parse app.context.defaults, using empty defaults');
-    }
-  }
 
   // Priority-based resolution algorithm
   const appDefBrand = pick(brands, contextDefaults.context?.brandId);

@@ -16,10 +16,11 @@ vi.mock('nodemailer', () => ({
   default: { createTransport: () => ({ sendMail: sendMailMock, close: () => undefined }) },
 }));
 
-const SMTP: Record<string, string> = { 'smtp.host': 'smtp.test', 'smtp.port': '587', 'smtp.user': 'u', 'smtp.pass': 'p', 'smtp.from': 'luke@test' };
+const SMTP: Record<string, string> = { 'smtp.host': 'smtp.test', 'smtp.user': 'u', 'smtp.pass': 'p', 'smtp.from': 'luke@test' };
 vi.mock('../src/lib/configManager', () => ({
   getConfig: async (_prisma: unknown, key: string) => SMTP[key] ?? null,
   getConfigOrDefault: async () => false,
+  getStoredConfigOrDefault: async () => 587,
 }));
 
 const { escapeHtml, sendAccountApprovedEmail, sendMaintenanceScheduledEmail } = await import('../src/lib/mailer');

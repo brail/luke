@@ -7,7 +7,13 @@ import {
   smbStorageProviderConfigSchema,
 } from '../storage/config.js';
 
-import { RateLimitConfigSchema, LdapResilienceSchema, CollectionAlertThresholdsSchema, AppContextDefaultsSchema } from './appConfig.js';
+import {
+  RateLimitConfigSchema,
+  LdapResilienceSchema,
+  CollectionAlertThresholdsSchema,
+  AppContextDefaultsSchema,
+  type CollectionAlertThresholds,
+} from './appConfig.js';
 import { BackupScheduleConfigSchema, BackupScopeSchema } from './backup.js';
 import { TimeZoneSchema, WallTimeSchema } from './dates.js';
 import { LDAP_STRATEGIES } from './ldap.js';
@@ -247,6 +253,24 @@ export function parseConfigValue<K extends AppConfigKey>(
   return (AppConfigRegistry[key] as z.ZodTypeAny).parse(raw) as AppConfigValue<K>;
 }
 
+/** The criticality bands shown before an admin configures `collectionControl.alertThresholds`. */
+const DEFAULT_ALERT_THRESHOLDS: CollectionAlertThresholds = {
+  default: {
+    // -Infinity fails z.number().int() and doesn't round-trip through JSON; a large negative
+    // sentinel acts as "no lower bound" instead.
+    bands: [
+      // Emphasis climbs with severity so the built-in set already demonstrates the three visual
+      // weights an admin can assign per band.
+      { minDaysToDeadline: -9999, maxDaysToDeadline: 0, color: '#B91C1C', label: 'In ritardo', emphasis: 'solid' },
+      { minDaysToDeadline: 0, maxDaysToDeadline: 7, color: '#D97706', label: 'Urgente', emphasis: 'soft' },
+      { minDaysToDeadline: 7, maxDaysToDeadline: 21, color: '#CA8A04', label: 'Attenzione', emphasis: 'outline' },
+      { minDaysToDeadline: 21, maxDaysToDeadline: null, color: '#15803D', label: 'In linea', emphasis: 'outline' },
+    ],
+  },
+  completedBand: { color: '#15803D', label: 'Concluso', emphasis: 'solid' },
+  completedLateBand: { color: '#B91C1C', label: 'Concluso in ritardo', emphasis: 'solid' },
+};
+
 /**
  * The value a key falls back to when AppConfig has no row for it.
  *
@@ -271,8 +295,15 @@ export const APP_CONFIG_DEFAULTS = {
   'app.name':            'Luke',
   'app.baseUrl':         'http://localhost:3000',
   'app.defaultTimezone': 'Europe/Rome',
+  // No organization-wide brand or season: each user starts from their own last choice.
+  'app.context.defaults': '{"context":{}}',
 
+  'smtp.port':   '587',
   'smtp.secure': 'false',
+
+  'collectionControl.alertThresholds': JSON.stringify(DEFAULT_ALERT_THRESHOLDS),
+
+  'integrations.nav.port': '1433',
 
   'integrations.google.calendarSync.enabled': 'false',
 

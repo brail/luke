@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
-import { mailSmtpConfigSchema, type MailSmtpConfigInput } from '@luke/core';
+import { APP_CONFIG_DEFAULTS, mailSmtpConfigSchema, type MailSmtpConfigInput } from '@luke/core';
 
 import { SectionCard } from '../../../../components/SectionCard';
 import { KeyValueGrid } from '../../../../components/settings/KeyValueGrid';
@@ -37,6 +37,9 @@ import { numberInputProps } from '../../../../lib/numberInput';
 import { trpc } from '../../../../lib/trpc';
 import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
+/** The port the server reads while none is saved: the registry default. */
+const DEFAULT_PORT = Number(APP_CONFIG_DEFAULTS['smtp.port']);
+
 export default function MailPage() {
   const { can } = usePermission();
   const canUpdate = can('config:update');
@@ -51,7 +54,7 @@ export default function MailPage() {
     resolver: zodResolver(mailSmtpConfigSchema),
     defaultValues: {
       host: '',
-      port: 587,
+      port: DEFAULT_PORT,
       secure: false,
       user: '',
       pass: '',
@@ -85,7 +88,7 @@ export default function MailPage() {
 
       form.reset({
         host: smtpHost?.valuePreview || '',
-        port: smtpPort?.valuePreview ? parseInt(smtpPort.valuePreview) : 587,
+        port: smtpPort?.valuePreview ? parseInt(smtpPort.valuePreview) : DEFAULT_PORT,
         secure: smtpSecure?.valuePreview === 'true',
         user: smtpUser?.valuePreview || '',
         pass: '',
@@ -214,7 +217,7 @@ export default function MailPage() {
                     <FormControl>
                       <Input
                         type="number"
-                        placeholder="587"
+                        placeholder={APP_CONFIG_DEFAULTS['smtp.port']}
                         {...field}
                         {...numberInputProps(field.value, field.onChange)}
                       />

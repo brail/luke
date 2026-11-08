@@ -136,7 +136,7 @@ All keys live under the `integrations.nav.*` namespace:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `integrations.nav.host` | string | — | SQL Server hostname/IP |
-| `integrations.nav.port` | number | — | TCP port (NAV default: 1433) |
+| `integrations.nav.port` | number | 1433 | TCP port; an unset port reads the default, a stored invalid one refuses the connection |
 | `integrations.nav.database` | string | — | NAV database name |
 | `integrations.nav.user` | string | — | SQL Server user |
 | `integrations.nav.password` | string (encrypted) | — | SQL Server password (encrypted in the DB) |
