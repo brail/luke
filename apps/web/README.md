@@ -237,5 +237,7 @@ To add a widget:
    `ClocksSettingsSchema` and `ForexSettingsSchema`.
 2. Create `src/components/dashboard/widgets/<Name>Widget.tsx`.
 3. Register a `WidgetDefinition` in `src/components/dashboard/widgetRegistry.ts`;
-   a configurable widget also needs its editor in `DashboardCustomizeSheet.tsx`.
+   a configurable widget also needs its editor in `DashboardCustomizeSheet.tsx`. A widget
+   that shows a section's data sets `section`: it shows only to a user who sees that
+   section and holds the permission `SECTION_TO_PERMISSION` maps it to.
 4. If it needs data, add a procedure to `apps/api/src/routers/dashboard.ts`.

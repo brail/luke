@@ -196,6 +196,12 @@ describe('admin-only actions', () => {
   );
 });
 
+// Viewers read no sales figures (#217): enforced at the API boundary, not only by hiding the
+// statistics section and the weekly orders widget.
+it('the viewer role holds no sales permission', () => {
+  expect(expandRole('viewer').filter(permission => permission.startsWith('sales:'))).toEqual([]);
+});
+
 // `collectionLayout.get` returns each row vendor's `moqPerColor` (`ROW_VENDOR_INCLUDE` in apps/api),
 // so a role that reads collection layouts must also read vendors.
 describe('collection layout payload', () => {

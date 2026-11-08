@@ -69,3 +69,9 @@ ADR-029's observed gaps are this record's. Recorded as follow-ups; this record d
 - The rule that every permission refusal logs is kept by convention for a manual check. No rule fails a `FORBIDDEN` thrown after `can()` or `hasPermission()` without `logAccessDenied`.
 - The audit rows of `users.forceVerifyEmail` have no `targetId`: its input names the user `userId`, and the audit middleware reads `id`.
 - The manual order-portfolio and KIMO syncs write no audit row.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-11-08 — Consequences, "Editors and viewers see … the next automatic sync on the statistics page again".** Since #217 the viewer role no longer holds `sales:read`: a viewer reads no sales figure, not the statistics, their sync state or the home's weekly orders, even with the statistics section switched on by an override. Editors still see the next automatic sync. The decision that the `download` mutations take `sales:read` is unchanged.

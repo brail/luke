@@ -182,8 +182,8 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'collection_layout:view_revisions',
     // Vendors: read-only
     'vendors:read',
-    // Sales: read statistics
-    'sales:read',
+    // Sales: none — viewers read no sales figures, neither the statistics nor the home's weekly
+    // orders (#217).
     // Merchandising Plan: read-only
     'merchandising_plan:read',
     // Season Calendar: read, export

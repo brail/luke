@@ -12,7 +12,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 
 import { DashboardCustomizeSheet } from './DashboardCustomizeSheet';
-import { WIDGET_REGISTRY } from './widgetRegistry';
+import { useWidgetAccess, WIDGET_REGISTRY } from './widgetRegistry';
 import { ClocksWidget } from './widgets/ClocksWidget';
 import { ForexWidget } from './widgets/ForexWidget';
 import { KpiStatsWidget } from './widgets/KpiStatsWidget';
@@ -50,6 +50,7 @@ export function DashboardGrid() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const { data: session } = useSession();
   const { data: config, isLoading } = trpc.dashboard.getConfig.useQuery();
+  const canSee = useWidgetAccess();
 
   const widgetMap = useMemo(
     () => new Map(config?.widgets.map(w => [w.id, w]) ?? []),
@@ -57,9 +58,9 @@ export function DashboardGrid() {
   );
 
   function isEnabled(id: WidgetId): boolean {
-    const saved = widgetMap.get(id);
-    if (saved) return saved.enabled;
-    return WIDGET_REGISTRY.find(d => d.id === id)?.defaultEnabled ?? true;
+    const definition = WIDGET_REGISTRY.find(d => d.id === id);
+    if (definition && !canSee(definition)) return false;
+    return widgetMap.get(id)?.enabled ?? definition?.defaultEnabled ?? true;
   }
 
   function getSettings(id: WidgetId): Record<string, unknown> | undefined {

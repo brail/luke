@@ -67,18 +67,18 @@ describe('Section Access Overrides', () => {
     });
 
     it("resolves an explicit 'auto' role default through the RBAC permission fallback", () => {
-      // `sales.statistics` is the discriminator: the static table denies it to a viewer while
-      // the permission fallback (`sales:read`) grants it, so `true` can only have come from
+      // `settings.users` is the discriminator: the static table denies it to a viewer while
+      // the permission fallback (`users:read`) grants it, so `true` can only have come from
       // layer 3 — a static answer would be `false`. Asserting the table first means that if
       // the default ever changes, this test reports a dead discriminator instead of passing
       // for the wrong reason.
-      expect(SECTION_ACCESS_DEFAULTS.viewer['sales.statistics']).toBe(false);
+      expect(SECTION_ACCESS_DEFAULTS.viewer['settings.users']).toBe(false);
 
       const auto = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { 'sales.statistics': 'auto' } },
+        sectionAccessDefaults: { viewer: { 'settings.users': 'auto' } },
         userOverrides: undefined,
-        section: 'sales.statistics',
+        section: 'settings.users',
       });
       expect(auto).toBe(true);
 
@@ -86,9 +86,9 @@ describe('Section Access Overrides', () => {
       // fallback, which is what makes 'auto' the only route to it.
       const disabled = effectiveSectionAccess({
         role: 'viewer',
-        sectionAccessDefaults: { viewer: { 'sales.statistics': 'disabled' } },
+        sectionAccessDefaults: { viewer: { 'settings.users': 'disabled' } },
         userOverrides: undefined,
-        section: 'sales.statistics',
+        section: 'settings.users',
       });
       expect(disabled).toBe(false);
     });

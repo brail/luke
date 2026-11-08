@@ -72,14 +72,13 @@ describe.each(TRIGGERS)('sales.statistics.$name.triggerSync', t => {
 });
 
 // The statistics page shows when the next automatic sync is due. Its schedule comes with the sync
-// state (`sales:read`), not from the NAV sync configuration (`config:read`), which editors and
-// viewers do not hold.
+// state (`sales:read`), not from the NAV sync configuration (`config:read`), which editors do not hold.
 describe('getSyncState carries the replica schedule', () => {
-  it.each(['editor', 'viewer'] as const)('to %s, each replica its own', async role => {
+  it('to an editor, each replica its own', async () => {
     await prisma.navSyncFilter.create({
       data: { entity: 'portafoglio', mode: 'all', navNos: [], autoSyncEnabled: true, intervalMinutes: 45 },
     });
-    const caller = await createCallerAs(role);
+    const caller = await createCallerAs('editor');
 
     const portafoglio = await caller.sales.statistics.portafoglio.getSyncState();
     const kimo = await caller.sales.statistics.kimo.getSyncState();
@@ -95,11 +94,27 @@ it('each replica reports only its own tables', async () => {
   await prisma.navPfSyncState.createMany({
     data: [{ tableName: 'nav_pf_sales_header' }, { tableName: 'nav_kimo_sales_header' }],
   });
-  const statistics = (await createCallerAs('viewer')).sales.statistics;
+  const statistics = (await createCallerAs('editor')).sales.statistics;
 
   const portafoglio = await statistics.portafoglio.getSyncState();
   const kimo = await statistics.kimo.getSyncState();
 
   expect(portafoglio.tables.map(t => t.tableName)).toEqual(['nav_pf_sales_header']);
   expect(kimo.tables.map(t => t.tableName)).toEqual(['nav_kimo_sales_header']);
+});
+
+// Viewers read no sales figures (#217), whatever their section access: the permission is the boundary.
+describe('a viewer reads no sales data', () => {
+  const brandSeason = { brandId: 'brand', seasonId: 'season' };
+
+  it.each([
+    ['dashboard.getWeeklySales', (c: Caller) => c.dashboard.getWeeklySales(brandSeason)],
+    ['sales.statistics.portafoglio.getSyncState', (c: Caller) => c.sales.statistics.portafoglio.getSyncState()],
+    ['sales.statistics.kimo.getSyncState', (c: Caller) => c.sales.statistics.kimo.getSyncState()],
+  ])('%s is refused for the permission', async (_name, read) => {
+    const viewer = await createCallerAs('viewer');
+    // The permission's refusal, not the brand scope's (`Accesso al brand non consentito`), which a
+    // viewer in no team would also meet on `getWeeklySales`.
+    await expect(read(viewer)).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'Accesso negato' });
+  });
 });

@@ -1,16 +1,3 @@
-import React from 'react';
+import { sectionLayout } from '../../../lib/authz/sectionLayout';
 
-import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
-
-/**
- * Layout for the Admin section.
- * Protects every route under /admin — admins only.
- */
-export default async function AdminLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  await assertSectionAccess('admin');
-  return <>{children}</>;
-}
+export default sectionLayout('admin');

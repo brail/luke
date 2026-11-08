@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../ui/sheet';
 import { Switch } from '../ui/switch';
 
-import { WIDGET_REGISTRY } from './widgetRegistry';
+import { useWidgetAccess, WIDGET_REGISTRY } from './widgetRegistry';
 
 interface DashboardCustomizeSheetProps {
   open: boolean;
@@ -95,7 +95,7 @@ function EditableList({
 /**
  * Side sheet for toggling and configuring dashboard widgets.
  *
- * Each widget in `WIDGET_REGISTRY` has a toggle switch. Configurable widgets
+ * Each widget in `WIDGET_REGISTRY` the user may see has a toggle switch. Configurable widgets
  * (`clocks`, `forex`) expose a popover with an `EditableList` to add/remove
  * IANA timezones or forex pairs. Saves changes immediately via `dashboard.saveConfig`.
  */
@@ -105,6 +105,7 @@ export function DashboardCustomizeSheet({
   widgets,
 }: DashboardCustomizeSheetProps) {
   const utils = trpc.useUtils();
+  const canSee = useWidgetAccess();
   const saveConfig = trpc.dashboard.saveConfig.useMutation({
     onSuccess: () => utils.dashboard.getConfig.invalidate(),
     onError: err => toast.error(getTrpcErrorMessage(err)),
@@ -129,7 +130,7 @@ export function DashboardCustomizeSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
-          {WIDGET_REGISTRY.map(def => {
+          {WIDGET_REGISTRY.filter(canSee).map(def => {
             const saved = widgets.find(w => w.id === def.id);
             const enabled = saved?.enabled ?? def.defaultEnabled;
             const settings = saved?.settings;

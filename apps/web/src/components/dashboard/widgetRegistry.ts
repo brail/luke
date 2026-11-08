@@ -1,4 +1,7 @@
-import type { WidgetId } from '@luke/core';
+import { SECTION_TO_PERMISSION, type Section, type WidgetId } from '@luke/core';
+
+import { usePermission } from '../../hooks/usePermission';
+import { useSectionAccess } from '../../hooks/useSectionAccess';
 
 import { ClocksWidget } from './widgets/ClocksWidget';
 import { ForexWidget } from './widgets/ForexWidget';
@@ -20,6 +23,8 @@ export interface WidgetDefinition {
   defaultEnabled: boolean;
   defaultPosition: number;
   configurable: boolean;
+  /** The section whose data the widget shows. */
+  section?: Section;
 }
 
 /**
@@ -31,9 +36,19 @@ export interface WidgetDefinition {
  */
 export const WIDGET_REGISTRY: WidgetDefinition[] = [
   { id: 'kpi-stats',       label: 'Statistiche',          component: KpiStatsWidget,       defaultEnabled: true, defaultPosition: 0, configurable: false },
-  { id: 'season-progress', label: 'Avanzamento stagione', component: SeasonProgressWidget, defaultEnabled: true, defaultPosition: 1, configurable: false },
-  { id: 'weekly-sales',    label: 'Ordini settimanali',   component: WeeklySalesWidget,    defaultEnabled: true, defaultPosition: 2, configurable: false },
+  { id: 'season-progress', label: 'Avanzamento stagione', component: SeasonProgressWidget, defaultEnabled: true, defaultPosition: 1, configurable: false, section: 'product.collection_layout' },
+  { id: 'weekly-sales',    label: 'Ordini settimanali',   component: WeeklySalesWidget,    defaultEnabled: true, defaultPosition: 2, configurable: false, section: 'sales.statistics' },
   { id: 'tasks',           label: 'Attività personali',   component: TasksWidget,          defaultEnabled: true, defaultPosition: 3, configurable: false },
   { id: 'forex',           label: 'Cambi valuta',         component: ForexWidget,          defaultEnabled: true, defaultPosition: 4, configurable: true  },
   { id: 'clocks',          label: 'Orologi mondo',        component: ClocksWidget,         defaultEnabled: true, defaultPosition: 5, configurable: true  },
 ];
+
+/**
+ * Whether the user may see a widget (#217): its section visible (not while loading) and the section's
+ * permission held — an override can show a section without granting it (ADR-038).
+ */
+export function useWidgetAccess(): (widget: WidgetDefinition) => boolean {
+  const sections = useSectionAccess();
+  const { can } = usePermission();
+  return ({ section }) => !section || (sections[section] === true && can(SECTION_TO_PERMISSION[section]));
+}

@@ -1,8 +1,3 @@
-import React from 'react';
+import { sectionLayout } from '../../../lib/authz/sectionLayout';
 
-import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
-
-export default async function CalendarLayout({ children }: { children: React.ReactNode }) {
-  await assertSectionAccess('planning');
-  return <>{children}</>;
-}
+export default sectionLayout('planning');

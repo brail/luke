@@ -1,16 +1,3 @@
-import React from 'react';
+import { sectionLayout } from '../../../lib/authz/sectionLayout';
 
-import { assertSectionAccess } from '../../../lib/authz/assertSectionAccess';
-
-/**
- * Layout for the Maintenance section.
- * Protects every route under /maintenance with an access check.
- */
-export default async function MaintenanceLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  await assertSectionAccess('maintenance');
-  return <>{children}</>;
-}
+export default sectionLayout('maintenance');
