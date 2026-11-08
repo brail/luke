@@ -86,19 +86,21 @@ describe('CollectionAlertThresholdsSchema — outcome bands', () => {
 });
 
 describe('RateLimitPolicySchema — timeWindow', () => {
-  // The write side of `rateLimit`: exactly the windows `rateLimitWindowMs` converts, the grammar the
-  // API parsed before it moved here, so no window a stored blob holds today stops reading.
+  // The write side of `rateLimit`: exactly the windows `rateLimitWindowMs` converts — the grammar the
+  // API parsed before it moved here, minus a numeral so long it overflows to `Infinity`, which never
+  // let a window end. No upper bound: a long stored window keeps working.
   const policy = (timeWindow: string) => RateLimitPolicySchema.safeParse({ max: 1, timeWindow });
 
-  it.each(['30s', '1m', '01m', '2h', '24h'])('accepts %s', timeWindow => {
+  it.each(['30s', '1m', '01m', '2h', '48h'])('accepts %s', timeWindow => {
     expect(policy(timeWindow).success).toBe(true);
   });
 
-  it.each(['1 minute', '1d', '0m', 'm', '1.5m', '', '25h', '1441m', `${'9'.repeat(400)}h`])('refuses %j', timeWindow => {
+  it.each(['1 minute', '1d', '0m', 'm', '1.5m', '', `${'9'.repeat(400)}h`])('refuses %j', timeWindow => {
     expect(policy(timeWindow).success).toBe(false);
   });
 
   it('converts each unit to milliseconds', () => {
     expect([rateLimitWindowMs('30s'), rateLimitWindowMs('01m'), rateLimitWindowMs('2h')]).toEqual([30_000, 60_000, 7_200_000]);
+    expect(rateLimitWindowMs(`${'9'.repeat(400)}h`)).toBeNull();
   });
 });

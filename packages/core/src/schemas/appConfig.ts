@@ -3,18 +3,18 @@ import { z } from 'zod';
 const WINDOW_UNIT_MS = { s: 1_000, m: 60_000, h: 3_600_000 } as const;
 type WindowUnit = keyof typeof WINDOW_UNIT_MS;
 const RATE_LIMIT_TIME_WINDOW = new RegExp(`^(\\d+)(${Object.keys(WINDOW_UNIT_MS).join('|')})$`);
-/** The longest window a policy may set: a longer one would keep a key locked out in practice. */
-const RATE_LIMIT_MAX_WINDOW_MS = 24 * WINDOW_UNIT_MS.h;
 
 /**
  * Milliseconds of a rate-limit window — a whole number of seconds, minutes or hours (`30s`, `1m`,
- * `2h`), longer than zero and at most 24 hours — or `null` for any other string.
+ * `2h`), longer than zero — or `null` for any other string, and for a numeral too long to compute
+ * (`Infinity` would never let a window end). No upper bound on purpose: a stored window works at
+ * any length, and a cap would send a working one back to its default (owner, 2026-11-08).
  */
 export function rateLimitWindowMs(window: string): number | null {
   const match = RATE_LIMIT_TIME_WINDOW.exec(window);
   // The pattern's unit group alternates exactly the map's keys.
   const ms = match ? Number(match[1]) * WINDOW_UNIT_MS[match[2] as WindowUnit] : 0;
-  return ms > 0 && ms <= RATE_LIMIT_MAX_WINDOW_MS ? ms : null;
+  return ms > 0 && Number.isFinite(ms) ? ms : null;
 }
 
 /**
@@ -24,10 +24,10 @@ export function rateLimitWindowMs(window: string): number | null {
 export const RateLimitPolicySchema = z.object({
   /** Maximum number of allowed requests */
   max: z.number().int().positive(),
-  /** Time window (e.g. '1m', '15m', '2h'), from 1s to 24h */
+  /** Time window (e.g. '1m', '15m', '2h'), longer than zero */
   timeWindow: z
     .string()
-    .refine(window => rateLimitWindowMs(window) !== null, 'Expected a window from 1s to 24h, such as 30s, 1m or 2h'),
+    .refine(window => rateLimitWindowMs(window) !== null, 'Expected a window longer than zero, such as 30s, 1m or 2h'),
   /** Key type for rate limiting */
   keyBy: z.enum(['ip', 'userId', 'username']).default('ip'),
 });
