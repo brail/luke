@@ -37,7 +37,7 @@ function leavesUnder(section: Section): Section[] {
 }
 
 /** The leaves a switch acts on: those under it that the kill switch does not cover. */
-function switchableLeaves(section: Section, disabledSections: readonly string[]): Section[] {
+function switchableLeaves(section: Section, disabledSections: readonly Section[]): Section[] {
   return leavesUnder(section).filter(leaf => !isGloballyDisabled(leaf, disabledSections));
 }
 
@@ -47,7 +47,7 @@ export function leafSections(): Section[] {
 }
 
 /** `true` when the kill switch leaves nothing to switch under the section. */
-export function isSectionLocked(section: Section, disabledSections: readonly string[]): boolean {
+export function isSectionLocked(section: Section, disabledSections: readonly Section[]): boolean {
   return switchableLeaves(section, disabledSections).length === 0;
 }
 
@@ -55,7 +55,7 @@ export function isSectionLocked(section: Section, disabledSections: readonly str
 export function isSectionOverridden(
   section: Section,
   overrides: SectionOverrides,
-  disabledSections: readonly string[]
+  disabledSections: readonly Section[]
 ): boolean {
   return switchableLeaves(section, disabledSections).some(leaf => leaf in overrides);
 }
@@ -70,7 +70,7 @@ export function toggleSection(
   section: Section,
   checked: boolean,
   roleDefault: (section: Section) => boolean,
-  disabledSections: readonly string[]
+  disabledSections: readonly Section[]
 ): SectionOverrides {
   const next = { ...overrides };
   for (const leaf of switchableLeaves(section, disabledSections)) {
@@ -87,7 +87,7 @@ export function toggleSection(
 export function resetSection(
   overrides: SectionOverrides,
   section: Section,
-  disabledSections: readonly string[]
+  disabledSections: readonly Section[]
 ): SectionOverrides {
   const next = { ...overrides };
   for (const leaf of switchableLeaves(section, disabledSections)) delete next[leaf];
@@ -120,7 +120,7 @@ export function editsBetween(server: SectionOverrides, shown: SectionOverrides):
 /** The edits a save sends, as `[section, value]`: those on leaves the kill switch does not cover. */
 export function sendableEdits(
   edits: SectionEdits,
-  disabledSections: readonly string[]
+  disabledSections: readonly Section[]
 ): Array<[Section, boolean | null]> {
   return leafSections()
     .filter(leaf => leaf in edits && !isGloballyDisabled(leaf, disabledSections))
@@ -142,7 +142,7 @@ export function withoutReflected(edits: SectionEdits, server: SectionOverrides):
 export function resetEditsToRoleDefaults(
   server: SectionOverrides,
   edits: SectionEdits,
-  disabledSections: readonly string[]
+  disabledSections: readonly Section[]
 ): SectionEdits {
   const next: SectionEdits = {};
   for (const leaf of leafSections()) {

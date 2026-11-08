@@ -131,7 +131,7 @@ type OverrideBySection = Map<string, boolean>;
 function canRecover(
   overrides: OverrideBySection,
   sectionAccessDefaults: SectionAccessDefaults,
-  disabledSections: string[]
+  disabledSections: readonly Section[]
 ): boolean {
   return effectiveSectionAccess({
     role: 'admin',
@@ -181,7 +181,7 @@ export async function loadAdminRecoveryOverrides(
 export function countRecoveryCapable(
   admins: readonly AdminRecoveryOverrides[],
   sectionAccessDefaults: SectionAccessDefaults,
-  disabledSections: string[]
+  disabledSections: readonly Section[]
 ): number {
   return admins.filter(admin =>
     canRecover(admin.overrides, sectionAccessDefaults, disabledSections)
@@ -199,7 +199,7 @@ export function countRecoveryCapable(
 export async function countRecoveryCapableAdmins(
   prisma: PrismaLike,
   sectionAccessDefaults: SectionAccessDefaults,
-  disabledSections: string[]
+  disabledSections: readonly Section[]
 ): Promise<number> {
   return countRecoveryCapable(
     await loadAdminRecoveryOverrides(prisma),
@@ -224,7 +224,7 @@ export async function countRecoveryCapableAdminsAfterChange(
   changedSection: Section | null,
   hypotheticalEnabled: boolean | null,
   sectionAccessDefaults: SectionAccessDefaults,
-  disabledSections: string[]
+  disabledSections: readonly Section[]
 ): Promise<number> {
   // The admins as they would be after the change: `userId` gone, or carrying the
   // hypothetical override; everyone else as loaded.

@@ -30,7 +30,7 @@ type EffectiveAccessParams = {
   /** Section to evaluate */
   section: Section;
   /** Globally disabled sections (kill switch — highest precedence) */
-  disabledSections?: string[];
+  disabledSections?: readonly Section[];
 };
 
 /**
@@ -63,7 +63,7 @@ export function effectiveSectionAccess(params: EffectiveAccessParams): boolean {
  */
 export function isGloballyDisabled(
   section: Section,
-  disabledSections: readonly string[] | undefined
+  disabledSections: readonly Section[] | undefined
 ): boolean {
   return [section, ...ancestorSectionsOf(section)].some(s => disabledSections?.includes(s));
 }

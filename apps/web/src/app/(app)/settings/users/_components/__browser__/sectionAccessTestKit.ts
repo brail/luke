@@ -7,7 +7,7 @@ import {
 } from '@luke/core';
 
 /** What `sectionAccess.getDefaults` answers with no role map stored and `disabledSections` killed. */
-export function defaultsWith(disabledSections: string[] = []) {
+export function defaultsWith(disabledSections: Section[] = []) {
   const sectionAccessDefaults = Object.fromEntries(
     Roles.map(role => [
       role,

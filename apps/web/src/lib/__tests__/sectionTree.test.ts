@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { childSectionsOf } from '@luke/core';
+import { childSectionsOf, type Section } from '@luke/core';
 
 import {
   applyEdits,
@@ -53,7 +53,7 @@ describe('sectionTree — switches', () => {
   });
 
   it('leaves the override of a killed child alone when its parent is switched', () => {
-    const killed = ['admin.brands'];
+    const killed: Section[] = ['admin.brands'];
     // Switching the parent on must not plant an override the dialog shows as off and locked.
     expect(toggleSection({}, 'admin', true, nothing, killed)['admin.brands']).toBeUndefined();
     // Nor overwrite one that is already stored.

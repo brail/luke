@@ -156,7 +156,7 @@ async function saveSectionsDisabledGuarded(
   await prisma.$transaction(async tx => {
     // Parsed here rather than threaded in from `saveConfig`'s validation: there `key` is the open
     // `AppConfigKey`, so the parsed value is the union of every config type and narrowing it to
-    // `string[]` would need a cast. A second parse of a ten-element array is the cheaper price.
+    // `Section[]` would need a cast. A second parse of a short array is the cheaper price.
     const disabled = parseConfigValue('app.sections.disabled', rawValue);
 
     // Lock before reading, like every other writer of the last-admin invariant.

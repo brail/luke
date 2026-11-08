@@ -68,7 +68,7 @@ describe('effectiveSectionAccess — derived parents (ADR-025)', () => {
 
   it('switches off a whole group when its parent is in the kill switch', () => {
     const userOverrides = new Map([['admin.brands', true]]);
-    const params = { ...base, userOverrides, disabledSections: ['admin'] };
+    const params = { ...base, userOverrides, disabledSections: ['admin' as const] };
     expect(effectiveSectionAccess({ ...params, section: 'admin.brands' })).toBe(false);
     expect(effectiveSectionAccess({ ...params, section: 'admin' })).toBe(false);
   });

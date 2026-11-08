@@ -139,7 +139,13 @@ describe('the registry is consulted on the write path, not only on the read path
     // every real write.
     expect(validateConfigValue('security.password.minLength', '12').success).toBe(true);
     expect(validateConfigValue('storage.s3.useSSL', 'false').success).toBe(true);
-    expect(validateConfigValue('app.sections.disabled', '["pricing"]').success).toBe(true);
+    expect(validateConfigValue('app.sections.disabled', '["product.pricing"]').success).toBe(true);
+  });
+
+  it('refuses a kill switch naming a section that does not exist', () => {
+    // Strict on save, so a typo never sits in the list; the reader drops one already stored.
+    expect(validateConfigValue('app.sections.disabled', '["pricing"]').success).toBe(false);
+    expect(validateConfigValue('app.sections.disabled', '[]').success).toBe(true);
   });
 
   it('refuses the empty string for keys whose absence means "not configured"', () => {

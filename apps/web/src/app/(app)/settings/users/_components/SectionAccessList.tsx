@@ -32,7 +32,7 @@ interface SectionAccessListProps {
   defaults:
     | {
         sectionAccessDefaults: Record<string, Partial<Record<Section, SectionDefault>>>;
-        disabledSections: string[];
+        disabledSections: readonly Section[];
       }
     | undefined;
   overrides: SectionOverrides;

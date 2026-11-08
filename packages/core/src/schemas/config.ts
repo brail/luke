@@ -20,7 +20,7 @@ import { LDAP_STRATEGIES } from './ldap.js';
 import { mailSmtpConfigSchema, smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 import { navConfigSchema } from './nav.js';
-import { sectionAccessDefaultsSchema } from './rbac.js';
+import { sectionAccessDefaultsSchema, sectionEnum } from './rbac.js';
 import { httpUrl } from './url.js';
 
 /**
@@ -85,7 +85,8 @@ export const AppConfigRegistry = {
    */
   'app.defaultTimezone': TimeZoneSchema,
   'app.baseUrl':         httpUrl(),
-  'app.sections.disabled': jsonConfigSchema(z.array(z.string())),
+  // Strict on save; `getRbacConfig` reads a stored list entry by entry (a retired name is dropped).
+  'app.sections.disabled': jsonConfigSchema(z.array(sectionEnum)),
   'app.context.defaults':  jsonConfigSchema(AppContextDefaultsSchema),
 
   // ── Auth ─────────────────────────────────────────────────────────────────

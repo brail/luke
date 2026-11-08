@@ -83,6 +83,28 @@ describe('getRbacConfig — reporting what it ignored', () => {
     expect(JSON.stringify(handler.mock.calls)).not.toContain('secret-ish');
   });
 
+  it('drops a kill-switch name outside the section list, keeping and enforcing the valid ones', async () => {
+    const handler = vi.fn();
+    setRbacConfigWarningHandler(handler);
+
+    const { disabledSections } = await getRbacConfig(
+      clientWith({ 'app.sections.disabled': JSON.stringify(['product.retired', 'product.pricing', 1]) }),
+      { bypassCache: true }
+    );
+
+    expect(disabledSections).toEqual(['product.pricing']);
+    // By position, never the stored text.
+    expect(handler).toHaveBeenCalledWith('app.sections.disabled', ['[0]', '[2]']);
+  });
+
+  it('disables nothing for a kill switch that is not a list', async () => {
+    const { disabledSections } = await getRbacConfig(
+      clientWith({ 'app.sections.disabled': '{"product.pricing":true}' }),
+      { bypassCache: true }
+    );
+    expect(disabledSections).toEqual([]);
+  });
+
   it('reports nothing for a valid row', async () => {
     const handler = vi.fn();
     setRbacConfigWarningHandler(handler);

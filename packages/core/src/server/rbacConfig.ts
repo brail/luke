@@ -4,7 +4,6 @@
  */
 
 import { Roles, type Role } from '../rbac.js';
-import { AppConfigRegistry } from '../schemas/config.js';
 import {
   SECTION_ACCESS_DEFAULTS,
   sectionDefaultSchema,
@@ -117,7 +116,7 @@ function readStoredSectionDefaults(raw: string): {
 
 /**
  * Receives the entries of a stored RBAC row that the reader ignored: the AppConfig key, and the
- * entries by name (`viewer.admin.brands`, `viewer`, `row`), never their values.
+ * entries by name (`viewer.admin.brands`, `viewer`, `row`) or position (`[2]`), never their values.
  */
 export type RbacConfigWarningHandler = (key: string, ignored: readonly string[]) => void;
 
@@ -156,7 +155,36 @@ export interface IPrismaConfigClientWithWrite extends IPrismaConfigClient {
 
 interface RbacConfig {
   sectionAccessDefaults: ResolvedSectionAccessDefaults;
-  disabledSections: string[];
+  /** Shared by every caller through the cache: never mutated. */
+  disabledSections: readonly Section[];
+}
+
+/**
+ * The stored kill switch, entry by entry: an entry outside `sectionEnum` (a retired section, a
+ * non-string) is dropped and reported by its position (`[2]`), so one stale entry never re-enables
+ * the rest. Absent, or not a JSON array: nothing is disabled (see `getRbacConfig`).
+ */
+function readDisabledSections(raw: string | undefined): {
+  sections: readonly Section[];
+  ignored: string[];
+} {
+  if (raw === undefined) return { sections: [], ignored: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { sections: [], ignored: ['row'] };
+  }
+  if (!Array.isArray(parsed)) return { sections: [], ignored: ['row'] };
+
+  const sections: Section[] = [];
+  const ignored: string[] = [];
+  parsed.forEach((entry: unknown, index) => {
+    const section = sectionEnum.safeParse(entry);
+    if (section.success) sections.push(section.data);
+    else ignored.push(`[${index}]`);
+  });
+  return { sections, ignored };
 }
 
 /** In-memory TTL cache for RBAC configuration. Invalidated by `invalidateRbacCache()`. */
@@ -211,15 +239,8 @@ export async function getRbacConfig(
 
   // An unreadable kill switch disables nothing: the alternative, everything disabled, would lock
   // every administrator out of the only place where it can be corrected.
-  let disabledSections: string[] = [];
-  if (disabledRow) {
-    const parsed = AppConfigRegistry['app.sections.disabled'].safeParse(disabledRow.value);
-    if (parsed.success) {
-      disabledSections = parsed.data;
-    } else {
-      reportIgnored('app.sections.disabled', ['row']);
-    }
-  }
+  const { sections: disabledSections, ignored } = readDisabledSections(disabledRow?.value);
+  reportIgnored('app.sections.disabled', ignored);
 
   const rbacConfig: RbacConfig = {
     sectionAccessDefaults: mergeSectionAccessDefaults(stored),
@@ -236,7 +257,7 @@ export async function getRbacConfig(
  */
 export async function getSectionsDisabled(
   prisma: IPrismaConfigClient
-): Promise<string[]> {
+): Promise<readonly Section[]> {
   return (await getRbacConfig(prisma)).disabledSections;
 }
 
