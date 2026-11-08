@@ -386,3 +386,14 @@ test('Google: a connected account without an address still shows as connected', 
 
   await expect.element(screen.getByText('Connesso', { exact: true })).toBeVisible();
 });
+
+// #112: a stored role mapping the registry refuses is shown as stored, marked, for correction.
+test('an invalid stored role mapping is shown in its field, naming the group, and editable with LDAP off', async () => {
+  h.ldap = { ...LDAP, url: 'ldap://dc.test:389', unreadable: [], roleMapping: '{"cn=admins":"admn"}', roleMappingInvalid: true };
+  const screen = await render(<LdapSettingsPage />);
+
+  await expect.element(screen.getByLabelText(/^Role Mapping/)).toHaveValue('{"cn=admins":"admn"}');
+  await expect.element(screen.getByLabelText(/^Role Mapping/)).toBeEnabled();
+  await expect.element(screen.getByText(/Ruolo non valido per il gruppo "cn=admins"/)).toBeVisible();
+  await expect.element(screen.getByText(/La mappatura salvata non è valida/)).toBeVisible();
+});

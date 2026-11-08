@@ -16,7 +16,7 @@ import {
 } from './appConfig.js';
 import { BackupScheduleConfigSchema, BackupScopeSchema } from './backup.js';
 import { TimeZoneSchema, WallTimeSchema } from './dates.js';
-import { LDAP_STRATEGIES } from './ldap.js';
+import { LDAP_STRATEGIES, RoleMappingSchema } from './ldap.js';
 import { mailSmtpConfigSchema, smtpFromSchema } from './mail.js';
 import { MaintenanceModeStateSchema } from './maintenanceMode.js';
 import { navConfigSchema } from './nav.js';
@@ -172,9 +172,7 @@ export const AppConfigRegistry = {
   'auth.ldap.searchFilter':   z.string(),
   'auth.ldap.groupSearchBase':   z.string(),
   'auth.ldap.groupSearchFilter': z.string(),
-  // `z.custom` types the shape without checking it. `configManager` has a stricter
-  // `RoleMappingSchema` it applies where it actually needs the guarantee.
-  'auth.ldap.roleMapping':    jsonConfigSchema(z.custom<Record<string, string>>()),
+  'auth.ldap.roleMapping':    jsonConfigSchema(RoleMappingSchema),
 
   // ── LDAP resilience (individual scalars) ─────────────────────────────────
   'auth.ldap.resilience.timeoutMs':               integerConfigSchema(z.number().int().min(100)),

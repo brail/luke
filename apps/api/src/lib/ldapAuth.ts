@@ -6,7 +6,7 @@
 import { TRPCError } from '@trpc/server';
 import { Filter, SASL_MECHANISMS } from 'ldapts';
 
-import { Roles, type Role } from '@luke/core';
+import type { Role, RoleMapping } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
 import {
@@ -283,26 +283,20 @@ async function lookUpGroups(
   }
 }
 
-/** A mapped value is used only if it names a known role; `Roles` is the one list. */
-function isRole(value: string): value is Role {
-  return (Roles as readonly string[]).includes(value);
-}
-
 /**
  * Determine the user's role based on LDAP groups
  */
 function determineUserRole(
   userGroups: string[],
-  roleMapping: Record<string, string>
+  roleMapping: RoleMapping
 ): Role {
   // Look for the most specific mapping
   for (const groupDN of userGroups) {
-    if (roleMapping[groupDN]) {
-      const role = roleMapping[groupDN];
-      if (isRole(role)) {
-        logger.info({ groupDN, role }, `Role mapping found`);
-        return role;
-      }
+    // Own keys only: a DN equal to an inherited name (`constructor`) must not read a prototype member.
+    const role = Object.hasOwn(roleMapping, groupDN) ? roleMapping[groupDN] : undefined;
+    if (role) {
+      logger.info({ groupDN, role }, `Role mapping found`);
+      return role;
     }
   }
 

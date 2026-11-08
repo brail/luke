@@ -7,7 +7,6 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 
 import {
   AppConfigRegistry,
@@ -27,7 +26,7 @@ import {
   type LdapResilienceConfig,
   type LdapStoredField,
   type LdapStrategy,
-  Roles,
+  type RoleMapping,
   storesEncrypted,
 } from '@luke/core';
 import { getMasterKey, getRbacConfig, invalidateRbacCache } from '@luke/core/server';
@@ -44,8 +43,6 @@ import { rootLogger } from './logger';
 
 const logger = rootLogger.child({ module: 'config' });
 
-const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
-
 /**
  * Full LDAP configuration assembled from AppConfig keys.
  */
@@ -58,7 +55,7 @@ export interface LdapConfig {
   searchFilter: string;
   groupSearchBase: string;
   groupSearchFilter: string;
-  roleMapping: Record<string, string>;
+  roleMapping: RoleMapping;
   strategy: LdapStrategy;
 }
 
@@ -879,13 +876,23 @@ export async function isLdapEnabled(prisma: PrismaClient): Promise<boolean> {
 }
 
 /**
+ * The LDAP configuration as the settings form reads it: the fields that do not decrypt (#193), and
+ * the text of a stored role mapping the registry refuses, which the configuration reads as empty (#112).
+ */
+interface LdapFormRead {
+  config: LdapConfig;
+  unreadable: LdapStoredField[];
+  invalidRoleMapping: string | null;
+}
+
+/**
  * Assembles the LDAP configuration: a stored value that does not decrypt throws if `required` names
  * its field, and otherwise comes back blank and listed in `unreadable` (#193).
  */
 async function loadLdapConfig(
   prisma: PrismaClient,
   required: readonly LdapStoredField[]
-): Promise<{ config: LdapConfig; unreadable: LdapStoredField[] }> {
+): Promise<LdapFormRead> {
   const unreadable: LdapStoredField[] = [];
   const decrypt = (field: LdapStoredField, value: string): string => {
     try {
@@ -915,6 +922,7 @@ async function loadLdapConfig(
   if (configs.length === 0) {
     return {
       unreadable,
+      invalidRoleMapping: null,
       config: {
         enabled: false,
         url: '',
@@ -952,17 +960,14 @@ async function loadLdapConfig(
     (configMap.get('auth.strategy')?.value as LdapConfig['strategy']) ||
     'local-first';
 
-  let roleMapping: Record<string, string>;
-  try {
-    const parsed = JSON.parse(roleMappingStr);
-    roleMapping = RoleMappingSchema.parse(parsed);
-  } catch (error) {
-    logger.warn(
-      { err: error },
-      'roleMapping parse/validation error, using an empty mapping'
-    );
-    roleMapping = {};
+  // Dropped whole, never in part: a partial mapping could silently change who is an administrator.
+  // Every new LDAP user is then a viewer; existing users keep their role.
+  const parsedMapping = AppConfigRegistry['auth.ldap.roleMapping'].safeParse(roleMappingStr);
+  if (!parsedMapping.success) {
+    const [issue] = parsedMapping.error.issues;
+    logger.warn({ path: issue?.path, issue: issue?.message }, 'Stored LDAP role mapping is invalid, using an empty mapping');
   }
+  const roleMapping: RoleMapping = parsedMapping.data ?? {};
 
   const result = {
     enabled,
@@ -977,7 +982,7 @@ async function loadLdapConfig(
     strategy,
   };
 
-  return { config: result, unreadable };
+  return { config: result, unreadable, invalidRoleMapping: parsedMapping.success ? null : roleMappingStr };
 }
 
 /**
@@ -999,14 +1004,14 @@ export async function getLdapConfig(
 }
 
 /**
- * `getLdapConfig` for the settings form: a row that does not decrypt comes back blank and named, so
- * the admin can repair it. Nothing that connects to the directory may use this configuration.
+ * `getLdapConfig` for the settings form: a row that does not decrypt comes back blank and named, and
+ * an invalid role mapping comes back as its stored text, so the admin can repair either. Nothing that
+ * connects to the directory may use this configuration.
  *
- * @returns The configuration, and the fields unreadable, without the `auth.ldap.` prefix.
+ * @returns The configuration, the fields unreadable (without the `auth.ldap.` prefix) and the
+ *   invalid role mapping's text, or `null`.
  */
-export function getLdapConfigForForm(
-  prisma: PrismaClient
-): Promise<{ config: LdapConfig; unreadable: LdapStoredField[] }> {
+export function getLdapConfigForForm(prisma: PrismaClient): Promise<LdapFormRead> {
   return loadLdapConfig(prisma, []);
 }
 

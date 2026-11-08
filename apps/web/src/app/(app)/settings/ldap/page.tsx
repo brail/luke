@@ -62,6 +62,10 @@ import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 const UNREADABLE_SIGN_IN_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo e salva.';
 const UNREADABLE_REMOVABLE_MESSAGE = 'Un valore salvato non è leggibile e blocca l\'accesso LDAP: inseriscilo di nuovo o rimuovilo.';
 
+/** Under a stored role mapping the registry refuses (#112), which the form shows for correction. */
+const INVALID_ROLE_MAPPING_MESSAGE =
+  "La mappatura salvata non è valida e all'accesso viene ignorata: i nuovi utenti LDAP ricevono il ruolo viewer. Correggila e salva.";
+
 /** What a bind DN without its password leads to: on the field, and in the confirmation that removes one. */
 const BIND_ALONE_WARNING =
   'senza, un guasto della directory viene mostrato come credenziali errate e la protezione dai guasti non interviene.';
@@ -123,10 +127,11 @@ export default function LdapSettingsPage() {
   const storedUnreadable = existingConfig?.unreadable ?? [];
   const removedFields = removed.from === existingConfig ? removed.fields : [];
   const unreadable = storedUnreadable.filter(f => !removedFields.includes(f));
+  const roleMappingInvalid = existingConfig?.roleMappingInvalid ?? false;
   // With LDAP off the fields are locked, but one that has to be entered again must stay editable,
   // and stays so after a removal until the page is read again.
   const enabled = useWatch({ control: form.control, name: 'enabled' });
-  const fieldsLocked = !canUpdate || (!enabled && storedUnreadable.length === 0);
+  const fieldsLocked = !canUpdate || (!enabled && storedUnreadable.length === 0 && !roleMappingInvalid);
 
   // Update form when existing configuration arrives
   useEffect(() => {
@@ -143,6 +148,8 @@ export default function LdapSettingsPage() {
         roleMapping: existingConfig.roleMapping,
         strategy: existingConfig.strategy,
       });
+      // Names the group with the wrong role at once, not only after a refused save.
+      if (existingConfig.roleMappingInvalid) void form.trigger('roleMapping');
     }
   }, [existingConfig, form]);
 
@@ -535,6 +542,7 @@ export default function LdapSettingsPage() {
                     <code>{'{"CN=Admins,DC=example,DC=com": "admin"}'}</code>
                   </FormDescription>
                   {unreadable.includes('roleMapping') && <UnreadableValueNotice {...removeAction('roleMapping')} />}
+                  {roleMappingInvalid && <p className="text-sm text-status-critical">{INVALID_ROLE_MAPPING_MESSAGE}</p>}
                   <FormMessage />
                 </FormItem>
               )}

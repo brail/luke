@@ -369,3 +369,32 @@ describe('a filter template takes the value literally', () => {
     expect(search.mock.calls[0]?.[1]?.filter).toBe('(uid=a$&b)');
   });
 });
+
+describe('the role mapping at first login (#112)', () => {
+  const GROUPS_BASE = 'ou=groups,dc=test';
+  const ADMINS_DN = 'cn=admins,dc=test';
+
+  async function signInWithMapping(mapping: string) {
+    await configureLdap({ 'auth.ldap.groupSearchBase': GROUPS_BASE, 'auth.ldap.groupSearchFilter': '(member=${userDN})' });
+    // Written straight to the table: a save refuses an invalid mapping, an earlier release did not.
+    await prisma.appConfig.upsert({
+      where: { key: 'auth.ldap.roleMapping' },
+      update: { value: mapping, isEncrypted: false },
+      create: { key: 'auth.ldap.roleMapping', value: mapping, isEncrypted: false },
+    });
+    search.mockImplementation(async base => (base === GROUPS_BASE ? found({ dn: ADMINS_DN }) : found(ALICE)));
+    return authenticateViaLdap(prisma, 'alice', 'her-password');
+  }
+
+  it("gives a new user the role mapped to the user's group", async () => {
+    const login = await signInWithMapping(JSON.stringify({ [ADMINS_DN]: 'admin' }));
+
+    expect(login.user).toMatchObject({ role: 'admin' });
+  });
+
+  it('drops a mapping with an unknown role whole: the new user is a viewer, not a partial match', async () => {
+    const login = await signInWithMapping(JSON.stringify({ [ADMINS_DN]: 'admin', 'cn=others,dc=test': 'admn' }));
+
+    expect(login.user).toMatchObject({ role: 'viewer' });
+  });
+});

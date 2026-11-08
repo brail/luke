@@ -191,11 +191,14 @@ export const ldapRouter = router({
     .use(requirePermission('config:read'))
     .query(async ({ ctx }) => {
       try {
-        const { config, unreadable } = await getLdapConfigForForm(ctx.prisma);
+        const { config, unreadable, invalidRoleMapping } = await getLdapConfigForForm(ctx.prisma);
 
-        // Convert roleMapping object to JSON string for the frontend; blank when it cannot be read,
-        // so that the form does not offer an empty mapping as the stored one
-        const roleMappingJson = unreadable.includes('roleMapping') ? '' : JSON.stringify(config.roleMapping, null, 2);
+        // Convert roleMapping object to JSON string for the frontend; blank when it cannot be read, so
+        // that the form does not offer an empty mapping as the stored one. An invalid one goes back as
+        // stored, for the admin to correct (#112): the form refuses it until then, so it is never
+        // saved again unchanged.
+        const roleMappingJson =
+          invalidRoleMapping ?? (unreadable.includes('roleMapping') ? '' : JSON.stringify(config.roleMapping, null, 2));
 
         // For security, omit sensitive data
         return {
@@ -210,6 +213,7 @@ export const ldapRouter = router({
           roleMapping: roleMappingJson,
           strategy: config.strategy,
           unreadable,
+          roleMappingInvalid: invalidRoleMapping !== null,
         };
       } catch (error: unknown) {
         throw new TRPCError({

@@ -40,3 +40,32 @@ describe('ldapConfigSchema', () => {
     }
   });
 });
+
+describe('the role mapping (#112)', () => {
+  const config = {
+    enabled: true,
+    url: 'ldap://dc.example.com',
+    searchBase: 'dc=example,dc=com',
+    searchFilter: '(uid=${username})',
+    strategy: 'local-first' as const,
+  };
+  const mapping = (value: unknown) => JSON.stringify(value);
+
+  it('accepts a mapping to known roles, and an empty one', () => {
+    expect(ldapConfigSchema.safeParse({ ...config, roleMapping: mapping({ 'CN=Admins': 'admin' }) }).success).toBe(true);
+    expect(ldapConfigSchema.safeParse({ ...config, roleMapping: '' }).success).toBe(true);
+  });
+
+  it('refuses a mistyped role on the field, naming the group', () => {
+    const result = ldapConfigSchema.safeParse({ ...config, roleMapping: mapping({ 'CN=Admins': 'admn' }) });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['roleMapping']);
+    expect(result.error?.issues[0]?.message).toContain('CN=Admins');
+  });
+
+  it('refuses JSON that is not an object of roles', () => {
+    expect(ldapConfigSchema.safeParse({ ...config, roleMapping: '["admin"]' }).success).toBe(false);
+    expect(ldapConfigSchema.safeParse({ ...config, roleMapping: '{not json' }).success).toBe(false);
+  });
+});

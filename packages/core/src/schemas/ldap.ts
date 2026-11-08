@@ -5,6 +5,8 @@
 
 import { z } from 'zod';
 
+import { Roles } from '../rbac.js';
+
 /**
  * Supported LDAP authentication strategies — the one list the `auth.strategy` AppConfig schema,
  * the LDAP config schemas below and the API's config reader all derive from.
@@ -21,8 +23,16 @@ export const LDAP_STRATEGIES = [
 export type LdapStrategy = (typeof LDAP_STRATEGIES)[number];
 
 /**
+ * LDAP group DN → Luke role, as `auth.ldap.roleMapping` stores it (as JSON) and the sign-in reads it.
+ * A role outside `Roles` is refused on save (#112); one stored by an earlier release makes the reader
+ * drop the whole mapping, never a part of it, which could silently change who is an administrator.
+ */
+export const RoleMappingSchema = z.record(z.string(), z.enum(Roles));
+export type RoleMapping = z.infer<typeof RoleMappingSchema>;
+
+/**
  * Input schema for saving LDAP configuration.
- * `roleMapping` must be a valid JSON string mapping LDAP group names to Luke role names.
+ * `roleMapping` is the JSON text of a `RoleMappingSchema`; a mistyped role names its group.
  * `ldap-only` with LDAP disabled is refused: only the local administrators could log in. The issue
  * sits on `strategy` so the settings form shows it under that field. A convenience for this form
  * and `saveLdapConfig`; Maintenance → Config writes the same keys without it.
@@ -43,18 +53,25 @@ export const ldapConfigSchema = z.object({
     .string()
     .optional()
     .or(z.literal(''))
-    .refine(
-      val => {
-        if (!val || val.trim() === '') return true; // Empty is valid
-        try {
-          JSON.parse(val);
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      { message: 'Role Mapping deve essere un JSON valido' }
-    ),
+    .superRefine((val, ctx) => {
+      if (!val || val.trim() === '') return; // Empty is valid
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(val);
+      } catch {
+        ctx.addIssue({ code: 'custom', message: 'Role Mapping deve essere un JSON valido' });
+        return;
+      }
+      const result = RoleMappingSchema.safeParse(parsed);
+      if (result.success) return;
+      const group = result.error.issues[0]?.path[0];
+      ctx.addIssue({
+        code: 'custom',
+        message: typeof group === 'string'
+          ? `Ruolo non valido per il gruppo "${group}": usa ${Roles.join(', ')}`
+          : 'Role Mapping deve associare ogni gruppo LDAP a un ruolo: { "gruppo": "ruolo" }',
+      });
+    }),
   strategy: z.enum(LDAP_STRATEGIES),
 }).superRefine((config, ctx) => {
   if (config.strategy === 'ldap-only' && !config.enabled) {
