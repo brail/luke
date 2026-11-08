@@ -302,6 +302,8 @@ export const dashboardRouter = router({
 
   /**
    * Returns collection layout progress summary (skuBudget, skuForecast, row and group counts).
+   * `skuBudget` is the sum of the group budgets, `null` when no group has one, as the layout's totals
+   * bar reads it: the layout-level column is written by no screen (#216).
    *
    * @auth {collection_layout:read}
    * @input {{ brandId: string, seasonId: string }}
@@ -317,7 +319,7 @@ export const dashboardRouter = router({
       where: { brandId: input.brandId, seasonId: input.seasonId },
       include: {
         rows: { select: { skuForecast: true } },
-        groups: { select: { id: true } },
+        groups: { select: { skuBudget: true } },
         brand: { select: { name: true } },
         season: { select: { name: true } },
       },
@@ -328,7 +330,9 @@ export const dashboardRouter = router({
     return {
       brandName: layout.brand.name,
       seasonName: layout.season.name,
-      skuBudget: layout.skuBudget,
+      skuBudget: layout.groups.some(g => g.skuBudget != null)
+        ? layout.groups.reduce((sum, g) => sum + (g.skuBudget ?? 0), 0)
+        : null,
       skuForecast,
       rowCount: layout.rows.length,
       groupCount: layout.groups.length,
