@@ -595,7 +595,7 @@ guard (`db:nav-reset` refuses to run in production).
 | `db:migrate-storage` | `migrate-storage.ts` | Copies every file from one storage provider to another, keeping bucket and key; dry run unless `--apply` |
 | `db:backfill-asset-derivatives` | `backfill-asset-derivatives.ts` | Generates the thumb/card/export derivatives of image masters uploaded before the asset pipeline |
 | `db:complete-stranded-rows` | `complete-stranded-rows.ts` | Closes collection rows left open on a deactivated phase |
-| `db:harden-google-acl` | `harden-google-calendar-acl.ts` | Reapplies the per-function reader list and the read-only domain rule to every provisioned Google calendar |
+| `db:harden-google-acl` | `harden-google-calendar-acl.ts` | Runs one Google Calendar reader reconcile now (the API also runs it every 10 minutes): readers and the read-only domain rule on every provisioned calendar |
 | `db:migrate-rbac-section-key` | `migrate-rbac-controllo-to-control.ts` | Renames the stored section key `product.controllo` to `product.control` |
 | `db:bootstrap` | `dev-bootstrap.ts` | Development only: resets the database, then seeds the administrator and the base configuration |
 | `db:nav-reset` | `nav-reset.ts` | Development only: restores the "NAV connection just configured" state |

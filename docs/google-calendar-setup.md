@@ -87,14 +87,27 @@ the sync is skipped without an error. A sync can be started by hand with
   rules to keep its readers in step, and reads the domain rule to restrict it.
 - **Calendar ownership** follows the identity Luke authenticates as: the service
   account, the impersonated user, or the connected OAuth account. Readers are the
-  members of the calendar's company function plus the administrators, added as
-  `reader`; a domain-wide rule is downgraded to `freeBusyReader`.
-  `db:harden-google-acl` reapplies both to calendars created before these rules.
+  active administrators plus the active members of an active team that holds both
+  the calendar's company function and its brand; users pending approval read
+  nothing. They are added as `reader`; a domain-wide rule is downgraded to
+  `freeBusyReader`.
+- **Reader reconcile**: the API brings every provisioned calendar's readers back
+  to that rule 30 seconds after it starts and then every 10 minutes, whenever
+  Google credentials are configured, even with event sync turned off. A change in
+  Luke (a member leaving a team, a team losing a brand or being deactivated, a user
+  deactivated or with a new address) reaches Google within 10 minutes.
+  `db:harden-google-acl` runs one pass immediately. Luke changes only user-scoped
+  `reader` rules: any other rule (a group, another domain, public access, a
+  `writer`, a second owner) is left as it is and reported in the API log, for the
+  Workspace admin to review.
+- **Deleting a purged calendar** also needs only the credentials. A calendar Google
+  refuses to delete is logged by id and keeps its sharing until removed by hand.
 - **One calendar** per season calendar (brand × season) and company function,
   named `Luke • {brandCode} • {seasonCode} • {function name}`.
 - **Idempotent sync**: a content hash comparison prevents redundant API calls.
 - **Retry**: up to three attempts with exponential backoff (500 ms, then 1 s) on
-  429 and 5xx responses; other 4xx responses are not retried.
+  network errors, 5xx, 429 and rate-limit 403 responses; other 4xx responses are
+  not retried.
 
 ## Troubleshooting
 

@@ -33,9 +33,8 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 |--------|------|-------------|
 | `buildCalendarSummary(brandCode, seasonCode, sectionLabel)` | function | Composes the calendar display name — `Luke • {brand} • {season} • {section}` |
 | `createCalendar(summary, description?)` / `deleteCalendar(id)` | function | Creates a Google Calendar, returning `{ id, summary }` and throwing when the API returns no id, and permanently deletes one |
-| `addCalendarReader(id, email)` / `removeCalendarReader(id, email)` | function | Grants and revokes a single `reader` ACL rule; the removal is idempotent on a 404 |
-| `syncCalendarReaders(id, expectedEmails)` | function | Reconciles the reader ACL to exactly `expectedEmails`, issuing the additions and removals in parallel |
-| `enforceDomainReadOnly(id)` | function | Pins the Workspace-inherited `domain:` rule down to `freeBusyReader` — see Key Concepts |
+| `syncCalendarAcl(id, expectedEmails)` | function | Brings the calendar's ACL to what Luke grants from one read of every ACL page: the user-scoped `reader` rules become exactly `expectedEmails` (addresses compared ignoring case, a rule removed by its Google id; an expected reader who already holds a user `writer` or `owner` rule is left as is) and the Workspace `domain:` rule is pinned to `freeBusyReader`. Each reader change runs on its own, so one refusal does not stop the rest; a refused domain downgrade is thrown. Returns `AclSyncResult` — counts, the refused changes, and the rules it does not manage (see Key Concepts) |
+| `googleErrorStatus(err)` | function | HTTP status of a Google API error, `undefined` for a network error |
 
 ### Events
 
@@ -50,7 +49,6 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 | Symbol | Type | Description |
 |--------|------|-------------|
 | `syncMilestone(milestone, ctx)` | function | Reconciles one milestone across every calendar named in `visibilityFunctionIds`: creates, updates in place, skips on an unchanged content hash, and deletes the events of functions that left the list or of a milestone no longer published externally |
-| `provisionBinding(ctx, companyFunctionId, functionLabel?)` | function | Creates the calendar for one company function, sets its reader ACL from `ctx.getAllowedEmailsForFunction`, pins the domain rule read-only, and returns the new calendar id |
 | `computeContentHash(milestone)` | function | First 32 hex characters of a SHA-256 over the fields that reach the Google event, with `visibilityFunctionIds` sorted so the hash does not move with array order |
 
 ### iCal
@@ -67,7 +65,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 | `GoogleCalendarClient` | type | Alias for the googleapis `calendar_v3.Calendar` instance |
 | `EventInput` | type | The event body the package writes: title, optional description, `startAt`/`endAt`, `allDay`, and `confirmed` \| `cancelled` |
 | `MilestoneForSync` | type | The milestone fields the engine needs — including `publishExternally`, `visibilityFunctionIds` and `planningGroupName`, whose initials prefix the Google event title |
-| `SyncContext` | type | Every database read and write the engine performs, injected as callbacks: `getOrCreateBinding`, `getMappings`, `upsertMapping`, `deleteMapping`, `getAllowedEmailsForFunction`, plus the brand and season codes |
+| `SyncContext` | type | Every database read and write the engine performs, injected as callbacks: `getOrCreateBinding`, `getMappings`, `upsertMapping`, `deleteMapping`, plus the brand and season codes |
 | `GoogleCalendarBindingRecord` / `GoogleEventMappingRecord` | type | The persisted section → calendar binding, and the per-function milestone → event mapping that carries the stored `contentHash` |
 | `ICalMilestone` | type | The narrower milestone shape the iCal generator consumes |
 <!-- luke-docs:end:exports -->
@@ -79,8 +77,9 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 - **The client is a per-process singleton, and it must be initialised first.** `createGoogleCalendarClient` stores the configuration and every other function resolves the client through an internal `getClient()` that throws when it was never called. Calling it again replaces the active client, which is how `apps/api` swaps configuration: it re-reads the `integrations.google.*` AppConfig keys and re-initialises at the start of each sync run.
 - **Idempotence comes from a stored content hash, not from reading Google back.** `syncMilestone` compares `computeContentHash(milestone)` against the hash saved on the mapping and skips the calendar entirely when they match, so a re-run costs no Google write. The hash covers the group-initials prefix actually rendered into the title, so renaming a planning group is a real change and does re-sync.
 - **One calendar per company function, one mapping per milestone and function.** A milestone fans out to every calendar in `visibilityFunctionIds`, and the binding for a function is provisioned on first use. Dropping a function from that list is a deletion: the run removes the Google event and the mapping for it, exactly as setting `publishExternally` to false does.
-- **The domain ACL rule has to be pinned down explicitly.** Google auto-creates a `domain:<workspaceDomain>` rule on every calendar made inside a Workspace, inherited from the org's default sharing setting, and Google applies the *most permissive* rule matching a user — so an org default of "edit" would silently override the per-user `reader` grants. `provisionBinding` calls `enforceDomainReadOnly` after setting the readers for that reason; it is a no-op when no domain rule exists or it is already read-only.
-- **Retries are bounded and skip client errors.** Every Google call inside `syncMilestone` runs through three attempts with exponential back-off (500 ms, 1 s), and a 4xx other than 429 is rethrown immediately rather than retried — a rejected request will not become valid by being sent again.
+- **The domain ACL rule has to be pinned down explicitly.** Google auto-creates a `domain:<workspaceDomain>` rule on every calendar made inside a Workspace, inherited from the org's default sharing setting, and Google applies the *most permissive* rule matching a user — so an org default of "edit" would silently override the per-user `reader` grants. `syncCalendarAcl` downgrades it to `freeBusyReader` on every call, at provisioning and on every reader reconcile; nothing changes when no domain rule exists or it is already read-only.
+- **Luke manages only user-scoped `reader` rules** (and pins the domain rule). `syncCalendarAcl` never changes any other rule; it returns them in `unmanaged` for the caller to report, and leaves removing access Luke never granted to the Workspace admin. Which rules count is documented on `unmanagedRules` in `src/google/acl.ts`.
+- **Retries are bounded and skip client errors.** Every Google call in `syncMilestone` and in the ACL functions runs through `withRetry`: three attempts with exponential back-off (500 ms, 1 s) on network errors, 5xx, 429 and a 403 whose reason is a rate limit. Any other 4xx is rethrown immediately — a rejected request will not become valid by being sent again.
 <!-- luke-docs:end:concepts -->
 
 ## Usage Example

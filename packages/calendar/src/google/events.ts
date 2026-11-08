@@ -1,6 +1,7 @@
 import { addCalendarDays, calendarDateOf } from '@luke/core';
 
 import { getClient } from './client.js';
+import { googleErrorStatus } from './retry.js';
 
 import type { calendar_v3 } from 'googleapis';
 
@@ -88,6 +89,6 @@ export async function deleteEvent(
     await client.events.delete({ calendarId: googleCalendarId, eventId: googleEventId });
   } catch (err: unknown) {
     // 410 = already deleted — idempotent
-    if ((err as { code?: number }).code !== 410) throw err;
+    if (googleErrorStatus(err) !== 410) throw err;
   }
 }

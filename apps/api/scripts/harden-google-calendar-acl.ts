@@ -1,75 +1,35 @@
 /**
  * harden-google-calendar-acl.ts
  *
- * Retroactively reapplies to every already-provisioned GoogleCalendarBinding:
- *  - syncCalendarReaders() with the current email list scoped per function (team
- *    membership + admin) — calendars created before the per-function restriction
- *    still have the old ACL (all active users, unfiltered)
- *  - enforceDomainReadOnly() — downgrades the domain rule to freeBusyReader
- *
- * Both hardening steps only kick in at the moment a new binding is created —
- * calendars created before that don't benefit from them until this script is
- * run once.
+ * Runs one `reconcileGoogleReaders` pass now: every provisioned Google calendar gets its readers
+ * brought back to the current rule (admins, plus members of a team holding both its function and
+ * its brand) and its domain rule pinned read-only. The API already runs the same pass shortly
+ * after it starts and every 10 minutes (`googleReaderScheduler.ts`); this is for an operator who
+ * wants it immediately.
  *
  * Usage:
  *   pnpm --filter @luke/api db:harden-google-acl
  */
 
-
-import { enforceDomainReadOnly, syncCalendarReaders } from '@luke/calendar';
-
-import { getConfiguredGoogleClient, getAllowedEmailsForFunction } from '../src/services/googleCalendarSync.service.js';
+import { reconcileGoogleReaders } from '../src/services/googleCalendarSync.service.js';
 
 import { createScriptPrismaClient } from './lib/prisma.js';
 
+const logger = {
+  info: (obj: unknown, msg?: string) => console.log(msg ?? '', obj),
+  warn: (obj: unknown, msg?: string) => console.warn(`⚠️  ${msg ?? ''}`, obj),
+  error: (obj: unknown, msg?: string) => console.error(`❌ ${msg ?? ''}`, obj),
+};
+
 async function main() {
   const prisma = createScriptPrismaClient();
-
   try {
-    const creds = await getConfiguredGoogleClient(prisma);
-    if (!creds) {
-      console.error('❌ Google Calendar integration not configured or disabled — nothing to do.');
+    const result = await reconcileGoogleReaders(prisma, logger);
+    if (!result) {
+      console.error('❌ Google credentials not configured — nothing to do.');
       process.exit(1);
     }
-
-    const bindings = await prisma.googleCalendarBinding.findMany({
-      where: { isProvisioned: true },
-      include: { companyFunction: { select: { name: true } }, seasonCalendar: { select: { brandId: true, seasonId: true } } },
-    });
-
-    console.log(`🔍 ${bindings.length} provisioned Google calendars found.\n`);
-
-    let hardened = 0;
-    let errors = 0;
-
-    // Same companyFunctionId repeats across every season calendar (one binding per
-    // season × function) — cache the reader list per function instead of re-querying it
-    // once per binding.
-    const emailsByFunction = new Map<string, Promise<string[]>>();
-    const allowedEmailsFor = (companyFunctionId: string): Promise<string[]> => {
-      let cached = emailsByFunction.get(companyFunctionId);
-      if (!cached) {
-        cached = getAllowedEmailsForFunction(companyFunctionId, prisma);
-        emailsByFunction.set(companyFunctionId, cached);
-      }
-      return cached;
-    };
-
-    for (const b of bindings) {
-      try {
-        const allowedEmails = await allowedEmailsFor(b.companyFunctionId);
-        await syncCalendarReaders(b.googleCalendarId, allowedEmails);
-        await enforceDomainReadOnly(b.googleCalendarId);
-        hardened++;
-        console.log(`✅ ${b.companyFunction.name} (${b.googleCalendarId}) — ${allowedEmails.length} reader`);
-      } catch (err) {
-        errors++;
-        console.error(`❌ ${b.companyFunction.name} (${b.googleCalendarId}):`, err instanceof Error ? err.message : err);
-      }
-    }
-
-    console.log(`\n✅ Completed: ${hardened} calendars updated, ${errors} errors.`);
-    if (errors > 0) process.exit(1);
+    if (result.failed > 0) process.exit(1);
   } finally {
     await prisma.$disconnect();
   }

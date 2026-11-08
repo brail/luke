@@ -35,6 +35,7 @@ import { getConfig, validateCriticalConfig } from './lib/configManager';
 import { buildCorsAllowedOrigins } from './lib/cors';
 import { logTrpcError, setGlobalErrorHandler } from './lib/error';
 import { registerFeedbackSyncScheduler } from './lib/feedbackSyncScheduler';
+import { registerGoogleReaderScheduler } from './lib/googleReaderScheduler';
 import { setupGracefulShutdown } from './lib/gracefulShutdown';
 import { buildHelmetConfig } from './lib/helmet';
 import { idempotencyStore } from './lib/idempotency';
@@ -595,6 +596,9 @@ const start = async () => {
 
     // Register feedback GitHub issue sync scheduler (tick interval from AppConfig, default 24h)
     registerFeedbackSyncScheduler(fastify, prisma);
+
+    // Register Google Calendar reader reconcile (first pass 30s after start-up, then every 10min)
+    registerGoogleReaderScheduler(fastify, prisma);
 
     // Configure graceful shutdown
     setupGracefulShutdown({

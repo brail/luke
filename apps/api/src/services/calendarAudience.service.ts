@@ -28,6 +28,15 @@ import { unionBrandScopes } from './context.service';
 
 
 /**
+ * A team that gives its members both `functionId` and `brandId`: active, of that function, with
+ * that brand among its scopes. Function and brand come from the same team. The Google Calendar
+ * readers of a (season calendar, function) pair are the members of such a team, plus admins.
+ */
+export function teamGrantsFunctionAndBrand(functionId: string, brandId: string): Prisma.CompanyTeamWhereInput {
+  return { isActive: true, functionId, brandScopes: { some: { brandId } } };
+}
+
+/**
  * `P_access` for a batch of users: userId → Set of accessible brandIds, or `null` for admin
  * (brand-unrestricted). Users that are inactive or pending approval are omitted from the map
  * entirely — a caller must treat "not in the map" as "no access", not as "the empty set".

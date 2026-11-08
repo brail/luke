@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // `vi.mock` is hoisted above the imports: the mocks are already active when
 // `engine.js` loads, so the static import is safe.
-import { provisionBinding, syncMilestone } from '../engine.js';
+import { syncMilestone } from '../engine.js';
 import { computeContentHash } from '../hash.js';
 
 import { makeMilestone as makeSharedMilestone } from './fixtures.js';
@@ -22,28 +22,12 @@ const google = vi.hoisted(() => ({
   createEvent: vi.fn(),
   updateEvent: vi.fn(),
   deleteEvent: vi.fn(),
-  createCalendar: vi.fn(),
-  buildCalendarSummary: vi.fn(
-    (b: string, s: string, l: string) => `Luke • ${b} • ${s} • ${l}`
-  ),
-  syncCalendarReaders: vi.fn(),
-  enforceDomainReadOnly: vi.fn(),
 }));
 
 vi.mock('../../google/events.js', () => ({
   createEvent: google.createEvent,
   updateEvent: google.updateEvent,
   deleteEvent: google.deleteEvent,
-}));
-
-vi.mock('../../google/calendars.js', () => ({
-  createCalendar: google.createCalendar,
-  buildCalendarSummary: google.buildCalendarSummary,
-}));
-
-vi.mock('../../google/acl.js', () => ({
-  syncCalendarReaders: google.syncCalendarReaders,
-  enforceDomainReadOnly: google.enforceDomainReadOnly,
 }));
 
 /**
@@ -79,7 +63,6 @@ function makeContext(mappings: GoogleEventMappingRecord[] = []): SyncContext {
     seasonCalendarId: 'sc-1',
     brandCode: 'ACME',
     seasonCode: 'FW25',
-    getAllowedEmailsForFunction: vi.fn(async () => ['a@example.com']),
     getOrCreateBinding: vi.fn(async (companyFunctionId: string) => ({
       id: `bind-${companyFunctionId}`,
       seasonCalendarId: 'sc-1',
@@ -98,9 +81,6 @@ beforeEach(() => {
   google.createEvent.mockResolvedValue('gev-nuovo');
   google.updateEvent.mockResolvedValue(undefined);
   google.deleteEvent.mockResolvedValue(undefined);
-  google.createCalendar.mockResolvedValue({ id: 'gcal-nuovo', summary: 'x' });
-  google.syncCalendarReaders.mockResolvedValue(undefined);
-  google.enforceDomainReadOnly.mockResolvedValue(undefined);
 });
 
 describe('syncMilestone — creation', () => {
@@ -274,39 +254,5 @@ describe('syncMilestone — retry policy', () => {
     await syncMilestone(makeMilestone(), makeContext());
 
     expect(google.createEvent).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('provisionBinding', () => {
-  it('creates the calendar, sets the readers and locks the domain as read-only', async () => {
-    const ctx = makeContext();
-
-    const id = await provisionBinding(ctx, 'fn-a', 'Prodotto');
-
-    expect(google.buildCalendarSummary).toHaveBeenCalledWith(
-      'ACME',
-      'FW25',
-      'Prodotto'
-    );
-    expect(google.createCalendar).toHaveBeenCalledWith(
-      'Luke • ACME • FW25 • Prodotto'
-    );
-    expect(google.syncCalendarReaders).toHaveBeenCalledWith('gcal-nuovo', [
-      'a@example.com',
-    ]);
-    // It must ALWAYS be called after provisioning: Google itself creates a domain rule
-    // that can override the per-user permissions.
-    expect(google.enforceDomainReadOnly).toHaveBeenCalledWith('gcal-nuovo');
-    expect(id).toBe('gcal-nuovo');
-  });
-
-  it('uses the function id as the label when the label is missing', async () => {
-    await provisionBinding(makeContext(), 'fn-a');
-
-    expect(google.buildCalendarSummary).toHaveBeenCalledWith(
-      'ACME',
-      'FW25',
-      'fn-a'
-    );
   });
 });

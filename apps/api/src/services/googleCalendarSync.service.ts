@@ -6,8 +6,8 @@ import {
   buildCalendarSummary,
   createCalendar,
   deleteCalendar,
-  syncCalendarReaders,
-  enforceDomainReadOnly,
+  syncCalendarAcl,
+  googleErrorStatus,
   type MilestoneForSync,
   type SyncContext,
 } from '@luke/calendar';
@@ -16,6 +16,7 @@ import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
 
+import { teamGrantsFunctionAndBrand } from './calendarAudience.service.js';
 import { getUserAllowedFunctionIds } from './context.service.js';
 
 
@@ -31,16 +32,23 @@ interface SyncLogger {
  * Reads Google integration config from AppConfig and initialises the Google Calendar client.
  * Supports oauth_user and service_account authentication modes.
  *
+ * Event sync needs `integrations.google.calendarSync.enabled` on. Work that keeps existing Google
+ * calendars in line with Luke (reader reconcile, deleting purged calendars) passes
+ * `requireSyncEnabled: false`: turning event sync off must not freeze who can read them.
+ *
  * @returns The configured workspace domain, or null if the integration is disabled or misconfigured.
  */
-export async function getConfiguredGoogleClient(prisma: PrismaClient): Promise<{ domain: string } | null> {
+export async function getConfiguredGoogleClient(
+  prisma: PrismaClient,
+  { requireSyncEnabled = true }: { requireSyncEnabled?: boolean } = {}
+): Promise<{ domain: string } | null> {
   const [authMode, domain, enabled] = await Promise.all([
     getConfig(prisma, 'integrations.google.authMode'),
     getConfig(prisma, 'integrations.google.domain'),
     getConfigOrDefault(prisma, 'integrations.google.calendarSync.enabled'),
   ]);
 
-  if (!domain || !enabled) return null;
+  if (!domain || (requireSyncEnabled && !enabled)) return null;
 
   if (authMode === 'oauth_user') {
     const [clientId, clientSecret, refreshToken] = await Promise.all([
@@ -102,17 +110,22 @@ function mapMilestone(m: MilestoneRow): MilestoneForSync {
 // ─── SyncContext builder ──────────────────────────────────────────────────────
 
 /**
- * Resolves the Google Calendar reader emails for a company function: active users on a team
- * belonging to that function, plus all active admins (admins see every section regardless of
- * team membership).
+ * The Google Calendar readers of one (season calendar, function) pair: active admins, plus active
+ * members of an active team that holds both the function and the season calendar's brand. Users
+ * pending approval read nothing.
  */
-export async function getAllowedEmailsForFunction(companyFunctionId: string, prisma: PrismaClient): Promise<string[]> {
+export async function getCalendarReaderEmails(
+  companyFunctionId: string,
+  brandId: string,
+  prisma: PrismaClient
+): Promise<string[]> {
   const users = await prisma.user.findMany({
     where: {
       isActive: true,
+      pendingApproval: false,
       OR: [
         { role: 'admin' },
-        { teamMemberships: { some: { team: { functionId: companyFunctionId, isActive: true } } } },
+        { teamMemberships: { some: { team: teamGrantsFunctionAndBrand(companyFunctionId, brandId) } } },
       ],
     },
     select: { email: true },
@@ -145,7 +158,6 @@ export async function buildSyncContext(
     seasonCalendarId: calendarId,
     brandCode,
     seasonCode,
-    getAllowedEmailsForFunction: (companyFunctionId) => getAllowedEmailsForFunction(companyFunctionId, prisma),
 
     getOrCreateBinding: async (companyFunctionId) => {
       const existing = await prisma.googleCalendarBinding.findUnique({
@@ -159,9 +171,16 @@ export async function buildSyncContext(
       });
       const summary = buildCalendarSummary(brandCode, seasonCode, fn?.name ?? companyFunctionId);
       const { id: googleCalendarId } = await createCalendar(summary);
-      const allowedUserEmails = await getAllowedEmailsForFunction(companyFunctionId, prisma);
-      await syncCalendarReaders(googleCalendarId, allowedUserEmails);
-      await enforceDomainReadOnly(googleCalendarId);
+      try {
+        // A refused reader change is retried by the next `reconcileGoogleReaders` pass; a calendar
+        // whose ACL could not be read or whose domain rule could not be pinned is not bound.
+        await syncCalendarAcl(googleCalendarId, await getCalendarReaderEmails(companyFunctionId, cal.brandId, prisma));
+      } catch (err) {
+        // No binding will point at it: delete it rather than leave it with the org's default
+        // sharing, out of every reconcile. Best effort: the sync's own error is the one reported.
+        await deleteCalendar(googleCalendarId).catch(() => undefined);
+        throw err;
+      }
 
       return prisma.googleCalendarBinding.upsert({
         where: { seasonCalendarId_companyFunctionId: { seasonCalendarId: calendarId, companyFunctionId } },
@@ -237,8 +256,9 @@ export async function deleteGoogleCopies(
 
 /**
  * Deletes Google calendars Luke provisioned, once their bindings are gone (a purged season calendar).
- * Best effort, as `deleteGoogleCopies`: a calendar Google refuses to delete is logged and stays.
- * No-ops if the integration is disabled.
+ * Best effort, as `deleteGoogleCopies`: a calendar Google refuses to delete is logged by id and
+ * stays. Runs with event sync off too (only credentials are needed): a purged calendar must not keep
+ * its readers.
  */
 export async function deleteGoogleCalendars(
   googleCalendarIds: string[],
@@ -246,15 +266,15 @@ export async function deleteGoogleCalendars(
   logger: SyncLogger
 ): Promise<void> {
   if (googleCalendarIds.length === 0) return;
-  const creds = await getConfiguredGoogleClient(prisma);
+  const creds = await getConfiguredGoogleClient(prisma, { requireSyncEnabled: false });
   if (!creds) return;
 
   const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id)));
-  const failed = results.filter(r => r.status === 'rejected').length;
-  if (failed > 0) {
-    logger.warn({ failed, total: googleCalendarIds.length }, 'Some provisioned Google calendars were not deleted');
+  const failedIds = googleCalendarIds.filter((_, i) => results[i].status === 'rejected');
+  if (failedIds.length > 0) {
+    logger.warn({ failedIds, total: googleCalendarIds.length }, 'Some provisioned Google calendars were not deleted');
   }
-  logger.info({ count: googleCalendarIds.length - failed }, 'Provisioned Google calendars deleted');
+  logger.info({ count: googleCalendarIds.length - failedIds.length }, 'Provisioned Google calendars deleted');
 }
 
 /**
@@ -295,6 +315,93 @@ export async function reconcileCalendar(
 
   logger.info({ calendarId, synced, errors }, 'Google Calendar reconciliation completed');
   return { synced, errors };
+}
+
+// ─── Reader reconcile ─────────────────────────────────────────────────────────
+
+/** Bindings whose Google calendar answered 404, warned once per process: it will not come back. */
+const missingCalendarsWarned = new Set<string>();
+
+/** The last unmanaged-rule report, logged again only when it changes. */
+let lastUnmanagedReport = '';
+
+/**
+ * Brings the ACL of every provisioned Google calendar back to what Luke grants (`syncCalendarAcl`):
+ * readers from `getCalendarReaderEmails`, the domain rule read-only. Revokes whoever lost access in Luke (left a team, team lost the
+ * brand or was deactivated, user deactivated or pending, address changed) and adds whoever gained
+ * it. Each calendar is reconciled on its own: one failure does not stop the others. Rules Luke does
+ * not manage are reported, aggregated per pass, never changed.
+ *
+ * Runs with event sync off too, as long as credentials exist.
+ *
+ * @returns Counts for the pass, or null when Google is not configured.
+ */
+export async function reconcileGoogleReaders(
+  prisma: PrismaClient,
+  logger: SyncLogger
+): Promise<{ calendars: number; added: number; removed: number; failed: number } | null> {
+  const creds = await getConfiguredGoogleClient(prisma, { requireSyncEnabled: false });
+  if (!creds) return null;
+
+  const bindings = await prisma.googleCalendarBinding.findMany({
+    where: { isProvisioned: true },
+    select: { id: true, googleCalendarId: true, companyFunctionId: true, seasonCalendar: { select: { brandId: true } } },
+  });
+
+  // The same (function, brand) pair repeats across seasons: one query per pair.
+  const readersByPair = new Map<string, Promise<string[]>>();
+  const unmanaged = new Map<string, number>();
+  let added = 0;
+  let removed = 0;
+  let failed = 0;
+
+  for (const b of bindings) {
+    const pair = `${b.companyFunctionId}:${b.seasonCalendar.brandId}`;
+    let readers = readersByPair.get(pair);
+    if (!readers) {
+      readers = getCalendarReaderEmails(b.companyFunctionId, b.seasonCalendar.brandId, prisma);
+      readersByPair.set(pair, readers);
+    }
+
+    try {
+      const result = await syncCalendarAcl(b.googleCalendarId, await readers);
+      added += result.added;
+      removed += result.removed;
+      if (result.errors.length > 0) {
+        logger.warn(
+          { bindingId: b.id, refused: result.errors.length, err: result.errors[0] },
+          'Google refused some reader changes; retried on the next pass'
+        );
+      }
+      for (const r of result.unmanaged) {
+        const key = `${r.role}/${r.scopeType}`;
+        unmanaged.set(key, (unmanaged.get(key) ?? 0) + 1);
+      }
+    } catch (err) {
+      if (googleErrorStatus(err) === 404) {
+        if (!missingCalendarsWarned.has(b.id)) {
+          missingCalendarsWarned.add(b.id);
+          logger.warn({ bindingId: b.id }, 'Google calendar of a binding no longer exists in Google');
+        }
+        continue;
+      }
+      failed++;
+      logger.error({ err, bindingId: b.id }, 'Google Calendar reader reconcile failed for a calendar');
+    }
+  }
+
+  const unmanagedRules = Object.fromEntries([...unmanaged].sort());
+  const report = JSON.stringify(unmanagedRules);
+  if (report !== lastUnmanagedReport && unmanaged.size > 0) {
+    logger.warn(
+      { unmanagedRules },
+      'Google calendars carry ACL rules Luke does not manage; left unchanged'
+    );
+  }
+  lastUnmanagedReport = report;
+
+  logger.info({ calendars: bindings.length, added, removed, failed }, 'Google Calendar readers reconciled');
+  return { calendars: bindings.length, added, removed, failed };
 }
 
 // ─── Subscription info ────────────────────────────────────────────────────────

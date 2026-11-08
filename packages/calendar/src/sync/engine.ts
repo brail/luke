@@ -1,8 +1,7 @@
 import { initials } from '@luke/core';
 
-import { syncCalendarReaders, enforceDomainReadOnly } from '../google/acl.js';
-import { buildCalendarSummary, createCalendar } from '../google/calendars.js';
 import { createEvent, deleteEvent, updateEvent } from '../google/events.js';
+import { withRetry } from '../google/retry.js';
 
 import { computeContentHash } from './hash.js';
 
@@ -10,24 +9,6 @@ import type { MilestoneForSync, SyncContext } from './types.js';
 
 function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' {
   return cancelled ? 'cancelled' : 'confirmed';
-}
-
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err: unknown) {
-      const code = (err as { code?: number }).code;
-      // 4xx (except 429) = do not retry
-      if (code !== undefined && code >= 400 && code < 500 && code !== 429) throw err;
-      lastErr = err;
-      if (attempt < maxAttempts - 1) {
-        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
-      }
-    }
-  }
-  throw lastErr;
 }
 
 /**
@@ -40,7 +21,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
  * - Otherwise: provisions the binding if needed, creates the event, and stores the mapping.
  *
  * Also removes mappings for company functions that are no longer in the visibility list.
- * All Google API calls are retried up to 3 times with exponential back-off (skipping 4xx errors).
+ * All Google API calls go through `withRetry` (network errors, 5xx and rate limits).
  *
  * @param milestone - Milestone data and its target function ids
  * @param ctx - Database I/O context (bindings, mappings, brand/season metadata)
@@ -105,27 +86,4 @@ export async function syncMilestone(
       await ctx.deleteMapping(milestone.id, companyFunctionId);
     }
   }
-}
-
-/**
- * Creates a new Google Calendar for the given company function and configures
- * reader ACL scoped to that function's team members (plus admins), via `ctx.getAllowedEmailsForFunction`.
- *
- * @param ctx - Sync context providing brand/season codes and the reader-email resolver
- * @param companyFunctionId - Identifier of the company function (used as calendar section label when no label is provided)
- * @param functionLabel - Human-readable section label for the calendar summary (optional)
- * @returns The newly provisioned Google Calendar id
- */
-export async function provisionBinding(
-  ctx: SyncContext,
-  companyFunctionId: string,
-  functionLabel?: string
-): Promise<string> {
-  const label = functionLabel ?? companyFunctionId;
-  const summary = buildCalendarSummary(ctx.brandCode, ctx.seasonCode, label);
-  const { id: googleCalendarId } = await createCalendar(summary);
-  const allowedUserEmails = await ctx.getAllowedEmailsForFunction(companyFunctionId);
-  await syncCalendarReaders(googleCalendarId, allowedUserEmails);
-  await enforceDomainReadOnly(googleCalendarId);
-  return googleCalendarId;
 }

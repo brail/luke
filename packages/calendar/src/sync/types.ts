@@ -50,8 +50,6 @@ export interface SyncContext {
   seasonCalendarId: string;
   brandCode: string;
   seasonCode: string;
-  /** Resolves reader emails scoped to the company function — team members of that function, plus admins. */
-  getAllowedEmailsForFunction: (companyFunctionId: string) => Promise<string[]>;
   getOrCreateBinding: (companyFunctionId: string) => Promise<GoogleCalendarBindingRecord>;
   getMappings: (milestoneId: string) => Promise<GoogleEventMappingRecord[]>;
   upsertMapping: (mapping: Omit<GoogleEventMappingRecord, 'lastSyncedAt'>) => Promise<void>;

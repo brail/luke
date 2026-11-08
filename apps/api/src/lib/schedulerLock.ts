@@ -51,6 +51,7 @@ export type SchedulerName =
   | 'backup'
   | 'calendar-digest'
   | 'feedback-sync'
+  | 'google-readers'
   | 'kimo-sync'
   | 'maintenance-mode'
   | 'milestone-deadline'
