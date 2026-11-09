@@ -94,16 +94,28 @@ export const usersAdminRouter = router({
           });
         }
 
-        await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
-        await tx.user.update({ where: { id: input.id }, data: { pendingApproval: false } });
-        // The membership is an access grant: recorded in the transaction, like `addMembers`'.
-        await logAudit({ ...ctx, prisma: tx }, {
+        // Conditional write (rule 3): of two approvals of the same user, only one finds it pending,
+        // so the user joins one team and the trail records one approval.
+        const { count } = await tx.user.updateMany({ where: { id: input.id, pendingApproval: true }, data: { pendingApproval: false } });
+        if (count === 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Utente in attesa non trovato' });
+        }
+        const membership = await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
+        // Access changes, recorded in the transaction; `USER_APPROVED` stays the post-commit event row.
+        await logAudit(ctx, {
+          action: 'USER_ACCESS_CHANGED',
+          targetType: 'User',
+          targetId: input.id,
+          result: 'SUCCESS',
+          metadata: { oldPendingApproval: true, newPendingApproval: false },
+        }, { tx });
+        await logAudit(ctx, {
           action: 'COMPANY_TEAM_MEMBER_ADDED',
           targetType: 'CompanyTeamMembership',
           targetId: `${input.teamId}:${input.id}`,
           result: 'SUCCESS',
-          metadata: { teamId: input.teamId, userId: input.id },
-        });
+          metadata: { teamId: input.teamId, userId: input.id, role: membership.role },
+        }, { tx });
 
         return pendingUser;
       });

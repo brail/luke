@@ -66,6 +66,8 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'COMPANY_TEAM_MEMBER_ADDED',
   'COMPANY_TEAM_MEMBER_REMOVED',
   'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
+  'CALENDAR_EVENT_USER_VISIBILITY_GRANTED',
+  'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
 ]);
 
 /**
@@ -208,6 +210,8 @@ const SAFE_KEY_LIST = [
   'newRole',
   'oldIsActive',
   'newIsActive',
+  'oldPendingApproval',
+  'newPendingApproval',
   'brandIds',
   'oldBrandIds',
   'newBrandIds',
@@ -544,8 +548,8 @@ type AuditLogger = Pick<FastifyBaseLogger, 'info' | 'error'>;
 /**
  * What `logAudit` needs from its caller. A tRPC `Context` is one. A context with no HTTP request — a
  * CLI script, a background flow — is another: its row has no IP, and its log line goes to the
- * logger it carries, or to this module's. `prisma` can be a transaction client, so that the row
- * commits or rolls back with the change it records.
+ * logger it carries, or to this module's. A row that must commit or roll back with the change it
+ * records goes through `logAudit`'s `tx` option, never through a `prisma` overridden here (#226).
  */
 export interface AuditContext {
   prisma: Pick<PrismaClient, 'auditLog'>;
@@ -581,12 +585,14 @@ function emit(write: () => void): void {
  *   there are any. See `AuditContext`.
  * @param params - Audit event details.
  * @param options.required - Re-throw a failed write whatever the action.
+ * @param options.tx - The transaction client that writes the row, so that it commits or rolls back
+ *   with the change it records; without it, `ctx.prisma` writes it.
  * @throws If the DB write fails and the action is critical or the write required.
  */
 export async function logAudit(
   ctx: AuditContext,
   params: AuditParams,
-  options: { required?: boolean } = {}
+  options: { required?: boolean; tx?: Pick<PrismaClient, 'auditLog'> } = {}
 ): Promise<void> {
   // Outside the try on purpose. Everything below it is I/O, whose failure is swallowed for
   // non-critical actions; a key missing from `SAFE_KEY_LIST` is a programming error, and letting
@@ -597,7 +603,7 @@ export async function logAudit(
 
   try {
     // Create AuditLog record with the new schema
-    await ctx.prisma.auditLog.create({
+    await (options.tx ?? ctx.prisma).auditLog.create({
       data: {
         actorId: ctx.session?.user?.id || null,
         action: params.action,

@@ -206,22 +206,25 @@ same transaction as the change, so the change is not saved without its row:
 
 | Action | Written by | Metadata |
 |--------|-----------|----------|
-| `USER_ACCESS_CHANGED` | `users.create`, `users.update` (when the role or active state changes), `users.softDelete` (when the user was active) | `oldRole`/`newRole`, `oldIsActive`/`newIsActive` — only the pair that changed |
+| `USER_ACCESS_CHANGED` | `users.create`, `users.update` (when the role or active state changes), `users.softDelete` (when the user was active), `users.approvePending`, LDAP provisioning at a first login (no actor) | `oldRole`/`newRole`, `oldIsActive`/`newIsActive`, `oldPendingApproval`/`newPendingApproval` — only what changed; a creation has only the `new*` keys |
 | `COMPANY_TEAM_CREATED` | `company.team.create` | `name`, `functionId`, `brandIds`, `isActive` |
 | `COMPANY_TEAM_UPDATED` | `company.team.update` | `oldBrandIds`/`newBrandIds`, `oldIsActive`/`newIsActive` — only what changed |
 | `COMPANY_TEAM_DELETED` | `company.team.delete` | `functionId`, `brandIds`, and `userIds`: the members whose access the deletion ends |
-| `COMPANY_TEAM_MEMBER_ADDED` / `_REMOVED` | `company.team.addMembers` / `removeMembers`, `users.approvePending` | `teamId`, `userId` |
+| `COMPANY_TEAM_MEMBER_ADDED` / `_REMOVED` | `company.team.addMembers` / `removeMembers`, `users.approvePending` | `teamId`, `userId`; `role` when added |
 | `COMPANY_TEAM_MEMBER_ROLE_UPDATED` | `company.team.updateMemberRole` | `teamId`, `userId`, `oldRole`, `newRole` |
+| `CALENDAR_EVENT_USER_VISIBILITY_GRANTED` / `_REVOKED` | `seasonCalendar.grantUserVisibility` / `revokeUserVisibility` — only the shares really created or removed | `eventId`, `userId` |
 
 These actions are in `CRITICAL_AUDIT_ACTIONS` (`src/lib/auditLog.ts`): the
 retention sweep keeps them for `auditLog.criticalRetentionDays` instead of
 `auditLog.retentionDays`. `USER_CREATE`, `USER_DELETE` and `USER_APPROVED` keep the
-default retention: the access change each makes is in the rows above.
+default retention: the access change each makes is in the rows above. A row is
+written through `logAudit`'s `tx` option; the Semgrep rule
+`luke-audit-row-transaction` refuses a `logAudit` inside a `$transaction` callback
+without it.
 
 Not covered: the seed and `db:*` scripts, a backup restore (it replaces the whole
 database), a brand purge removing team brand scopes by cascade (the purge has
-its own row, `BRAND_PURGE`), and LDAP provisioning, which creates a user with
-its initial role outside `users.create`.
+its own row, `BRAND_PURGE`).
 
 ## Transactional email
 

@@ -237,13 +237,13 @@ export const usersCoreRouter = router({
             },
           });
 
-          await logAudit({ ...ctx, prisma: tx }, {
+          await logAudit(ctx, {
             action: 'USER_ACCESS_CHANGED',
             targetType: 'User',
             targetId: user.id,
             result: 'SUCCESS',
             metadata: { newRole: user.role, newIsActive: user.isActive },
-          });
+          }, { tx });
 
           return user;
         });
@@ -562,7 +562,7 @@ export const usersCoreRouter = router({
           const roleChanged = !!current && updated.role !== current.role;
           const activeChanged = !!current && updated.isActive !== current.isActive;
           if (current && (roleChanged || activeChanged)) {
-            await logAudit({ ...ctx, prisma: tx }, {
+            await logAudit(ctx, {
               action: 'USER_ACCESS_CHANGED',
               targetType: 'User',
               targetId: id,
@@ -573,7 +573,7 @@ export const usersCoreRouter = router({
                 oldIsActive: activeChanged ? current.isActive : undefined,
                 newIsActive: activeChanged ? updated.isActive : undefined,
               },
-            });
+            }, { tx });
           }
 
           return { updated, revokesSessions, current };

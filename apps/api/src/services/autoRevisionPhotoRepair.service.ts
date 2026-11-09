@@ -139,7 +139,7 @@ export async function repairAutoRevisionPhotos(
         }
         for (const revisionId of revisionIds) {
           await logAudit(
-            { prisma: tx },
+            { prisma },
             {
               action: PHOTO_REPAIR_AUDIT_ACTION,
               targetType: 'CollectionLayoutRevision',
@@ -154,7 +154,7 @@ export async function repairAutoRevisionPhotos(
               },
             },
             // A repointed row must not outlive its audit row: the failure rolls the key back.
-            { required: true },
+            { required: true, tx },
           );
         }
       });

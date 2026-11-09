@@ -82,7 +82,7 @@ export async function encryptPlainSecretRows(
         });
         if (count === 0) return false;
         await logAudit(
-          { prisma: tx },
+          { prisma },
           {
             action: 'CONFIG_UPSERT',
             targetType: 'Config',
@@ -90,7 +90,7 @@ export async function encryptPlainSecretRows(
             result: 'SUCCESS',
             metadata: { key, isEncrypted: true, valueRedacted: CONFIG_SECRET_PLACEHOLDER, source: 'cli' },
           },
-          { required: true }
+          { required: true, tx }
         );
         return true;
       });

@@ -97,13 +97,13 @@ export async function deleteUserHandler({
       data: { isActive: false, updatedAt: new Date() },
     });
     if (count === 1) {
-      await logAudit({ ...ctx, prisma: tx }, {
+      await logAudit(ctx, {
         action: 'USER_ACCESS_CHANGED',
         targetType: 'User',
         targetId: input.id,
         result: 'SUCCESS',
         metadata: { oldIsActive: true, newIsActive: false },
-      });
+      }, { tx });
     }
     return tx.user.findUniqueOrThrow({ where: { id: input.id } });
   });

@@ -1051,7 +1051,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const event = await resolveEventBrandAccess(ctx, input.eventId);
 
-      await ctx.prisma.$transaction(async tx => {
+      const created = await ctx.prisma.$transaction(async tx => {
         // With no visibility row at all the event reaches the whole brand; a first per-person row
         // would narrow it to that person.
         if (
@@ -1079,30 +1079,31 @@ export const seasonCalendarRouter = router({
           });
         }
 
-        await tx.calendarEventUserVisibility.createMany({
-          data: input.userIds.map(userId => ({
+        // Only the shares really created are recorded (#222): an existing one is skipped by the insert.
+        // Sorted, so two overlapping grants take the rows' locks in the same order.
+        const rows = await tx.calendarEventUserVisibility.createManyAndReturn({
+          data: [...new Set(input.userIds)].sort().map(userId => ({
             eventId: input.eventId,
             userId,
             grantedBy: ctx.session.user.id,
           })),
           skipDuplicates: true,
+          select: { userId: true },
         });
-      });
-
-      await Promise.all(
-        input.userIds.map(userId =>
-          logAudit(ctx, {
+        for (const { userId } of rows) {
+          await logAudit(ctx, {
             action: 'CALENDAR_EVENT_USER_VISIBILITY_GRANTED',
             targetType: 'CalendarEventUserVisibility',
             targetId: `${input.eventId}:${userId}`,
             result: 'SUCCESS',
             metadata: { eventId: input.eventId, userId },
-          })
-        )
-      );
+          }, { tx });
+        }
+        return rows;
+      }, { timeout: 15000 });
 
       await Promise.all(
-        input.userIds.map(userId =>
+        created.map(({ userId }) =>
           createNotification(ctx.prisma, {
             userId,
             category: 'USER_ACTION',
@@ -1139,7 +1140,7 @@ export const seasonCalendarRouter = router({
       const saverSees = input.userIds.includes(ctx.session.user.id) && !input.confirmHidesFromCaller
         ? await callerEventVisibility(ctx)
         : undefined;
-      await ctx.prisma.$transaction(async tx => {
+      const removed = await ctx.prisma.$transaction(async tx => {
         // With no function, the event's per-person rows keep it from the whole brand: not the last one.
         let personOnly = !(await hasFunctionVisibility(tx, input.eventId));
         if (personOnly) {
@@ -1149,9 +1150,22 @@ export const seasonCalendarRouter = router({
           await tx.$executeRaw`SELECT 1 FROM calendar_events WHERE id = ${input.eventId} FOR NO KEY UPDATE`;
           personOnly = !(await hasFunctionVisibility(tx, input.eventId));
         }
-        await tx.calendarEventUserVisibility.deleteMany({
-          where: { eventId: input.eventId, userId: { in: input.userIds } },
-        });
+        // Only the shares really removed are recorded (#222): one delete per person, whose count is
+        // exact also against a concurrent revoke; sorted, so two revokes lock rows in the same order.
+        const removedIds: string[] = [];
+        for (const userId of [...new Set(input.userIds)].sort()) {
+          const { count } = await tx.calendarEventUserVisibility.deleteMany({ where: { eventId: input.eventId, userId } });
+          if (count === 0) continue;
+          removedIds.push(userId);
+          await logAudit(ctx, {
+            action: 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
+            targetType: 'CalendarEventUserVisibility',
+            targetId: `${input.eventId}:${userId}`,
+            result: 'SUCCESS',
+            // The confirmation is about the caller's own grant, not the others revoked with it.
+            metadata: { eventId: input.eventId, userId, confirmedHidesFromCaller: input.confirmHidesFromCaller && userId === ctx.session.user.id ? true : undefined },
+          }, { tx });
+        }
         if (personOnly && (await tx.calendarEventUserVisibility.count({ where: { eventId: input.eventId } })) === 0) {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -1159,23 +1173,11 @@ export const seasonCalendarRouter = router({
           });
         }
         if (saverSees) await refuseIfHiddenFromSaver(tx, input.eventId, saverSees);
-      });
+        return removedIds;
+      }, { timeout: 15000 });
 
       await Promise.all(
-        input.userIds.map(userId =>
-          logAudit(ctx, {
-            action: 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
-            targetType: 'CalendarEventUserVisibility',
-            targetId: `${input.eventId}:${userId}`,
-            result: 'SUCCESS',
-            // The confirmation is about the caller's own grant, not the others revoked with it.
-            metadata: { eventId: input.eventId, userId, confirmedHidesFromCaller: input.confirmHidesFromCaller && userId === ctx.session.user.id ? true : undefined },
-          })
-        )
-      );
-
-      await Promise.all(
-        input.userIds.map(userId =>
+        removed.map(userId =>
           createNotification(ctx.prisma, {
             userId,
             category: 'USER_ACTION',

@@ -298,6 +298,18 @@ describe('authenticateViaLdap', () => {
     });
   });
 
+  it('records the access a new user is created with, in the creating transaction', async () => {
+    await configureLdap();
+
+    const login = await authenticateViaLdap(prisma, 'alice', 'her-password');
+
+    expect(login.user).not.toBeNull();
+    const rows = await prisma.auditLog.findMany({ where: { action: 'USER_ACCESS_CHANGED', targetId: login.user?.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorId: null, targetType: 'User' });
+    expect(rows[0].metadata).toEqual({ newRole: 'viewer', newIsActive: true, newPendingApproval: true });
+  });
+
   it('throws when the user record cannot be written after the directory verified the password', async () => {
     await configureLdap();
     // The directory's email already belongs to another local account: the insert is refused.

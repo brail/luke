@@ -1,0 +1,16 @@
+rules:
+  - id: luke-audit-row-transaction
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      An audit row written inside a transaction goes through that transaction:
+      pass its client as logAudit's `tx` option (`logAudit(ctx, params, { tx })`).
+      Without it the row is written on another connection, outside the
+      transaction, and survives the rollback of the change it records (#226).
+    patterns:
+      - pattern-either:
+          - pattern-inside: '$X.$transaction(async ($TX) => { ... }, ...)'
+          - pattern-inside: '$X.$transaction(async $TX => { ... }, ...)'
+      - pattern: 'logAudit(...)'
+      - pattern-not: 'logAudit($CTX, $P, { ..., tx: $TX, ... })'
+      - pattern-not: 'logAudit($CTX, $P, { ..., tx, ... })'

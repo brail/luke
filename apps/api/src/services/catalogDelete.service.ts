@@ -351,13 +351,13 @@ export async function purge(ctx: Context, kind: PurgeKind, id: string, confirmNa
       const deletedCalendars = new Set(found.googleCalendarIds);
 
       // A critical action: a failed write throws, rolling the purge back.
-      await logAudit({ ...ctx, prisma: tx }, {
+      await logAudit(ctx, {
         action: e.action,
         targetType: e.targetType,
         targetId: id,
         result: 'SUCCESS',
         metadata: { name, deletedCounts: found.deletedCounts, keptPictureReferences: found.keptPictureReferences },
-      });
+      }, { tx });
       return {
         deletedCounts: found.deletedCounts,
         keptPictureReferences: found.keptPictureReferences,

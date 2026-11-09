@@ -2,7 +2,7 @@
  * Access changes leave their before and after in the audit trail (#222), written in the same
  * transaction as the change, and are kept for the critical retention: a user's role and active
  * state (`USER_ACCESS_CHANGED`), a team's brands and active state, its deletion with the members
- * it had, and a member's role in the team.
+ * it had, and a member's role in the team; an approval, and a per-person share of a calendar event.
  */
 
 import { randomUUID } from 'crypto';
@@ -15,6 +15,7 @@ import * as auditLog from '../src/lib/auditLog';
 import { CRITICAL_AUDIT_ACTIONS } from '../src/lib/auditLog';
 
 import { createCallerWithSession, createTestUser, expectToThrow, setupTestDb } from './helpers';
+import { createCalendarFixture, grantBrandAccess } from './helpers/calendarFixture';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -50,6 +51,15 @@ beforeAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+/** Makes the audit write of `action` fail, leaving every other action's row as it is. */
+function failAuditFor(action: string) {
+  const real = auditLog.logAudit;
+  vi.spyOn(auditLog, 'logAudit').mockImplementation(async (ctx, params, options) => {
+    if (params.action === action) throw new Error('audit store unavailable');
+    return real(ctx, params, options);
+  });
+}
 
 describe("a user's role and active state", () => {
   it('a role change records the role before and after', async () => {
@@ -98,23 +108,36 @@ describe("a user's role and active state", () => {
     expect(await only('USER_ACCESS_CHANGED', created.id)).toEqual({ newRole: 'editor', newIsActive: true });
   });
 
-  it('an approval records the membership it creates', async () => {
+  it('an approval records the approval and the membership it creates', async () => {
     const { user } = await createTestUser('viewer');
     await prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true } });
     const team = await asAdmin().company.team.create({ functionId, name: `Approval ${randomUUID().substring(0, 6)}` });
 
     await asAdmin().users.approvePending({ id: user.id, teamId: team.id });
 
-    expect(await only('COMPANY_TEAM_MEMBER_ADDED', `${team.id}:${user.id}`)).toEqual({ teamId: team.id, userId: user.id });
+    expect(await only('USER_ACCESS_CHANGED', user.id)).toEqual({ oldPendingApproval: true, newPendingApproval: false });
+    expect(await only('COMPANY_TEAM_MEMBER_ADDED', `${team.id}:${user.id}`)).toEqual({ teamId: team.id, userId: user.id, role: 'MEMBER' });
+  });
+
+  it('of two approvals of the same user into different teams, one succeeds and is recorded once', async () => {
+    const { user } = await createTestUser('viewer');
+    await prisma.user.update({ where: { id: user.id }, data: { pendingApproval: true } });
+    const [teamA, teamB] = await Promise.all(['A', 'B'].map(t =>
+      asAdmin().company.team.create({ functionId, name: `Race ${t} ${randomUUID().substring(0, 6)}` })));
+
+    const results = await Promise.allSettled([
+      asAdmin().users.approvePending({ id: user.id, teamId: teamA.id }),
+      asAdmin().users.approvePending({ id: user.id, teamId: teamB.id }),
+    ]);
+
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await prisma.companyTeamMembership.count({ where: { userId: user.id } })).toBe(1);
+    expect(await rowsOf('USER_ACCESS_CHANGED', user.id)).toHaveLength(1);
   });
 
   it('a change whose access row cannot be written is not saved', async () => {
     const { user } = await createTestUser('viewer');
-    const real = auditLog.logAudit;
-    vi.spyOn(auditLog, 'logAudit').mockImplementation(async (ctx, params, options) => {
-      if (params.action === 'USER_ACCESS_CHANGED') throw new Error('audit store unavailable');
-      return real(ctx, params, options);
-    });
+    failAuditFor('USER_ACCESS_CHANGED');
 
     await expect(asAdmin().users.update({ id: user.id, role: 'editor' })).rejects.toThrow();
 
@@ -207,6 +230,15 @@ describe('a team', () => {
     expect(await rowsOf('COMPANY_TEAM_MEMBER_ADDED', `${team.id}:${joining.user.id}`)).toHaveLength(1);
   });
 
+  it('adding records the role the member joins with', async () => {
+    const team = await asAdmin().company.team.create({ functionId, name: `Leader ${randomUUID().substring(0, 6)}` });
+    const { user } = await createTestUser('viewer');
+
+    await asAdmin().company.team.addMembers({ teamId: team.id, userIds: [user.id], role: 'LEADER' });
+
+    expect(await only('COMPANY_TEAM_MEMBER_ADDED', `${team.id}:${user.id}`)).toEqual({ teamId: team.id, userId: user.id, role: 'LEADER' });
+  });
+
   it('removing records only who leaves: someone who was not a member gets no row', async () => {
     const team = await asAdmin().company.team.create({ functionId, name: `Remove ${randomUUID().substring(0, 6)}` });
     const [member, stranger] = await Promise.all([createTestUser('viewer'), createTestUser('viewer')]);
@@ -227,12 +259,94 @@ describe('a team', () => {
   });
 });
 
+describe('a per-person share of a calendar event', () => {
+  let eventId: string;
+  let brandId: string;
+
+  beforeAll(async () => {
+    const calendar = await createCalendarFixture(prisma, { prefix: 'ACS' });
+    brandId = calendar.brandId;
+    eventId = (await prisma.calendarEvent.create({
+      data: { calendarId: calendar.calendarId, planningGroupId: calendar.planningGroupId, title: 'Shared', startAt: new Date('2096-03-02') },
+    })).id;
+    // A function audience, so that neither a grant nor a revoke runs into the person-only guards.
+    await prisma.calendarEventVisibility.create({ data: { eventId, functionId } });
+  });
+
+  const notified = (userId: string, title: string) => prisma.notification.count({ where: { userId, title } });
+
+  async function people(count: number) {
+    const users = await Promise.all(Array.from({ length: count }, () => createTestUser('viewer')));
+    const ids = users.map(u => u.user.id as string);
+    await grantBrandAccess(prisma, { brandIds: [brandId], userIds: ids, label: 'Share' });
+    return ids;
+  }
+
+  it('a grant records only the people it really adds', async () => {
+    const [already, joining] = await people(2);
+    await prisma.calendarEventUserVisibility.create({ data: { eventId, userId: already, grantedBy: admin.user.id } });
+
+    await asAdmin().seasonCalendar.grantUserVisibility({ eventId, userIds: [already, joining] });
+
+    expect(await rowsOf('CALENDAR_EVENT_USER_VISIBILITY_GRANTED', `${eventId}:${already}`)).toHaveLength(0);
+    expect(await only('CALENDAR_EVENT_USER_VISIBILITY_GRANTED', `${eventId}:${joining}`)).toEqual({ eventId, userId: joining });
+    // Only the person who gains access is told so.
+    expect(await notified(already, 'Accesso evento concesso')).toBe(0);
+    expect(await notified(joining, 'Accesso evento concesso')).toBe(1);
+  });
+
+  it('a revoke records only the people it really removes', async () => {
+    const [shared, stranger] = await people(2);
+    await prisma.calendarEventUserVisibility.create({ data: { eventId, userId: shared, grantedBy: admin.user.id } });
+
+    await asAdmin().seasonCalendar.revokeUserVisibility({ eventId, userIds: [shared, stranger] });
+
+    expect(await only('CALENDAR_EVENT_USER_VISIBILITY_REVOKED', `${eventId}:${shared}`)).toEqual({ eventId, userId: shared });
+    expect(await rowsOf('CALENDAR_EVENT_USER_VISIBILITY_REVOKED', `${eventId}:${stranger}`)).toHaveLength(0);
+    expect(await notified(shared, 'Accesso evento revocato')).toBe(1);
+    expect(await notified(stranger, 'Accesso evento revocato')).toBe(0);
+  });
+
+  it('a grant whose row cannot be written is not saved', async () => {
+    const [refused] = await people(1);
+    failAuditFor('CALENDAR_EVENT_USER_VISIBILITY_GRANTED');
+
+    await expect(asAdmin().seasonCalendar.grantUserVisibility({ eventId, userIds: [refused] })).rejects.toThrow();
+
+    expect(await prisma.calendarEventUserVisibility.count({ where: { eventId, userId: refused } })).toBe(0);
+  });
+
+  it('a revoke whose row cannot be written is not saved', async () => {
+    const [kept] = await people(1);
+    await prisma.calendarEventUserVisibility.create({ data: { eventId, userId: kept, grantedBy: admin.user.id } });
+    failAuditFor('CALENDAR_EVENT_USER_VISIBILITY_REVOKED');
+
+    await expect(asAdmin().seasonCalendar.revokeUserVisibility({ eventId, userIds: [kept] })).rejects.toThrow();
+
+    expect(await prisma.calendarEventUserVisibility.count({ where: { eventId, userId: kept } })).toBe(1);
+  });
+});
+
+describe('logAudit with a transaction', () => {
+  it('a row written through the transaction rolls back with it', async () => {
+    const targetId = randomUUID();
+
+    await expect(prisma.$transaction(async tx => {
+      await auditLog.logAudit({ prisma }, { action: 'USER_ACCESS_CHANGED', targetType: 'User', targetId, result: 'SUCCESS' }, { tx });
+      throw new Error('rolled back');
+    })).rejects.toThrow('rolled back');
+
+    expect(await rowsOf('USER_ACCESS_CHANGED', targetId)).toHaveLength(0);
+  });
+});
+
 describe('retention', () => {
   it('every access action is kept for the critical retention', () => {
     for (const action of [
       'USER_ACCESS_CHANGED',
       'COMPANY_TEAM_CREATED', 'COMPANY_TEAM_UPDATED', 'COMPANY_TEAM_DELETED',
       'COMPANY_TEAM_MEMBER_ADDED', 'COMPANY_TEAM_MEMBER_REMOVED', 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
+      'CALENDAR_EVENT_USER_VISIBILITY_GRANTED', 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
     ]) {
       expect(CRITICAL_AUDIT_ACTIONS.has(action), action).toBe(true);
     }

@@ -9,6 +9,7 @@ import { Filter, SASL_MECHANISMS } from 'ldapts';
 import type { Role, RoleMapping } from '@luke/core';
 import type { PrismaClient, User } from '@luke/db';
 
+import { logAudit } from './auditLog';
 import {
   getConfigOrDefault,
   getLdapConfig,
@@ -403,6 +404,15 @@ async function createOrUpdateUser(
           providerId: username,
         },
       });
+
+      // The access a user starts with (#222); a pre-session flow, so no actor.
+      await logAudit({ prisma, logger }, {
+        action: 'USER_ACCESS_CHANGED',
+        targetType: 'User',
+        targetId: newUser.id,
+        result: 'SUCCESS',
+        metadata: { newRole: newUser.role, newIsActive: newUser.isActive, newPendingApproval: newUser.pendingApproval },
+      }, { tx });
 
       logger.info(
         { username, role, firstName, lastName },

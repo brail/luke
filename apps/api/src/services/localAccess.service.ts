@@ -220,7 +220,7 @@ export async function grantLocalAccess(
     const { token, userToken, revoked: resetTokensRevoked } = issued;
 
     await logAudit(
-      { prisma: tx },
+      { prisma },
       {
         action: 'USER_LOCAL_ACCESS_FORCED',
         targetType: 'User',
@@ -233,7 +233,7 @@ export async function grantLocalAccess(
           resetTokensRevoked,
         },
       },
-      { required: true }
+      { required: true, tx }
     );
 
     return { token, expiresAt: userToken.expiresAt, identityCreated, resetTokensRevoked };

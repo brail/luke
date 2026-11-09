@@ -251,12 +251,11 @@ describe('a failed audit write', () => {
     // so this fails only if the command requires the write.
     const realLogAudit = auditLog.logAudit;
     vi.spyOn(auditLog, 'logAudit').mockImplementation((ctx, params, options) =>
-      realLogAudit(
-        // Only `auditLog.create` is reached by `logAudit`.
-        { ...ctx, prisma: { auditLog: { create: vi.fn().mockRejectedValue(new Error('audit store unavailable')) } } as unknown as auditLog.AuditContext['prisma'] },
-        params,
-        options,
-      ),
+      realLogAudit(ctx, params, {
+        ...options,
+        // The client the row goes through; only `auditLog.create` is reached by `logAudit`.
+        tx: { auditLog: { create: vi.fn().mockRejectedValue(new Error('audit store unavailable')) } } as unknown as auditLog.AuditContext['prisma'],
+      }),
     );
     const t = terminal();
 

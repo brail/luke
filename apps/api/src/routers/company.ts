@@ -399,21 +399,25 @@ async function lockTeam(
   }
 }
 
-/** One audit row per member added to or removed from a team, in the write's transaction. */
+/**
+ * One audit row per member added to or removed from a team, in the write's transaction; an added
+ * member's row carries the role they join with.
+ */
 async function logMembershipAudit(
   ctx: Parameters<typeof logAudit>[0],
+  tx: Prisma.TransactionClient,
   action: 'COMPANY_TEAM_MEMBER_ADDED' | 'COMPANY_TEAM_MEMBER_REMOVED',
   teamId: string,
-  userIds: readonly string[]
+  members: readonly { userId: string; role?: string }[]
 ): Promise<void> {
-  for (const userId of userIds) {
+  for (const { userId, role } of members) {
     await logAudit(ctx, {
       action,
       targetType: 'CompanyTeamMembership',
       targetId: `${teamId}:${userId}`,
       result: 'SUCCESS',
-      metadata: { teamId, userId },
-    });
+      metadata: { teamId, userId, role },
+    }, { tx });
   }
 }
 
@@ -505,13 +509,13 @@ const companyTeamRouter = router({
             data: brandIds.map(brandId => ({ teamId: created.id, brandId })),
           });
         }
-        await logAudit({ ...ctx, prisma: tx }, {
+        await logAudit(ctx, {
           action: 'COMPANY_TEAM_CREATED',
           targetType: 'CompanyTeam',
           targetId: created.id,
           result: 'SUCCESS',
           metadata: { name: created.name, functionId: created.functionId, brandIds: sortedIds(brandIds ?? []), isActive: created.isActive },
-        });
+        }, { tx });
         return created;
       }, { timeout: 15000 });
     }),
@@ -552,7 +556,7 @@ const companyTeamRouter = router({
         const newBrandIds = sortedIds(brandIds ?? []);
         const brandsChanged = brandIds !== undefined && oldBrandIds.join() !== newBrandIds.join();
         const activeChanged = updated.isActive !== before.isActive;
-        await logAudit({ ...ctx, prisma: tx }, {
+        await logAudit(ctx, {
           action: 'COMPANY_TEAM_UPDATED',
           targetType: 'CompanyTeam',
           targetId: id,
@@ -563,7 +567,7 @@ const companyTeamRouter = router({
             oldIsActive: activeChanged ? before.isActive : undefined,
             newIsActive: activeChanged ? updated.isActive : undefined,
           },
-        });
+        }, { tx });
         return updated;
       }, { timeout: 15000 });
     }),
@@ -590,7 +594,7 @@ const companyTeamRouter = router({
         if (!team) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
 
         await tx.companyTeam.delete({ where: { id: input.id } });
-        await logAudit({ ...ctx, prisma: tx }, {
+        await logAudit(ctx, {
           action: 'COMPANY_TEAM_DELETED',
           targetType: 'CompanyTeam',
           targetId: input.id,
@@ -600,7 +604,7 @@ const companyTeamRouter = router({
             brandIds: sortedIds(team.brandScopes.map(b => b.brandId)),
             userIds: sortedIds(team.memberships.map(m => m.userId)),
           },
-        });
+        }, { tx });
       });
 
       return { ok: true };
@@ -626,9 +630,9 @@ const companyTeamRouter = router({
         const created = await tx.companyTeamMembership.createManyAndReturn({
           data: [...new Set(input.userIds)].map(userId => ({ teamId: input.teamId, userId, role: input.role })),
           skipDuplicates: true,
-          select: { userId: true },
+          select: { userId: true, role: true },
         });
-        await logMembershipAudit({ ...ctx, prisma: tx }, 'COMPANY_TEAM_MEMBER_ADDED', input.teamId, created.map(m => m.userId));
+        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_ADDED', input.teamId, created);
       }, { timeout: 15000 });
 
       const calendarMsg = team.brandNames.length > 0
@@ -681,7 +685,7 @@ const companyTeamRouter = router({
         await tx.companyTeamMembership.deleteMany({
           where: { teamId: input.teamId, userId: { in: removed.map(m => m.userId) } },
         });
-        await logMembershipAudit({ ...ctx, prisma: tx }, 'COMPANY_TEAM_MEMBER_REMOVED', input.teamId, removed.map(m => m.userId));
+        await logMembershipAudit(ctx, tx, 'COMPANY_TEAM_MEMBER_REMOVED', input.teamId, removed);
       }, { timeout: 15000 });
 
       await Promise.all(input.userIds.flatMap(userId => [
@@ -723,13 +727,13 @@ const companyTeamRouter = router({
           where: { teamId_userId: { teamId: input.teamId, userId: input.userId } },
           data: { role: input.role },
         });
-        await logAudit({ ...ctx, prisma: tx }, {
+        await logAudit(ctx, {
           action: 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
           targetType: 'CompanyTeamMembership',
           targetId: `${input.teamId}:${input.userId}`,
           result: 'SUCCESS',
           metadata: { teamId: input.teamId, userId: input.userId, oldRole: membership.role, newRole: input.role },
-        });
+        }, { tx });
       });
 
       await createNotification(ctx.prisma, {
