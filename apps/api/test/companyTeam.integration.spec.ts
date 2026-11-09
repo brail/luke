@@ -143,3 +143,37 @@ describe('CompanyTeam invariants', () => {
     expect(scopes.map(s => s.brandId)).toEqual([brand.id]);
   });
 });
+
+/** An update leaves an omitted field as stored, and applies an explicit one (#225). */
+describe('function and team updates', () => {
+  const caller = () => createCallerWithSession(adminSession);
+
+  it('editing a function without order keeps its order', async () => {
+    const id = await createFunction();
+    await caller().company.function.update({ id, name: 'Renamed' });
+    expect(await prisma.companyFunction.findUniqueOrThrow({ where: { id } })).toMatchObject({ name: 'Renamed', order: 97, isActive: true });
+  });
+
+  it('an update without isActive keeps a deactivated function and team inactive', async () => {
+    const functionId = await createFunction();
+    const team = await prisma.companyTeam.create({ data: { functionId, name: `Off ${randomUUID().slice(0, 8)}`, isActive: false } });
+    await prisma.companyFunction.update({ where: { id: functionId }, data: { isActive: false } });
+
+    await caller().company.function.update({ id: functionId, name: 'Still off' });
+    await caller().company.team.update({ id: team.id, name: 'Still off' });
+
+    expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).isActive).toBe(false);
+    expect((await prisma.companyTeam.findUniqueOrThrow({ where: { id: team.id } })).isActive).toBe(false);
+  });
+
+  it('an explicit order or isActive still applies', async () => {
+    const functionId = await createFunction();
+    const team = await prisma.companyTeam.create({ data: { functionId, name: `On ${randomUUID().slice(0, 8)}` } });
+
+    await caller().company.function.update({ id: functionId, name: 'Moved', order: 3, isActive: false });
+    await caller().company.team.update({ id: team.id, name: 'Off', isActive: false });
+
+    expect(await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).toMatchObject({ order: 3, isActive: false });
+    expect((await prisma.companyTeam.findUniqueOrThrow({ where: { id: team.id } })).isActive).toBe(false);
+  });
+});

@@ -8,13 +8,17 @@ export type CompanyFunctionSeedSlug = (typeof COMPANY_FUNCTION_SEED_SLUGS)[numbe
 export const CompanyTeamMemberRoleEnum = z.enum(['LEADER', 'MEMBER']);
 export type CompanyTeamMemberRole = z.infer<typeof CompanyTeamMemberRoleEnum>;
 
-/** Input schema for creating a company function (e.g. Product, Sales, Sourcing). */
+/**
+ * Input schema for creating a company function (e.g. Product, Sales, Sourcing). No `.default()`: the
+ * update schema below derives from it, and an update must leave an omitted field as stored (#225);
+ * `create` defaults them itself.
+ */
 export const CompanyFunctionInputSchema = z.object({
   slug: z.string().regex(/^[a-z][a-z0-9_]*$/).max(32),
   name: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
-  order: z.number().int().min(0).default(0).optional(),
-  isActive: z.boolean().default(true).optional(),
+  order: z.number().int().min(0).optional(),
+  isActive: z.boolean().optional(),
 });
 export type CompanyFunctionInput = z.infer<typeof CompanyFunctionInputSchema>;
 
@@ -24,12 +28,15 @@ export const CompanyFunctionUpdateInputSchema = CompanyFunctionInputSchema.omit(
 });
 export type CompanyFunctionUpdateInput = z.infer<typeof CompanyFunctionUpdateInputSchema>;
 
-/** Input schema for creating a team within a company function. */
+/**
+ * Input schema for creating a team within a company function. No `.default()`, as for functions
+ * (#225): the database defaults `isActive`.
+ */
 export const CompanyTeamInputSchema = z.object({
   functionId: z.uuid(),
   name: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
-  isActive: z.boolean().default(true).optional(),
+  isActive: z.boolean().optional(),
   brandIds: z.array(z.uuid()).optional(),
 });
 export type CompanyTeamInput = z.infer<typeof CompanyTeamInputSchema>;
