@@ -213,18 +213,20 @@ same transaction as the change, so the change is not saved without its row:
 | `COMPANY_TEAM_MEMBER_ADDED` / `_REMOVED` | `company.team.addMembers` / `removeMembers`, `users.approvePending` | `teamId`, `userId`; `role` when added |
 | `COMPANY_TEAM_MEMBER_ROLE_UPDATED` | `company.team.updateMemberRole` | `teamId`, `userId`, `oldRole`, `newRole` |
 | `CALENDAR_EVENT_USER_VISIBILITY_GRANTED` / `_REVOKED` | `seasonCalendar.grantUserVisibility` / `revokeUserVisibility` — only the shares really created or removed | `eventId`, `userId` |
+| `CALENDAR_EVENT_VISIBILITY_CHANGED` | `seasonCalendar.createMilestone`, `updateMilestone` (when the set changes), `applyTemplate` and `cloneFromBrandSeason` (per event created with functions), `deleteMilestone(s)` (per event deleted) | `oldVisibilityFunctionIds`/`newVisibilityFunctionIds`, sorted; `eventDeleted` on a deletion, which also ends the event's per-person shares |
 
 These actions are in `CRITICAL_AUDIT_ACTIONS` (`src/lib/auditLog.ts`): the
 retention sweep keeps them for `auditLog.criticalRetentionDays` instead of
 `auditLog.retentionDays`. `USER_CREATE`, `USER_DELETE` and `USER_APPROVED` keep the
 default retention: the access change each makes is in the rows above. A row is
-written through `logAudit`'s `tx` option; the Semgrep rule
-`luke-audit-row-transaction` refuses a `logAudit` inside a `$transaction` callback
-without it.
+written through the `tx` option of `logAudit` or `logAuditMany` (several rows in
+one insert); the Semgrep rule `luke-audit-row-transaction` refuses either inside a
+`$transaction` callback without it.
 
 Not covered: the seed and `db:*` scripts, a backup restore (it replaces the whole
 database), a brand purge removing team brand scopes by cascade (the purge has
-its own row, `BRAND_PURGE`).
+its own row, `BRAND_PURGE`), and a purge deleting a brand's or season's calendar
+events (`BRAND_PURGE` / `SEASON_PURGE`).
 
 ## Transactional email
 

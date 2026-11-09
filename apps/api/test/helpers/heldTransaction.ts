@@ -30,13 +30,16 @@ export async function whileHeld<T>(
     const {
       rows: [self],
     } = await holder.query<{ pid: number }>('SELECT pg_backend_pid() AS pid');
-    const blocked = async () =>
-      (
-        await holder.query<{ pid: number }>(
-          'SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
-          [self!.pid]
-        )
-      ).rows;
+    // `pg_stat_activity` is read once per transaction and cached: without clearing it, a backend
+    // that connects after the first read (a new pool connection) is never seen waiting.
+    const blocked = async () => {
+      await holder.query('SELECT pg_stat_clear_snapshot()');
+      const { rows } = await holder.query<{ pid: number }>(
+        'SELECT pid FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))',
+        [self!.pid]
+      );
+      return rows;
+    };
     expect(await blocked()).toEqual([]);
 
     running = other().then(

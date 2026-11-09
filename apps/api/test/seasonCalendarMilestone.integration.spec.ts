@@ -367,7 +367,7 @@ describe('deleting events — only while they stay deletable', () => {
 
       const allowed = eventDeleteBlock({ cancelledAt, phaseId: withPhase ? phaseId : null, frozenAt: group.frozenAt }) === null;
       // A refusal must be the condition's CONFLICT, nothing else, and must delete nothing.
-      const outcome = await deleteEvents(prisma, [event.id]).then(() => 'deleted', (err: { code?: string }) => err.code);
+      const outcome = await deleteEvents({ prisma }, [event.id]).then(() => 'deleted', (err: { code?: string }) => err.code);
       expect(outcome).toBe(allowed ? 'deleted' : 'CONFLICT');
       expect(await prisma.calendarEvent.count({ where: { id: event.id } })).toBe(allowed ? 0 : 1);
     },
@@ -376,6 +376,6 @@ describe('deleting events — only while they stay deletable', () => {
   it('skips an event another delete removed meanwhile, and reports only what it deleted', async () => {
     const [kept, gone] = [await createEvent(), await createEvent()];
     await prisma.calendarEvent.delete({ where: { id: gone.id } });
-    await expect(deleteEvents(prisma, [kept.id, gone.id])).resolves.toMatchObject({ deletedIds: [kept.id] });
+    await expect(deleteEvents({ prisma }, [kept.id, gone.id])).resolves.toMatchObject({ deletedIds: [kept.id] });
   });
 });

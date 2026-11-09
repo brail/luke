@@ -323,7 +323,7 @@ export const seasonCalendarRouter = router({
 
       // Confirmed: nothing left to check (#199).
       const saverSees = input.confirmHidesFromCaller ? undefined : await callerEventVisibility(ctx);
-      const result = await createMilestone(input, group.calendarId, ctx.prisma, saverSees);
+      const result = await createMilestone(input, group.calendarId, ctx, saverSees);
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {
         eventId: result.id,
@@ -392,7 +392,7 @@ export const seasonCalendarRouter = router({
       // Conditional on the dates the client read and based this write on.
       // Confirmed: nothing left to check (#199).
       const saverSees = input.confirmHidesFromCaller ? undefined : await callerEventVisibility(ctx);
-      const result = await updateMilestone(input.id, input.data, ctx.prisma, datesFromExpected(input.expected), saverSees);
+      const result = await updateMilestone(input.id, input.data, ctx, datesFromExpected(input.expected), saverSees);
 
       // Sorted, so a list sent in another order is no change.
       const oldFunctionIds = event.visibilities.map(v => v.functionId).sort();
@@ -512,7 +512,7 @@ export const seasonCalendarRouter = router({
 
       // Snapshot visibility before delete so digest and notification can use it afterward
       const visibleUserIds = await resolveEventAudienceOne(input.id, ctx.prisma);
-      const { deletedIds, googleCopies } = await deleteEvents(ctx.prisma, [input.id]);
+      const { deletedIds, googleCopies } = await deleteEvents(ctx, [input.id]);
       // Deleted meanwhile by someone else: the end state is reached, but this call did not reach it.
       if (deletedIds.length === 0) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
       await logAudit(ctx, {
@@ -567,7 +567,7 @@ export const seasonCalendarRouter = router({
 
       // Snapshot visibility for each event before deletion (for digest + notifications)
       const visibilityMap = await resolveEventAudience(events.map(e => e.id), ctx.prisma);
-      const { deletedIds, googleCopies } = await deleteEvents(ctx.prisma, events.map(e => e.id));
+      const { deletedIds, googleCopies } = await deleteEvents(ctx, events.map(e => e.id));
       // Ids deleted meanwhile by someone else are not this call's to report.
       const deleted = events.filter(e => deletedIds.includes(e.id));
       if (deleted.length === 0) return { success: true, count: 0 };
@@ -773,7 +773,7 @@ export const seasonCalendarRouter = router({
     .mutation(async ({ input, ctx }) => {
       const group = await resolvePlanningGroupBrandAccess(ctx, input.planningGroupId);
 
-      const result = await applyTemplate(input.planningGroupId, input.templateId, input.anchorDate, input.force, ctx.prisma);
+      const result = await applyTemplate(input.planningGroupId, input.templateId, input.anchorDate, input.force, ctx);
       await logAudit(ctx, { action: 'PLANNING_GROUP_APPLY_TEMPLATE', targetType: 'PlanningGroup', targetId: input.planningGroupId, result: 'SUCCESS', metadata: { templateId: input.templateId, count: result.length } });
       sseStore.pushToAll({ type: 'calendar-updated', seasonId: group.calendar.seasonId });
       notifyCalendarChange(ctx.prisma, {

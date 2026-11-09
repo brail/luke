@@ -2,7 +2,8 @@
  * Access changes leave their before and after in the audit trail (#222), written in the same
  * transaction as the change, and are kept for the critical retention: a user's role and active
  * state (`USER_ACCESS_CHANGED`), a team's brands and active state, its deletion with the members
- * it had, and a member's role in the team; an approval, and a per-person share of a calendar event.
+ * it had, and a member's role in the team; an approval, a per-person share of a calendar event and
+ * the functions an event is visible to.
  */
 
 import { randomUUID } from 'crypto';
@@ -14,8 +15,9 @@ import type { PrismaClient } from '@luke/db';
 import * as auditLog from '../src/lib/auditLog';
 import { CRITICAL_AUDIT_ACTIONS } from '../src/lib/auditLog';
 
-import { createCallerWithSession, createTestUser, expectToThrow, setupTestDb } from './helpers';
+import { createCallerWithSession, createTestUser, expectedOf, expectToThrow, setupTestDb } from './helpers';
 import { createCalendarFixture, grantBrandAccess } from './helpers/calendarFixture';
+import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -58,6 +60,11 @@ function failAuditFor(action: string) {
   vi.spyOn(auditLog, 'logAudit').mockImplementation(async (ctx, params, options) => {
     if (params.action === action) throw new Error('audit store unavailable');
     return real(ctx, params, options);
+  });
+  const realMany = auditLog.logAuditMany;
+  vi.spyOn(auditLog, 'logAuditMany').mockImplementation(async (ctx, rows, options) => {
+    if (rows.some(row => row.action === action)) throw new Error('audit store unavailable');
+    return realMany(ctx, rows, options);
   });
 }
 
@@ -327,6 +334,162 @@ describe('a per-person share of a calendar event', () => {
   });
 });
 
+describe("the functions a calendar event is visible to", () => {
+  const VISIBILITY = 'CALENDAR_EVENT_VISIBILITY_CHANGED';
+  let calendar: Awaited<ReturnType<typeof createCalendarFixture>>;
+  let otherFunctionId: string;
+
+  beforeAll(async () => {
+    calendar = await createCalendarFixture(prisma, { prefix: 'ACV' });
+    otherFunctionId = (await prisma.companyFunction.create({
+      data: { slug: `acv_${calendar.uid}`, name: `Access other ${calendar.uid}`, order: 96, isActive: true },
+    })).id;
+  });
+
+  /** An event in `groupId` visible to `functionIds`. */
+  async function eventFor(functionIds: string[], groupId = calendar.planningGroupId) {
+    return (await prisma.calendarEvent.create({
+      data: {
+        calendarId: calendar.calendarId, planningGroupId: groupId, title: `Event ${randomUUID().slice(0, 8)}`,
+        startAt: new Date('2096-03-02T00:00:00.000Z'), allDay: true,
+        visibilities: { create: functionIds.map(id => ({ functionId: id })) },
+      },
+    })).id;
+  }
+
+  const create = (title: string) => asAdmin().seasonCalendar.createMilestone({
+    planningGroupId: calendar.planningGroupId, title, startAt: '2096-03-02T00:00:00.000Z', allDay: true,
+    visibilityFunctionIds: [otherFunctionId, functionId],
+  });
+
+  async function template(items: { title: string; functionIds: string[] }[]) {
+    const [group, tpl] = await Promise.all([
+      prisma.planningGroup.create({ data: { calendarId: calendar.calendarId, name: `Template ${randomUUID().slice(0, 8)}` } }),
+      prisma.milestoneTemplate.create({
+        data: {
+          name: `Template ${randomUUID().slice(0, 8)}`,
+          items: { create: items.map(i => ({ title: i.title, offsetDays: 0, durationDays: 1, allDay: true, visibilities: { create: i.functionIds.map(id => ({ functionId: id })) } })) },
+        },
+      }),
+    ]);
+    return { groupId: group.id, apply: () => asAdmin().seasonCalendar.applyTemplate({ planningGroupId: group.id, templateId: tpl.id, anchorDate: '2096-03-02', force: false }) };
+  }
+
+  async function cloneSource() {
+    const group = await prisma.planningGroup.create({ data: { calendarId: calendar.calendarId, name: `Source ${randomUUID().slice(0, 8)}` } });
+    const [withFunctions, without] = await Promise.all([eventFor([otherFunctionId, functionId], group.id), eventFor([], group.id)]);
+    const target = await createCalendarFixture(prisma, { prefix: 'ACT' });
+    const clone = () => asAdmin().seasonCalendar.cloneFromBrandSeason({
+      sourceBrandId: calendar.brandId, sourceSeasonId: calendar.seasonId, targetBrandId: target.brandId, targetSeasonId: target.seasonId,
+      sourcePlanningGroupIds: [group.id], dateShiftDays: 0, includeCancelled: false,
+    });
+    const titleOf = async (id: string) => (await prisma.calendarEvent.findUniqueOrThrow({ where: { id } })).title;
+    const copyOf = async (sourceId: string) =>
+      prisma.calendarEvent.findFirst({ where: { calendar: { brandId: target.brandId }, title: await titleOf(sourceId) } });
+    return { withFunctions, without, clone, copyOf };
+  }
+
+  const both = () => [functionId, otherFunctionId].sort();
+
+  it('a creation records the functions it starts with, sorted', async () => {
+    const event = await create(`Created ${randomUUID().slice(0, 8)}`);
+    expect(await only(VISIBILITY, event.id)).toEqual({ oldVisibilityFunctionIds: [], newVisibilityFunctionIds: both() });
+  });
+
+  it('an update records the functions before and after, only when they change', async () => {
+    const id = await eventFor([functionId]);
+    await asAdmin().seasonCalendar.updateMilestone({ id, expected: await expectedOf(prisma, id), data: { title: 'Renamed' } });
+    await asAdmin().seasonCalendar.updateMilestone({ id, expected: await expectedOf(prisma, id), data: { visibilityFunctionIds: [functionId] } });
+    expect(await rowsOf(VISIBILITY, id)).toHaveLength(0);
+
+    await asAdmin().seasonCalendar.updateMilestone({ id, expected: await expectedOf(prisma, id), data: { visibilityFunctionIds: [otherFunctionId, functionId] } });
+    expect(await only(VISIBILITY, id)).toEqual({ oldVisibilityFunctionIds: [functionId], newVisibilityFunctionIds: both() });
+  });
+
+  it('a template records the functions of each event it creates; one without functions gets no row', async () => {
+    const { apply } = await template([{ title: 'Shared item', functionIds: [otherFunctionId, functionId] }, { title: 'Bare item', functionIds: [] }]);
+    const events = await apply();
+    const shared = events.find(e => e.title === 'Shared item')!;
+    const bare = events.find(e => e.title === 'Bare item')!;
+
+    expect(await only(VISIBILITY, shared.id)).toEqual({ oldVisibilityFunctionIds: [], newVisibilityFunctionIds: both() });
+    expect(await rowsOf(VISIBILITY, bare.id)).toHaveLength(0);
+  });
+
+  it('a clone records the functions of each copy; one without functions gets no row', async () => {
+    const { withFunctions, without, clone, copyOf } = await cloneSource();
+    await clone();
+    const [copy, bareCopy] = await Promise.all([copyOf(withFunctions), copyOf(without)]);
+
+    expect(await only(VISIBILITY, copy!.id)).toEqual({ oldVisibilityFunctionIds: [], newVisibilityFunctionIds: both() });
+    expect(await rowsOf(VISIBILITY, bareCopy!.id)).toHaveLength(0);
+  });
+
+  it('a deletion records the functions each event had, those without functions too', async () => {
+    const [single, shared, bare] = await Promise.all([eventFor([functionId]), eventFor([otherFunctionId, functionId]), eventFor([])]);
+    await asAdmin().seasonCalendar.deleteMilestone({ id: single });
+    await asAdmin().seasonCalendar.deleteMilestones({ ids: [shared, bare] });
+
+    expect(await only(VISIBILITY, single)).toEqual({ oldVisibilityFunctionIds: [functionId], newVisibilityFunctionIds: [], eventDeleted: true });
+    expect(await only(VISIBILITY, shared)).toEqual({ oldVisibilityFunctionIds: both(), newVisibilityFunctionIds: [], eventDeleted: true });
+    expect(await only(VISIBILITY, bare)).toEqual({ oldVisibilityFunctionIds: [], newVisibilityFunctionIds: [], eventDeleted: true });
+  });
+
+  it('a deletion records the functions an update left while the deletion waited for the event', async () => {
+    const id = await eventFor([functionId]);
+    const outcome = await whileHeld(
+      holder => holder.query('UPDATE calendar_events SET title = title WHERE id = $1', [id]),
+      () => asAdmin().seasonCalendar.deleteMilestone({ id }),
+      async holder => {
+        await holder.query('DELETE FROM calendar_event_visibilities WHERE "eventId" = $1', [id]);
+        await holder.query('INSERT INTO calendar_event_visibilities ("eventId", "functionId") VALUES ($1, $2)', [id, otherFunctionId]);
+      }
+    );
+
+    expect(outcome.status).toBe('fulfilled');
+    expect(await only(VISIBILITY, id)).toEqual({ oldVisibilityFunctionIds: [otherFunctionId], newVisibilityFunctionIds: [], eventDeleted: true });
+  });
+
+  describe('a change whose row cannot be written is not saved', () => {
+    it('a creation', async () => {
+      const title = `Refused ${randomUUID().slice(0, 8)}`;
+      failAuditFor(VISIBILITY);
+      await expect(create(title)).rejects.toThrow('audit store unavailable');
+      expect(await prisma.calendarEvent.count({ where: { title } })).toBe(0);
+    });
+
+    it('an update', async () => {
+      const id = await eventFor([functionId]);
+      failAuditFor(VISIBILITY);
+      await expect(asAdmin().seasonCalendar.updateMilestone({ id, expected: await expectedOf(prisma, id), data: { title: 'Refused', visibilityFunctionIds: [otherFunctionId] } })).rejects.toThrow('audit store unavailable');
+      const kept = await prisma.calendarEvent.findUniqueOrThrow({ where: { id }, include: { visibilities: true } });
+      expect(kept.title).not.toBe('Refused');
+      expect(kept.visibilities.map(v => v.functionId)).toEqual([functionId]);
+    });
+
+    it('a deletion', async () => {
+      const id = await eventFor([functionId]);
+      failAuditFor(VISIBILITY);
+      await expect(asAdmin().seasonCalendar.deleteMilestone({ id })).rejects.toThrow('audit store unavailable');
+      expect(await prisma.calendarEvent.count({ where: { id } })).toBe(1);
+    });
+
+    it('a template', async () => {
+      const { groupId, apply } = await template([{ title: 'Refused item', functionIds: [functionId] }]);
+      failAuditFor(VISIBILITY);
+      await expect(apply()).rejects.toThrow('audit store unavailable');
+      expect(await prisma.calendarEvent.count({ where: { planningGroupId: groupId } })).toBe(0);
+    });
+
+    it('a clone', async () => {
+      const { withFunctions, clone, copyOf } = await cloneSource();
+      failAuditFor(VISIBILITY);
+      await expect(clone()).rejects.toThrow('audit store unavailable');
+      expect(await copyOf(withFunctions)).toBeNull();
+    });
+  });
+});
+
 describe('logAudit with a transaction', () => {
   it('a row written through the transaction rolls back with it', async () => {
     const targetId = randomUUID();
@@ -347,6 +510,7 @@ describe('retention', () => {
       'COMPANY_TEAM_CREATED', 'COMPANY_TEAM_UPDATED', 'COMPANY_TEAM_DELETED',
       'COMPANY_TEAM_MEMBER_ADDED', 'COMPANY_TEAM_MEMBER_REMOVED', 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
       'CALENDAR_EVENT_USER_VISIBILITY_GRANTED', 'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
+      'CALENDAR_EVENT_VISIBILITY_CHANGED',
     ]) {
       expect(CRITICAL_AUDIT_ACTIONS.has(action), action).toBe(true);
     }

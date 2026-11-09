@@ -17,6 +17,7 @@ import {
 } from '@luke/core';
 import { Prisma, type CalendarDaysRelevance, type PrismaClient } from '@luke/db';
 
+import { logAuditMany, type AuditContext } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { rootLogger } from '../lib/logger';
 
@@ -38,6 +39,36 @@ function warnIfOrphaned(orphanedEventIds: string[], fields: Record<string, unkno
   if (orphanedEventIds.length > 0) {
     logger.warn({ ...fields, orphanedEventIds }, message);
   }
+}
+
+/** A calendar write's client, and the context its audit rows are attributed to. */
+type CalendarWriteCtx = AuditContext & { prisma: PrismaClient };
+
+/** One event's function audience before (none, for a new event) and after a write. */
+interface VisibilityChange {
+  eventId: string;
+  before?: readonly string[];
+  after: readonly string[];
+  eventDeleted?: true;
+}
+
+/**
+ * Records, through the write's transaction, the events whose function audience changed (#222): the
+ * function ids before and after, sorted, so the same set always reads the same. An unchanged set
+ * gets no row, unless the event is deleted: a deletion ends every share of the event, its
+ * per-person ones too.
+ */
+async function recordVisibilityChanges(ctx: AuditContext, tx: Prisma.TransactionClient, changes: readonly VisibilityChange[]) {
+  const sorted = (ids: readonly string[]) => [...new Set(ids)].sort();
+  await logAuditMany(ctx, changes.flatMap(({ eventId, before = [], after, eventDeleted }) => {
+    const oldIds = sorted(before);
+    const newIds = sorted(after);
+    if (!eventDeleted && oldIds.join() === newIds.join()) return [];
+    return [{
+      action: 'CALENDAR_EVENT_VISIBILITY_CHANGED', targetType: 'CalendarEvent', targetId: eventId, result: 'SUCCESS' as const,
+      metadata: { oldVisibilityFunctionIds: oldIds, newVisibilityFunctionIds: newIds, eventDeleted },
+    }];
+  }), { tx });
 }
 
 // ─── Calendar get/create ──────────────────────────────────────────────────────
@@ -307,14 +338,21 @@ export function assertEventsDeletable(
  * `assertEventsDeletable` is refused, not deleted. Ids another delete removed meanwhile are skipped:
  * deletes are serialized by the lock, so what is present after it is what this one deletes. Returns
  * the deleted ids and the Google Calendar copies to remove once committed (the mappings go with the
- * events).
+ * events). Each deletion's audit row goes in the same transaction.
  *
  * @throws {TRPCError} CONFLICT if an event was cancelled or frozen after it was checked.
  */
-export async function deleteEvents(prisma: PrismaClient, eventIds: string[]) {
-  return prisma.$transaction(async tx => {
+export async function deleteEvents(ctx: CalendarWriteCtx, eventIds: string[]) {
+  return ctx.prisma.$transaction(async tx => {
     await acquireCalendarFreezeLock(tx);
-    const present = await tx.calendarEvent.findMany({ where: { id: { in: eventIds } }, select: { id: true } });
+    // Row lock (CLAUDE.md "Raw SQL" exception, `FOR UPDATE`, the lock the delete takes anyway),
+    // before the functions are read: an update holds its event's row while it replaces them, so the
+    // set read here is the one the delete removes.
+    await tx.$executeRaw`SELECT 1 FROM calendar_events WHERE id IN (${Prisma.join(eventIds)}) ORDER BY id FOR UPDATE`;
+    const present = await tx.calendarEvent.findMany({
+      where: { id: { in: eventIds } },
+      select: { id: true, visibilities: { select: { functionId: true } } },
+    });
     const deletedIds = present.map(e => e.id);
     const googleCopies = await tx.googleEventMapping.findMany({
       where: { eventId: { in: deletedIds } },
@@ -324,6 +362,9 @@ export async function deleteEvents(prisma: PrismaClient, eventIds: string[]) {
     if (count !== deletedIds.length) {
       throw new TRPCError({ code: 'CONFLICT', message: 'Evento/i cambiati nel frattempo: aggiorna e riprova.' });
     }
+    await recordVisibilityChanges(ctx, tx, present.map(e => ({
+      eventId: e.id, before: e.visibilities.map(v => v.functionId), after: [], eventDeleted: true,
+    })));
     return { deletedIds, googleCopies };
   });
 }
@@ -530,7 +571,8 @@ export async function refuseIfHiddenFromSaver(
 
 /**
  * Creates a calendar event and its visibility entries within a single transaction.
- * The owner function always receives a read-write visibility; all others are read-only.
+ * The owner function always receives a read-write visibility; all others are read-only. Its
+ * functions' audit row goes in the same transaction.
  *
  * @param calendarId - The planning group's calendar id, already resolved by the caller (e.g. via
  *   `resolvePlanningGroupBrandAccess`) — a group's calendar is immutable once created, so
@@ -539,11 +581,11 @@ export async function refuseIfHiddenFromSaver(
 export async function createMilestone(
   input: CalendarEventInput,
   calendarId: string,
-  prisma: PrismaClient,
+  ctx: CalendarWriteCtx,
   saverSees?: Prisma.CalendarEventWhereInput
 ) {
   assertEventDates({ startAt: new Date(input.startAt), endAt: input.endAt ? new Date(input.endAt) : null, allDay: input.allDay });
-  return prisma.$transaction(async tx => {
+  return ctx.prisma.$transaction(async tx => {
     const event = await tx.calendarEvent.create({
       data: {
         calendarId,
@@ -566,6 +608,7 @@ export async function createMilestone(
         functionId: fId,
       })),
     });
+    await recordVisibilityChanges(ctx, tx, [{ eventId: event.id, after: input.visibilityFunctionIds }]);
     if (saverSees) await refuseIfHiddenFromSaver(tx, event.id, saverSees);
 
     return event;
@@ -574,7 +617,8 @@ export async function createMilestone(
 
 /**
  * Partially updates a calendar event. When `visibilityFunctionIds` is provided,
- * existing visibility entries are replaced atomically within a transaction.
+ * existing visibility entries are replaced atomically within a transaction, with the audit row of a
+ * changed set.
  *
  * @param read - The dates the caller read and validated the request against: the dates the
  *   update leaves are each input field over them (an omitted `endAt` is kept), and the write only
@@ -583,7 +627,7 @@ export async function createMilestone(
 export async function updateMilestone(
   eventId: string,
   input: Partial<CalendarEventInput>,
-  prisma: PrismaClient,
+  ctx: CalendarWriteCtx,
   read: EventDates,
   saverSees?: Prisma.CalendarEventWhereInput
 ) {
@@ -595,7 +639,7 @@ export async function updateMilestone(
   // Judged only when the dates change: the event dialog resends them unchanged on every edit, and a
   // row stored before a rule existed must stay editable until its dates are moved.
   if (!sameEventDates(next, read)) assertEventDates(next);
-  return prisma.$transaction(async tx => {
+  return ctx.prisma.$transaction(async tx => {
     const updated = await tx.calendarEvent.update({
       where: readDates(eventId, read),
       data: {
@@ -610,6 +654,9 @@ export async function updateMilestone(
     });
 
     if (input.visibilityFunctionIds) {
+      // After the update: every writer of an existing event's set holds its row (this update, a
+      // delete), so a concurrent one reads the set this one leaves.
+      const before = await tx.calendarEventVisibility.findMany({ where: { eventId }, select: { functionId: true } });
       await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
       await tx.calendarEventVisibility.createMany({
         data: input.visibilityFunctionIds.map(fId => ({
@@ -617,6 +664,7 @@ export async function updateMilestone(
           functionId: fId,
         })),
       });
+      await recordVisibilityChanges(ctx, tx, [{ eventId, before: before.map(v => v.functionId), after: input.visibilityFunctionIds }]);
       // Checked when functions are sent, changed or not (the dialog always sends them): without new
       // functions the event stays as visible as it was when `resolveEventBrandAccess` checked it.
       if (saverSees) await refuseIfHiddenFromSaver(tx, eventId, saverSees);
@@ -707,8 +755,9 @@ function templateItemDates(
 
 /**
  * Materializes a milestone template onto a planning group anchored at `anchorDay`.
- * Creates events and visibility entries within a transaction, stamping each created event with the
- * group's id — that's what makes them applicable only to the rows of the same group.
+ * Creates events and visibility entries within a transaction, with their functions' audit rows,
+ * stamping each created event with the group's id — that's what makes them applicable only to the
+ * rows of the same group.
  *
  * @param force - When false, throws CONFLICT if the planning group already has events.
  * @throws {TRPCError} CONFLICT if events exist and `force` is false.
@@ -721,10 +770,10 @@ export async function applyTemplate(
   templateId: string,
   requestedAnchor: CalendarDate | undefined,
   force: boolean,
-  prisma: PrismaClient
+  ctx: CalendarWriteCtx
 ) {
-  const businessZone = await getConfigOrDefault(prisma, 'app.defaultTimezone');
-  return prisma.$transaction(async tx => {
+  const businessZone = await getConfigOrDefault(ctx.prisma, 'app.defaultTimezone');
+  return ctx.prisma.$transaction(async tx => {
     const group = await tx.planningGroup.findUnique({ where: { id: planningGroupId } });
     if (!group) throw new TRPCError({ code: 'NOT_FOUND', message: 'Gruppo di pianificazione non trovato' });
     // Without an anchor in the request, the one recorded by the group's last apply.
@@ -770,22 +819,18 @@ export async function applyTemplate(
     });
 
     const itemById = new Map(template.items.map(item => [item.id, item]));
-
-    const visibilityData = created.flatMap(event => {
-      const item = itemById.get(event.templateItemId!);
-      if (!item) return [];
-      return item.visibilities.map(v => ({
-        eventId: event.id,
-        functionId: v.functionId,
-      }));
+    const changes = created.map(event => ({
+      eventId: event.id,
+      after: (event.templateItemId ? itemById.get(event.templateItemId)?.visibilities.map(v => v.functionId) : undefined) ?? [],
+    }));
+    await tx.calendarEventVisibility.createMany({
+      data: changes.flatMap(({ eventId, after }) => after.map(functionId => ({ eventId, functionId }))),
     });
-    await tx.calendarEventVisibility.createMany({ data: visibilityData });
+    await recordVisibilityChanges(ctx, tx, changes);
 
     // Not blocked: the template item may genuinely have no functions assigned yet.
     warnIfOrphaned(
-      created
-        .filter(event => (itemById.get(event.templateItemId!)?.visibilities.length ?? 0) === 0)
-        .map(event => event.id),
+      changes.filter(({ after }) => after.length === 0).map(({ eventId }) => eventId),
       { templateId, planningGroupId },
       'applyTemplate: events created without visibility rows (template item with no functions assigned)'
     );
@@ -1031,7 +1076,7 @@ function clonedDates(event: EventDates, name: string, days: number, businessZone
  *   dates are refused (`clonedDates`).
  *   A refusal names only the events the caller can list.
  */
-export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx: BrandScopeCtx) {
+export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx: BrandScopeCtx & AuditContext) {
   const { prisma } = ctx;
   const { sourceBrandId, sourceSeasonId, targetBrandId, targetSeasonId, sourcePlanningGroupIds, dateShiftDays, includeCancelled } = input;
 
@@ -1094,6 +1139,7 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
 
     let totalCreated = 0;
     const createdEventIds: string[] = [];
+    const visibilityChanges: VisibilityChange[] = [];
 
     for (const sourceGroup of groups) {
       // The default group maps to the target's default group; the others by name (#117, #128).
@@ -1120,17 +1166,19 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
         })),
       });
 
-      const visibilityData = created.flatMap((newEvent, i) =>
-        sourceGroup.events[i]!.visibilities.map(v => ({
-          eventId: newEvent.id,
-          functionId: v.functionId,
-        }))
-      );
-      await tx.calendarEventVisibility.createMany({ data: visibilityData });
+      const changes = created.map((newEvent, i) => ({
+        eventId: newEvent.id,
+        // `!`: one created row per source event, in input order (a single INSERT … RETURNING).
+        after: sourceGroup.events[i]!.visibilities.map(v => v.functionId),
+      }));
+      await tx.calendarEventVisibility.createMany({
+        data: changes.flatMap(({ eventId, after }) => after.map(functionId => ({ eventId, functionId }))),
+      });
+      visibilityChanges.push(...changes);
 
       // A source event with no visibility rows clones into another one with none.
       warnIfOrphaned(
-        created.filter((_, i) => sourceGroup.events[i]!.visibilities.length === 0).map(e => e.id),
+        changes.filter(({ after }) => after.length === 0).map(({ eventId }) => eventId),
         { sourceGroupId: sourceGroup.id, targetGroupId },
         'cloneFromBrandSeason: events cloned without visibility rows (source with no functions assigned)'
       );
@@ -1138,6 +1186,7 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
       totalCreated += created.length;
       createdEventIds.push(...created.map(e => e.id));
     }
+    await recordVisibilityChanges(ctx, tx, visibilityChanges);
 
     return {
       calendarId: targetCalendar.id,

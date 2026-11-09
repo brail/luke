@@ -68,6 +68,7 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
   'CALENDAR_EVENT_USER_VISIBILITY_GRANTED',
   'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
+  'CALENDAR_EVENT_VISIBILITY_CHANGED',
 ]);
 
 /**
@@ -179,6 +180,8 @@ const SAFE_KEY_LIST = [
   'visibilityFunctionIds',
   'oldVisibilityFunctionIds',
   'newVisibilityFunctionIds',
+  // A deletion ends every share of the event, its per-person ones too (#222).
+  'eventDeleted',
   // A write the caller confirmed past the "it leaves your calendar" prompt (#199).
   'confirmedHidesFromCaller',
   'safetySnapshotId',
@@ -574,6 +577,26 @@ function emit(write: () => void): void {
   }
 }
 
+interface AuditWriteOptions {
+  required?: boolean;
+  tx?: Pick<PrismaClient, 'auditLog'>;
+}
+
+/** The stored row of `params`, its metadata sanitised. */
+function auditRow(ctx: AuditContext, params: AuditParams): Prisma.AuditLogCreateManyInput {
+  return {
+    actorId: ctx.session?.user?.id || null,
+    action: params.action,
+    targetType: params.targetType,
+    targetId: params.targetId || null,
+    result: params.result || 'SUCCESS',
+    // sanitizeMetadata only ever returns JSON-safe primitives/objects/arrays
+    metadata: params.metadata ? sanitizeMetadata(params.metadata) as Prisma.InputJsonValue : undefined,
+    traceId: ctx.traceId,
+    ip: ctx.req?.ip || null,
+  };
+}
+
 /**
  * Persists an audit event to the database and emits a structured Pino log entry.
  * Metadata is sanitised before storage; keys matching sensitive patterns are redacted.
@@ -592,29 +615,17 @@ function emit(write: () => void): void {
 export async function logAudit(
   ctx: AuditContext,
   params: AuditParams,
-  options: { required?: boolean; tx?: Pick<PrismaClient, 'auditLog'> } = {}
+  options: AuditWriteOptions = {}
 ): Promise<void> {
   // Outside the try on purpose. Everything below it is I/O, whose failure is swallowed for
   // non-critical actions; a key missing from `SAFE_KEY_LIST` is a programming error, and letting
   // it be caught there would turn the gate into a log line nobody reads — exactly the silence it
   // exists to break.
-  const sanitizedMetadata = params.metadata ? sanitizeMetadata(params.metadata) : undefined;
+  const data = auditRow(ctx, params);
   const log = ctx.req?.log ?? ctx.logger ?? fallbackLogger;
 
   try {
-    // Create AuditLog record with the new schema
-    await (options.tx ?? ctx.prisma).auditLog.create({
-      data: {
-        actorId: ctx.session?.user?.id || null,
-        action: params.action,
-        targetType: params.targetType,
-        targetId: params.targetId || null,
-        result: params.result || 'SUCCESS',
-        metadata: sanitizedMetadata as Prisma.InputJsonValue | undefined, // sanitizeMetadata only ever returns JSON-safe primitives/objects/arrays
-        traceId: ctx.traceId,
-        ip: ctx.req?.ip || null,
-      },
-    });
+    await (options.tx ?? ctx.prisma).auditLog.create({ data });
   } catch (error) {
     emit(() => log.error({ traceId: ctx.traceId, err: error, action: params.action }, 'Failed to log audit event'));
     if (options.required || CRITICAL_AUDIT_ACTIONS.has(params.action)) {
@@ -633,6 +644,35 @@ export async function logAudit(
       message: `Audit: ${params.action}`,
     })
   );
+}
+
+/**
+ * `logAudit` for several rows in one insert, for a write that records many changes at once. Same
+ * sanitising and failure rule: re-thrown when the write is required or any row's action is critical.
+ * No rows, no write.
+ */
+export async function logAuditMany(
+  ctx: AuditContext,
+  rows: readonly AuditParams[],
+  options: AuditWriteOptions = {}
+): Promise<void> {
+  if (rows.length === 0) return;
+  // Outside the try, as in `logAudit`.
+  const data = rows.map(params => auditRow(ctx, params));
+  const log = ctx.req?.log ?? ctx.logger ?? fallbackLogger;
+  const actions = [...new Set(rows.map(row => row.action))];
+
+  try {
+    await (options.tx ?? ctx.prisma).auditLog.createMany({ data });
+  } catch (error) {
+    emit(() => log.error({ traceId: ctx.traceId, err: error, actions }, 'Failed to log audit events'));
+    if (options.required || rows.some(row => CRITICAL_AUDIT_ACTIONS.has(row.action))) {
+      throw error;
+    }
+    return;
+  }
+
+  emit(() => log.info({ traceId: ctx.traceId, actions, count: rows.length, message: `Audit: ${actions.join(', ')}` }));
 }
 
 // Entity-specific helpers removed - everything centralized in logAudit() for DRY

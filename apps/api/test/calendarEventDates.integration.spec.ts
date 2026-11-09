@@ -206,8 +206,8 @@ describe('a write is conditional on the dates it was validated against', () => {
     const event = await createEvent({ startAt: MIDNIGHT, allDay: false });
     const read = { startAt: event.startAt, endAt: event.endAt, allDay: event.allDay };
 
-    await updateMilestone(event.id, { startAt: '2099-06-01T09:00:00.000Z' }, prisma, read);
-    const second = updateMilestone(event.id, { allDay: true, visibilityFunctionIds: [fnB] }, prisma, read);
+    await updateMilestone(event.id, { startAt: '2099-06-01T09:00:00.000Z' }, { prisma }, read);
+    const second = updateMilestone(event.id, { allDay: true, visibilityFunctionIds: [fnB] }, { prisma }, read);
     await expect(second).rejects.toBeInstanceOf(TRPCError);
     await expect(second).rejects.toMatchObject({ code: 'CONFLICT' });
 
@@ -221,7 +221,7 @@ describe('a write is conditional on the dates it was validated against', () => {
     const event = await createEvent({ startAt: MIDNIGHT, allDay: true });
     const read = { startAt: event.startAt, endAt: event.endAt, allDay: event.allDay };
     await rescheduleMilestone(event.id, NEXT_MIDNIGHT.toISOString(), null, prisma, undefined, read);
-    await expect(updateMilestone(event.id, { title: 'Rinominato' }, prisma, read)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(updateMilestone(event.id, { title: 'Rinominato' }, { prisma }, read)).rejects.toMatchObject({ code: 'CONFLICT' });
     expect(await prisma.calendarEvent.findUniqueOrThrow({ where: { id: event.id } })).toMatchObject({ title: event.title });
   });
 
@@ -229,7 +229,7 @@ describe('a write is conditional on the dates it was validated against', () => {
     const event = await createEvent({ startAt: MIDNIGHT, allDay: true });
     const read = { startAt: event.startAt, endAt: event.endAt, allDay: event.allDay };
     await prisma.calendarEvent.delete({ where: { id: event.id } });
-    await expect(updateMilestone(event.id, { title: 'Fantasma' }, prisma, read)).rejects.toMatchObject({ code: 'CONFLICT' });
+    await expect(updateMilestone(event.id, { title: 'Fantasma' }, { prisma }, read)).rejects.toMatchObject({ code: 'CONFLICT' });
   });
 
   it('a reschedule validated against dates that changed meanwhile is refused', async () => {
