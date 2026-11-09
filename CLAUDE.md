@@ -289,9 +289,13 @@ Two distinct layers that must stay in sync.
   runtime section overrides never grant resource permissions (ADR-038)
 - `withSectionAccess` guards only a section without children (it throws when the procedure is
   built); `Resource:Action` stays the API boundary
-- `saveConfig`, `saveConfigs` and `deleteConfig` invalidate the RBAC cache when they write an
-  `rbac.*` key or `app.sections.disabled`; a write to those keys that bypasses them calls
-  `invalidateRbacCache()` after it commits
+- The kill switch `app.sections.disabled` is saved only by `saveSectionsDisabled` (the last-admin
+  guard and its critical audit row, in one transaction) and removed only by `deleteConfig`;
+  `saveConfig` and `saveConfigs` refuse it
+- `saveConfigs` (and `saveConfig` through it), `saveSectionsDisabled` and `deleteConfig` invalidate
+  the RBAC cache after the commit when they write an `rbac.*` key or the kill switch; any other
+  write to an `rbac.*` key (`setRbacSectionDefaultsTx`, run by `sectionAccess.setRoleDefaults`)
+  calls `invalidateRbacCache()` after it commits
 
 ## LDAP
 

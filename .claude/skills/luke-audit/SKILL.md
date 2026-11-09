@@ -119,8 +119,9 @@ Three areas, one single pass. See the fan-out note in `../luke-shared/audit-prot
 
 **RBAC:**
 
-- A write to RBAC keys that bypasses `saveConfig`/`saveConfigs`/`deleteConfig` and is NOT followed by
-  `invalidateRbacCache()` after it commits
+- A write to `rbac.*` or `app.sections.disabled` outside the rules in CLAUDE.md "RBAC & Section
+  Access": a kill-switch save not through `saveSectionsDisabled`, or an `rbac.*` write NOT followed
+  by `invalidateRbacCache()` after it commits
 - `requirePermission` presence is enforced by `.semgrep/rules/procedure-requires-permission.yml`;
   review what it cannot see: a `selfProcedure` handler that breaks its contract in
   `apps/api/src/lib/trpc.ts`, a `nosemgrep: luke-procedure-requires-permission` whose reason does
