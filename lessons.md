@@ -842,6 +842,17 @@ existed. The classification had been written from memory of the table, not
 from the table. Build the verdict column from the evidence column mechanically,
 and next to every "no caller" name the search that established it.
 
+**Postscript 4 (2026-11-08).** The converse failure: claiming a mechanism *is*
+in use from evidence that it exists. During the authorization study (#221) I
+told the owner that stored files are downloaded through presigned links that no
+revocation stops, because `storage.s3.presignedGetTtl` is registered, has a
+default and is read by the S3 provider. `getPresignedGetUrl` had no caller: no
+read path uses presigned links. The analysis adopted the claim, and the owner
+answered a question built on it. Only checking the call sites, before the
+design started, undid it. A configuration key, a registry entry or an interface
+method shows that a path can exist, not that anything takes it. Before stating
+"X happens", trace one real call from an entry point to X.
+
 ### Before changing a map's key, follow every use of the key (2026-10-14)
 
 **What happened.** ADR-036 lists "`groupByTimeZone` puts aliases in separate digest and maintenance
