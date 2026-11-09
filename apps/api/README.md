@@ -199,6 +199,30 @@ verified writes no row. A generic
 success response to a password-reset request does not prove that an email was
 sent; the service deliberately avoids disclosing whether the account exists.
 
+## Access audit and retention
+
+Every change to who can reach what records its before and after, written in the
+same transaction as the change, so the change is not saved without its row:
+
+| Action | Written by | Metadata |
+|--------|-----------|----------|
+| `USER_ACCESS_CHANGED` | `users.create`, `users.update` (when the role or active state changes), `users.softDelete` (when the user was active) | `oldRole`/`newRole`, `oldIsActive`/`newIsActive` — only the pair that changed |
+| `COMPANY_TEAM_CREATED` | `company.team.create` | `name`, `functionId`, `brandIds`, `isActive` |
+| `COMPANY_TEAM_UPDATED` | `company.team.update` | `oldBrandIds`/`newBrandIds`, `oldIsActive`/`newIsActive` — only what changed |
+| `COMPANY_TEAM_DELETED` | `company.team.delete` | `functionId`, `brandIds`, and `userIds`: the members whose access the deletion ends |
+| `COMPANY_TEAM_MEMBER_ADDED` / `_REMOVED` | `company.team.addMembers` / `removeMembers`, `users.approvePending` | `teamId`, `userId` |
+| `COMPANY_TEAM_MEMBER_ROLE_UPDATED` | `company.team.updateMemberRole` | `teamId`, `userId`, `oldRole`, `newRole` |
+
+These actions are in `CRITICAL_AUDIT_ACTIONS` (`src/lib/auditLog.ts`): the
+retention sweep keeps them for `auditLog.criticalRetentionDays` instead of
+`auditLog.retentionDays`. `USER_CREATE`, `USER_DELETE` and `USER_APPROVED` keep the
+default retention: the access change each makes is in the rows above.
+
+Not covered: the seed and `db:*` scripts, a backup restore (it replaces the whole
+database), a brand purge removing team brand scopes by cascade (the purge has
+its own row, `BRAND_PURGE`), and LDAP provisioning, which creates a user with
+its initial role outside `users.create`.
+
 ## Transactional email
 
 `src/lib/mailer.ts` sends three kinds of mail with the SMTP settings in

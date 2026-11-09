@@ -20,7 +20,7 @@ import {
   CompanyTeamMembershipRemoveInputSchema,
   CompanyTeamMembershipUpdateRoleInputSchema,
 } from '@luke/core';
-import type { PrismaClient } from '@luke/db';
+import { Prisma, type PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { runInBackground } from '../lib/backgroundWork.js';
@@ -372,6 +372,51 @@ const companyFunctionRouter = router({
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 
+/** Sorted copy: a reordered but equal list compares equal and reads the same in the audit trail. */
+const sortedIds = (ids: readonly string[]) => [...new Set(ids)].sort();
+
+/**
+ * Locks a team, then its brand scope rows and, with `members`, its memberships (CLAUDE.md "Raw
+ * SQL" row-lock exception): what the audit records as "before" (#222) is what the write replaces.
+ * Always this order. The team row takes `FOR NO KEY UPDATE`, which serializes team writers without
+ * blocking a membership insert's foreign-key check, or `FOR UPDATE` when the team is about to be
+ * deleted. The scope rows are locked too because a brand purge deletes them by cascade, without
+ * touching the team row.
+ */
+async function lockTeam(
+  tx: Prisma.TransactionClient,
+  teamId: string,
+  { members = false, deleting = false } = {}
+): Promise<void> {
+  if (deleting) {
+    await tx.$executeRaw`SELECT 1 FROM company_teams WHERE id = ${teamId} FOR UPDATE`;
+  } else {
+    await tx.$executeRaw`SELECT 1 FROM company_teams WHERE id = ${teamId} FOR NO KEY UPDATE`;
+  }
+  await tx.$executeRaw`SELECT 1 FROM company_team_brand_scopes WHERE "teamId" = ${teamId} ORDER BY "brandId" FOR UPDATE`;
+  if (members) {
+    await tx.$executeRaw`SELECT 1 FROM company_team_memberships WHERE "teamId" = ${teamId} ORDER BY "userId" FOR UPDATE`;
+  }
+}
+
+/** One audit row per member added to or removed from a team, in the write's transaction. */
+async function logMembershipAudit(
+  ctx: Parameters<typeof logAudit>[0],
+  action: 'COMPANY_TEAM_MEMBER_ADDED' | 'COMPANY_TEAM_MEMBER_REMOVED',
+  teamId: string,
+  userIds: readonly string[]
+): Promise<void> {
+  for (const userId of userIds) {
+    await logAudit(ctx, {
+      action,
+      targetType: 'CompanyTeamMembership',
+      targetId: `${teamId}:${userId}`,
+      result: 'SUCCESS',
+      metadata: { teamId, userId },
+    });
+  }
+}
+
 async function fetchTeamName(teamId: string, prisma: PrismaClient): Promise<string> {
   const team = await prisma.companyTeam.findUnique({ where: { id: teamId }, select: { name: true } });
   return team?.name ?? teamId;
@@ -450,7 +495,8 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { brandIds, ...teamData } = input;
 
-      const team = await ctx.prisma.$transaction(async tx => {
+      // The audit row is written in the transaction: an access change is never saved without it.
+      return ctx.prisma.$transaction(async tx => {
         const created = await tx.companyTeam.create({
           data: { ...teamData },
         });
@@ -459,18 +505,15 @@ const companyTeamRouter = router({
             data: brandIds.map(brandId => ({ teamId: created.id, brandId })),
           });
         }
+        await logAudit({ ...ctx, prisma: tx }, {
+          action: 'COMPANY_TEAM_CREATED',
+          targetType: 'CompanyTeam',
+          targetId: created.id,
+          result: 'SUCCESS',
+          metadata: { name: created.name, functionId: created.functionId, brandIds: sortedIds(brandIds ?? []), isActive: created.isActive },
+        });
         return created;
       }, { timeout: 15000 });
-
-      await logAudit(ctx, {
-        action: 'COMPANY_TEAM_CREATED',
-        targetType: 'CompanyTeam',
-        targetId: team.id,
-        result: 'SUCCESS',
-        metadata: { name: team.name, functionId: team.functionId },
-      });
-
-      return team;
     }),
 
   /**
@@ -487,10 +530,14 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, brandIds, ...data } = input;
 
-      const existing = await ctx.prisma.companyTeam.findUnique({ where: { id } });
-      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
+      return ctx.prisma.$transaction(async tx => {
+        await lockTeam(tx, id);
+        const before = await tx.companyTeam.findUnique({
+          where: { id },
+          select: { isActive: true, brandScopes: { select: { brandId: true } } },
+        });
+        if (!before) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
 
-      const team = await ctx.prisma.$transaction(async tx => {
         const updated = await tx.companyTeam.update({ where: { id }, data });
         if (brandIds !== undefined) {
           await tx.companyTeamBrandScope.deleteMany({ where: { teamId: id } });
@@ -500,17 +547,25 @@ const companyTeamRouter = router({
             });
           }
         }
+
+        const oldBrandIds = sortedIds(before.brandScopes.map(b => b.brandId));
+        const newBrandIds = sortedIds(brandIds ?? []);
+        const brandsChanged = brandIds !== undefined && oldBrandIds.join() !== newBrandIds.join();
+        const activeChanged = updated.isActive !== before.isActive;
+        await logAudit({ ...ctx, prisma: tx }, {
+          action: 'COMPANY_TEAM_UPDATED',
+          targetType: 'CompanyTeam',
+          targetId: id,
+          result: 'SUCCESS',
+          metadata: {
+            oldBrandIds: brandsChanged ? oldBrandIds : undefined,
+            newBrandIds: brandsChanged ? newBrandIds : undefined,
+            oldIsActive: activeChanged ? before.isActive : undefined,
+            newIsActive: activeChanged ? updated.isActive : undefined,
+          },
+        });
         return updated;
       }, { timeout: 15000 });
-
-      await logAudit(ctx, {
-        action: 'COMPANY_TEAM_UPDATED',
-        targetType: 'CompanyTeam',
-        targetId: team.id,
-        result: 'SUCCESS',
-      });
-
-      return team;
     }),
 
   /**
@@ -525,16 +580,27 @@ const companyTeamRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(z.object({ id: z.uuid() }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.prisma.companyTeam.delete({ where: { id: input.id } }).catch((e: unknown) => {
-        if ((e as { code?: string })?.code === 'P2025') throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
-        throw e;
-      });
+      await ctx.prisma.$transaction(async tx => {
+        // The members the cascade removes are recorded: their access ends here with no row of their own.
+        await lockTeam(tx, input.id, { members: true, deleting: true });
+        const team = await tx.companyTeam.findUnique({
+          where: { id: input.id },
+          select: { functionId: true, brandScopes: { select: { brandId: true } }, memberships: { select: { userId: true } } },
+        });
+        if (!team) throw new TRPCError({ code: 'NOT_FOUND', message: 'Team not found' });
 
-      await logAudit(ctx, {
-        action: 'COMPANY_TEAM_DELETED',
-        targetType: 'CompanyTeam',
-        targetId: input.id,
-        result: 'SUCCESS',
+        await tx.companyTeam.delete({ where: { id: input.id } });
+        await logAudit({ ...ctx, prisma: tx }, {
+          action: 'COMPANY_TEAM_DELETED',
+          targetType: 'CompanyTeam',
+          targetId: input.id,
+          result: 'SUCCESS',
+          metadata: {
+            functionId: team.functionId,
+            brandIds: sortedIds(team.brandScopes.map(b => b.brandId)),
+            userIds: sortedIds(team.memberships.map(m => m.userId)),
+          },
+        });
       });
 
       return { ok: true };
@@ -554,23 +620,22 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const team = await fetchTeam(input.teamId, ctx.prisma);
 
-      await ctx.prisma.companyTeamMembership.createMany({
-        data: input.userIds.map(userId => ({ teamId: input.teamId, userId, role: input.role })),
-        skipDuplicates: true,
-      });
+      await ctx.prisma.$transaction(async tx => {
+        // Only the memberships actually created are recorded: an existing member or a repeated id
+        // is skipped by the insert and gets no grant row.
+        const created = await tx.companyTeamMembership.createManyAndReturn({
+          data: [...new Set(input.userIds)].map(userId => ({ teamId: input.teamId, userId, role: input.role })),
+          skipDuplicates: true,
+          select: { userId: true },
+        });
+        await logMembershipAudit({ ...ctx, prisma: tx }, 'COMPANY_TEAM_MEMBER_ADDED', input.teamId, created.map(m => m.userId));
+      }, { timeout: 15000 });
 
       const calendarMsg = team.brandNames.length > 0
         ? `Hai accesso ai calendari di: ${team.brandNames.join(', ')}`
         : 'Hai accesso ai calendari del team';
 
       await Promise.all(input.userIds.flatMap(userId => [
-        logAudit(ctx, {
-          action: 'COMPANY_TEAM_MEMBER_ADDED',
-          targetType: 'CompanyTeamMembership',
-          targetId: `${input.teamId}:${userId}`,
-          result: 'SUCCESS',
-          metadata: { teamId: input.teamId, userId },
-        }),
         createNotification(ctx.prisma, {
           userId,
           category: 'USER_ACTION',
@@ -606,18 +671,20 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const teamName = await fetchTeamName(input.teamId, ctx.prisma);
 
-      await ctx.prisma.companyTeamMembership.deleteMany({
-        where: { teamId: input.teamId, userId: { in: input.userIds } },
-      });
+      await ctx.prisma.$transaction(async tx => {
+        // Only the memberships actually removed are recorded, read under the team's lock.
+        await lockTeam(tx, input.teamId, { members: true });
+        const removed = await tx.companyTeamMembership.findMany({
+          where: { teamId: input.teamId, userId: { in: input.userIds } },
+          select: { userId: true },
+        });
+        await tx.companyTeamMembership.deleteMany({
+          where: { teamId: input.teamId, userId: { in: removed.map(m => m.userId) } },
+        });
+        await logMembershipAudit({ ...ctx, prisma: tx }, 'COMPANY_TEAM_MEMBER_REMOVED', input.teamId, removed.map(m => m.userId));
+      }, { timeout: 15000 });
 
       await Promise.all(input.userIds.flatMap(userId => [
-        logAudit(ctx, {
-          action: 'COMPANY_TEAM_MEMBER_REMOVED',
-          targetType: 'CompanyTeamMembership',
-          targetId: `${input.teamId}:${userId}`,
-          result: 'SUCCESS',
-          metadata: { teamId: input.teamId, userId },
-        }),
         createNotification(ctx.prisma, {
           userId,
           category: 'USER_ACTION',
@@ -644,22 +711,25 @@ const companyTeamRouter = router({
     .mutation(async ({ ctx, input }) => {
       const teamName = await fetchTeamName(input.teamId, ctx.prisma);
 
-      await ctx.prisma.companyTeamMembership
-        .update({
+      await ctx.prisma.$transaction(async tx => {
+        // Row lock (CLAUDE.md "Raw SQL" exception): the role recorded as "before" is the one replaced.
+        const [membership] = await tx.$queryRaw<{ role: string }[]>(Prisma.sql`
+          SELECT role::text AS role FROM company_team_memberships
+          WHERE "teamId" = ${input.teamId} AND "userId" = ${input.userId} FOR UPDATE
+        `);
+        if (!membership) throw new TRPCError({ code: 'NOT_FOUND', message: 'Membership not found' });
+
+        await tx.companyTeamMembership.update({
           where: { teamId_userId: { teamId: input.teamId, userId: input.userId } },
           data: { role: input.role },
-        })
-        .catch((e: unknown) => {
-          if ((e as { code?: string })?.code === 'P2025') throw new TRPCError({ code: 'NOT_FOUND', message: 'Membership not found' });
-          throw e;
         });
-
-      await logAudit(ctx, {
-        action: 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
-        targetType: 'CompanyTeamMembership',
-        targetId: `${input.teamId}:${input.userId}`,
-        result: 'SUCCESS',
-        metadata: { teamId: input.teamId, userId: input.userId, role: input.role },
+        await logAudit({ ...ctx, prisma: tx }, {
+          action: 'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
+          targetType: 'CompanyTeamMembership',
+          targetId: `${input.teamId}:${input.userId}`,
+          result: 'SUCCESS',
+          metadata: { teamId: input.teamId, userId: input.userId, oldRole: membership.role, newRole: input.role },
+        });
       });
 
       await createNotification(ctx.prisma, {

@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { hasPermission, UserIdSchema, type LockedFields, type Role } from '@luke/core';
 import type { Prisma } from '@luke/db';
 
+import { logAudit } from '../lib/auditLog';
 import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { invalidateTokenVersionCache } from '../lib/tokenVersionCache';
 
@@ -89,13 +90,22 @@ export async function deleteUserHandler({
       );
     }
 
-    return tx.user.update({
-      where: { id: input.id },
-      data: {
-        isActive: false,
-        updatedAt: new Date(),
-      },
+    // Conditional write: only an active user is deactivated, so the row below records a real change
+    // (#222); an already inactive user still answers as before, with no row.
+    const { count } = await tx.user.updateMany({
+      where: { id: input.id, isActive: true },
+      data: { isActive: false, updatedAt: new Date() },
     });
+    if (count === 1) {
+      await logAudit({ ...ctx, prisma: tx }, {
+        action: 'USER_ACCESS_CHANGED',
+        targetType: 'User',
+        targetId: input.id,
+        result: 'SUCCESS',
+        metadata: { oldIsActive: true, newIsActive: false },
+      });
+    }
+    return tx.user.findUniqueOrThrow({ where: { id: input.id } });
   });
 
   invalidateTokenVersionCache(input.id);

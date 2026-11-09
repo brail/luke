@@ -83,6 +83,9 @@ export const usersAdminRouter = router({
           });
         }
 
+        // Row lock (CLAUDE.md "Raw SQL" exception, `FOR NO KEY UPDATE`, the lock a team update takes):
+        // the team stays active until the membership commits.
+        await tx.$executeRaw`SELECT 1 FROM company_teams WHERE id = ${input.teamId} FOR NO KEY UPDATE`;
         const team = await tx.companyTeam.findUnique({ where: { id: input.teamId }, select: { isActive: true } });
         if (!team || !team.isActive) {
           throw new TRPCError({
@@ -93,6 +96,14 @@ export const usersAdminRouter = router({
 
         await tx.companyTeamMembership.create({ data: { teamId: input.teamId, userId: input.id } });
         await tx.user.update({ where: { id: input.id }, data: { pendingApproval: false } });
+        // The membership is an access grant: recorded in the transaction, like `addMembers`'.
+        await logAudit({ ...ctx, prisma: tx }, {
+          action: 'COMPANY_TEAM_MEMBER_ADDED',
+          targetType: 'CompanyTeamMembership',
+          targetId: `${input.teamId}:${input.id}`,
+          result: 'SUCCESS',
+          metadata: { teamId: input.teamId, userId: input.id },
+        });
 
         return pendingUser;
       });

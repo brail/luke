@@ -14,10 +14,10 @@ import { Prisma } from '@luke/db';
 import { logAudit } from '../lib/auditLog';
 import { withAuditLog } from '../lib/auditMiddleware';
 import { getConfigOrDefault } from '../lib/configManager';
-import { revokeUserLinks } from '../lib/emailHelpers';
+import { lockUserEmail, revokeUserLinks } from '../lib/emailHelpers';
 import { isUniqueViolation, toErrorCode, toErrorMessage } from '../lib/error';
 import { withIdempotency } from '../lib/idempotencyTrpc';
-import { assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
+import { acquireLastAdminLock, assertNotLastAdminWithSettingsAccess } from '../lib/lastAdminGuard';
 import { createNotification } from '../lib/notifications';
 import { hashPassword } from '../lib/password';
 import { can, logAccessDenied, requirePermission } from '../lib/permissions';
@@ -235,6 +235,14 @@ export const usersCoreRouter = router({
               identityId: identity.id,
               passwordHash,
             },
+          });
+
+          await logAudit({ ...ctx, prisma: tx }, {
+            action: 'USER_ACCESS_CHANGED',
+            targetType: 'User',
+            targetId: user.id,
+            result: 'SUCCESS',
+            metadata: { newRole: user.role, newIsActive: user.isActive },
           });
 
           return user;
@@ -459,6 +467,13 @@ export const usersCoreRouter = router({
       let txResult;
       try {
         txResult = await ctx.prisma.$transaction(async tx => {
+          // A role or active-state change is recorded with its "before" (#222): lock so `current` is
+          // the value the write replaces — the last-admin advisory lock first, then the user row,
+          // the order of every path that takes both.
+          if (updateData.role !== undefined || updateData.isActive !== undefined) {
+            await acquireLastAdminLock(tx);
+            await lockUserEmail(tx, id);
+          }
           const current = await tx.user.findUnique({
             where: { id },
             select: { role: true, isActive: true },
@@ -541,6 +556,24 @@ export const usersCoreRouter = router({
           // order: the user row, then its links — see `issueUserToken`).
           if (emailChanged) {
             await revokeUserLinks(tx, id);
+          }
+
+          // In the transaction: an access change is never saved without its row.
+          const roleChanged = !!current && updated.role !== current.role;
+          const activeChanged = !!current && updated.isActive !== current.isActive;
+          if (current && (roleChanged || activeChanged)) {
+            await logAudit({ ...ctx, prisma: tx }, {
+              action: 'USER_ACCESS_CHANGED',
+              targetType: 'User',
+              targetId: id,
+              result: 'SUCCESS',
+              metadata: {
+                oldRole: roleChanged ? current.role : undefined,
+                newRole: roleChanged ? updated.role : undefined,
+                oldIsActive: activeChanged ? current.isActive : undefined,
+                newIsActive: activeChanged ? updated.isActive : undefined,
+              },
+            });
           }
 
           return { updated, revokesSessions, current };

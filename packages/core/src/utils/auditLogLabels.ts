@@ -54,8 +54,17 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   USER_UPDATE: 'Utente modificato',
   USER_DELETE: 'Utente eliminato',
   USER_APPROVED: 'Utente approvato',
+  USER_ACCESS_CHANGED: 'Accesso utente modificato',
   USER_REVOKE_SESSIONS: 'Sessioni utente revocate',
   USER_PASSWORD_RESET_BY_ADMIN: 'Password utente reimpostata da admin',
+
+  // Company teams
+  COMPANY_TEAM_CREATED: 'Team creato',
+  COMPANY_TEAM_UPDATED: 'Team modificato',
+  COMPANY_TEAM_DELETED: 'Team eliminato',
+  COMPANY_TEAM_MEMBER_ADDED: 'Membro aggiunto al team',
+  COMPANY_TEAM_MEMBER_REMOVED: 'Membro rimosso dal team',
+  COMPANY_TEAM_MEMBER_ROLE_UPDATED: 'Ruolo nel team modificato',
 
   // Config / backup / maintenance
   CONFIG_UPSERT: 'Configurazione aggiornata',

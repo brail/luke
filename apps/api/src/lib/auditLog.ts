@@ -54,6 +54,18 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'MAINTENANCE_MODE_ACTIVATED',
   'BRAND_PURGE',
   'SEASON_PURGE',
+  // Access changes (#222): the history of who could reach what, kept past the default retention
+  // until a dedicated grant-history table replaces it. All written in the change's transaction;
+  // `USER_APPROVED`, `USER_CREATE` and `USER_DELETE` stay out: `withAuditLog` writes them after
+  // commit, where a critical failure would report a saved change as failed, and the access they
+  // carry is already in these rows.
+  'USER_ACCESS_CHANGED',
+  'COMPANY_TEAM_CREATED',
+  'COMPANY_TEAM_UPDATED',
+  'COMPANY_TEAM_DELETED',
+  'COMPANY_TEAM_MEMBER_ADDED',
+  'COMPANY_TEAM_MEMBER_REMOVED',
+  'COMPANY_TEAM_MEMBER_ROLE_UPDATED',
 ]);
 
 /**
@@ -189,6 +201,17 @@ const SAFE_KEY_LIST = [
   // Structural containers written by `withAuditLog` — their children are filtered normally.
   'input',
   'result',
+
+  // Access changes (#222): a user's role and active state, a team's brands and members — ids,
+  // role names and booleans only.
+  'oldRole',
+  'newRole',
+  'oldIsActive',
+  'newIsActive',
+  'brandIds',
+  'oldBrandIds',
+  'newBrandIds',
+  'userIds',
 
   // Entity references
   'userId',
