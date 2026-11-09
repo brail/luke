@@ -69,6 +69,8 @@ export const CRITICAL_AUDIT_ACTIONS = new Set([
   'CALENDAR_EVENT_USER_VISIBILITY_GRANTED',
   'CALENDAR_EVENT_USER_VISIBILITY_REVOKED',
   'CALENDAR_EVENT_VISIBILITY_CHANGED',
+  // The initial access snapshot (`accessSnapshot.ts`): the baseline the rows above are folded over.
+  'ACCESS_SNAPSHOT',
 ]);
 
 /**
@@ -721,10 +723,19 @@ const NO_SUBJECT: AuditSubject = { name: null, email: null };
 
 /** Minimal shape needed to attribute an entry — accepted so callers can pass a full row or a narrow select. */
 interface AuditSubjectSource {
+  action: string;
   actorId: string | null;
   targetType: string;
   targetId: string | null;
   metadata: unknown;
+}
+
+/**
+ * An actor-less entry whose subject may be the user it targets. Not the access snapshot's rows:
+ * they are about each user, but written by the system, not by them.
+ */
+function mayHaveSubject(entry: AuditSubjectSource): boolean {
+  return entry.actorId === null && entry.action !== 'ACCESS_SNAPSHOT';
 }
 
 /**
@@ -743,7 +754,7 @@ export async function resolveAuditSubjects(
   const ids = [
     ...new Set(
       entries
-        .filter(e => !e.actorId && e.targetId && USER_SUBJECT_TARGET_TYPES.has(e.targetType))
+        .filter(e => mayHaveSubject(e) && e.targetId && USER_SUBJECT_TARGET_TYPES.has(e.targetType))
         .map(e => e.targetId as string)
     ),
   ];
@@ -763,7 +774,7 @@ export async function resolveAuditSubjects(
  * Returns an empty subject when the entry has a real actor — the actor is the attribution then.
  */
 export function auditSubjectOf(entry: AuditSubjectSource, subjects: Map<string, AuditSubject>): AuditSubject {
-  if (entry.actorId) return NO_SUBJECT;
+  if (!mayHaveSubject(entry)) return NO_SUBJECT;
 
   const resolved = entry.targetId ? subjects.get(entry.targetId) : undefined;
   if (resolved) return resolved;

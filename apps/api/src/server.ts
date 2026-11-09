@@ -26,6 +26,7 @@ import {
 import { createPrismaClient } from '@luke/db';
 
 import { shutdownTelemetry } from './instrument';
+import { runInitialAccessSnapshot } from './lib/accessSnapshot';
 import { appVersion } from './lib/appVersion';
 import { registerDerivativeScheduler } from './lib/assets/derivativeWorker';
 import { registerBackupScheduler } from './lib/backupScheduler';
@@ -599,6 +600,10 @@ const start = async () => {
 
     // Register Google Calendar reader reconcile (first pass 30s after start-up, then every 10min)
     registerGoogleReaderScheduler(fastify, prisma);
+
+    // The initial access snapshot (#222), once: awaited before the server listens; a failure is
+    // logged and retried at the next start.
+    fastify.addHook('onReady', () => runInitialAccessSnapshot(prisma, fastify.log));
 
     // Configure graceful shutdown
     setupGracefulShutdown({

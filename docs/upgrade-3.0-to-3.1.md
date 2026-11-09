@@ -21,6 +21,10 @@ What 3.1 changes for the operator so far:
   the row's previous file: step 2 checks that no stored picture is shared or missing first.
 - **A season calendar has no status any more.** 3.1 drops the column: step 2 lists the calendars an
   earlier release archived.
+- **Access changes are recorded from 3.1 on.** The first start of 3.1 writes the initial access
+  snapshot to the audit log (`Fotografia iniziale degli accessi`), the state the later changes are
+  read against: nothing to run. A start where it fails logs `Initial access snapshot failed` and
+  serves all the same; the next start writes it.
 
 ## 1. Shell variables
 

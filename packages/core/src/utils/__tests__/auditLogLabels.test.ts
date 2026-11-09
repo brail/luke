@@ -15,6 +15,7 @@ describe('audit labels of the access actions', () => {
     ['CALENDAR_EVENT_USER_VISIBILITY_GRANTED', 'Evento condiviso con una persona'],
     ['CALENDAR_EVENT_USER_VISIBILITY_REVOKED', 'Condivisione evento con una persona revocata'],
     ['CALENDAR_EVENT_VISIBILITY_CHANGED', 'Visibilità evento modificata'],
+    ['ACCESS_SNAPSHOT', 'Fotografia iniziale degli accessi'],
   ])('%s → %s', (action, label) => {
     expect(getAuditActionLabel(action)).toBe(label);
   });

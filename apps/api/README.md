@@ -227,6 +227,18 @@ written through the `tx` option of `logAudit` or `logAuditMany` (several rows in
 one insert); the Semgrep rule `luke-audit-row-transaction` refuses either inside a
 `$transaction` callback without it.
 
+The initial access snapshot (`src/lib/accessSnapshot.ts`) is the state these rows are folded
+over: one `ACCESS_SNAPSHOT` row per user, team, membership, per-person share, event with functions
+and section override, and one per section config key, each with the target and metadata of the
+row that creates it (`newRole`/`newIsActive`/`newPendingApproval` for a user; the section
+defaults resolved over the static table, and the kill switch, as the application reads them), no
+actor, one transaction. It is
+written at start-up while no `ACCESS_SNAPSHOT` row exists — the first start of 3.1.0, a fresh
+install — and again after retention or a restore removed it, since the history before it is gone
+with it. A failure is logged (`Initial access snapshot failed`) and retried at the next start.
+An answer for a date needs the snapshot and every change since: once retention removes either, the
+dates before the next snapshot are out of reach (a grant history of its own is #221).
+
 A reader folds the configuration rows by key: an absent key is its default
 (`APP_CONFIG_DEFAULTS`, and the static section defaults for
 `rbac.sectionAccessDefaults`), and `CONFIG_DELETE` returns the key to it. Rows
