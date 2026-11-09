@@ -96,7 +96,7 @@ describe('integrations.google.exchangeOAuthCode', () => {
 
 describe('integrations.google without client credentials', () => {
   it('refuses both OAuth steps as a precondition failure', async () => {
-    await deleteConfig(prisma, 'integrations.google.oauth.clientId');
+    await deleteConfig({ prisma }, 'integrations.google.oauth.clientId');
     const caller = await createCallerAs('admin');
     const redirectUri = 'https://luke.example.com/cb';
 

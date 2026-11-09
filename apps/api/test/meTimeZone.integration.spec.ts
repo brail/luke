@@ -69,7 +69,7 @@ describe('me.get with a legacy invalid zone', () => {
       });
       expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).timezone).toBe('Asia/Tokyo');
     } finally {
-      if (previous === null) await deleteConfig(prisma, 'app.defaultTimezone');
+      if (previous === null) await deleteConfig({ prisma }, 'app.defaultTimezone');
       else await saveConfig(prisma, 'app.defaultTimezone', previous);
     }
   });

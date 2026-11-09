@@ -37,6 +37,7 @@ import {
   loadAdminRecoveryOverrides,
 } from '../services/sectionAccess.service';
 
+import { logAudit, type AuditContext } from './auditLog';
 import { toErrorMessage } from './error';
 import { acquireLastAdminLock } from './lastAdminGuard';
 import { rootLogger } from './logger';
@@ -143,19 +144,22 @@ const RBAC_CACHE_KEYS = /^(rbac\.|app\.sections\.disabled$)/;
  * does disabling every `settings.*` child, since a parent is derived from its
  * children (ADR-025). A list that does not make things worse is accepted, so
  * a system with no recovery-capable admin (a fresh install) stays writable.
+ *
+ * The value is validated like any other key's; its critical `CONFIG_UPSERT` row, with the whole
+ * list, is written in the same transaction; the RBAC cache is invalidated after the commit.
+ *
+ * @throws {TRPCError} `BAD_REQUEST` when the value fails its schema or would lock administration out.
  */
-async function saveSectionsDisabledGuarded(
-  prisma: PrismaClient,
-  rawValue: string,
-  finalValue: string,
-  encrypt: boolean
+export async function saveSectionsDisabled(
+  ctx: AuditContext & { prisma: PrismaClient },
+  value: string,
+  options: { source?: string } = {}
 ): Promise<void> {
-  await prisma.$transaction(async tx => {
-    // Parsed here rather than threaded in from `saveConfig`'s validation: there `key` is the open
-    // `AppConfigKey`, so the parsed value is the union of every config type and narrowing it to
-    // `Section[]` would need a cast. A second parse of a short array is the cheaper price.
-    const disabled = parseConfigValue('app.sections.disabled', rawValue);
-
+  // A plaintext key (`PLAINTEXT_CONFIG_KEYS`): stored as it is, whatever a caller asks.
+  const row = prepareConfigWrite({ key: 'app.sections.disabled', value });
+  // Validated above; parsed again for the typed `Section[]`, without a cast.
+  const disabled = parseConfigValue('app.sections.disabled', value);
+  await ctx.prisma.$transaction(async tx => {
     // Lock before reading, like every other writer of the last-admin invariant.
     await acquireLastAdminLock(tx);
     const { sectionAccessDefaults, disabledSections: current } = await getRbacConfig(tx, {
@@ -176,10 +180,16 @@ async function saveSectionsDisabledGuarded(
 
     await tx.appConfig.upsert({
       where: { key: 'app.sections.disabled' },
-      update: { value: finalValue, isEncrypted: encrypt, updatedAt: new Date() },
-      create: { key: 'app.sections.disabled', value: finalValue, isEncrypted: encrypt },
+      update: { value: row.value, isEncrypted: row.encrypt, updatedAt: new Date() },
+      create: { key: 'app.sections.disabled', value: row.value, isEncrypted: row.encrypt },
     });
+    // The whole list, in the transaction: the access history (#222) folds it.
+    await logAudit(ctx, {
+      action: 'CONFIG_UPSERT', targetType: 'Config', targetId: 'app.sections.disabled', result: 'SUCCESS',
+      metadata: { key: 'app.sections.disabled', isEncrypted: row.encrypt, sectionsDisabled: disabled, source: options.source },
+    }, { tx });
   });
+  invalidateRbacCache();
 }
 
 /**
@@ -213,24 +223,18 @@ async function saveSectionsDisabledGuarded(
 
 export async function saveConfig(
   prisma: PrismaClient,
-  key: AppConfigKey,
+  key: BatchConfigKey,
   value: string,
   encrypt: boolean = false
 ): Promise<void> {
-  if (key === 'app.sections.disabled') {
-    const row = prepareConfigWrite({ key, value, encrypt });
-    await saveSectionsDisabledGuarded(prisma, value, row.value, row.encrypt);
-    invalidateRbacCache();
-    return;
-  }
   await saveConfigs(prisma, [{ key, value, encrypt }]);
 }
 
 /**
- * A key `saveConfigs` may write: every registry key but the kill switch, whose guard runs its own
- * transaction under the last-admin lock (`saveSectionsDisabledGuarded`) and which no form writes.
+ * A key `saveConfig` and `saveConfigs` may write: every registry key but the kill switch, whose
+ * guard and audit row run in their own transaction (`saveSectionsDisabled`).
  */
-type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
+export type BatchConfigKey = Exclude<AppConfigKey, 'app.sections.disabled'>;
 
 /** One entry of a `saveConfigs` batch: a value to store, or `null` to remove the key. */
 export type ConfigWrite =
@@ -269,7 +273,7 @@ export async function saveConfigs(
 ): Promise<void> {
   // Excluded by the key type too; refused here as well for a caller that reaches it through a cast.
   if (writes.some(write => (write.key as AppConfigKey) === 'app.sections.disabled')) {
-    throw new Error('saveConfigs cannot write app.sections.disabled: use saveConfig, which runs its guard');
+    throw new Error('saveConfigs cannot write app.sections.disabled: use saveSectionsDisabled, which runs its guard');
   }
   const rows = writes.map(write => (write.value === null ? write : prepareConfigWrite(write)));
 
@@ -647,25 +651,34 @@ export async function listConfigsPaged(
 }
 
 /**
- * Permanently deletes a configuration entry from the database. A no-op when the key is absent.
+ * Permanently deletes a configuration entry from the database, with its critical `CONFIG_DELETE`
+ * row in the same transaction. A no-op when the key is absent, which writes no row.
+ *
+ * @returns Whether a row was deleted: a concurrent delete may have removed it first.
  *
  * `key` stays a `string` where `saveConfig` takes an `AppConfigKey`: a delete cannot persist a bad
  * value, and requiring registry membership here would leave a row whose key was later dropped from
  * the registry with no way to remove it from the app.
  */
 export async function deleteConfig(
-  prisma: PrismaClient,
+  ctx: AuditContext & { prisma: PrismaClient },
   key: string
-): Promise<void> {
-  // `deleteMany`, not `delete`: clearing a key that is already absent is the intended outcome of
-  // every caller here, and `delete` turns that into a P2025 the caller would have to swallow.
-  await prisma.appConfig.deleteMany({
-    where: { key },
+): Promise<boolean> {
+  const deleted = await ctx.prisma.$transaction(async tx => {
+    // `deleteMany`, not `delete`: clearing a key that is already absent is the intended outcome of
+    // every caller here, and `delete` turns that into a P2025 the caller would have to swallow.
+    const { count } = await tx.appConfig.deleteMany({ where: { key } });
+    if (count === 0) return false;
+    await logAudit(ctx, {
+      action: 'CONFIG_DELETE', targetType: 'Config', targetId: key, result: 'SUCCESS', metadata: { key },
+    }, { tx });
+    return true;
   });
 
   if (RBAC_CACHE_KEYS.test(key)) {
     invalidateRbacCache();
   }
+  return deleted;
 }
 
 /**

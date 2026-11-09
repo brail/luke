@@ -22,6 +22,7 @@ import {
 import { logAudit } from '../lib/auditLog';
 import {
   saveConfig,
+  saveSectionsDisabled,
   getConfigsMasked,
   listConfigsPaged,
   deleteConfig,
@@ -233,22 +234,25 @@ async function upsertConfig(
   // A secret is stored encrypted, and a plaintext key in plaintext, whatever the client asked: the
   // audit row and the response follow what is stored, so neither carries the value of a secret sent
   // as plaintext nor claims an encryption that did not happen.
-  await saveConfig(ctx.prisma, key, value, encrypt);
   const encrypted = storesEncrypted(key, encrypt);
-
-  // Audit log
-  await logAudit(ctx, {
-    action: 'CONFIG_UPSERT',
-    targetType: 'Config',
-    targetId: key,
-    result: 'SUCCESS',
-    metadata: {
-      key,
-      isEncrypted: encrypted,
-      valueRedacted: encrypted ? CONFIG_SECRET_PLACEHOLDER : redact(value),
-      source: options.source,
-    },
-  });
+  if (key === 'app.sections.disabled') {
+    // Its audit row, with the whole list, is written in the save's own transaction.
+    await saveSectionsDisabled(ctx, value, { source: options.source });
+  } else {
+    await saveConfig(ctx.prisma, key, value, encrypt);
+    await logAudit(ctx, {
+      action: 'CONFIG_UPSERT',
+      targetType: 'Config',
+      targetId: key,
+      result: 'SUCCESS',
+      metadata: {
+        key,
+        isEncrypted: encrypted,
+        valueRedacted: encrypted ? CONFIG_SECRET_PLACEHOLDER : redact(value),
+        source: options.source,
+      },
+    });
+  }
 
   return {
     key,
@@ -406,15 +410,11 @@ export const configRouter = router({
         });
       }
 
-      await deleteConfig(ctx.prisma, input.key);
-
-      // Audit log
-      await logAudit(ctx, {
-        action: 'CONFIG_DELETE',
-        targetType: 'Config',
-        result: 'SUCCESS',
-        metadata: { key: input.key },
-      });
+      // Its audit row is written in the delete's transaction. Removed meanwhile by another
+      // request: that one deleted it, and recorded it.
+      if (!(await deleteConfig(ctx, input.key))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Configurazione '${input.key}' non trovata` });
+      }
 
       return {
         key: input.key,

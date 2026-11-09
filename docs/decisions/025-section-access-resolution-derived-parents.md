@@ -101,3 +101,9 @@ These deviations exist when this record is accepted. They are recorded as follow
   - In a row that does parse, missing or invalid entries fall through to the permission fallback, which can grant a section the static table denies.
   - Such a row can also introduce an unrecognised role, whose `'enabled'` sections decide at layer 2 without ever reaching the fallback.
   - The supported write paths reject all of these, and the parseable invalid-row cases are not covered by tests.
+
+## Errata
+
+Appended under [ADR-030](030-documentation-architecture-canonical-language-and-historical-records.md); the sections above are unchanged.
+
+- **2026-11-09 — Decision, Kill switch, `saveSectionsDisabledGuarded`.** The function is now `saveSectionsDisabled` (`apps/api/src/lib/configManager.ts`), the only function that saves the key: it runs the same guard and records the list in its transaction; `saveConfig` and `saveConfigs` refuse the key. `deleteConfig` removes it, back to its default, with its own row.

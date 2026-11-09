@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { saveConfig } from '../src/lib/configManager';
+import { saveConfig, type BatchConfigKey } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { resetLdapBreakers } from '../src/lib/ldapClient';
 import { appRouter } from '../src/routers/index';
@@ -45,7 +45,7 @@ async function configure(strategy: Strategy) {
   };
   for (const [key, value] of Object.entries(values)) {
     // `Object.entries` widens the keys to `string`; they are the registry keys listed above.
-    if (value !== undefined) await saveConfig(prisma, key as AppConfigKey, value);
+    if (value !== undefined) await saveConfig(prisma, key as BatchConfigKey, value);
   }
 }
 

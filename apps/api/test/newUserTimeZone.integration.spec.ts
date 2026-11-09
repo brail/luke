@@ -23,7 +23,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await deleteConfig(prisma, 'app.defaultTimezone');
+  await deleteConfig({ prisma }, 'app.defaultTimezone');
 });
 
 describe('users.create', () => {

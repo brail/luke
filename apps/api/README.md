@@ -214,6 +214,10 @@ same transaction as the change, so the change is not saved without its row:
 | `COMPANY_TEAM_MEMBER_ROLE_UPDATED` | `company.team.updateMemberRole` | `teamId`, `userId`, `oldRole`, `newRole` |
 | `CALENDAR_EVENT_USER_VISIBILITY_GRANTED` / `_REVOKED` | `seasonCalendar.grantUserVisibility` / `revokeUserVisibility` — only the shares really created or removed | `eventId`, `userId` |
 | `CALENDAR_EVENT_VISIBILITY_CHANGED` | `seasonCalendar.createMilestone`, `updateMilestone` (when the set changes), `applyTemplate` and `cloneFromBrandSeason` (per event created with functions), `deleteMilestone(s)` (per event deleted) | `oldVisibilityFunctionIds`/`newVisibilityFunctionIds`, sorted; `eventDeleted` on a deletion, which also ends the event's per-person shares |
+| `SECTION_ACCESS_UPDATED` | `sectionAccess.set`; target `UserSectionAccess` `${userId}:${section}` | `targetUserId`, `section`, `enabled` (`null`: the override was removed) |
+| `CONFIG_UPSERT` on `rbac.sectionAccessDefaults` | `sectionAccess.setRoleDefaults` | `sectionAccessDefaults`: the whole stored map |
+| `CONFIG_UPSERT` on `app.sections.disabled` | `config.set` / `update` / `importJson`, through `saveSectionsDisabled` | `sectionsDisabled`: the whole list |
+| `CONFIG_DELETE` | `config.delete`, through `deleteConfig`; target the key | `key` |
 
 These actions are in `CRITICAL_AUDIT_ACTIONS` (`src/lib/auditLog.ts`): the
 retention sweep keeps them for `auditLog.criticalRetentionDays` instead of
@@ -223,8 +227,16 @@ written through the `tx` option of `logAudit` or `logAuditMany` (several rows in
 one insert); the Semgrep rule `luke-audit-row-transaction` refuses either inside a
 `$transaction` callback without it.
 
-Not covered: the seed and `db:*` scripts, a backup restore (it replaces the whole
-database), a brand purge removing team brand scopes by cascade (the purge has
+A reader folds the configuration rows by key: an absent key is its default
+(`APP_CONFIG_DEFAULTS`, and the static section defaults for
+`rbac.sectionAccessDefaults`), and `CONFIG_DELETE` returns the key to it. Rows
+written before 3.1.0 have other shapes (a kill switch cut to 32 characters, no
+target on a delete, an override keyed by its row) and are not folded.
+
+Not covered: the seed and `db:*` scripts (the RBAC migration scripts included), a
+backup restore (it replaces the whole database, and has its own critical row,
+`BACKUP_RESTORE`), a user's hard delete removing their section overrides by cascade
+(its own row, `USER_HARD_DELETE`), a brand purge removing team brand scopes by cascade (the purge has
 its own row, `BRAND_PURGE`), and a purge deleting a brand's or season's calendar
 events (`BRAND_PURGE` / `SEASON_PURGE`).
 

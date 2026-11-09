@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { encryptValue, saveConfig } from '../src/lib/configManager';
+import { encryptValue, saveConfig, type BatchConfigKey } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import { authenticateViaLdap } from '../src/lib/ldapAuth';
 import { LdapUnavailableError, resetLdapBreakers } from '../src/lib/ldapClient';
@@ -77,7 +77,7 @@ async function configureLdap(overrides: Partial<Record<AppConfigKey, string | nu
   };
   for (const [key, value] of Object.entries(values)) {
     // `Object.entries` widens the keys to `string`; they are the registry keys listed above.
-    if (value !== null) await saveConfig(prisma, key as AppConfigKey, value);
+    if (value !== null) await saveConfig(prisma, key as BatchConfigKey, value);
   }
 }
 

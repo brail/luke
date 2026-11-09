@@ -121,7 +121,7 @@ describe('reader list', () => {
   });
 
   it('does nothing without Google credentials', async () => {
-    await deleteConfig(prisma, 'integrations.google.serviceKey');
+    await deleteConfig({ prisma }, 'integrations.google.serviceKey');
 
     expect(await reconcileGoogleReaders(prisma, logger)).toBeNull();
     expect(syncReaders).not.toHaveBeenCalled();

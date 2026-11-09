@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import type { AppConfigKey } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
-import { saveConfig } from '../src/lib/configManager';
+import { saveConfig, type BatchConfigKey } from '../src/lib/configManager';
 import * as emailHelpers from '../src/lib/emailHelpers';
 import * as ldapAuth from '../src/lib/ldapAuth';
 import { resetLdapBreakers } from '../src/lib/ldapClient';
@@ -56,7 +56,7 @@ async function configure(strategy: 'ldap-first' | 'local-first') {
   };
   for (const [key, value] of Object.entries(values)) {
     // `Object.entries` widens the keys to `string`; they are the registry keys listed above.
-    await saveConfig(prisma, key as AppConfigKey, value);
+    await saveConfig(prisma, key as BatchConfigKey, value);
   }
 }
 

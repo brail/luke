@@ -3,17 +3,20 @@
  * transaction as the change, and are kept for the critical retention: a user's role and active
  * state (`USER_ACCESS_CHANGED`), a team's brands and active state, its deletion with the members
  * it had, and a member's role in the team; an approval, a per-person share of a calendar event and
- * the functions an event is visible to.
+ * the functions an event is visible to; a user's section overrides, the role section defaults and the
+ * section kill switch, its deletion included.
  */
 
 import { randomUUID } from 'crypto';
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { invalidateRbacCache } from '@luke/core/server';
 import type { PrismaClient } from '@luke/db';
 
 import * as auditLog from '../src/lib/auditLog';
 import { CRITICAL_AUDIT_ACTIONS } from '../src/lib/auditLog';
+import { deleteConfig } from '../src/lib/configManager';
 
 import { createCallerWithSession, createTestUser, expectedOf, expectToThrow, setupTestDb } from './helpers';
 import { createCalendarFixture, grantBrandAccess } from './helpers/calendarFixture';
@@ -487,6 +490,91 @@ describe("the functions a calendar event is visible to", () => {
       await expect(clone()).rejects.toThrow('audit store unavailable');
       expect(await copyOf(withFunctions)).toBeNull();
     });
+  });
+});
+
+describe('section access', () => {
+  const SECTION = 'admin.brands';
+  const KILL_SWITCH = 'app.sections.disabled';
+  const DEFAULTS = 'rbac.sectionAccessDefaults';
+
+  /** The global section settings go back to their defaults, for the specs that run after. */
+  async function resetSectionConfig() {
+    await prisma.appConfig.deleteMany({ where: { key: { in: [KILL_SWITCH, DEFAULTS] } } });
+    invalidateRbacCache();
+  }
+  afterEach(resetSectionConfig);
+
+  const viewerId = async () => (await createTestUser('viewer')).user.id as string;
+  const killSwitchRows = () => prisma.auditLog.findMany({ where: { action: 'CONFIG_UPSERT', targetId: KILL_SWITCH } });
+
+  it("a user's override records the user, the section and the value; a removal records null", async () => {
+    const userId = await viewerId();
+    await asAdmin().sectionAccess.set({ userId, section: SECTION, enabled: false });
+    await asAdmin().sectionAccess.set({ userId, section: SECTION, enabled: null });
+
+    const rows = await rowsOf('SECTION_ACCESS_UPDATED', `${userId}:${SECTION}`);
+    expect(rows.map(r => [r.targetType, r.metadata])).toEqual([
+      ['UserSectionAccess', { targetUserId: userId, section: SECTION, enabled: false }],
+      ['UserSectionAccess', { targetUserId: userId, section: SECTION, enabled: null }],
+    ]);
+  });
+
+  it('an override whose row cannot be written is not saved', async () => {
+    const userId = await viewerId();
+    failAuditFor('SECTION_ACCESS_UPDATED');
+    await expect(asAdmin().sectionAccess.set({ userId, section: SECTION, enabled: false })).rejects.toThrow('audit store unavailable');
+    expect(await prisma.userSectionAccess.count({ where: { userId } })).toBe(0);
+  });
+
+  it('the role defaults record the whole map', async () => {
+    const sectionAccessDefaults = { viewer: { [SECTION]: 'disabled' as const } };
+    await asAdmin().sectionAccess.setRoleDefaults({ sectionAccessDefaults });
+
+    const rows = await prisma.auditLog.findMany({ where: { action: 'CONFIG_UPSERT', targetId: DEFAULTS }, orderBy: { createdAt: 'desc' }, take: 1 });
+    expect(rows[0]?.metadata).toEqual({ sectionAccessDefaults });
+  });
+
+  it('role defaults whose row cannot be written are not saved', async () => {
+    failAuditFor('CONFIG_UPSERT');
+    await expect(asAdmin().sectionAccess.setRoleDefaults({ sectionAccessDefaults: { viewer: { [SECTION]: 'disabled' } } }))
+      .rejects.toThrow('audit store unavailable');
+    expect(await prisma.appConfig.count({ where: { key: DEFAULTS } })).toBe(0);
+  });
+
+  it('the kill switch records its whole value, in one row', async () => {
+    // Longer than the 32 characters a redacted value keeps.
+    const sectionsDisabled = ['settings.storage', SECTION];
+    const before = (await killSwitchRows()).length;
+    await asAdmin().config.set({ key: KILL_SWITCH, value: JSON.stringify(sectionsDisabled) });
+
+    const rows = await killSwitchRows();
+    expect(rows).toHaveLength(before + 1);
+    expect(rows.at(-1)?.metadata).toMatchObject({ key: KILL_SWITCH, sectionsDisabled });
+  });
+
+  it('a kill switch whose row cannot be written is not saved', async () => {
+    failAuditFor('CONFIG_UPSERT');
+    await expect(asAdmin().config.set({ key: KILL_SWITCH, value: JSON.stringify([SECTION]) })).rejects.toThrow('audit store unavailable');
+    expect(await prisma.appConfig.count({ where: { key: KILL_SWITCH } })).toBe(0);
+  });
+
+  it('deleting a key records it in the delete; an absent key records nothing', async () => {
+    await prisma.appConfig.create({ data: { key: KILL_SWITCH, value: JSON.stringify([SECTION]) } });
+    const before = (await rowsOf('CONFIG_DELETE', KILL_SWITCH)).length;
+    await asAdmin().config.delete({ key: KILL_SWITCH });
+    expect(await deleteConfig({ prisma }, KILL_SWITCH)).toBe(false);
+
+    const rows = await rowsOf('CONFIG_DELETE', KILL_SWITCH);
+    expect(rows).toHaveLength(before + 1);
+    expect(rows.at(-1)).toMatchObject({ targetType: 'Config', metadata: { key: KILL_SWITCH } });
+  });
+
+  it('a delete whose row cannot be written is not saved', async () => {
+    await prisma.appConfig.create({ data: { key: KILL_SWITCH, value: JSON.stringify([SECTION]) } });
+    failAuditFor('CONFIG_DELETE');
+    await expect(asAdmin().config.delete({ key: KILL_SWITCH })).rejects.toThrow('audit store unavailable');
+    expect(await prisma.appConfig.count({ where: { key: KILL_SWITCH } })).toBe(1);
   });
 });
 

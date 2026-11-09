@@ -330,6 +330,8 @@ const SAFE_KEY_LIST = [
   'valueRedacted',
   'includeValues',
   'sectionAccessDefaults',
+  // The kill switch's whole list of disabled sections (#222): `valueRedacted` cuts it.
+  'sectionsDisabled',
 ] as const;
 
 /** A key that may be persisted in `AuditLog.metadata`. */

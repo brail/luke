@@ -39,7 +39,7 @@ const idOf = (line: string) => {
 beforeAll(async () => {
   prisma = await setupTestDb();
   await saveConfig(prisma, 'app.defaultTimezone', 'Europe/Rome');
-  await deleteConfig(prisma, 'collectionControl.alertThresholds');
+  await deleteConfig({ prisma }, 'collectionControl.alertThresholds');
   const uid = randomUUID().substring(0, 6).toUpperCase();
 
   const admin = await createTestUser('admin');
@@ -96,7 +96,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await deleteConfig(prisma, 'app.defaultTimezone');
+  await deleteConfig({ prisma }, 'app.defaultTimezone');
 });
 
 describe('phase alerts on a season whose calendars follow the catalog order', () => {

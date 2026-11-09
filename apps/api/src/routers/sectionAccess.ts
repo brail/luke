@@ -143,24 +143,17 @@ export const sectionAccessRouter = router({
         }
 
         await setRbacSectionDefaultsTx(tx, input.sectionAccessDefaults);
-      });
-
-      invalidateRbacCache(); // only after the commit — same as in users.core.router.ts
-
-      // The RBAC mutation is already committed: an audit-log failure
-      // (a CRITICAL_AUDIT_ACTIONS action, which normally rethrows) must not
-      // masquerade as a failure of the mutation itself.
-      try {
+        // The map replaces the stored one, so it is the whole new value (#222).
         await logAudit(ctx, {
           action: 'CONFIG_UPSERT',
           targetType: 'Config',
           targetId: 'rbac.sectionAccessDefaults',
           result: 'SUCCESS',
           metadata: { sectionAccessDefaults: input.sectionAccessDefaults },
-        });
-      } catch (err) {
-        ctx.logger.error({ err }, 'Audit log failed after a successful RBAC commit');
-      }
+        }, { tx });
+      });
+
+      invalidateRbacCache(); // only after the commit — same as in users.core.router.ts
 
       return { success: true };
     }),
@@ -233,25 +226,17 @@ export const sectionAccessRouter = router({
           }
         }
 
-        return setOverride(tx, userId, section, enabled, ctx.logger);
-      });
-
-      // The mutation is already committed: an audit-log failure must not
-      // masquerade as a failure of the mutation itself.
-      try {
+        const override = await setOverride(tx, userId, section, enabled, ctx.logger);
+        // Keyed by user and section, not by the override row, which a removal deletes (#222).
+        // `enabled: null` is a removal.
         await logAudit(ctx, {
           action: 'SECTION_ACCESS_UPDATED',
           targetType: 'UserSectionAccess',
-          targetId: result?.id,
-          metadata: {
-            targetUserId: userId,
-            section,
-            enabled,
-          },
-        });
-      } catch (err) {
-        ctx.logger.error({ err }, 'Audit log failed after a successful sectionAccess.set commit');
-      }
+          targetId: `${userId}:${section}`,
+          metadata: { targetUserId: userId, section, enabled },
+        }, { tx });
+        return override;
+      });
 
       return result;
     }),
