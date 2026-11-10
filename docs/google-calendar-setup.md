@@ -134,7 +134,12 @@ event of the brand and season selected in the header.
 - **Deleting a purged calendar** also needs only the credentials. A calendar Google
   refuses to delete is logged by id, recorded as an `Eliminazioni` failure, and
   keeps its sharing until removed by hand. A calendar or event already gone from
-  Google counts as deleted.
+  Google, deleted there by hand for example, counts as deleted: here, and when the
+  sync removes an event (unpublished, or a function taken off its visibility). An
+  event in a calendar Luke can no longer reach (another identity owns it) is not:
+  that removal is recorded as a failure.
+- **An event deleted by hand on Google** comes back the next time it changes in
+  Luke: Luke is the source of truth for what it publishes.
 - **One calendar** per season calendar (brand × season) and company function,
   named `Luke • {brandCode} • {seasonCode} • {function name}`.
 - **Idempotent sync**: a content hash comparison prevents redundant API calls.

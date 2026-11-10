@@ -77,18 +77,38 @@ export async function updateEvent(
 }
 
 /**
+ * Whether `err`, from a call on one event, means the event is gone from Google (deleted by hand,
+ * for example): a 410, or a 404 while its calendar still answers. Google also answers 404 for a
+ * calendar the caller can no longer reach (another identity owns it); the event may then still be
+ * there, visible to that calendar's readers, so the answer is `false`. Any other failure of the
+ * calendar check is thrown, so `withRetry` can retry it.
+ */
+export async function isEventGone(googleCalendarId: string, err: unknown): Promise<boolean> {
+  const status = googleErrorStatus(err);
+  if (status === 410) return true;
+  if (status !== 404) return false;
+  try {
+    await getClient().calendars.get({ calendarId: googleCalendarId });
+    return true;
+  } catch (checkErr: unknown) {
+    if (googleErrorStatus(checkErr) === 404) return false;
+    throw checkErr;
+  }
+}
+
+/**
  * Deletes a Google Calendar event.
- * Idempotent: silently succeeds if the event is already gone (410).
+ * Idempotent: silently succeeds if the event is already gone (`isEventGone`). An event in a
+ * calendar the caller can no longer reach is reported as not deleted, instead of being dropped
+ * from Luke while it stays visible on Google.
  */
 export async function deleteEvent(
   googleCalendarId: string,
   googleEventId: string
 ): Promise<void> {
-  const client = getClient();
   try {
-    await client.events.delete({ calendarId: googleCalendarId, eventId: googleEventId });
+    await getClient().events.delete({ calendarId: googleCalendarId, eventId: googleEventId });
   } catch (err: unknown) {
-    // 410 = already deleted — idempotent
-    if (googleErrorStatus(err) !== 410) throw err;
+    if (!(await isEventGone(googleCalendarId, err))) throw err;
   }
 }

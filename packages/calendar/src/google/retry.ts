@@ -13,6 +13,16 @@ export function googleErrorStatus(err: unknown): number | undefined {
   return typeof code === 'number' ? code : undefined;
 }
 
+/**
+ * Google has nothing at that id — not found (404) or already deleted (410): a delete of a calendar
+ * or an ACL rule is done. A calendar the caller can no longer reach answers 404 too and cannot be
+ * told apart here; events, whose calendar can be checked, use `isEventGone`.
+ */
+export function isGoneError(err: unknown): boolean {
+  const status = googleErrorStatus(err);
+  return status === 404 || status === 410;
+}
+
 function isRetryable(err: unknown): boolean {
   const status = googleErrorStatus(err);
   if (status === undefined || status === 429 || status >= 500) return true;

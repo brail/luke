@@ -32,7 +32,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 | Symbol | Type | Description |
 |--------|------|-------------|
 | `buildCalendarSummary(brandCode, seasonCode, sectionLabel)` | function | Composes the calendar display name — `Luke • {brand} • {season} • {section}` |
-| `createCalendar(summary, description?)` / `deleteCalendar(id)` | function | Creates a Google Calendar, returning `{ id, summary }` and throwing when the API returns no id, and permanently deletes one |
+| `createCalendar(summary, description?)` / `deleteCalendar(id)` | function | Creates a Google Calendar, returning `{ id, summary }` and throwing when the API returns no id, and permanently deletes one, idempotent on a 404 or 410 |
 | `syncCalendarAcl(id, expectedEmails)` | function | Brings the calendar's ACL to what Luke grants from one read of every ACL page: the user-scoped `reader` rules become exactly `expectedEmails` (addresses compared ignoring case, a rule removed by its Google id; an expected reader who already holds a user `writer` or `owner` rule is left as is) and the Workspace `domain:` rule is pinned to `freeBusyReader`. Each reader change runs on its own, so one refusal does not stop the rest; a refused domain downgrade is thrown. Returns `AclSyncResult` — counts, the refused changes, and the rules it does not manage (see Key Concepts) |
 | `googleErrorStatus(err)` | function | HTTP status of a Google API error, `undefined` for a network error |
 
@@ -42,13 +42,13 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 |--------|------|-------------|
 | `createEvent(calendarId, input)` | function | Creates an event from an `EventInput` and returns its Google event id |
 | `updateEvent(calendarId, eventId, input)` | function | Replaces the whole event body — this is an `events.update`, not a patch |
-| `deleteEvent(calendarId, eventId)` | function | Deletes an event; idempotent on a 410, so a re-run over an already-removed event succeeds |
+| `deleteEvent(calendarId, eventId)` | function | Deletes an event; idempotent on a 410, or a 404 while its calendar still answers, so a re-run, or an event deleted by hand on Google, succeeds. A 404 for a calendar the caller can no longer reach is rethrown |
 
 ### Sync engine
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `syncMilestone(milestone, ctx)` | function | Reconciles one milestone across every calendar named in `visibilityFunctionIds`: creates, updates in place, skips on an unchanged content hash, and deletes the events of functions that left the list or of a milestone no longer published externally. Returns whether it called Google, so a caller tells a sync that reached Google from one with nothing to change |
+| `syncMilestone(milestone, ctx)` | function | Reconciles one milestone across every calendar named in `visibilityFunctionIds`: creates, updates in place (recreating an event deleted on Google, which answers the update with 404 or 410), skips on an unchanged content hash, and deletes the events of functions that left the list or of a milestone no longer published externally. Returns whether it called Google, so a caller tells a sync that reached Google from one with nothing to change |
 | `computeContentHash(milestone)` | function | First 32 hex characters of a SHA-256 over the fields that reach the Google event, with `visibilityFunctionIds` sorted so the hash does not move with array order |
 
 ### iCal

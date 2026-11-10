@@ -22,13 +22,18 @@ const google = vi.hoisted(() => ({
   createEvent: vi.fn(),
   updateEvent: vi.fn(),
   deleteEvent: vi.fn(),
+  isEventGone: vi.fn(),
 }));
 
 vi.mock('../../google/events.js', () => ({
   createEvent: google.createEvent,
   updateEvent: google.updateEvent,
   deleteEvent: google.deleteEvent,
+  isEventGone: google.isEventGone,
 }));
+
+/** A Google API error with its HTTP status, as gaxios shapes it. */
+const googleError = (code: number) => Object.assign(new Error(`Google ${code}`), { code });
 
 /**
  * Milestone visible to **a single** function.
@@ -81,6 +86,10 @@ beforeEach(() => {
   google.createEvent.mockResolvedValue('gev-nuovo');
   google.updateEvent.mockResolvedValue(undefined);
   google.deleteEvent.mockResolvedValue(undefined);
+  // `isEventGone`'s own cases are in events.test.ts: here, a 404 or 410 is a gone event.
+  google.isEventGone.mockImplementation(async (_calendarId: string, err: { code?: number }) =>
+    err.code === 404 || err.code === 410
+  );
 });
 
 describe('syncMilestone — creation', () => {
@@ -170,6 +179,42 @@ describe('syncMilestone — update and skip', () => {
       })
     );
   });
+
+  it.each([404, 410])('recreates an event deleted on Google (the update answers %i)', async code => {
+    // Luke is the source of truth for what it publishes (#110): an event deleted by hand
+    // on Google comes back at the next change.
+    google.updateEvent.mockRejectedValue(googleError(code));
+    const milestone = makeMilestone();
+    const ctx = makeContext([makeMapping({ contentHash: 'obsoleto' })]);
+
+    expect(await syncMilestone(milestone, ctx)).toBe(true);
+
+    expect(google.isEventGone).toHaveBeenCalledWith('gcal-1', expect.objectContaining({ code }));
+    expect(google.createEvent).toHaveBeenCalledWith(
+      'gcal-fn-a',
+      expect.objectContaining({ title: '[LU] Consegna campionario' })
+    );
+    expect(ctx.upsertMapping).toHaveBeenCalledWith(
+      expect.objectContaining({
+        googleEventId: 'gev-nuovo',
+        googleCalendarId: 'gcal-fn-a',
+        contentHash: computeContentHash(milestone),
+      })
+    );
+  });
+
+  it.each([
+    ['any other update error', 403, false],
+    ['a 404 from a calendar Luke can no longer reach', 404, true],
+  ])('does not recreate on %s: the mapping stays', async (_label, code, unreachable) => {
+    google.updateEvent.mockRejectedValue(googleError(code));
+    if (unreachable) google.isEventGone.mockResolvedValue(false);
+    const ctx = makeContext([makeMapping({ contentHash: 'obsoleto' })]);
+
+    await expect(syncMilestone(makeMilestone(), ctx)).rejects.toThrow(`Google ${code}`);
+    expect(google.createEvent).not.toHaveBeenCalled();
+    expect(ctx.upsertMapping).not.toHaveBeenCalled();
+  });
 });
 
 describe('syncMilestone — removal', () => {
@@ -221,6 +266,16 @@ describe('syncMilestone — removal', () => {
 
     expect(google.deleteEvent).toHaveBeenCalledTimes(2);
     expect(ctx.deleteMapping).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the mapping when Google does not confirm the delete', async () => {
+    // `deleteEvent` throws when the event may still be on Google (e.g. a calendar Luke can no
+    // longer reach): dropping the mapping would lose the only reference to a visible event.
+    google.deleteEvent.mockRejectedValue(googleError(404));
+    const ctx = makeContext([makeMapping()]);
+
+    await expect(syncMilestone(makeMilestone({ visibilityFunctionIds: [] }), ctx)).rejects.toThrow('Google 404');
+    expect(ctx.deleteMapping).not.toHaveBeenCalled();
   });
 });
 

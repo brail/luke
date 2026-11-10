@@ -1,5 +1,5 @@
 import { getClient, getWorkspaceDomain } from './client.js';
-import { googleErrorStatus, withRetry } from './retry.js';
+import { isGoneError, withRetry } from './retry.js';
 
 import type { calendar_v3 } from 'googleapis';
 
@@ -125,8 +125,8 @@ export async function syncCalendarAcl(
         try {
           await withRetry(() => client.acl.delete({ calendarId: googleCalendarId, ruleId }));
         } catch (err: unknown) {
-          // 404 = rule already gone, which is the state we want
-          if (googleErrorStatus(err) !== 404) throw err;
+          // Rule already gone: the state we want.
+          if (!isGoneError(err)) throw err;
         }
       })
     ),

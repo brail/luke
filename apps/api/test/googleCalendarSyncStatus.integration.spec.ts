@@ -231,9 +231,10 @@ describe('reader reconcile', () => {
 });
 
 describe('deletes', () => {
-  it('treats a copy or a calendar already gone from Google as deleted', async () => {
-    vi.spyOn(calendar, 'deleteEvent').mockRejectedValue(googleError(404));
-    vi.spyOn(calendar, 'deleteCalendar').mockRejectedValue(googleError(410));
+  // A copy or calendar already gone from Google resolves too: `@luke/calendar` owns that rule.
+  it('records deletes Google accepted as a success', async () => {
+    vi.spyOn(calendar, 'deleteEvent').mockResolvedValue(undefined);
+    vi.spyOn(calendar, 'deleteCalendar').mockResolvedValue(undefined);
 
     await deleteGoogleCopies([{ googleCalendarId: 'gcal-1', googleEventId: 'gev-1' }], prisma, logger);
     await deleteGoogleCalendars(['gcal-1'], prisma, logger);

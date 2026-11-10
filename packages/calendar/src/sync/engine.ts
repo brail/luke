@@ -1,6 +1,6 @@
 import { initials } from '@luke/core';
 
-import { createEvent, deleteEvent, updateEvent } from '../google/events.js';
+import { createEvent, deleteEvent, isEventGone, updateEvent } from '../google/events.js';
 import { withRetry } from '../google/retry.js';
 
 import { computeContentHash } from './hash.js';
@@ -17,7 +17,8 @@ function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' 
  * For each company function in `milestone.visibilityFunctionIds`:
  * - If `publishExternally` is `false`: deletes the existing Google event and mapping if present.
  * - If the existing content hash matches: skips (no-op).
- * - If an existing mapping exists: updates the Google event in place.
+ * - If an existing mapping exists: updates the Google event in place; if the event is gone from
+ *   Google (`isEventGone`), creates it again and maps the new id.
  * - Otherwise: provisions the binding if needed, creates the event, and stores the mapping.
  *
  * Also removes mappings for company functions that are no longer in the visibility list.
@@ -62,27 +63,24 @@ export async function syncMilestone(
       status: milestoneStatusToGoogle(milestone.cancelled),
     };
 
+    let target: { googleEventId: string; googleCalendarId: string } | null = null;
     if (existing) {
-      await withRetry(() => updateEvent(existing.googleCalendarId, existing.googleEventId, eventInput));
-      calledGoogle = true;
-      await ctx.upsertMapping({
-        eventId: milestone.id,
-        companyFunctionId,
-        googleEventId: existing.googleEventId,
-        googleCalendarId: existing.googleCalendarId,
-        contentHash,
-      });
-    } else {
-      const googleEventId = await withRetry(() => createEvent(binding.googleCalendarId, eventInput));
-      calledGoogle = true;
-      await ctx.upsertMapping({
-        eventId: milestone.id,
-        companyFunctionId,
-        googleEventId,
-        googleCalendarId: binding.googleCalendarId,
-        contentHash,
-      });
+      try {
+        await withRetry(() => updateEvent(existing.googleCalendarId, existing.googleEventId, eventInput));
+        target = { googleEventId: existing.googleEventId, googleCalendarId: existing.googleCalendarId };
+      } catch (err) {
+        // Deleted on Google, by hand for example: Luke is the source of truth for what it publishes,
+        // so the event is created again below. In a calendar Luke can no longer reach the old event
+        // may still be there: keep its mapping and fail.
+        if (!(await withRetry(() => isEventGone(existing.googleCalendarId, err)))) throw err;
+      }
     }
+    target ??= {
+      googleEventId: await withRetry(() => createEvent(binding.googleCalendarId, eventInput)),
+      googleCalendarId: binding.googleCalendarId,
+    };
+    calledGoogle = true;
+    await ctx.upsertMapping({ eventId: milestone.id, companyFunctionId, ...target, contentHash });
   }
 
   // Remove mappings for functions no longer in visibilityFunctionIds

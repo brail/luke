@@ -363,12 +363,6 @@ export async function syncOneMilestone(
   logger.info({ milestoneId }, 'Google Calendar sync completed');
 }
 
-/** A delete Google answers with 404 or 410 found nothing left to delete: done, not failed. */
-function ignoreGone(err: unknown): void {
-  const status = googleErrorStatus(err);
-  if (status !== 404 && status !== 410) throw err;
-}
-
 /**
  * Deletes the Google Calendar copies of events already deleted from Luke — the mappings went with
  * them (cascade), so the caller reads `copies` before its delete (`deleteEvents`). Best effort: a
@@ -384,7 +378,7 @@ export async function deleteGoogleCopies(
   if (!(await googleClientFor(prisma, logger, 'delete'))) return;
 
   const results = await Promise.allSettled(
-    copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId).catch(ignoreGone))
+    copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId))
   );
   const failures = rejectionsOf(results);
   if (failures.length > 0) {
@@ -408,7 +402,7 @@ export async function deleteGoogleCalendars(
   if (googleCalendarIds.length === 0) return;
   if (!(await googleClientFor(prisma, logger, 'delete', { requireSyncEnabled: false }))) return;
 
-  const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id).catch(ignoreGone)));
+  const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id)));
   const failedIds = googleCalendarIds.filter((_, i) => results[i].status === 'rejected');
   if (failedIds.length > 0) {
     logger.warn({ failedIds, total: googleCalendarIds.length }, 'Some provisioned Google calendars were not deleted');

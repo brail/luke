@@ -1,6 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
-import { buildCalendarSummary } from '../calendars.js';
+import { buildCalendarSummary, deleteCalendar } from '../calendars.js';
+
+const { calendars } = vi.hoisted(() => ({
+  calendars: { delete: vi.fn() },
+}));
+
+vi.mock('../client.js', () => ({
+  getClient: () => ({ calendars }),
+}));
 
 describe('buildCalendarSummary', () => {
   it('composes the calendar name in the Luke • brand • season • section format', () => {
@@ -16,5 +24,20 @@ describe('buildCalendarSummary', () => {
     expect(buildCalendarSummary('a-b', '2025/26', 'Sez. 1')).toBe(
       'Luke • a-b • 2025/26 • Sez. 1'
     );
+  });
+});
+
+describe('deleteCalendar', () => {
+  it.each([404, 410])('is idempotent: a %i is not an error', async code => {
+    // Both mean the calendar is gone: the desired state.
+    calendars.delete.mockRejectedValue(Object.assign(new Error('Gone'), { code }));
+
+    await expect(deleteCalendar('gcal-1')).resolves.toBeUndefined();
+  });
+
+  it('propagates errors other than 404 and 410', async () => {
+    calendars.delete.mockRejectedValue(Object.assign(new Error('Forbidden'), { code: 403 }));
+
+    await expect(deleteCalendar('gcal-1')).rejects.toThrow('Forbidden');
   });
 });

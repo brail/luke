@@ -4,16 +4,17 @@ import { createEvent, deleteEvent, updateEvent } from '../events.js';
 
 import type { EventInput } from '../events.js';
 
-const { events } = vi.hoisted(() => ({
+const { events, calendars } = vi.hoisted(() => ({
   events: {
     insert: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   },
+  calendars: { get: vi.fn() },
 }));
 
 vi.mock('../client.js', () => ({
-  getClient: () => ({ events }),
+  getClient: () => ({ events, calendars }),
   getWorkspaceDomain: () => 'example.com',
 }));
 
@@ -129,9 +130,34 @@ describe('deleteEvent', () => {
     );
 
     await expect(deleteEvent('cal-1', 'gev-1')).resolves.toBeUndefined();
+    expect(calendars.get).not.toHaveBeenCalled();
   });
 
-  it('propagates errors other than 410', async () => {
+  it('a 404 is done when the calendar still answers: only the event is gone', async () => {
+    events.delete.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
+    calendars.get.mockResolvedValue({ data: { id: 'cal-1' } });
+
+    await expect(deleteEvent('cal-1', 'gev-1')).resolves.toBeUndefined();
+    expect(calendars.get).toHaveBeenCalledWith({ calendarId: 'cal-1' });
+  });
+
+  it('a 404 is a failure when the calendar does not answer either: access may be lost', async () => {
+    // Google answers 404 for a calendar the caller cannot reach too: counting that as done
+    // would drop the mapping and leave the event visible on Google.
+    events.delete.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
+    calendars.get.mockRejectedValue(Object.assign(new Error('Calendar not found'), { code: 404 }));
+
+    await expect(deleteEvent('cal-1', 'gev-1')).rejects.toThrow('Not Found');
+  });
+
+  it('a failing calendar check is thrown as it is, for the caller to retry', async () => {
+    events.delete.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
+    calendars.get.mockRejectedValue(Object.assign(new Error('Backend Error'), { code: 503 }));
+
+    await expect(deleteEvent('cal-1', 'gev-1')).rejects.toThrow('Backend Error');
+  });
+
+  it('propagates errors other than 404 and 410', async () => {
     events.delete.mockRejectedValue(
       Object.assign(new Error('Boom'), { code: 500 })
     );

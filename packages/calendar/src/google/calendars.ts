@@ -1,4 +1,5 @@
 import { getClient } from './client.js';
+import { isGoneError } from './retry.js';
 
 /**
  * Minimal metadata returned after creating a Google Calendar.
@@ -24,10 +25,15 @@ export async function createCalendar(summary: string, description?: string): Pro
 
 /**
  * Permanently deletes a Google Calendar.
+ * Idempotent: silently succeeds if the calendar is already gone (404 or 410).
  */
 export async function deleteCalendar(googleCalendarId: string): Promise<void> {
   const client = getClient();
-  await client.calendars.delete({ calendarId: googleCalendarId });
+  try {
+    await client.calendars.delete({ calendarId: googleCalendarId });
+  } catch (err: unknown) {
+    if (!isGoneError(err)) throw err;
+  }
 }
 
 /**
