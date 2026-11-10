@@ -46,7 +46,22 @@ describe('update input schemas', () => {
     const id = '00000000-0000-4000-8000-000000000000';
     expect(core.CompanyFunctionUpdateInputSchema.parse({ id, name: 'Product' })).toEqual({ id, name: 'Product' });
     expect(core.CompanyTeamUpdateInputSchema.parse({ id, name: 'Team' })).toEqual({ id, name: 'Team' });
-    expect(core.CompanyFunctionUpdateInputSchema.parse({ id, name: 'Product', order: 3, isActive: false }))
-      .toEqual({ id, name: 'Product', order: 3, isActive: false });
+    expect(core.CompanyFunctionUpdateInputSchema.parse({ id, name: 'Product', order: 3 }))
+      .toEqual({ id, name: 'Product', order: 3 });
+    expect(core.CompanyTeamUpdateInputSchema.parse({ id, name: 'Team', isActive: false }))
+      .toEqual({ id, name: 'Team', isActive: false });
+  });
+
+  it("a function's active state is not an update; null clears a description (#237)", () => {
+    const id = '00000000-0000-4000-8000-000000000000';
+    expect(core.CompanyFunctionUpdateInputSchema.parse({ id, name: 'Product', isActive: false }))
+      .toEqual({ id, name: 'Product' });
+    expect(core.CompanyFunctionUpdateInputSchema.parse({ id, name: 'Product', description: null }))
+      .toEqual({ id, name: 'Product', description: null });
+    expect(core.CompanyTeamUpdateInputSchema.parse({ id, name: 'Team', description: null }))
+      .toEqual({ id, name: 'Team', description: null });
+    // A cleared field arrives as '' or blanks: no description is null, on create too.
+    expect(core.CompanyFunctionInputSchema.parse({ slug: 'product', name: 'Product', description: '  ' }).description)
+      .toBeNull();
   });
 });

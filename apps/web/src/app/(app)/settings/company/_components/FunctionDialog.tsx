@@ -32,12 +32,12 @@ import { getTrpcErrorMessage } from '../../../../../lib/trpcErrorMessages';
 
 /**
  * `description` is narrowed to a plain string: the core schema marks it optional, and an
- * `undefined` value would leave the Textarea uncontrolled on first render. It is mapped back to
- * `undefined` on submit so the payload still matches `CompanyFunctionInputSchema`.
+ * `undefined` value would leave the Textarea uncontrolled on first render. It is sent as typed:
+ * the core schema stores an emptied description as `null`, which clears it on an edit (#237).
  */
 const FunctionFormSchema = CompanyFunctionInputSchema
   .pick({ slug: true, name: true, description: true })
-  .extend({ description: z.string().max(500) });
+  .extend({ description: z.string().trim().max(500) });
 
 type FunctionFormData = z.infer<typeof FunctionFormSchema>;
 
@@ -101,7 +101,7 @@ export function FunctionDialog({ open, onClose, onSaved, fn }: FunctionDialogPro
   };
 
   const handleSubmit = (data: FunctionFormData) => {
-    const description = data.description.trim() || undefined;
+    const { description } = data;
     if (fn) {
       updateMutation.mutate({ id: fn.id, name: data.name.trim(), description });
     } else {

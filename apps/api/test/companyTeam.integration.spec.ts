@@ -20,6 +20,8 @@ import {
   createTestUser,
   setupTestDb,
 } from './helpers';
+import { createCalendarFixture } from './helpers/calendarFixture';
+import { whileHeld } from './helpers/heldTransaction';
 
 import type { UserSession } from '../src/lib/auth';
 
@@ -166,14 +168,115 @@ describe('function and team updates', () => {
     expect((await prisma.companyTeam.findUniqueOrThrow({ where: { id: team.id } })).isActive).toBe(false);
   });
 
-  it('an explicit order or isActive still applies', async () => {
+  it('an explicit order applies; a team update applies isActive, a function update ignores it (#237)', async () => {
     const functionId = await createFunction();
     const team = await prisma.companyTeam.create({ data: { functionId, name: `On ${randomUUID().slice(0, 8)}` } });
 
+    // A function is deactivated only by `delete` and reactivated only by `restore`, with their checks.
+    // @ts-expect-error -- `isActive` is no longer part of the function update input
     await caller().company.function.update({ id: functionId, name: 'Moved', order: 3, isActive: false });
     await caller().company.team.update({ id: team.id, name: 'Off', isActive: false });
 
-    expect(await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).toMatchObject({ order: 3, isActive: false });
+    expect(await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).toMatchObject({ order: 3, isActive: true });
     expect((await prisma.companyTeam.findUniqueOrThrow({ where: { id: team.id } })).isActive).toBe(false);
+  });
+
+  it('null clears a description, for a function and a team', async () => {
+    const functionId = await createFunction();
+    await prisma.companyFunction.update({ where: { id: functionId }, data: { description: 'Old text' } });
+    const team = await prisma.companyTeam.create({
+      data: { functionId, name: `Desc ${randomUUID().slice(0, 8)}`, description: 'Old text' },
+    });
+
+    await caller().company.function.update({ id: functionId, name: 'Cleared', description: null });
+    await caller().company.team.update({ id: team.id, name: 'Cleared', description: null });
+
+    expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).description).toBeNull();
+    expect((await prisma.companyTeam.findUniqueOrThrow({ where: { id: team.id } })).description).toBeNull();
+  });
+
+  it('the function audit row records before and after of the changed fields only', async () => {
+    const functionId = await createFunction();
+    const before = await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } });
+
+    await caller().company.function.update({ id: functionId, name: 'After', order: 5 });
+
+    const row = await prisma.auditLog.findFirst({
+      where: { action: 'COMPANY_FUNCTION_UPDATED', targetId: functionId },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(row?.metadata).toEqual({ oldName: before.name, newName: 'After', oldOrder: before.order, newOrder: 5 });
+  });
+
+  it('a function deleted while its update waits answers NOT_FOUND, not a server error', async () => {
+    const functionId = await createFunction();
+
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM company_functions WHERE id = $1 FOR UPDATE', [functionId]),
+      () => caller().company.function.update({ id: functionId, name: 'Too late' }),
+      holder => holder.query('DELETE FROM company_functions WHERE id = $1', [functionId])
+    );
+
+    expect(outcome.status === 'rejected' && (outcome.reason as TRPCError).code).toBe('NOT_FOUND');
+  });
+});
+
+/** A function's state changes only through delete and restore, which keep their checks (#237). */
+describe('function delete and restore checks', () => {
+  const caller = () => createCallerWithSession(adminSession);
+
+  it('delete is refused while an active event is visible to the function', async () => {
+    const functionId = await createFunction();
+    const calendar = await createCalendarFixture(prisma, { prefix: 'FND' });
+    await prisma.calendarEvent.create({
+      data: {
+        calendarId: calendar.calendarId, planningGroupId: calendar.planningGroupId, title: 'Visible',
+        startAt: new Date('2096-03-02'), visibilities: { create: [{ functionId }] },
+      },
+    });
+
+    await expect(caller().company.function.delete({ id: functionId })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).isActive).toBe(true);
+  });
+
+  it('restore is refused while an active function holds the same slug', async () => {
+    const slug = `dup_fn_${randomUUID().substring(0, 8)}`;
+    // Two rows with one slug exist only outside the router, which refuses a duplicate on create.
+    await prisma.companyFunction.create({ data: { slug, name: 'Active', order: 98, isActive: true } });
+    const inactive = await prisma.companyFunction.create({ data: { slug, name: 'Inactive', order: 99, isActive: false } });
+
+    await expect(caller().company.function.restore({ id: inactive.id })).rejects.toMatchObject({ code: 'CONFLICT' });
+    expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: inactive.id } })).isActive).toBe(false);
+  });
+
+  it('of two concurrent restores of a function, the second answers BAD_REQUEST', async () => {
+    const inactive = await prisma.companyFunction.create({
+      data: { slug: `twice_fn_${randomUUID().substring(0, 8)}`, name: 'Twice', isActive: false },
+    });
+
+    const outcome = await whileHeld(
+      holder => holder.query('SELECT 1 FROM company_functions WHERE id = $1 FOR UPDATE', [inactive.id]),
+      () => caller().company.function.restore({ id: inactive.id }),
+      holder => holder.query('UPDATE company_functions SET "isActive" = true WHERE id = $1', [inactive.id])
+    );
+
+    expect(outcome.status === 'rejected' && (outcome.reason as TRPCError).code).toBe('BAD_REQUEST');
+  });
+
+  // Past create's check, the active-slug index refuses the loser of a race: a CONFLICT too. A restore
+  // has no check of its own, so the test above already goes through the index.
+  it('a concurrent create of the same slug answers CONFLICT, not a server error', async () => {
+    const slug = `race_fn_${randomUUID().substring(0, 8)}`;
+
+    const outcome = await whileHeld(
+      holder => holder.query(
+        `INSERT INTO company_functions (id, slug, name, "order", "isActive", "updatedAt")
+         VALUES (gen_random_uuid()::text, $1, 'Concurrent', 1, true, now())`,
+        [slug]
+      ),
+      () => caller().company.function.create({ slug, name: 'Second' })
+    );
+
+    expect(outcome.status === 'rejected' && (outcome.reason as TRPCError).code).toBe('CONFLICT');
   });
 });

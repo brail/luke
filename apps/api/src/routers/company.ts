@@ -24,6 +24,7 @@ import { Prisma, type PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { runInBackground } from '../lib/backgroundWork.js';
+import { isUniqueViolation } from '../lib/error.js';
 import { createNotification } from '../lib/notifications.js';
 import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -143,6 +144,18 @@ const companyProfileRouter = router({
 
 // ─── Function ───────────────────────────────────────────────────────────────
 
+/** Partial unique index on the slug of active functions (migration 20260526172738; Prisma cannot model it). */
+const FUNCTION_ACTIVE_SLUG_KEY = 'company_functions_slug_active_key';
+
+const slugTaken = (slug: string, advice = '') =>
+  new TRPCError({ code: 'CONFLICT', message: `Una funzione attiva con slug "${slug}" esiste già.${advice}` });
+
+/** The active-slug index's refusal of a write that would make a second active function hold `slug`, as CONFLICT (#237). */
+const rethrowSlugTaken = (slug: string, advice = '') => (err: unknown): never => {
+  if (isUniqueViolation(err, FUNCTION_ACTIVE_SLUG_KEY)) throw slugTaken(slug, advice);
+  throw err;
+};
+
 const companyFunctionRouter = router({
   /**
    * Lists active company functions ordered by `order` then `name`.
@@ -186,10 +199,7 @@ const companyFunctionRouter = router({
             message: `Una funzione disattivata con slug "${input.slug}" esiste già. Ripristinala invece di crearne una nuova.`,
           });
         }
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `Una funzione con slug "${input.slug}" esiste già.`,
-        });
+        throw slugTaken(input.slug);
       }
 
       const fn = await ctx.prisma.companyFunction.create({
@@ -200,7 +210,8 @@ const companyFunctionRouter = router({
           order: input.order ?? 0,
           isActive: input.isActive ?? true,
         },
-      });
+      // A concurrent create of the same slug passes the check above; the index refuses the second.
+      }).catch(rethrowSlugTaken(input.slug));
 
       await logAudit(ctx, {
         action: 'COMPANY_FUNCTION_CREATED',
@@ -214,11 +225,15 @@ const companyFunctionRouter = router({
     }),
 
   /**
-   * Updates a company function's fields.
+   * Updates a company function's name, description and order; `null` clears the description. Its
+   * active state is not an update: `delete` and `restore` change it, with their checks (#237). The
+   * audit row records before and after of the fields that changed.
    *
    * @auth company_function:update
    * @input CompanyFunctionUpdateInputSchema
    * @output Updated CompanyFunction
+   * @throws NOT_FOUND when the function does not exist — also a row removed from the database while
+   *   this update waited (no Luke path does that: `delete` only deactivates)
    */
   update: protectedProcedure
     .use(requirePermission('company_function:update'))
@@ -227,19 +242,31 @@ const companyFunctionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
 
-      const existing = await ctx.prisma.companyFunction.findUnique({ where: { id } });
-      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
+      return ctx.prisma.$transaction(async tx => {
+        // Row lock (CLAUDE.md "Raw SQL" exception): the "before" the audit records is what the write
+        // replaces, and a row removed meanwhile reads as gone instead of failing the write (P2025).
+        await tx.$executeRaw`SELECT 1 FROM company_functions WHERE id = ${id} FOR NO KEY UPDATE`;
+        const before = await tx.companyFunction.findUnique({ where: { id } });
+        if (!before) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
 
-      const fn = await ctx.prisma.companyFunction.update({ where: { id }, data });
-
-      await logAudit(ctx, {
-        action: 'COMPANY_FUNCTION_UPDATED',
-        targetType: 'CompanyFunction',
-        targetId: fn.id,
-        result: 'SUCCESS',
-      });
-
-      return fn;
+        const fn = await tx.companyFunction.update({ where: { id }, data });
+        const changed = (key: 'name' | 'description' | 'order') => before[key] !== fn[key];
+        await logAudit(ctx, {
+          action: 'COMPANY_FUNCTION_UPDATED',
+          targetType: 'CompanyFunction',
+          targetId: id,
+          result: 'SUCCESS',
+          metadata: {
+            oldName: changed('name') ? before.name : undefined,
+            newName: changed('name') ? fn.name : undefined,
+            oldDescription: changed('description') ? before.description : undefined,
+            newDescription: changed('description') ? fn.description : undefined,
+            oldOrder: changed('order') ? before.order : undefined,
+            newOrder: changed('order') ? fn.order : undefined,
+          },
+        }, { tx });
+        return fn;
+      }, { timeout: 15000 });
     }),
 
   /**
@@ -323,7 +350,8 @@ const companyFunctionRouter = router({
   /**
    * Restores a soft-deleted company function (sets `isActive = true`).
    *
-   * Blocked if another active function already holds the same slug (checked inside a transaction).
+   * Refused with CONFLICT while another active function holds the same slug: the active-slug index
+   * refuses the write, a concurrent create or restore included.
    *
    * @auth company_function:update
    * @input { id }
@@ -340,23 +368,13 @@ const companyFunctionRouter = router({
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'Function not found' });
       if (existing.isActive) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Function is already active' });
 
-      const fn = await ctx.prisma.$transaction(async tx => {
-        // Guard against slug collision with another active function — checked inside
-        // transaction to close the dirty-read window between check and update
-        const conflict = await tx.companyFunction.findFirst({
-          where: { slug: existing.slug, isActive: true },
-        });
-        if (conflict) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: `Una funzione attiva con slug "${existing.slug}" esiste già (id: ${conflict.id}). Rinomina o disattiva quella prima di ripristinare questa.`,
-          });
-        }
-        return tx.companyFunction.update({
-          where: { id: input.id },
-          data: { isActive: true },
-        });
-      }, { timeout: 15000 });
+      // Conditional write (CLAUDE.md rule 3): of two concurrent restores, one finds it active.
+      const restored = await ctx.prisma.companyFunction.updateMany({
+        where: { id: input.id, isActive: false },
+        data: { isActive: true },
+      }).catch(rethrowSlugTaken(existing.slug, ' Disattiva quella prima di ripristinare questa.'));
+      if (restored.count === 0) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Function is already active' });
+      const fn = await ctx.prisma.companyFunction.findUniqueOrThrow({ where: { id: input.id } });
 
       await logAudit(ctx, {
         action: 'COMPANY_FUNCTION_RESTORED',

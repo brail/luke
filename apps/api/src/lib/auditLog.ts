@@ -222,6 +222,15 @@ const SAFE_KEY_LIST = [
   'newBrandIds',
   'userIds',
 
+  // Company function edits (#237): name, order and description, written by admins about the
+  // function (owner OK, 2026-11-10). The description is free text, kept for the audit's before/after.
+  'oldName',
+  'newName',
+  'oldDescription',
+  'newDescription',
+  'oldOrder',
+  'newOrder',
+
   // Entity references
   'userId',
   'teamId',

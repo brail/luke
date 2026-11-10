@@ -67,8 +67,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   company: {
     reason:
-      'structure and teams covered on the main path, updateMemberRole by the access audit spec; team getById and listAllBrands, function reorder and restore remain',
-    uncovered: 4,
+      'structure and teams covered on the main path, updateMemberRole by the access audit spec, function restore by the team spec (#237); team getById and listAllBrands, function reorder remain',
+    uncovered: 3,
   },
   config: {
     reason:

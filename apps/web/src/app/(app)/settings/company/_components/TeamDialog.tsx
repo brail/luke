@@ -56,11 +56,12 @@ function displayName(u: { firstName?: string | null; lastName?: string | null; u
 
 /**
  * The fields both team dialogs collect by typing. `description` is narrowed to a plain string so
- * the Textarea stays controlled; it is mapped back to `undefined` on submit.
+ * the Textarea stays controlled; it is sent as typed, and the core schema stores an emptied one as
+ * `null`, which clears it on an edit (#237).
  */
 const TeamFormSchema = CompanyTeamInputSchema.pick({ name: true, description: true }).extend({
   name: z.string().min(1, 'Il nome è obbligatorio').max(80, 'Massimo 80 caratteri'),
-  description: z.string().max(500, 'Massimo 500 caratteri'),
+  description: z.string().trim().max(500, 'Massimo 500 caratteri'),
 });
 
 type TeamFormData = z.infer<typeof TeamFormSchema>;
@@ -100,7 +101,7 @@ export function CreateTeamDialog({ open, onClose, onSaved, functionId }: CreateT
     createMutation.mutate({
       functionId,
       name: data.name.trim(),
-      description: data.description.trim() || undefined,
+      description: data.description,
     });
   };
 
@@ -230,7 +231,7 @@ export function EditTeamDialog({ open, onClose, onSaved, teamId }: EditTeamDialo
     const toAdd = localMemberIds.filter(id => !originalIds.has(id));
     const toRemove = [...originalIds].filter(id => !localMemberIds.includes(id));
     try {
-      await updateMutation.mutateAsync({ id: teamId, name: data.name.trim(), description: data.description.trim() || undefined, brandIds: [...selectedBrandIds] });
+      await updateMutation.mutateAsync({ id: teamId, name: data.name.trim(), description: data.description, brandIds: [...selectedBrandIds] });
       const ops: Promise<unknown>[] = [];
       if (toAdd.length > 0) ops.push(addMembersMutation.mutateAsync({ teamId, userIds: toAdd }));
       if (toRemove.length > 0) ops.push(removeMembersMutation.mutateAsync({ teamId, userIds: toRemove }));

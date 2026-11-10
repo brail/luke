@@ -9,6 +9,12 @@ export const CompanyTeamMemberRoleEnum = z.enum(['LEADER', 'MEMBER']);
 export type CompanyTeamMemberRole = z.infer<typeof CompanyTeamMemberRoleEnum>;
 
 /**
+ * A function's or team's description. A cleared field arrives as '' (or blanks): no description is
+ * `null`, whoever the caller. On an update, `null` clears it and a left-out field stays as stored.
+ */
+const description = z.string().trim().max(500).transform(text => text || null).optional().nullable();
+
+/**
  * Input schema for creating a company function (e.g. Product, Sales, Sourcing). No `.default()`: the
  * update schema below derives from it, and an update must leave an omitted field as stored (#225);
  * `create` defaults them itself.
@@ -16,14 +22,18 @@ export type CompanyTeamMemberRole = z.infer<typeof CompanyTeamMemberRoleEnum>;
 export const CompanyFunctionInputSchema = z.object({
   slug: z.string().regex(/^[a-z][a-z0-9_]*$/).max(32),
   name: z.string().min(1).max(80),
-  description: z.string().max(500).optional(),
+  description,
   order: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
 });
 export type CompanyFunctionInput = z.infer<typeof CompanyFunctionInputSchema>;
 
-/** Input schema for updating a company function. `slug` is immutable after creation. */
-export const CompanyFunctionUpdateInputSchema = CompanyFunctionInputSchema.omit({ slug: true }).extend({
+/**
+ * Input schema for updating a company function. `slug` is immutable after creation, and `isActive`
+ * is not an update: a function is deactivated only by `delete` and reactivated only by `restore`,
+ * with their checks (#237).
+ */
+export const CompanyFunctionUpdateInputSchema = CompanyFunctionInputSchema.omit({ slug: true, isActive: true }).extend({
   id: z.uuid(),
 });
 export type CompanyFunctionUpdateInput = z.infer<typeof CompanyFunctionUpdateInputSchema>;
@@ -35,13 +45,16 @@ export type CompanyFunctionUpdateInput = z.infer<typeof CompanyFunctionUpdateInp
 export const CompanyTeamInputSchema = z.object({
   functionId: z.uuid(),
   name: z.string().min(1).max(80),
-  description: z.string().max(500).optional(),
+  description,
   isActive: z.boolean().optional(),
   brandIds: z.array(z.uuid()).optional(),
 });
 export type CompanyTeamInput = z.infer<typeof CompanyTeamInputSchema>;
 
-/** Input schema for updating a team. `functionId` is immutable after creation. */
+/**
+ * Input schema for updating a team. `functionId` is immutable after creation. Unlike a function, a
+ * team keeps `isActive` here: its `delete` is a hard delete and it has no `restore` (#237).
+ */
 export const CompanyTeamUpdateInputSchema = CompanyTeamInputSchema.omit({ functionId: true }).extend({
   id: z.uuid(),
 });
