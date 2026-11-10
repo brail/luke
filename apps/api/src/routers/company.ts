@@ -178,7 +178,8 @@ const companyFunctionRouter = router({
     }),
 
   /**
-   * Creates a company function. Rejects on slug collision, suggesting restore if the existing one is inactive.
+   * Creates a company function, always active (#237). Rejects on slug collision, suggesting restore
+   * if the existing one is inactive.
    *
    * @auth company_function:create
    * @input CompanyFunctionInputSchema
@@ -189,8 +190,10 @@ const companyFunctionRouter = router({
     .use(withRateLimit('companyStructureMutations'))
     .input(CompanyFunctionInputSchema)
     .mutation(async ({ ctx, input }) => {
+      // The active row first: when an inactive one shares the slug too, a restore would be refused.
       const existing = await ctx.prisma.companyFunction.findFirst({
         where: { slug: input.slug },
+        orderBy: { isActive: 'desc' },
       });
       if (existing) {
         if (!existing.isActive) {
@@ -208,9 +211,9 @@ const companyFunctionRouter = router({
           name: input.name,
           description: input.description,
           order: input.order ?? 0,
-          isActive: input.isActive ?? true,
         },
-      // A concurrent create of the same slug passes the check above; the index refuses the second.
+      // A concurrent create of the same slug passes the check above. Every create is active, so the
+      // active-slug index refuses the second.
       }).catch(rethrowSlugTaken(input.slug));
 
       await logAudit(ctx, {

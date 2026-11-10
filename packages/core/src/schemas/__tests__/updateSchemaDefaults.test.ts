@@ -60,6 +60,9 @@ describe('update input schemas', () => {
       .toEqual({ id, name: 'Product', description: null });
     expect(core.CompanyTeamUpdateInputSchema.parse({ id, name: 'Team', description: null }))
       .toEqual({ id, name: 'Team', description: null });
+    // A function is always created active: create drops `isActive` like update.
+    expect(core.CompanyFunctionInputSchema.parse({ slug: 'product', name: 'Product', isActive: false }))
+      .toEqual({ slug: 'product', name: 'Product' });
     // A cleared field arrives as '' or blanks: no description is null, on create too.
     expect(core.CompanyFunctionInputSchema.parse({ slug: 'product', name: 'Product', description: '  ' }).description)
       .toBeNull();

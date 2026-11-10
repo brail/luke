@@ -239,6 +239,16 @@ describe('function delete and restore checks', () => {
     expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: functionId } })).isActive).toBe(true);
   });
 
+  it('create ignores an isActive sent anyway: a function is always created active', async () => {
+    const slug = `born_fn_${randomUUID().substring(0, 8)}`;
+    // What an outdated client still sends; a variable, not a literal, so no excess-property error.
+    const input = { slug, name: 'Born', isActive: false };
+
+    const fn = await caller().company.function.create(input);
+
+    expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: fn.id } })).isActive).toBe(true);
+  });
+
   it('restore is refused while an active function holds the same slug', async () => {
     const slug = `dup_fn_${randomUUID().substring(0, 8)}`;
     // Two rows with one slug exist only outside the router, which refuses a duplicate on create.
@@ -247,6 +257,15 @@ describe('function delete and restore checks', () => {
 
     await expect(caller().company.function.restore({ id: inactive.id })).rejects.toMatchObject({ code: 'CONFLICT' });
     expect((await prisma.companyFunction.findUniqueOrThrow({ where: { id: inactive.id } })).isActive).toBe(false);
+  });
+
+  it('create names the active function, not an inactive one with the same slug', async () => {
+    const slug = `both_fn_${randomUUID().substring(0, 8)}`;
+    await prisma.companyFunction.create({ data: { slug, name: 'Inactive', isActive: false } });
+    await prisma.companyFunction.create({ data: { slug, name: 'Active', isActive: true } });
+
+    await expect(caller().company.function.create({ slug, name: 'Third' }))
+      .rejects.toMatchObject({ code: 'CONFLICT', message: expect.stringContaining('Una funzione attiva') });
   });
 
   it('of two concurrent restores of a function, the second answers BAD_REQUEST', async () => {

@@ -17,23 +17,19 @@ const description = z.string().trim().max(500).transform(text => text || null).o
 /**
  * Input schema for creating a company function (e.g. Product, Sales, Sourcing). No `.default()`: the
  * update schema below derives from it, and an update must leave an omitted field as stored (#225);
- * `create` defaults them itself.
+ * `create` defaults them itself. No `isActive`: a function is always created active, and only
+ * `delete` and `restore` change its state (#237).
  */
 export const CompanyFunctionInputSchema = z.object({
   slug: z.string().regex(/^[a-z][a-z0-9_]*$/).max(32),
   name: z.string().min(1).max(80),
   description,
   order: z.number().int().min(0).optional(),
-  isActive: z.boolean().optional(),
 });
 export type CompanyFunctionInput = z.infer<typeof CompanyFunctionInputSchema>;
 
-/**
- * Input schema for updating a company function. `slug` is immutable after creation, and `isActive`
- * is not an update: a function is deactivated only by `delete` and reactivated only by `restore`,
- * with their checks (#237).
- */
-export const CompanyFunctionUpdateInputSchema = CompanyFunctionInputSchema.omit({ slug: true, isActive: true }).extend({
+/** Input schema for updating a company function. `slug` is immutable after creation. */
+export const CompanyFunctionUpdateInputSchema = CompanyFunctionInputSchema.omit({ slug: true }).extend({
   id: z.uuid(),
 });
 export type CompanyFunctionUpdateInput = z.infer<typeof CompanyFunctionUpdateInputSchema>;
