@@ -125,8 +125,8 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
   dashboard: {
     reason:
-      '`getSeasonProgress` from the brand-scope and season-progress specs, `upsertTask` from the dashboard-tasks spec, `getForexRates` (with Frankfurter stubbed) from the forex spec, `getWeeklySales` (a viewer refused) from the sales-sync permission spec; config, the other task procedures and KPIs remain',
-    uncovered: 5,
+      '`getSeasonProgress` and `getKpiStats` from the brand-scope spec (`getSeasonProgress` also from the season-progress spec), `upsertTask` from the dashboard-tasks spec, `getForexRates` (with Frankfurter stubbed) from the forex spec, `getWeeklySales` (a viewer refused) from the sales-sync permission spec; config and the other task procedures remain',
+    uncovered: 4,
   },
   season: {
     reason:

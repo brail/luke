@@ -23,6 +23,7 @@ import { logAudit } from '../lib/auditLog';
 import { getConfigOrDefault } from '../lib/configManager';
 import { requirePermission } from '../lib/permissions';
 import { protectedProcedure, router, selfProcedure } from '../lib/trpc';
+import { allowedBrandIds } from '../services/brandScope.service';
 import { assertBrandAccess } from '../services/context.service';
 
 
@@ -172,7 +173,8 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Returns aggregate KPI counts: active brands, seasons, users, and collection rows.
+   * Returns aggregate KPI counts: active brands, seasons, users, and collection rows. Brands and
+   * collection rows are counted within the caller's brand scope, as `brand.list` reads it.
    *
    * @auth {dashboard:read}
    * @input {none}
@@ -181,11 +183,13 @@ export const dashboardRouter = router({
   getKpiStats: protectedProcedure
     .use(requirePermission('dashboard:read'))
     .query(async ({ ctx }) => {
+      const allowed = await allowedBrandIds(ctx);
+      const brandIn = allowed === null ? undefined : { in: allowed };
       const [brands, seasons, users, collectionRows] = await Promise.all([
-        ctx.prisma.brand.count({ where: { isActive: true } }),
+        ctx.prisma.brand.count({ where: { isActive: true, id: brandIn } }),
         ctx.prisma.season.count({ where: { isActive: true } }),
         ctx.prisma.user.count({ where: { isActive: true } }),
-        ctx.prisma.collectionLayoutRow.count(),
+        ctx.prisma.collectionLayoutRow.count({ where: { collectionLayout: { brandId: brandIn } } }),
       ]);
       return { brands, seasons, users, collectionRows };
     }),

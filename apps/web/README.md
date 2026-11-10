@@ -223,7 +223,7 @@ through `dashboard.saveConfig`.
 
 | ID | Data source | Configurable |
 |---|---|---|
-| `kpi-stats` | Prisma counts: active brands, seasons and users; collection rows | No |
+| `kpi-stats` | Prisma counts: active brands and collection rows within the user's brands; active seasons and users | No |
 | `season-progress` | Collection layout KPIs | No |
 | `clocks` | `Intl.DateTimeFormat`, no API | Yes — IANA time zones |
 | `forex` | `api.frankfurter.app` (ECB rates, no API key) | Yes — currency pairs |

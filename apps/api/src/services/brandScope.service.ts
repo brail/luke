@@ -93,7 +93,8 @@ async function allowedTeamAccess(ctx: BrandScopeCtx): Promise<UserAllowedIds> {
   return ctx._allowedTeamAccessPromise;
 }
 
-async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
+/** The brands the requesting user may open (`null` = admin, unrestricted), resolved once per request. */
+export async function allowedBrandIds(ctx: BrandScopeCtx): Promise<string[] | null> {
   return (await allowedTeamAccess(ctx)).brandIds;
 }
 

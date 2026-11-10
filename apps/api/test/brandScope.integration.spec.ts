@@ -215,6 +215,40 @@ describe('brand scope — collectionLayout and dashboard', () => {
       'FORBIDDEN'
     );
   });
+
+  it('dashboard.getKpiStats counts brands and collection rows within the scope only', async () => {
+    const [stats, brands, inScopeRows, allRows, seasons, users] = await Promise.all([
+      createCallerWithSession(scopedSession).dashboard.getKpiStats(),
+      prisma.brand.count({ where: { isActive: true, id: inScopeBrandId } }),
+      prisma.collectionLayoutRow.count({ where: { collectionLayout: { brandId: inScopeBrandId } } }),
+      prisma.collectionLayoutRow.count(),
+      prisma.season.count({ where: { isActive: true } }),
+      prisma.user.count({ where: { isActive: true } }),
+    ]);
+
+    // Seasons and users are not brand data: counted in full.
+    expect(stats).toEqual({ brands, collectionRows: inScopeRows, seasons, users });
+    // The out-of-scope brand has a row too: only the scope keeps it out.
+    expect(inScopeRows).toBeLessThan(allRows);
+  });
+
+  it('dashboard.getKpiStats counts no brand and no row for an editor in no team', async () => {
+    const { session } = await createTestUser('editor');
+
+    const stats = await createCallerWithSession(session).dashboard.getKpiStats();
+
+    expect(stats).toMatchObject({ brands: 0, collectionRows: 0 });
+  });
+
+  it('dashboard.getKpiStats counts everything for an admin', async () => {
+    const [stats, brands, collectionRows] = await Promise.all([
+      createCallerWithSession(adminSession).dashboard.getKpiStats(),
+      prisma.brand.count({ where: { isActive: true } }),
+      prisma.collectionLayoutRow.count(),
+    ]);
+
+    expect(stats).toMatchObject({ brands, collectionRows });
+  });
 });
 
 describe('brand scope — saturation heatmap', () => {
