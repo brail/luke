@@ -25,12 +25,16 @@ function milestoneStatusToGoogle(cancelled: boolean): 'confirmed' | 'cancelled' 
  *
  * @param milestone - Milestone data and its target function ids
  * @param ctx - Database I/O context (bindings, mappings, brand/season metadata)
+ * @returns Whether an event was created, updated or deleted on Google: a sync with nothing to
+ *   change calls no Google API, so it says nothing about whether Google accepts Luke's requests
  */
 export async function syncMilestone(
   milestone: MilestoneForSync,
   ctx: SyncContext
-): Promise<void> {
+): Promise<boolean> {
   const contentHash = computeContentHash(milestone);
+  // A binding is created only right before an event call, so the event calls are enough to tell.
+  let calledGoogle = false;
   const existingMappings = await ctx.getMappings(milestone.id);
   const mappingByFunctionId = new Map(existingMappings.map(m => [m.companyFunctionId, m]));
 
@@ -39,6 +43,7 @@ export async function syncMilestone(
       const existing = mappingByFunctionId.get(companyFunctionId);
       if (existing) {
         await withRetry(() => deleteEvent(existing.googleCalendarId, existing.googleEventId));
+        calledGoogle = true;
         await ctx.deleteMapping(milestone.id, companyFunctionId);
       }
       continue;
@@ -59,6 +64,7 @@ export async function syncMilestone(
 
     if (existing) {
       await withRetry(() => updateEvent(existing.googleCalendarId, existing.googleEventId, eventInput));
+      calledGoogle = true;
       await ctx.upsertMapping({
         eventId: milestone.id,
         companyFunctionId,
@@ -68,6 +74,7 @@ export async function syncMilestone(
       });
     } else {
       const googleEventId = await withRetry(() => createEvent(binding.googleCalendarId, eventInput));
+      calledGoogle = true;
       await ctx.upsertMapping({
         eventId: milestone.id,
         companyFunctionId,
@@ -83,7 +90,9 @@ export async function syncMilestone(
   for (const [companyFunctionId, mapping] of mappingByFunctionId) {
     if (!visibleSet.has(companyFunctionId)) {
       await withRetry(() => deleteEvent(mapping.googleCalendarId, mapping.googleEventId));
+      calledGoogle = true;
       await ctx.deleteMapping(milestone.id, companyFunctionId);
     }
   }
+  return calledGoogle;
 }

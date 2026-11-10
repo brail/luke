@@ -25,6 +25,9 @@ What 3.1 changes for the operator so far:
   snapshot to the audit log (`Fotografia iniziale degli accessi`), the state the later changes are
   read against: nothing to run. A start where it fails logs `Initial access snapshot failed` and
   serves all the same; the next start writes it.
+- **Google Calendar sync failures are visible.** The `Google Workspace` settings page shows each
+  sync operation's last success and last failure, and a failure notifies the administrators. In
+  production, step 5 moves the sync to a dedicated mailbox.
 
 ## 1. Shell variables
 
@@ -91,7 +94,34 @@ encrypted. It exits 1 when a row needs attention: a value its schema refuses, a 
 it ran, or a write that failed; fix the row or re-run. Run it again after restoring a backup taken
 before this step.
 
-## 5. Rollback
+## 5. After the update, production only: the Google Calendar identity
+
+Skip this step on the RC stack: it is a copy of production with real addresses, and never
+connects the Google mailbox.
+
+If the sync impersonates a user through a service account without domain-wide delegation, every
+event change fails with `unauthorized_client`, and the events stay out of Google. Move it to an
+OAuth user with a mailbox dedicated to Luke
+([Choosing a mode](google-calendar-setup.md#choosing-a-mode)). On the `Google Workspace` page:
+
+1. Turn off `Sincronizzazione Google Calendar` and click `Salva Configurazione`.
+2. Still in the service-account mode, clear `Impersonazione utente (DWD — opzionale)` and save:
+   the other mode leaves the service-account fields stored, and a later switch back would
+   impersonate again.
+3. Choose `Account utente OAuth (collega virtuale)`, enter the OAuth client ID and secret
+   ([Option B](google-calendar-setup.md#option-b--oauth-user)) and save.
+4. Click `Connetti account Google` and sign in as the dedicated mailbox.
+5. Click `Test Connessione`: it must succeed.
+6. Turn on `Sincronizzazione Google Calendar` and save.
+7. Push the events the failing sync left behind: on the calendar page, select each brand and
+   season with events to publish in the header and run `Altre azioni` › `Sincronizza`, which syncs
+   every event of that season. A message with failures (`falliti`) means part of it did not reach
+   Google; `Stato sincronizzazione` on the `Google Workspace` page shows the error.
+8. Check that the calendars (`Luke • <brand> • <season> • <function>`) appear in the dedicated
+   mailbox's Google Calendar, and that `Stato sincronizzazione` shows a success for
+   `Sincronizzazione eventi`.
+
+## 6. Rollback
 
 - 3.1 adds database migrations: going back to 3.0 means restoring the database from the backup of
   step 3 as well as the stack's Git reference and `LUKE_VERSION`, as in

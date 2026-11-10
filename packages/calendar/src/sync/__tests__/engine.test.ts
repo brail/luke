@@ -88,7 +88,8 @@ describe('syncMilestone — creation', () => {
     const ctx = makeContext();
     const milestone = makeMilestone();
 
-    await syncMilestone(milestone, ctx);
+    // `true`: Google was called, so the caller records a success (#223).
+    expect(await syncMilestone(milestone, ctx)).toBe(true);
 
     expect(google.createEvent).toHaveBeenCalledTimes(1);
     expect(google.createEvent).toHaveBeenCalledWith('gcal-fn-a', {
@@ -138,7 +139,8 @@ describe('syncMilestone — update and skip', () => {
       makeMapping({ contentHash: computeContentHash(milestone) }),
     ]);
 
-    await syncMilestone(milestone, ctx);
+    // `false`: nothing reached Google, so nothing is recorded as a success.
+    expect(await syncMilestone(milestone, ctx)).toBe(false);
 
     // The very point of the hash: no Google call for an unchanged event. If this test
     // breaks, every sync rewrites everything.
@@ -151,7 +153,7 @@ describe('syncMilestone — update and skip', () => {
     const milestone = makeMilestone();
     const ctx = makeContext([makeMapping({ contentHash: 'obsoleto' })]);
 
-    await syncMilestone(milestone, ctx);
+    expect(await syncMilestone(milestone, ctx)).toBe(true);
 
     expect(google.updateEvent).toHaveBeenCalledWith(
       'gcal-1',
@@ -174,7 +176,7 @@ describe('syncMilestone — removal', () => {
   it('deletes event and mapping when publishExternally becomes false', async () => {
     const ctx = makeContext([makeMapping()]);
 
-    await syncMilestone(makeMilestone({ publishExternally: false }), ctx);
+    expect(await syncMilestone(makeMilestone({ publishExternally: false }), ctx)).toBe(true);
 
     expect(google.deleteEvent).toHaveBeenCalledWith('gcal-1', 'gev-1');
     expect(ctx.deleteMapping).toHaveBeenCalledWith('m1', 'fn-a');
@@ -184,7 +186,7 @@ describe('syncMilestone — removal', () => {
   it('with publishExternally false and no mapping it does nothing', async () => {
     const ctx = makeContext();
 
-    await syncMilestone(makeMilestone({ publishExternally: false }), ctx);
+    expect(await syncMilestone(makeMilestone({ publishExternally: false }), ctx)).toBe(false);
 
     expect(google.deleteEvent).not.toHaveBeenCalled();
     expect(ctx.deleteMapping).not.toHaveBeenCalled();
@@ -215,7 +217,7 @@ describe('syncMilestone — removal', () => {
       makeMapping({ companyFunctionId: 'fn-b', googleEventId: 'gev-2' }),
     ]);
 
-    await syncMilestone(makeMilestone({ visibilityFunctionIds: [] }), ctx);
+    expect(await syncMilestone(makeMilestone({ visibilityFunctionIds: [] }), ctx)).toBe(true);
 
     expect(google.deleteEvent).toHaveBeenCalledTimes(2);
     expect(ctx.deleteMapping).toHaveBeenCalledTimes(2);

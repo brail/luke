@@ -9,6 +9,22 @@ optionally impersonating a Workspace user through domain-wide delegation, or an
 below are quoted as code, as they appear in the product, which is in Italian;
 Google's are in bold.
 
+## Choosing a mode
+
+Use an **OAuth user** with a mailbox dedicated to Luke (for example
+`luke-calendar@<domain>`): Luke then acts on that mailbox only, and the calendars
+it creates belong to it. A service account that impersonates a user needs
+domain-wide delegation, and delegation cannot be limited to one mailbox: it grants
+the Calendar scope for every user of the domain to whoever holds the key. Without
+it, impersonating a user fails with `unauthorized_client`. A service account
+without impersonation needs no delegation, but the calendars then belong to the
+service account, outside the Workspace.
+
+Choose the identity before the first sync. Calendars belong to the identity that
+created them: after a switch of mode, account or impersonated user, the new
+identity cannot write to the calendars created under the previous one, so the sync
+of their events fails, and Luke cannot move them.
+
 ## Prerequisites
 
 - Google Cloud project with billing enabled
@@ -70,15 +86,30 @@ private key is stored encrypted in AppConfig.
 Click `Test Connessione` on the settings page (`integrations.google.testConnection`,
 which requires `config:read`). It uses the stored credentials to list one
 calendar, and reports either success or what is missing: the domain, the
-service-account credentials, or the OAuth connection.
+service-account credentials, or the OAuth connection. The test and the sync
+authenticate the same way, impersonation included: a test that fails with
+`unauthorized_client` means the sync fails too.
+
+Once a sync has run, the `Stato sincronizzazione` block on the same page shows,
+for each operation (`Sincronizzazione eventi`, `Lettori dei calendari`,
+`Eliminazioni`), the time of its last success and of its last failure, with the
+failure's message; a stored credential Luke cannot read counts as a failure too.
+An operation that has neither failed nor sent Google a request is not listed: a
+sync with nothing to change sends none. A failure also notifies the
+administrators in the app, at most once every 6 hours per operation, with a link
+to this page.
 
 ## When the sync runs
 
 The sync runs only when calendar sync is enabled
 (`integrations.google.calendarSync.enabled`) **and** the domain and the
 credentials of the selected mode are all configured. If any of them is missing,
-the sync is skipped without an error. A sync can be started by hand with
-`seasonCalendar.triggerSync`, which requires `season_calendar:sync`.
+the sync is skipped without an error. An event is synced when it is created,
+edited, rescheduled, cancelled or restored; an event left behind (created while
+the sync was off or failing) reaches Google on its next change, or when a sync is
+started by hand: `Altre azioni` › `Sincronizza` on the calendar page
+(`seasonCalendar.triggerSync`, which requires `season_calendar:sync`) syncs every
+event of the brand and season selected in the header.
 
 ## Architecture
 
@@ -101,7 +132,9 @@ the sync is skipped without an error. A sync can be started by hand with
   `writer`, a second owner) is left as it is and reported in the API log, for the
   Workspace admin to review.
 - **Deleting a purged calendar** also needs only the credentials. A calendar Google
-  refuses to delete is logged by id and keeps its sharing until removed by hand.
+  refuses to delete is logged by id, recorded as an `Eliminazioni` failure, and
+  keeps its sharing until removed by hand. A calendar or event already gone from
+  Google counts as deleted.
 - **One calendar** per season calendar (brand × season) and company function,
   named `Luke • {brandCode} • {seasonCode} • {function name}`.
 - **Idempotent sync**: a content hash comparison prevents redundant API calls.
@@ -115,3 +148,4 @@ the sync is skipped without an error. A sync can be started by hand with
 |-------|-------|-----|
 | `403 forbidden` on calendar ops | Google Calendar API not enabled | Enable Google Calendar API in Cloud Console |
 | `401 unauthorized` | Invalid private key or client email, or a revoked OAuth token | Paste the JSON key again on the `Google Workspace` page, or reconnect the OAuth account |
+| `unauthorized_client` | The service account impersonates a user without domain-wide delegation for the Calendar scope | Move to an OAuth user with a dedicated mailbox ([Choosing a mode](#choosing-a-mode)), or add the delegation (option A, step 3) |

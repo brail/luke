@@ -151,6 +151,7 @@ vi.mock('../../../../lib/trpc', () => {
         },
         google: {
           getConfig: { useQuery: () => ({ data: h.google, isPending: false, error: null, refetch: vi.fn() }) },
+          getSyncStatus: { useQuery: () => ({ data: undefined }) },
           saveConfig: idle,
           testConnection: idle,
           getOAuthUrl: idle,

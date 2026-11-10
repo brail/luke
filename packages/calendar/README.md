@@ -48,7 +48,7 @@ Google Cloud project, service account and Workspace configuration: [`docs/google
 
 | Symbol | Type | Description |
 |--------|------|-------------|
-| `syncMilestone(milestone, ctx)` | function | Reconciles one milestone across every calendar named in `visibilityFunctionIds`: creates, updates in place, skips on an unchanged content hash, and deletes the events of functions that left the list or of a milestone no longer published externally |
+| `syncMilestone(milestone, ctx)` | function | Reconciles one milestone across every calendar named in `visibilityFunctionIds`: creates, updates in place, skips on an unchanged content hash, and deletes the events of functions that left the list or of a milestone no longer published externally. Returns whether it called Google, so a caller tells a sync that reached Google from one with nothing to change |
 | `computeContentHash(milestone)` | function | First 32 hex characters of a SHA-256 over the fields that reach the Google event, with `visibilityFunctionIds` sorted so the hash does not move with array order |
 
 ### iCal

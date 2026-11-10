@@ -8,13 +8,15 @@ import {
   deleteCalendar,
   syncCalendarAcl,
   googleErrorStatus,
+  type CalendarConfig,
   type MilestoneForSync,
   type SyncContext,
 } from '@luke/calendar';
-import { planningGroupName, type Role } from '@luke/core';
+import { planningGroupName, toErrorMessage, type Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
 
 import { getConfig, getConfigOrDefault } from '../lib/configManager.js';
+import { notifyAdmins, notifyDeduped, SYSTEM_FAILURE_DEDUP_MS } from '../lib/notifications.js';
 
 import { teamGrantsFunctionAndBrand } from './calendarAudience.service.js';
 import { getUserAllowedIds } from './context.service.js';
@@ -27,6 +29,33 @@ interface SyncLogger {
 }
 
 // ─── Client factory ───────────────────────────────────────────────────────────
+
+/** The stored credentials of one authentication mode; an absent key is `null`. */
+export type StoredGoogleCredentials =
+  | { authMode: 'oauth_user'; clientId: string | null; clientSecret: string | null; refreshToken: string | null }
+  | { authMode: 'service_account'; serviceEmail: string | null; serviceKey: string | null; impersonateEmail: string | null };
+
+/**
+ * The client configuration for the stored Google settings, or null while a credential is missing.
+ * The one mapping the sync and the settings connection test share (#223): a connection test that
+ * passes authenticates as the sync does, impersonation included.
+ */
+export function toGoogleCalendarConfig(domain: string, stored: StoredGoogleCredentials): CalendarConfig | null {
+  if (stored.authMode === 'oauth_user') {
+    const { clientId, clientSecret, refreshToken } = stored;
+    if (!clientId || !clientSecret || !refreshToken) return null;
+    return { mode: 'oauth_user', clientId, clientSecret, refreshToken, workspaceDomain: domain };
+  }
+  const { serviceEmail, serviceKey, impersonateEmail } = stored;
+  if (!serviceEmail || !serviceKey) return null;
+  return {
+    mode: 'service_account',
+    serviceAccountEmail: serviceEmail,
+    serviceAccountPrivateKey: serviceKey,
+    workspaceDomain: domain,
+    impersonateEmail: impersonateEmail || undefined,
+  };
+}
 
 /**
  * Reads Google integration config from AppConfig and initialises the Google Calendar client.
@@ -50,31 +79,131 @@ export async function getConfiguredGoogleClient(
 
   if (!domain || (requireSyncEnabled && !enabled)) return null;
 
+  let config: CalendarConfig | null;
   if (authMode === 'oauth_user') {
     const [clientId, clientSecret, refreshToken] = await Promise.all([
       getConfig(prisma, 'integrations.google.oauth.clientId'),
       getConfig(prisma, 'integrations.google.oauth.clientSecret'),
       getConfig(prisma, 'integrations.google.oauth.refreshToken'),
     ]);
-    if (!clientId || !clientSecret || !refreshToken) return null;
-    createGoogleCalendarClient({ mode: 'oauth_user', clientId, clientSecret, refreshToken, workspaceDomain: domain });
+    config = toGoogleCalendarConfig(domain, { authMode: 'oauth_user', clientId, clientSecret, refreshToken });
   } else {
     const [serviceEmail, serviceKey, impersonateEmail] = await Promise.all([
       getConfig(prisma, 'integrations.google.serviceEmail'),
       getConfig(prisma, 'integrations.google.serviceKey'),
       getConfig(prisma, 'integrations.google.impersonateEmail'),
     ]);
-    if (!serviceEmail || !serviceKey) return null;
-    createGoogleCalendarClient({
-      mode: 'service_account',
-      serviceAccountEmail: serviceEmail,
-      serviceAccountPrivateKey: serviceKey,
-      workspaceDomain: domain,
-      impersonateEmail: impersonateEmail || undefined,
-    });
+    config = toGoogleCalendarConfig(domain, { authMode: 'service_account', serviceEmail, serviceKey, impersonateEmail });
   }
+  if (!config) return null;
 
+  createGoogleCalendarClient(config);
   return { domain };
+}
+
+// ─── Sync outcome (#223) ──────────────────────────────────────────────────────
+
+/**
+ * The Google operations whose last outcome is kept, one `IntegrationStatus` row each: event sync
+ * (single events and calendar reconcile), reader reconcile, deletes. Separate rows, so the reader
+ * job's success every 10 minutes cannot hide a failing event sync.
+ */
+const GOOGLE_SYNC_OPERATIONS = ['events', 'readers', 'delete'] as const;
+type GoogleSyncOperation = (typeof GOOGLE_SYNC_OPERATIONS)[number];
+
+const statusKey = (operation: GoogleSyncOperation) => `google-calendar:${operation}` as const;
+
+const FAILURE_TITLES: Record<GoogleSyncOperation, string> = {
+  events: 'Google Calendar: sincronizzazione eventi non riuscita',
+  readers: 'Google Calendar: lettori dei calendari non aggiornati',
+  delete: 'Google Calendar: eliminazioni non riuscite',
+};
+
+const MAX_ERROR_LENGTH = 500;
+
+/** What a pass did on Google: sent no request, succeeded, or failed (with its first error). */
+type GoogleOutcome = 'none' | 'success' | { error: unknown };
+
+function outcomeOf(failures: unknown[], calledGoogle: boolean): GoogleOutcome {
+  if (failures.length > 0) return { error: failures[0] };
+  return calledGoogle ? 'success' : 'none';
+}
+
+const rejectionsOf = (results: PromiseSettledResult<unknown>[]): unknown[] =>
+  results.flatMap(r => (r.status === 'rejected' ? [r.reason] : []));
+
+/**
+ * Keeps the last outcome of `operation`: a success stores its time; a failure its time and message,
+ * and tells the admins at most once per `SYSTEM_FAILURE_DEDUP_MS` and operation; 'none' stores
+ * nothing. Never throws (`cleanUpAfterPurge` awaits the deletes): a failed write or notice is
+ * logged, and the sync's own result stands.
+ */
+async function recordGoogleOutcome(
+  prisma: PrismaClient,
+  logger: SyncLogger,
+  operation: GoogleSyncOperation,
+  outcome: GoogleOutcome
+): Promise<void> {
+  if (outcome === 'none') return;
+  const integration = statusKey(operation);
+  const now = new Date();
+  // The page and the notice show the same text.
+  const message = outcome === 'success' ? null : toErrorMessage(outcome.error).slice(0, MAX_ERROR_LENGTH);
+  const data = message === null ? { lastSuccessAt: now } : { lastErrorAt: now, lastError: message };
+  try {
+    await prisma.integrationStatus.upsert({ where: { integration }, create: { integration, ...data }, update: data });
+  } catch (err) {
+    logger.error({ err, integration }, 'Google Calendar: sync outcome not recorded');
+  }
+  if (message === null) return;
+
+  await notifyDeduped(prisma, `google-sync:failure:${operation}`, SYSTEM_FAILURE_DEDUP_MS, () => notifyAdmins(prisma, {
+    category: 'SYSTEM',
+    title: FAILURE_TITLES[operation],
+    message,
+    link: '/settings/google',
+    data: { type: 'google_sync_failure' },
+  })).catch(err => logger.error({ err, operation }, 'Google Calendar: admins not told of a sync failure'));
+}
+
+/** Runs `work`; a throw is recorded as a failure of `operation`, then rethrown. */
+async function failureRecorded<T>(
+  prisma: PrismaClient,
+  logger: SyncLogger,
+  operation: GoogleSyncOperation,
+  work: () => Promise<T>
+): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    await recordGoogleOutcome(prisma, logger, operation, { error: err });
+    throw err;
+  }
+}
+
+/**
+ * `getConfiguredGoogleClient` for `operation`. Only its `null` means "not configured": a
+ * configuration it cannot read (an undecryptable credential) fails the operation.
+ */
+const googleClientFor = (
+  prisma: PrismaClient,
+  logger: SyncLogger,
+  operation: GoogleSyncOperation,
+  options?: { requireSyncEnabled?: boolean }
+) => failureRecorded(prisma, logger, operation, () => getConfiguredGoogleClient(prisma, options));
+
+/**
+ * The last outcome of each Google operation that has one, in a fixed order, for the settings page.
+ * An operation that has neither failed nor sent Google a request has no entry.
+ */
+export async function getGoogleSyncStatus(prisma: PrismaClient) {
+  const rows = await prisma.integrationStatus.findMany({
+    where: { integration: { in: GOOGLE_SYNC_OPERATIONS.map(statusKey) } },
+  });
+  return GOOGLE_SYNC_OPERATIONS.flatMap(operation => {
+    const row = rows.find(r => r.integration === statusKey(operation));
+    return row ? [{ operation, lastSuccessAt: row.lastSuccessAt, lastErrorAt: row.lastErrorAt, lastError: row.lastError }] : [];
+  });
 }
 
 // ─── Milestone mapping ────────────────────────────────────────────────────────
@@ -211,31 +340,40 @@ export async function buildSyncContext(
 // ─── Sync operations ─────────────────────────────────────────────────────────
 
 /**
- * Syncs a single calendar event to all bound Google Calendars. No-ops if the integration
- * is disabled or not configured.
+ * Syncs a single calendar event to all bound Google Calendars and records the outcome. No-ops if
+ * the integration is disabled or not configured, or the event no longer exists.
  */
 export async function syncOneMilestone(
   milestoneId: string,
   prisma: PrismaClient,
   logger: SyncLogger
 ): Promise<void> {
-  const creds = await getConfiguredGoogleClient(prisma);
-  if (!creds) return;
+  if (!(await googleClientFor(prisma, logger, 'events'))) return;
 
-  const m = await prisma.calendarEvent.findUniqueOrThrow({
+  const m = await prisma.calendarEvent.findUnique({
     where: { id: milestoneId },
     include: { visibilities: { select: { functionId: true } }, planningGroup: { select: { name: true } } },
   });
+  // Deleted since the change that started this sync: nothing left to sync.
+  if (!m) return;
 
   const ctx = await buildSyncContext(m.calendarId, prisma);
-  await syncMilestone(mapMilestone(m), ctx);
+  const calledGoogle = await failureRecorded(prisma, logger, 'events', () => syncMilestone(mapMilestone(m), ctx));
+  await recordGoogleOutcome(prisma, logger, 'events', calledGoogle ? 'success' : 'none');
   logger.info({ milestoneId }, 'Google Calendar sync completed');
+}
+
+/** A delete Google answers with 404 or 410 found nothing left to delete: done, not failed. */
+function ignoreGone(err: unknown): void {
+  const status = googleErrorStatus(err);
+  if (status !== 404 && status !== 410) throw err;
 }
 
 /**
  * Deletes the Google Calendar copies of events already deleted from Luke — the mappings went with
  * them (cascade), so the caller reads `copies` before its delete (`deleteEvents`). Best effort: a
- * copy Google refuses to delete is logged and stays in Google. No-ops if the integration is disabled.
+ * copy Google refuses to delete is logged, recorded and stays in Google. No-ops if the integration
+ * is disabled.
  */
 export async function deleteGoogleCopies(
   copies: { googleCalendarId: string; googleEventId: string }[],
@@ -243,21 +381,23 @@ export async function deleteGoogleCopies(
   logger: SyncLogger
 ): Promise<void> {
   if (copies.length === 0) return;
-  const creds = await getConfiguredGoogleClient(prisma);
-  if (!creds) return;
+  if (!(await googleClientFor(prisma, logger, 'delete'))) return;
 
-  const results = await Promise.allSettled(copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId)));
-  const failed = results.filter(r => r.status === 'rejected').length;
-  if (failed > 0) {
-    logger.warn({ failed, total: copies.length }, 'Some Google Calendar copies of deleted events were not deleted');
+  const results = await Promise.allSettled(
+    copies.map(c => deleteEvent(c.googleCalendarId, c.googleEventId).catch(ignoreGone))
+  );
+  const failures = rejectionsOf(results);
+  if (failures.length > 0) {
+    logger.warn({ failed: failures.length, total: copies.length }, 'Some Google Calendar copies of deleted events were not deleted');
   }
-  logger.info({ count: copies.length - failed }, 'Google Calendar copies of deleted events removed');
+  logger.info({ count: copies.length - failures.length }, 'Google Calendar copies of deleted events removed');
+  await recordGoogleOutcome(prisma, logger, 'delete', outcomeOf(failures, true));
 }
 
 /**
  * Deletes Google calendars Luke provisioned, once their bindings are gone (a purged season calendar).
- * Best effort, as `deleteGoogleCopies`: a calendar Google refuses to delete is logged by id and
- * stays. Runs with event sync off too (only credentials are needed): a purged calendar must not keep
+ * Best effort, as `deleteGoogleCopies`: a calendar Google refuses to delete is logged by id,
+ * recorded and stays. Runs with event sync off too (only credentials are needed): a purged calendar must not keep
  * its readers.
  */
 export async function deleteGoogleCalendars(
@@ -266,20 +406,21 @@ export async function deleteGoogleCalendars(
   logger: SyncLogger
 ): Promise<void> {
   if (googleCalendarIds.length === 0) return;
-  const creds = await getConfiguredGoogleClient(prisma, { requireSyncEnabled: false });
-  if (!creds) return;
+  if (!(await googleClientFor(prisma, logger, 'delete', { requireSyncEnabled: false }))) return;
 
-  const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id)));
+  const results = await Promise.allSettled(googleCalendarIds.map(id => deleteCalendar(id).catch(ignoreGone)));
   const failedIds = googleCalendarIds.filter((_, i) => results[i].status === 'rejected');
   if (failedIds.length > 0) {
     logger.warn({ failedIds, total: googleCalendarIds.length }, 'Some provisioned Google calendars were not deleted');
   }
   logger.info({ count: googleCalendarIds.length - failedIds.length }, 'Provisioned Google calendars deleted');
+  await recordGoogleOutcome(prisma, logger, 'delete', outcomeOf(rejectionsOf(results), true));
 }
 
 /**
  * Re-syncs all milestones of a season calendar to Google Calendar. Errors per milestone
- * are caught individually so that a single failure does not abort the run.
+ * are caught individually so that a single failure does not abort the run; any of them makes the
+ * recorded outcome a failure.
  *
  * @returns Count of successfully synced milestones and count of errors.
  */
@@ -288,7 +429,7 @@ export async function reconcileCalendar(
   prisma: PrismaClient,
   logger: SyncLogger
 ): Promise<{ synced: number; errors: number }> {
-  const creds = await getConfiguredGoogleClient(prisma);
+  const creds = await googleClientFor(prisma, logger, 'events');
   if (!creds) return { synced: 0, errors: 0 };
 
   const milestones = await prisma.calendarEvent.findMany({
@@ -301,19 +442,22 @@ export async function reconcileCalendar(
   const ctx = await buildSyncContext(calendarId, prisma);
 
   let synced = 0;
-  let errors = 0;
+  let calledGoogle = false;
+  const failures: unknown[] = [];
 
   for (const m of milestones) {
     try {
-      await syncMilestone(mapMilestone(m), ctx);
+      if (await syncMilestone(mapMilestone(m), ctx)) calledGoogle = true;
       synced++;
     } catch (err) {
-      errors++;
+      failures.push(err);
       logger.error({ err, milestoneId: m.id }, 'Google Calendar reconcile error for milestone');
     }
   }
 
+  const errors = failures.length;
   logger.info({ calendarId, synced, errors }, 'Google Calendar reconciliation completed');
+  await recordGoogleOutcome(prisma, logger, 'events', outcomeOf(failures, calledGoogle));
   return { synced, errors };
 }
 
@@ -332,7 +476,8 @@ let lastUnmanagedReport = '';
  * it. Each calendar is reconciled on its own: one failure does not stop the others. Rules Luke does
  * not manage are reported, aggregated per pass, never changed.
  *
- * Runs with event sync off too, as long as credentials exist.
+ * Runs with event sync off too, as long as credentials exist. A failed calendar or a refused reader
+ * change makes the recorded outcome a failure; a pass that read no ACL records nothing.
  *
  * @returns Counts for the pass, or null when Google is not configured.
  */
@@ -340,7 +485,7 @@ export async function reconcileGoogleReaders(
   prisma: PrismaClient,
   logger: SyncLogger
 ): Promise<{ calendars: number; added: number; removed: number; failed: number } | null> {
-  const creds = await getConfiguredGoogleClient(prisma, { requireSyncEnabled: false });
+  const creds = await googleClientFor(prisma, logger, 'readers', { requireSyncEnabled: false });
   if (!creds) return null;
 
   const bindings = await prisma.googleCalendarBinding.findMany({
@@ -354,6 +499,10 @@ export async function reconcileGoogleReaders(
   let added = 0;
   let removed = 0;
   let failed = 0;
+  /** Whether Google returned a calendar's ACL: a 404 calendar is no read. */
+  let readAcl = false;
+  /** Refused reader changes and failed calendars, for the recorded outcome. */
+  const failures: unknown[] = [];
 
   for (const b of bindings) {
     const pair = `${b.companyFunctionId}:${b.seasonCalendar.brandId}`;
@@ -365,9 +514,11 @@ export async function reconcileGoogleReaders(
 
     try {
       const result = await syncCalendarAcl(b.googleCalendarId, await readers);
+      readAcl = true;
       added += result.added;
       removed += result.removed;
       if (result.errors.length > 0) {
+        failures.push(result.errors[0]);
         logger.warn(
           { bindingId: b.id, refused: result.errors.length, err: result.errors[0] },
           'Google refused some reader changes; retried on the next pass'
@@ -386,6 +537,7 @@ export async function reconcileGoogleReaders(
         continue;
       }
       failed++;
+      failures.push(err);
       logger.error({ err, bindingId: b.id }, 'Google Calendar reader reconcile failed for a calendar');
     }
   }
@@ -401,6 +553,7 @@ export async function reconcileGoogleReaders(
   lastUnmanagedReport = report;
 
   logger.info({ calendars: bindings.length, added, removed, failed }, 'Google Calendar readers reconciled');
+  await recordGoogleOutcome(prisma, logger, 'readers', outcomeOf(failures, readAcl));
   return { calendars: bindings.length, added, removed, failed };
 }
 

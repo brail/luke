@@ -479,7 +479,7 @@ values in the environment table below, and no configuration file is read. Ration
 | `feedback.*` | Internal feedback system |
 | `holidays.*` | National holidays and vendor closure periods |
 | `integrations.auth.*` | LDAP configuration and connection test |
-| `integrations.google.*` | Google Calendar OAuth 2.0 — authorization flow and binding |
+| `integrations.google.*` | Google Workspace configuration, OAuth 2.0 authorization flow, connection test and Google Calendar sync status |
 | `integrations.importExport.*` | Placeholder for data import and export: both procedures are stubs, not implemented |
 | `integrations.mail.*` | SMTP configuration and test email delivery |
 | `integrations.nav.*` | NAV configuration, manual sync trigger, sync logs |
@@ -575,10 +575,10 @@ pnpm --filter @luke/api db:bootstrap    # Development only: reset the database, 
 
 Creating a migration is a workflow of its own, not a single command: see [`docs/prisma-migration-workflow.md`](../../docs/prisma-migration-workflow.md). Run any `prisma` CLI command from `packages/db/`, the only directory that resolves config, schema and migrations together. In production `entrypoint.sh` runs `prisma migrate deploy` before the server starts; the migrations are version-controlled in `packages/db/prisma/migrations/`.
 
-**80 models**, grouped by the schema file that owns them:
+**81 models**, grouped by the schema file that owns them:
 
 - `identity.prisma` — `User`, `Identity`, `LocalCredential`, `UserToken`, `UserSectionAccess`, `UserPreference`
-- `platform.prisma` — `AppConfig`, `AuditLog`, `FileObject`, `EditLock`, `SchedulerLock`, `BackupRecord`, `Notification`, `NotificationPreference`, `NotificationDedupKey`, `DashboardConfig`, `DashboardTask`, `FeedbackSubmission`
+- `platform.prisma` — `AppConfig`, `AuditLog`, `FileObject`, `EditLock`, `SchedulerLock`, `BackupRecord`, `Notification`, `NotificationPreference`, `NotificationDedupKey`, `DashboardConfig`, `DashboardTask`, `FeedbackSubmission`, `IntegrationStatus` (the last outcome of each Google Calendar operation)
 - `catalog.prisma` — `Brand`, `Season`, `Vendor`, `PricingParameterSet`, `NavSyncFilter`, `NavVendor`, `NavBrand`, `NavSeason`
 - `collection.prisma` — `CollectionLayout`, `CollectionGroup`, `CollectionLayoutRow`, `CollectionRowQuotation`, `CollectionRowPhaseHistory`, `CollectionCatalogItem`, and the four `*Revision` snapshot models
 - `merchandising.prisma` — `MerchandisingPlan`, `MerchandisingPlanRow`, `MerchandisingSpecsheet`, `MerchandisingComponent`, `MerchandisingImage`

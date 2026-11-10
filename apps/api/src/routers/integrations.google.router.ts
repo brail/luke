@@ -3,7 +3,13 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { testGoogleConnection, generateOAuthUrl, exchangeOAuthCode, MissingRefreshTokenError } from '@luke/calendar';
+import {
+  testGoogleConnection,
+  generateOAuthUrl,
+  exchangeOAuthCode,
+  MissingRefreshTokenError,
+  type CalendarConfig,
+} from '@luke/calendar';
 import { type AppConfigKey, googleWorkspaceConfigSchema, httpUrl } from '@luke/core';
 
 import { logAudit } from '../lib/auditLog';
@@ -11,6 +17,7 @@ import { getConfig, getConfigForForm, getConfigOrDefault, rethrowUnreadable, sav
 import { requirePermission } from '../lib/permissions';
 import { withRateLimit } from '../lib/ratelimit';
 import { router, protectedProcedure } from '../lib/trpc';
+import { getGoogleSyncStatus, toGoogleCalendarConfig } from '../services/googleCalendarSync.service';
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -281,8 +288,7 @@ export const googleRouter = router({
       const domain = await read('integrations.google.domain');
       if (!domain) return { ok: false as const, error: 'Workspace domain non configurato' };
 
-      let result: { ok: true } | { ok: false; error: string };
-
+      let config: CalendarConfig | null;
       if (authMode === 'oauth_user') {
         const [clientId, clientSecret, refreshToken] = await Promise.all([
           read('integrations.google.oauth.clientId'),
@@ -293,31 +299,35 @@ export const googleRouter = router({
         if (refreshToken.unreadable) {
           return { ok: false as const, error: "Il token salvato non è leggibile: connetti di nuovo l'account." };
         }
-        if (!clientId || !clientSecret || !refreshToken.value) {
-          return { ok: false as const, error: 'Account OAuth non connesso' };
-        }
-        result = await testGoogleConnection({ mode: 'oauth_user', clientId, clientSecret, refreshToken: refreshToken.value, workspaceDomain: domain });
+        config = toGoogleCalendarConfig(domain, { authMode: 'oauth_user', clientId, clientSecret, refreshToken: refreshToken.value });
+        if (!config) return { ok: false as const, error: 'Account OAuth non connesso' };
       } else {
         const [serviceEmail, serviceKey, impersonateEmail] = await Promise.all([
           read('integrations.google.serviceEmail'),
           read('integrations.google.serviceKey'),
           read('integrations.google.impersonateEmail'),
         ]);
-        if (!serviceEmail || !serviceKey) {
-          return { ok: false as const, error: 'Credenziali service account non configurate' };
-        }
-        result = await testGoogleConnection({
-          mode: 'service_account',
-          serviceAccountEmail: serviceEmail,
-          serviceAccountPrivateKey: serviceKey,
-          workspaceDomain: domain,
-          impersonateEmail: impersonateEmail || undefined,
-        });
+        config = toGoogleCalendarConfig(domain, { authMode: 'service_account', serviceEmail, serviceKey, impersonateEmail });
+        if (!config) return { ok: false as const, error: 'Credenziali service account non configurate' };
       }
 
+      const result = await testGoogleConnection(config);
       if (!result.ok) {
         ctx.logger.warn({ error: result.error }, 'Google Workspace test connection failed');
       }
       return result;
     }),
+
+  /**
+   * The last success and the last failure of each Google Calendar operation (event sync, readers,
+   * deletes) that has reached Google, for the settings page (#223). Apart from `getConfig`, so a
+   * refresh does not reset the form.
+   *
+   * @auth {config:read}
+   * @input {none}
+   * @output {{ operation: 'events' | 'readers' | 'delete', lastSuccessAt, lastErrorAt, lastError }[]}
+   */
+  getSyncStatus: protectedProcedure
+    .use(requirePermission('config:read'))
+    .query(({ ctx }) => getGoogleSyncStatus(ctx.prisma)),
 });

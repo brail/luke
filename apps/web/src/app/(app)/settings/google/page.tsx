@@ -39,7 +39,9 @@ import { Switch } from '../../../../components/ui/switch';
 import { Textarea } from '../../../../components/ui/textarea';
 import { usePermission } from '../../../../hooks/usePermission';
 import { trpc } from '../../../../lib/trpc';
+import { getTrpcErrorMessage } from '../../../../lib/trpcErrorMessages';
 
+import { GoogleSyncStatus } from './GoogleSyncStatus';
 import { useGoogleOAuthCallback } from './useGoogleOAuthCallback';
 
 type FormValues = GoogleWorkspaceConfig;
@@ -76,6 +78,8 @@ export default function GoogleWorkspacePage() {
   const authMode = useWatch({ control: form.control, name: 'authMode' });
 
   const { data: config, isPending, error, refetch } = trpc.integrations.google.getConfig.useQuery();
+  // Its own query: a new `config` resets the form, a status refresh must not.
+  const { data: syncStatus, error: syncStatusError } = trpc.integrations.google.getSyncStatus.useQuery();
   const hasServiceKey = config?.hasServiceKey;
   const hasOauthClientSecret = config?.hasOauthClientSecret;
   const hasOauthToken = config?.hasOauthToken;
@@ -486,6 +490,16 @@ export default function GoogleWorkspacePage() {
               )}
             />
           </SectionCard>
+
+          {/* A failed read must not pass for "no failure". */}
+          {syncStatusError && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                Stato della sincronizzazione non disponibile: {getTrpcErrorMessage(syncStatusError)}
+              </AlertDescription>
+            </Alert>
+          )}
+          {syncStatus && <GoogleSyncStatus operations={syncStatus} />}
 
           {/* Test */}
           <div className="flex justify-end space-x-2 pt-2">

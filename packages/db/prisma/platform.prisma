@@ -269,6 +269,20 @@ model SchedulerLock {
   @@map("scheduler_locks")
 }
 
+/// The last outcome of one operation of an outbound integration, shown on its settings page (#223).
+/// Runtime state, not configuration: written by the integration's own code, one row per operation.
+/// Work that neither failed nor sent the external service a request writes nothing.
+model IntegrationStatus {
+  /// The operation, e.g. "google-calendar:events"; the keys are a literal union in the writer.
+  integration   String    @id
+  lastSuccessAt DateTime?
+  lastErrorAt   DateTime?
+  /// The last failure's message, cut to 500 characters.
+  lastError     String?
+
+  @@map("integration_statuses")
+}
+
 // ─── Backup & Disaster Recovery ───────────────────────────────────────────────
 
 /// Scope of a database backup: DB (schema+data only) or DB_AND_FILES (includes all storage bucket objects).
