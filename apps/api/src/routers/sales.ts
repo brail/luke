@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { versionLabel } from '@luke/core';
 import type { Role } from '@luke/core';
 import type { PrismaClient } from '@luke/db';
-import { createSyncRequest, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg } from '@luke/nav';
+import { createSyncRequest, getPool, queryPortafoglioOrdini, sanitizeCompany, queryPortafoglioFromPg, queryKimoFromPg, queryKimoSalespersonCodes } from '@luke/nav';
 
 import { appVersion } from '../lib/appVersion';
 import { exportTimestamp } from '../lib/export/xlsxStreaming';
@@ -350,7 +350,8 @@ const portafoglioRouter = router({
 
 const kimoRouter = router({
   /**
-   * Returns available filter options (salespersons) for the Kimo sales+basket report, merging agents from nav_pf_* and nav_kimo_*.
+   * Returns available filter options (salespersons) for the Kimo sales+basket report: exactly the
+   * salespersons the report can return for the brand and season (`queryKimoSalespersonCodes`).
    *
    * @auth {sales:read}
    * @input {{ brandId: string (UUID), seasonId: string (UUID) }}
@@ -373,36 +374,11 @@ const kimoRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Brand o stagione non trovati' });
       }
 
-      // Agents from SO (step0) and BASKET (step1) — independent queries, in parallel
-      const [soHeaderRows, basketHeaderRows] = await Promise.all([
-        ctx.prisma.navPfSalesHeader.findMany({
-          where: {
-            sellingSeasonCode: season.code,
-            shortcutDimension2Code: brand.code,
-            salespersonCode: { not: null },
-          },
-          select: { salespersonCode: true },
-          distinct: ['salespersonCode'],
-        }),
-        ctx.prisma.navKimoSalesHeader.findMany({
-          where: {
-            trademarkCode: brand.code,
-            salespersonCodeNav: { not: null },
-            OR: [{ assignedSalesDocumentNo: null }, { assignedSalesDocumentNo: '' }],
-          },
-          select: { salespersonCodeNav: true },
-          distinct: ['salespersonCodeNav'],
-        }),
-      ]);
-      const spSoCodes = soHeaderRows
-        .map(r => r.salespersonCode)
-        .filter((c): c is string => c !== null);
-      const spBaCodes = basketHeaderRows
-        .map(r => r.salespersonCodeNav)
-        .filter((c): c is string => c !== null);
-
-      // Deduplicated union
-      const allCodes = [...new Set([...spSoCodes, ...spBaCodes])];
+      // Read with the report's own conditions, so no salesperson is offered for an empty report (#233).
+      const allCodes = await queryKimoSalespersonCodes(ctx.prisma, {
+        seasonCode: season.code,
+        trademarkCode: brand.code,
+      });
       const nameMap = await resolveSalespersonNames(ctx.prisma, allCodes);
       const salespersons = allCodes
         .map(code => ({ code, name: nameMap.get(code) ?? '' }))

@@ -18,7 +18,7 @@ export { queryPortafoglioOrdini } from './statistics/portafoglio.js';
 export type { PortafoglioParams, PortafoglioRow } from './statistics/portafoglio.js';
 
 export { queryPortafoglioFromPg } from './queries/portafoglioPg.js';
-export { queryKimoFromPg } from './queries/kimoPg.js';
+export { queryKimoFromPg, queryKimoSalespersonCodes } from './queries/kimoPg.js';
 export type { KimoParams, KimoRow } from './queries/kimoPg.js';
 
 export { syncPortafoglioNow } from './sync/portafoglio.js';

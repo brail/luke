@@ -4,9 +4,10 @@
  *  - Step 1 (BASKET): KIMO-FASHION orders not yet assigned to an SO
  *
  * Faithfully replicates the Access logic (queries #13/#14/#15 in kimo-test.txt):
- *  - SO filtered by season + brand (shortcutDimension2Code)
- *  - BASKET filtered by brand (kh.trademarkCode) + season (item.seasonCode)
- *    where assignedSalesDocumentNo = '' and type IN (2, 20)
+ *  - SO filtered by season + brand (shortcutDimension2Code), lines of type IN (19, 20) with no
+ *    deleteReason
+ *  - BASKET filtered by brand (kh.trademarkCode) + the header's season (kh.sellingSeasonCode)
+ *    where assignedSalesDocumentNo is empty and the line type is IN (2, 20)
  */
 
 import type { PrismaClient } from '@luke/db';
@@ -51,6 +52,28 @@ export interface KimoRow {
   kimoDocumentType: string | null;
 }
 
+// ─── What the report reads ────────────────────────────────────────────────────
+//
+// One definition of the rows the report selects, shared by the report and by the salesperson
+// filter (`queryKimoSalespersonCodes`), so the filter offers exactly who the report can return
+// (#233). Every fragment reads `$1` = season and `$2` = brand: build the parameters with
+// `kimoBaseParams`.
+
+/** Sales orders (`sh` headers, `sl` lines): brand and season on the header. */
+const SO_HEADER = `sh."sellingSeasonCode" = $1 AND sh."shortcutDimension2Code" = $2`;
+const SO_LINE_OF_HEADER = `sl."documentNo" = sh."no_" AND sl."documentType" = sh."documentType"`;
+const SO_LINE = `sl."type" IN (19, 20) AND (sl."deleteReason" IS NULL OR sl."deleteReason" = '')`;
+
+/** Baskets (`kh` headers, `kl` lines) not yet assigned to a sales order: brand and the header's season. */
+const BASKET_HEADER = `(kh."assignedSalesDocumentNo" IS NULL OR kh."assignedSalesDocumentNo" = '')
+  AND kh."trademarkCode" = $2 AND kh."sellingSeasonCode" = $1`;
+const BASKET_LINE_OF_HEADER = `kl."headerEntryNo" = kh."entryNo"`;
+const BASKET_LINE = `kl."type" IN (2, 20)`;
+
+/** `$1` = season, `$2` = brand: the order every fragment above reads. */
+const kimoBaseParams = (params: Pick<KimoParams, 'seasonCode' | 'trademarkCode'>) =>
+  new PgParams([params.seasonCode, params.trademarkCode]);
+
 // ─── Query ────────────────────────────────────────────────────────────────────
 
 /**
@@ -65,8 +88,7 @@ export async function queryKimoFromPg(
 ): Promise<KimoRow[]> {
   const { seasonCode, trademarkCode, salespersonCode, customerCode } = params;
 
-  // Base parameters: $1 = seasonCode, $2 = trademarkCode
-  const p = new PgParams([seasonCode, trademarkCode]);
+  const p = kimoBaseParams({ seasonCode, trademarkCode });
 
   // Optional filters, identical for both branches of the UNION
   let spFilterSo = '', spFilterBa = '';
@@ -117,8 +139,7 @@ SELECT
   ''                                                   AS "kimoDocumentType"
 FROM nav_pf_sales_line sl
 JOIN nav_pf_sales_header sh
-  ON sl."documentNo" = sh."no_"
- AND sl."documentType" = sh."documentType"
+  ON ${SO_LINE_OF_HEADER}
 LEFT JOIN nav_pf_salesperson sp
   ON sh."salespersonCode" = sp."code"
 LEFT JOIN nav_pf_item i
@@ -127,10 +148,8 @@ LEFT JOIN nav_pf_vendor v
   ON i."vendorNo" = v."no_"
 LEFT JOIN nav_pf_customer c
   ON sh."sellToCustomerNo" = c."no_"
-WHERE sh."sellingSeasonCode" = $1
-  AND sh."shortcutDimension2Code" = $2
-  AND sl."type" IN (19, 20)
-  AND (sl."deleteReason" IS NULL OR sl."deleteReason" = '')
+WHERE ${SO_HEADER}
+  AND ${SO_LINE}
   ${spFilterSo}
   ${custFilterSo}
 
@@ -168,7 +187,7 @@ SELECT
   kh."kimoDocumentType"                                AS "kimoDocumentType"
 FROM nav_kimo_sales_line kl
 JOIN nav_kimo_sales_header kh
-  ON kl."headerEntryNo" = kh."entryNo"
+  ON ${BASKET_LINE_OF_HEADER}
 LEFT JOIN nav_pf_customer c
   ON kh."sellToCustomerNo" = c."no_"
 LEFT JOIN nav_pf_item i
@@ -179,10 +198,8 @@ LEFT JOIN nav_pf_vendor vm
   ON i."manufacturer" = vm."no_"
 LEFT JOIN nav_pf_salesperson sp
   ON kh."salespersonCodeNav" = sp."code"
-WHERE (kh."assignedSalesDocumentNo" IS NULL OR kh."assignedSalesDocumentNo" = '')
-  AND kl."type" IN (2, 20)
-  AND kh."trademarkCode" = $2
-  AND kh."sellingSeasonCode" = $1
+WHERE ${BASKET_HEADER}
+  AND ${BASKET_LINE}
   ${spFilterBa}
   ${custFilterBa}
 GROUP BY
@@ -218,4 +235,33 @@ ORDER BY "trademarkCode", "salespersonCodeNav"
   // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2...); every value is bound as a parameter, never interpolated
   const rows = await prisma.$queryRawUnsafe<KimoRow[]>(sql, ...p.values);
   return rows;
+}
+
+/**
+ * The salespersons the KIMO report can return for a brand and season — those with a sales order or
+ * a basket among the rows `queryKimoFromPg` reads — so the filter offers no one the report would
+ * leave out (#233). A header counts once one of its lines qualifies (`EXISTS`, no line scan). A
+ * missing or blank code (NAV stores blanks as '') is not offered: the report reads '' as no filter.
+ */
+export async function queryKimoSalespersonCodes(
+  prisma: PrismaClient,
+  params: Pick<KimoParams, 'seasonCode' | 'trademarkCode'>,
+): Promise<string[]> {
+  const p = kimoBaseParams(params);
+  const sql = `
+SELECT sh."salespersonCode" AS "code"
+FROM nav_pf_sales_header sh
+WHERE ${SO_HEADER}
+  AND sh."salespersonCode" <> ''
+  AND EXISTS (SELECT 1 FROM nav_pf_sales_line sl WHERE ${SO_LINE_OF_HEADER} AND ${SO_LINE})
+UNION
+SELECT kh."salespersonCodeNav"
+FROM nav_kimo_sales_header kh
+WHERE ${BASKET_HEADER}
+  AND kh."salespersonCodeNav" <> ''
+  AND EXISTS (SELECT 1 FROM nav_kimo_sales_line kl WHERE ${BASKET_LINE_OF_HEADER} AND ${BASKET_LINE})`;
+
+  // nosemgrep: luke-prisma-raw-unsafe -- `sql` is built only from constant fragments and PgParams placeholders ($1, $2); every value is bound as a parameter, never interpolated
+  const rows = await prisma.$queryRawUnsafe<{ code: string }[]>(sql, ...p.values);
+  return rows.map(r => r.code);
 }

@@ -92,11 +92,6 @@ export const UNCOVERED_NAMESPACES: Record<string, UncoveredDeclaration> = {
   },
 
   // ── Depend on an external system or on data the suite doesn't have ────────
-  sales: {
-    reason:
-      'reads the PostgreSQL replica of NAV: without synced data the queries have nothing to run against; the two triggerSync and the two getSyncState by their permission spec (salesSyncPermission), the two download exports by the export rate-limit spec (ratelimit.integration), portafoglio.getFilters on its direct NAV path (salesNavConfig)',
-    uncovered: 1,
-  },
   holidays: {
     reason:
       'listHolidays, previewImport and confirmImport (with Nager.Date stubbed) and the vendor closure writes (upsert, delete, confirm, prefill) are covered by holidays.integration.spec.ts; listCountries, deleteHoliday and the closure reads have no test yet',
