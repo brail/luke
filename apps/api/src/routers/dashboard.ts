@@ -173,8 +173,9 @@ export const dashboardRouter = router({
     }),
 
   /**
-   * Returns aggregate KPI counts: active brands, seasons, users, and collection rows. Brands and
-   * collection rows are counted within the caller's brand scope, as `brand.list` reads it.
+   * Returns aggregate KPI counts: active brands, seasons, users, and the collection rows of active
+   * brands. Brands and collection rows are counted within the caller's brand scope, as `brand.list`
+   * reads it.
    *
    * @auth {dashboard:read}
    * @input {none}
@@ -189,7 +190,9 @@ export const dashboardRouter = router({
         ctx.prisma.brand.count({ where: { isActive: true, id: brandIn } }),
         ctx.prisma.season.count({ where: { isActive: true } }),
         ctx.prisma.user.count({ where: { isActive: true } }),
-        ctx.prisma.collectionLayoutRow.count({ where: { collectionLayout: { brandId: brandIn } } }),
+        ctx.prisma.collectionLayoutRow.count({
+          where: { collectionLayout: { brand: { isActive: true, id: brandIn } } },
+        }),
       ]);
       return { brands, seasons, users, collectionRows };
     }),

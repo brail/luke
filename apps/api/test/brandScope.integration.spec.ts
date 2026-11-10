@@ -220,7 +220,9 @@ describe('brand scope — collectionLayout and dashboard', () => {
     const [stats, brands, inScopeRows, allRows, seasons, users] = await Promise.all([
       createCallerWithSession(scopedSession).dashboard.getKpiStats(),
       prisma.brand.count({ where: { isActive: true, id: inScopeBrandId } }),
-      prisma.collectionLayoutRow.count({ where: { collectionLayout: { brandId: inScopeBrandId } } }),
+      prisma.collectionLayoutRow.count({
+        where: { collectionLayout: { brand: { isActive: true, id: inScopeBrandId } } },
+      }),
       prisma.collectionLayoutRow.count(),
       prisma.season.count({ where: { isActive: true } }),
       prisma.user.count({ where: { isActive: true } }),
@@ -240,14 +242,37 @@ describe('brand scope — collectionLayout and dashboard', () => {
     expect(stats).toMatchObject({ brands: 0, collectionRows: 0 });
   });
 
-  it('dashboard.getKpiStats counts everything for an admin', async () => {
+  it('dashboard.getKpiStats counts every active brand for an admin', async () => {
     const [stats, brands, collectionRows] = await Promise.all([
       createCallerWithSession(adminSession).dashboard.getKpiStats(),
       prisma.brand.count({ where: { isActive: true } }),
-      prisma.collectionLayoutRow.count(),
+      prisma.collectionLayoutRow.count({ where: { collectionLayout: { brand: { isActive: true } } } }),
     ]);
 
     expect(stats).toMatchObject({ brands, collectionRows });
+  });
+
+  it('dashboard.getKpiStats leaves out the rows of inactive brands', async () => {
+    const asAdmin = createCallerWithSession(adminSession);
+    const [before, outRows] = await Promise.all([
+      asAdmin.dashboard.getKpiStats(),
+      prisma.collectionLayoutRow.count({ where: { collectionLayout: { brandId: outOfScopeBrandId } } }),
+    ]);
+
+    // Without a row of its own the brand would prove nothing about the row count.
+    expect(outRows).toBeGreaterThan(0);
+
+    await prisma.brand.update({ where: { id: outOfScopeBrandId }, data: { isActive: false } });
+    try {
+      // The same rule as `Brand attivi`: an inactive brand's rows are not counted either.
+      expect(await asAdmin.dashboard.getKpiStats()).toMatchObject({
+        brands: before.brands - 1,
+        collectionRows: before.collectionRows - outRows,
+      });
+    } finally {
+      // The other tests of this file use the brand active.
+      await prisma.brand.update({ where: { id: outOfScopeBrandId }, data: { isActive: true } });
+    }
   });
 });
 

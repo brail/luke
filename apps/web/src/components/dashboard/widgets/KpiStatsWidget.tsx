@@ -21,8 +21,8 @@ const STAT_DEFS: {
 ];
 
 /**
- * Dashboard widget showing four KPI counters: active brands and collection rows within the user's
- * brands, active seasons and users.
+ * Dashboard widget showing four KPI counters: active brands and their collection rows, within the
+ * user's brands; active seasons and users.
  *
  * Fetches data from `dashboard.getKpiStats`.
  */
