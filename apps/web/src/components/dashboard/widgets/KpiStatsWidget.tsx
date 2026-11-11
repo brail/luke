@@ -14,15 +14,15 @@ const STAT_DEFS: {
   unit: string;
   icon: LucideIcon;
 }[] = [
-  { label: 'Brand attivi',     key: 'brands',         unit: 'brand',    icon: Tag    },
-  { label: 'Stagioni attive',  key: 'seasons',        unit: 'stagioni', icon: Boxes  },
-  { label: 'Utenti attivi',    key: 'users',          unit: 'utenti',   icon: Users2 },
-  { label: 'Righe collezione', key: 'collectionRows', unit: 'righe',    icon: Rows3  },
+  { label: 'Brand attivi',            key: 'brands',         unit: 'brand',    icon: Tag    },
+  { label: 'Stagioni attive',         key: 'seasons',        unit: 'stagioni', icon: Boxes  },
+  { label: 'Utenti attivi',           key: 'users',          unit: 'utenti',   icon: Users2 },
+  { label: 'Righe collezione attive', key: 'collectionRows', unit: 'righe',    icon: Rows3  },
 ];
 
 /**
- * Dashboard widget showing four KPI counters: active brands and their collection rows, within the
- * user's brands; active seasons and users.
+ * Dashboard widget showing four KPI counters: active brands and the collection rows of active brands
+ * and seasons, within the user's brands; active seasons and users.
  *
  * Fetches data from `dashboard.getKpiStats`.
  */

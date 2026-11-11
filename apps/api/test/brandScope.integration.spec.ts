@@ -221,7 +221,9 @@ describe('brand scope — collectionLayout and dashboard', () => {
       createCallerWithSession(scopedSession).dashboard.getKpiStats(),
       prisma.brand.count({ where: { isActive: true, id: inScopeBrandId } }),
       prisma.collectionLayoutRow.count({
-        where: { collectionLayout: { brand: { isActive: true, id: inScopeBrandId } } },
+        where: {
+          collectionLayout: { brand: { isActive: true, id: inScopeBrandId }, season: { isActive: true } },
+        },
       }),
       prisma.collectionLayoutRow.count(),
       prisma.season.count({ where: { isActive: true } }),
@@ -246,7 +248,9 @@ describe('brand scope — collectionLayout and dashboard', () => {
     const [stats, brands, collectionRows] = await Promise.all([
       createCallerWithSession(adminSession).dashboard.getKpiStats(),
       prisma.brand.count({ where: { isActive: true } }),
-      prisma.collectionLayoutRow.count({ where: { collectionLayout: { brand: { isActive: true } } } }),
+      prisma.collectionLayoutRow.count({
+        where: { collectionLayout: { brand: { isActive: true }, season: { isActive: true } } },
+      }),
     ]);
 
     expect(stats).toMatchObject({ brands, collectionRows });
@@ -272,6 +276,30 @@ describe('brand scope — collectionLayout and dashboard', () => {
     } finally {
       // The other tests of this file use the brand active.
       await prisma.brand.update({ where: { id: outOfScopeBrandId }, data: { isActive: true } });
+    }
+  });
+
+  it('dashboard.getKpiStats leaves out the rows of inactive seasons', async () => {
+    const asAdmin = createCallerWithSession(adminSession);
+    const [before, seasonRows] = await Promise.all([
+      asAdmin.dashboard.getKpiStats(),
+      // Rows of active brands only: an inactive brand's are already out of the count.
+      prisma.collectionLayoutRow.count({ where: { collectionLayout: { seasonId, brand: { isActive: true } } } }),
+    ]);
+
+    // Without a row of its own the season would prove nothing about the row count.
+    expect(seasonRows).toBeGreaterThan(0);
+
+    await prisma.season.update({ where: { id: seasonId }, data: { isActive: false } });
+    try {
+      // The same rule as `Stagioni attive`: an inactive season's rows are not counted either.
+      expect(await asAdmin.dashboard.getKpiStats()).toMatchObject({
+        seasons: before.seasons - 1,
+        collectionRows: before.collectionRows - seasonRows,
+      });
+    } finally {
+      // The other tests of this file use the season active.
+      await prisma.season.update({ where: { id: seasonId }, data: { isActive: true } });
     }
   });
 });
