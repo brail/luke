@@ -35,7 +35,8 @@ model CompanyFunction {
   description String?
   /// Display order in function listings.
   order       Int      @default(0)
-  /// Soft-delete flag.
+  /// Soft-delete flag. Setting it false is refused while an active calendar event is visible to
+  /// the function or a template item uses it (trigger `company_function_deactivation_visibility`, #242).
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

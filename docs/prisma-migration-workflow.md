@@ -53,8 +53,8 @@ reset it, deleting the data.
 
 ### Hand-written migrations
 
-Two kinds of migration have no schema difference for `db:migrate:new` to generate, so they are
-written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`; a third is a generated
+Three kinds of migration have no schema difference for `db:migrate:new` to generate, so they are
+written by hand in `prisma/migrations/<timestamp>_<name>/migration.sql`; a fourth is a generated
 migration with SQL added by hand:
 
 - **A `CHECK` constraint Prisma does not model.** It has no representation in the `.prisma` files:
@@ -64,6 +64,12 @@ migration with SQL added by hand:
   (`20260929224334_calendar_dates_in_supported_years`, narrowed and extended to holidays and vendor
   closures by `20261012220000_user_timezone_and_calendar_date_bounds`). A generated migration can
   append one: `planning_groups_default_has_no_name` (`20261101200000_drop_unused_calendar_columns`).
+- **Trigger functions and triggers.** Like a `CHECK`, Prisma does not model them: `migrate diff`
+  cannot see them, so an integration test asserts they exist and are enabled (`pg_trigger`), and
+  `///` comments on the fields they guard name them. Name each refusal with a dedicated SQLSTATE the
+  API recognises (the PostgreSQL adapter drops a `check_violation`'s constraint name). They are the
+  inactive-function triggers (`20261111120000_company_function_active_triggers`, #242, SQLSTATE
+  `LK001`, `isInactiveFunctionRefusal`); they do not scan existing rows.
 - **A one-time rewrite of stored data** that must reach every database, restored backups included:
   only a versioned migration is replayed by the backup migration bridge, which a `db:*` script is
   not. Freeze in the file whatever application rule it applies (enum values, tables, permissions),
@@ -95,8 +101,8 @@ pnpm exec prisma migrate diff --from-migrations ./prisma/migrations --to-schema 
 docker stop luke-pg-migrate
 ```
 
-The development database is aligned with `db push`, which neither creates a constraint nor runs a
-data rewrite: apply the same SQL to it directly, **once** (`docker exec -i luke-db-1 psql -U luke -d
+The development database is aligned with `db push`, which neither creates a constraint or a
+trigger nor runs a data rewrite: apply the same SQL to it directly, **once** (`docker exec -i luke-db-1 psql -U luke -d
 luke -v ON_ERROR_STOP=1 < prisma/migrations/<timestamp>_<name>/migration.sql`) — `psql` records
 nothing, so a data rewrite that is not safe to run twice must not be applied again by hand. The
 integration test database gets it on its own: every integration run applies `migrate deploy` to the

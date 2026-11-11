@@ -34,6 +34,18 @@ export function toErrorCode(err: unknown): string {
   return 'UNKNOWN';
 }
 
+/** What the PostgreSQL driver adapter reports under `meta.driverAdapterError.cause`: the parts read here. */
+interface AdapterCause {
+  constraint?: { index?: string };
+  /** The database's own error code: the SQLSTATE for PostgreSQL. */
+  originalCode?: string;
+}
+
+function adapterCause(err: Prisma.PrismaClientKnownRequestError): AdapterCause | undefined {
+  // `meta` is typed as an open record.
+  return (err.meta?.driverAdapterError as { cause?: AdapterCause } | undefined)?.cause;
+}
+
 /**
  * Whether `err` is the Prisma refusal `code` on one of `constraints`. With the PostgreSQL driver
  * adapter the constraint is reported under `meta.driverAdapterError.cause.constraint.index`, not the
@@ -41,9 +53,7 @@ export function toErrorCode(err: unknown): string {
  */
 function violates(err: unknown, code: string, constraints: readonly string[]): boolean {
   if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== code) return false;
-  // `meta` is typed as an open record.
-  const adapterError = err.meta?.driverAdapterError as { cause?: { constraint?: { index?: string } } } | undefined;
-  const constraint = adapterError?.cause?.constraint?.index;
+  const constraint = adapterCause(err)?.constraint?.index;
   return constraint !== undefined && constraints.includes(constraint);
 }
 
@@ -101,6 +111,29 @@ export async function refuseOnForeignKey<T>(
  */
 export function isUniqueViolation(err: unknown, ...constraints: [string, ...string[]]): boolean {
   return violates(err, 'P2002', constraints);
+}
+
+/**
+ * `true` when `err` is the database's refusal of an inactive company function on an active event or
+ * a template item: SQLSTATE `LK001`, raised by the triggers of migration
+ * `20261111120000_company_function_active_triggers` (#242). Prisma reports it as P2039 on a model
+ * write and P2010 on a raw one, both with the SQLSTATE under `meta.driverAdapterError.cause.originalCode`.
+ */
+export function isInactiveFunctionRefusal(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && adapterCause(err)?.originalCode === 'LK001';
+}
+
+/**
+ * Runs a write the inactive-function triggers guard: their refusal reads PRECONDITION_FAILED with
+ * `message`, keeping the database error as its cause; anything else is rethrown as it is.
+ */
+export async function refuseOnInactiveFunction<T>(message: string, write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (isInactiveFunctionRefusal(err)) throw new TRPCError({ code: 'PRECONDITION_FAILED', message, cause: err });
+    throw err;
+  }
 }
 
 /**

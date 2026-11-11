@@ -353,6 +353,7 @@ export async function buildTestServer() {
  * what keeps the check active.
  */
 export {
+  asLegacy,
   createCalendarFixture,
   expectedOf,
   grantBrandAccess,

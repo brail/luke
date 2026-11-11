@@ -8,17 +8,22 @@
  * Races: each writer is run against a held delete (the function row locked, then deactivated): it
  * must wait, which proves that real path takes the lock, then refuse. Delete is run against a held
  * writer lock, then the writer's row: it must wait, then refuse.
+ *
+ * The database refuses the same states (#242), so a fixture that holds a legacy one — an inactive
+ * function on an active event or a template item — is written with the triggers off (`asLegacy`, or
+ * `session_replication_role = replica` in a held transaction). `companyFunctionTriggers` tests them.
  */
 
 import { randomUUID } from 'crypto';
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import type { PrismaClient } from '@luke/db';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 import { sseStore } from '../src/lib/sseStore';
 
 import {
+  asLegacy,
   createCalendarFixture,
   createCallerWithSession,
   createTestUser,
@@ -47,8 +52,8 @@ async function newFunction(isActive = true) {
 }
 
 /** An event in the source calendar's group, visible to `functionIds`; cancelled when asked. */
-async function newEvent(functionIds: string[], cancelled = false, groupId = source.planningGroupId) {
-  return prisma.calendarEvent.create({
+async function newEvent(functionIds: string[], cancelled = false, groupId = source.planningGroupId, db: Prisma.TransactionClient = prisma) {
+  return db.calendarEvent.create({
     data: {
       calendarId: source.calendarId, planningGroupId: groupId, title: `Ev ${uid()}`, startAt: START,
       cancelledAt: cancelled ? new Date() : null, cancelReason: cancelled ? 'test' : null,
@@ -57,8 +62,8 @@ async function newEvent(functionIds: string[], cancelled = false, groupId = sour
   });
 }
 
-async function newTemplate(items: { title: string; functionIds: string[] }[]) {
-  return prisma.milestoneTemplate.create({
+async function newTemplate(items: { title: string; functionIds: string[] }[], db: Prisma.TransactionClient = prisma) {
+  return db.milestoneTemplate.create({
     data: {
       name: `Tpl ${uid()}`,
       items: {
@@ -108,7 +113,7 @@ describe('writers refuse an inactive function, naming it', () => {
     })).rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: expect.stringContaining(`«${off.name}»`) });
 
     // Saved before #237: the inactive function may stay while the rest of the event changes.
-    const legacy = await newEvent([off.id]);
+    const legacy = await asLegacy(prisma, tx => newEvent([off.id], false, source.planningGroupId, tx));
     await asAdmin().seasonCalendar.updateMilestone({
       id: legacy.id, data: { title: 'Renamed', visibilityFunctionIds: [off.id, on.id] }, expected: await expectedOf(prisma, legacy.id),
     });
@@ -117,7 +122,8 @@ describe('writers refuse an inactive function, naming it', () => {
 
   it('applyTemplate, naming the items, and applies nothing', async () => {
     const [on, off] = await Promise.all([newFunction(), newFunction(false)]);
-    const template = await newTemplate([{ title: 'Fine', functionIds: [on.id] }, { title: 'Stale', functionIds: [off.id] }]);
+    const template = await asLegacy(prisma, tx =>
+      newTemplate([{ title: 'Fine', functionIds: [on.id] }, { title: 'Stale', functionIds: [off.id] }], tx));
     const groupId = await newGroup();
 
     await expect(asAdmin().seasonCalendar.applyTemplate({ planningGroupId: groupId, templateId: template.id, anchorDate: '2099-03-01' }))
@@ -161,7 +167,7 @@ describe('writers refuse an inactive function, naming it', () => {
 
   it('updateTemplateItem refuses any save of an item carrying one, and saves once it is removed', async () => {
     const [on, off] = await Promise.all([newFunction(), newFunction(false)]);
-    const [item] = (await newTemplate([{ title: 'Legacy', functionIds: [off.id] }])).items;
+    const [item] = (await asLegacy(prisma, tx => newTemplate([{ title: 'Legacy', functionIds: [off.id] }], tx))).items;
 
     await expect(asAdmin().seasonCalendar.updateTemplateItem({ id: item!.id, title: 'Only the title' }))
       .rejects.toMatchObject({ code: 'PRECONDITION_FAILED', message: expect.stringContaining(`«${off.name}»`) });
@@ -288,7 +294,11 @@ describe('a writer racing a delete waits for it, then refuses', () => {
     const outcome = await whileHeld(
       holder => holder.query('SELECT 1 FROM company_functions WHERE id = $1 FOR NO KEY UPDATE', [fn.id]),
       run,
-      holder => holder.query('UPDATE company_functions SET "isActive" = false WHERE id = $1', [fn.id])
+      // A raw deactivation, past the trigger that refuses it while a template or event uses the function.
+      async holder => {
+        await holder.query('SET LOCAL session_replication_role = replica');
+        await holder.query('UPDATE company_functions SET "isActive" = false WHERE id = $1', [fn.id]);
+      }
     );
 
     expect(rejectionOf(outcome)?.code).toBe('PRECONDITION_FAILED');
@@ -306,7 +316,10 @@ describe('ordering', () => {
       holder => holder.query('SELECT 1 FROM calendar_events WHERE id = $1 FOR NO KEY UPDATE', [event.id]),
       () => asAdmin().seasonCalendar.updateMilestone({ id: event.id, data: { visibilityFunctionIds: [on.id, off.id] }, expected }),
       // A save that committed before #237's rule held: the inactive function is already on the event.
-      holder => holder.query('INSERT INTO calendar_event_visibilities ("eventId", "functionId") VALUES ($1, $2)', [event.id, off.id])
+      async holder => {
+        await holder.query('SET LOCAL session_replication_role = replica');
+        await holder.query('INSERT INTO calendar_event_visibilities ("eventId", "functionId") VALUES ($1, $2)', [event.id, off.id]);
+      }
     );
 
     expect(outcome.status).toBe('fulfilled');

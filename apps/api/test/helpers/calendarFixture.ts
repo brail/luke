@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'crypto';
 
-import type { PrismaClient } from '@luke/db';
+import type { Prisma, PrismaClient } from '@luke/db';
 
 export interface CalendarFixture {
   /** Short uppercase suffix used in every generated code/name, so parallel specs cannot collide. */
@@ -178,4 +178,17 @@ export async function grantBrandAccess(
 export async function expectedOf(prisma: PrismaClient, eventId: string) {
   const event = await prisma.calendarEvent.findUniqueOrThrow({ where: { id: eventId }, select: { startAt: true, endAt: true, allDay: true } });
   return { startAt: event.startAt.toISOString(), endAt: event.endAt?.toISOString() ?? null, allDay: event.allDay };
+}
+
+/**
+ * Writes rows saved before the inactive-function triggers existed (#242), which may hold an inactive
+ * function on an active event or a template item (#237's legacy, kept by owner decision #12): `write`
+ * runs in one transaction with triggers off (`session_replication_role = replica`, which needs the
+ * superuser the test database runs as). Foreign keys are triggers too, so they are not checked either.
+ */
+export function asLegacy<T>(prisma: PrismaClient, write: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+  return prisma.$transaction(async tx => {
+    await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+    return write(tx);
+  });
 }

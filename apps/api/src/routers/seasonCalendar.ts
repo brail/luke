@@ -43,7 +43,7 @@ import {
 
 import { logAudit } from '../lib/auditLog.js';
 import { getConfigOrDefault } from '../lib/configManager.js';
-import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey } from '../lib/error.js';
+import { FOREIGN_KEYS, isUniqueViolation, refuseOnForeignKey, refuseOnInactiveFunction } from '../lib/error.js';
 import { brandSeasonLabel, createNotification, notifyCalendarChange } from '../lib/notifications.js';
 import { requirePermission } from '../lib/permissions.js';
 import { withRateLimit } from '../lib/ratelimit.js';
@@ -689,10 +689,13 @@ export const seasonCalendarRouter = router({
         // An event visible to an inactive function stays cancelled (#237).
         await assertEventFunctionsActive(tx, input.id);
 
-        const restored = await tx.calendarEvent.update({
-          where: { id: input.id },
-          data: { cancelledAt: null, cancelReason: null, cancelledByUserId: null },
-        }).catch((err: unknown) => {
+        const restored = await refuseOnInactiveFunction(
+          'Impossibile ripristinare: l\'evento è visibile a una funzione disattivata.',
+          () => tx.calendarEvent.update({
+            where: { id: input.id },
+            data: { cancelledAt: null, cancelReason: null, cancelledByUserId: null },
+          })
+        ).catch((err: unknown) => {
           // A concurrent uncancel or save took the slot after the check: the index refuses this one.
           if (isUniqueViolation(err, 'calendar_events_group_phase_active_uq')) throw phaseTaken();
           throw err;

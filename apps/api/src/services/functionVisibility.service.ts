@@ -7,11 +7,20 @@
  *
  * `function.delete` locks the function row `FOR NO KEY UPDATE` before it counts both tables, so
  * either it sees the rows a writer here commits, or the writer sees the function inactive.
+ *
+ * The database holds the same rule as a backstop (#242): the triggers of migration
+ * `20261111120000_company_function_active_triggers` refuse what these checks refuse, for any writer.
+ * Here the checks answer first; a trigger refusal still reads PRECONDITION_FAILED.
  */
 
 import { TRPCError } from '@trpc/server';
 
 import { Prisma } from '@luke/db';
+
+import { refuseOnInactiveFunction } from '../lib/error.js';
+
+/** A trigger refusal that the checks here did not answer first. */
+const INACTIVE = 'Una funzione scelta è disattivata. Ricarica e riprova.';
 
 /** An event's (or a template item's) functions, and its name for a refusal naming several. */
 export interface FunctionCarrier {
@@ -57,9 +66,9 @@ async function lockActiveFunctions(tx: Prisma.TransactionClient, carriers: reado
  */
 export async function insertEventVisibilities(tx: Prisma.TransactionClient, events: readonly FunctionCarrier[]): Promise<void> {
   await lockActiveFunctions(tx, events);
-  await tx.calendarEventVisibility.createMany({
+  await refuseOnInactiveFunction(INACTIVE, () => tx.calendarEventVisibility.createMany({
     data: events.flatMap(e => e.functionIds.map(functionId => ({ eventId: e.id, functionId }))),
-  });
+  }));
 }
 
 /**
@@ -77,7 +86,7 @@ export async function replaceEventVisibilities(
   const added = [...new Set(functionIds)].filter(id => !before.includes(id));
   await lockActiveFunctions(tx, [{ id: eventId, functionIds: added }]);
   await tx.calendarEventVisibility.deleteMany({ where: { eventId, functionId: { notIn: [...functionIds] } } });
-  await tx.calendarEventVisibility.createMany({ data: added.map(functionId => ({ eventId, functionId })) });
+  await refuseOnInactiveFunction(INACTIVE, () => tx.calendarEventVisibility.createMany({ data: added.map(functionId => ({ eventId, functionId })) }));
   return before;
 }
 
@@ -88,9 +97,9 @@ export async function insertTemplateItemVisibilities(
   functionIds: readonly string[]
 ) {
   await lockActiveFunctions(tx, [{ id: templateItemId, functionIds }]);
-  return tx.milestoneTemplateItemVisibility.createManyAndReturn({
+  return refuseOnInactiveFunction(INACTIVE, () => tx.milestoneTemplateItemVisibility.createManyAndReturn({
     data: functionIds.map(functionId => ({ templateItemId, functionId })),
-  });
+  }));
 }
 
 /**
@@ -104,7 +113,8 @@ export async function replaceTemplateItemVisibilities(
 ): Promise<void> {
   await lockActiveFunctions(tx, [{ id: templateItemId, functionIds }]);
   await tx.milestoneTemplateItemVisibility.deleteMany({ where: { templateItemId } });
-  await tx.milestoneTemplateItemVisibility.createMany({ data: functionIds.map(functionId => ({ templateItemId, functionId })) });
+  await refuseOnInactiveFunction(INACTIVE, () =>
+    tx.milestoneTemplateItemVisibility.createMany({ data: functionIds.map(functionId => ({ templateItemId, functionId })) }));
 }
 
 /** Refuses reactivating an event visible to an inactive function; the caller holds the event row. */

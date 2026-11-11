@@ -26,7 +26,8 @@ model CalendarEventUserVisibility {
 model MilestoneTemplateItemVisibility {
   /// FK to MilestoneTemplateItem. Cascade delete.
   templateItemId String
-  /// FK to CompanyFunction. Restrict delete.
+  /// FK to CompanyFunction. Restrict delete. Must be an active function on insert or change
+  /// (trigger `template_item_visibility_function_active`, #242).
   functionId     String
 
   /// The template item being shared.
@@ -195,7 +196,8 @@ model CalendarEvent {
   /// Cancellation timestamp. Null = active. A cancelled event is retired from the alert engine and
   /// from the (planningGroup, phase) uniqueness constraint, but kept for audit/history — never
   /// hard-deleted once frozen. Completion is NOT an event state: the truth of "phase done" lives in
-  /// CollectionRowPhaseHistory, per-row, not here.
+  /// CollectionRowPhaseHistory, per-row, not here. Back to null (uncancel) is refused while the
+  /// event is visible to an inactive function (trigger `calendar_event_restore_functions_active`, #242).
   cancelledAt           DateTime?
   /// Mandatory reason captured when the event is cancelled. Non-null iff cancelledAt is non-null.
   cancelReason          String?
@@ -253,7 +255,9 @@ model CalendarEvent {
 model CalendarEventVisibility {
   /// FK to CalendarEvent. Cascade delete.
   eventId    String
-  /// FK to CompanyFunction. Restrict delete.
+  /// FK to CompanyFunction. Restrict delete. On insert or change, while the event is active, must be
+  /// an active function (trigger `calendar_event_visibility_function_active`, #242). A row saved
+  /// before the rule may keep one.
   functionId String
 
   /// The calendar event being shared.

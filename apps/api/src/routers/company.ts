@@ -24,7 +24,7 @@ import { Prisma, type PrismaClient } from '@luke/db';
 
 import { logAudit } from '../lib/auditLog.js';
 import { runInBackground } from '../lib/backgroundWork.js';
-import { isUniqueViolation } from '../lib/error.js';
+import { isUniqueViolation, refuseOnInactiveFunction } from '../lib/error.js';
 import { createNotification } from '../lib/notifications.js';
 import { confirmPendingFile } from '../lib/pendingFile.js';
 import { requirePermission } from '../lib/permissions.js';
@@ -311,7 +311,8 @@ const companyFunctionRouter = router({
    *
    * Blocked if the function is visible on active (non-cancelled) calendar events or used by a
    * template item (#237), and BAD_REQUEST if it is already inactive, so a repeat writes no second
-   * audit row. Every calendar writer refuses an inactive function, so the check holds after commit.
+   * audit row. Every calendar writer refuses an inactive function, so the check holds after commit;
+   * the database refuses it too (#242).
    *
    * @auth company_function:delete
    * @input { id }
@@ -355,7 +356,10 @@ const companyFunctionRouter = router({
           });
         }
 
-        const fn = await tx.companyFunction.update({ where: { id: input.id }, data: { isActive: false } });
+        const fn = await refuseOnInactiveFunction(
+          'Impossibile disattivare: la funzione è usata da eventi attivi o elementi di template.',
+          () => tx.companyFunction.update({ where: { id: input.id }, data: { isActive: false } })
+        );
         await logAudit(ctx, {
           action: 'COMPANY_FUNCTION_DEACTIVATED',
           targetType: 'CompanyFunction',
