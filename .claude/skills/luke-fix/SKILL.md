@@ -251,3 +251,4 @@ Suggested next step:
 - If the same file is fixed 3+ times in one session, warn:
   "⚠️ This file has been modified 3 times — consider reviewing the full file
   before continuing."
+- For repeated failed attempts, follow the CLAUDE.md section "Sessions, agents and models".

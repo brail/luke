@@ -22,7 +22,7 @@ Use that analysis to review and improve Claude Code's existing plan. Return focu
 
 If the plan is fundamentally unsound, say so explicitly and recommend reopening or rejecting it rather than silently substituting a new plan.
 
-Once the corrected plan is approved, prefer continuing implementation in the same Claude Code session, switching model there when useful. Produce a new implementation prompt only when no active plan exists, the existing plan has been deliberately abandoned, or the user explicitly requests one.
+Once the corrected plan is approved, prefer continuing implementation in the existing luke-dev session, unless the owner explicitly assigns implementation to Codex. Follow `CLAUDE.md`, "Sessions, agents and models", for role assignment and escalation. Produce a new implementation prompt only when no active plan exists, the existing plan has been deliberately abandoned, or the user explicitly requests one.
 
 Follow the collaboration workflow in [`CLAUDE.md`, "Collaboration with Codex"](CLAUDE.md#collaboration-with-codex): who implements, when a Codex round is warranted, what a handoff carries, and who plans which instruction file.
 

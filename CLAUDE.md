@@ -9,6 +9,61 @@
 3. **Never `git commit` without explicit approval** — show the diff, ask for confirmation, wait for
    the go-ahead, then commit
 
+## Sessions, agents and models
+
+luke-lead was named luke-backlog until 2026-11-10; older issues and notes use that name.
+
+- **luke-dev** handles code: mini-plans, implementation questions, commits and pushes.
+- **luke-lead** handles everything else: owner questions, decisions, triage, issues,
+  advisories and design. Design areas run as its subagents, never as separate sessions.
+- Queue owner questions on luke-lead's local, gitignored board
+  (`.planning/backlog/board.md`) and ask them in batches. A decision counts only once
+  recorded there. Do not send acknowledgement messages between sessions.
+
+**Decision rights**
+
+- The owner decides principles and requirements, security and exposure, release content
+  and hotfixes, user-visible behaviour with real trade-offs, irreversible or costly
+  choices, approval of each design part, and residual risk.
+- luke-lead decides direct consequences of owner decisions, reversible technical choices
+  that follow known practice within approved principles, and triage into existing issues.
+  It informs the owner, who can reverse those decisions.
+- luke-dev decides how and when to write code within the approved plan.
+
+**Models and effort**
+
+| Role | Model | Effort |
+| --- | --- | --- |
+| Main sessions: luke-lead and luke-dev | Opus, configured in user settings | high |
+| Design author | Fable | medium |
+| Independent plan or design reviewer | Codex; when unavailable, a Claude model different from the author's | medium; high for security, auth and RBAC, migrations and irreversible choices |
+| Verification of applied findings | Sonnet | medium |
+| Search, web reading, logs and summaries | Haiku; Sonnet when exact quotes matter | low or medium for Haiku; medium for Sonnet |
+| `/code-review` | Its configured model | medium |
+
+Use the role definitions in `.claude/agents/` when delegating these roles.
+A reviewer runs on a model different from the author's; the `plan-reviewer` definition
+says how. Apply invocation overrides when the role requires them; changing the model alone
+does not change its declared effort.
+
+**Escalation**
+
+A session does not change its own model; escalate through delegation.
+
+- Start at the role's level. For known hard work — new-area architecture, migrations,
+  intermittent or production bug diagnosis, or irreversible choices — start one step
+  up the ladder and declare it in the brief or plan.
+- After the first failure, check context and scope, then raise effort one level,
+  capped at high. A failure includes red tests, an unresolved verification finding,
+  or a high-severity finding left unfixed.
+- After the second failure, delegate analysis to a Fable subagent at high.
+  Code edits stay with the main implementation session. When needed, the Fable
+  subagent prepares a patch in a separate worktree.
+- After the third failure, stop and bring the task to the owner.
+- Use xhigh only with a declared justification; use max only at the owner's request.
+- Record each escalation's trigger and outcome in the task's brief or plan.
+  Review this standard at the next stable graduation using that log.
+
 ## Collaboration with Codex
 
 Codex reviews and Claude Code implements, unless the owner explicitly assigns implementation to
@@ -19,29 +74,30 @@ Codex; Codex's side of this contract is `AGENTS.md`.
   or auth; for security fixes, behavior changes visible to users, and design choices with several
   viable options. Not for mechanical units the compiler or tests prove, translations, or
   documentation fixes outside the two instruction files.
-- State in every plan whether Codex reviews it and why. At most one Codex round per unit of work,
-  on its plan, in a fresh session; reviewing the implementation needs an owner request. After
-  CHANGES REQUIRED, apply the findings and have an independent agent verify them; if that
-  verification fails, the findings stay open until corrected and verified again — the round limit
-  implies no approval. A second Codex round only when the findings changed the design, or the
-  owner asks.
-- Before a round, run `node scripts/codex-budget.mjs`, a live read of the Codex limits that costs
-  no model usage, and record its line in the plan before and after the round. Only `go` starts
-  Codex (usage allowed, at most 50% of the 5-hour window and 80% of the week). On `insufficient`
-  with `offerWait`, offer the owner a wait and a new check. Otherwise on `insufficient`, on
-  `unknown` (also report that the probe needs attention), or when the review does not need a
-  second model family, use an independent read-only Claude agent instead: Sonnet for fact-checks
-  and focused unit reviews, Opus or Fable for judgment-heavy reviews. If Codex stops on a limit
-  mid-round, that agent completes the review and the plan records it. If the owner explicitly
-  asked for Codex, report the limitation before substituting.
+- State in every plan whether Codex reviews it and why. At most one Codex round per unit of work, on
+  its plan, in a fresh session; reviewing the implementation needs an owner request. After CHANGES
+  REQUIRED, apply the findings and have an independent verifier, selected under "Sessions, agents
+  and models", verify them; if that verification fails, the findings stay open until corrected and
+  verified again — the round limit implies no approval. A second Codex round only when the findings
+  changed the design, or the owner asks.
+- Before a round, run `node scripts/codex-budget.mjs`, a live read of the Codex limits that
+  costs no model usage, and record its line in the plan before and after the round, with the
+  effort used and the number of findings. Only `go` starts Codex (usage allowed, at most 50% of
+  the 5-hour window and 80% of the week). On `insufficient` with `offerWait`, offer the owner a
+  wait and a new check. Otherwise on `insufficient`, or on `unknown` (also report that the probe
+  needs attention), use an independent read-only Claude reviewer selected under "Sessions,
+  agents and models". If Codex stops on a limit mid-round, that reviewer completes the review
+  and the plan records it. If the owner explicitly asked for Codex, report the limitation before
+  substituting.
 - Run Codex through the plugin's rescue task (`codex:codex-rescue`, read-only) on the model in
-  `~/.codex/config.toml`; for plan, security and governance reviews raise the reasoning effort to
-  `high` (`--effort high`, which `task` accepts and `/codex:review` does not).
+  `~/.codex/config.toml`, at the effort set under "Sessions, agents and models". Pass effort
+  through `task`'s `--effort` option; `/codex:review` does not accept it.
 - Hand off by reference — the brief, paths, `git diff --stat`, the gates already run, the acceptance
   criteria — never a pasted transcript or full diff.
 - Codex plans changes to `CLAUDE.md`; Claude Code checks the plan against the repository, then
   implements it. Claude Code drafts changes to `AGENTS.md` and Codex reviews them. When Codex is
-  unavailable, Claude Code plans the `CLAUDE.md` change and an independent Claude agent reviews it.
+  unavailable, Claude Code plans the `CLAUDE.md` change and an independent Claude reviewer, selected
+  under "Sessions, agents and models", reviews it.
 
 ## Canonical Language and Documentation Impact
 

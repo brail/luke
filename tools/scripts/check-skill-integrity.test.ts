@@ -36,6 +36,8 @@ import { test } from 'node:test';
 
 import {
   ARGUMENT_BINDING,
+  checkAgentDefinition,
+  checkAgents,
   checkArgumentBinding,
   checkExecutionContract,
   checkNoFanOut,
@@ -44,6 +46,7 @@ import {
   checkSkillInvocations,
   checkVersionFree,
   checkWriterCitesConcurrency,
+  EXPECTED_AGENTS,
   IGNORE_MARKER,
   isRepoPath,
   isSymbolRef,
@@ -469,4 +472,69 @@ test('a valid repository passes and counts what it verified', () => {
   withRepo({ ...BASE, [SKILL_PATH]: skillSaying('Read `docs/guide.md` first.') }, root =>
     assert.deepEqual(checkSkills(root), { files: 2, pathRefs: 1, symbolRefs: 0, contracts: 1 })
   );
+});
+
+// ── Agent definitions ────────────────────────────────────────────────────────
+
+const AGENT = '.claude/agents/verifier.md';
+const VALID_AGENT = `---
+name: verifier
+description: "Verifies that review findings were applied."
+model: sonnet
+effort: medium
+tools: Read, Grep
+---
+
+Body.
+`;
+
+function agentProblems(content: string, relPath = AGENT): Problem[] {
+  const problems: Problem[] = [];
+  checkAgentDefinition(relPath, content, problems);
+  return problems;
+}
+
+test('a valid agent definition produces no problems', () => {
+  assert.deepEqual(agentProblems(VALID_AGENT), []);
+});
+
+test('a mistyped effort key fails as a missing effort — Claude Code would ignore it silently', () => {
+  assertFailsWith(agentProblems(VALID_AGENT.replace('effort:', 'efort:')), '`effort` must be one of low, medium, high, got `\\(none\\)`');
+});
+
+test('a model or effort outside the standard fails, naming the value', () => {
+  assertFailsWith(agentProblems(VALID_AGENT.replace('model: sonnet', 'model: gpt')), '`model` must be one of .*got `gpt`');
+  assertFailsWith(agentProblems(VALID_AGENT.replace('effort: medium', 'effort: max')), 'got `max`');
+});
+
+test('a name other than the file name fails', () => {
+  assertFailsWith(agentProblems(VALID_AGENT.replace('name: verifier', 'name: checker')), '`name` must be `verifier`');
+});
+
+test('an empty or block-scalar description fails', () => {
+  assertFailsWith(agentProblems(VALID_AGENT.replace(/description: .*/, 'description: >')), 'non-empty single-line');
+  assertFailsWith(agentProblems(VALID_AGENT.replace(/description: .*/, 'description:')), 'non-empty single-line');
+});
+
+test('a missing tools key, or a write tool in it, fails — every role is read-only', () => {
+  assertFailsWith(agentProblems(VALID_AGENT.replace('tools: Read, Grep\n', '')), 'inherits every tool');
+  assertFailsWith(agentProblems(VALID_AGENT.replace('tools: Read, Grep', 'tools: Read, Edit')), 'must not grant Edit');
+});
+
+test('an agent file without frontmatter fails', () => {
+  assertFailsWith(agentProblems('# No frontmatter\n'), 'has no frontmatter');
+});
+
+const agentFiles = (names: readonly string[]) =>
+  Object.fromEntries(names.map(name => [`.claude/agents/${name}.md`, VALID_AGENT.replace('name: verifier', `name: ${name}`)]));
+
+test('every expected role present and valid passes, counting the definitions', () => {
+  withRepo(agentFiles(EXPECTED_AGENTS), root => assert.equal(checkAgents(root), EXPECTED_AGENTS.length));
+});
+
+test('a deleted role file turns the check red instead of passing vacuously', () => {
+  withRepo(agentFiles(EXPECTED_AGENTS.filter(name => name !== 'researcher')), root =>
+    assert.throws(() => checkAgents(root), /researcher\.md:1 — is missing/)
+  );
+  withRepo({}, root => assert.throws(() => checkAgents(root), /4 problems in agent definitions/));
 });

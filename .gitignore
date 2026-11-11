@@ -17,6 +17,7 @@ docs/merchandising-reference/
 # stop git descending into the re-included directories.
 .claude/*
 !.claude/skills/
+!.claude/agents/
 !.claude/hooks/
 !.claude/settings.json
 # Redundant with `.claude/*` today. It stays because this is the one file that

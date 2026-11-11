@@ -162,7 +162,8 @@ on every diff.
 
 `AGENTS.md` governs only Codex's conduct as a reviewer and ranks with
 `CLAUDE.md` for that alone; on anything else `CLAUDE.md` prevails. How the two
-agents collaborate is stated once, in `CLAUDE.md` ("Collaboration with Codex").
+agents collaborate is stated once, in `CLAUDE.md` ("Collaboration with Codex");
+session roles, models, effort and escalation are in "Sessions, agents and models".
 
 ## 5. Deduplications
 

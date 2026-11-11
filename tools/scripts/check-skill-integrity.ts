@@ -688,11 +688,89 @@ export function checkSkills(root: string): SkillCheckSummary {
   return { files: files.length, pathRefs, symbolRefs, contracts };
 }
 
+// ── Agent definitions ────────────────────────────────────────────────────────
+
+/**
+ * The roles `CLAUDE.md` "Sessions, agents and models" delegates to `.claude/agents/`. A deleted file must
+ * turn the check red, not leave it vacuously green.
+ */
+export const EXPECTED_AGENTS = ['design-author', 'plan-reviewer', 'researcher', 'verifier'];
+
+/** The models and the standard efforts a role may declare; `xhigh` and `max` are per-call exceptions. */
+const AGENT_MODELS = ['fable', 'opus', 'sonnet', 'haiku'];
+const AGENT_EFFORTS = ['low', 'medium', 'high'];
+
+/**
+ * Checks one agent definition's declarations, not what runs: Claude Code ignores a mistyped or missing
+ * `model` or `effort` without a word, and the role then runs on the session's model and effort. Only the
+ * keys the standard relies on are read; other keys belong to Claude Code (see the note above
+ * `DIRECT_WRITE_TOOLS`).
+ */
+export function checkAgentDefinition(relPath: string, content: string, problems: Problem[]): void {
+  const fm = frontmatter(content);
+  if (fm === null) {
+    problems.push({ file: relPath, line: 1, message: 'has no frontmatter.' });
+    return;
+  }
+  const report = (key: string, message: string) =>
+    problems.push({ file: relPath, line: lineOf(content, new RegExp(`^${key}:`, 'm')), message });
+
+  const expectedName = basename(relPath, '.md');
+  if (frontmatterValue(fm, 'name') !== expectedName) {
+    report('name', `\`name\` must be \`${expectedName}\`, the file name.`);
+  }
+  // A folded or literal block (`>`, `|`) would read as one character here: one line, quoted.
+  const description = frontmatterValue(fm, 'description');
+  if (!description || /^[>|]/.test(description)) {
+    report('description', '`description` must be a non-empty single-line value: Claude Code picks the agent by it.');
+  }
+  const model = frontmatterValue(fm, 'model');
+  if (!model || !AGENT_MODELS.includes(model)) {
+    report('model', `\`model\` must be one of ${AGENT_MODELS.join(', ')}, got \`${model ?? '(none)'}\`.`);
+  }
+  const effort = frontmatterValue(fm, 'effort');
+  if (!effort || !AGENT_EFFORTS.includes(effort)) {
+    report('effort', `\`effort\` must be one of ${AGENT_EFFORTS.join(', ')}, got \`${effort ?? '(none)'}\`.`);
+  }
+  // Every role is read-only. Without `tools` an agent inherits every tool, Edit and Write included.
+  const tools = frontmatterValue(fm, 'tools');
+  const writeTools = DIRECT_WRITE_TOOLS.filter(tool => tools && new RegExp(`\\b${tool}\\b`).test(tools));
+  if (!tools) {
+    report('tools', '`tools` must list the role\'s tools: without it the agent inherits every tool, Edit and Write included.');
+  } else if (writeTools.length > 0) {
+    report('tools', `\`tools\` must not grant ${writeTools.join(', ')}: every role is read-only.`);
+  }
+}
+
+/** Checks every agent definition of the repository at `root`, and that each expected role has one. */
+export function checkAgents(root: string): number {
+  const dir = join(root, '.claude', 'agents');
+  const files = existsSync(dir) ? readdirSync(dir).filter(file => file.endsWith('.md')).sort() : [];
+  const problems: Problem[] = [];
+  for (const name of EXPECTED_AGENTS) {
+    if (!files.includes(`${name}.md`)) {
+      problems.push({
+        file: `.claude/agents/${name}.md`,
+        line: 1,
+        message: 'is missing: CLAUDE.md "Sessions, agents and models" delegates this role to it.',
+      });
+    }
+  }
+  for (const file of files) {
+    checkAgentDefinition(`.claude/agents/${file}`, readFileSync(join(dir, file), 'utf8'), problems);
+  }
+  if (problems.length > 0) {
+    throw new Error(`[skill-integrity] ${problems.length} problems in agent definitions:\n${formatProblems(problems)}`);
+  }
+  return files.length;
+}
+
 function main(): void {
   const { files, pathRefs, symbolRefs, contracts } = checkSkills(REPO_ROOT);
+  const agents = checkAgents(REPO_ROOT);
   console.log(
     `[skill-integrity] ok — ${files} skill files, ${pathRefs} paths, ` +
-      `${symbolRefs} symbols, and ${contracts} execution contracts verified.`
+      `${symbolRefs} symbols, ${contracts} execution contracts and ${agents} agent definitions verified.`
   );
 }
 
