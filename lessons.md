@@ -511,6 +511,18 @@ shared-state race, not the last commit's bug: reproduce it under the conditions
 CI has and local runs lack (a fresh home, fewer cores, more concurrency) before
 blaming or retrying.
 
+### `gh run list --commit` needs the full SHA; an empty answer is not "still running" (2026-11-11)
+
+**What happened.** After the S0q2 push a background wait polled
+`gh run list --commit 37c1f32`: a short SHA matches nothing, so it printed an
+empty list for as long as it ran, and the wait — which waited for two runs to
+complete — never ended. CI and security were green; the owner noticed before I
+did.
+
+**Rule.** Pass `gh run list --commit "$(git rev-parse <sha>)"`. A wait or check
+that sees zero runs for a pushed commit is broken, not pending: fail it at once
+and look, never keep polling.
+
 ### A rule written only in prose gets broken — `pnpm dev` during a push (2026-09-27)
 
 **What happened.** CLAUDE.md said not to run the pre-push hook while `pnpm dev`
