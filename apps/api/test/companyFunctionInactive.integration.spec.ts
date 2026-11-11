@@ -172,6 +172,14 @@ describe('writers refuse an inactive function, naming it', () => {
   });
 });
 
+describe('a function that does not exist', () => {
+  it('answers NOT_FOUND, not a foreign-key 500', async () => {
+    await expect(asAdmin().seasonCalendar.createMilestone({
+      planningGroupId: source.planningGroupId, title: `Ghost ${uid()}`, startAt: START.toISOString(), visibilityFunctionIds: [randomUUID()],
+    })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
 describe('function.delete', () => {
   it('is refused while a template item uses the function', async () => {
     const fn = await newFunction();

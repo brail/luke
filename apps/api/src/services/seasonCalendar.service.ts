@@ -24,6 +24,14 @@ import { rootLogger } from '../lib/logger';
 import { callerEventVisibility, type BrandScopeCtx } from './brandScope.service';
 import { eventVisibilityWhere } from './calendarAudience.service';
 import { visibilityOf } from './eventMasking.service';
+import {
+  assertTemplateItemFunctionsActive,
+  insertEventVisibilities,
+  insertTemplateItemVisibilities,
+  replaceEventVisibilities,
+  replaceTemplateItemVisibilities,
+  type FunctionCarrier,
+} from './functionVisibility.service';
 
 import type { FunctionBrands } from './context.service';
 
@@ -69,54 +77,6 @@ async function recordVisibilityChanges(ctx: AuditContext, tx: Prisma.Transaction
       metadata: { oldVisibilityFunctionIds: oldIds, newVisibilityFunctionIds: newIds, eventDeleted },
     }];
   }), { tx });
-}
-
-/**
- * Holds the named company functions until the transaction commits and refuses, with
- * PRECONDITION_FAILED, any that is inactive (#237): an inactive function gets no new association to
- * an active event or to a template item. `function.delete` locks the function row before it checks
- * for both, so either it sees this transaction's rows or this lock sees the function inactive.
- *
- * Call it once per transaction, with every function id the write associates: the ids are locked in
- * one batch, `ORDER BY id`, so two writers, `function.delete` and `function.reorder` cannot deadlock.
- * Raw SQL exception: `FOR SHARE`, a row lock the ORM cannot express, inside an interactive
- * transaction; concurrent writers naming the same function do not wait for each other.
- *
- * @param carriers - For a write of many events or items: the names of those carrying each function,
- *   so the refusal says where to fix it.
- */
-export async function lockActiveFunctions(
-  tx: Prisma.TransactionClient,
-  functionIds: readonly string[],
-  carriers?: ReadonlyMap<string, readonly string[]>
-): Promise<void> {
-  const ids = [...new Set(functionIds)];
-  if (ids.length === 0) return;
-  const rows = await tx.$queryRaw<{ id: string; name: string; isActive: boolean }[]>(Prisma.sql`
-    SELECT id, name, "isActive" FROM company_functions WHERE id = ANY(${ids}::text[]) ORDER BY id FOR SHARE`);
-  const inactive = rows.filter(f => !f.isActive);
-  if (inactive.length === 0) return;
-  const named = inactive.map(f => {
-    const where = carriers?.get(f.id);
-    return where?.length ? `«${f.name}» (in ${[...new Set(where)].join(', ')})` : `«${f.name}»`;
-  });
-  const [noun, fix] = inactive.length === 1
-    ? ['Funzione disattivata', 'Toglila dalla visibilità o ripristinala']
-    : ['Funzioni disattivate', 'Toglile dalla visibilità o ripristinale'];
-  throw new TRPCError({ code: 'PRECONDITION_FAILED', message: `${noun}: ${named.join(', ')}. ${fix} prima di salvare.` });
-}
-
-/** Function id → names of the events or items that carry it, for `lockActiveFunctions`' refusal. */
-function carriersOf(entries: readonly { name: string; functionIds: readonly string[] }[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const { name, functionIds } of entries) {
-    for (const id of functionIds) {
-      const names = map.get(id);
-      if (names) names.push(name);
-      else map.set(id, [name]);
-    }
-  }
-  return map;
 }
 
 // ─── Calendar get/create ──────────────────────────────────────────────────────
@@ -652,13 +612,7 @@ export async function createMilestone(
       },
     });
 
-    await lockActiveFunctions(tx, input.visibilityFunctionIds);
-    await tx.calendarEventVisibility.createMany({
-      data: input.visibilityFunctionIds.map(fId => ({
-        eventId: event.id,
-        functionId: fId,
-      })),
-    });
+    await insertEventVisibilities(tx, [{ id: event.id, functionIds: input.visibilityFunctionIds }]);
     await recordVisibilityChanges(ctx, tx, [{ eventId: event.id, after: input.visibilityFunctionIds }]);
     if (saverSees) await refuseIfHiddenFromSaver(tx, event.id, saverSees);
 
@@ -707,18 +661,8 @@ export async function updateMilestone(
     if (input.visibilityFunctionIds) {
       // After the update: every writer of an existing event's set holds its row (this update, a
       // delete), so a concurrent one reads the set this one leaves.
-      const before = await tx.calendarEventVisibility.findMany({ where: { eventId }, select: { functionId: true } });
-      // Only an added function must be active: one already on the event before #237 may stay.
-      const kept = new Set(before.map(v => v.functionId));
-      await lockActiveFunctions(tx, input.visibilityFunctionIds.filter(id => !kept.has(id)));
-      await tx.calendarEventVisibility.deleteMany({ where: { eventId } });
-      await tx.calendarEventVisibility.createMany({
-        data: input.visibilityFunctionIds.map(fId => ({
-          eventId,
-          functionId: fId,
-        })),
-      });
-      await recordVisibilityChanges(ctx, tx, [{ eventId, before: before.map(v => v.functionId), after: input.visibilityFunctionIds }]);
+      const before = await replaceEventVisibilities(tx, eventId, input.visibilityFunctionIds);
+      await recordVisibilityChanges(ctx, tx, [{ eventId, before, after: input.visibilityFunctionIds }]);
       // Checked when functions are sent, changed or not (the dialog always sends them): without new
       // functions the event stays as visible as it was when `resolveEventBrandAccess` checked it.
       if (saverSees) await refuseIfHiddenFromSaver(tx, eventId, saverSees);
@@ -855,8 +799,6 @@ export async function applyTemplate(
       },
     });
     if (!template) throw new TRPCError({ code: 'NOT_FOUND', message: 'Template non trovato' });
-    const itemFunctions = template.items.map(item => ({ name: `«${item.title}»`, functionIds: item.visibilities.map(v => v.functionId) }));
-    await lockActiveFunctions(tx, itemFunctions.flatMap(i => i.functionIds), carriersOf(itemFunctions));
 
     const itemsWithDates = template.items.map(item => ({ item, ...templateItemDates(anchorDay, item, businessZone) }));
 
@@ -877,13 +819,13 @@ export async function applyTemplate(
     });
 
     const itemById = new Map(template.items.map(item => [item.id, item]));
-    const changes = created.map(event => ({
-      eventId: event.id,
-      after: (event.templateItemId ? itemById.get(event.templateItemId)?.visibilities.map(v => v.functionId) : undefined) ?? [],
+    const events = created.map(event => ({
+      id: event.id,
+      name: `«${event.title}»`,
+      functionIds: (event.templateItemId ? itemById.get(event.templateItemId)?.visibilities.map(v => v.functionId) : undefined) ?? [],
     }));
-    await tx.calendarEventVisibility.createMany({
-      data: changes.flatMap(({ eventId, after }) => after.map(functionId => ({ eventId, functionId }))),
-    });
+    await insertEventVisibilities(tx, events);
+    const changes = events.map(e => ({ eventId: e.id, after: e.functionIds }));
     await recordVisibilityChanges(ctx, tx, changes);
 
     // Not blocked: the template item may genuinely have no functions assigned yet.
@@ -1043,17 +985,8 @@ export async function createTemplateItem(
 ) {
   const { visibilityFunctionIds, ...itemData } = data;
   return prisma.$transaction(async tx => {
-    await lockActiveFunctions(tx, visibilityFunctionIds);
-    return tx.milestoneTemplateItem.create({
-      data: {
-        templateId,
-        ...itemData,
-        visibilities: {
-          createMany: { data: visibilityFunctionIds.map(functionId => ({ functionId })) },
-        },
-      },
-      include: { visibilities: true },
-    });
+    const item = await tx.milestoneTemplateItem.create({ data: { templateId, ...itemData } });
+    return { ...item, visibilities: await insertTemplateItemVisibilities(tx, item.id, visibilityFunctionIds) };
   });
 }
 
@@ -1085,15 +1018,10 @@ export async function updateTemplateItem(
     // any save (#237), so a concurrent change of its set must not slip between the read and the write.
     // Raw SQL exception: a row lock inside an interactive transaction.
     await tx.$executeRaw`SELECT 1 FROM milestone_template_items WHERE id = ${id} FOR NO KEY UPDATE`;
-    const functionIds = visibilityFunctionIds
-      ?? (await tx.milestoneTemplateItemVisibility.findMany({ where: { templateItemId: id }, select: { functionId: true } })).map(v => v.functionId);
-    await lockActiveFunctions(tx, functionIds);
+    if (!visibilityFunctionIds) await assertTemplateItemFunctionsActive(tx, id);
     const item = await tx.milestoneTemplateItem.update({ where: { id }, data: itemData });
     if (visibilityFunctionIds) {
-      await tx.milestoneTemplateItemVisibility.deleteMany({ where: { templateItemId: id } });
-      await tx.milestoneTemplateItemVisibility.createMany({
-        data: visibilityFunctionIds.map(functionId => ({ templateItemId: id, functionId })),
-      });
+      await replaceTemplateItemVisibilities(tx, id, visibilityFunctionIds);
     }
     return tx.milestoneTemplateItem.findUniqueOrThrow({
       where: { id: item.id },
@@ -1206,9 +1134,6 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
   const groups = sourceGroups.map(g => ({ ...g, events: g.events.map(e => ({ ...e, ...clonedDates(e, nameOf(e), dateShiftDays, businessZone) })) }));
 
   return prisma.$transaction(async tx => {
-    // Every copy is created active, a cancelled source's too.
-    const eventFunctions = sourceEvents.map(e => ({ name: nameOf(e), functionIds: e.visibilities.map(v => v.functionId) }));
-    await lockActiveFunctions(tx, eventFunctions.flatMap(e => e.functionIds), carriersOf(eventFunctions));
     const targetCalendar = await tx.seasonCalendar.upsert({
       where: { brandId_seasonId: { brandId: targetBrandId, seasonId: targetSeasonId } },
       create: { brandId: targetBrandId, seasonId: targetSeasonId },
@@ -1218,6 +1143,7 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
     let totalCreated = 0;
     const createdEventIds: string[] = [];
     const visibilityChanges: VisibilityChange[] = [];
+    const copies: FunctionCarrier[] = [];
 
     for (const sourceGroup of groups) {
       // The default group maps to the target's default group; the others by name (#117, #128).
@@ -1244,14 +1170,13 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
         })),
       });
 
-      const changes = created.map((newEvent, i) => ({
-        eventId: newEvent.id,
+      const groupCopies = created.map((newEvent, i) => {
         // `!`: one created row per source event, in input order (a single INSERT … RETURNING).
-        after: sourceGroup.events[i]!.visibilities.map(v => v.functionId),
-      }));
-      await tx.calendarEventVisibility.createMany({
-        data: changes.flatMap(({ eventId, after }) => after.map(functionId => ({ eventId, functionId }))),
+        const source = sourceGroup.events[i]!;
+        return { id: newEvent.id, name: nameOf(source), functionIds: source.visibilities.map(v => v.functionId) };
       });
+      copies.push(...groupCopies);
+      const changes = groupCopies.map(c => ({ eventId: c.id, after: c.functionIds }));
       visibilityChanges.push(...changes);
 
       // A source event with no visibility rows clones into another one with none.
@@ -1264,6 +1189,9 @@ export async function cloneFromBrandSeason(input: CloneSeasonCalendarInput, ctx:
       totalCreated += created.length;
       createdEventIds.push(...created.map(e => e.id));
     }
+    // One call for every copy: each is created active, a cancelled source's too, and the clone is
+    // refused whole if any carries an inactive function.
+    await insertEventVisibilities(tx, copies);
     await recordVisibilityChanges(ctx, tx, visibilityChanges);
 
     return {

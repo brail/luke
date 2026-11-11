@@ -63,6 +63,7 @@ import {
 import { listUsersWithBrandAccess, resolveBrandAccess, resolveEventAudience, resolveEventAudienceOne } from '../services/calendarAudience.service.js';
 import { assertUnlocked } from '../services/editLock.service.js';
 import { maskHolidayOverlaps, visibilityOf } from '../services/eventMasking.service.js';
+import { assertEventFunctionsActive } from '../services/functionVisibility.service.js';
 import {
   syncOneMilestone,
   deleteGoogleCopies,
@@ -96,7 +97,6 @@ import {
   cloneFromBrandSeason,
   getSyncStatus,
   hasFunctionVisibility,
-  lockActiveFunctions,
   refuseIfHiddenFromSaver,
 } from '../services/seasonCalendar.service.js';
 
@@ -664,13 +664,13 @@ export const seasonCalendarRouter = router({
       await assertUnlocked('SEASON_CALENDAR', event.calendarId, ctx.session.user.id, ctx.prisma);
 
       const result = await ctx.prisma.$transaction(async tx => {
-        // The event first, then its functions (`lockActiveFunctions`), as every writer does. Raw SQL
+        // The event first, then its functions (`assertEventFunctionsActive`), as every writer does. Raw SQL
         // exception: a row lock inside an interactive transaction; what is checked below is re-read
         // under it, so a concurrent cancel, uncancel or visibility change cannot slip in between.
         await tx.$executeRaw`SELECT 1 FROM calendar_events WHERE id = ${input.id} FOR NO KEY UPDATE`;
         const current = await tx.calendarEvent.findUnique({
           where: { id: input.id },
-          select: { title: true, cancelledAt: true, planningGroupId: true, phaseId: true, phase: { select: { label: true } }, visibilities: { select: { functionId: true } } },
+          select: { title: true, cancelledAt: true, planningGroupId: true, phaseId: true, phase: { select: { label: true } } },
         });
         if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'Evento non trovato' });
         if (!current.cancelledAt) throw new TRPCError({ code: 'CONFLICT', message: 'Evento non è annullato' });
@@ -687,7 +687,7 @@ export const seasonCalendarRouter = router({
           if (conflicting) throw phaseTaken(conflicting.title);
         }
         // An event visible to an inactive function stays cancelled (#237).
-        await lockActiveFunctions(tx, current.visibilities.map(v => v.functionId));
+        await assertEventFunctionsActive(tx, input.id);
 
         const restored = await tx.calendarEvent.update({
           where: { id: input.id },

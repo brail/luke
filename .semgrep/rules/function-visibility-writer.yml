@@ -1,0 +1,33 @@
+rules:
+  - id: luke-function-visibility-writer
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Write a company function's visibility rows on a calendar event or a template item only through
+      functionVisibility.service.ts (insertEventVisibilities, replaceEventVisibilities,
+      insertTemplateItemVisibilities). That writer locks the functions and refuses an inactive one in
+      the same transaction as the insert (#237): a direct write skips the check, and an inactive
+      function ends up on an active event or template item without any test failing (#241).
+    pattern-either:
+      - patterns:
+          - pattern-either:
+              - pattern: $P.calendarEventVisibility.$M(...)
+              - pattern: $P.milestoneTemplateItemVisibility.$M(...)
+          - metavariable-regex:
+              metavariable: $M
+              regex: ^(create|createMany|createManyAndReturn|upsert|update|updateMany)$
+      # A nested write through any parent, at any depth (event, item, template, planning group).
+      - patterns:
+          - pattern: '$P.$MODEL.$M(<... { ..., visibilities: { ..., $K: $V, ... }, ... } ...>)'
+          - metavariable-regex:
+              metavariable: $K
+              regex: ^(create|createMany|connectOrCreate|upsert|update|updateMany)$
+      - pattern-regex: (?i)(insert\s+into|update)\s+("?public"?\.)?"?(calendar_event_visibilities|milestone_template_item_visibilities)\b
+    paths:
+      # Application code. Seeds (apps/api/prisma) create active functions in the same run, and tests
+      # write fixture rows on purpose.
+      include:
+        - '/apps/api/src/**'
+      exclude:
+        # The writer itself.
+        - '/apps/api/src/services/functionVisibility.service.ts'
